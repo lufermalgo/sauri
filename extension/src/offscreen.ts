@@ -2,7 +2,7 @@
 // Captura Pista_De_Audio + Pista_De_Video via tabCapture stream, troceo timeslice 5s.
 // Producción: chunks persistidos en IndexedDB ensamblados por sessionId.
 
-export {};
+import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME } from "./recording-db";
 
 console.log("[sauri] Offscreen document loaded");
 
@@ -10,100 +10,7 @@ let recorder: MediaRecorder | null = null;
 let audioCtx: AudioContext | null = null;
 let currentSessionId: string | null = null;
 
-// --- IndexedDB helpers ---
-
-const DB_NAME = "sauri-recordings";
-const DB_VERSION = 1;
-const STORE_NAME = "chunks";
-
-interface ChunkRecord {
-  sessionId: string;
-  blob: Blob;
-  timestamp: number;
-}
-
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-        store.createIndex("by_session", "sessionId", { unique: false });
-      }
-    };
-
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function storeChunk(sessionId: string, blob: Blob): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    const record: ChunkRecord = {
-      sessionId,
-      blob,
-      timestamp: Date.now(),
-    };
-    const request = store.add(record);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
-  });
-}
-
-async function getChunksBySession(sessionId: string): Promise<Blob[]> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const store = tx.objectStore(STORE_NAME);
-    const index = store.index("by_session");
-    const request = index.getAll(sessionId);
-    request.onsuccess = () => {
-      const records = request.result as ChunkRecord[];
-      // Sort by timestamp to ensure correct order
-      records.sort((a, b) => a.timestamp - b.timestamp);
-      resolve(records.map((r) => r.blob));
-    };
-    request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
-  });
-}
-
-/**
- * Remove all chunks for a given session from IndexedDB.
- */
-async function clearSession(sessionId: string): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    const index = store.index("by_session");
-    const request = index.openCursor(sessionId);
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (cursor) {
-        cursor.delete();
-        cursor.continue();
-      }
-    };
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-    tx.onerror = () => {
-      db.close();
-      reject(tx.error);
-    };
-  });
-}
+// --- Local IndexedDB helpers (not shared — only used in offscreen) ---
 
 /**
  * Returns sessionIds still present in IndexedDB (unfinished/orphaned sessions).
@@ -134,11 +41,6 @@ async function getUnfinishedSessions(): Promise<string[]> {
     };
   });
 }
-
-// Expose recovery functions for use by background (via messaging)
-// These are handled via message listener below
-void getUnfinishedSessions;
-void clearSession;
 
 // --- Capture mode type ---
 
@@ -304,31 +206,23 @@ async function startRecording(
 
       const storedSessionId = currentSessionId;
 
-      // Read all chunks from IndexedDB for this session
+      // Read all chunks from IndexedDB for this session to calculate final size
       const blobs = await getChunksBySession(storedSessionId);
       const blob = new Blob(blobs, { type: mimeType });
       console.log(
         `[sauri] Final blob: ${blob.size} bytes from ${blobs.length} chunks`
       );
 
-      // Convert blob to base64 for transfer to background
-      const base64 = await blobToBase64(blob);
-
+      // Send metadata-only message — no recording data transfer
       chrome.runtime.sendMessage({
         type: "recording-stopped",
-        base64Data: base64,
+        sessionId: storedSessionId,
         size: blob.size,
         mimeType,
-        sessionId: storedSessionId,
       });
 
-      // Cleanup: delete chunks from IndexedDB after successful send
-      await clearSession(storedSessionId);
-      console.log(
-        `[sauri] Chunks cleared from IndexedDB for session: ${storedSessionId}`
-      );
-
       // Cleanup audio context and tracks
+      // NOTE: chunks are NOT cleared here — background handles cleanup after successful upload
       currentSessionId = null;
       if (audioCtx) {
         audioCtx.close();
@@ -355,20 +249,4 @@ function stopRecording(): void {
     recorder.stop();
     console.log("[sauri] Stopping recorder...");
   }
-}
-
-// --- Utility ---
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const dataUrl = reader.result as string;
-      // Strip the data URL prefix (e.g., "data:video/webm;base64,")
-      const base64 = dataUrl.split(",")[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
 }
