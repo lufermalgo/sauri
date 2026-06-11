@@ -305,3 +305,49 @@ These rules apply once the project has a repository, a default branch, and a PR 
 7. **Keep session state accurate when session tracking is enabled.** A stale session file is worse than no session file.
 
 ---
+
+## 13. Spec → GitHub Traceability Workflow
+
+Each module of the product roadmap maps 1:1 to a **Kiro spec** and a **GitHub milestone**:
+
+```text
+Kiro Spec (.kiro/specs/{module}/)  ←→  GitHub Milestone
+  requirements.md                       (defines acceptance criteria)
+  design.md                             (defines architecture)
+  tasks.md                              (defines atomic work items)
+```
+
+### Lifecycle of a module
+
+1. **Plan (Kiro):** Create the spec → requirements.md → design.md → tasks.md.
+2. **Sync to GitHub:** For each atomic task in tasks.md, create a GitHub issue assigned to the corresponding milestone. Label with `task`. Optional tasks (tests marked `*`) get label `optional`.
+3. **Execute:** For each issue, create a branch (`feature/issue-{id}-{desc}`), implement, open PR referencing `Closes #{id}`.
+4. **Track:** The milestone progress in GitHub reflects the spec progress. When all required issues in a milestone are closed, the milestone is closed.
+5. **Bugs:** Bugs discovered during execution are filed as issues with label `bug`, assigned to the relevant milestone.
+
+### Mapping rules
+
+| Kiro artifact               | GitHub artifact                              |
+| --------------------------- | -------------------------------------------- |
+| Spec module name            | Milestone title (numbered: "1. Captura...")   |
+| Requirement (user story)    | Referenced in issue body for context          |
+| Atomic task from tasks.md   | GitHub issue (label: `task`)                  |
+| Optional task (`*`)         | GitHub issue (labels: `task`, `optional`)     |
+| Bug found during execution  | GitHub issue (label: `bug`)                   |
+| Property test task          | GitHub issue (labels: `task`, `test`, `pbt`)  |
+
+### When to create issues
+
+* **From milestone 2 onward:** every atomic task in tasks.md gets a GitHub issue at spec creation time (before implementation starts).
+* **Milestone 1 (retroactive):** only bugs and pending items were filed as issues. Completed tasks are tracked in tasks.md only.
+
+### Milestone closure criteria
+
+A milestone is **closed** when:
+* All required (non-optional) task issues are closed.
+* The spec's tasks.md reflects all tasks as completed.
+* No open `bug` issues block the module's acceptance criteria.
+
+Optional tasks (property tests, e2e tests) may remain open without blocking milestone closure, but should be completed before the next milestone starts.
+
+---
