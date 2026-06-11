@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import GrabacionDeSesion, NotificacionDeGrabacion
+from app.infra.models import GrabacionDeSesion, NotificacionDeGrabacion, Reunion
 from app.ingesta.schemas import DatosIngesta
 
 
@@ -25,17 +25,10 @@ async def procesar_ingesta(
     """Procesa una ingesta desde cualquier fuente de captura.
 
     1. Verifica idempotencia: si la clave ya existe, retorna la grabación existente.
-    2. Crea la GrabacionDeSesion con origen_captura (NO altera el pipeline).
-    3. Registra NotificacionDeGrabacion si notificacion_emitida_en está presente.
-    4. Retorna tupla (GrabacionDeSesion, es_nueva).
-
-    El campo origen_captura se almacena pero no cambia el comportamiento.
-    El pipeline posterior (almacenar → transcribir → persistir) es idéntico
-    para "extension_chrome" y "bot_servidor" (Req. 2.1, 2.2).
-
-    Returns:
-        Tupla (grabacion, es_nueva): es_nueva=True si se creó, False si ya existía
-        (reintento idempotente).
+    2. Si la Reunion no existe, la crea automáticamente (MVP workaround).
+    3. Crea la GrabacionDeSesion con origen_captura (NO altera el pipeline).
+    4. Registra NotificacionDeGrabacion si notificacion_emitida_en está presente.
+    5. Retorna tupla (GrabacionDeSesion, es_nueva).
     """
     # 1. Idempotencia — si la clave ya existe, retornar la grabación existente.
     stmt = select(GrabacionDeSesion).where(
@@ -46,8 +39,22 @@ async def procesar_ingesta(
     if existente is not None:
         return existente, False
 
-    # 2. Crear GrabacionDeSesion — origen_captura se almacena sin alterar flujo.
+    # 2. Ensure Reunion exists (auto-create if not — MVP workaround for extension flow)
     ahora = datetime.now(UTC)
+    reunion = await session.get(Reunion, datos.reunion_id)
+    if reunion is None:
+        reunion = Reunion(
+            id=datos.reunion_id,
+            enlace_meet="https://meet.google.com/unknown",
+            origen="manual",
+            estado_proceso="grabando",
+            creada_por="extension",
+            creada_en=ahora,
+        )
+        session.add(reunion)
+        await session.flush()
+
+    # 3. Crear GrabacionDeSesion
     grabacion = GrabacionDeSesion(
         id=str(uuid.uuid4()),
         reunion_id=datos.reunion_id,
@@ -61,7 +68,7 @@ async def procesar_ingesta(
     )
     session.add(grabacion)
 
-    # 3. Registrar NotificacionDeGrabacion si se proporcionó la marca.
+    # 4. Registrar NotificacionDeGrabacion si se proporcionó la marca.
     if datos.notificacion_emitida_en is not None:
         notificacion = NotificacionDeGrabacion(
             id=str(uuid.uuid4()),
@@ -73,5 +80,5 @@ async def procesar_ingesta(
     await session.flush()
     await session.refresh(grabacion)
 
-    # 4. Retornar la grabación creada (es nueva).
+    # 5. Retornar la grabación creada (es nueva).
     return grabacion, True
