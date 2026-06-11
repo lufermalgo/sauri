@@ -1,0 +1,225 @@
+"""Router de reuniones — rutas de registro, consulta y unión.
+
+Expone:
+- POST /api/v1/reuniones — registrar una reunión
+- GET /api/v1/reuniones — listar reuniones del usuario autenticado
+- GET /api/v1/reuniones/{reunion_id} — consultar estado de una reunión
+- POST /api/v1/reuniones/{reunion_id}/solicitar-union — disparar unión manual
+- GET /api/v1/reuniones/{reunion_id}/transcripcion — obtener transcripción
+
+Todas las rutas requieren autenticación vía JWT.
+
+Requirements: 4.5, 7.1, 7.2, 8.3, 8.4
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+
+from app.auth.dependencies import obtener_usuario_actual
+from app.auth.schemas import UsuarioAutenticado
+from app.infra.database import create_engine, create_session_factory
+from app.infra.models import Reunion, Transcripcion, TurnoDeHabla
+from app.infra.queue import ColaDeTrabajos, crear_cola_de_trabajos
+from app.reuniones.service import (
+    consultar_reunion,
+    registrar_reunion,
+    solicitar_union,
+)
+
+router = APIRouter(prefix="/api/v1/reuniones", tags=["reuniones"])
+
+
+def _obtener_cola() -> ColaDeTrabajos:
+    """Factory de la cola de trabajos (DI simplificada)."""
+    return crear_cola_de_trabajos()
+
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def crear_reunion(
+    entrada: dict,
+    usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+) -> dict:
+    """Registra una nueva reunión en estado 'en_cola'.
+
+    Acepta enlace de Meet, invitación de calendario o solicitud manual.
+    Requirements: 1.1, 1.7, 9.1
+    """
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            async with session.begin():
+                reunion = await registrar_reunion(
+                    session=session,
+                    entrada=entrada,
+                    creada_por=usuario.id,
+                )
+                return {
+                    "reunion_id": reunion.id,
+                    "estado_proceso": reunion.estado_proceso,
+                    "enlace_meet": reunion.enlace_meet,
+                    "origen": reunion.origen,
+                }
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+    finally:
+        await engine.dispose()
+
+
+@router.get("/")
+async def listar_reuniones(
+    usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+) -> list[dict]:
+    """Lista las reuniones del usuario autenticado.
+
+    Requirements: 4.5, 9.1
+    """
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            stmt = (
+                select(Reunion)
+                .where(Reunion.creada_por == usuario.id)
+                .order_by(Reunion.creada_en.desc())
+            )
+            result = await session.execute(stmt)
+            reuniones = result.scalars().all()
+            return [
+                {
+                    "reunion_id": r.id,
+                    "enlace_meet": r.enlace_meet,
+                    "origen": r.origen,
+                    "estado_proceso": r.estado_proceso,
+                    "causa_fallo": r.causa_fallo if r.estado_proceso == "fallido" else None,
+                    "creada_en": r.creada_en.isoformat() if r.creada_en else None,
+                }
+                for r in reuniones
+            ]
+    finally:
+        await engine.dispose()
+
+
+@router.get("/{reunion_id}")
+async def obtener_reunion(
+    reunion_id: str,
+    usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+) -> dict:
+    """Consulta el estado actual de una reunión.
+
+    Requirements: 4.5, 9.1
+    """
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            resultado = await consultar_reunion(session, reunion_id)
+            return resultado
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        )
+    finally:
+        await engine.dispose()
+
+
+@router.post("/{reunion_id}/solicitar-union")
+async def solicitar_union_endpoint(
+    reunion_id: str,
+    usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+) -> dict:
+    """Solicita la unión manual del asistente a una reunión en cola.
+
+    Requirements: 1.2, 9.1
+    """
+    cola = _obtener_cola()
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        await cola.conectar()
+        async with session_factory() as session:
+            async with session.begin():
+                resultado = await solicitar_union(session, reunion_id, cola)
+                if not resultado.exitosa:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"No se puede solicitar unión: la reunión está en estado "
+                            f"'{resultado.nuevo_estado}'"
+                        ),
+                    )
+                return {
+                    "reunion_id": reunion_id,
+                    "estado_proceso": resultado.nuevo_estado,
+                }
+    finally:
+        await cola.desconectar()
+        await engine.dispose()
+
+
+@router.get("/{reunion_id}/transcripcion")
+async def obtener_transcripcion(
+    reunion_id: str,
+    usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+) -> dict:
+    """Obtiene la transcripción completa de una reunión.
+
+    Requirements: 4.5, 9.1
+    """
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            # Verificar que la reunión existe
+            reunion = await session.get(Reunion, reunion_id)
+            if reunion is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Reunión no encontrada: {reunion_id}",
+                )
+
+            # Obtener la transcripción
+            stmt = select(Transcripcion).where(Transcripcion.reunion_id == reunion_id)
+            result = await session.execute(stmt)
+            transcripcion = result.scalar_one_or_none()
+
+            if transcripcion is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Transcripción no disponible para la reunión: {reunion_id}",
+                )
+
+            # Obtener los turnos/segmentos
+            stmt_turnos = (
+                select(TurnoDeHabla)
+                .where(TurnoDeHabla.transcripcion_id == transcripcion.id)
+                .order_by(TurnoDeHabla.orden)
+            )
+            result_turnos = await session.execute(stmt_turnos)
+            turnos = result_turnos.scalars().all()
+
+            return {
+                "transcripcion_id": transcripcion.id,
+                "reunion_id": transcripcion.reunion_id,
+                "idioma": transcripcion.idioma,
+                "proveedor": transcripcion.proveedor,
+                "soporta_turnos": transcripcion.soporta_turnos,
+                "creada_en": transcripcion.creada_en.isoformat() if transcripcion.creada_en else None,
+                "segmentos": [
+                    {
+                        "texto": t.texto,
+                        "inicio_ms": t.inicio_ms,
+                        "fin_ms": t.fin_ms,
+                        "orden": t.orden,
+                    }
+                    for t in turnos
+                ],
+            }
+    finally:
+        await engine.dispose()

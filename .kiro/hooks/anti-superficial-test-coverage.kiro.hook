@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Test Coverage Gate",
+  "description": "After a task, requires the agent to consider test coverage for behavior changes without assuming a specific folder, language, or test framework.",
+  "version": "1",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "TEST COVERAGE GATE. Before declaring the task complete, determine whether the task changed application behavior. Behavior changes include business logic, data transformation, validation rules, API behavior, UI interaction behavior, state management, permissions, access control, error handling, persistence, integrations, or command behavior. If behavior changed, do one of the following: 1) add or update a relevant test using the existing project test framework, 2) run an existing relevant test and report the result, or 3) explain objectively why a test is not practical or not available. Do not invent a test framework unless explicitly asked. If the project has no test framework yet, state that clearly and recommend the smallest useful future test strategy. Vague reasons such as 'too small to test', 'simple change', 'not needed', or 'should work' are not accepted. If the task is documentation-only, formatting-only, generated code, pure configuration, or non-behavioral styling, state that briefly and proceed."
+  }
+}

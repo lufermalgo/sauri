@@ -1,0 +1,17 @@
+{
+  "name": "sauri",
+  "private": true,
+  "workspaces": [
+    "extension",
+    "frontend",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces",
+    "test:e2e": "npm run test:e2e --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

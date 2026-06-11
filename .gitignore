@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build outputs
+extension/dist/
+frontend/dist/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes (local)
+pgdata/
+minio-data/
+
+# Python packaging
+*.egg-info/
+
+# Generated files
+tree.txt

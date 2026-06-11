@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Check Session Status",
+  "description": "Before every prompt, read the session status file (_tools/SESSION_STATUS.md) to check current work state, and update it if the current task has changed.",
+  "version": "1",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Before proceeding with the user's request, do the following silently:\n1. Read _tools/SESSION_STATUS.md to check the current session state (branch, files being touched, open issues).\n2. If your current work has changed (new branch, new issue, PR opened, rebase done), update _tools/SESSION_STATUS.md accordingly.\n3. Then proceed with the user's request normally."
+  }
+}

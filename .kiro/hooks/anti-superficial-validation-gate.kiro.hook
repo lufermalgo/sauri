@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Validation Gate",
+  "description": "After writing code, forces the agent to run or identify the most appropriate project validation path without assuming a specific framework, folder, or command.",
+  "version": "1",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [
+      "write"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "VALIDATION GATE. After modifying code, validate the change using the most appropriate existing project mechanism. First inspect available project scripts, documentation, configuration files, or nearby test files. Prefer the narrowest relevant validation first: affected test, typecheck/check, lint, build, or framework-specific validation. Do not invent commands and do not assume a folder structure. If a validation command exists, run it and use the real result; do not filter output in a way that hides failures. If validation fails, do not claim the task is complete. Either fix the failure or report the blocker. If no validation command exists yet, state that explicitly and perform the best static verification possible from the files changed."
+  }
+}

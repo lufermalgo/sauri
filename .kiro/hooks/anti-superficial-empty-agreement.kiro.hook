@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Empty Agreement Blocker",
+  "description": "Forces the agent to rewrite any reply that opens with an empty agreement phrase (e.g., 'tienes razón', 'ya veo el problema', 'ahora entiendo', 'debería funcionar') unless cited evidence (archivo:línea or pegged command output) appears in the same paragraph.",
+  "version": "1",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [
+      "*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "EMPTY AGREEMENT CHECK. Inspect your most recent assistant message. If it opens with or contains any of these phrases (case-insensitive): 'tienes razón', 'ya veo el problema', 'ahora entiendo', 'el problema era', 'voy a corregirlo', 'debería funcionar', 'listo, ya está resuelto', 'claro, lo corrijo', 'perfecto', 'excelente observación', 'you are right', 'i see the problem', 'now i understand', 'should work', then verify that within the SAME paragraph or the immediately following paragraph there is concrete evidence in one of these forms: a file path with a line number (pattern path/to/file.ext:N), a fenced code block containing command output, a `getDiagnostics` result, or a passing test name. If the evidence is absent, REWRITE the reply replacing the empty phrase with the corresponding evidence-based equivalent from AGENTS.md §8 (Frases prohibidas y reemplazos correctos). Do not send replies that violate this rule."
+  }
+}

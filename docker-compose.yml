@@ -1,0 +1,112 @@
+services:
+  # --- API (FastAPI) ---
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - minio
+      - rabbitmq
+    environment:
+      - DATABASE_URL=postgresql://sauri:sauri_dev@postgres:5432/sauri
+      - OBJECT_STORE_ENDPOINT=http://minio:9000
+      - OBJECT_STORE_BUCKET=sauri-recordings
+      - QUEUE_BROKER_URL=amqp://guest:guest@rabbitmq:5672/
+      - ASR_PROVIDER=${ASR_PROVIDER:-local}
+      - ASR_LOCAL_URL=http://asr-engine:8001
+      - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
+      - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      - RETENTION_DAYS=${RETENTION_DAYS:-90}
+    networks:
+      - sauri-net
+
+  # --- Worker (procesamiento asíncrono: transcripción, retención) ---
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      - postgres
+      - minio
+      - rabbitmq
+    environment:
+      - DATABASE_URL=postgresql://sauri:sauri_dev@postgres:5432/sauri
+      - OBJECT_STORE_ENDPOINT=http://minio:9000
+      - OBJECT_STORE_BUCKET=sauri-recordings
+      - QUEUE_BROKER_URL=amqp://guest:guest@rabbitmq:5672/
+      - ASR_PROVIDER=${ASR_PROVIDER:-local}
+      - ASR_LOCAL_URL=http://asr-engine:8001
+      - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
+      - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
+      - RETENTION_DAYS=${RETENTION_DAYS:-90}
+    networks:
+      - sauri-net
+
+  # --- PostgreSQL ---
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=sauri
+      - POSTGRES_USER=sauri
+      - POSTGRES_PASSWORD=sauri_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - sauri-net
+
+  # --- MinIO (almacenamiento S3-local) ---
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio-data:/data
+    networks:
+      - sauri-net
+
+  # --- RabbitMQ (broker de cola) ---
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - sauri-net
+
+  # --- ASR Engine (faster-whisper, contenedor propio) ---
+  asr-engine:
+    build:
+      context: ./backend/asr-engine
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    # En macOS no hay GPU nativa; descomentar en Linux con NVIDIA GPU:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    networks:
+      - sauri-net
+
+volumes:
+  pgdata:
+  minio-data:
+
+networks:
+  sauri-net:
+    driver: bridge
