@@ -20,6 +20,7 @@ services:
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      - AUTH_DISABLED=${AUTH_DISABLED:-true}
       - RETENTION_DAYS=${RETENTION_DAYS:-90}
     networks:
       - sauri-net
