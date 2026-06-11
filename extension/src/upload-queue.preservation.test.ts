@@ -43,7 +43,6 @@ function arbEnqueueInput(): fc.Arbitrary<EnqueueUploadInput> {
   return fc.record({
     sessionId: fc.uuid(),
     claveIdempotencia: fc.uuid(),
-    blobBase64: fc.string({ minLength: 1, maxLength: 50 }),
     mimeType: fc.constantFrom(
       "video/webm;codecs=vp8,opus",
       "audio/webm;codecs=opus",
@@ -73,7 +72,6 @@ describe("Preservation: Upload Queue Idempotent Retry and FIFO Recovery", () => 
           expect(job.maxRetries).toBe(3);
           expect(job.sessionId).toBe(input.sessionId);
           expect(job.claveIdempotencia).toBe(input.claveIdempotencia);
-          expect(job.blobBase64).toBe(input.blobBase64);
           expect(job.mimeType).toBe(input.mimeType);
           expect(job.id).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -105,7 +103,6 @@ describe("Preservation: Upload Queue Idempotent Retry and FIFO Recovery", () => 
               const input: EnqueueUploadInput = {
                 sessionId: crypto.randomUUID(),
                 claveIdempotencia: crypto.randomUUID(),
-                blobBase64: `data-${i}`,
                 mimeType: "video/webm",
                 notificationEmittedAt: undefined,
               };

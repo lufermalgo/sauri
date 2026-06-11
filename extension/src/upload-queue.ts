@@ -15,14 +15,13 @@ export interface UploadJob {
   createdAt: number;
   lastAttemptAt?: number;
   errorMessage?: string;
-  blobBase64: string;
   mimeType: string;
   notificationEmittedAt?: string;
 }
 
 export type EnqueueUploadInput = Pick<
   UploadJob,
-  "sessionId" | "claveIdempotencia" | "blobBase64" | "mimeType" | "notificationEmittedAt"
+  "sessionId" | "claveIdempotencia" | "mimeType" | "notificationEmittedAt"
 >;
 
 const DB_NAME = "sauri-upload-queue";
@@ -62,7 +61,6 @@ export async function enqueueUpload(input: EnqueueUploadInput): Promise<UploadJo
     retryCount: 0,
     maxRetries: 3,
     createdAt: Date.now(),
-    blobBase64: input.blobBase64,
     mimeType: input.mimeType,
     notificationEmittedAt: input.notificationEmittedAt,
   };
