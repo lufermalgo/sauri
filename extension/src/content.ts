@@ -144,10 +144,18 @@ const SCREEN_SHARE_SIGNALS: string[] = [
   "Estás presentando",
 ];
 
-// --- State tracking ---
+// --- State machine (replaces boolean flags) ---
 
-let meetDetected = false;
-let meetEnded = false;
+type MeetState = 'idle' | 'active' | 'ending' | 'ended';
+let meetState: MeetState = 'idle';
+
+// --- Debounce and confirmation timers ---
+
+let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let endingConfirmTimer: ReturnType<typeof setTimeout> | null = null;
+
+const DEBOUNCE_MS = 500;
+const ENDING_CONFIRM_MS = 2000;
 
 // --- Utilities ---
 
@@ -168,36 +176,75 @@ function extractMeetingTitle(): string {
 // --- Detection logic ---
 
 function checkMeetState(): void {
-  const activeElement = findElementByAriaLabel(ACTIVE_CALL_SIGNALS);
-  const endElement = findElementByAriaLabel(END_SIGNALS);
+  const hasActiveSignals = findElementByAriaLabel(ACTIVE_CALL_SIGNALS) !== null;
+  const hasEndSignals = findElementByAriaLabel(END_SIGNALS) !== null;
 
-  if (endElement && !meetEnded) {
-    // Meeting has ended
-    meetEnded = true;
-    meetDetected = false;
-    console.log("[sauri] Meeting ended detected");
-    chrome.runtime.sendMessage({ type: "meet-ended" });
+  // Priority: ACTIVE_CALL_SIGNALS override END_SIGNALS
+  if (hasActiveSignals) {
+    // Cancel any pending ending confirmation
+    if (endingConfirmTimer !== null) {
+      clearTimeout(endingConfirmTimer);
+      endingConfirmTimer = null;
+    }
+
+    // Only send meet-detected on transitions: idle → active, ended → active
+    if (meetState === 'idle' || meetState === 'ended') {
+      meetState = 'active';
+      const meetingTitle = extractMeetingTitle();
+      console.log(`[sauri] Active meeting detected: "${meetingTitle}"`);
+      chrome.runtime.sendMessage({
+        type: "meet-detected",
+        meetingTitle,
+        url: window.location.href,
+      });
+    } else if (meetState === 'ending') {
+      // Active signals reappeared during confirmation — cancel ending
+      meetState = 'active';
+      console.log("[sauri] Ending cancelled — active signals reappeared");
+    }
+    // If already 'active', do nothing (deduplication)
     return;
   }
 
-  if (activeElement && !meetDetected) {
-    // Active call detected
-    meetDetected = true;
-    meetEnded = false;
-    const meetingTitle = extractMeetingTitle();
-    console.log(`[sauri] Active meeting detected: "${meetingTitle}"`);
-    chrome.runtime.sendMessage({
-      type: "meet-detected",
-      meetingTitle,
-      url: window.location.href,
-    });
+  if (hasEndSignals && !hasActiveSignals) {
+    if (meetState === 'active') {
+      // Begin ending transition — start confirmation timer
+      meetState = 'ending';
+      console.log("[sauri] End signals detected — waiting confirmation...");
+
+      endingConfirmTimer = setTimeout(() => {
+        endingConfirmTimer = null;
+        // After confirmation period, check one more time
+        const stillNoActive = findElementByAriaLabel(ACTIVE_CALL_SIGNALS) === null;
+        if (stillNoActive && meetState === 'ending') {
+          meetState = 'ended';
+          console.log("[sauri] Meeting ended confirmed");
+          chrome.runtime.sendMessage({ type: "meet-ended" });
+        } else {
+          // Active signals reappeared during confirmation
+          meetState = 'active';
+          console.log("[sauri] Ending cancelled during confirmation — active signals found");
+        }
+      }, ENDING_CONFIRM_MS);
+    }
+    // If already 'ending', 'ended', or 'idle' — do nothing
+    return;
   }
+
+  // No signals at all — could be loading or between states, do nothing
 }
 
-// --- MutationObserver to watch for DOM changes ---
+// --- MutationObserver with debounce ---
 
 const observer = new MutationObserver(() => {
-  checkMeetState();
+  // Debounce: clear any pending evaluation and wait for DOM to settle
+  if (debounceTimer !== null) {
+    clearTimeout(debounceTimer);
+  }
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    checkMeetState();
+  }, DEBOUNCE_MS);
 });
 
 observer.observe(document.body, {
@@ -207,5 +254,5 @@ observer.observe(document.body, {
   attributeFilter: ["aria-label"],
 });
 
-// Initial check in case the page is already in a call
+// Initial check (bypasses debounce — no prior mutations to settle)
 checkMeetState();
