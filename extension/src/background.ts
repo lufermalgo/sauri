@@ -9,6 +9,7 @@ import {
   markDone,
   markFailed,
 } from "./upload-queue";
+import { assembleBlob, clearSession } from "./recording-db";
 
 export {};
 
@@ -73,19 +74,13 @@ async function ensureOffscreenDocument(): Promise<void> {
 const BACKEND_URL = "http://localhost:8000";
 
 async function uploadRecording(
-  base64Data: string,
   mimeType: string,
   sessionId: string,
   notificationEmittedAt?: string
 ): Promise<void> {
   try {
-    // Decode base64 to binary
-    const binaryString = atob(base64Data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: mimeType });
+    // Read Blob directly from shared sauri-recordings IndexedDB
+    const blob = await assembleBlob(sessionId, mimeType);
 
     // Build DatosIngesta JSON payload
     const datosIngesta = {
@@ -124,6 +119,8 @@ async function uploadRecording(
     if (response.ok) {
       const result = await response.json();
       console.log("[sauri] Upload successful:", result);
+      // Clear chunks from IndexedDB after successful upload
+      await clearSession(sessionId);
     } else {
       console.error("[sauri] Upload failed:", response.status, response.statusText);
     }
@@ -154,7 +151,6 @@ chrome.runtime.onMessage.addListener(
       type: string;
       meetingTitle?: string;
       url?: string;
-      base64Data?: string;
       size?: number;
       mimeType?: string;
       sessionId?: string;
@@ -189,7 +185,7 @@ chrome.runtime.onMessage.addListener(
         break;
 
       case "recording-stopped":
-        handleRecordingStopped(message.base64Data!, message.size!, message.mimeType!, message.sessionId);
+        handleRecordingStopped(message.size!, message.mimeType!, message.sessionId);
         sendResponse({ ok: true });
         break;
 
@@ -309,7 +305,6 @@ async function handleStopCapture(): Promise<void> {
 }
 
 async function handleRecordingStopped(
-  base64Data: string,
   size: number,
   mimeType: string,
   sessionId?: string
@@ -328,7 +323,6 @@ async function handleRecordingStopped(
   await enqueueUpload({
     sessionId: sid,
     claveIdempotencia: sid, // sessionId = clave_idempotencia ensures idempotent retries
-    blobBase64: base64Data,
     mimeType,
     notificationEmittedAt,
   });
@@ -385,7 +379,7 @@ async function processUploadQueue(): Promise<void> {
   await markProcessing(job.id);
 
   try {
-    await uploadRecording(job.blobBase64, job.mimeType, job.sessionId, job.notificationEmittedAt);
+    await uploadRecording(job.mimeType, job.sessionId, job.notificationEmittedAt);
     await markDone(job.id);
     console.log(`[sauri] Upload job done: ${job.id}`);
   } catch (error) {
