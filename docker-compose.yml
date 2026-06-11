@@ -11,7 +11,7 @@ services:
       - minio
       - rabbitmq
     environment:
-      - DATABASE_URL=postgresql://sauri:sauri_dev@postgres:5432/sauri
+      - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
       - OBJECT_STORE_ENDPOINT=http://minio:9000
       - OBJECT_STORE_BUCKET=sauri-recordings
       - MINIO_ROOT_USER=minioadmin
@@ -38,7 +38,7 @@ services:
       - minio
       - rabbitmq
     environment:
-      - DATABASE_URL=postgresql://sauri:sauri_dev@postgres:5432/sauri
+      - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
       - OBJECT_STORE_ENDPOINT=http://minio:9000
       - OBJECT_STORE_BUCKET=sauri-recordings
       - MINIO_ROOT_USER=minioadmin
