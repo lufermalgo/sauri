@@ -20,32 +20,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # --- Enum types ---
-    origen_reunion = sa.Enum("enlace", "invitacion_calendario", "manual", name="origen_reunion")
-    estado_proceso = sa.Enum(
-        "en_cola", "uniendose", "grabando", "transcribiendo", "completado", "fallido",
-        name="estado_proceso",
-    )
-    causa_fallo = sa.Enum("no_pudo_unirse", "reunion_cancelada", "fallo_del_motor", name="causa_fallo")
-    origen_captura = sa.Enum("extension_chrome", "bot_servidor", name="origen_captura")
-    resultado_acceso = sa.Enum("permitido", "denegado", name="resultado_acceso")
-
-    origen_reunion.create(op.get_bind(), checkfirst=True)
-    estado_proceso.create(op.get_bind(), checkfirst=True)
-    causa_fallo.create(op.get_bind(), checkfirst=True)
-    origen_captura.create(op.get_bind(), checkfirst=True)
-    resultado_acceso.create(op.get_bind(), checkfirst=True)
-
     # --- Table: reuniones ---
     op.create_table(
         "reuniones",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("enlace_meet", sa.String(512), nullable=False),
-        sa.Column("origen", origen_reunion, nullable=False),
+        sa.Column("origen", sa.String(64), nullable=False),
         sa.Column("id_invitacion_calendario", sa.String(256), nullable=True),
         sa.Column("hora_inicio_programada", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("estado_proceso", estado_proceso, nullable=False),
-        sa.Column("causa_fallo", causa_fallo, nullable=True),
+        sa.Column("estado_proceso", sa.String(64), nullable=False),
+        sa.Column("causa_fallo", sa.String(64), nullable=True),
         sa.Column("creada_por", UUID(as_uuid=True), nullable=False),
         sa.Column("creada_en", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
@@ -58,8 +42,8 @@ def upgrade() -> None:
             "reunion_id", UUID(as_uuid=True),
             sa.ForeignKey("reuniones.id", ondelete="CASCADE"), nullable=False,
         ),
-        sa.Column("estado", estado_proceso, nullable=False),
-        sa.Column("causa_fallo", causa_fallo, nullable=True),
+        sa.Column("estado", sa.String(64), nullable=False),
+        sa.Column("causa_fallo", sa.String(64), nullable=True),
         sa.Column("ocurrido_en", sa.DateTime(timezone=True), nullable=False),
     )
 
@@ -72,7 +56,7 @@ def upgrade() -> None:
             sa.ForeignKey("reuniones.id", ondelete="CASCADE"), nullable=False,
         ),
         sa.Column("clave_idempotencia", sa.String(256), nullable=False),
-        sa.Column("origen_captura", origen_captura, nullable=False),
+        sa.Column("origen_captura", sa.String(64), nullable=False),
         sa.Column("audio_ref", sa.String(1024), nullable=False),
         sa.Column("video_ref", sa.String(1024), nullable=True),
         sa.Column("duracion_segundos", sa.Integer, nullable=False),
@@ -129,7 +113,7 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("usuario_id", UUID(as_uuid=True), nullable=True),
         sa.Column("recurso", sa.String(512), nullable=False),
-        sa.Column("resultado", resultado_acceso, nullable=False),
+        sa.Column("resultado", sa.String(16), nullable=False),
         sa.Column("ocurrido_en", sa.DateTime(timezone=True), nullable=False),
     )
 
@@ -142,10 +126,3 @@ def downgrade() -> None:
     op.drop_table("grabaciones_de_sesion")
     op.drop_table("estado_historial")
     op.drop_table("reuniones")
-
-    # Drop enum types
-    sa.Enum(name="resultado_acceso").drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name="origen_captura").drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name="causa_fallo").drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name="estado_proceso").drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name="origen_reunion").drop(op.get_bind(), checkfirst=True)

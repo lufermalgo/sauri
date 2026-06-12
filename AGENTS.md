@@ -74,12 +74,39 @@ All specs live in `.kiro/specs/[module-name]/`. Each spec folder contains:
 
 ## 3. TDD & Quality Discipline
 
-* Define acceptance tests before writing implementation code when the change affects application behavior.
+### RED → GREEN → REFACTOR (NON-NEGOTIABLE)
+
+Every behavior change follows strict TDD. No exceptions:
+
+1. **RED (write test first, verify it fails):**
+   * Write the test (property-based, example, or integration) that encodes the acceptance criterion.
+   * **Run the test.** It MUST fail. If it passes, the test is wrong or the behavior already exists — investigate before proceeding.
+   * Record the failing output as evidence that the test correctly targets unimplemented behavior.
+
+2. **GREEN (implement, verify test passes):**
+   * Write the minimum implementation to make the failing test pass.
+   * **Run the test again.** It MUST pass. If it doesn't, fix the implementation — not the test.
+   * Do not move to the next task until the test is green.
+
+3. **REFACTOR (clean up, verify test still passes):**
+   * Improve the code (naming, structure, duplication) without changing behavior.
+   * **Run the test again.** It MUST still pass. If it regresses, revert the refactor.
+
+### Execution enforcement
+
+* **A task is NOT complete unless its corresponding test has been executed and passes.**
+* "Executed" means actually run via the project test runner (e.g. `pytest`), not just syntactically validated.
+* If the test runner is unavailable (no venv, no DB, missing deps), the FIRST task in the plan MUST set it up. Implementation tasks CANNOT proceed until the test runner works.
+* Static analysis (AST parse, diagnostics) is NOT a substitute for running the test.
+
+### Additional quality rules
+
 * Never say "done" without confirming acceptance criteria pass.
 * If tests can't run automatically, document exactly what to verify manually.
 * Bug reports: diagnose root cause before touching code. Never patch symptoms.
 * Test failure limit: 3 failed attempts → document the blocker in the task → surface to the human in plain language.
 * If the project has no test framework yet, state that clearly and recommend the smallest useful future test strategy. Do not invent a test framework unless explicitly asked.
+* **No mocks in production code.** The application must be 100% real functionality. Mocks, stubs, and fakes are ONLY acceptable inside test files (`tests/`) to simulate external I/O (HTTP responses, message brokers, databases) when the real infrastructure is not available during test execution. Production code (`app/`, services, workers) must never contain mock objects, conditional test paths, or fake implementations. Every implementation must be the real, deployable version.
 * Behavior changes require test consideration. Behavior changes include:
 
   * business logic
@@ -332,7 +359,6 @@ Kiro Spec (.kiro/specs/{module}/)  ←→  GitHub Milestone
 | Spec module name            | Milestone title (numbered: "1. Captura...")   |
 | Requirement (user story)    | Referenced in issue body for context          |
 | Atomic task from tasks.md   | GitHub issue (label: `task`)                  |
-| Optional task (`*`)         | GitHub issue (labels: `task`, `optional`)     |
 | Bug found during execution  | GitHub issue (label: `bug`)                   |
 | Property test task          | GitHub issue (labels: `task`, `test`, `pbt`)  |
 
@@ -341,13 +367,30 @@ Kiro Spec (.kiro/specs/{module}/)  ←→  GitHub Milestone
 * **From milestone 2 onward:** every atomic task in tasks.md gets a GitHub issue at spec creation time (before implementation starts).
 * **Milestone 1 (retroactive):** only bugs and pending items were filed as issues. Completed tasks are tracked in tasks.md only.
 
+### TDD execution order (NON-NEGOTIABLE)
+
+Test tasks are **NOT optional** in the execution plan. They follow strict TDD order:
+
+1. Write the test (property, example, or integration) — it must FAIL (red).
+2. Write the implementation — the test must PASS (green).
+3. Refactor if needed — the test must still pass.
+
+In `tasks.md`, test tasks are **never marked with `*` (optional)**. They are
+regular required tasks sequenced BEFORE their corresponding implementation task
+in the dependency graph. The task plan generator must produce pairs:
+`test (red)` → `implementation (green)`.
+
+If the test infrastructure is not yet available (no venv, no DB, etc.), the FIRST
+task in any implementation plan must set it up. Tests that cannot run due to
+external blockers (missing CI, hardware, etc.) are documented as blocked — not
+skipped.
+
 ### Milestone closure criteria
 
 A milestone is **closed** when:
-* All required (non-optional) task issues are closed.
+* All task issues (including tests) are closed.
 * The spec's tasks.md reflects all tasks as completed.
 * No open `bug` issues block the module's acceptance criteria.
-
-Optional tasks (property tests, e2e tests) may remain open without blocking milestone closure, but should be completed before the next milestone starts.
+* All property tests pass with the configured minimum examples (≥100).
 
 ---

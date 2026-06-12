@@ -279,12 +279,11 @@ class TestColaDeRabbitMQBehavior:
     @pytest.mark.asyncio
     async def test_descarte_sin_dlx(self):
         """Req 9.4: Sin DLX + reintentos agotados → descarte (nack requeue=False)."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, patch
         from app.infra.queue_rabbitmq import ColaDeRabbitMQ
         import json
 
         cola = ColaDeRabbitMQ("amqp://guest:guest@localhost/")
-        cola._max_retries = 2
         cola._dlx_exchange = None
 
         async def failing_handler(msg):
@@ -308,7 +307,8 @@ class TestColaDeRabbitMQBehavior:
 
         mock_queue.consume = capture_consume
 
-        await cola.suscribir("transcribir", failing_handler)
+        with patch("app.infra.queue_rabbitmq._leer_max_retries", return_value=2):
+            await cola.suscribir("transcribir", failing_handler)
         await captured_callback(mock_message)
 
         mock_message.nack.assert_called_once_with(requeue=False)

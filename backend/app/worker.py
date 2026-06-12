@@ -17,6 +17,7 @@ from app.infra.object_store import crear_almacen_de_objetos
 from app.infra.queue import crear_cola_de_trabajos
 from app.retencion.worker import iniciar_worker_retencion
 from app.transcripcion.worker import iniciar_worker
+from app.diarizacion.worker import iniciar_worker as iniciar_worker_diarizacion
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +42,9 @@ async def main() -> None:
 
     # Suscribir worker de transcripción
     await iniciar_worker(cola, session_factory)
+
+    # Suscribir worker de diarización (tema 'diarizar', Req. 1.1)
+    await iniciar_worker_diarizacion(cola, session_factory)
 
     # Iniciar worker de retención como tarea en segundo plano
     retencion_task = asyncio.create_task(
