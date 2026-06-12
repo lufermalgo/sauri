@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infra.database import Base
 
@@ -91,6 +91,7 @@ class Transcripcion(Base):
     """Transcripción en español generada a partir de la grabación (Req. 3)."""
 
     __tablename__ = "transcripciones"
+    __table_args__ = (UniqueConstraint("reunion_id", name="uq_transcripcion_reunion_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     reunion_id: Mapped[str] = mapped_column(
@@ -101,6 +102,10 @@ class Transcripcion(Base):
     soporta_turnos: Mapped[bool] = mapped_column(Boolean, nullable=False)
     expira_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    turnos: Mapped[list["TurnoDeHabla"]] = relationship(
+        "TurnoDeHabla", back_populates="transcripcion", lazy="select"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +126,10 @@ class TurnoDeHabla(Base):
     inicio_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     fin_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     orden: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    transcripcion: Mapped["Transcripcion"] = relationship(
+        "Transcripcion", back_populates="turnos"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -155,3 +164,91 @@ class RegistroDeAcceso(Base):
     recurso: Mapped[str] = mapped_column(String(512), nullable=False)
     resultado: Mapped[str] = mapped_column(String(16), nullable=False)  # "permitido" | "denegado"
     ocurrido_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Diarizacion
+# ---------------------------------------------------------------------------
+
+
+class Diarizacion(Base):
+    """Resultado de diarización asociado 1:1 a una Reunion (Req. 8.1, 8.4, 9.3, 9.4, 10.5)."""
+
+    __tablename__ = "diarizaciones"
+    __table_args__ = (UniqueConstraint("reunion_id", name="uq_diarizacion_reunion_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    reunion_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("reuniones.id"), nullable=False
+    )
+    transcripcion_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("transcripciones.id"), nullable=False
+    )
+    proveedor: Mapped[str] = mapped_column(String(128), nullable=False)
+    num_hablantes: Mapped[int] = mapped_column(Integer, nullable=False)
+    estado_diarizacion: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # pendiente | en_proceso | completada | fallida
+    causa_fallo: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )  # fallo_del_motor cuando fallida
+    creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    actualizada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    hablantes: Mapped[list["Hablante"]] = relationship(
+        "Hablante", back_populates="diarizacion", lazy="select"
+    )
+    asignaciones: Mapped[list["AsignacionDeHablante"]] = relationship(
+        "AsignacionDeHablante", back_populates="diarizacion", lazy="select"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Hablante
+# ---------------------------------------------------------------------------
+
+
+class Hablante(Base):
+    """Hablante anónimo detectado por la diarización (Req. 6.1, 6.2, 6.3)."""
+
+    __tablename__ = "hablantes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    diarizacion_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("diarizaciones.id", ondelete="CASCADE"), nullable=False
+    )
+    etiqueta_cruda: Mapped[str] = mapped_column(String(128), nullable=False)
+    etiqueta: Mapped[str] = mapped_column(String(64), nullable=False)  # "Hablante N"
+    orden: Mapped[int] = mapped_column(Integer, nullable=False)  # consecutivo desde 1
+
+    diarizacion: Mapped["Diarizacion"] = relationship(
+        "Diarizacion", back_populates="hablantes"
+    )
+
+
+# ---------------------------------------------------------------------------
+# AsignacionDeHablante
+# ---------------------------------------------------------------------------
+
+
+class AsignacionDeHablante(Base):
+    """Asignación de un TurnoDeHabla a un Hablante (Req. 7.1)."""
+
+    __tablename__ = "asignaciones_de_hablante"
+    __table_args__ = (UniqueConstraint("turno_id", name="uq_asignacion_turno_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    diarizacion_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("diarizaciones.id", ondelete="CASCADE"), nullable=False
+    )
+    turno_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("turnos_de_habla.id"), nullable=False
+    )
+    hablante_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("hablantes.id", ondelete="CASCADE"), nullable=False
+    )
+
+    diarizacion: Mapped["Diarizacion"] = relationship(
+        "Diarizacion", back_populates="asignaciones"
+    )
+    hablante: Mapped["Hablante"] = relationship("Hablante")

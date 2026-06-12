@@ -1,13 +1,15 @@
 """Implementación de ColaDeTrabajos usando RabbitMQ vía aio-pika.
 
 Proporciona entrega al-menos-una-vez, mensajes persistentes (delivery_mode=2),
-y dead-letter automática cuando un manejador falla (nack sin requeue).
+reintentos acotados por ASR_MAX_RETRIES con conteo vía x-death,
+y dead-letter automática cuando se agotan los reintentos (nack sin requeue).
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -19,6 +21,78 @@ from app.infra.queue import ColaDeTrabajos
 
 logger = logging.getLogger(__name__)
 
+_MAX_RETRIES_MIN = 0
+_MAX_RETRIES_MAX = 10
+_MAX_RETRIES_DEFAULT = 3
+
+# Mapa de tema → variable de entorno para reintentos
+_TEMA_A_ENV_RETRIES: dict[str, str] = {
+    "transcribir": "ASR_MAX_RETRIES",
+    "diarizar": "DIARIZATION_MAX_RETRIES",
+}
+
+
+def _leer_max_retries(tema: str = "transcribir") -> int:
+    """Lee la variable de reintentos del entorno para el tema dado.
+
+    Mapa de temas:
+    - "transcribir" → ASR_MAX_RETRIES
+    - "diarizar" → DIARIZATION_MAX_RETRIES
+
+    Rango válido: 0–10. Default: 3.
+    """
+    env_var = _TEMA_A_ENV_RETRIES.get(tema, "ASR_MAX_RETRIES")
+    raw = os.environ.get(env_var, "")
+    if not raw.strip():
+        return _MAX_RETRIES_DEFAULT
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        logger.warning(
+            "%s='%s' no es un entero válido. Usando default %d.",
+            env_var,
+            raw,
+            _MAX_RETRIES_DEFAULT,
+        )
+        return _MAX_RETRIES_DEFAULT
+    if value < _MAX_RETRIES_MIN or value > _MAX_RETRIES_MAX:
+        logger.warning(
+            "%s=%d fuera de rango [%d, %d]. Usando default %d.",
+            env_var,
+            value,
+            _MAX_RETRIES_MIN,
+            _MAX_RETRIES_MAX,
+            _MAX_RETRIES_DEFAULT,
+        )
+        return _MAX_RETRIES_DEFAULT
+    return value
+
+
+def _contar_reintentos(message: aio_pika.abc.AbstractIncomingMessage) -> int:
+    """Cuenta los reintentos acumulados de un mensaje usando el header x-death de RabbitMQ.
+
+    RabbitMQ incrementa el campo 'count' en el array x-death cada vez que un mensaje
+    es derivado a dead-letter y reencolado. Si no existe x-death, el mensaje no ha sido
+    reintentado previamente.
+    """
+    headers = message.headers or {}
+    x_death = headers.get("x-death")
+    if not x_death or not isinstance(x_death, list):
+        return 0
+    total = 0
+    for entry in x_death:
+        if isinstance(entry, dict):
+            count = entry.get("count", 0)
+            if isinstance(count, int):
+                total += count
+    return total
+
+
+def _leer_dlx_exchange() -> str | None:
+    """Lee QUEUE_DLX_EXCHANGE del entorno. Retorna None si no está configurado o está vacío."""
+    raw = os.environ.get("QUEUE_DLX_EXCHANGE", "")
+    return raw.strip() if raw.strip() else None
+
 
 class ColaDeRabbitMQ(ColaDeTrabajos):
     """Implementación de ColaDeTrabajos con RabbitMQ (aio-pika)."""
@@ -27,6 +101,7 @@ class ColaDeRabbitMQ(ColaDeTrabajos):
         self._broker_url = broker_url
         self._connection: AbstractRobustConnection | None = None
         self._channel: AbstractChannel | None = None
+        self._dlx_exchange: str | None = _leer_dlx_exchange()
 
     async def conectar(self) -> None:
         """Crea una conexión robusta y un canal con el broker RabbitMQ."""
@@ -70,13 +145,22 @@ class ColaDeRabbitMQ(ColaDeTrabajos):
         """Consume mensajes de la cola `tema`, invoca el manejador y ack/nack.
 
         - Ack tras procesamiento exitoso del manejador.
-        - Nack con requeue=False en caso de excepción (envía a dead-letter
-          si la cola tiene DLX configurado).
+        - Nack con requeue=True si reintentos acumulados < max_retries para el tema.
+        - Nack con requeue=False al alcanzar max_retries (envía a dead-letter
+          si la cola tiene DLX configurado; de lo contrario se descarta).
         """
         if self._channel is None:
             raise RuntimeError("No hay conexión activa. Llame a `conectar()` primero.")
 
-        queue = await self._channel.declare_queue(tema, durable=True)
+        max_retries = _leer_max_retries(tema)
+
+        queue_arguments: dict[str, Any] = {}
+        if self._dlx_exchange:
+            queue_arguments["x-dead-letter-exchange"] = self._dlx_exchange
+
+        queue = await self._channel.declare_queue(
+            tema, durable=True, arguments=queue_arguments or None
+        )
 
         async def _on_message(message: aio_pika.abc.AbstractIncomingMessage) -> None:
             try:
@@ -85,8 +169,34 @@ class ColaDeRabbitMQ(ColaDeTrabajos):
                 await message.ack()
                 logger.debug("Mensaje procesado y ack'd en '%s'.", tema)
             except Exception:
-                logger.exception("Error procesando mensaje en '%s'. Nack sin requeue.", tema)
-                await message.nack(requeue=False)
+                reintentos = _contar_reintentos(message)
+                if reintentos < max_retries:
+                    logger.warning(
+                        "Error procesando mensaje en '%s'. Reintento %d/%d. Requeue.",
+                        tema,
+                        reintentos + 1,
+                        max_retries,
+                    )
+                    await message.nack(requeue=True)
+                else:
+                    if self._dlx_exchange:
+                        logger.error(
+                            "Error procesando mensaje en '%s'. Reintentos agotados (%d/%d). "
+                            "Derivando a dead-letter (DLX='%s').",
+                            tema,
+                            reintentos,
+                            max_retries,
+                            self._dlx_exchange,
+                        )
+                    else:
+                        logger.error(
+                            "Error procesando mensaje en '%s'. Reintentos agotados (%d/%d). "
+                            "Mensaje descartado (sin DLX configurado).",
+                            tema,
+                            reintentos,
+                            max_retries,
+                        )
+                    await message.nack(requeue=False)
 
         await queue.consume(_on_message)
-        logger.info("Suscrito a la cola '%s'.", tema)
+        logger.info("Suscrito a la cola '%s'. Max reintentos: %d.", tema, max_retries)
