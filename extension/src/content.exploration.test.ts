@@ -135,19 +135,15 @@ describe("Bug Condition Exploration: Detection Oscillation During Transient DOM 
             // ASSERTION: The function's conditional logic should check active signals
             // BEFORE end signals, giving active signals priority.
             //
-            // Expected pattern (after fix):
+            // Fixed pattern (current implementation, see content.ts):
             //   if (hasActiveSignals) { ... stay active ... return; }
             //   if (hasEndSignals && !hasActiveSignals) { ... begin ending ... }
             //
-            // On UNFIXED code this FAILS because checkMeetState() has:
-            //   if (endElement && !meetEnded) { ... send meet-ended ... return; }
-            //   if (activeElement && !meetDetected) { ... }
-            // The endElement conditional comes FIRST with no guard for active signals.
-            //
-            // We check the position of the first `if (endElement` vs `if (activeElement`
-            // in the conditional logic (not variable declarations).
-            const endIfPos = checkMeetStateBody.indexOf("if (endElement");
-            const activeIfPos = checkMeetStateBody.indexOf("if (activeElement");
+            // We check the position of the first `if (hasEndSignals` vs
+            // `if (hasActiveSignals` in the conditional logic (not variable
+            // declarations such as `const hasActiveSignals = ...`).
+            const endIfPos = checkMeetStateBody.indexOf("if (hasEndSignals");
+            const activeIfPos = checkMeetStateBody.indexOf("if (hasActiveSignals");
 
             // Active signal conditional should be evaluated BEFORE end signal conditional
             // to implement priority logic
@@ -259,23 +255,26 @@ describe("Bug Condition Exploration: Detection Oscillation During Transient DOM 
             );
             const checkMeetStateBody = checkMeetStateMatch?.[1] ?? "";
 
-            // Find the end detection branch
-            const endBranchMatch = checkMeetStateBody.match(
-              /if\s*\(endElement[^{]*\{([\s\S]*?)\}/
-            );
-            const endBranchBody = endBranchMatch?.[1] ?? "";
-
-            // ASSERTION: The end detection branch should NOT directly call
-            // chrome.runtime.sendMessage({ type: "meet-ended" }).
-            // Instead, it should transition to an intermediate "ending" state
-            // and use a confirmation timer before actually sending the message.
+            // ASSERTION: checkMeetState() should NOT directly call
+            // chrome.runtime.sendMessage({ type: "meet-ended" }) as soon as end
+            // signals are found. Instead, it should register a confirmation
+            // timer (setTimeout) first, and only send `meet-ended` from inside
+            // that timer's callback once the end state has been confirmed.
             //
-            // On UNFIXED code this FAILS because the end branch immediately does:
-            //   chrome.runtime.sendMessage({ type: "meet-ended" })
-            // with no confirmation delay.
-            const hasImmediateSend = endBranchBody.includes("sendMessage");
+            // We verify this without brace-balancing the source (which a plain
+            // regex extraction can't do reliably around nested blocks) by
+            // checking that the `setTimeout(` call that sets up the
+            // confirmation timer appears BEFORE the `meet-ended` sendMessage
+            // call in the function body — i.e., the send is nested inside the
+            // deferred callback, not issued synchronously.
+            const setTimeoutPos = checkMeetStateBody.indexOf("setTimeout(");
+            const meetEndedSendPos = checkMeetStateBody.indexOf(
+              'sendMessage({ type: "meet-ended" }'
+            );
 
-            expect(hasImmediateSend).toBe(false);
+            expect(setTimeoutPos).toBeGreaterThan(-1);
+            expect(meetEndedSendPos).toBeGreaterThan(-1);
+            expect(setTimeoutPos).toBeLessThan(meetEndedSendPos);
           }
         ),
         { numRuns: 10 }
