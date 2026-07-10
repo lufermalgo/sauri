@@ -71,7 +71,7 @@ sauri/
 ├── extension/         # Chrome MV3 (captura de reuniones)
 ├── frontend/          # React SPA (consulta de reuniones)
 ├── packages/          # Tipos compartidos (@sauri/shared-types)
-├── .kiro/specs/       # Especificaciones de módulos (Kiro)
+├── .spectra/specs/    # Especificaciones de módulos (Spectra)
 ├── docker-compose.yml # Stack local completo
 ├── Makefile           # Comandos de desarrollo
 └── AGENTS.md          # Reglas y workflow del proyecto
@@ -81,7 +81,7 @@ sauri/
 
 Ver [AGENTS.md](./AGENTS.md) para las reglas completas. En resumen:
 
-1. Cada módulo tiene un spec en `.kiro/specs/` (requirements → design → tasks)
+1. Cada módulo tiene un spec en `.spectra/specs/` (requirements/bugfix → design → tasks)
 2. Cada tarea atómica → issue en GitHub asignado al milestone del módulo
 3. Cada issue → branch → PR → merge a main
 4. Milestones en GitHub reflejan el progreso del roadmap

@@ -1,0 +1,12 @@
+{
+  "specId": "59d0f15b-cb65-4d04-9c74-df644b627bc2",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-06-12",
+  "idea": "Migrado desde .kiro/specs/identificacion-hablantes (metodologia Kiro, sin prompt original registrado). Milestone 3: diarizacion de la Transcripcion ya producida por el Milestone 2 -- motor de diarizacion intercambiable (local/nube), etiquetado anonimo y estable de hablantes, asignacion de Turnos_De_Habla por solape temporal, y persistencia de la Diarizacion.",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "complete"
+  }
+}

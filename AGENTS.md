@@ -12,7 +12,7 @@ These rules govern how agents must behave before, during, and after any task.
 * **Surgical reads**: only the file being edited, only the relevant lines. No project-wide scans.
 * **Focused diffs**: touch only what the task requires. Zero side edits.
 * **Lazy loading**: pull context just-in-time, never preemptively.
-* **Platform capabilities**: use Kiro's native tools — specs, hooks, steering files — never
+* **Platform capabilities**: use Claude Code's native tools — skills, hooks, worktrees — never
   do manually what the platform can do automatically.
 * **Subagents**: use for exploration, research, or parallel independent work. Never for
   single-file edits. Instructions must be self-contained and scoped. Pass only relevant
@@ -41,25 +41,36 @@ Features are built from specs, not from ad-hoc prompts. The workflow is:
 Idea → Spec (requirements + design + tasks) → Implementation → PR → main
 ```
 
-### Spec-Driven Development (SDD) with Kiro
+### Spec-Driven Development (SDD) with Spectra
+
+This project started in the Kiro IDE, whose spec methodology lived under
+`.kiro/specs/[module-name]/`. Now that Claude Code is the primary driver, specs
+live under **`.spectra/specs/[slug]/`** instead, authored via the `spectra-*`
+Claude Code skills (`.spectra/skills/`, invoked as `/spectra-req`,
+`/spectra-design`, `/spectra-tasks`, `/spectra-bugfix`). All pre-existing specs
+were migrated from `.kiro/specs/` to `.spectra/specs/` in one pass — `.kiro/specs/`
+no longer exists. `.kiro/hooks/` (Kiro IDE automation) is untouched and unrelated
+to this workflow; it simply isn't used by Claude Code.
 
 #### Spec location
 
-All specs live in `.kiro/specs/[module-name]/`. Each spec folder contains:
+All specs live in `.spectra/specs/[slug]/`, tracked via a `.config.spectra`
+(`specId`, `specType`: `feature`|`bugfix`, `phases`: requirements/design/tasks
+status). Each spec folder contains:
 
-| File              | Purpose                                                              |
-| ----------------- | -------------------------------------------------------------------- |
-| `requirements.md` | What the feature must do — user-facing behavior, acceptance criteria |
-| `design.md`       | How it will be built — architecture, data flow, key decisions        |
-| `tasks.md`        | Ordered implementation tasks with status tracking                    |
+| File                          | Purpose                                                              |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `requirements.md` (feature) or `bugfix.md` (bugfix) | What the feature must do, or the bug's current/expected/unchanged behavior |
+| `design.md`                    | How it will be built — architecture, data flow, key decisions        |
+| `tasks.md`                     | Ordered implementation tasks with status tracking                    |
 
-#### How to create a spec in Kiro
+#### How to create a spec with Spectra
 
-1. Open the Kiro Spec panel, or use the command palette → "New Spec".
-2. Describe the feature in natural language — Kiro generates the initial spec.
-3. Iterate on `requirements.md` until behavior is fully defined.
-4. Review `design.md` — validate technical approach before any code is written.
-5. Work through `tasks.md` in order — one task = one atomic unit of work.
+1. `/spectra-req <idea>` (feature) or `/spectra-bugfix <description>` (bug) — writes
+   `.spectra/specs/[slug]/requirements.md` or `bugfix.md` + `.config.spectra`.
+2. `/spectra-design` — reads the pending spec, writes `design.md`.
+3. `/spectra-tasks` — reads the approved design, writes `tasks.md`.
+4. Work through `tasks.md` in order — one task = one atomic unit of work.
 
 ### Spec discipline rules
 
@@ -317,11 +328,12 @@ Types:
 
 ## 10. Directory Structure & Ownership
 
-| Directory      | Purpose                                        | Rule                                                         |
-| -------------- | ---------------------------------------------- | ------------------------------------------------------------ |
-| `.kiro/specs/` | Feature specs: requirements, design, and tasks | Created and maintained by Kiro                               |
-| `.kiro/hooks/` | Agent automation hooks                         | Created and maintained by Kiro                               |
-| `_tools/`      | Optional session state and tooling notes       | Use only when persistent session state is explicitly enabled |
+| Directory         | Purpose                                        | Rule                                                         |
+| ----------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| `.spectra/specs/` | Feature/bugfix specs: requirements, design, tasks | Created via `/spectra-req`, `/spectra-design`, `/spectra-tasks`, `/spectra-bugfix` |
+| `.spectra/skills/` | Spectra skill definitions (SKILL.md + references) | Not project content — don't hand-edit unless changing the methodology itself |
+| `.kiro/hooks/`    | Legacy Kiro IDE automation hooks                | Historical; unused by Claude Code, kept as-is                |
+| `_tools/`         | Optional session state and tooling notes        | Use only when persistent session state is explicitly enabled |
 
 ---
 
@@ -372,32 +384,32 @@ These rules apply once the project has a repository, a default branch, and a PR 
 
 ## 13. Spec → GitHub Traceability Workflow
 
-Each module of the product roadmap maps 1:1 to a **Kiro spec** and a **GitHub milestone**:
+Each module of the product roadmap maps 1:1 to a **Spectra spec** and a **GitHub milestone**:
 
 ```text
-Kiro Spec (.kiro/specs/{module}/)  ←→  GitHub Milestone
-  requirements.md                       (defines acceptance criteria)
-  design.md                             (defines architecture)
-  tasks.md                              (defines atomic work items)
+Spectra Spec (.spectra/specs/{slug}/)  ←→  GitHub Milestone
+  requirements.md or bugfix.md              (defines acceptance criteria)
+  design.md                                 (defines architecture)
+  tasks.md                                  (defines atomic work items)
 ```
 
 ### Lifecycle of a module
 
-1. **Plan (Kiro):** Create the spec → requirements.md → design.md → tasks.md.
+1. **Plan (Spectra):** Create the spec → `/spectra-req` or `/spectra-bugfix` → `/spectra-design` → `/spectra-tasks`.
 2. **Sync to GitHub:** For each atomic task in tasks.md, create a GitHub issue assigned to the corresponding milestone. Label with `task`. Optional tasks (tests marked `*`) get label `optional`.
-3. **Execute:** For each issue, create a branch (`feature/issue-{id}-{desc}`), implement, open PR referencing `Closes #{id}`.
+3. **Execute:** For each issue, create a worktree + branch (`_tools/new-worktree.sh feature/issue-{id}-{desc}`, see §7), implement, open PR referencing `Closes #{id}`.
 4. **Track:** The milestone progress in GitHub reflects the spec progress. When all required issues in a milestone are closed, the milestone is closed.
 5. **Bugs:** Bugs discovered during execution are filed as issues with label `bug`, assigned to the relevant milestone.
 
 ### Mapping rules
 
-| Kiro artifact               | GitHub artifact                              |
-| --------------------------- | -------------------------------------------- |
-| Spec module name            | Milestone title (numbered: "1. Captura...")   |
-| Requirement (user story)    | Referenced in issue body for context          |
-| Atomic task from tasks.md   | GitHub issue (label: `task`)                  |
-| Bug found during execution  | GitHub issue (label: `bug`)                   |
-| Property test task          | GitHub issue (labels: `task`, `test`, `pbt`)  |
+| Spectra artifact             | GitHub artifact                              |
+| ----------------------------- | -------------------------------------------- |
+| Spec slug                    | Milestone title (numbered: "1. Captura...")   |
+| Requirement (user story)     | Referenced in issue body for context          |
+| Atomic task from tasks.md    | GitHub issue (label: `task`)                  |
+| Bug found during execution   | GitHub issue (label: `bug`)                   |
+| Property test task           | GitHub issue (labels: `task`, `test`, `pbt`)  |
 
 ### When to create issues
 
