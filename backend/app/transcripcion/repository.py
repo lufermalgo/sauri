@@ -22,11 +22,14 @@ class TranscripcionRepository:
         """Agrega una transcripción y sus turnos de habla a la sesión provista.
 
         No abre, cierra ni confirma la sesión: el llamador (worker) controla
-        la transacción y decidirá cuándo hacer commit o rollback.
+        la transacción y decidirá cuándo hacer commit o rollback, de modo que
+        un fallo posterior (p.ej. la transición de estado) puede revertir
+        tanto la Transcripcion como sus TurnoDeHabla de forma atómica.
         """
         session.add(transcripcion)
         for turno in turnos:
             session.add(turno)
+        await session.flush()
         return transcripcion
 
     async def obtener_por_reunion(self, reunion_id: str) -> Transcripcion | None:

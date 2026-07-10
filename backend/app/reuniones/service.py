@@ -16,7 +16,7 @@ Requirements: 1.1, 1.4, 1.5, 1.7, 2.5, 3.6, 4.1, 4.2, 4.4, 4.5
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,7 +69,7 @@ async def registrar_transicion(
         reunion_id=reunion.id,
         estado=resultado.nuevo_estado,
         causa_fallo=resultado.causa_fallo,
-        ocurrido_en=datetime.now(timezone.utc),
+        ocurrido_en=datetime.now(UTC),
     )
     session.add(historial)
 
@@ -118,7 +118,7 @@ async def registrar_reunion(
     except (ValidationError, TypeError) as exc:
         raise ValueError(f"Entrada inválida: {exc}") from exc
 
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.now(UTC)
     reunion_id = str(uuid.uuid4())
 
     # Crear la Reunion en estado 'en_cola'
@@ -142,6 +142,10 @@ async def registrar_reunion(
         creada_en=ahora,
     )
     session.add(reunion)
+    # Flush the Reunion first: EstadoHistorial's FK requires the parent row
+    # to exist before insert (enforced by real databases, not by the SQLite
+    # test engine, which ignores foreign keys by default).
+    await session.flush()
 
     # Crear entrada inicial en EstadoHistorial
     historial = EstadoHistorial(
@@ -152,7 +156,6 @@ async def registrar_reunion(
         ocurrido_en=ahora,
     )
     session.add(historial)
-
     await session.flush()
 
     return reunion

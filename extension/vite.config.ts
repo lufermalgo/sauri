@@ -13,4 +13,8 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    // tests/e2e/** are Playwright specs (run via `npm run test:e2e`), not Vitest.
+    exclude: ["node_modules/**", "tests/e2e/**"],
+  },
 });

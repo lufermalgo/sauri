@@ -26,3 +26,8 @@ minio-data/
 
 # Generated files
 tree.txt
+
+# Playwright e2e artifacts
+extension/test-results/
+extension/tests/e2e/.backend-pid
+extension/tests/e2e/.backend.log
