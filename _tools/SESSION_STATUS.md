@@ -10,6 +10,16 @@
 
 ## Completed
 
+- **meeting-capture-transcription — 100% de tasks.md implementadas y probadas** (issue #71,
+  branch `feature/issue-71-meeting-capture-transcription-tests`): las 22 sub-tareas opcionales
+  (`*`) que quedaban pendientes — los 15 property tests de diseño (Hypothesis backend /
+  fast-check cliente), unit tests puntuales (5.10, 9.4), tests de extensión (14.8, 14.9),
+  tests de frontend (15.2), integración pytest+Docker (17.3) y e2e Playwright (17.4) — están
+  implementadas y en verde. De paso se corrigieron dos bugs reales descubiertos por los nuevos
+  tests contra Postgres real: `TranscripcionRepository.crear` no reutilizaba la sesión/transacción
+  del llamador (rompía atomicidad) y `registrar_reunion` insertaba `EstadoHistorial` antes de que
+  `Reunion` se flusheara (violaba FK en Postgres real, enmascarado por SQLite en tests unitarios).
+  Ver PR asociado para detalle.
 - **Milestone 2 — Transcripción (ASR)**: ALL tasks done. PR #50 merged.
 - **Milestone 3 — Identificación de hablantes (diarización)**: tasks 1–16 implementadas y GREEN.
   - 120 tests passing en toda la suite backend (incluye diar-engine contract).
@@ -33,6 +43,13 @@
 - diar-engine: pyannote.audio requiere HF_TOKEN y modelo gated en runtime del contenedor.
 - torch/pyannote.audio no instalados en .venv local (pesados); se instalan vía Dockerfile.
 - AUTH_DISABLED bypass needs real auth flow for the extension.
+- **`tests/test_proveedor_nube.py` no colecciona** (`ImportError: ErrorServicioExterno`) y
+  `tests/test_factory.py`/`tests/test_proveedor_local.py` tienen fallos preexistentes — son del
+  spec `transcripcion-asr` (Milestone 2, commit `12400d6`), cuya implementación real de
+  `proveedor_nube`/`proveedor_local`/`factory` quedó a medias frente a sus propios tests TDD.
+  No es de meeting-capture-transcription; parece en progreso en otra sesión concurrente
+  (se observó un worktree `feature-transcripcion-asr-improvements` activo). Al correr pytest
+  en `backend/`, excluir esos 3 archivos hasta que se resuelva ahí.
 
 ## Open GitHub PRs
 

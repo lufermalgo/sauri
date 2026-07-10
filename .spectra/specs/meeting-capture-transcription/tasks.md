@@ -56,7 +56,7 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
     - Modelos + migraciones Alembic para `Reunion`, `EstadoHistorial`, `Grabacion_De_Sesion`, `Transcripcion`, `Turno_De_Habla/Segmento`, `Notificacion_De_Grabacion`, `RegistroDeAcceso`
     - Restricción única `reunion_id` en `Grabacion_De_Sesion` (1:1) y `clave_idempotencia` única
     - _Requirements: 2.3, 3.3, 4.1_
-  - [ ]* 4.2 Escribir property test de integridad referencial 1:1 (Hypothesis)
+  - [x]* 4.2 Escribir property test de integridad referencial 1:1 (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 6: Integridad referencial 1:1**
     - Cada Grabacion_De_Sesion referencia exactamente una Reunion y ninguna Reunion tiene más de una; cada Transcripcion referencia su Reunion
     - Hypothesis, mínimo 100 iteraciones (`max_examples=100`)
@@ -69,36 +69,36 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 5.1 Implementar `aplicar_evento` como función pura de transición
     - Transiciones exactas del diagrama; eventos inválidos se descartan sin efecto; estados terminales inmutables; cada transición válida inserta una fila en `EstadoHistorial` con marca de tiempo; toda transición a `fallido` exige `causa_fallo` válida
     - _Requirements: 1.4, 1.5, 2.5, 3.6, 4.1, 4.2, 4.4_
-  - [ ]* 5.2 Escribir property test de integridad de la máquina de estados (Hypothesis)
+  - [x]* 5.2 Escribir property test de integridad de la máquina de estados (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 3: Integridad de la máquina de estados**
     - Solo transiciones válidas; estado en el conjunto permitido; terminales inmutables; una entrada de historial por transición válida. Hypothesis con generadores de secuencias de eventos (incl. inválidos), mínimo 100 iteraciones
     - **Validates: Requirements 1.4, 1.5, 2.5, 3.6, 4.1, 4.2**
-  - [ ]* 5.3 Escribir property test de causa de fallo válida (Hypothesis)
+  - [x]* 5.3 Escribir property test de causa de fallo válida (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 4: Toda transición a "fallido" registra una causa válida**
     - timeout>120s ⇒ no pudo unirse; cancelación desde en cola ⇒ reunión cancelada; ASR sin texto ⇒ fallo del motor. Mínimo 100 iteraciones
     - **Validates: Requirements 1.6, 3.7, 4.3, 4.4**
   - [x] 5.4 Implementar `registrar_reunion` aceptando los tres tipos de entrada
     - Acepta enlace de Meet, identificador de invitación de calendario o solicitud manual con enlace; crea Reunion en estado `en cola`; rechaza entradas inválidas
     - _Requirements: 1.1, 1.7_
-  - [ ]* 5.5 Escribir property test de estado inicial "en cola" (Hypothesis)
+  - [x]* 5.5 Escribir property test de estado inicial "en cola" (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 1: Registro de Reunion inicia en "en cola"**
     - Mínimo 100 iteraciones
     - **Validates: Requirements 1.1**
-  - [ ]* 5.6 Escribir property test de aceptación de tipos de entrada (Hypothesis)
+  - [x]* 5.6 Escribir property test de aceptación de tipos de entrada (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 2: Aceptación de tipos de entrada de Reunion**
     - Acepta los tres tipos válidos, rechaza el resto. Mínimo 100 iteraciones
     - **Validates: Requirements 1.7**
   - [x] 5.7 Implementar `consultar_reunion` exponiendo estado y causa de fallo
     - Devuelve el último estado del `EstadoHistorial`; incluye `causa_fallo` si y solo si el estado es `fallido`
     - _Requirements: 4.5_
-  - [ ]* 5.8 Escribir property test de consistencia de consulta de estado (Hypothesis)
+  - [x]* 5.8 Escribir property test de consistencia de consulta de estado (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 5: Consistencia de la consulta de estado**
     - Mínimo 100 iteraciones
     - **Validates: Requirements 4.5**
   - [x] 5.9 Implementar `solicitar_union` y `programar_union_por_calendario`
     - Unión manual encola trabajo de unión; disparo por `hora_inicio_programada`
     - _Requirements: 1.2, 1.3_
-  - [ ]* 5.10 Escribir unit tests de disparadores de unión (pytest)
+  - [x]* 5.10 Escribir unit tests de disparadores de unión (pytest)
     - Unión manual encola trabajo (1.2); disparo por hora con reloj simulado (1.3)
     - _Requirements: 1.2, 1.3_
 
@@ -112,7 +112,7 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 7.2 Definir interfaz `ColaDeTrabajos` e implementación local (broker)
     - `publicar`/`suscribir` con entrega al-menos-una-vez, reintentos y dead-letter (RabbitMQ/Redis local)
     - _Requirements: 8.3, 8.4_
-  - [ ]* 7.3 Escribir property test de conformidad de adaptadores (contract testing, Hypothesis)
+  - [x]* 7.3 Escribir property test de conformidad de adaptadores (contract testing, Hypothesis)
     - **Feature: meeting-capture-transcription, Property 13: Conformidad de adaptadores de infraestructura**
     - Round-trip `guardar`→`obtener`; `eliminar` deja indisponible; mensaje publicado se entrega al suscriptor; contrato observable idéntico entre implementaciones (suite ejecutada contra cada impl./fake). Mínimo 100 iteraciones
     - **Validates: Requirements 8.3, 8.4**
@@ -121,7 +121,7 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 8.1 Implementar `autenticar` y `autorizar` con auditoría de denegaciones
     - OIDC/JWT como dependencia FastAPI; ninguna operación de registro/consulta sin autenticación; acceso restringido a Usuarios_Comerciales autorizados; registrar denegaciones en `RegistroDeAcceso`
     - _Requirements: 7.3, 7.4, 9.1, 9.2, 9.3_
-  - [ ]* 8.2 Escribir property test de control de acceso y auditoría (Hypothesis)
+  - [x]* 8.2 Escribir property test de control de acceso y auditoría (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 10: Control de acceso y auditoría**
     - Acceso concedido si y solo si autenticado y autorizado; toda denegación genera exactamente una entrada con `resultado = denegado`. Mínimo 100 iteraciones
     - **Validates: Requirements 7.3, 7.4, 9.1, 9.2, 9.3**
@@ -133,11 +133,11 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 9.2 Implementar idempotencia por `clave_idempotencia`
     - Reintentos de subida con la misma clave crean a lo sumo una Grabacion y encolan a lo sumo un trabajo
     - _Requirements: 2.3, 4.1, 4.2_
-  - [ ]* 9.3 Escribir property test de idempotencia de manejadores e ingesta (Hypothesis)
+  - [x]* 9.3 Escribir property test de idempotencia de manejadores e ingesta (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 14: Idempotencia de los manejadores del pipeline y de la ingesta**
     - Reprocesar un mensaje o reintentar subida con la misma clave produce el mismo estado final, sin duplicar Grabaciones/Transcripciones/transiciones. Mínimo 100 iteraciones
     - **Validates: Requirements 2.3, 4.1, 4.2**
-  - [ ]* 9.4 Escribir unit test del registro de Notificacion_De_Grabacion (pytest)
+  - [x]* 9.4 Escribir unit test del registro de Notificacion_De_Grabacion (pytest)
     - La ingesta persiste el registro auditable de consentimiento asociado a la Reunion (6.5)
     - _Requirements: 6.5_
 
@@ -154,15 +154,15 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 10.4 Implementar worker de transcripción que produce la Transcripcion
     - Worker Python que consume la cola; invoca el `Motor_ASR` con `idioma_prioritario = es-CO`; persiste Transcripcion y segmentos/turnos con marcas de tiempo relativas; transiciona a `completado`; si no hay texto pese a audio hablado, transiciona a `fallido` con causa `fallo del motor`
     - _Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7_
-  - [ ]* 10.5 Escribir property test del invariante temporal de la Transcripcion (Hypothesis)
+  - [x]* 10.5 Escribir property test del invariante temporal de la Transcripcion (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 7: Invariante temporal de la Transcripcion**
     - `0 <= inicio_ms <= fin_ms <= duracion_segundos*1000`; segmentos ordenados sin solape; sin identidad nominal. Mínimo 100 iteraciones
     - **Validates: Requirements 3.4, 3.5**
-  - [ ]* 10.6 Escribir property test del idioma es-CO (Hypothesis)
+  - [x]* 10.6 Escribir property test del idioma es-CO (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 8: Idioma de transcripción es-CO**
     - Las opciones fijan es-CO prioritario y la Transcripcion registra es-CO. Mínimo 100 iteraciones
     - **Validates: Requirements 3.2**
-  - [ ]* 10.7 Escribir property test de intercambiabilidad del Motor_ASR (Hypothesis)
+  - [x]* 10.7 Escribir property test de intercambiabilidad del Motor_ASR (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 9: Intercambiabilidad del Motor_ASR**
     - Cualquier proveedor conforme (con/sin turnos, local/externo) produce Transcripcion válida (cumple Property 7) sin cambios en el `Servicio_De_Reuniones`. Contract/model-based testing con fakes conformes. Mínimo 100 iteraciones
     - **Validates: Requirements 5.5**
@@ -174,14 +174,14 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 12.1 Implementar cálculo de expiración configurable
     - `expira_en = creada_en + periodo` para `Grabacion_De_Sesion` y `Transcripcion`
     - _Requirements: 6.2, 6.6_
-  - [ ]* 12.2 Escribir property test del cálculo del periodo de retención (Hypothesis)
+  - [x]* 12.2 Escribir property test del cálculo del periodo de retención (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 11: Cálculo del periodo de retención**
     - Mínimo 100 iteraciones
     - **Validates: Requirements 6.2**
   - [x] 12.3 Implementar worker de borrado por retención
     - Worker programado que elimina datos con `expira_en <= now`; al borrar la Grabacion expira audio + video y la Transcripcion asociada; conserva el resto
     - _Requirements: 6.3, 6.6_
-  - [ ]* 12.4 Escribir property test de borrado por retención del dato completo (Hypothesis)
+  - [x]* 12.4 Escribir property test de borrado por retención del dato completo (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 12: Borrado por retención del dato completo**
     - Mínimo 100 iteraciones
     - **Validates: Requirements 6.3, 6.6**
@@ -190,7 +190,7 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 13.1 Definir contrato de ingesta/origen y manejo de `origen_captura` en el backend
     - Contrato común que el `Asistente_De_Reunion` cumple al entregar una `Grabacion_De_Sesion`; el campo `origen_captura` (`extension_chrome` | `bot_servidor`) no altera el pipeline posterior
     - _Requirements: 2.1, 2.2_
-  - [ ]* 13.2 Escribir property test de intercambiabilidad de la fuente de captura (Hypothesis)
+  - [x]* 13.2 Escribir property test de intercambiabilidad de la fuente de captura (Hypothesis)
     - **Feature: meeting-capture-transcription, Property 15: Intercambiabilidad de la fuente de captura**
     - Con fakes de `Asistente_De_Reunion` (extensión y bot servidor): una grabación ingerida produce el mismo flujo (almacenar → transcribir → persistir) y los mismos estados, independientemente del origen. Mínimo 100 iteraciones
     - **Validates: Requirements 2.1, 2.2**
@@ -217,10 +217,10 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 14.7 Emitir y registrar la Notificacion_De_Grabacion (TS)
     - Banner de consentimiento en Shadow DOM + badge REC al iniciar captura; la subida transporta la marca de emisión para su registro auditable en el backend
     - _Requirements: 6.1, 6.5_
-  - [ ]* 14.8 Escribir tests de la capa de captura de la extensión (Vitest)
+  - [x]* 14.8 Escribir tests de la capa de captura de la extensión (Vitest)
     - Tests del documento offscreen (composición A/V, modos de captura, mezcla de micrófono, `mimeType`) y del panel (resolución, cuenta regresiva)
     - _Requirements: 2.1, 2.2_
-  - [ ]* 14.9 Escribir property test de idempotencia de la cola de subida (fast-check, lado cliente)
+  - [x]* 14.9 Escribir property test de idempotencia de la cola de subida (fast-check, lado cliente)
     - **Feature: meeting-capture-transcription, Property 14: Idempotencia de los manejadores del pipeline y de la ingesta**
     - Faceta cliente: para toda secuencia de reintentos sobre la cola de IndexedDB con la misma `clave_idempotencia`, la extensión emite a lo sumo una subida efectiva (sin duplicar). fast-check, `numRuns: 100`
     - **Validates: Requirements 2.3, 4.1**
@@ -229,7 +229,7 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 15.1 Implementar registro de reunión, lista con estado y vista de transcripción
     - Cliente SPA delgado que consume el API usando los tipos compartidos; flujo autenticado; muestra `Estado_De_Proceso` y causa de fallo
     - _Requirements: 9.1, 9.2, 4.5_
-  - [ ]* 15.2 Escribir tests de componentes del frontend (Vitest)
+  - [x]* 15.2 Escribir tests de componentes del frontend (Vitest)
     - Render de lista con estados y vista de transcripción; manejo de flujo no autenticado
     - _Requirements: 9.1, 9.2, 4.5_
 
@@ -243,10 +243,10 @@ Componentes propios de sauri: la extensión de Chrome y su capa de captura son p
   - [x] 17.2 Completar Docker Compose local equivalente a producción
     - Conectar `api` + `worker` (Python), PostgreSQL, MinIO (S3-local), broker y `asr-engine` (faster-whisper local o proveedor nube por config); la extensión apunta al endpoint de ingesta local
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
-  - [ ]* 17.3 Escribir tests de integración del pipeline end-to-end (pytest + Docker)
+  - [x]* 17.3 Escribir tests de integración del pipeline end-to-end (pytest + Docker)
     - Subida multipart autenticada (incl. reentrega con misma `clave_idempotencia`), transcripción y persistencia con dependencias en contenedores locales; adaptador ASR local sin llamadas externas (5.3) y adaptador externo enviando audio (5.4)
     - _Requirements: 2.2, 5.3, 5.4, 6.1_
-  - [ ]* 17.4 Escribir test e2e de captura → ingesta de la extensión (Playwright)
+  - [x]* 17.4 Escribir test e2e de captura → ingesta de la extensión (Playwright)
     - Flujo automatizado: cargar extensión, detectar Meet mockeado, capturar A/V y subir al endpoint de ingesta local; verificar transición a `transcribiendo`
     - _Requirements: 2.1, 2.2_
 

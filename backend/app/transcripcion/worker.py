@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -72,14 +72,13 @@ async def _procesar_transcripcion(
     logger.info("Procesando transcripción para reunion_id=%s", reunion_id)
 
     # Transición inicial grabando → transcribiendo (Req. 8.1)
-    async with session_factory() as session:
-        async with session.begin():
-            reunion = await session.get(Reunion, reunion_id)
-            if reunion is None:
-                logger.error("Reunion no encontrada: %s", reunion_id)
-                return
-            if reunion.estado_proceso == "grabando":
-                await registrar_transicion(session, reunion, "grabacion_subida")
+    async with session_factory() as session, session.begin():
+        reunion = await session.get(Reunion, reunion_id)
+        if reunion is None:
+            logger.error("Reunion no encontrada: %s", reunion_id)
+            return
+        if reunion.estado_proceso == "grabando":
+            await registrar_transicion(session, reunion, "grabacion_subida")
 
     # 1. Crear motor ASR vía fábrica (selecciona proveedor por config)
     motor = crear_motor_asr()
@@ -91,76 +90,75 @@ async def _procesar_transcripcion(
 
     # 3. Evaluar resultado y persistir
     transcripcion_creada = False
-    async with session_factory() as session:
-        async with session.begin():
-            # Re-fetch reunion within the transaction for state transitions
-            reunion = await session.get(Reunion, reunion_id)
-            if reunion is None:
-                logger.error("Reunion no encontrada: %s", reunion_id)
-                return
+    async with session_factory() as session, session.begin():
+        # Re-fetch reunion within the transaction for state transitions
+        reunion = await session.get(Reunion, reunion_id)
+        if reunion is None:
+            logger.error("Reunion no encontrada: %s", reunion_id)
+            return
 
-            if resultado.segmentos:
-                # Hay texto producido → persistir Transcripcion y turnos (Req. 3.4, 3.5)
-                capacidades = motor.capacidades()
+        if resultado.segmentos:
+            # Hay texto producido → persistir Transcripcion y turnos (Req. 3.4, 3.5)
+            capacidades = motor.capacidades()
 
-                transcripcion = Transcripcion(
+            transcripcion = Transcripcion(
+                id=str(uuid.uuid4()),
+                reunion_id=reunion_id,
+                idioma=resultado.idioma or "es-CO",
+                proveedor="local" if capacidades.es_local else "cloud",
+                soporta_turnos=capacidades.soporta_turnos,
+                expira_en=None,
+                creada_en=datetime.now(UTC),
+            )
+
+            turnos = []
+            for orden, segmento in enumerate(resultado.segmentos, start=1):
+                turno = TurnoDeHabla(
                     id=str(uuid.uuid4()),
-                    reunion_id=reunion_id,
-                    idioma=resultado.idioma or "es-CO",
-                    proveedor="local" if capacidades.es_local else "cloud",
-                    soporta_turnos=capacidades.soporta_turnos,
-                    expira_en=None,
-                    creada_en=datetime.now(timezone.utc),
+                    transcripcion_id=transcripcion.id,
+                    texto=segmento.texto,
+                    inicio_ms=segmento.inicio_ms,
+                    fin_ms=segmento.fin_ms,
+                    orden=orden,
                 )
+                turnos.append(turno)
 
-                turnos = []
-                for orden, segmento in enumerate(resultado.segmentos, start=1):
-                    turno = TurnoDeHabla(
-                        id=str(uuid.uuid4()),
-                        transcripcion_id=transcripcion.id,
-                        texto=segmento.texto,
-                        inicio_ms=segmento.inicio_ms,
-                        fin_ms=segmento.fin_ms,
-                        orden=orden,
-                    )
-                    turnos.append(turno)
+            repo = TranscripcionRepository(session_factory)
+            await repo.crear(session, transcripcion, turnos)
+            transcripcion_creada = True
 
-                repo = TranscripcionRepository(session_factory)
-                await repo.crear(session, transcripcion, turnos)
-                transcripcion_creada = True
+            # Transicionar a "completado" (Req. 3.6)
+            transicion = await registrar_transicion(
+                session, reunion, "transcripcion_completada"
+            )
 
-                # Transicionar a "completado" (Req. 3.6)
-                transicion = await registrar_transicion(
-                    session, reunion, "transcripcion_completada"
+            if transicion.exitosa:
+                logger.info(
+                    "Transcripción completada para reunion_id=%s (%d segmentos)",
+                    reunion_id,
+                    len(resultado.segmentos),
                 )
-
-                if transicion.exitosa:
-                    logger.info(
-                        "Transcripción completada para reunion_id=%s (%d segmentos)",
-                        reunion_id,
-                        len(resultado.segmentos),
-                    )
-                else:
-                    logger.warning(
-                        "Transición a completado rechazada para reunion_id=%s",
-                        reunion_id,
-                    )
             else:
-                # Sin texto pese a audio hablado → fallo del motor (Req. 3.7)
-                transicion = await registrar_transicion(
-                    session, reunion, "fallo_motor"
+                logger.warning(
+                    "Transición a completado rechazada para reunion_id=%s",
+                    reunion_id,
                 )
+        else:
+            # Sin texto pese a audio hablado → fallo del motor (Req. 3.7)
+            transicion = await registrar_transicion(
+                session, reunion, "fallo_motor"
+            )
 
-                if transicion.exitosa:
-                    logger.warning(
-                        "Transcripción sin texto para reunion_id=%s → estado fallido",
-                        reunion_id,
-                    )
-                else:
-                    logger.warning(
-                        "Transición a fallido rechazada para reunion_id=%s",
-                        reunion_id,
-                    )
+            if transicion.exitosa:
+                logger.warning(
+                    "Transcripción sin texto para reunion_id=%s → estado fallido",
+                    reunion_id,
+                )
+            else:
+                logger.warning(
+                    "Transición a fallido rechazada para reunion_id=%s",
+                    reunion_id,
+                )
 
     # Encolar Mensaje_De_Diarizacion una vez confirmada la transacción de la
     # Transcripcion (Req. 1.2 de identificacion-hablantes). No altera el

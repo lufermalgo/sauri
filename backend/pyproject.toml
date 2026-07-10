@@ -50,3 +50,6 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: requires live Postgres/MinIO/RabbitMQ (docker compose up -d postgres minio rabbitmq)",
+]
