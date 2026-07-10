@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,7 +54,7 @@ async def sembrar_usuarios(session: AsyncSession) -> list[Usuario]:
             nombre=str(datos["nombre"]),
             password_hash=hash_password(password),
             es_comercial=bool(datos["es_comercial"]),
-            creado_en=datetime.now(timezone.utc),
+            creado_en=datetime.now(UTC),
         )
         session.add(usuario)
         creados.append(usuario)

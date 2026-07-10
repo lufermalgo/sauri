@@ -6,7 +6,7 @@ Validates: Requirements 13.1, 13.2
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -23,7 +23,7 @@ async def test_usuario_se_puede_crear_y_leer(db_session: AsyncSession):
         nombre="Comercial Uno",
         password_hash="$2b$12$hashfalsoparapruebas",
         es_comercial=True,
-        creado_en=datetime.now(timezone.utc),
+        creado_en=datetime.now(UTC),
     )
     db_session.add(usuario)
     await db_session.commit()
@@ -44,7 +44,7 @@ async def test_usuario_email_es_unico(db_session: AsyncSession):
             nombre="Uno",
             password_hash="hash1",
             es_comercial=True,
-            creado_en=datetime.now(timezone.utc),
+            creado_en=datetime.now(UTC),
         )
     )
     await db_session.commit()
@@ -56,7 +56,7 @@ async def test_usuario_email_es_unico(db_session: AsyncSession):
             nombre="Dos",
             password_hash="hash2",
             es_comercial=True,
-            creado_en=datetime.now(timezone.utc),
+            creado_en=datetime.now(UTC),
         )
     )
     with pytest.raises(IntegrityError):

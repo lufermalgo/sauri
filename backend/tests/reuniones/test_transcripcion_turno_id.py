@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -30,44 +30,43 @@ async def test_segmentos_incluyen_id_del_turno(api_client: AsyncClient, api_db_u
     reunion_id = str(uuid.uuid4())
     transcripcion_id = str(uuid.uuid4())
     turno_id = str(uuid.uuid4())
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.now(UTC)
 
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(
-                Reunion(
-                    id=reunion_id,
-                    enlace_meet="https://meet.google.com/abc-defg-hij",
-                    origen="enlace",
-                    id_invitacion_calendario=None,
-                    hora_inicio_programada=None,
-                    estado_proceso="completado",
-                    causa_fallo=None,
-                    creada_por=USUARIO_ID,
-                    creada_en=ahora,
-                )
+    async with session_factory() as session, session.begin():
+        session.add(
+            Reunion(
+                id=reunion_id,
+                enlace_meet="https://meet.google.com/abc-defg-hij",
+                origen="enlace",
+                id_invitacion_calendario=None,
+                hora_inicio_programada=None,
+                estado_proceso="completado",
+                causa_fallo=None,
+                creada_por=USUARIO_ID,
+                creada_en=ahora,
             )
-            session.add(
-                Transcripcion(
-                    id=transcripcion_id,
-                    reunion_id=reunion_id,
-                    idioma="es-CO",
-                    proveedor="local",
-                    soporta_turnos=True,
-                    expira_en=None,
-                    creada_en=ahora,
-                )
+        )
+        session.add(
+            Transcripcion(
+                id=transcripcion_id,
+                reunion_id=reunion_id,
+                idioma="es-CO",
+                proveedor="local",
+                soporta_turnos=True,
+                expira_en=None,
+                creada_en=ahora,
             )
-            session.add(
-                TurnoDeHabla(
-                    id=turno_id,
-                    transcripcion_id=transcripcion_id,
-                    texto="Hola mundo",
-                    inicio_ms=0,
-                    fin_ms=1500,
-                    orden=0,
-                )
+        )
+        session.add(
+            TurnoDeHabla(
+                id=turno_id,
+                transcripcion_id=transcripcion_id,
+                texto="Hola mundo",
+                inicio_ms=0,
+                fin_ms=1500,
+                orden=0,
             )
+        )
     await engine.dispose()
 
     resp = await api_client.get(

@@ -6,11 +6,11 @@ Validates: Requirements 6.3, 14.1
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import crear_token
 from app.infra.models import (
@@ -43,74 +43,73 @@ async def test_diarizacion_200_con_hablantes_y_asignaciones(api_client: AsyncCli
     diarizacion_id = str(uuid.uuid4())
     turno_id = str(uuid.uuid4())
     hablante_id = str(uuid.uuid4())
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.now(UTC)
 
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(
-                Reunion(
-                    id=reunion_id,
-                    enlace_meet="https://meet.google.com/abc-defg-hij",
-                    origen="enlace",
-                    id_invitacion_calendario=None,
-                    hora_inicio_programada=None,
-                    estado_proceso="completado",
-                    causa_fallo=None,
-                    creada_por=USUARIO_ID,
-                    creada_en=ahora,
-                )
+    async with session_factory() as session, session.begin():
+        session.add(
+            Reunion(
+                id=reunion_id,
+                enlace_meet="https://meet.google.com/abc-defg-hij",
+                origen="enlace",
+                id_invitacion_calendario=None,
+                hora_inicio_programada=None,
+                estado_proceso="completado",
+                causa_fallo=None,
+                creada_por=USUARIO_ID,
+                creada_en=ahora,
             )
-            session.add(
-                Transcripcion(
-                    id=transcripcion_id,
-                    reunion_id=reunion_id,
-                    idioma="es-CO",
-                    proveedor="local",
-                    soporta_turnos=True,
-                    expira_en=None,
-                    creada_en=ahora,
-                )
+        )
+        session.add(
+            Transcripcion(
+                id=transcripcion_id,
+                reunion_id=reunion_id,
+                idioma="es-CO",
+                proveedor="local",
+                soporta_turnos=True,
+                expira_en=None,
+                creada_en=ahora,
             )
-            session.add(
-                TurnoDeHabla(
-                    id=turno_id,
-                    transcripcion_id=transcripcion_id,
-                    texto="Hola",
-                    inicio_ms=0,
-                    fin_ms=1000,
-                    orden=0,
-                )
+        )
+        session.add(
+            TurnoDeHabla(
+                id=turno_id,
+                transcripcion_id=transcripcion_id,
+                texto="Hola",
+                inicio_ms=0,
+                fin_ms=1000,
+                orden=0,
             )
-            session.add(
-                Diarizacion(
-                    id=diarizacion_id,
-                    reunion_id=reunion_id,
-                    transcripcion_id=transcripcion_id,
-                    proveedor="local",
-                    num_hablantes=1,
-                    estado_diarizacion="completada",
-                    causa_fallo=None,
-                    creada_en=ahora,
-                    actualizada_en=ahora,
-                )
+        )
+        session.add(
+            Diarizacion(
+                id=diarizacion_id,
+                reunion_id=reunion_id,
+                transcripcion_id=transcripcion_id,
+                proveedor="local",
+                num_hablantes=1,
+                estado_diarizacion="completada",
+                causa_fallo=None,
+                creada_en=ahora,
+                actualizada_en=ahora,
             )
-            session.add(
-                Hablante(
-                    id=hablante_id,
-                    diarizacion_id=diarizacion_id,
-                    etiqueta_cruda="SPEAKER_00",
-                    etiqueta="Hablante 1",
-                    orden=1,
-                )
+        )
+        session.add(
+            Hablante(
+                id=hablante_id,
+                diarizacion_id=diarizacion_id,
+                etiqueta_cruda="SPEAKER_00",
+                etiqueta="Hablante 1",
+                orden=1,
             )
-            session.add(
-                AsignacionDeHablante(
-                    id=str(uuid.uuid4()),
-                    diarizacion_id=diarizacion_id,
-                    turno_id=turno_id,
-                    hablante_id=hablante_id,
-                )
+        )
+        session.add(
+            AsignacionDeHablante(
+                id=str(uuid.uuid4()),
+                diarizacion_id=diarizacion_id,
+                turno_id=turno_id,
+                hablante_id=hablante_id,
             )
+        )
     await engine.dispose()
 
     resp = await api_client.get(
@@ -142,22 +141,21 @@ async def test_diarizacion_404_reunion_inexistente(api_client: AsyncClient):
 async def test_diarizacion_404_sin_diarizacion(api_client: AsyncClient, api_db_url: str):
     session_factory, engine = await _session_factory(api_db_url)
     reunion_id = str(uuid.uuid4())
-    ahora = datetime.now(timezone.utc)
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(
-                Reunion(
-                    id=reunion_id,
-                    enlace_meet="https://meet.google.com/abc-defg-hij",
-                    origen="enlace",
-                    id_invitacion_calendario=None,
-                    hora_inicio_programada=None,
-                    estado_proceso="completado",
-                    causa_fallo=None,
-                    creada_por=USUARIO_ID,
-                    creada_en=ahora,
-                )
+    ahora = datetime.now(UTC)
+    async with session_factory() as session, session.begin():
+        session.add(
+            Reunion(
+                id=reunion_id,
+                enlace_meet="https://meet.google.com/abc-defg-hij",
+                origen="enlace",
+                id_invitacion_calendario=None,
+                hora_inicio_programada=None,
+                estado_proceso="completado",
+                causa_fallo=None,
+                creada_por=USUARIO_ID,
+                creada_en=ahora,
             )
+        )
     await engine.dispose()
 
     resp = await api_client.get(

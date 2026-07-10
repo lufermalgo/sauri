@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
@@ -28,22 +28,21 @@ async def test_historial_incluye_titulo_nulo(api_client: AsyncClient, api_db_url
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     reunion_id = str(uuid.uuid4())
-    ahora = datetime.now(timezone.utc)
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(
-                Reunion(
-                    id=reunion_id,
-                    enlace_meet="https://meet.google.com/abc-defg-hij",
-                    origen="enlace",
-                    id_invitacion_calendario=None,
-                    hora_inicio_programada=None,
-                    estado_proceso="completado",
-                    causa_fallo=None,
-                    creada_por=USUARIO_ID,
-                    creada_en=ahora,
-                )
+    ahora = datetime.now(UTC)
+    async with session_factory() as session, session.begin():
+        session.add(
+            Reunion(
+                id=reunion_id,
+                enlace_meet="https://meet.google.com/abc-defg-hij",
+                origen="enlace",
+                id_invitacion_calendario=None,
+                hora_inicio_programada=None,
+                estado_proceso="completado",
+                causa_fallo=None,
+                creada_por=USUARIO_ID,
+                creada_en=ahora,
             )
+        )
     await engine.dispose()
 
     resp = await api_client.get("/api/v1/reuniones/", headers=_auth_header())

@@ -6,6 +6,7 @@ Validates: Requirements 13.1, 13.4
 from __future__ import annotations
 
 import pytest
+from fastapi import HTTPException
 
 from app.auth.dependencies import obtener_usuario_actual
 
@@ -24,7 +25,7 @@ async def test_bypass_inactivo_fuera_de_entorno_test(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("AUTH_DISABLED", "1")
     monkeypatch.setenv("APP_ENV", "production")
 
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException):
         await obtener_usuario_actual(credentials=None)
 
 
@@ -33,5 +34,5 @@ async def test_bypass_inactivo_sin_app_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("AUTH_DISABLED", "1")
     monkeypatch.delenv("APP_ENV", raising=False)
 
-    with pytest.raises(Exception):
+    with pytest.raises(HTTPException):
         await obtener_usuario_actual(credentials=None)
