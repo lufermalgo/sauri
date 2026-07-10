@@ -252,3 +252,27 @@ class AsignacionDeHablante(Base):
         "Diarizacion", back_populates="asignaciones"
     )
     hablante: Mapped["Hablante"] = relationship("Hablante")
+
+
+# ---------------------------------------------------------------------------
+# Usuario
+# ---------------------------------------------------------------------------
+
+
+class Usuario(Base):
+    """Almacén mínimo de usuarios comerciales autorizados de sauri (Req. 13.1, 13.2).
+
+    NO es una integración con el IdP de Summan: es un almacén mínimo,
+    semillado de forma determinista, que respalda el Servicio_De_Autenticacion
+    (`POST /api/v1/auth/login`) mientras no exista una integración con el IdP.
+    """
+
+    __tablename__ = "usuarios"
+    __table_args__ = (UniqueConstraint("email", name="uq_usuario_email"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(256), nullable=False)
+    nombre: Mapped[str] = mapped_column(String(256), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
+    es_comercial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

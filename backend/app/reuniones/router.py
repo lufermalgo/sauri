@@ -16,11 +16,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.auth.dependencies import obtener_usuario_actual
 from app.auth.schemas import UsuarioAutenticado
 from app.infra.database import create_engine, create_session_factory
-from app.infra.models import Reunion, Transcripcion, TurnoDeHabla
+from app.infra.models import Diarizacion, Reunion, Transcripcion, TurnoDeHabla
 from app.infra.queue import ColaDeTrabajos, crear_cola_de_trabajos
 from app.reuniones.service import (
     consultar_reunion,
@@ -98,6 +99,10 @@ async def listar_reuniones(
                     "estado_proceso": r.estado_proceso,
                     "causa_fallo": r.causa_fallo if r.estado_proceso == "fallido" else None,
                     "creada_en": r.creada_en.isoformat() if r.creada_en else None,
+                    # Brecha aditiva (chrome-side-panel, Req. 4.3, 4.4): Reunion no
+                    # tiene columna de título; se expone null hasta que un módulo
+                    # futuro lo asigne. La UI muestra un placeholder.
+                    "titulo": None,
                 }
                 for r in reuniones
             ]
@@ -213,12 +218,73 @@ async def obtener_transcripcion(
                 "creada_en": transcripcion.creada_en.isoformat() if transcripcion.creada_en else None,
                 "segmentos": [
                     {
+                        # Brecha aditiva (chrome-side-panel, Req. 8.1): expone el id
+                        # del TurnoDeHabla para poder unirlo con su Asignacion_De_Hablante.
+                        "id": t.id,
                         "texto": t.texto,
                         "inicio_ms": t.inicio_ms,
                         "fin_ms": t.fin_ms,
                         "orden": t.orden,
                     }
                     for t in turnos
+                ],
+            }
+    finally:
+        await engine.dispose()
+
+
+@router.get("/{reunion_id}/diarizacion")
+async def obtener_diarizacion(
+    reunion_id: str,
+    usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+) -> dict:
+    """Obtiene la Diarizacion (hablantes + asignaciones) de una reunión.
+
+    Endpoint nuevo (chrome-side-panel, brecha de backend).
+    Requirements: 6.3, 8.3, 10.1, 10.2, 14.1, 14.2
+    """
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            reunion = await session.get(Reunion, reunion_id)
+            if reunion is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Reunión no encontrada: {reunion_id}",
+                )
+
+            stmt = (
+                select(Diarizacion)
+                .where(Diarizacion.reunion_id == reunion_id)
+                .options(
+                    selectinload(Diarizacion.hablantes),
+                    selectinload(Diarizacion.asignaciones),
+                )
+            )
+            result = await session.execute(stmt)
+            diarizacion = result.scalar_one_or_none()
+
+            if diarizacion is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Diarización no disponible para la reunión: {reunion_id}",
+                )
+
+            hablantes_ordenados = sorted(diarizacion.hablantes, key=lambda h: h.orden)
+
+            return {
+                "diarizacion_id": diarizacion.id,
+                "reunion_id": diarizacion.reunion_id,
+                "estado_diarizacion": diarizacion.estado_diarizacion,
+                "num_hablantes": diarizacion.num_hablantes,
+                "hablantes": [
+                    {"id": h.id, "etiqueta": h.etiqueta, "orden": h.orden}
+                    for h in hablantes_ordenados
+                ],
+                "asignaciones": [
+                    {"turno_id": a.turno_id, "hablante_id": a.hablante_id}
+                    for a in diarizacion.asignaciones
                 ],
             }
     finally:

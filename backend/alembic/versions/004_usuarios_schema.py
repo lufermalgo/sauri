@@ -1,0 +1,36 @@
+"""Usuarios schema: almacén mínimo de usuarios comerciales autorizados.
+
+Revision ID: 004_usuarios_schema
+Revises: 003_diarizacion_schema
+Create Date: 2026-07-10 00:00:00.000000
+
+"""
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects.postgresql import UUID
+
+# revision identifiers, used by Alembic.
+revision: str = "004_usuarios_schema"
+down_revision: Union[str, None] = "003_diarizacion_schema"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "usuarios",
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("email", sa.String(256), nullable=False),
+        sa.Column("nombre", sa.String(256), nullable=False),
+        sa.Column("password_hash", sa.String(256), nullable=False),
+        sa.Column("es_comercial", sa.Boolean, nullable=False, server_default=sa.true()),
+        sa.Column("creado_en", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("email", name="uq_usuario_email"),
+    )
+
+
+def downgrade() -> None:
+    op.drop_table("usuarios")
