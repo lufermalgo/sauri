@@ -14,25 +14,33 @@ from app.transcripcion.motor_asr import MotorASR
 def crear_motor_asr() -> MotorASR:
     """Crea la implementación de Motor_ASR configurada por entorno.
 
-    Lee la variable de entorno ASR_PROVIDER:
-    - "local" (por defecto): proveedor local basado en faster-whisper (Req. 5.3).
-    - "cloud": proveedor en la nube con canal cifrado (Req. 5.4).
+    Lee la variable de entorno ASR_PROVIDER (case-insensitive, stripped):
+    - "local" o ausente/vacío: proveedor local basado en faster-whisper (Req. 2.2, 2.4).
+    - "cloud": proveedor en la nube con canal cifrado (Req. 2.3).
 
-    También lee ASR_LOCAL_URL para el proveedor local.
+    También lee ASR_LOCAL_URL para el proveedor local (obligatoria, Req. 2.6).
 
     Raises:
-        ValueError: Si ASR_PROVIDER tiene un valor no reconocido.
+        ValueError: Si ASR_PROVIDER tiene un valor no reconocido (Req. 2.5),
+            o si se selecciona el proveedor local y ASR_LOCAL_URL está
+            ausente o vacía (Req. 2.6).
     """
-    provider = os.environ.get("ASR_PROVIDER", "local")
+    raw = os.environ.get("ASR_PROVIDER", "")
+    provider = raw.strip().lower()
 
-    if provider == "local":
+    if provider in ("", "local"):
         from app.transcripcion.proveedor_local import ProveedorLocal
 
-        url = os.environ.get("ASR_LOCAL_URL", "http://localhost:8001")
-        return ProveedorLocal(url=url)
+        url = os.environ.get("ASR_LOCAL_URL", "")
+        if not url or not url.strip():
+            raise ValueError(
+                "ASR_LOCAL_URL no está definida o está vacía; "
+                "es obligatoria para el proveedor local"
+            )
+        return ProveedorLocal(url=url.strip())
     elif provider == "cloud":
         from app.transcripcion.proveedor_nube import ProveedorNube
 
         return ProveedorNube()
     else:
-        raise ValueError(f"ASR_PROVIDER no válido: {provider}")
+        raise ValueError(f"ASR_PROVIDER no válido: '{raw.strip()}'")
