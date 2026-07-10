@@ -72,13 +72,19 @@ class ProveedorLocal(MotorASR):
 
         data = response.json()
 
+        if "segments" not in data:
+            raise ValueError(
+                "Respuesta del servicio ASR local sin la clave 'segments': "
+                "estructura inválida"
+            )
+
         segmentos = [
             SegmentoTranscripcion(
                 texto=seg["text"],
                 inicio_ms=seg["start_ms"],
                 fin_ms=seg["end_ms"],
             )
-            for seg in data.get("segments", [])
+            for seg in data["segments"]
         ]
 
         return ResultadoTranscripcion(
