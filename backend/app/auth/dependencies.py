@@ -11,16 +11,27 @@ from app.auth.token import JWT_ALGORITHM, JWT_SECRET
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
-# TODO(auth): Implementar flujo de login real en la extensión y eliminar
-# esta variable de bypass. Ticket pendiente: autenticación extensión → backend.
-_AUTH_DISABLED = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
-
 _DEV_USER = UsuarioAutenticado(
     id="dev-user-00000000",
     email="dev@sauri.local",
     nombre="Developer (auth disabled)",
     es_comercial=True,
 )
+
+
+def _bypass_activo() -> bool:
+    """Determina si el bypass AUTH_DISABLED está activo.
+
+    Restringido al entorno de test (Req. 13.1, 13.4): con la incorporación
+    de `POST /api/v1/auth/login` (chrome-side-panel), el bypass de
+    desarrollo se retira fuera de pruebas automatizadas; los endpoints
+    exigen un JWT real emitido por el Servicio_De_Autenticacion. Se
+    conserva sólo para test (`APP_ENV=test`) donde otros módulos aún lo
+    usan como atajo.
+    """
+    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() in ("1", "true", "yes")
+    app_env = os.getenv("APP_ENV", "").lower()
+    return auth_disabled and app_env == "test"
 
 
 async def obtener_usuario_actual(
@@ -34,8 +45,8 @@ async def obtener_usuario_actual(
     Raises:
         HTTPException 401: si el token falta, es inválido o está expirado.
     """
-    # Bypass auth for local development (AUTH_DISABLED=1 in env)
-    if _AUTH_DISABLED:
+    # Bypass sólo en entorno de test (AUTH_DISABLED=1 y APP_ENV=test), Req. 13.1, 13.4
+    if _bypass_activo():
         return _DEV_USER
 
     if credentials is None:

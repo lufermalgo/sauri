@@ -129,12 +129,26 @@ async function uploadRecording(
   }
 }
 
+// --- Side Panel (Req. 1.1, 1.2, 1.7) ---
+
+async function configurarSidePanel(): Promise<void> {
+  try {
+    // Abre el Side_Panel al hacer clic en el icono de acción (Req. 1.1)
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  } catch (error) {
+    console.error("[sauri] No se pudo configurar el Side_Panel:", error);
+  }
+}
+
 // --- Initialization ---
 
 chrome.runtime.onInstalled.addListener(async () => {
   await setState(DEFAULT_STATE);
+  await configurarSidePanel();
   console.log("[sauri] Extension installed, state initialized to idle");
 });
+
+configurarSidePanel();
 
 // On service worker startup, ensure state is loaded from session storage
 // (chrome.storage.session persists across SW restarts within the browser session)
