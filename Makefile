@@ -2,7 +2,24 @@
 # sauri - Makefile para desarrollo local
 # =============================================================================
 
-.PHONY: up down logs build clean migrate
+.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm
+
+## Instalar los git hooks compartidos (bloquean commit/push directo a main).
+## Se ejecuta automáticamente con `npm install` en la raíz (script "prepare"),
+## pero disponible aquí para quien solo trabaje en backend/ sin tocar npm.
+setup-hooks:
+	git config core.hooksPath .githooks
+	@echo "core.hooksPath -> .githooks (ver AGENTS.md §6-7)"
+
+## Crear un worktree + rama aislados para un spec/issue: make worktree BRANCH=feature/issue-12-desc
+worktree:
+	@test -n "$(BRANCH)" || (echo "Uso: make worktree BRANCH=feature/issue-12-desc" && exit 1)
+	_tools/new-worktree.sh $(BRANCH)
+
+## Eliminar un worktree ya mergeado: make worktree-rm BRANCH=feature/issue-12-desc
+worktree-rm:
+	@test -n "$(BRANCH)" || (echo "Uso: make worktree-rm BRANCH=feature/issue-12-desc" && exit 1)
+	_tools/remove-worktree.sh $(BRANCH)
 
 ## Levantar el stack completo (API, worker, PostgreSQL, MinIO, RabbitMQ, ASR engine)
 up:

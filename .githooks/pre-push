@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Blocks pushes that would land directly on main. Part of the branch-isolation
+# policy in AGENTS.md §6-7 (server-side branch protection isn't available on the
+# GitHub Free plan for a private repo, so this is the enforcement of record).
+#
+# Installed via `core.hooksPath .githooks` (see AGENTS.md / Makefile `make setup`).
+# Bypass: `git push --no-verify` (intentional escape hatch, not silent).
+#
+# Git calls this with remote name/URL as args and feeds one line per ref on stdin:
+#   <local ref> <local sha1> <remote ref> <remote sha1>
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "ERROR: push to 'main' is blocked (local ref: $local_ref)." >&2
+    echo "Open a PR instead: gh pr create --base main" >&2
+    echo "To bypass in a real emergency: git push --no-verify" >&2
+    exit 1
+  fi
+done
+
+exit 0

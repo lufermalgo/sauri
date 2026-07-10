@@ -212,14 +212,41 @@ Validation must use the project’s actual commands and conventions. Do not assu
 
 **NEVER work on `main` or any shared branch directly.**
 
+### Enforcement
+
+This repo is private on the GitHub Free plan, so server-side branch protection /
+rulesets are unavailable (they require GitHub Pro or a public repo). The rule above
+is therefore enforced **locally, not by GitHub**, via two layers:
+
+1. **Git hooks** (`.githooks/pre-commit`, `.githooks/pre-push`), wired through
+   `core.hooksPath .githooks`. This applies regardless of which tool drives git
+   (any Claude Code session, another agent, or a human) and to every worktree of
+   this repo, since they all share the same `.git`. Auto-installed by `npm install`
+   at the repo root (the `prepare` script); run `make setup-hooks` if you never run
+   npm at the root (e.g. backend-only work).
+2. **A Claude Code `PreToolUse` hook** (`.claude/settings.json` →
+   `.claude/hooks/block-main-git.sh`) that blocks `git commit`/`git push` on `main`
+   before the command even runs, inside any Claude Code session with this repo open.
+
+Both are bypassable (`--no-verify`, or simply not having the hooks installed in a
+given clone) — this is a guardrail against accidental slips, not a security boundary.
+If the team later moves to GitHub Pro or makes the repo public, add real branch
+protection on top; don't remove the local hooks, since they also cover worktrees.
+
 ---
 
-## 7. Git Workflow
+## 7. Git Workflow — one worktree per spec/issue
+
+Multiple sessions (Claude Code or otherwise) may work on this repo concurrently.
+Branch isolation alone isn't enough for that — two sessions on the same branch
+name in the same checkout still stomp on each other's index and working tree. So
+each spec/issue gets **its own git worktree**, not just its own branch, as a
+sibling directory of the repo (`../sauri-worktrees/<branch-name>`):
 
 ```bash
-# 1. Always start from latest main
-git fetch origin main
-git checkout -b feature/issue-{id}-{desc} origin/main
+# 1. Create an isolated worktree + branch, fresh off origin/main
+_tools/new-worktree.sh feature/issue-{id}-{desc}
+cd ../sauri-worktrees/feature-issue-{id}-{desc}   # path is printed by the script
 
 # 2. Implement, then commit
 git add <specific files>
@@ -234,15 +261,25 @@ git rebase origin/main
 # 4. Push and open PR → main
 git push -u origin feature/issue-{id}-{desc}
 gh pr create --title "feat: description" --body "Closes #{id}"
+
+# 5. After the PR merges, clean up
+cd ../..  # back to the main checkout
+_tools/remove-worktree.sh feature/issue-{id}-{desc}
 ```
+
+Claude Code's own background-session isolation (`EnterWorktree`, `--worktree`) uses
+the same underlying mechanism and is configured in `.claude/settings.json`
+(`worktree.symlinkDirectories` symlinks `node_modules`/`backend/.venv` into new
+worktrees so they don't need a full reinstall each time).
 
 ### Git rules
 
 * Stage specific files — never `git add .` blindly.
 * Rebase before push — never merge.
-* Do not work directly on `main`.
+* Do not work directly on `main` — use a worktree (see above), not a branch in the
+  shared checkout.
 * If `main` is broken, stop and fix it first.
-* Clean up branches after merge. Delete remote branches once their PR is merged.
+* Clean up branches **and worktrees** after merge (`_tools/remove-worktree.sh`).
 
 ---
 

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# PreToolUse guard for the Bash tool: blocks `git commit` / `git push` while the
+# current branch is `main`, before the command even runs. This is a friendlier,
+# earlier version of the same policy enforced by .githooks/pre-commit and
+# .githooks/pre-push (the authoritative backstop — see AGENTS.md §6-7).
+#
+# GitHub-side branch protection isn't available on this repo (private + Free
+# plan), so this pair of local mechanisms is the enforcement of record.
+
+cmd="$(jq -r '.tool_input.command // empty')"
+
+if ! echo "$cmd" | grep -qE '(^|[;&|]|\s)git\s+(commit|push)(\s|$)'; then
+  exit 0
+fi
+
+branch="$(git symbolic-ref --short HEAD 2>/dev/null)"
+
+if [ "$branch" = "main" ]; then
+  reason="Direct git commit/push on 'main' is blocked by project policy (AGENTS.md §6-7). Create or enter a worktree first: _tools/new-worktree.sh <branch-name>, then cd into the printed path and retry there."
+  jq -n --arg reason "$reason" \
+    '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
+  exit 0
+fi
+
+exit 0
