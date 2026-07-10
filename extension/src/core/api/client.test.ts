@@ -93,6 +93,19 @@ describe("Cliente_De_API — timeout y reintento (Req. 14.4, 14.5, 4.9, 6.6)", (
   });
 });
 
+describe("Cliente_De_API — 404 distinguido de un fallo real (Req. 7.6, 8.8, 10.5)", () => {
+  beforeEach(() => {
+    mockChromeStorage({ authToken: "token-abc" });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("lanza ErrorNoEncontrado cuando el backend responde 404", async () => {
+    global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
+    const { obtenerTranscripcion, ErrorNoEncontrado } = await import("./client");
+    await expect(obtenerTranscripcion("r1", "http://localhost:8000")).rejects.toBeInstanceOf(ErrorNoEncontrado);
+  });
+});
+
 describe("Cliente_De_API — transporte cifrado (Req. 13.5)", () => {
   beforeEach(() => {
     mockChromeStorage({ authToken: "token-abc" });

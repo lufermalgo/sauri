@@ -20,6 +20,14 @@ export class ErrorTransporteNoSeguro extends Error {
   }
 }
 
+/** Recurso ausente (404) — distinto de un fallo real, para derivar Estado_De_Vista "vacio" (Req. 7.6, 8.8, 10.5) */
+export class ErrorNoEncontrado extends Error {
+  constructor() {
+    super("Recurso no encontrado");
+    this.name = "ErrorNoEncontrado";
+  }
+}
+
 /** Exige https:// salvo en http://localhost (desarrollo) — Req. 13.5 */
 function validarTransporte(backendUrl: string): void {
   const url = new URL(backendUrl);
@@ -67,6 +75,10 @@ async function solicitar<T>(backendUrl: string, ruta: string, init?: RequestInit
     if (response.status === 401) {
       await descartarSesion();
       throw new ErrorSesionInvalida();
+    }
+
+    if (response.status === 404) {
+      throw new ErrorNoEncontrado();
     }
 
     if (!response.ok) {
