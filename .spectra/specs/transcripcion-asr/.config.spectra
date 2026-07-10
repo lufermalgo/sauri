@@ -1,0 +1,12 @@
+{
+  "specId": "e028baeb-c61b-4d62-a0ce-d22e9ae3090c",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-06-11",
+  "idea": "Migrado desde .kiro/specs/transcripcion-asr (metodologia Kiro, sin prompt original registrado). Milestone 2: consumir Grabacion_De_Audio encolada, ejecutar ASR mediante un Motor_ASR intercambiable (local con faster-whisper o nube), producir una Transcripcion segmentada con marcas de tiempo en espanol de Colombia, y actualizar el Estado_De_Proceso de la Reunion.",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "complete"
+  }
+}

@@ -78,14 +78,19 @@ API at `http://localhost:8000`.
 
 ## Architecture
 
-### Spec-driven development (Kiro)
+### Spec-driven development (Spectra)
 
-Features are not built ad hoc. Each module has a spec under `.kiro/specs/{module-name}/`:
-`requirements.md` (user-facing behavior/acceptance criteria) → `design.md` (architecture/data
-flow) → `tasks.md` (atomic, ordered implementation tasks). Small bugfixes, docs, and config
-changes may skip a full spec but still need scoped validation. Full workflow, branch naming,
-commit format, and PR rules are documented in [AGENTS.md](AGENTS.md) — read it before doing
-git/PR work in this repo, since it's more detailed than the summary below.
+Features are not built ad hoc. This project started in the Kiro IDE (specs under
+`.kiro/specs/`); now that Claude Code is the primary driver, specs live under
+`.spectra/specs/{slug}/` instead, authored via the `spectra-*` Claude Code skills
+(`/spectra-req` or `/spectra-bugfix` → `/spectra-design` → `/spectra-tasks`). Each spec
+folder has `requirements.md` (feature) or `bugfix.md` (bug) → `design.md` → `tasks.md`,
+tracked by a `.config.spectra`. All pre-existing Kiro specs were migrated in one pass —
+`.kiro/specs/` no longer exists; `.kiro/hooks/` (Kiro IDE automation) remains but is unused
+by Claude Code. Small bugfixes, docs, and config changes may skip a full spec but still
+need scoped validation. Full workflow, branch naming, commit format, and PR rules are
+documented in [AGENTS.md](AGENTS.md) — read it before doing git/PR work in this repo,
+since it's more detailed than the summary below.
 
 Key points from AGENTS.md worth internalizing:
 - **TDD is non-negotiable**: red (failing test) → green (minimal implementation) → refactor,

@@ -1,0 +1,12 @@
+{
+  "specId": "5d6197cf-214a-4a27-825e-774535bace66",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-06-11",
+  "idea": "Migrado desde .kiro/specs/meeting-capture-transcription (metodologia Kiro, sin prompt original registrado). MVP / Milestone 1: unirse a una reunion de Google Meet, capturar audio y video de la sesion, y producir una transcripcion en espanol (Colombia) persistida y asociada a la reunion, sin identificacion nominal de hablantes.",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "complete"
+  }
+}
