@@ -82,13 +82,25 @@ describe("coincidenciasDeTranscripcion", () => {
       fc.property(
         fc.array(intervencionArb, { maxLength: 20 }),
         fc.string({ minLength: 1, maxLength: 10 }).filter((s) => s.trim().length > 0),
-        (intervenciones: IntervencionDTO[], texto) => {
+        (intervencionesCrudas: IntervencionDTO[], texto) => {
+          // turnoId únicos: en el dominio real es la clave primaria del Turno_De_Habla;
+          // sin esta garantía, dos Intervenciones con el mismo turnoId pero distinto
+          // inicioMs harían que `.find()` (primer elemento en orden de array) y el
+          // verdadero mínimo por inicioMs pudieran no coincidir, produciendo un
+          // contraejemplo espurio no relacionado con la propiedad bajo prueba.
+          const idsUnicos = Array.from(new Set(intervencionesCrudas.map((i) => i.turnoId)));
+          const intervenciones = idsUnicos.map((id) => intervencionesCrudas.find((i) => i.turnoId === id)!);
+
           const resultado = coincidenciasDeTranscripcion(intervenciones, texto);
 
           // El orden/conjunto de intervenciones mostradas no cambia
           expect(resultado.intervenciones).toEqual(intervenciones);
 
-          const textoNorm = texto.toLowerCase();
+          // coincidenciasDeTranscripcion recorta y hace trim() del texto de
+          // búsqueda antes de normalizarlo (Req. 9.5) — el oráculo debe
+          // replicar exactamente esa normalización, o un texto con espacios
+          // al inicio/fin (p. ej. " m") produce un falso contraejemplo.
+          const textoNorm = texto.trim().toLowerCase();
           const idsCoincidentes = new Set(
             intervenciones.filter((i) => i.texto.toLowerCase().includes(textoNorm)).map((i) => i.turnoId)
           );
