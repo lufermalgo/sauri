@@ -13,6 +13,14 @@ if ! echo "$cmd" | grep -qE '(^|[;&|]|\s)git\s+(commit|push)(\s|$)'; then
   exit 0
 fi
 
+# `git push --delete`/`-d` removes a remote ref (e.g. cleaning up a merged
+# branch) — it can't land commits on main, so it's exempt from this check.
+# The git-native pre-push hook (.githooks/pre-push) still inspects the
+# actual ref being pushed for every other case.
+if echo "$cmd" | grep -qE '(^|[;&|]|\s)git\s+push\b.*(--delete|\s-d\s)'; then
+  exit 0
+fi
+
 # Respect a leading `cd <dir> &&`/`;` so a worktree command (e.g.
 # `cd ../sauri-worktrees/feature-x && git commit ...`) is checked against
 # that directory's branch, not this hook process's own cwd.
