@@ -1,0 +1,54 @@
+/* Sistema_De_Diseno: variables CSS compartidas por el Side_Panel y la Vista_De_Detalle. */
+/* Requisitos: 12.1, 12.2, 12.4 */
+
+:root {
+  /* Color */
+  --color-fondo: #0f1115;
+  --color-superficie: #181b21;
+  --color-superficie-alterna: #20242c;
+  --color-primario: #5b8cff;
+  --color-texto: #f2f4f8;
+  --color-texto-tenue: #9aa3b2;
+  --color-error: #ff6b6b;
+  --color-grabando: #ff5c5c;
+  --color-foco: #ffd166;
+
+  /* Tipografía */
+  --fuente-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --texto-sm: 12px;
+  --texto-base: 14px;
+  --texto-lg: 16px;
+  --texto-xl: 20px;
+
+  /* Espaciado */
+  --esp-1: 4px;
+  --esp-2: 8px;
+  --esp-3: 12px;
+  --esp-4: 16px;
+  --esp-5: 24px;
+  --esp-6: 32px;
+
+  /* Radios */
+  --radio-sm: 4px;
+  --radio-md: 8px;
+  --radio-lg: 16px;
+
+  /* Elevaciones */
+  --sombra-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+  --sombra-md: 0 4px 12px rgba(0, 0, 0, 0.32);
+
+  /* Foco */
+  --anillo-foco: 2px solid var(--color-foco);
+}
+
+*:focus-visible {
+  outline: var(--anillo-foco);
+  outline-offset: 2px;
+}
+
+body {
+  background: var(--color-fondo);
+  color: var(--color-texto);
+  font-family: var(--fuente-base);
+  font-size: var(--texto-base);
+}
