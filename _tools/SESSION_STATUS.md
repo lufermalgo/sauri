@@ -3,10 +3,9 @@
 ## Current State
 
 - **Branch**: main
-- **Status**: in-progress — Milestone 3 (diarización) COMPLETO en implementación: tasks 1–16 hechas. Pendiente: commit/PR.
-- **Files being touched**: `backend/app/diarizacion/` (8 módulos), `backend/diar-engine/` (servicio real pyannote), `backend/alembic/versions/` (001 fix + 003 nueva), `backend/app/infra/queue_rabbitmq.py`, `backend/app/transcripcion/worker.py`, `backend/app/worker.py`, `backend/tests/diarizacion/` (9 archivos de test)
-- **Last commit**: `de5908c` — Merge PR #50 (Milestone 2 TDD tests)
-- **Last session date**: 2026-06-12
+- **Status**: idle
+- **Last commit**: `6a1fe30` — Merge PR #74 (chrome-side-panel: Side Panel UI + Vista_De_Detalle)
+- **Last session date**: 2026-07-10
 
 ## Completed
 
@@ -20,7 +19,12 @@
   del llamador (rompía atomicidad) y `registrar_reunion` insertaba `EstadoHistorial` antes de que
   `Reunion` se flusheara (violaba FK en Postgres real, enmascarado por SQLite en tests unitarios).
   Ver PR asociado para detalle.
-- **Milestone 2 — Transcripción (ASR)**: ALL tasks done. PR #50 merged.
+- **Milestone 2 — Transcripción (ASR)**: Tests merged (PR #50), implementation + improvements merged (PR #70).
+  - ProveedorNube: Cloud provider with HTTPS/TLS encryption and API key authentication
+  - ProveedorLocal: Enhanced with strict configuration validation
+  - factory.py: Robust configuration parsing with comprehensive error messages
+  - asr-engine: FastAPI microservice with faster-whisper backend
+  - S3/MinIO integration for audio asset management
 - **Milestone 3 — Identificación de hablantes (diarización)**: tasks 1–16 implementadas y GREEN.
   - 120 tests passing en toda la suite backend (incluye diar-engine contract).
   - Lógica pura: estado, motor, factory, proveedor_local, proveedor_nube, etiquetado, asignacion.
@@ -29,34 +33,34 @@
   - Worker de diarización + cableado en `app/worker.py` (suscrito a 'diarizar' en runtime, verificado en logs).
   - Publicación de Mensaje_De_Diarizacion al completar transcripción.
   - diar-engine: servicio FastAPI real con pyannote.audio (contrato POST /diarize, GET /health).
+- **chrome-side-panel** (issue #69, PR #74 merged): Side Panel UI + Vista_De_Detalle implementadas.
+  - Shared core: design tokens, formatting, ordering, search, capture state machine.
+  - Backend gaps cerrados: diarización expuesta, ids de turno, títulos de nota, auth real.
+  - Cliente_De_API compartido, Side_Panel UI (Task 15), Vista_De_Detalle (Task 16).
 
 ## Cambios de infraestructura relevantes
 
-- **Bug Alembic enum RESUELTO**: migración 001 y 003 usan columnas `String` (sin enums de Postgres),
-  eliminando el `DuplicateObjectError`. Cadena 001 → 002_uq_transcripcion → 003_diarizacion_schema.
-  `alembic upgrade head` corre limpio en PostgreSQL real (11 tablas, version=003_diarizacion_schema).
-- Revision 002 renombrada a `002_uq_transcripcion` (cabía en varchar(32) de alembic_version).
-- AGENTS.md §3: nueva regla "No mocks in production code".
+- **Milestone 2 (Transcripción)**: ASR providers with validation, cloud encryption, local engine
+- **Milestone 3 (Diarización)**: Pure state machine, diarization worker, diar-engine service
+- **AGENTS.md**: New rule "No mocks in production code" (§3), worktree enforcement (§6-7)
 
 ## Known issues / tech debt (not blocking)
 
 - diar-engine: pyannote.audio requiere HF_TOKEN y modelo gated en runtime del contenedor.
 - torch/pyannote.audio no instalados en .venv local (pesados); se instalan vía Dockerfile.
 - AUTH_DISABLED bypass needs real auth flow for the extension.
-- **`tests/test_proveedor_nube.py` no colecciona** (`ImportError: ErrorServicioExterno`) y
-  `tests/test_factory.py`/`tests/test_proveedor_local.py` tienen fallos preexistentes — son del
-  spec `transcripcion-asr` (Milestone 2, commit `12400d6`), cuya implementación real de
-  `proveedor_nube`/`proveedor_local`/`factory` quedó a medias frente a sus propios tests TDD.
-  No es de meeting-capture-transcription; parece en progreso en otra sesión concurrente
-  (se observó un worktree `feature-transcripcion-asr-improvements` activo). Al correr pytest
-  en `backend/`, excluir esos 3 archivos hasta que se resuelva ahí.
 
 ## Open GitHub PRs
 
-- None. Cambios de Milestone 3 sin commitear aún.
+- None. main is clean at `6a1fe30` (PR #74 merged).
+
+## Deuda de proceso
+
+- No GitHub issues created for Milestone 2 or 3 tasks (should have been created pre-implementation per AGENTS.md §13).
+  Retroactive creation recommended for traceability.
 
 ## Next session priorities
 
-1. Crear rama feature, commit y PR del Milestone 3 hacia main.
-2. Validar diar-engine end-to-end con audio real + HF_TOKEN en el contenedor.
-3. Considerar UX del Side Panel para exponer hablantes en la transcripción.
+1. Validate end-to-end ASR + diarization + chrome-side-panel workflow with real audio in Chrome.
+2. Decide next product module per roadmap (see README.md) — e.g. notas/inteligencia con LLM, CRM (ClickUp).
+3. Create GitHub issues retroactively for Milestone 2 and 3 tasks and close with PR references.
