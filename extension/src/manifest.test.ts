@@ -21,4 +21,9 @@ describe("manifest.json — migración a chrome.sidePanel (Req. 1.2)", () => {
   it("no declara action.default_popup (el popup se reemplaza por el Side_Panel)", () => {
     expect(manifest.action?.default_popup).toBeUndefined();
   });
+
+  it("declara options_page (permiso de micrófono en pestaña completa, no side panel)", () => {
+    expect(typeof manifest.options_page).toBe("string");
+    expect(manifest.options_page.length).toBeGreaterThan(0);
+  });
 });

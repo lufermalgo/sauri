@@ -18,14 +18,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from pydantic import BaseModel, Field
+
 from app.auth.dependencies import obtener_usuario_actual
 from app.auth.schemas import UsuarioAutenticado
 from app.infra.database import create_engine, create_session_factory
 from app.infra.models import Diarizacion, Reunion, Transcripcion, TurnoDeHabla
+from app.infra.object_store import AlmacenDeObjetos, crear_almacen_de_objetos
 from app.infra.queue import ColaDeTrabajos, crear_cola_de_trabajos
 from app.reuniones.service import (
     consultar_reunion,
+    eliminar_reunion,
     registrar_reunion,
+    renombrar_reunion,
     solicitar_union,
 )
 
@@ -35,6 +40,17 @@ router = APIRouter(prefix="/api/v1/reuniones", tags=["reuniones"])
 def _obtener_cola() -> ColaDeTrabajos:
     """Factory de la cola de trabajos (DI simplificada)."""
     return crear_cola_de_trabajos()
+
+
+def _obtener_almacen() -> AlmacenDeObjetos:
+    """Factory del almacén de objetos (DI simplificada)."""
+    return crear_almacen_de_objetos()
+
+
+class EntradaRenombrar(BaseModel):
+    """Cuerpo de PATCH /{reunion_id} — nuevo título de la nota."""
+
+    titulo: str = Field(..., min_length=1, max_length=512)
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -99,13 +115,64 @@ async def listar_reuniones(
                     "estado_proceso": r.estado_proceso,
                     "causa_fallo": r.causa_fallo if r.estado_proceso == "fallido" else None,
                     "creada_en": r.creada_en.isoformat() if r.creada_en else None,
-                    # Brecha aditiva (chrome-side-panel, Req. 4.3, 4.4): Reunion no
-                    # tiene columna de título; se expone null hasta que un módulo
-                    # futuro lo asigne. La UI muestra un placeholder.
-                    "titulo": None,
+                    "titulo": r.titulo,
                 }
                 for r in reuniones
             ]
+    finally:
+        await engine.dispose()
+
+
+@router.patch("/{reunion_id}")
+async def renombrar_reunion_endpoint(
+    reunion_id: str,
+    entrada: EntradaRenombrar,
+    usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+) -> dict:
+    """Renombra una nota (Mis_Notas → renombrar).
+
+    Solo el usuario que creó la Reunion puede renombrarla.
+    """
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            async with session.begin():
+                reunion = await session.get(Reunion, reunion_id)
+                if reunion is None or reunion.creada_por != usuario.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Reunión no encontrada: {reunion_id}",
+                    )
+                actualizada = await renombrar_reunion(session, reunion_id, entrada.titulo)
+                assert actualizada is not None
+                return {"reunion_id": actualizada.id, "titulo": actualizada.titulo}
+    finally:
+        await engine.dispose()
+
+
+@router.delete("/{reunion_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def eliminar_reunion_endpoint(
+    reunion_id: str,
+    usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+) -> None:
+    """Elimina una nota y todo lo asociado (Mis_Notas → eliminar).
+
+    Solo el usuario que creó la Reunion puede eliminarla.
+    """
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            async with session.begin():
+                reunion = await session.get(Reunion, reunion_id)
+                if reunion is None or reunion.creada_por != usuario.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Reunión no encontrada: {reunion_id}",
+                    )
+                almacen = _obtener_almacen()
+                await eliminar_reunion(session, almacen, reunion_id)
     finally:
         await engine.dispose()
 

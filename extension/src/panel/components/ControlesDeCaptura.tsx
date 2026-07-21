@@ -18,6 +18,7 @@ export interface ControlesDeCapturaProps {
   onAbrirAjustes: () => void;
   tiempoTranscurridoMs: number;
   errorInicio?: string | null;
+  errorMicrofono?: string | null;
 }
 
 const FUENTES_DE_AUDIO = ["Pantalla + audio"];
@@ -36,6 +37,7 @@ export function ControlesDeCaptura({
   onAbrirAjustes,
   tiempoTranscurridoMs,
   errorInicio,
+  errorMicrofono,
 }: ControlesDeCapturaProps) {
   const grabando = estadoDeCaptura === "grabando";
 
@@ -62,8 +64,15 @@ export function ControlesDeCaptura({
       <div style={{ display: "flex", flexDirection: "column" }}>
         <label style={{ fontSize: TYPOGRAPHY_TOKENS.textoSm }}>Micrófono</label>
         {microfonos.length === 0 ? (
-          <p style={{ color: COLOR_TOKENS.textoTenue, fontSize: TYPOGRAPHY_TOKENS.textoSm, margin: 0 }}>
-            Sin micrófonos disponibles
+          <p
+            role={errorMicrofono ? "alert" : undefined}
+            style={{
+              color: errorMicrofono ? COLOR_TOKENS.error : COLOR_TOKENS.textoTenue,
+              fontSize: TYPOGRAPHY_TOKENS.textoSm,
+              margin: 0,
+            }}
+          >
+            {errorMicrofono ?? "Sin micrófonos disponibles"}
           </p>
         ) : (
           <select

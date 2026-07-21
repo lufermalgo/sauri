@@ -56,3 +56,17 @@ class DatosIngesta(BaseModel):
             "Si se provee, el backend registra el evento auditable (Req. 6.5)."
         ),
     )
+    titulo: str | None = Field(
+        default=None,
+        description=(
+            "Título de la reunión (detectado por el Asistente_De_Reunion). "
+            "Se usa solo al auto-crear la Reunion si aún no existe."
+        ),
+    )
+    enlace_meet: str | None = Field(
+        default=None,
+        description=(
+            "Enlace real de Google Meet (detectado por el Asistente_De_Reunion). "
+            "Se usa solo al auto-crear la Reunion si aún no existe."
+        ),
+    )

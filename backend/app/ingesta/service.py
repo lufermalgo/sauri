@@ -21,11 +21,13 @@ async def procesar_ingesta(
     datos: DatosIngesta,
     audio_ref: str,
     video_ref: str | None,
+    creada_por: str,
 ) -> tuple[GrabacionDeSesion, bool]:
     """Procesa una ingesta desde cualquier fuente de captura.
 
     1. Verifica idempotencia: si la clave ya existe, retorna la grabación existente.
-    2. Si la Reunion no existe, la crea automáticamente (MVP workaround).
+    2. Si la Reunion no existe, la crea automáticamente (MVP workaround) con
+       creada_por = id del usuario autenticado que la subió.
     3. Crea la GrabacionDeSesion con origen_captura (NO altera el pipeline).
     4. Registra NotificacionDeGrabacion si notificacion_emitida_en está presente.
     5. Retorna tupla (GrabacionDeSesion, es_nueva).
@@ -45,10 +47,11 @@ async def procesar_ingesta(
     if reunion is None:
         reunion = Reunion(
             id=datos.reunion_id,
-            enlace_meet="https://meet.google.com/unknown",
+            enlace_meet=datos.enlace_meet or "https://meet.google.com/unknown",
+            titulo=datos.titulo,
             origen="manual",
             estado_proceso="grabando",
-            creada_por="extension",
+            creada_por=creada_por,
             creada_en=ahora,
         )
         session.add(reunion)

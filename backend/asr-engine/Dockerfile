@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir \
     uvicorn[standard]==0.30.6 \
     pydantic==2.9.2 \
     faster-whisper==1.1.0 \
-    boto3==1.35.0
+    boto3==1.35.0 \
+    requests==2.32.3
 
 COPY main.py .
 

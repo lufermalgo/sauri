@@ -2,65 +2,86 @@
 
 ## Current State
 
-- **Branch**: main
-- **Status**: idle
-- **Last commit**: `6a1fe30` — Merge PR #74 (chrome-side-panel: Side Panel UI + Vista_De_Detalle)
-- **Last session date**: 2026-07-10
+- **Branch**: `bugfix/issue-78-e2e-pipeline-fixes`
+- **Status**: pr-open
+- **Pending PR**: [#79](https://github.com/lufermalgo/sauri/pull/79) — "fix: chrome-side-panel E2E capture/transcription pipeline bugs", closes #78
+- **Last session date**: 2026-07-21
 
-## Completed
+## Completed this session
 
-- **meeting-capture-transcription — 100% de tasks.md implementadas y probadas** (issue #71,
-  branch `feature/issue-71-meeting-capture-transcription-tests`): las 22 sub-tareas opcionales
-  (`*`) que quedaban pendientes — los 15 property tests de diseño (Hypothesis backend /
-  fast-check cliente), unit tests puntuales (5.10, 9.4), tests de extensión (14.8, 14.9),
-  tests de frontend (15.2), integración pytest+Docker (17.3) y e2e Playwright (17.4) — están
-  implementadas y en verde. De paso se corrigieron dos bugs reales descubiertos por los nuevos
-  tests contra Postgres real: `TranscripcionRepository.crear` no reutilizaba la sesión/transacción
-  del llamador (rompía atomicidad) y `registrar_reunion` insertaba `EstadoHistorial` antes de que
-  `Reunion` se flusheara (violaba FK en Postgres real, enmascarado por SQLite en tests unitarios).
-  Ver PR asociado para detalle.
-- **Milestone 2 — Transcripción (ASR)**: Tests merged (PR #50), implementation + improvements merged (PR #70).
-  - ProveedorNube: Cloud provider with HTTPS/TLS encryption and API key authentication
-  - ProveedorLocal: Enhanced with strict configuration validation
-  - factory.py: Robust configuration parsing with comprehensive error messages
-  - asr-engine: FastAPI microservice with faster-whisper backend
-  - S3/MinIO integration for audio asset management
-- **Milestone 3 — Identificación de hablantes (diarización)**: tasks 1–16 implementadas y GREEN.
-  - 120 tests passing en toda la suite backend (incluye diar-engine contract).
-  - Lógica pura: estado, motor, factory, proveedor_local, proveedor_nube, etiquetado, asignacion.
-  - Persistencia: ORM models + migración 003 (validada en PostgreSQL real), repository.
-  - Cola: `_leer_max_retries` generalizado para `DIARIZATION_MAX_RETRIES`.
-  - Worker de diarización + cableado en `app/worker.py` (suscrito a 'diarizar' en runtime, verificado en logs).
-  - Publicación de Mensaje_De_Diarizacion al completar transcripción.
-  - diar-engine: servicio FastAPI real con pyannote.audio (contrato POST /diarize, GET /health).
-- **chrome-side-panel** (issue #69, PR #74 merged): Side Panel UI + Vista_De_Detalle implementadas.
-  - Shared core: design tokens, formatting, ordering, search, capture state machine.
-  - Backend gaps cerrados: diarización expuesta, ids de turno, títulos de nota, auth real.
-  - Cliente_De_API compartido, Side_Panel UI (Task 15), Vista_De_Detalle (Task 16).
+First real end-to-end manual test of the Meet → capture → upload → transcription →
+detail-view pipeline against a live Docker Compose stack. It had never been exercised
+this way before (all prior test coverage runs on in-memory SQLite / mocked engines),
+which is why it surfaced a long chain of previously-hidden bugs. All fixed in PR #79
+(branch has 2 commits, `fix(backend)` + `fix(extension)`):
 
-## Cambios de infraestructura relevantes
+- **Schema**: every id/FK column since `001_initial_schema` was native Postgres `UUID`
+  while the ORM maps ids as `String(36)` — broke inserts/filters against real Postgres.
+  Fixed via migrations `005_fix_uuid_columns_to_varchar` and `006_add_titulo_reunion`
+  (the latter also adds `reuniones.titulo`).
+- **Queue**: infinite retry loop in RabbitMQ consumption — without `QUEUE_DLX_EXCHANGE`
+  (the default), `x-death`-based retry counting never advanced, so failures retried
+  forever instead of respecting `*_MAX_RETRIES`. Fixed with a self-managed
+  `x-sauri-reintentos` header.
+- **Auth/ownership**: `ingesta/service.py` hardcoded `creada_por="extension"` instead
+  of the authenticated user — silently broke `GET /reuniones/` (filters by
+  `creada_por`) for every extension-uploaded recording.
+- **asr-engine**: missing `requests` dependency in the Dockerfile (faster-whisper
+  imports it transitively) — container never started.
+- **Extension capture**: `openPanelOnActionClick: true` blocked the `activeTab` grant
+  `tabCapture` needs; the microphone selector wasn't wired to the actual capture call
+  (`micDeviceId` always `null`); `getUserMedia` from the side panel never actually
+  surfaced Chrome's permission prompt (known side-panel limitation) — added an
+  options page (`extension/src/options/`) as a permission bridge, since the same
+  origin's grant applies to the side panel too.
+- **Notes management**: added `PATCH`/`DELETE /api/v1/reuniones/{id}` (rename/delete,
+  ownership-checked, FK-safe cascade — `diarizaciones` has no `ondelete=CASCADE` on
+  `reunion_id`/`transcripcion_id`, must be deleted before the reunion) and the
+  corresponding Side_Panel UI. Real meeting title now threads through to the note.
+- **Vista_De_Detalle polling**: opening a note before its worker finished (~10-15s)
+  used to 404 once and get permanently stuck on "not available" with no retry. Now
+  polls `GET /api/v1/reuniones/{id}` every 3s (silently) until `estado_proceso` is
+  terminal, re-fetching the transcript/diarization each tick.
 
-- **Milestone 2 (Transcripción)**: ASR providers with validation, cloud encryption, local engine
-- **Milestone 3 (Diarización)**: Pure state machine, diarization worker, diar-engine service
-- **AGENTS.md**: New rule "No mocks in production code" (§3), worktree enforcement (§6-7)
+Verified independently of the browser: uploaded a synthetic real-speech WAV
+(macOS `say` + `afconvert`) directly to `/api/v1/ingesta/subir` via curl — produced
+a real, non-empty transcript (`VAD filter removed 00:00.000 of audio`), proving the
+backend pipeline itself has no remaining bug once real audio reaches it. Also
+manually verified rename/delete against real Postgres with a full diarization graph
+(no FK violations).
 
-## Known issues / tech debt (not blocking)
+Confirmed in Chrome with a real microphone: recording now produces non-empty
+transcripts, note rename/delete works, notes show the real Meet title.
 
-- diar-engine: pyannote.audio requiere HF_TOKEN y modelo gated en runtime del contenedor.
-- torch/pyannote.audio no instalados en .venv local (pesados); se instalan vía Dockerfile.
-- AUTH_DISABLED bypass needs real auth flow for the extension.
+## Known issues / tech debt (not blocking, not yet filed as separate issues)
 
-## Open GitHub PRs
-
-- None. main is clean at `6a1fe30` (PR #74 merged).
-
-## Deuda de proceso
-
-- No GitHub issues created for Milestone 2 or 3 tasks (should have been created pre-implementation per AGENTS.md §13).
-  Retroactive creation recommended for traceability.
+- **No `diar-engine` container** in this dev `docker-compose.yml` — diarization will
+  always fail (3 retries then discarded, no longer an infinite loop) until it's wired
+  in. Not attempted this session.
+- Two follow-up tasks already flagged via the session's task-spawn mechanism (should
+  become real GitHub issues if picked up):
+  - Fix `tests/integration/test_pipeline_e2e.py`'s stale `_AUTH_DISABLED` monkeypatch
+    (references an attribute that no longer exists in `app/auth/dependencies.py`).
+  - Isolate `test_pipeline_e2e.py` from the shared dev Postgres database — it hardcodes
+    `sauri:sauri_dev@localhost:5432/sauri` (the same DB used by local `docker compose`)
+    and calls `Base.metadata.drop_all()` in teardown. **This wiped the live dev DB twice
+    during this session** when a background session ran it to verify its own fix.
+    Needs a dedicated DB name/guard before anyone runs that test file again locally.
+- "Ajustes" → mic permission is a one-time-per-browser-profile grant; expected friction,
+  not a bug, but no in-app copy currently explains why the button opens a new tab.
+- JWT expires after 60 min (`app/auth/router.py:23`, hardcoded) with no client-side
+  auto-refresh or redirect-to-login on 401 — during long manual test sessions this
+  surfaces as silent 401s until the user manually clears `chrome.storage.sync.authToken`
+  and re-logs in. Not touched this session (out of scope, and a real security
+  parameter, not something to loosen for convenience).
 
 ## Next session priorities
 
-1. Validate end-to-end ASR + diarization + chrome-side-panel workflow with real audio in Chrome.
-2. Decide next product module per roadmap (see README.md) — e.g. notas/inteligencia con LLM, CRM (ClickUp).
-3. Create GitHub issues retroactively for Milestone 2 and 3 tasks and close with PR references.
+1. Get PR #79 reviewed/merged (now 3 commits: `fix(backend)`, `fix(extension)`,
+   `docs: session status`, plus a 4th `fix(extension): poll Vista_De_Detalle...`).
+2. Decide whether to wire up `diar-engine` in `docker-compose.yml` for this environment,
+   or keep diarization cloud-only/deferred.
+3. Address the two queued follow-ups (stale AUTH_DISABLED test, destructive test DB
+   isolation) before anyone runs `test_pipeline_e2e.py` again locally.
+4. Retroactive GitHub issues for Milestone 2/3 tasks — still not done (carried over
+   from the previous SESSION_STATUS.md; low priority).

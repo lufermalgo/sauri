@@ -102,6 +102,7 @@ async def subir_grabacion(
                 datos=datos_ingesta,
                 audio_ref=audio_ref,
                 video_ref=video_ref,
+                creada_por=usuario.id,
             )
 
             # Si es un reintento idempotente (clave duplicada), retornar sin

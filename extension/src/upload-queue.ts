@@ -17,11 +17,13 @@ export interface UploadJob {
   errorMessage?: string;
   mimeType: string;
   notificationEmittedAt?: string;
+  titulo?: string;
+  enlaceMeet?: string;
 }
 
 export type EnqueueUploadInput = Pick<
   UploadJob,
-  "sessionId" | "claveIdempotencia" | "mimeType" | "notificationEmittedAt"
+  "sessionId" | "claveIdempotencia" | "mimeType" | "notificationEmittedAt" | "titulo" | "enlaceMeet"
 >;
 
 const DB_NAME = "sauri-upload-queue";
@@ -63,6 +65,8 @@ export async function enqueueUpload(input: EnqueueUploadInput): Promise<UploadJo
     createdAt: Date.now(),
     mimeType: input.mimeType,
     notificationEmittedAt: input.notificationEmittedAt,
+    titulo: input.titulo,
+    enlaceMeet: input.enlaceMeet,
   };
 
   return new Promise((resolve, reject) => {

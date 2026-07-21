@@ -121,4 +121,42 @@ describe("DetailApp — carga y estructura simultánea (Req. 6.3, 6.4, 7.1, 7.2,
       expect(screen.getByText(/la transcripción no está disponible para esta nota/i)).toBeInTheDocument()
     );
   });
+
+  it("reintenta en silencio mientras la Reunion sigue procesándose, y muestra la transcripción apenas queda disponible", async () => {
+    setUrl("?reunionId=r4");
+    let transcripcionDisponible = false;
+    let estadoProceso = "transcribiendo";
+
+    global.fetch = vi.fn(async (url: string) => {
+      if (url.includes("/transcripcion")) {
+        if (!transcripcionDisponible) return new Response("", { status: 404 });
+        return new Response(
+          JSON.stringify({
+            transcripcion_id: "tr4",
+            reunion_id: "r4",
+            segmentos: [{ id: "t1", texto: "Texto que llega tarde", inicio_ms: 0, fin_ms: 1000, orden: 0 }],
+          }),
+          { status: 200 }
+        );
+      }
+      if (url.includes("/diarizacion")) return new Response("", { status: 404 });
+      // GET /api/v1/reuniones/{id} — estado de procesamiento
+      return new Response(JSON.stringify({ reunion_id: "r4", estado_proceso: estadoProceso }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    render(<DetailApp />);
+
+    // Primer intento: aún "transcribiendo", sin transcripción disponible todavía.
+    await waitFor(() =>
+      expect(screen.getByText(/la transcripción no está disponible para esta nota/i)).toBeInTheDocument()
+    );
+
+    // La reunión termina de procesarse entre reintentos (polling real, cada 3s).
+    transcripcionDisponible = true;
+    estadoProceso = "completado";
+
+    await waitFor(() => expect(screen.getByText("Texto que llega tarde")).toBeInTheDocument(), {
+      timeout: 6000,
+    });
+  }, 10000);
 });

@@ -51,7 +51,7 @@ async def test_property_15_pipeline_identico_independiente_del_origen(
     )
 
     grabacion, es_nueva = await procesar_ingesta(
-        db_session, datos, audio_ref="audio/x.webm", video_ref=None
+        db_session, datos, audio_ref="audio/x.webm", video_ref=None, creada_por="usuario-test"
     )
     await db_session.commit()
 
@@ -91,7 +91,7 @@ async def test_property_15_ambos_origenes_producen_los_mismos_campos_persistidos
             notificacion_emitida_en=None,
         )
         grabacion, _ = await procesar_ingesta(
-            db_session, datos, audio_ref="audio/x.webm", video_ref=None
+            db_session, datos, audio_ref="audio/x.webm", video_ref=None, creada_por="usuario-test"
         )
         await db_session.commit()
         campos_por_origen[origen] = grabacion

@@ -110,6 +110,18 @@ export async function listarReuniones(backendUrl: string = BACKEND_URL_DEFECTO):
   }));
 }
 
+/** GET /api/v1/reuniones/{id} — estado de procesamiento (Vista_De_Detalle → polling mientras transcribe) */
+export async function obtenerReunion(
+  reunionId: string,
+  backendUrl: string = BACKEND_URL_DEFECTO
+): Promise<{ reunionId: string; estadoProceso: string }> {
+  const crudo = await solicitar<{ reunion_id: string; estado_proceso: string }>(
+    backendUrl,
+    `/api/v1/reuniones/${reunionId}`
+  );
+  return { reunionId: crudo.reunion_id, estadoProceso: crudo.estado_proceso };
+}
+
 /** GET /api/v1/reuniones/{id}/transcripcion (Req. 6.3) */
 export async function obtenerTranscripcion(
   reunionId: string,
@@ -159,6 +171,63 @@ export async function obtenerDiarizacion(
       hablanteId: a.hablante_id,
     })),
   };
+}
+
+/** PATCH /api/v1/reuniones/{id} — renombra una nota (Mis_Notas → renombrar) */
+export async function renombrarReunion(
+  reunionId: string,
+  nuevoTitulo: string,
+  backendUrl: string = BACKEND_URL_DEFECTO
+): Promise<void> {
+  await solicitar<{ reunion_id: string; titulo: string }>(
+    backendUrl,
+    `/api/v1/reuniones/${reunionId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ titulo: nuevoTitulo }),
+    }
+  );
+}
+
+/** DELETE /api/v1/reuniones/{id} — elimina una nota (Mis_Notas → eliminar) */
+export async function eliminarReunion(
+  reunionId: string,
+  backendUrl: string = BACKEND_URL_DEFECTO
+): Promise<void> {
+  validarTransporte(backendUrl);
+
+  const sesion = await leerSesion();
+  const headers: Record<string, string> = {};
+  if (sesion) {
+    headers["Authorization"] = `Bearer ${sesion}`;
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    // Respuesta 204 sin cuerpo — no reutiliza solicitar<T>() porque esa
+    // función siempre intenta parsear JSON de la respuesta.
+    const response = await fetch(`${backendUrl}/api/v1/reuniones/${reunionId}`, {
+      method: "DELETE",
+      headers,
+      signal: controller.signal,
+    });
+
+    if (response.status === 401) {
+      await descartarSesion();
+      throw new ErrorSesionInvalida();
+    }
+    if (response.status === 404) {
+      throw new ErrorNoEncontrado();
+    }
+    if (!response.ok) {
+      throw new Error(`Solicitud fallida: ${response.status}`);
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /** POST /api/v1/auth/login (Req. 13.2, 13.3) */

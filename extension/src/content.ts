@@ -95,12 +95,20 @@ function showConsentBanner(): void {
   });
 }
 
-// --- Listen for show-consent-banner message from background ---
+function hideConsentBanner(): void {
+  bannerHost?.remove();
+  bannerHost = null;
+}
+
+// --- Listen for show/hide-consent-banner messages from background ---
 
 chrome.runtime.onMessage.addListener(
   (message: { type: string }, _sender, sendResponse) => {
     if (message.type === "show-consent-banner") {
       showConsentBanner();
+      sendResponse({ ok: true });
+    } else if (message.type === "hide-consent-banner") {
+      hideConsentBanner();
       sendResponse({ ok: true });
     }
     return false;

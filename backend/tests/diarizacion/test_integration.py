@@ -195,7 +195,13 @@ class TestAckNackReintentosDiarizar:
 
     @pytest.mark.asyncio
     async def test_nack_tras_excepcion_con_reintentos_diarization(self):
-        """Manejador con excepción → nack reencolando mientras hay reintentos (Req 1.8, 10.2)."""
+        """Manejador con excepción → republica con contador +1 y ack mientras hay reintentos (Req 1.8, 10.2).
+
+        No usa nack(requeue=True): sin DLX configurado eso reencola el mismo
+        mensaje sin dejar rastro de reintentos, causando un loop infinito
+        (bug real observado). En su lugar se republica una copia con
+        x-sauri-reintentos incrementado y se hace ack del mensaje original.
+        """
         import json
         from app.infra.queue_rabbitmq import ColaDeRabbitMQ
 
@@ -209,12 +215,14 @@ class TestAckNackReintentosDiarizar:
             mock_message = AsyncMock()
             mock_message.body = json.dumps({"reunion_id": "abc"}).encode()
             mock_message.headers = {}  # 0 reintentos previos
+            mock_message.content_type = "application/json"
             mock_message.ack = AsyncMock()
             mock_message.nack = AsyncMock()
 
             cola._channel = AsyncMock()
             mock_queue = AsyncMock()
             cola._channel.declare_queue.return_value = mock_queue
+            cola._channel.default_exchange.publish = AsyncMock()
 
             captured = {}
 
@@ -226,9 +234,13 @@ class TestAckNackReintentosDiarizar:
             await cola.suscribir("diarizar", manejador_falla)
             await captured["cb"](mock_message)
 
-            # 0 < 3 reintentos → nack con requeue=True
-            mock_message.nack.assert_awaited_once_with(requeue=True)
-            mock_message.ack.assert_not_called()
+            # 0 < 3 reintentos → republica con x-sauri-reintentos=1 y ack del original
+            mock_message.nack.assert_not_called()
+            mock_message.ack.assert_awaited_once()
+            cola._channel.default_exchange.publish.assert_awaited_once()
+            published_message, kwargs = cola._channel.default_exchange.publish.call_args
+            assert kwargs["routing_key"] == "diarizar"
+            assert published_message[0].headers["x-sauri-reintentos"] == 1
 
 
 # ---------------------------------------------------------------------------
