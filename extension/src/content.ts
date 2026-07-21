@@ -110,6 +110,13 @@ chrome.runtime.onMessage.addListener(
     } else if (message.type === "hide-consent-banner") {
       hideConsentBanner();
       sendResponse({ ok: true });
+    } else if (message.type === "get-current-title") {
+      // Vuelve a leer document.title bajo demanda: al detectar la reunión
+      // (checkMeetState) Meet suele mostrar todavía el título genérico
+      // "Meet" — el nombre real de la sesión se asienta unos segundos
+      // después. Pedirlo de nuevo justo al iniciar la grabación da tiempo
+      // a que ya esté actualizado.
+      sendResponse({ title: extractMeetingTitle() });
     }
     return false;
   }
