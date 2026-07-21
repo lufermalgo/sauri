@@ -2,7 +2,7 @@
 # sauri - Makefile para desarrollo local
 # =============================================================================
 
-.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm
+.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english
 
 ## Instalar los git hooks compartidos (bloquean commit/push directo a main).
 ## Se ejecuta automáticamente con `npm install` en la raíz (script "prepare"),
@@ -20,6 +20,11 @@ worktree:
 worktree-rm:
 	@test -n "$(BRANCH)" || (echo "Uso: make worktree-rm BRANCH=feature/issue-12-desc" && exit 1)
 	_tools/remove-worktree.sh $(BRANCH)
+
+## Escanear todo el repo en busca de identificadores en español (Language_Regression_Check).
+## Ver .spectra/specs/english-codebase-standard/
+check-english:
+	python3 _tools/check_english_only.py $$(git ls-files 'backend/**' 'extension/src/**' 'frontend/src/**' 'packages/shared-types/**')
 
 ## Levantar el stack completo (API, worker, PostgreSQL, MinIO, RabbitMQ, ASR engine)
 up:
