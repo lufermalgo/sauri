@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         offscreen: resolve(__dirname, "src/offscreen.html"),
         detail: resolve(__dirname, "src/detail/index.html"),
+        options: resolve(__dirname, "src/options/index.html"),
       },
     },
   },

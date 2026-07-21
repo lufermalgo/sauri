@@ -31,6 +31,7 @@ interface SauriState {
   captureMode?: CaptureMode;
   micDeviceId?: string | null;
   notificationEmittedAt?: string;
+  tabId?: number;
 }
 
 const DEFAULT_STATE: SauriState = { status: "idle" };
@@ -76,7 +77,9 @@ const BACKEND_URL = "http://localhost:8000";
 async function uploadRecording(
   mimeType: string,
   sessionId: string,
-  notificationEmittedAt?: string
+  notificationEmittedAt?: string,
+  titulo?: string,
+  enlaceMeet?: string
 ): Promise<void> {
   try {
     // Read Blob directly from shared sauri-recordings IndexedDB
@@ -90,6 +93,8 @@ async function uploadRecording(
       duracion_segundos: 0,
       interrumpida: false,
       notificacion_emitida_en: notificationEmittedAt ?? null,
+      titulo: titulo ?? null,
+      enlace_meet: enlaceMeet ?? null,
     };
 
     const formData = new FormData();
@@ -133,12 +138,21 @@ async function uploadRecording(
 
 async function configurarSidePanel(): Promise<void> {
   try {
-    // Abre el Side_Panel al hacer clic en el icono de acción (Req. 1.1)
-    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    // NO usar openPanelOnActionClick: true — eso impide que onClicked se
+    // dispare, y sin onClicked Chrome nunca concede activeTab sobre la
+    // pestaña de Meet (chrome.tabCapture.getMediaStreamId lo requiere).
+    // En su lugar abrimos el panel manualmente desde onClicked (Req. 1.1).
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
   } catch (error) {
     console.error("[sauri] No se pudo configurar el Side_Panel:", error);
   }
 }
+
+chrome.action.onClicked.addListener(async (tab) => {
+  if (tab.id) {
+    await chrome.sidePanel.open({ tabId: tab.id });
+  }
+});
 
 // --- Initialization ---
 
@@ -297,12 +311,17 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
       micDeviceId: micDeviceId ?? null,
     });
 
-    // Update state to recording with sessionId, resolution, and micDeviceId
-    await setState({ ...currentState, status: "recording", sessionId, resolution: res, micDeviceId });
+    // Update state to recording with sessionId, resolution, micDeviceId, and the
+    // captured tab (needed later to dismiss the consent banner on that same tab)
+    await setState({ ...currentState, status: "recording", sessionId, resolution: res, micDeviceId, tabId: tab.id });
     console.log(`[sauri] Capture started — status: recording, sessionId: ${sessionId}, resolution: ${res.width}x${res.height}, mode: ${captureMode}, mic: ${micDeviceId ?? "none"}`);
 
-    // Send consent banner to the content script in the active tab
-    chrome.tabs.sendMessage(tab.id!, { type: "show-consent-banner" });
+    // Send consent banner to the content script in the active tab. Best-effort:
+    // if the tab's content script isn't listening (e.g. stale after an extension
+    // reload), don't let it surface as an unhandled rejection.
+    chrome.tabs.sendMessage(tab.id!, { type: "show-consent-banner" }).catch((error) => {
+      console.warn("[sauri] Could not show consent banner:", error);
+    });
 
     // Set REC badge
     chrome.action.setBadgeText({ text: "REC" });
@@ -332,6 +351,8 @@ async function handleRecordingStopped(
   const currentState = await getState();
   const notificationEmittedAt = currentState.notificationEmittedAt;
 
+  await hideConsentBanner(currentState.tabId);
+
   // Enqueue upload job — the queue handles retries with the same clave_idempotencia
   const sid = sessionId ?? crypto.randomUUID();
   await enqueueUpload({
@@ -339,6 +360,8 @@ async function handleRecordingStopped(
     claveIdempotencia: sid, // sessionId = clave_idempotencia ensures idempotent retries
     mimeType,
     notificationEmittedAt,
+    titulo: currentState.meetingTitle,
+    enlaceMeet: currentState.meetingUrl,
   });
   console.log(`[sauri] Upload job enqueued for session: ${sid}`);
 
@@ -354,8 +377,20 @@ async function handleRecordingError(): Promise<void> {
   // Clear REC badge
   chrome.action.setBadgeText({ text: "" });
 
+  const currentState = await getState();
+  await hideConsentBanner(currentState.tabId);
+
   await setState(DEFAULT_STATE);
   console.log("[sauri] Recording error, state reset to idle");
+}
+
+async function hideConsentBanner(tabId?: number): Promise<void> {
+  if (!tabId) return;
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "hide-consent-banner" });
+  } catch (error) {
+    console.warn("[sauri] Could not hide consent banner:", error);
+  }
 }
 
 async function handleNotificationEmitted(emitidaEn?: string): Promise<void> {
@@ -393,7 +428,7 @@ async function processUploadQueue(): Promise<void> {
   await markProcessing(job.id);
 
   try {
-    await uploadRecording(job.mimeType, job.sessionId, job.notificationEmittedAt);
+    await uploadRecording(job.mimeType, job.sessionId, job.notificationEmittedAt, job.titulo, job.enlaceMeet);
     await markDone(job.id);
     console.log(`[sauri] Upload job done: ${job.id}`);
   } catch (error) {

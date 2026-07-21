@@ -106,6 +106,56 @@ describe("Cliente_De_API — 404 distinguido de un fallo real (Req. 7.6, 8.8, 10
   });
 });
 
+describe("Cliente_De_API — renombrarReunion / eliminarReunion (Mis_Notas → administrar)", () => {
+  beforeEach(() => {
+    mockChromeStorage({ authToken: "token-abc" });
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("renombrarReunion hace PATCH con el nuevo título en el body", async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ reunion_id: "r1", titulo: "Nuevo título" }), { status: 200 })
+    ) as unknown as typeof fetch;
+
+    const { renombrarReunion } = await import("./client");
+    await renombrarReunion("r1", "Nuevo título", "http://localhost:8000");
+
+    expect(fetch).toHaveBeenCalled();
+    const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[0]).toBe("http://localhost:8000/api/v1/reuniones/r1");
+    const init = callArgs[1] as RequestInit;
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ titulo: "Nuevo título" });
+  });
+
+  it("renombrarReunion lanza ErrorNoEncontrado en 404", async () => {
+    global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
+    const { renombrarReunion, ErrorNoEncontrado } = await import("./client");
+    await expect(renombrarReunion("r1", "X", "http://localhost:8000")).rejects.toBeInstanceOf(
+      ErrorNoEncontrado
+    );
+  });
+
+  it("eliminarReunion hace DELETE y no falla al parsear el 204 sin cuerpo", async () => {
+    global.fetch = vi.fn(async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+    const { eliminarReunion } = await import("./client");
+    await expect(eliminarReunion("r1", "http://localhost:8000")).resolves.toBeUndefined();
+
+    const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[0]).toBe("http://localhost:8000/api/v1/reuniones/r1");
+    const init = callArgs[1] as RequestInit;
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("eliminarReunion lanza ErrorNoEncontrado en 404", async () => {
+    global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
+    const { eliminarReunion, ErrorNoEncontrado } = await import("./client");
+    await expect(eliminarReunion("r1", "http://localhost:8000")).rejects.toBeInstanceOf(
+      ErrorNoEncontrado
+    );
+  });
+});
+
 describe("Cliente_De_API — transporte cifrado (Req. 13.5)", () => {
   beforeEach(() => {
     mockChromeStorage({ authToken: "token-abc" });

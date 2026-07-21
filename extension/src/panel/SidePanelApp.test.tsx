@@ -24,7 +24,10 @@ function mockChrome(sesionVigente: boolean) {
 describe("SidePanelApp", () => {
   beforeEach(() => {
     vi.stubGlobal("navigator", {
-      mediaDevices: { enumerateDevices: vi.fn(async () => []) },
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+        enumerateDevices: vi.fn(async () => []),
+      },
     });
   });
 
