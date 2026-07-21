@@ -302,6 +302,20 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
     const currentState = await getState();
     const captureMode: CaptureMode = currentState.captureMode ?? "screen_audio";
 
+    // Vuelve a pedir el título actual al content script: el que se capturó al
+    // detectar la reunión (meet-detected) suele ser el genérico "Meet" — Google
+    // Meet actualiza document.title con el nombre real de la sesión unos
+    // segundos después. Al iniciar la grabación ya suele estar actualizado.
+    let meetingTitle = currentState.meetingTitle;
+    try {
+      const respuesta = (await chrome.tabs.sendMessage(tab.id!, { type: "get-current-title" })) as
+        | { title?: string }
+        | undefined;
+      if (respuesta?.title) meetingTitle = respuesta.title;
+    } catch (error) {
+      console.warn("[sauri] Could not refresh meeting title:", error);
+    }
+
     chrome.runtime.sendMessage({
       type: "start-recording",
       streamId,
@@ -313,7 +327,15 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
 
     // Update state to recording with sessionId, resolution, micDeviceId, and the
     // captured tab (needed later to dismiss the consent banner on that same tab)
-    await setState({ ...currentState, status: "recording", sessionId, resolution: res, micDeviceId, tabId: tab.id });
+    await setState({
+      ...currentState,
+      status: "recording",
+      sessionId,
+      resolution: res,
+      micDeviceId,
+      tabId: tab.id,
+      meetingTitle,
+    });
     console.log(`[sauri] Capture started — status: recording, sessionId: ${sessionId}, resolution: ${res.width}x${res.height}, mode: ${captureMode}, mic: ${micDeviceId ?? "none"}`);
 
     // Send consent banner to the content script in the active tab. Best-effort:

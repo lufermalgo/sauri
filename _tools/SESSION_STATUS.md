@@ -2,9 +2,9 @@
 
 ## Current State
 
-- **Branch**: `bugfix/issue-78-e2e-pipeline-fixes`
+- **Branch**: `bugfix/issue-80-meeting-title-race`
 - **Status**: pr-open
-- **Pending PR**: [#79](https://github.com/lufermalgo/sauri/pull/79) — "fix: chrome-side-panel E2E capture/transcription pipeline bugs", closes #78
+- **Pending PR**: [#81](https://github.com/lufermalgo/sauri/pull/81) — "fix: meeting title race condition captures generic 'Meet' instead of real session name", closes #80
 - **Last session date**: 2026-07-21
 
 ## Completed this session
@@ -12,76 +12,69 @@
 First real end-to-end manual test of the Meet → capture → upload → transcription →
 detail-view pipeline against a live Docker Compose stack. It had never been exercised
 this way before (all prior test coverage runs on in-memory SQLite / mocked engines),
-which is why it surfaced a long chain of previously-hidden bugs. All fixed in PR #79
-(branch has 2 commits, `fix(backend)` + `fix(extension)`):
+which is why it surfaced a long chain of previously-hidden bugs.
 
-- **Schema**: every id/FK column since `001_initial_schema` was native Postgres `UUID`
-  while the ORM maps ids as `String(36)` — broke inserts/filters against real Postgres.
-  Fixed via migrations `005_fix_uuid_columns_to_varchar` and `006_add_titulo_reunion`
-  (the latter also adds `reuniones.titulo`).
-- **Queue**: infinite retry loop in RabbitMQ consumption — without `QUEUE_DLX_EXCHANGE`
-  (the default), `x-death`-based retry counting never advanced, so failures retried
-  forever instead of respecting `*_MAX_RETRIES`. Fixed with a self-managed
-  `x-sauri-reintentos` header.
-- **Auth/ownership**: `ingesta/service.py` hardcoded `creada_por="extension"` instead
-  of the authenticated user — silently broke `GET /reuniones/` (filters by
-  `creada_por`) for every extension-uploaded recording.
-- **asr-engine**: missing `requests` dependency in the Dockerfile (faster-whisper
-  imports it transitively) — container never started.
-- **Extension capture**: `openPanelOnActionClick: true` blocked the `activeTab` grant
-  `tabCapture` needs; the microphone selector wasn't wired to the actual capture call
-  (`micDeviceId` always `null`); `getUserMedia` from the side panel never actually
-  surfaced Chrome's permission prompt (known side-panel limitation) — added an
-  options page (`extension/src/options/`) as a permission bridge, since the same
-  origin's grant applies to the side panel too.
-- **Notes management**: added `PATCH`/`DELETE /api/v1/reuniones/{id}` (rename/delete,
-  ownership-checked, FK-safe cascade — `diarizaciones` has no `ondelete=CASCADE` on
-  `reunion_id`/`transcripcion_id`, must be deleted before the reunion) and the
-  corresponding Side_Panel UI. Real meeting title now threads through to the note.
-- **Vista_De_Detalle polling**: opening a note before its worker finished (~10-15s)
-  used to 404 once and get permanently stuck on "not available" with no retry. Now
-  polls `GET /api/v1/reuniones/{id}` every 3s (silently) until `estado_proceso` is
-  terminal, re-fetching the transcript/diarization each tick.
+**PR #78/#79 (merged)** — schema type fixes, queue infinite-retry fix, note
+ownership, note management (rename/delete), title threading, activeTab/mic
+permission fixes (options-page bridge), Vista_De_Detalle polling. See the merged
+PR description for full detail.
 
-Verified independently of the browser: uploaded a synthetic real-speech WAV
-(macOS `say` + `afconvert`) directly to `/api/v1/ingesta/subir` via curl — produced
-a real, non-empty transcript (`VAD filter removed 00:00.000 of audio`), proving the
-backend pipeline itself has no remaining bug once real audio reaches it. Also
-manually verified rename/delete against real Postgres with a full diarization graph
-(no FK violations).
+**PR #80/#81 (open)** — a second, distinct bug found after #79 merged: notes were
+titled literally "Meet" instead of the real Meet session name. Root cause:
+`content.ts` captured `document.title` at the instant `checkMeetState()` detects
+an active call, but Meet still shows the generic placeholder at that point — the
+real name settles a few seconds later. Fixed by re-requesting the title from the
+content script right when recording starts (`handleStartCapture`), not at initial
+detection time.
 
-Confirmed in Chrome with a real microphone: recording now produces non-empty
-transcripts, note rename/delete works, notes show the real Meet title.
+**End-to-end confirmed working in Chrome**, including the fix above, once
+verified with a **freshly-opened Meet tab**:
+- Recording produces a real, non-empty transcript (mic permission via the
+  options-page bridge, `chrome.tabCapture` via `activeTab`).
+- Vista_De_Detalle shows the transcript, polling silently until ready.
+- Note title reflects the real Meet session name (e.g. "Meet - zpp-mofi-rgd").
+- Note rename/delete works from "Mis Notas".
+
+**Important gotcha reconfirmed twice this session** (not a bug to fix, a
+dev-workflow trap): reloading the extension does **not** refresh already-open
+Meet tabs' content scripts — they stay orphaned, disconnected from the new
+service worker. Symptoms: no "meet-detected" ever fires, so the note falls back
+to placeholder `enlace_meet` ("https://meet.google.com/unknown") and title, the
+consent banner never shows, and `get-current-title` (the #80 fix) also can't
+reach the content script. **Always open a brand-new Meet tab (not reuse an
+existing one) after reloading the extension during manual testing.**
 
 ## Known issues / tech debt (not blocking, not yet filed as separate issues)
 
-- **No `diar-engine` container** in this dev `docker-compose.yml` — diarization will
-  always fail (3 retries then discarded, no longer an infinite loop) until it's wired
-  in. Not attempted this session.
-- Two follow-up tasks already flagged via the session's task-spawn mechanism (should
-  become real GitHub issues if picked up):
-  - Fix `tests/integration/test_pipeline_e2e.py`'s stale `_AUTH_DISABLED` monkeypatch
-    (references an attribute that no longer exists in `app/auth/dependencies.py`).
-  - Isolate `test_pipeline_e2e.py` from the shared dev Postgres database — it hardcodes
-    `sauri:sauri_dev@localhost:5432/sauri` (the same DB used by local `docker compose`)
-    and calls `Base.metadata.drop_all()` in teardown. **This wiped the live dev DB twice
-    during this session** when a background session ran it to verify its own fix.
-    Needs a dedicated DB name/guard before anyone runs that test file again locally.
-- "Ajustes" → mic permission is a one-time-per-browser-profile grant; expected friction,
-  not a bug, but no in-app copy currently explains why the button opens a new tab.
-- JWT expires after 60 min (`app/auth/router.py:23`, hardcoded) with no client-side
-  auto-refresh or redirect-to-login on 401 — during long manual test sessions this
-  surfaces as silent 401s until the user manually clears `chrome.storage.sync.authToken`
-  and re-logs in. Not touched this session (out of scope, and a real security
-  parameter, not something to loosen for convenience).
+- **No `diar-engine` container** in this dev `docker-compose.yml` — diarization
+  will always fail (3 retries then discarded, no longer an infinite loop) until
+  it's wired in. Not attempted this session.
+- Two follow-up tasks already flagged via the session's task-spawn mechanism
+  (should become real GitHub issues if picked up):
+  - Fix `tests/integration/test_pipeline_e2e.py`'s stale `_AUTH_DISABLED`
+    monkeypatch (references an attribute that no longer exists in
+    `app/auth/dependencies.py`).
+  - Isolate `test_pipeline_e2e.py` from the shared dev Postgres database — it
+    hardcodes `sauri:sauri_dev@localhost:5432/sauri` (the same DB used by local
+    `docker compose`) and calls `Base.metadata.drop_all()` in teardown. **This
+    wiped the live dev DB twice during this session.** Needs a dedicated DB
+    name/guard before anyone runs that test file again locally.
+- "Ajustes" → mic permission is a one-time-per-browser-profile grant; expected
+  friction, not a bug, but no in-app copy currently explains why the button
+  opens a new tab.
+- JWT expires after 60 min (`app/auth/router.py:23`, hardcoded) with no
+  client-side auto-refresh or redirect-to-login on 401 — during long manual
+  test sessions this surfaces as silent 401s until the user manually clears
+  `chrome.storage.sync.authToken` and re-logs in. Not touched this session (out
+  of scope, and a real security parameter, not something to loosen for
+  convenience).
 
 ## Next session priorities
 
-1. Get PR #79 reviewed/merged (now 3 commits: `fix(backend)`, `fix(extension)`,
-   `docs: session status`, plus a 4th `fix(extension): poll Vista_De_Detalle...`).
-2. Decide whether to wire up `diar-engine` in `docker-compose.yml` for this environment,
-   or keep diarization cloud-only/deferred.
-3. Address the two queued follow-ups (stale AUTH_DISABLED test, destructive test DB
-   isolation) before anyone runs `test_pipeline_e2e.py` again locally.
-4. Retroactive GitHub issues for Milestone 2/3 tasks — still not done (carried over
-   from the previous SESSION_STATUS.md; low priority).
+1. Get PR #81 reviewed/merged (small, 1 commit — the title-refresh fix).
+2. Decide whether to wire up `diar-engine` in `docker-compose.yml` for this
+   environment, or keep diarization cloud-only/deferred.
+3. Address the two queued follow-ups (stale AUTH_DISABLED test, destructive
+   test DB isolation) before anyone runs `test_pipeline_e2e.py` again locally.
+4. Retroactive GitHub issues for Milestone 2/3 tasks — still not done (carried
+   over from previous sessions; low priority).
