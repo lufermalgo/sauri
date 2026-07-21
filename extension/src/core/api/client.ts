@@ -110,6 +110,18 @@ export async function listarReuniones(backendUrl: string = BACKEND_URL_DEFECTO):
   }));
 }
 
+/** GET /api/v1/reuniones/{id} — estado de procesamiento (Vista_De_Detalle → polling mientras transcribe) */
+export async function obtenerReunion(
+  reunionId: string,
+  backendUrl: string = BACKEND_URL_DEFECTO
+): Promise<{ reunionId: string; estadoProceso: string }> {
+  const crudo = await solicitar<{ reunion_id: string; estado_proceso: string }>(
+    backendUrl,
+    `/api/v1/reuniones/${reunionId}`
+  );
+  return { reunionId: crudo.reunion_id, estadoProceso: crudo.estado_proceso };
+}
+
 /** GET /api/v1/reuniones/{id}/transcripcion (Req. 6.3) */
 export async function obtenerTranscripcion(
   reunionId: string,
