@@ -38,6 +38,10 @@ which is why it surfaced a long chain of previously-hidden bugs. All fixed in PR
   ownership-checked, FK-safe cascade — `diarizaciones` has no `ondelete=CASCADE` on
   `reunion_id`/`transcripcion_id`, must be deleted before the reunion) and the
   corresponding Side_Panel UI. Real meeting title now threads through to the note.
+- **Vista_De_Detalle polling**: opening a note before its worker finished (~10-15s)
+  used to 404 once and get permanently stuck on "not available" with no retry. Now
+  polls `GET /api/v1/reuniones/{id}` every 3s (silently) until `estado_proceso` is
+  terminal, re-fetching the transcript/diarization each tick.
 
 Verified independently of the browser: uploaded a synthetic real-speech WAV
 (macOS `say` + `afconvert`) directly to `/api/v1/ingesta/subir` via curl — produced
@@ -51,12 +55,6 @@ transcripts, note rename/delete works, notes show the real Meet title.
 
 ## Known issues / tech debt (not blocking, not yet filed as separate issues)
 
-- **Vista_De_Detalle doesn't poll while `estado_proceso == "transcribiendo"`**: if a
-  note is opened before the worker finishes (ASR takes ~10-15s for a short clip),
-  `GET .../transcripcion` 404s once, `DetailApp.tsx` renders "not available"
-  permanently, with no retry — the user must manually reload that tab. Straightforward
-  fix: poll on an interval while diarizacion/transcripcion 404s, or show a "still
-  processing, retry" affordance instead of the terminal "vacio" state.
 - **No `diar-engine` container** in this dev `docker-compose.yml` — diarization will
   always fail (3 retries then discarded, no longer an infinite loop) until it's wired
   in. Not attempted this session.
@@ -79,12 +77,11 @@ transcripts, note rename/delete works, notes show the real Meet title.
 
 ## Next session priorities
 
-1. Get PR #79 reviewed/merged.
-2. Fix the Vista_De_Detalle polling gap above — quick, well-scoped, and it's the
-   difference between "transcription looks broken" and "it just takes a few seconds."
-3. Decide whether to wire up `diar-engine` in `docker-compose.yml` for this environment,
+1. Get PR #79 reviewed/merged (now 3 commits: `fix(backend)`, `fix(extension)`,
+   `docs: session status`, plus a 4th `fix(extension): poll Vista_De_Detalle...`).
+2. Decide whether to wire up `diar-engine` in `docker-compose.yml` for this environment,
    or keep diarization cloud-only/deferred.
-4. Address the two queued follow-ups (stale AUTH_DISABLED test, destructive test DB
+3. Address the two queued follow-ups (stale AUTH_DISABLED test, destructive test DB
    isolation) before anyone runs `test_pipeline_e2e.py` again locally.
-5. Retroactive GitHub issues for Milestone 2/3 tasks — still not done (carried over
+4. Retroactive GitHub issues for Milestone 2/3 tasks — still not done (carried over
    from the previous SESSION_STATUS.md; low priority).
