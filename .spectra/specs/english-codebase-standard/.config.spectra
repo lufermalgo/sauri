@@ -1,0 +1,12 @@
+{
+  "specId": "42fcafd0-2aef-406f-951f-6999de36942d",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-07-21T20:17:47Z",
+  "idea": "Crear especificacion para que todo el desarrollo de la app es en ingles, estoy viendo que estamos usando spanglish en el codigo, metodos, nombre de funciones, etc en español y otros en ingles. El codigo debe ser todo en ingles, la app debe ser todo en ingles y luego crearemos una spec para que podamos tener compatibilidad a español.",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "complete"
+  }
+}
