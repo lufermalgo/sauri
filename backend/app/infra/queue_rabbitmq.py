@@ -1,8 +1,9 @@
 """Implementación de ColaDeTrabajos usando RabbitMQ vía aio-pika.
 
 Proporciona entrega al-menos-una-vez, mensajes persistentes (delivery_mode=2),
-reintentos acotados por ASR_MAX_RETRIES con conteo vía x-death,
-y dead-letter automática cuando se agotan los reintentos (nack sin requeue).
+reintentos acotados por ASR_MAX_RETRIES con conteo vía un header propio
+(x-sauri-reintentos), y dead-letter automática cuando se agotan los
+reintentos (nack sin requeue).
 """
 
 from __future__ import annotations
@@ -68,24 +69,23 @@ def _leer_max_retries(tema: str = "transcribir") -> int:
     return value
 
 
-def _contar_reintentos(message: aio_pika.abc.AbstractIncomingMessage) -> int:
-    """Cuenta los reintentos acumulados de un mensaje usando el header x-death de RabbitMQ.
+_HEADER_REINTENTOS = "x-sauri-reintentos"
 
-    RabbitMQ incrementa el campo 'count' en el array x-death cada vez que un mensaje
-    es derivado a dead-letter y reencolado. Si no existe x-death, el mensaje no ha sido
-    reintentado previamente.
+
+def _contar_reintentos(message: aio_pika.abc.AbstractIncomingMessage) -> int:
+    """Cuenta los reintentos acumulados de un mensaje usando un header propio.
+
+    No se puede usar el x-death de RabbitMQ para esto: ese header solo lo puebla
+    RabbitMQ cuando un mensaje pasa por un dead-letter-exchange real. Sin DLX
+    configurado (QUEUE_DLX_EXCHANGE vacío, el caso por defecto), un
+    nack(requeue=True) directo reencola el mismo mensaje sin dejar rastro alguno,
+    por lo que _contar_reintentos siempre devolvía 0 y el mensaje se reintentaba
+    para siempre. Por eso el conteo se rastrea explícitamente en el header
+    x-sauri-reintentos, que este módulo incrementa al republicar cada reintento.
     """
     headers = message.headers or {}
-    x_death = headers.get("x-death")
-    if not x_death or not isinstance(x_death, list):
-        return 0
-    total = 0
-    for entry in x_death:
-        if isinstance(entry, dict):
-            count = entry.get("count", 0)
-            if isinstance(count, int):
-                total += count
-    return total
+    count = headers.get(_HEADER_REINTENTOS, 0)
+    return count if isinstance(count, int) else 0
 
 
 def _leer_dlx_exchange() -> str | None:
@@ -145,12 +145,16 @@ class ColaDeRabbitMQ(ColaDeTrabajos):
         """Consume mensajes de la cola `tema`, invoca el manejador y ack/nack.
 
         - Ack tras procesamiento exitoso del manejador.
-        - Nack con requeue=True si reintentos acumulados < max_retries para el tema.
+        - Si reintentos acumulados < max_retries para el tema: se republica una
+          copia del mensaje con x-sauri-reintentos incrementado y se hace ack
+          del original (ver _contar_reintentos para el porqué de no usar
+          nack(requeue=True) aquí).
         - Nack con requeue=False al alcanzar max_retries (envía a dead-letter
           si la cola tiene DLX configurado; de lo contrario se descarta).
         """
         if self._channel is None:
             raise RuntimeError("No hay conexión activa. Llame a `conectar()` primero.")
+        channel = self._channel
 
         max_retries = _leer_max_retries(tema)
 
@@ -158,7 +162,7 @@ class ColaDeRabbitMQ(ColaDeTrabajos):
         if self._dlx_exchange:
             queue_arguments["x-dead-letter-exchange"] = self._dlx_exchange
 
-        queue = await self._channel.declare_queue(
+        queue = await channel.declare_queue(
             tema, durable=True, arguments=queue_arguments or None
         )
 
@@ -177,7 +181,14 @@ class ColaDeRabbitMQ(ColaDeTrabajos):
                         reintentos + 1,
                         max_retries,
                     )
-                    await message.nack(requeue=True)
+                    retry_message = Message(
+                        body=message.body,
+                        delivery_mode=DeliveryMode.PERSISTENT,
+                        content_type=message.content_type,
+                        headers={**(message.headers or {}), _HEADER_REINTENTOS: reintentos + 1},
+                    )
+                    await channel.default_exchange.publish(retry_message, routing_key=tema)
+                    await message.ack()
                 else:
                     if self._dlx_exchange:
                         logger.error(

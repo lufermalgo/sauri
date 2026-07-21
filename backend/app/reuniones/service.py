@@ -15,13 +15,16 @@ Requirements: 1.1, 1.4, 1.5, 1.7, 2.5, 3.6, 4.1, 4.2, 4.4, 4.5
 
 from __future__ import annotations
 
+import contextlib
 import uuid
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import EstadoHistorial, Reunion
+from app.infra.models import Diarizacion, EstadoHistorial, GrabacionDeSesion, Reunion
+from app.infra.object_store import AlmacenDeObjetos
 from app.infra.queue import ColaDeTrabajos
 from app.reuniones.schemas import (
     EntradaReunionCalendario,
@@ -183,6 +186,7 @@ async def consultar_reunion(
 
     resultado: dict = {
         "reunion_id": reunion.id,
+        "titulo": reunion.titulo,
         "estado_proceso": reunion.estado_proceso,
     }
 
@@ -190,6 +194,72 @@ async def consultar_reunion(
         resultado["causa_fallo"] = reunion.causa_fallo
 
     return resultado
+
+
+async def renombrar_reunion(
+    session: AsyncSession,
+    reunion_id: str,
+    nuevo_titulo: str,
+) -> Reunion | None:
+    """Renombra una Reunion (Mis_Notas → renombrar nota).
+
+    Retorna None si la Reunion no existe; el llamador decide cómo mapear
+    eso a una respuesta HTTP (404).
+    """
+    reunion = await session.get(Reunion, reunion_id)
+    if reunion is None:
+        return None
+
+    reunion.titulo = nuevo_titulo
+    await session.flush()
+    return reunion
+
+
+async def eliminar_reunion(
+    session: AsyncSession,
+    almacen: AlmacenDeObjetos,
+    reunion_id: str,
+) -> bool:
+    """Elimina una Reunion y todo lo asociado (Mis_Notas → eliminar nota).
+
+    Orden necesario porque `diarizaciones.reunion_id` y
+    `diarizaciones.transcripcion_id` no tienen ondelete=CASCADE (bloquearían
+    el borrado en cascada de transcripciones/turnos_de_habla si quedara una
+    Diarizacion referenciándolos):
+    1. Borra la Diarizacion de esta reunión si existe (cascada ORM/DB borra
+       Hablante y AsignacionDeHablante automáticamente vía ondelete=CASCADE).
+    2. Borra los blobs de audio/video de la GrabacionDeSesion en el almacén.
+    3. Borra la Reunion — cascada en BD borra estado_historial,
+       grabaciones_de_sesion, transcripciones (→ turnos_de_habla) y
+       notificaciones_de_grabacion.
+
+    Retorna False si la Reunion no existe; el llamador decide cómo mapear
+    eso a una respuesta HTTP (404).
+    """
+    reunion = await session.get(Reunion, reunion_id)
+    if reunion is None:
+        return False
+
+    # DELETE de bajo nivel (no session.delete()): Diarizacion.hablantes es una
+    # relationship ORM bidireccional sin cascade configurado, así que
+    # session.delete() intentaría poner NULL en hablantes.diarizacion_id
+    # (columna NOT NULL) antes de borrar, en vez de dejar que la FK
+    # ondelete=CASCADE de la base de datos borre hablantes/asignaciones.
+    await session.execute(delete(Diarizacion).where(Diarizacion.reunion_id == reunion_id))
+    await session.flush()
+
+    stmt_grabacion = select(GrabacionDeSesion).where(GrabacionDeSesion.reunion_id == reunion_id)
+    grabacion = (await session.execute(stmt_grabacion)).scalar_one_or_none()
+    if grabacion is not None:
+        with contextlib.suppress(Exception):
+            await almacen.eliminar(grabacion.audio_ref)
+        if grabacion.video_ref is not None:
+            with contextlib.suppress(Exception):
+                await almacen.eliminar(grabacion.video_ref)
+
+    await session.delete(reunion)
+    await session.flush()
+    return True
 
 
 async def solicitar_union(

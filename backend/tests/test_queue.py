@@ -77,10 +77,17 @@ class TestMaxRetries:
 
 
 class TestContarReintentos:
-    """Tests unitarios para _contar_reintentos (sin necesidad de RabbitMQ real)."""
+    """Tests unitarios para _contar_reintentos (sin necesidad de RabbitMQ real).
 
-    def test_sin_x_death_retorna_0(self):
-        """Mensaje sin x-death → 0 reintentos."""
+    El conteo se rastrea con un header propio (x-sauri-reintentos), no con el
+    x-death de RabbitMQ: x-death solo lo puebla RabbitMQ cuando el mensaje pasa
+    por un dead-letter-exchange real, y en este entorno (sin QUEUE_DLX_EXCHANGE
+    configurado) un nack(requeue=True) directo nunca lo toca — lo que causaba
+    un loop infinito de reintentos, ya que _contar_reintentos siempre veía 0.
+    """
+
+    def test_sin_header_retorna_0(self):
+        """Mensaje sin x-sauri-reintentos → 0 reintentos."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
@@ -95,33 +102,28 @@ class TestContarReintentos:
         msg.headers = None
         assert _contar_reintentos(msg) == 0
 
-    def test_x_death_con_count_1(self):
-        """x-death con count=1 → 1 reintento."""
+    def test_header_con_valor_1(self):
+        """x-sauri-reintentos=1 → 1 reintento."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
-        msg.headers = {"x-death": [{"count": 1, "queue": "transcribir"}]}
+        msg.headers = {"x-sauri-reintentos": 1}
         assert _contar_reintentos(msg) == 1
 
-    def test_x_death_con_multiples_entries(self):
-        """x-death con múltiples entries → suma de counts."""
+    def test_header_con_valor_3(self):
+        """x-sauri-reintentos=3 → 3 reintentos."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
-        msg.headers = {
-            "x-death": [
-                {"count": 2, "queue": "transcribir"},
-                {"count": 1, "queue": "transcribir"},
-            ]
-        }
+        msg.headers = {"x-sauri-reintentos": 3}
         assert _contar_reintentos(msg) == 3
 
-    def test_x_death_lista_vacia(self):
-        """x-death vacío → 0 reintentos."""
+    def test_header_no_entero_retorna_0(self):
+        """x-sauri-reintentos con valor no entero → 0 reintentos."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
-        msg.headers = {"x-death": []}
+        msg.headers = {"x-sauri-reintentos": "no-es-un-entero"}
         assert _contar_reintentos(msg) == 0
 
 
@@ -191,7 +193,7 @@ class TestColaDeRabbitMQBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"reunion_id": "abc"}).encode()
-        mock_message.headers = {"x-death": [{"count": 3, "queue": "transcribir"}]}
+        mock_message.headers = {"x-sauri-reintentos": 3}
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
@@ -214,8 +216,15 @@ class TestColaDeRabbitMQBehavior:
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_nack_con_requeue_ante_excepcion_reintentos_disponibles(self):
-        """Req 9.2: Excepción con reintentos disponibles → nack(requeue=True)."""
+    async def test_republica_con_reintentos_incrementado_ante_excepcion_reintentos_disponibles(self):
+        """Req 9.2: Excepción con reintentos disponibles → republica con contador +1 y ack del original.
+
+        No usa nack(requeue=True): sin DLX configurado eso reencola el mismo
+        mensaje sin dejar rastro en x-death, causando un loop infinito de
+        reintentos idénticos (bug real observado en vivo). En su lugar, se
+        publica una copia con x-sauri-reintentos incrementado y se hace ack
+        del mensaje original.
+        """
         from unittest.mock import AsyncMock
         from app.infra.queue_rabbitmq import ColaDeRabbitMQ
         import json
@@ -229,13 +238,15 @@ class TestColaDeRabbitMQBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"reunion_id": "abc"}).encode()
-        mock_message.headers = {"x-death": [{"count": 1, "queue": "transcribir"}]}
+        mock_message.headers = {"x-sauri-reintentos": 1}
+        mock_message.content_type = "application/json"
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
         cola._channel = AsyncMock()
         mock_queue = AsyncMock()
         cola._channel.declare_queue.return_value = mock_queue
+        cola._channel.default_exchange.publish = AsyncMock()
 
         captured_callback = None
 
@@ -248,7 +259,12 @@ class TestColaDeRabbitMQBehavior:
         await cola.suscribir("transcribir", failing_handler)
         await captured_callback(mock_message)
 
-        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.nack.assert_not_called()
+        mock_message.ack.assert_called_once()
+        cola._channel.default_exchange.publish.assert_called_once()
+        published_message, kwargs = cola._channel.default_exchange.publish.call_args
+        assert kwargs["routing_key"] == "transcribir"
+        assert published_message[0].headers["x-sauri-reintentos"] == 2
 
     @pytest.mark.asyncio
     async def test_dlx_configurado_en_queue_arguments(self):
@@ -291,7 +307,7 @@ class TestColaDeRabbitMQBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"reunion_id": "abc"}).encode()
-        mock_message.headers = {"x-death": [{"count": 2, "queue": "transcribir"}]}
+        mock_message.headers = {"x-sauri-reintentos": 2}
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 

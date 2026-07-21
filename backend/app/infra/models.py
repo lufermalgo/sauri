@@ -20,6 +20,7 @@ class Reunion(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     enlace_meet: Mapped[str] = mapped_column(String(512), nullable=False)
+    titulo: Mapped[str | None] = mapped_column(String(512), nullable=True)
     origen: Mapped[str] = mapped_column(String(64), nullable=False)  # enlace | invitacion_calendario | manual
     id_invitacion_calendario: Mapped[str | None] = mapped_column(String(256), nullable=True)
     hora_inicio_programada: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

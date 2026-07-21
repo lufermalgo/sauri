@@ -55,7 +55,7 @@ async def test_property_14_reintentos_misma_clave_no_duplican_grabacion(
     resultados = []
     for i in range(n_reintentos):
         grabacion, es_nueva = await procesar_ingesta(
-            db_session, datos, audio_ref=f"audio/{i}.webm", video_ref=None
+            db_session, datos, audio_ref=f"audio/{i}.webm", video_ref=None, creada_por="usuario-test"
         )
         await db_session.commit()
         resultados.append((grabacion, es_nueva))
@@ -90,7 +90,7 @@ async def test_ejemplo_ingesta_registra_notificacion_de_grabacion(
     marca_emision = datetime.now(UTC).isoformat()
     datos = _datos_ingesta(reunion_id, clave, notificacion=marca_emision)
 
-    await procesar_ingesta(db_session, datos, audio_ref="audio/x.webm", video_ref=None)
+    await procesar_ingesta(db_session, datos, audio_ref="audio/x.webm", video_ref=None, creada_por="usuario-test")
     await db_session.commit()
 
     result = await db_session.execute(
@@ -109,7 +109,7 @@ async def test_ejemplo_ingesta_sin_marca_no_registra_notificacion(
     clave = str(uuid.uuid4())
     datos = _datos_ingesta(reunion_id, clave, notificacion=None)
 
-    await procesar_ingesta(db_session, datos, audio_ref="audio/x.webm", video_ref=None)
+    await procesar_ingesta(db_session, datos, audio_ref="audio/x.webm", video_ref=None, creada_por="usuario-test")
     await db_session.commit()
 
     result = await db_session.execute(
