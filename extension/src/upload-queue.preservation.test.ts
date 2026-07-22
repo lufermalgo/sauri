@@ -9,7 +9,7 @@
  * - markFailed increments retryCount, transitions correctly
  * - markProcessing sets status and lastAttemptAt
  * - markDone sets status to "done"
- * - Duplicate claveIdempotencia is rejected (unique index)
+ * - Duplicate idempotencyKey is rejected (unique index)
  *
  * Written BEFORE the fix — must pass on UNFIXED code and continue to pass after fix.
  */
@@ -42,7 +42,7 @@ beforeEach(() => {
 function arbEnqueueInput(): fc.Arbitrary<EnqueueUploadInput> {
   return fc.record({
     sessionId: fc.uuid(),
-    claveIdempotencia: fc.uuid(),
+    idempotencyKey: fc.uuid(),
     mimeType: fc.constantFrom(
       "video/webm;codecs=vp8,opus",
       "audio/webm;codecs=opus",
@@ -71,7 +71,7 @@ describe("Preservation: Upload Queue Idempotent Retry and FIFO Recovery", () => 
           expect(job.retryCount).toBe(0);
           expect(job.maxRetries).toBe(3);
           expect(job.sessionId).toBe(input.sessionId);
-          expect(job.claveIdempotencia).toBe(input.claveIdempotencia);
+          expect(job.idempotencyKey).toBe(input.idempotencyKey);
           expect(job.mimeType).toBe(input.mimeType);
           expect(job.id).toMatch(
             /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
@@ -102,7 +102,7 @@ describe("Preservation: Upload Queue Idempotent Retry and FIFO Recovery", () => 
             for (let i = 0; i < n; i++) {
               const input: EnqueueUploadInput = {
                 sessionId: crypto.randomUUID(),
-                claveIdempotencia: crypto.randomUUID(),
+                idempotencyKey: crypto.randomUUID(),
                 mimeType: "video/webm",
                 notificationEmittedAt: undefined,
               };
@@ -198,11 +198,11 @@ describe("Preservation: Upload Queue Idempotent Retry and FIFO Recovery", () => 
   });
 
   /**
-   * Property: For any job with a given claveIdempotencia,
+   * Property: For any job with a given idempotencyKey,
    * a duplicate enqueue is rejected (unique index constraint).
    */
-  describe("Property: duplicate claveIdempotencia is rejected (unique index)", () => {
-    it("second enqueue with same claveIdempotencia throws", async () => {
+  describe("Property: duplicate idempotencyKey is rejected (unique index)", () => {
+    it("second enqueue with same idempotencyKey throws", async () => {
       await fc.assert(
         fc.asyncProperty(arbEnqueueInput(), async (input) => {
           globalThis.indexedDB = new IDBFactory();
@@ -211,7 +211,7 @@ describe("Preservation: Upload Queue Idempotent Retry and FIFO Recovery", () => 
           // First enqueue succeeds
           await enqueueUpload(input);
 
-          // Second enqueue with same claveIdempotencia should be rejected
+          // Second enqueue with same idempotencyKey should be rejected
           await expect(enqueueUpload(input)).rejects.toThrow();
         }),
         { numRuns: 15 }

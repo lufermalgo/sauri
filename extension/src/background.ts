@@ -1,6 +1,6 @@
-// Service worker (MV3) — punto de entrada del background de la extensión sauri.
-// Estado efímero en chrome.storage.session (sobrevive reinicios del SW dentro de la sesión).
-// NUNCA usar variables de módulo para estado mutable (el SW es efímero).
+// Service worker (MV3) — entry point for the sauri extension's background.
+// Ephemeral state lives in chrome.storage.session (survives SW restarts within the session).
+// NEVER use module-level variables for mutable state (the SW is ephemeral).
 
 import {
   enqueueUpload,
@@ -78,29 +78,29 @@ async function uploadRecording(
   mimeType: string,
   sessionId: string,
   notificationEmittedAt?: string,
-  titulo?: string,
-  enlaceMeet?: string
+  title?: string,
+  meetLink?: string
 ): Promise<void> {
   try {
     // Read Blob directly from shared sauri-recordings IndexedDB
     const blob = await assembleBlob(sessionId, mimeType);
 
-    // Build DatosIngesta JSON payload
-    const datosIngesta = {
-      reunion_id: crypto.randomUUID(),
-      clave_idempotencia: sessionId,
-      origen_captura: "extension_chrome",
-      duracion_segundos: 0,
-      interrumpida: false,
-      notificacion_emitida_en: notificationEmittedAt ?? null,
-      titulo: titulo ?? null,
-      enlace_meet: enlaceMeet ?? null,
+    // Build IngestionData JSON payload
+    const ingestionData = {
+      meeting_id: crypto.randomUUID(),
+      idempotency_key: sessionId,
+      capture_origin: "chrome_extension",
+      duration_seconds: 0,
+      interrupted: false,
+      notice_issued_at: notificationEmittedAt ?? null,
+      title: title ?? null,
+      meet_link: meetLink ?? null,
     };
 
     const formData = new FormData();
     // Single WebM container with audio+video interleaved — send as "audio"
     formData.append("audio", blob, "recording.webm");
-    formData.append("datos", JSON.stringify(datosIngesta));
+    formData.append("data", JSON.stringify(ingestionData));
 
     // Retrieve auth token from chrome.storage.sync (set by login flow)
     const headers: Record<string, string> = {};
@@ -115,7 +115,7 @@ async function uploadRecording(
       console.warn("[sauri] Could not read authToken from storage:", e);
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/v1/ingesta/subir`, {
+    const response = await fetch(`${BACKEND_URL}/api/v1/ingestion/upload`, {
       method: "POST",
       headers,
       body: formData,
@@ -136,15 +136,15 @@ async function uploadRecording(
 
 // --- Side Panel (Req. 1.1, 1.2, 1.7) ---
 
-async function configurarSidePanel(): Promise<void> {
+async function configureSidePanel(): Promise<void> {
   try {
-    // NO usar openPanelOnActionClick: true — eso impide que onClicked se
-    // dispare, y sin onClicked Chrome nunca concede activeTab sobre la
-    // pestaña de Meet (chrome.tabCapture.getMediaStreamId lo requiere).
-    // En su lugar abrimos el panel manualmente desde onClicked (Req. 1.1).
+    // Do NOT use openPanelOnActionClick: true — that prevents onClicked from
+    // firing, and without onClicked Chrome never grants activeTab on the
+    // Meet tab (chrome.tabCapture.getMediaStreamId requires it). Instead we
+    // open the panel manually from onClicked (Req. 1.1).
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
   } catch (error) {
-    console.error("[sauri] No se pudo configurar el Side_Panel:", error);
+    console.error("[sauri] Could not configure the Side_Panel:", error);
   }
 }
 
@@ -158,11 +158,11 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 chrome.runtime.onInstalled.addListener(async () => {
   await setState(DEFAULT_STATE);
-  await configurarSidePanel();
+  await configureSidePanel();
   console.log("[sauri] Extension installed, state initialized to idle");
 });
 
-configurarSidePanel();
+configureSidePanel();
 
 // On service worker startup, ensure state is loaded from session storage
 // (chrome.storage.session persists across SW restarts within the browser session)
@@ -186,7 +186,7 @@ chrome.runtime.onMessage.addListener(
       resolution?: Resolution;
       captureMode?: CaptureMode;
       micDeviceId?: string | null;
-      emitidaEn?: string;
+      emittedAt?: string;
     },
     _sender,
     sendResponse
@@ -229,7 +229,7 @@ chrome.runtime.onMessage.addListener(
         break;
 
       case "notification-emitted":
-        handleNotificationEmitted(message.emitidaEn);
+        handleNotificationEmitted(message.emittedAt);
         sendResponse({ ok: true });
         break;
 
@@ -302,16 +302,16 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
     const currentState = await getState();
     const captureMode: CaptureMode = currentState.captureMode ?? "screen_audio";
 
-    // Vuelve a pedir el título actual al content script: el que se capturó al
-    // detectar la reunión (meet-detected) suele ser el genérico "Meet" — Google
-    // Meet actualiza document.title con el nombre real de la sesión unos
-    // segundos después. Al iniciar la grabación ya suele estar actualizado.
+    // Ask the content script for the current title again: the one captured
+    // when the meeting was detected (meet-detected) is usually the generic
+    // "Meet" — Google Meet updates document.title with the real session name
+    // a few seconds later. By the time recording starts it's usually current.
     let meetingTitle = currentState.meetingTitle;
     try {
-      const respuesta = (await chrome.tabs.sendMessage(tab.id!, { type: "get-current-title" })) as
+      const response = (await chrome.tabs.sendMessage(tab.id!, { type: "get-current-title" })) as
         | { title?: string }
         | undefined;
-      if (respuesta?.title) meetingTitle = respuesta.title;
+      if (response?.title) meetingTitle = response.title;
     } catch (error) {
       console.warn("[sauri] Could not refresh meeting title:", error);
     }
@@ -375,15 +375,15 @@ async function handleRecordingStopped(
 
   await hideConsentBanner(currentState.tabId);
 
-  // Enqueue upload job — the queue handles retries with the same clave_idempotencia
+  // Enqueue upload job — the queue handles retries with the same idempotencyKey
   const sid = sessionId ?? crypto.randomUUID();
   await enqueueUpload({
     sessionId: sid,
-    claveIdempotencia: sid, // sessionId = clave_idempotencia ensures idempotent retries
+    idempotencyKey: sid, // sessionId = idempotencyKey ensures idempotent retries
     mimeType,
     notificationEmittedAt,
-    titulo: currentState.meetingTitle,
-    enlaceMeet: currentState.meetingUrl,
+    title: currentState.meetingTitle,
+    meetLink: currentState.meetingUrl,
   });
   console.log(`[sauri] Upload job enqueued for session: ${sid}`);
 
@@ -415,11 +415,11 @@ async function hideConsentBanner(tabId?: number): Promise<void> {
   }
 }
 
-async function handleNotificationEmitted(emitidaEn?: string): Promise<void> {
-  if (!emitidaEn) return;
+async function handleNotificationEmitted(emittedAt?: string): Promise<void> {
+  if (!emittedAt) return;
   const currentState = await getState();
-  await setState({ ...currentState, notificationEmittedAt: emitidaEn });
-  console.log(`[sauri] Notification emitted at: ${emitidaEn}`);
+  await setState({ ...currentState, notificationEmittedAt: emittedAt });
+  console.log(`[sauri] Notification emitted at: ${emittedAt}`);
 }
 
 async function handleSetCaptureMode(captureMode?: CaptureMode): Promise<void> {
@@ -436,7 +436,7 @@ const UPLOAD_ALARM_NAME = "sauri-upload-check";
 /**
  * Processes the next pending job in the upload queue.
  * Gets the oldest pending job, marks it processing, attempts upload,
- * and marks done/failed accordingly. Uses the same clave_idempotencia
+ * and marks done/failed accordingly. Uses the same idempotencyKey
  * (= sessionId) so the backend won't create duplicates on retries.
  */
 async function processUploadQueue(): Promise<void> {
@@ -450,7 +450,7 @@ async function processUploadQueue(): Promise<void> {
   await markProcessing(job.id);
 
   try {
-    await uploadRecording(job.mimeType, job.sessionId, job.notificationEmittedAt, job.titulo, job.enlaceMeet);
+    await uploadRecording(job.mimeType, job.sessionId, job.notificationEmittedAt, job.title, job.meetLink);
     await markDone(job.id);
     console.log(`[sauri] Upload job done: ${job.id}`);
   } catch (error) {

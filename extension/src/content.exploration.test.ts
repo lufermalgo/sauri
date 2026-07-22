@@ -108,7 +108,7 @@ describe("Bug Condition Exploration: Detection Oscillation During Transient DOM 
               "Leave call",
               "Turn off microphone",
               "Salir de la llamada",
-              "Desactivar micrófono"
+              "Desactivar micrófono" // spanish-sample-data
             ),
             endSignal: fc.constantFrom(
               "Return to home screen",

@@ -54,10 +54,10 @@ describe("Preservation: Genuine State Transitions Still Work", () => {
               "Turn off camera",
               "Turn on camera",
               "Salir de la llamada",
-              "Desactivar micrófono",
-              "Activar micrófono",
-              "Desactivar cámara",
-              "Activar cámara"
+              "Desactivar micrófono",  // spanish-sample-data
+              "Activar micrófono",  // spanish-sample-data
+              "Desactivar cámara",  // spanish-sample-data
+              "Activar cámara"  // spanish-sample-data
             ),
           }),
           (_input) => {
@@ -192,10 +192,10 @@ describe("Preservation: Genuine State Transitions Still Work", () => {
         fc.property(
           fc.constantFrom(
             "Salir de la llamada",
-            "Desactivar micrófono",
-            "Activar micrófono",
-            "Desactivar cámara",
-            "Activar cámara"
+            "Desactivar micrófono",  // spanish-sample-data
+            "Activar micrófono",  // spanish-sample-data
+            "Desactivar cámara",  // spanish-sample-data
+            "Activar cámara"  // spanish-sample-data
           ),
           (spanishLabel) => {
             const contentSource = readSource("content.ts");

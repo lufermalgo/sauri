@@ -1,11 +1,40 @@
-// Cola de subida idempotente en IndexedDB para la extensión sauri.
-// Estados: pending → processing → done/failed
-// Reintentos con la misma clave_idempotencia sin duplicar subidas.
-// Recuperación por chrome.alarms y chrome.runtime.onStartup.
+// Idempotent upload queue in IndexedDB for the sauri extension.
+// States: pending → processing → done/failed
+// Retries with the same idempotencyKey never duplicate uploads.
+// Recovery via chrome.alarms and chrome.runtime.onStartup.
 
 export type UploadJobStatus = "pending" | "processing" | "done" | "failed";
 
 export interface UploadJob {
+  id: string;
+  sessionId: string;
+  idempotencyKey: string;
+  status: UploadJobStatus;
+  retryCount: number;
+  maxRetries: number;
+  createdAt: number;
+  lastAttemptAt?: number;
+  errorMessage?: string;
+  mimeType: string;
+  notificationEmittedAt?: string;
+  title?: string;
+  meetLink?: string;
+}
+
+export type EnqueueUploadInput = Pick<
+  UploadJob,
+  "sessionId" | "idempotencyKey" | "mimeType" | "notificationEmittedAt" | "title" | "meetLink"
+>;
+
+const DB_NAME = "sauri-upload-queue";
+const DB_VERSION = 2; // bumped from 1 — see the v1 -> v2 migration below
+const STORE_NAME = "jobs";
+
+/**
+ * Legacy (v1) on-disk shape of a record in the "jobs" store, kept only to
+ * type the schema migration below.
+ */
+interface LegacyUploadJobV1 {
   id: string;
   sessionId: string;
   claveIdempotencia: string;
@@ -21,26 +50,48 @@ export interface UploadJob {
   enlaceMeet?: string;
 }
 
-export type EnqueueUploadInput = Pick<
-  UploadJob,
-  "sessionId" | "claveIdempotencia" | "mimeType" | "notificationEmittedAt" | "titulo" | "enlaceMeet"
->;
-
-const DB_NAME = "sauri-upload-queue";
-const DB_VERSION = 1;
-const STORE_NAME = "jobs";
-
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
+
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
         store.createIndex("status", "status", { unique: false });
         store.createIndex("createdAt", "createdAt", { unique: false });
-        store.createIndex("claveIdempotencia", "claveIdempotencia", { unique: true });
+        store.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
+        return;
+      }
+
+      if (event.oldVersion < 2) {
+        // Rename claveIdempotencia/titulo/enlaceMeet -> idempotencyKey/title/
+        // meetLink on every existing record before touching the index, so
+        // pending upload jobs are not lost (Design Decision 6).
+        const store = request.transaction!.objectStore(STORE_NAME);
+        const cursorRequest = store.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (cursor) {
+            const legacy = cursor.value as LegacyUploadJobV1;
+            const { claveIdempotencia, titulo, enlaceMeet, ...rest } = legacy;
+            const migrated: UploadJob = {
+              ...rest,
+              idempotencyKey: claveIdempotencia,
+              title: titulo,
+              meetLink: enlaceMeet,
+            };
+            cursor.update(migrated);
+            cursor.continue();
+          } else {
+            // All records migrated — safe to swap the index now.
+            store.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
+            if (store.indexNames.contains("claveIdempotencia")) {
+              store.deleteIndex("claveIdempotencia");
+            }
+          }
+        };
       }
     };
 
@@ -51,22 +102,22 @@ function openDB(): Promise<IDBDatabase> {
 
 /**
  * Adds a new upload job to the queue with status='pending', retryCount=0, maxRetries=3.
- * Uses sessionId as clave_idempotencia to prevent duplicates.
+ * Uses sessionId as idempotencyKey to prevent duplicates.
  */
 export async function enqueueUpload(input: EnqueueUploadInput): Promise<UploadJob> {
   const db = await openDB();
   const job: UploadJob = {
     id: crypto.randomUUID(),
     sessionId: input.sessionId,
-    claveIdempotencia: input.claveIdempotencia,
+    idempotencyKey: input.idempotencyKey,
     status: "pending",
     retryCount: 0,
     maxRetries: 3,
     createdAt: Date.now(),
     mimeType: input.mimeType,
     notificationEmittedAt: input.notificationEmittedAt,
-    titulo: input.titulo,
-    enlaceMeet: input.enlaceMeet,
+    title: input.title,
+    meetLink: input.meetLink,
   };
 
   return new Promise((resolve, reject) => {

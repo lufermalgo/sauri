@@ -1,18 +1,18 @@
 /**
- * E2E: carga de la extensión, detección de Meet mockeado, captura → ingesta.
+ * E2E: extension load, mocked Meet detection, capture -> ingestion.
  *
  * Feature: meeting-capture-transcription
  * Task: 17.4 — Validates: Requirements 2.1, 2.2
  *
- * chrome.tabCapture requiere un gesto de usuario real y captura de pantalla del
- * SO, que no es automatizable de forma fiable en un entorno headless de CI (esto
- * es una limitación conocida de Chrome, no del test). Por eso este test dirige el
- * flujo desde el punto en que el documento offscreen ya habría producido una
- * grabación — invocando el mensaje real "recording-stopped" desde una página de
- * la propia extensión (el patrón estándar página→background, igual que hace el
- * panel real) — y verifica de extremo a extremo el resto del pipeline real:
- * detección de Meet, cola de subida, subida multipart al backend real, y
- * transición de la Reunion a "transcribiendo".
+ * chrome.tabCapture requires a real user gesture and OS screen capture,
+ * which can't be reliably automated in a headless CI environment (this is a
+ * known Chrome limitation, not a test limitation). So this test drives the
+ * flow from the point where the offscreen document would already have
+ * produced a recording — invoking the real "recording-stopped" message from
+ * an extension page (the standard page->background pattern, same as the
+ * real panel) — and verifies end-to-end the rest of the real pipeline: Meet
+ * detection, upload queue, real multipart upload to the backend, and the
+ * Meeting's transition to "transcribing".
  */
 
 import { test, expect, chromium, type BrowserContext } from "@playwright/test";
@@ -36,13 +36,13 @@ const VENV_PYTHON =
     : resolve(BACKEND_DIR, "../../../sauri/backend/.venv/bin/python"));
 
 /**
- * La Reunion auto-creada por la ingesta (flujo real de la extensión) tiene
- * creada_por="extension" y por eso NO aparece en GET /api/v1/reuniones/
- * (filtrado por el usuario autenticado) — se consulta directo en Postgres
- * para identificarla, ya que consultar_reunion (GET /{id}) sí funciona sin
- * ese filtro pero requiere conocer el id de antemano.
+ * The Meeting auto-created by ingestion (real extension flow) has
+ * created_by="extension" and so does NOT appear in GET /api/v1/meetings/
+ * (filtered by the authenticated user) — it's queried directly against
+ * Postgres to identify it, since get_meeting (GET /{id}) does work without
+ * that filter but requires knowing the id beforehand.
  */
-async function reunionesCreadasPorExtension(): Promise<string[]> {
+async function meetingsCreatedByExtension(): Promise<string[]> {
   const script = `
 import asyncio
 from sqlalchemy import select
@@ -54,7 +54,7 @@ async def main():
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
         result = await session.execute(
-            select(models.Reunion.id).where(models.Reunion.creada_por == "extension")
+            select(models.Meeting.id).where(models.Meeting.created_by == "extension")
         )
         for row in result.scalars().all():
             print(row)
@@ -69,9 +69,9 @@ asyncio.run(main())
 const FAKE_MEET_HTML = `
 <!doctype html>
 <html>
-  <head><title>Reunión de prueba - Google Meet</title></head>
+  <head><title>Test Meeting - Google Meet</title></head>
   <body>
-    <button aria-label="Leave call">Salir</button>
+    <button aria-label="Leave call">Leave</button>
     <button aria-label="Turn off microphone">Mic</button>
   </body>
 </html>
@@ -95,7 +95,7 @@ async function getExtensionId(context: BrowserContext): Promise<string> {
   return sw.url().split("/")[2];
 }
 
-test("captura → ingesta: detecta Meet mockeado, sube al backend y transiciona a transcribiendo", async () => {
+test("capture -> ingestion: detects mocked Meet, uploads to the backend, and transitions to transcribing", async () => {
   const context = await launchWithExtension();
 
   try {
@@ -105,12 +105,12 @@ test("captura → ingesta: detecta Meet mockeado, sube al backend y transiciona 
     const [sw] = context.serviceWorkers();
     sw?.on("console", (msg) => console.log("[SW]", msg.text()));
 
-    // Página propia de la extensión: contexto estándar para hablar con el
-    // background vía chrome.runtime.sendMessage (igual que el panel real).
+    // Extension's own page: standard context for talking to the background
+    // via chrome.runtime.sendMessage (same as the real panel).
     const extPage = await context.newPage();
     await extPage.goto(`chrome-extension://${extensionId}/src/panel/index.html`);
 
-    // --- 1. Detección de Meet mockeado ---
+    // --- 1. Mocked Meet detection ---
     await context.route("https://meet.google.com/**", (route) =>
       route.fulfill({ status: 200, contentType: "text/html", body: FAKE_MEET_HTML })
     );
@@ -129,17 +129,18 @@ test("captura → ingesta: detecta Meet mockeado, sube al backend y transiciona 
       )
       .toBe("pending");
 
-    // --- 2. Simula el fin de una grabación real (offscreen ya habría
-    //     ensamblado el Blob final) e invoca el flujo real de subida ---
-    // Toma nota de las reuniones existentes antes de subir, para poder
-    // identificar la que crea esta subida (background.ts genera su propio
-    // reunion_id (PoC) al construir el payload, así que no se conoce de antemano).
-    const reunionesAntes = await reunionesCreadasPorExtension();
+    // --- 2. Simulate the end of a real recording (offscreen would already
+    //     have assembled the final Blob) and invoke the real upload flow ---
+    // Note the meetings that exist before uploading, to later identify the
+    // one created by this upload (background.ts generates its own
+    // meeting_id (PoC) when building the payload, so it isn't known ahead
+    // of time).
+    const meetingsBefore = await meetingsCreatedByExtension();
 
     const sessionId = await extPage.evaluate(async () => crypto.randomUUID());
 
-    // Guarda un chunk de prueba en el IndexedDB compartido (misma DB que usa
-    // el documento offscreen), para que assembleBlob(sessionId) tenga contenido.
+    // Store a test chunk in the shared IndexedDB (same DB the offscreen
+    // document uses), so assembleBlob(sessionId) has content.
     await extPage.evaluate(async ({ sessionId }: { sessionId: string }) => {
       const DB_NAME = "sauri-recordings";
       const STORE_NAME = "chunks";
@@ -163,7 +164,7 @@ test("captura → ingesta: detecta Meet mockeado, sube al backend y transiciona 
         const tx = db.transaction(STORE_NAME, "readwrite");
         tx.objectStore(STORE_NAME).add({
           sessionId,
-          blob: new Blob(["contenido-de-audio-simulado"], { type: "audio/webm" }),
+          blob: new Blob(["simulated-audio-content"], { type: "audio/webm" }),
           timestamp: Date.now(),
         });
         tx.oncomplete = () => resolvePromise();
@@ -172,9 +173,9 @@ test("captura → ingesta: detecta Meet mockeado, sube al backend y transiciona 
       db.close();
     }, { sessionId });
 
-    // Dispara el mensaje real que el offscreen envía al terminar de grabar
-    // (patrón estándar página→background; el service worker MV3 se despierta
-    // automáticamente para atenderlo).
+    // Fire the real message the offscreen document sends when it finishes
+    // recording (standard page->background pattern; the MV3 service worker
+    // wakes up automatically to handle it).
     await extPage.evaluate(async ({ sessionId }: { sessionId: string }) => {
       await chrome.runtime.sendMessage({
         type: "recording-stopped",
@@ -184,31 +185,32 @@ test("captura → ingesta: detecta Meet mockeado, sube al backend y transiciona 
       });
     }, { sessionId });
 
-    // --- 3. Verifica en el backend real que la subida llegó (nueva Reunion
-    //     creada por la ingesta) y que transicionó a "transcribiendo" ---
-    let reunionId: string | null = null;
+    // --- 3. Verify against the real backend that the upload arrived (new
+    //     Meeting created by ingestion) and that it transitioned to
+    //     "transcribing" ---
+    let meetingId: string | null = null;
     await expect
       .poll(
         async () => {
-          const reunionesAhora = await reunionesCreadasPorExtension();
-          reunionId = reunionesAhora.find((id) => !reunionesAntes.includes(id)) ?? null;
-          return reunionId;
+          const meetingsAfter = await meetingsCreatedByExtension();
+          meetingId = meetingsAfter.find((id) => !meetingsBefore.includes(id)) ?? null;
+          return meetingId;
         },
-        { timeout: 10_000, message: "esperando que la ingesta cree la Reunion" }
+        { timeout: 10_000, message: "waiting for ingestion to create the Meeting" }
       )
       .not.toBeNull();
 
     await expect
       .poll(
         async () => {
-          const res = await fetch(`${BACKEND_URL}/api/v1/reuniones/${reunionId}`);
+          const res = await fetch(`${BACKEND_URL}/api/v1/meetings/${meetingId}`);
           if (!res.ok) return null;
           const body = await res.json();
-          return body.estado_proceso as string;
+          return body.process_state as string;
         },
-        { timeout: 15_000, message: "esperando transición a 'transcribiendo'" }
+        { timeout: 15_000, message: "waiting for the transition to 'transcribing'" }
       )
-      .toBe("transcribiendo");
+      .toBe("transcribing");
   } finally {
     await context.close();
   }
