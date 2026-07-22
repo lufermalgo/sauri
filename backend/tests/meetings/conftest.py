@@ -1,8 +1,8 @@
-"""Fixtures compartidas para pruebas de contrato de la API de reuniones (chrome-side-panel).
+"""Shared fixtures for testing the meetings API contract (chrome-side-panel).
 
-Usa un archivo SQLite temporal (no ':memory:') porque el router crea un
-AsyncEngine nuevo por solicitud (`create_engine()` lee `DATABASE_URL` en
-cada llamada); un ':memory:' no persistiría entre solicitudes distintas.
+Uses a temporary SQLite file (not ':memory:') because the router creates a
+new AsyncEngine per request (`create_engine()` reads `DATABASE_URL` on every
+call); a ':memory:' engine wouldn't persist across separate requests.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from app.infra.database import Base
 
 @pytest.fixture
 async def api_db_url(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[str, None]:
-    """Crea un SQLite temporal, aplica el esquema y apunta DATABASE_URL a él."""
+    """Creates a temporary SQLite database, applies the schema, and points DATABASE_URL to it."""
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     url = f"sqlite+aiosqlite:///{path}"
@@ -40,7 +40,7 @@ async def api_db_url(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[str, Non
 
 @pytest.fixture
 async def api_client(api_db_url: str) -> AsyncGenerator[AsyncClient, None]:
-    """Cliente HTTP asíncrono contra la app FastAPI real (sin servidor)."""
+    """Async HTTP client against the real FastAPI app (no server)."""
     from app.main import app
 
     transport = ASGITransport(app=app)

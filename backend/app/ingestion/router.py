@@ -22,7 +22,7 @@ from app.infra.object_store import AlmacenDeObjetos, crear_almacen_de_objetos
 from app.infra.queue import ColaDeTrabajos, crear_cola_de_trabajos
 from app.ingestion.schemas import IngestionData
 from app.ingestion.service import process_ingestion
-from app.reuniones.service import registrar_transicion
+from app.meetings.service import record_transition
 
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
 
@@ -52,7 +52,7 @@ async def upload_recording(
     c. Stores audio in the ObjectStore -> audio_ref.
     d. Stores video in the ObjectStore (if provided) -> video_ref.
     e. Calls process_ingestion (creates SessionRecording, handles idempotency).
-    f. Transitions the Meeting to "transcribing" via registrar_transicion.
+    f. Transitions the Meeting to "transcribing" via record_transition.
     g. Enqueues the transcription job.
     h. Returns 200 with the recording's ID and state.
     """
@@ -124,10 +124,10 @@ async def upload_recording(
                     detail=f"Meeting not found: {ingestion_data.meeting_id}",
                 )
 
-            transition_result = await registrar_transicion(
+            transition_result = await record_transition(
                 session=session,
-                reunion=meeting,
-                evento="grabacion_subida",
+                meeting=meeting,
+                event="recording_uploaded",
             )
 
     # g. Enqueue the transcription job (only if the recording is new)
@@ -149,5 +149,5 @@ async def upload_recording(
     # h. Return the result
     return {
         "recording_id": recording.id,
-        "state": "transcribing" if transition_result.exitosa else meeting.process_state,
+        "state": "transcribing" if transition_result.successful else meeting.process_state,
     }

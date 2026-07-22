@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
 from app.ingestion.router import router as ingestion_router
-from app.reuniones.router import router as reuniones_router
+from app.meetings.router import router as meetings_router
 
 app = FastAPI(
     title="sauri",
@@ -23,7 +23,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(ingestion_router)
-app.include_router(reuniones_router)
+app.include_router(meetings_router)
 app.include_router(auth_router)
 
 
