@@ -1,4 +1,4 @@
-"""Modelo Usuario y su migración Alembic (chrome-side-panel, Tarea 13.7).
+"""User model and its Alembic migration (chrome-side-panel, Tarea 13.7).
 
 Validates: Requirements 13.1, 13.2
 """
@@ -12,51 +12,51 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import Usuario
+from app.infra.models import User
 
 
 @pytest.mark.asyncio
-async def test_usuario_se_puede_crear_y_leer(db_session: AsyncSession):
-    usuario = Usuario(
+async def test_user_can_be_created_and_read(db_session: AsyncSession):
+    user = User(
         id=str(uuid.uuid4()),
         email="comercial@summan.com",
-        nombre="Comercial Uno",
+        name="Comercial Uno",
         password_hash="$2b$12$hashfalsoparapruebas",
-        es_comercial=True,
-        creado_en=datetime.now(UTC),
+        is_sales=True,
+        created_at=datetime.now(UTC),
     )
-    db_session.add(usuario)
+    db_session.add(user)
     await db_session.commit()
 
-    recuperado = await db_session.get(Usuario, usuario.id)
-    assert recuperado is not None
-    assert recuperado.email == "comercial@summan.com"
-    assert recuperado.es_comercial is True
+    retrieved = await db_session.get(User, user.id)
+    assert retrieved is not None
+    assert retrieved.email == "comercial@summan.com"
+    assert retrieved.is_sales is True
 
 
 @pytest.mark.asyncio
-async def test_usuario_email_es_unico(db_session: AsyncSession):
+async def test_user_email_is_unique(db_session: AsyncSession):
     email = "duplicado@summan.com"
     db_session.add(
-        Usuario(
+        User(
             id=str(uuid.uuid4()),
             email=email,
-            nombre="Uno",
+            name="Uno",
             password_hash="hash1",
-            es_comercial=True,
-            creado_en=datetime.now(UTC),
+            is_sales=True,
+            created_at=datetime.now(UTC),
         )
     )
     await db_session.commit()
 
     db_session.add(
-        Usuario(
+        User(
             id=str(uuid.uuid4()),
             email=email,
-            nombre="Dos",
+            name="Dos",
             password_hash="hash2",
-            es_comercial=True,
-            creado_en=datetime.now(UTC),
+            is_sales=True,
+            created_at=datetime.now(UTC),
         )
     )
     with pytest.raises(IntegrityError):

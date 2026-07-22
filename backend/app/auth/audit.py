@@ -1,33 +1,33 @@
-"""Auditoría de acceso — registra intentos permitidos y denegados."""
+"""Access audit — records allowed and denied attempts."""
 
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import RegistroDeAcceso
+from app.infra.models import AccessLog
 
 
-async def registrar_acceso(
+async def record_access(
     session: AsyncSession,
-    usuario_id: str | None,
-    recurso: str,
-    resultado: str,
+    user_id: str | None,
+    resource: str,
+    result: str,
 ) -> None:
-    """Crea una entrada de RegistroDeAcceso en la base de datos.
+    """Creates an AccessLog entry in the database.
 
     Args:
-        session: Sesión async de SQLAlchemy.
-        usuario_id: UUID del usuario solicitante (None si no autenticado).
-        recurso: Recurso al que se intentó acceder.
-        resultado: "permitido" o "denegado".
+        session: Async SQLAlchemy session.
+        user_id: UUID of the requesting user (None if unauthenticated).
+        resource: Resource the access attempt targeted.
+        result: "allowed" or "denied".
     """
-    registro = RegistroDeAcceso(
+    entry = AccessLog(
         id=str(uuid4()),
-        usuario_id=usuario_id,
-        recurso=recurso,
-        resultado=resultado,
-        ocurrido_en=datetime.now(timezone.utc),
+        user_id=user_id,
+        resource=resource,
+        result=result,
+        occurred_at=datetime.now(timezone.utc),
     )
-    session.add(registro)
+    session.add(entry)
     await session.commit()
