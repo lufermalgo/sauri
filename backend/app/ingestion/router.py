@@ -18,8 +18,8 @@ from pydantic import ValidationError
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
-from app.infra.object_store import AlmacenDeObjetos, crear_almacen_de_objetos
-from app.infra.queue import ColaDeTrabajos, crear_cola_de_trabajos
+from app.infra.object_store import ObjectStore, create_object_store
+from app.infra.queue import JobQueue, create_job_queue
 from app.ingestion.schemas import IngestionData
 from app.ingestion.service import process_ingestion
 from app.meetings.service import record_transition
@@ -27,14 +27,14 @@ from app.meetings.service import record_transition
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
 
 
-def _get_object_store() -> AlmacenDeObjetos:
+def _get_object_store() -> ObjectStore:
     """Creates the object store instance (simplified DI, final wiring in task 17.1)."""
-    return crear_almacen_de_objetos()
+    return create_object_store()
 
 
-def _get_queue() -> ColaDeTrabajos:
+def _get_queue() -> JobQueue:
     """Creates the job queue instance (simplified DI, final wiring in task 17.1)."""
-    return crear_cola_de_trabajos()
+    return create_job_queue()
 
 
 @router.post("/upload", status_code=status.HTTP_200_OK)
@@ -75,9 +75,9 @@ async def upload_recording(
     # c. Store audio in the ObjectStore
     audio_content = await audio.read()
     audio_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/audio"
-    audio_ref = await object_store.guardar(
-        clave=audio_key,
-        contenido=audio_content,
+    audio_ref = await object_store.save(
+        key=audio_key,
+        content=audio_content,
         content_type=audio.content_type or "audio/webm",
     )
 
@@ -86,9 +86,9 @@ async def upload_recording(
     if video is not None:
         video_content = await video.read()
         video_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/video"
-        video_ref = await object_store.guardar(
-            clave=video_key,
-            contenido=video_content,
+        video_ref = await object_store.save(
+            key=video_key,
+            content=video_content,
             content_type=video.content_type or "video/webm",
         )
 
@@ -131,17 +131,17 @@ async def upload_recording(
             )
 
     # g. Enqueue the transcription job (only if the recording is new)
-    await queue.conectar()
+    await queue.connect()
     try:
-        await queue.publicar(
-            tema="transcribe",
-            mensaje={
+        await queue.publish(
+            topic="transcribe",
+            message={
                 "meeting_id": ingestion_data.meeting_id,
                 "audio_ref": audio_ref,
             },
         )
     finally:
-        await queue.desconectar()
+        await queue.disconnect()
 
     # Close the engine
     await engine.dispose()

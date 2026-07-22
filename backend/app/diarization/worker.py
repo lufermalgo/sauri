@@ -36,7 +36,7 @@ from app.infra.models import (
     Speaker,
     SpeakerAssignment,
 )
-from app.infra.queue import ColaDeTrabajos
+from app.infra.queue import JobQueue
 from app.transcription.repository import TranscriptRepository
 
 logger = logging.getLogger(__name__)
@@ -181,7 +181,7 @@ async def _process_diarization(
 
 
 async def start_worker(
-    queue: ColaDeTrabajos,
+    queue: JobQueue,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Starts the diarization worker: subscribes to the 'diarize' topic (Req. 1.1).
@@ -194,5 +194,5 @@ async def start_worker(
     async def handler(message: dict[str, Any]) -> None:
         await _process_diarization(message, session_factory)
 
-    await queue.suscribir("diarize", handler)
+    await queue.subscribe("diarize", handler)
     logger.info("Diarization worker subscribed to the 'diarize' topic")

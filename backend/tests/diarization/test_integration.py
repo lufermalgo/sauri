@@ -1,6 +1,6 @@
-"""Integration tests for the identificacion-hablantes (diarization) module.
+"""Integration tests for the speaker-identification (diarization) module.
 
-# Feature: identificacion-hablantes
+# Feature: speaker-identification
 Tasks: 15.1, 15.2, 15.4
 Validates: Requirements 1.1, 1.2, 1.7, 1.8, 4.1, 4.3, 10.2
 
@@ -35,13 +35,13 @@ class TestDiarizationWorkerSubscription:
     async def test_worker_subscribes_to_diarize_topic(self):
         """On startup, the worker subscribes to the 'diarize' topic (Req 1.1)."""
         mock_queue = AsyncMock()
-        mock_queue.suscribir = AsyncMock()
+        mock_queue.subscribe = AsyncMock()
         mock_session_factory = AsyncMock()
 
         await start_worker(mock_queue, mock_session_factory)
 
-        mock_queue.suscribir.assert_called_once()
-        call_args = mock_queue.suscribir.call_args
+        mock_queue.subscribe.assert_called_once()
+        call_args = mock_queue.subscribe.call_args
         assert call_args[0][0] == "diarize"
         assert callable(call_args[0][1])
 
@@ -90,7 +90,7 @@ class TestDiarizationMessagePublication:
         engine.capabilities = MagicMock(return_value=ASRCapabilities(supports_turns=True, is_local=True))
 
         mock_queue = AsyncMock()
-        mock_queue.publicar = AsyncMock()
+        mock_queue.publish = AsyncMock()
 
         message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
         with patch("app.transcription.worker.create_asr_engine", return_value=engine):
@@ -98,7 +98,7 @@ class TestDiarizationMessagePublication:
 
         # The Diarization_Message must have been published with the meeting_id
         diarize_publications = [
-            c for c in mock_queue.publicar.call_args_list if c[0][0] == "diarize"
+            c for c in mock_queue.publish.call_args_list if c[0][0] == "diarize"
         ]
         assert len(diarize_publications) == 1
         assert diarize_publications[0][0][1] == {"meeting_id": meeting_id}
@@ -137,14 +137,14 @@ class TestDiarizationMessagePublication:
         engine.capabilities = MagicMock(return_value=ASRCapabilities(supports_turns=True, is_local=True))
 
         mock_queue = AsyncMock()
-        mock_queue.publicar = AsyncMock()
+        mock_queue.publish = AsyncMock()
 
         message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
         with patch("app.transcription.worker.create_asr_engine", return_value=engine):
             await _process_transcription(message, session_factory, mock_queue)
 
         diarize_publications = [
-            c for c in mock_queue.publicar.call_args_list if c[0][0] == "diarize"
+            c for c in mock_queue.publish.call_args_list if c[0][0] == "diarize"
         ]
         assert len(diarize_publications) == 0
 
@@ -162,9 +162,9 @@ class TestDiarizeAckNackRetries:
     async def test_ack_after_success(self):
         """Successful handler -> ack (Req 1.7)."""
         import json
-        from app.infra.queue_rabbitmq import ColaDeRabbitMQ
+        from app.infra.queue_rabbitmq import RabbitMQJobQueue
 
-        queue = ColaDeRabbitMQ("amqp://guest:guest@localhost/")
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
         queue._dlx_exchange = None
 
         async def ok_handler(_msg):
@@ -187,7 +187,7 @@ class TestDiarizeAckNackRetries:
 
         mock_queue_obj.consume = capture_consume
 
-        await queue.suscribir("diarize", ok_handler)
+        await queue.subscribe("diarize", ok_handler)
         await captured["cb"](mock_message)
 
         mock_message.ack.assert_awaited_once()
@@ -200,13 +200,13 @@ class TestDiarizeAckNackRetries:
         Doesn't use nack(requeue=True): with no DLX configured that requeues
         the same message with no trace of retries, causing an infinite loop
         (a real bug that was observed). Instead a copy is republished with
-        x-sauri-reintentos incremented and the original message is acked.
+        x-sauri-retries incremented and the original message is acked.
         """
         import json
-        from app.infra.queue_rabbitmq import ColaDeRabbitMQ
+        from app.infra.queue_rabbitmq import RabbitMQJobQueue
 
         with patch.dict(os.environ, {"DIARIZATION_MAX_RETRIES": "3"}, clear=False):
-            queue = ColaDeRabbitMQ("amqp://guest:guest@localhost/")
+            queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
             queue._dlx_exchange = None
 
             async def failing_handler(_msg):
@@ -231,16 +231,16 @@ class TestDiarizeAckNackRetries:
 
             mock_queue_obj.consume = capture_consume
 
-            await queue.suscribir("diarize", failing_handler)
+            await queue.subscribe("diarize", failing_handler)
             await captured["cb"](mock_message)
 
-            # 0 < 3 retries -> republishes with x-sauri-reintentos=1 and acks the original
+            # 0 < 3 retries -> republishes with x-sauri-retries=1 and acks the original
             mock_message.nack.assert_not_called()
             mock_message.ack.assert_awaited_once()
             queue._channel.default_exchange.publish.assert_awaited_once()
             published_message, kwargs = queue._channel.default_exchange.publish.call_args
             assert kwargs["routing_key"] == "diarize"
-            assert published_message[0].headers["x-sauri-reintentos"] == 1
+            assert published_message[0].headers["x-sauri-retries"] == 1
 
 
 # ---------------------------------------------------------------------------

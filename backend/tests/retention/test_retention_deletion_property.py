@@ -16,31 +16,31 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import Meeting, SessionRecording, Transcript
-from app.infra.object_store import AlmacenDeObjetos
+from app.infra.object_store import ObjectStore
 from app.retention.worker import run_retention_deletion
 
 
-class _FakeObjectStore(AlmacenDeObjetos):
-    """In-memory fake of AlmacenDeObjetos for tests."""
+class _FakeObjectStore(ObjectStore):
+    """In-memory fake of ObjectStore for tests."""
 
     def __init__(self) -> None:
         self._objects: dict[str, bytes] = {}
 
-    async def guardar(self, clave: str, contenido: bytes, content_type: str = "application/octet-stream") -> str:
-        self._objects[clave] = contenido
-        return clave
+    async def save(self, key: str, content: bytes, content_type: str = "application/octet-stream") -> str:
+        self._objects[key] = content
+        return key
 
-    async def obtener(self, referencia: str) -> bytes:
-        return self._objects[referencia]
+    async def get(self, reference: str) -> bytes:
+        return self._objects[reference]
 
-    async def eliminar(self, referencia: str) -> None:
-        self._objects.pop(referencia, None)
+    async def delete(self, reference: str) -> None:
+        self._objects.pop(reference, None)
 
-    async def url_temporal_de_lectura(self, referencia: str, ttl_seconds: int = 3600) -> str:
-        return f"https://example.local/{referencia}?ttl={ttl_seconds}"
+    async def temporary_read_url(self, reference: str, ttl_seconds: int = 3600) -> str:
+        return f"https://example.local/{reference}?ttl={ttl_seconds}"
 
-    def existe(self, referencia: str) -> bool:
-        return referencia in self._objects
+    def exists(self, reference: str) -> bool:
+        return reference in self._objects
 
 
 def _create_meeting(meeting_id: str) -> Meeting:
@@ -76,9 +76,9 @@ async def test_property_12_deletion_removes_audio_video_and_transcript(
 
     audio_ref = f"audio/{uuid.uuid4()}.webm"
     video_ref = f"video/{uuid.uuid4()}.webm" if has_video else None
-    await object_store.guardar(audio_ref, b"audio-bytes")
+    await object_store.save(audio_ref, b"audio-bytes")
     if video_ref:
-        await object_store.guardar(video_ref, b"video-bytes")
+        await object_store.save(video_ref, b"video-bytes")
 
     now = datetime.now(UTC)
     db_session.add(_create_meeting(meeting_id))
@@ -111,9 +111,9 @@ async def test_property_12_deletion_removes_audio_video_and_transcript(
 
     await run_retention_deletion(db_session, object_store, now)
 
-    assert not object_store.existe(audio_ref)
+    assert not object_store.exists(audio_ref)
     if video_ref:
-        assert not object_store.existe(video_ref)
+        assert not object_store.exists(video_ref)
 
     recording_result = await db_session.execute(
         select(SessionRecording).where(SessionRecording.meeting_id == meeting_id)
@@ -134,7 +134,7 @@ async def test_property_12_unexpired_are_preserved(db_session: AsyncSession) -> 
     now = datetime.now(UTC)
 
     audio_ref = f"audio/{uuid.uuid4()}.webm"
-    await object_store.guardar(audio_ref, b"audio-bytes")
+    await object_store.save(audio_ref, b"audio-bytes")
 
     db_session.add(_create_meeting(meeting_id))
     db_session.add(
@@ -155,7 +155,7 @@ async def test_property_12_unexpired_are_preserved(db_session: AsyncSession) -> 
 
     await run_retention_deletion(db_session, object_store, now)
 
-    assert object_store.existe(audio_ref)
+    assert object_store.exists(audio_ref)
     result = await db_session.execute(
         select(SessionRecording).where(SessionRecording.meeting_id == meeting_id)
     )

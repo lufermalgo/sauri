@@ -1,9 +1,9 @@
-"""Entrypoint del worker asíncrono de sauri.
+"""sauri async worker entrypoint.
 
-Ejecutable como: python -m app.worker
+Runnable as: python -m app.worker
 
-Conecta la cola de trabajos, inicia el worker de transcripción y
-mantiene el loop hasta interrupción (SIGINT/SIGTERM).
+Connects the job queue, starts the transcription worker and keeps the
+loop running until interrupted (SIGINT/SIGTERM).
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ import asyncio
 import logging
 import signal
 
+from app.diarization.worker import start_worker as start_diarization_worker
 from app.infra.database import create_engine, create_session_factory
-from app.infra.object_store import crear_almacen_de_objetos
-from app.infra.queue import crear_cola_de_trabajos
-from app.retencion.worker import iniciar_worker_retencion
-from app.transcripcion.worker import iniciar_worker
-from app.diarizacion.worker import iniciar_worker as iniciar_worker_diarizacion
+from app.infra.object_store import create_object_store
+from app.infra.queue import create_job_queue
+from app.retention.worker import start_retention_worker
+from app.transcription.worker import start_worker as start_transcription_worker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,35 +27,35 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    """Arranca la cola, suscribe workers y espera hasta shutdown."""
-    logger.info("Iniciando worker de sauri...")
+    """Starts the queue, subscribes workers, and waits until shutdown."""
+    logger.info("Starting sauri worker...")
 
-    # Infraestructura
+    # Infrastructure
     engine = create_engine()
     session_factory = create_session_factory(engine)
-    cola = crear_cola_de_trabajos()
+    queue = create_job_queue()
 
-    almacen = crear_almacen_de_objetos()
+    object_store = create_object_store()
 
-    await cola.conectar()
-    logger.info("Conexión a la cola establecida")
+    await queue.connect()
+    logger.info("Queue connection established")
 
-    # Suscribir worker de transcripción
-    await iniciar_worker(cola, session_factory)
+    # Subscribe transcription worker
+    await start_transcription_worker(queue, session_factory)
 
-    # Suscribir worker de diarización (tema 'diarizar', Req. 1.1)
-    await iniciar_worker_diarizacion(cola, session_factory)
+    # Subscribe diarization worker (topic 'diarize', Req. 1.1)
+    await start_diarization_worker(queue, session_factory)
 
-    # Iniciar worker de retención como tarea en segundo plano
-    retencion_task = asyncio.create_task(
-        iniciar_worker_retencion(session_factory, almacen)
+    # Start retention worker as a background task
+    retention_task = asyncio.create_task(
+        start_retention_worker(session_factory, object_store)
     )
 
-    # Esperar señal de shutdown
+    # Wait for shutdown signal
     stop_event = asyncio.Event()
 
     def _signal_handler() -> None:
-        logger.info("Señal de shutdown recibida, cerrando...")
+        logger.info("Shutdown signal received, closing...")
         stop_event.set()
 
     loop = asyncio.get_running_loop()
@@ -64,11 +64,11 @@ async def main() -> None:
 
     await stop_event.wait()
 
-    # Limpieza
-    retencion_task.cancel()
-    await cola.desconectar()
+    # Cleanup
+    retention_task.cancel()
+    await queue.disconnect()
     await engine.dispose()
-    logger.info("Worker de sauri finalizado")
+    logger.info("sauri worker finished")
 
 
 if __name__ == "__main__":

@@ -24,8 +24,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import Diarization, Meeting, SessionRecording, StateHistory
-from app.infra.object_store import AlmacenDeObjetos
-from app.infra.queue import ColaDeTrabajos
+from app.infra.object_store import ObjectStore
+from app.infra.queue import JobQueue
 from app.meetings.schemas import (
     CalendarMeetingInput,
     LinkMeetingInput,
@@ -217,7 +217,7 @@ async def rename_meeting(
 
 async def delete_meeting(
     session: AsyncSession,
-    object_store: AlmacenDeObjetos,
+    object_store: ObjectStore,
     meeting_id: str,
 ) -> bool:
     """Deletes a Meeting and everything associated with it (Mis_Notas -> delete note).
@@ -251,10 +251,10 @@ async def delete_meeting(
     recording = (await session.execute(stmt_recording)).scalar_one_or_none()
     if recording is not None:
         with contextlib.suppress(Exception):
-            await object_store.eliminar(recording.audio_ref)
+            await object_store.delete(recording.audio_ref)
         if recording.video_ref is not None:
             with contextlib.suppress(Exception):
-                await object_store.eliminar(recording.video_ref)
+                await object_store.delete(recording.video_ref)
 
     await session.delete(meeting)
     await session.flush()
@@ -264,7 +264,7 @@ async def delete_meeting(
 async def request_join(
     session: AsyncSession,
     meeting_id: str,
-    queue: ColaDeTrabajos,
+    queue: JobQueue,
 ) -> TransitionResult:
     """Requests manual join of the assistant to a queued Meeting (Req. 1.2).
 
@@ -280,9 +280,9 @@ async def request_join(
     result = await record_transition(session, meeting, "start_capture")
 
     if result.successful:
-        await queue.publicar(
-            tema="join",
-            mensaje={"meeting_id": meeting.id, "meet_link": meeting.meet_link},
+        await queue.publish(
+            topic="join",
+            message={"meeting_id": meeting.id, "meet_link": meeting.meet_link},
         )
 
     return result
@@ -291,7 +291,7 @@ async def request_join(
 async def schedule_join_by_calendar(
     session: AsyncSession,
     meeting_id: str,
-    queue: ColaDeTrabajos,
+    queue: JobQueue,
 ) -> TransitionResult:
     """Triggers the join when scheduled_start_time arrives (Req. 1.3).
 
@@ -305,9 +305,9 @@ async def schedule_join_by_calendar(
     result = await record_transition(session, meeting, "start_capture")
 
     if result.successful:
-        await queue.publicar(
-            tema="join",
-            mensaje={"meeting_id": meeting.id, "meet_link": meeting.meet_link},
+        await queue.publish(
+            topic="join",
+            message={"meeting_id": meeting.id, "meet_link": meeting.meet_link},
         )
 
     return result

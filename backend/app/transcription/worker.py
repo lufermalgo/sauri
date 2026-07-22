@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import Meeting, SpeechTurn, Transcript
-from app.infra.queue import ColaDeTrabajos
+from app.infra.queue import JobQueue
 from app.meetings.service import record_transition
 from app.transcription.asr_engine import TranscriptionOptions
 from app.transcription.factory import create_asr_engine
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 async def _process_transcription(
     message: dict[str, Any],
     session_factory: async_sessionmaker[AsyncSession],
-    queue: ColaDeTrabajos | None = None,
+    queue: JobQueue | None = None,
 ) -> None:
     """Processes a message from the transcription queue.
 
@@ -39,8 +39,9 @@ async def _process_transcription(
         message: Expected: {"meeting_id": str, "audio_ref": str}
         session_factory: Async SQLAlchemy session factory.
         queue: Optional JobQueue; if provided, once the Transcript becomes
-            available a Diarization_Message is published to the "diarizar"
-            topic with the meeting_id (Req. 1.2 of identificacion-hablantes).
+            available a Diarization_Message is published to the "diarize"
+            topic with the meeting_id (Req. 1.2 of the speaker-identification
+            feature).
     """
     # --- Message validation (Req. 1.2, 1.3) ---
     meeting_id = message.get("meeting_id")
@@ -161,10 +162,10 @@ async def _process_transcription(
                 )
 
     # Enqueue the Diarization_Message once the Transcript transaction is
-    # committed (Req. 1.2 of identificacion-hablantes). Doesn't alter the
-    # Meeting's ProcessState (Req. 9.5).
+    # committed (Req. 1.2 of the speaker-identification feature). Doesn't
+    # alter the Meeting's ProcessState (Req. 9.5).
     if queue is not None and transcript_created:
-        await queue.publicar("diarize", {"meeting_id": meeting_id})
+        await queue.publish("diarize", {"meeting_id": meeting_id})
         logger.info(
             "Diarization_Message enqueued for meeting_id=%s (topic 'diarize')",
             meeting_id,
@@ -172,7 +173,7 @@ async def _process_transcription(
 
 
 async def start_worker(
-    queue: ColaDeTrabajos,
+    queue: JobQueue,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Starts the transcription worker: subscribes to the 'transcribe' topic.
@@ -185,5 +186,5 @@ async def start_worker(
     async def handler(message: dict[str, Any]) -> None:
         await _process_transcription(message, session_factory, queue)
 
-    await queue.suscribir("transcribe", handler)
+    await queue.subscribe("transcribe", handler)
     logger.info("Transcription worker subscribed to the 'transcribe' topic")

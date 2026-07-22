@@ -16,14 +16,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import SessionRecording, Transcript
-from app.infra.object_store import AlmacenDeObjetos
+from app.infra.object_store import ObjectStore
 
 logger = logging.getLogger(__name__)
 
 
 async def run_retention_deletion(
     session: AsyncSession,
-    object_store: AlmacenDeObjetos,
+    object_store: ObjectStore,
     now: datetime,
 ) -> None:
     """Runs one cycle of expired-data deletion.
@@ -31,8 +31,8 @@ async def run_retention_deletion(
     Steps:
     a. Queries SessionRecording with expires_at <= now.
     b. For each expired recording:
-       - Deletes the audio blob via object_store.eliminar(audio_ref).
-       - Deletes the video blob via object_store.eliminar(video_ref) if present.
+       - Deletes the audio blob via object_store.delete(audio_ref).
+       - Deletes the video blob via object_store.delete(video_ref) if present.
        - Deletes the associated Transcript (by meeting_id).
        - Deletes the SessionRecording record.
     c. Queries Transcript with expires_at <= now (independently expired).
@@ -56,7 +56,7 @@ async def run_retention_deletion(
     for recording in expired_recordings:
         # Delete audio blob
         try:
-            await object_store.eliminar(recording.audio_ref)
+            await object_store.delete(recording.audio_ref)
         except Exception:
             logger.warning(
                 "Could not delete audio_ref=%s for recording=%s",
@@ -67,7 +67,7 @@ async def run_retention_deletion(
         # Delete video blob if present
         if recording.video_ref is not None:
             try:
-                await object_store.eliminar(recording.video_ref)
+                await object_store.delete(recording.video_ref)
             except Exception:
                 logger.warning(
                     "Could not delete video_ref=%s for recording=%s",
@@ -118,7 +118,7 @@ async def run_retention_deletion(
 
 async def start_retention_worker(
     session_factory: async_sessionmaker[AsyncSession],
-    object_store: AlmacenDeObjetos,
+    object_store: ObjectStore,
     interval_seconds: int = 3600,
 ) -> None:
     """Runs retention deletion periodically.

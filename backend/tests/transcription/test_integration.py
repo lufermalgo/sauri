@@ -1,6 +1,6 @@
 """Integration tests for the transcription-asr module.
 
-# Feature: transcripcion-asr
+# Feature: transcription-asr
 Tasks: 11.2, 12.2
 """
 
@@ -40,7 +40,7 @@ class TestASREngineContract:
         response_data = {
             "segments": [
                 {"text": "Hola mundo", "start_ms": 0, "end_ms": 2000},
-                {"text": "¿Cómo estás?", "start_ms": 2100, "end_ms": 4000},
+                {"text": "¿Cómo estás?", "start_ms": 2100, "end_ms": 4000},  # spanish-sample-data
             ],
             "language": "es",
         }
@@ -91,15 +91,15 @@ class TestWorkerSubscription:
     async def test_worker_subscribes_to_transcribe_topic(self):
         """On startup, the worker subscribes to the 'transcribe' topic."""
         mock_queue = AsyncMock()
-        mock_queue.suscribir = AsyncMock()
+        mock_queue.subscribe = AsyncMock()
 
         mock_session_factory = AsyncMock()
 
         await start_worker(mock_queue, mock_session_factory)
 
-        # Verify suscribir was called with "transcribe" as the topic
-        mock_queue.suscribir.assert_called_once()
-        call_args = mock_queue.suscribir.call_args
+        # Verify subscribe was called with "transcribe" as the topic
+        mock_queue.subscribe.assert_called_once()
+        call_args = mock_queue.subscribe.call_args
         assert call_args[0][0] == "transcribe"
         # Second arg should be a callable (the handler)
         assert callable(call_args[0][1])

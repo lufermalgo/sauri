@@ -1,4 +1,4 @@
-"""Implementación S3-compatible de AlmacenDeObjetos (MinIO local / S3 / GCS)."""
+"""S3-compatible implementation of ObjectStore (local MinIO / S3 / GCS)."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ import functools
 import boto3
 from botocore.config import Config
 
-from app.infra.object_store import AlmacenDeObjetos
+from app.infra.object_store import ObjectStore
 
 
-class AlmacenDeObjetosS3(AlmacenDeObjetos):
-    """Almacén de objetos respaldado por un endpoint compatible con S3.
+class S3ObjectStore(ObjectStore):
+    """Object store backed by an S3-compatible endpoint.
 
-    Funciona con MinIO (desarrollo local), AWS S3 y GCS (interop S3).
-    Las operaciones de boto3 (síncronas) se ejecutan en un hilo separado
-    para no bloquear el event loop de asyncio.
+    Works with MinIO (local development), AWS S3, and GCS (S3 interop).
+    The (synchronous) boto3 operations run on a separate thread so they
+    don't block the asyncio event loop.
     """
 
     def __init__(
@@ -36,60 +36,60 @@ class AlmacenDeObjetosS3(AlmacenDeObjetos):
         )
 
     # ------------------------------------------------------------------
-    # Interfaz AlmacenDeObjetos
+    # ObjectStore interface
     # ------------------------------------------------------------------
 
-    async def guardar(
+    async def save(
         self,
-        clave: str,
-        contenido: bytes,
+        key: str,
+        content: bytes,
         content_type: str = "application/octet-stream",
     ) -> str:
-        """Sube un objeto al bucket y devuelve la clave como referencia."""
+        """Uploads an object to the bucket and returns the key as reference."""
         await asyncio.to_thread(
             functools.partial(
                 self._client.put_object,
                 Bucket=self._bucket,
-                Key=clave,
-                Body=contenido,
+                Key=key,
+                Body=content,
                 ContentType=content_type,
             )
         )
-        return clave
+        return key
 
-    async def obtener(self, referencia: str) -> bytes:
-        """Descarga el contenido de un objeto del bucket."""
+    async def get(self, reference: str) -> bytes:
+        """Downloads the content of an object from the bucket."""
         response = await asyncio.to_thread(
             functools.partial(
                 self._client.get_object,
                 Bucket=self._bucket,
-                Key=referencia,
+                Key=reference,
             )
         )
         body: bytes = response["Body"].read()
         return body
 
-    async def eliminar(self, referencia: str) -> None:
-        """Elimina un objeto del bucket."""
+    async def delete(self, reference: str) -> None:
+        """Deletes an object from the bucket."""
         await asyncio.to_thread(
             functools.partial(
                 self._client.delete_object,
                 Bucket=self._bucket,
-                Key=referencia,
+                Key=reference,
             )
         )
 
-    async def url_temporal_de_lectura(
+    async def temporary_read_url(
         self,
-        referencia: str,
+        reference: str,
         ttl_seconds: int = 3600,
     ) -> str:
-        """Genera una URL pre-firmada de lectura con expiración."""
+        """Generates a pre-signed read URL with expiration."""
         url: str = await asyncio.to_thread(
             functools.partial(
                 self._client.generate_presigned_url,
                 ClientMethod="get_object",
-                Params={"Bucket": self._bucket, "Key": referencia},
+                Params={"Bucket": self._bucket, "Key": reference},
                 ExpiresIn=ttl_seconds,
             )
         )

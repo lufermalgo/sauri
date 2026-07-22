@@ -44,9 +44,9 @@ async def test_request_join_manual_transitions_and_enqueues(db_session: AsyncSes
 
     assert result.successful is True
     assert result.new_state == "joining"
-    queue.publicar.assert_awaited_once_with(
-        tema="join",
-        mensaje={"meeting_id": meeting_id, "meet_link": meeting.meet_link},
+    queue.publish.assert_awaited_once_with(
+        topic="join",
+        message={"meeting_id": meeting_id, "meet_link": meeting.meet_link},
     )
 
 
@@ -59,7 +59,7 @@ async def test_request_join_nonexistent_meeting_does_not_publish(
     result = await request_join(db_session, "does-not-exist", queue)
 
     assert result.successful is False
-    queue.publicar.assert_not_awaited()
+    queue.publish.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -80,7 +80,7 @@ async def test_schedule_join_by_calendar_fires_when_the_time_arrives(
 
     assert result.successful is True
     assert result.new_state == "joining"
-    queue.publicar.assert_awaited_once_with(
-        tema="join",
-        mensaje={"meeting_id": meeting_id, "meet_link": meeting.meet_link},
+    queue.publish.assert_awaited_once_with(
+        topic="join",
+        message={"meeting_id": meeting_id, "meet_link": meeting.meet_link},
     )

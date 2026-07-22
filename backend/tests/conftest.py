@@ -95,11 +95,11 @@ def meeting_recording() -> Meeting:
 
 
 @pytest.fixture
-def mock_cola() -> AsyncMock:
-    """A mock ColaDeTrabajos for testing without RabbitMQ."""
-    cola = AsyncMock()
-    cola.publicar = AsyncMock()
-    cola.suscribir = AsyncMock()
-    cola.conectar = AsyncMock()
-    cola.desconectar = AsyncMock()
-    return cola
+def mock_queue() -> AsyncMock:
+    """A mock JobQueue for testing without RabbitMQ."""
+    queue = AsyncMock()
+    queue.publish = AsyncMock()
+    queue.subscribe = AsyncMock()
+    queue.connect = AsyncMock()
+    queue.disconnect = AsyncMock()
+    return queue

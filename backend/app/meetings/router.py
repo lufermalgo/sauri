@@ -24,8 +24,8 @@ from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
 from app.infra.models import Diarization, Meeting, SpeechTurn, Transcript
-from app.infra.object_store import AlmacenDeObjetos, crear_almacen_de_objetos
-from app.infra.queue import ColaDeTrabajos, crear_cola_de_trabajos
+from app.infra.object_store import ObjectStore, create_object_store
+from app.infra.queue import JobQueue, create_job_queue
 from app.meetings.service import (
     get_meeting,
     delete_meeting,
@@ -37,14 +37,14 @@ from app.meetings.service import (
 router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"])
 
 
-def _get_queue() -> ColaDeTrabajos:
+def _get_queue() -> JobQueue:
     """Job queue factory (simplified DI)."""
-    return crear_cola_de_trabajos()
+    return create_job_queue()
 
 
-def _get_object_store() -> AlmacenDeObjetos:
+def _get_object_store() -> ObjectStore:
     """Object store factory (simplified DI)."""
-    return crear_almacen_de_objetos()
+    return create_object_store()
 
 
 class RenameInput(BaseModel):
@@ -214,7 +214,7 @@ async def request_join_endpoint(
     engine = create_engine()
     session_factory = create_session_factory(engine)
     try:
-        await queue.conectar()
+        await queue.connect()
         async with session_factory() as session:
             async with session.begin():
                 result = await request_join(session, meeting_id, queue)
@@ -231,7 +231,7 @@ async def request_join_endpoint(
                     "process_state": result.new_state,
                 }
     finally:
-        await queue.desconectar()
+        await queue.disconnect()
         await engine.dispose()
 
 
