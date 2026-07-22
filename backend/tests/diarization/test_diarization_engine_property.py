@@ -1,6 +1,6 @@
 """Property tests for diarization_engine.py.
 
-# Feature: identificacion-hablantes, Property 6: Ascending order of SpeakerSegments
+# Feature: speaker-identification, Property 6: Ascending order of SpeakerSegments
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=30)
 
 # ---------------------------------------------------------------------------
 # Property 6: Ascending order of SpeakerSegments
-# Feature: identificacion-hablantes, Property 6: Ascending order of SpeakerSegments
+# Feature: speaker-identification, Property 6: Ascending order of SpeakerSegments
 # Validates: Requirements 5.1
 # ---------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 """Integration test for the diarization schema (migration 003).
 
-# Feature: identificacion-hablantes
+# Feature: speaker-identification
 Task: 10.2
 Validates: Requirements 8.1, 10.5
 

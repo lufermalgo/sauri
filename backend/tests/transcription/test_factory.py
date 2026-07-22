@@ -1,6 +1,6 @@
 """Tests for the ASREngine factory (factory.py).
 
-# Feature: transcripcion-asr
+# Feature: transcription-asr
 Tasks: 3.2, 3.3, 3.4
 """
 
@@ -20,7 +20,7 @@ from app.transcription.cloud_provider import CloudProvider
 
 # ---------------------------------------------------------------------------
 # Property 1: Provider selection by configuration (Task 3.2)
-# Feature: transcripcion-asr, Property 1: Provider selection by configuration
+# Feature: transcription-asr, Property 1: Provider selection by configuration
 # Validates: Requirements 2.1, 2.2, 2.3, 2.4
 # ---------------------------------------------------------------------------
 
@@ -81,7 +81,7 @@ def test_property_1_absent_without_variable():
 
 # ---------------------------------------------------------------------------
 # Property 2: Invalid provider value flags an error with the received value (Task 3.3)
-# Feature: transcripcion-asr, Property 2: Invalid value flags an error
+# Feature: transcription-asr, Property 2: Invalid value flags an error
 # Validates: Requirements 2.5
 # ---------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 """Tests for TranscriptRepository (repository.py).
 
-# Feature: transcripcion-asr
+# Feature: transcription-asr
 Tasks: 7.3, 7.4
 """
 
@@ -68,7 +68,7 @@ def _create_turns(transcript_id: str, n: int) -> list[SpeechTurn]:
 
 # ---------------------------------------------------------------------------
 # Property 13: Persistence and retrieval round-trip (Task 7.3)
-# Feature: transcripcion-asr, Property 13: Persistence round-trip
+# Feature: transcription-asr, Property 13: Persistence round-trip
 # Validates: Requirements 7.7
 # ---------------------------------------------------------------------------
 

@@ -14,6 +14,8 @@ Requirements: 4.5, 7.1, 7.2, 8.3, 8.4
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -55,9 +57,9 @@ class RenameInput(BaseModel):
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_meeting(
-    input: dict,
+    input: dict[str, Any],
     user: AuthenticatedUser = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     """Registers a new meeting in state 'queued'.
 
     Accepts a Meet link, a calendar invite, or a manual request.
@@ -91,7 +93,7 @@ async def create_meeting(
 @router.get("/")
 async def list_meetings(
     user: AuthenticatedUser = Depends(get_current_user),
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Lists the authenticated user's meetings.
 
     Requirements: 4.5, 9.1
@@ -128,7 +130,7 @@ async def rename_meeting_endpoint(
     meeting_id: str,
     input: RenameInput,
     user: AuthenticatedUser = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     """Renames a note (Mis_Notas -> rename).
 
     Only the user who created the Meeting can rename it.
@@ -181,7 +183,7 @@ async def delete_meeting_endpoint(
 async def get_meeting_endpoint(
     meeting_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     """Looks up the current state of a meeting.
 
     Requirements: 4.5, 9.1
@@ -205,7 +207,7 @@ async def get_meeting_endpoint(
 async def request_join_endpoint(
     meeting_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     """Requests a manual join of the assistant to a queued meeting.
 
     Requirements: 1.2, 9.1
@@ -239,7 +241,7 @@ async def request_join_endpoint(
 async def get_transcript(
     meeting_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     """Gets the full transcript of a meeting.
 
     Requirements: 4.5, 9.1
@@ -304,7 +306,7 @@ async def get_transcript(
 async def get_diarization(
     meeting_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     """Gets the Diarization (speakers + assignments) of a meeting.
 
     New endpoint (chrome-side-panel, backend gap).

@@ -37,4 +37,4 @@ def create_token(
         "exp": now + timedelta(minutes=expires_minutes),
         "iat": now,
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return str(jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM))

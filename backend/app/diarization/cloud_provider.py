@@ -9,6 +9,7 @@ Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import httpx
 
@@ -113,7 +114,7 @@ class CloudProvider(DiarizationEngine):
         )
 
     def _parse_and_validate_response(
-        self, data: dict, duration_ms: int | None
+        self, data: dict[str, Any], duration_ms: int | None
     ) -> list[SpeakerSegment]:
         """Parses and validates the cloud service's JSON response (Req. 4.5).
 

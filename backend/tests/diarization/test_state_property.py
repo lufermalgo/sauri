@@ -1,6 +1,6 @@
 """Property test for the diarization state machine.
 
-# Feature: identificacion-hablantes, Property 16: Diarization state machine correctness
+# Feature: speaker-identification, Property 16: Diarization state machine correctness
 Validates: Requirements 9.1, 9.2, 9.3
 """
 
@@ -29,7 +29,7 @@ VALID_TRANSITIONS: dict[tuple[str, str], tuple[str, str | None]] = {
 
 # ---------------------------------------------------------------------------
 # Property 16: Diarization state machine correctness
-# Feature: identificacion-hablantes, Property 16: Diarization state machine correctness
+# Feature: speaker-identification, Property 16: Diarization state machine correctness
 # Validates: Requirements 9.1, 9.2, 9.3
 # ---------------------------------------------------------------------------
 

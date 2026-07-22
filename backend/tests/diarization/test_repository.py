@@ -1,6 +1,6 @@
 """Tests for DiarizationRepository (repository.py).
 
-# Feature: identificacion-hablantes
+# Feature: speaker-identification
 Tasks: 11.1, 11.2, 11.3, 11.4, 11.5
 Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 10.5, 10.6
 """
@@ -120,7 +120,7 @@ def _create_assignments(
 
 # ---------------------------------------------------------------------------
 # Property 12: Uniqueness of the Diarization per Meeting (Task 11.1)
-# Feature: identificacion-hablantes, Property 12: Uniqueness of the Diarization per Meeting
+# Feature: speaker-identification, Property 12: Uniqueness of the Diarization per Meeting
 # Validates: Requirements 8.1, 10.5
 # ---------------------------------------------------------------------------
 
@@ -169,7 +169,7 @@ async def test_property_12_diarization_uniqueness_per_meeting(
 
 # ---------------------------------------------------------------------------
 # Property 13: Persistence atomicity (Task 11.2)
-# Feature: identificacion-hablantes, Property 13: Persistence atomicity
+# Feature: speaker-identification, Property 13: Persistence atomicity
 # Validates: Requirements 8.2, 8.3, 10.6
 # ---------------------------------------------------------------------------
 
@@ -228,7 +228,7 @@ async def test_property_13_persistence_atomicity(
 
 # ---------------------------------------------------------------------------
 # Property 14: Provider metadata recording (Task 11.3)
-# Feature: identificacion-hablantes, Property 14: Provider metadata recording
+# Feature: speaker-identification, Property 14: Provider metadata recording
 # Validates: Requirements 8.4
 # ---------------------------------------------------------------------------
 
@@ -268,7 +268,7 @@ async def test_property_14_provider_metadata_recording(
 
 # ---------------------------------------------------------------------------
 # Property 15: Persistence and retrieval round-trip (Task 11.4)
-# Feature: identificacion-hablantes, Property 15: Persistence and retrieval round-trip
+# Feature: speaker-identification, Property 15: Persistence and retrieval round-trip
 # Validates: Requirements 8.5
 # ---------------------------------------------------------------------------
 

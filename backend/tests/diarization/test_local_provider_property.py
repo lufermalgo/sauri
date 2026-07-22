@@ -1,6 +1,6 @@
 """Property tests for the diarization LocalProvider.
 
-# Feature: identificacion-hablantes, Property 4: Faithful mapping of the local response to SpeakerSegments
+# Feature: speaker-identification, Property 4: Faithful mapping of the local response to SpeakerSegments
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=20)
 
 # ---------------------------------------------------------------------------
 # Property 4: Faithful mapping of the local response to SpeakerSegments
-# Feature: identificacion-hablantes, Property 4: Faithful mapping of the local response to SpeakerSegments
+# Feature: speaker-identification, Property 4: Faithful mapping of the local response to SpeakerSegments
 # Validates: Requirements 3.4
 # ---------------------------------------------------------------------------
 

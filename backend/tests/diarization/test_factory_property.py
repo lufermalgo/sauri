@@ -1,6 +1,6 @@
 """Property tests for the DiarizationEngine factory (factory.py).
 
-# Feature: identificacion-hablantes, Property 1: Provider selection by configuration
+# Feature: speaker-identification, Property 1: Provider selection by configuration
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from app.diarization.cloud_provider import CloudProvider
 
 # ---------------------------------------------------------------------------
 # Property 1: Provider selection by configuration
-# Feature: identificacion-hablantes, Property 1: Provider selection by configuration
+# Feature: speaker-identification, Property 1: Provider selection by configuration
 # Validates: Requirements 2.1, 2.2, 2.3, 2.4
 # ---------------------------------------------------------------------------
 
@@ -96,7 +96,7 @@ def test_property_1_absent_without_variable():
 
 # ---------------------------------------------------------------------------
 # Property 2: Invalid provider value flags an error with the received value
-# Feature: identificacion-hablantes, Property 2: Invalid provider value flags an error with the received value
+# Feature: speaker-identification, Property 2: Invalid provider value flags an error with the received value
 # Validates: Requirements 2.5
 # ---------------------------------------------------------------------------
 

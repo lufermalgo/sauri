@@ -1,6 +1,6 @@
 """Tests for LocalProvider (local_provider.py).
 
-# Feature: transcripcion-asr
+# Feature: transcription-asr
 Tasks: 4.2, 4.3, 4.4
 """
 
@@ -33,7 +33,7 @@ segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=20)
 
 # ---------------------------------------------------------------------------
 # Property 4: Faithful mapping of the local response to segments (Task 4.2)
-# Feature: transcripcion-asr, Property 4: Faithful mapping of the local response
+# Feature: transcription-asr, Property 4: Faithful mapping of the local response
 # Validates: Requirements 3.4
 # ---------------------------------------------------------------------------
 
@@ -70,7 +70,7 @@ async def test_property_4_faithful_mapping_of_local_response(segments: list[dict
 
 # ---------------------------------------------------------------------------
 # Property 6: Ascending order of segments (Task 4.3)
-# Feature: transcripcion-asr, Property 6: Ascending order
+# Feature: transcription-asr, Property 6: Ascending order
 # Validates: Requirements 5.1
 # ---------------------------------------------------------------------------
 

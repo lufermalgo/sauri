@@ -1,6 +1,6 @@
 """Property test for turn assignment by maximum temporal overlap.
 
-# Feature: identificacion-hablantes, Property 9: Turn assignment by maximum overlap with deterministic tie-break
+# Feature: speaker-identification, Property 9: Turn assignment by maximum overlap with deterministic tie-break
 Validates: Requirements 7.1, 7.2
 """
 
@@ -100,7 +100,7 @@ def _calculate_overlap(turn: Turn, segment: SpeakerSegment) -> int:
 
 # ---------------------------------------------------------------------------
 # Property 9: Turn assignment by maximum overlap with deterministic tie-break
-# Feature: identificacion-hablantes, Property 9: Turn assignment by maximum overlap with deterministic tie-break
+# Feature: speaker-identification, Property 9: Turn assignment by maximum overlap with deterministic tie-break
 # Validates: Requirements 7.1, 7.2
 # ---------------------------------------------------------------------------
 
@@ -213,7 +213,7 @@ def test_property_9_tie_break_by_lower_sequence(
 
 # ---------------------------------------------------------------------------
 # Property 10: Preservation of the Transcript's SpeechTurns
-# Feature: identificacion-hablantes, Property 10: Preservation of the Transcript's SpeechTurns
+# Feature: speaker-identification, Property 10: Preservation of the Transcript's SpeechTurns
 # Validates: Requirements 7.3
 # ---------------------------------------------------------------------------
 

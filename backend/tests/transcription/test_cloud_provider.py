@@ -1,6 +1,6 @@
 """Tests for CloudProvider (cloud_provider.py).
 
-# Feature: transcripcion-asr
+# Feature: transcription-asr
 Tasks: 5.2, 5.3, 5.4
 """
 
@@ -20,7 +20,7 @@ from app.transcription.cloud_provider import CloudProvider, ExternalServiceError
 
 # ---------------------------------------------------------------------------
 # Property 3: Rejects an unencrypted endpoint (Task 5.2)
-# Feature: transcripcion-asr, Property 3: Rejects an unencrypted endpoint
+# Feature: transcription-asr, Property 3: Rejects an unencrypted endpoint
 # Validates: Requirements 4.2
 # ---------------------------------------------------------------------------
 
@@ -43,7 +43,7 @@ def test_property_3_rejects_unencrypted_endpoint(scheme: str, host: str):
 
 # ---------------------------------------------------------------------------
 # Property 5: Validity of the result's segments (Task 5.3)
-# Feature: transcripcion-asr, Property 5: Segment validity
+# Feature: transcription-asr, Property 5: Segment validity
 # Validates: Requirements 4.5, 5.2, 5.3, 5.4
 # ---------------------------------------------------------------------------
 

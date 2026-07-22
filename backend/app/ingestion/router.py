@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import ValidationError
@@ -43,7 +44,7 @@ async def upload_recording(
     video: UploadFile | None = File(None),
     data: str = Form(...),
     user: AuthenticatedUser = Depends(get_current_user),
-) -> dict:
+) -> dict[str, Any]:
     """Authenticated multipart upload endpoint for SessionRecording.
 
     Flow:

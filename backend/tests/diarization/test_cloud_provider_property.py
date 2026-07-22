@@ -1,4 +1,4 @@
-# Feature: identificacion-hablantes, Property 3: CloudProvider rejects an unencrypted endpoint
+# Feature: speaker-identification, Property 3: CloudProvider rejects an unencrypted endpoint
 """Property test: CloudProvider rejects endpoints without HTTPS.
 
 **Validates: Requirements 4.2**
@@ -92,7 +92,7 @@ def test_property_3_rejects_unencrypted_endpoint(endpoint: str, api_key: str) ->
         )
 
 
-# Feature: identificacion-hablantes, Property 5: Validity of the result's SpeakerSegments
+# Feature: speaker-identification, Property 5: Validity of the result's SpeakerSegments
 # ---------------------------------------------------------------------------
 # Property test 5: Validity of the result's SpeakerSegments
 #

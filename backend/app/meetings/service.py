@@ -18,6 +18,7 @@ from __future__ import annotations
 import contextlib
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import delete, select
@@ -30,6 +31,7 @@ from app.meetings.schemas import (
     CalendarMeetingInput,
     LinkMeetingInput,
     ManualMeetingInput,
+    MeetingInput,
 )
 from app.meetings.state_machine import TransitionResult, apply_event
 
@@ -83,7 +85,7 @@ async def record_transition(
 
 async def register_meeting(
     session: AsyncSession,
-    input: dict,
+    input: dict[str, Any],
     created_by: str,
 ) -> Meeting:
     """Creates a new Meeting in state 'queued' from a validated input.
@@ -106,6 +108,7 @@ async def register_meeting(
     Requirements: 1.1, 1.7
     """
     # Determine the input type and validate with Pydantic
+    model: MeetingInput
     try:
         if "calendar_invite_id" in input:
             model = CalendarMeetingInput(**input)
@@ -167,7 +170,7 @@ async def register_meeting(
 async def get_meeting(
     session: AsyncSession,
     meeting_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """Looks up the current state of a Meeting.
 
     Returns a dict with:
@@ -184,7 +187,7 @@ async def get_meeting(
     if meeting is None:
         raise ValueError(f"Meeting not found: {meeting_id}")
 
-    result: dict = {
+    result: dict[str, Any] = {
         "meeting_id": meeting.id,
         "title": meeting.title,
         "process_state": meeting.process_state,

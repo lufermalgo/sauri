@@ -1,6 +1,6 @@
 """Property tests for labeling.py.
 
-# Feature: identificacion-hablantes, Property 7: Speaker count equals distinct raw labels
+# Feature: speaker-identification, Property 7: Speaker count equals distinct raw labels
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ segments_list_strategy = st.lists(segment_strategy, min_size=1, max_size=30)
 
 # ---------------------------------------------------------------------------
 # Property 7: Speaker count equals distinct raw labels
-# Feature: identificacion-hablantes, Property 7: Speaker count equals distinct raw labels
+# Feature: speaker-identification, Property 7: Speaker count equals distinct raw labels
 # Validates: Requirements 5.5, 6.1
 # ---------------------------------------------------------------------------
 
@@ -76,7 +76,7 @@ def test_property_7_speaker_count_equals_distinct_raw_labels(
 
 # ---------------------------------------------------------------------------
 # Property 8: Anonymous, ordered, and deterministic speaker labeling
-# Feature: identificacion-hablantes, Property 8: Anonymous, ordered, and deterministic speaker labeling
+# Feature: speaker-identification, Property 8: Anonymous, ordered, and deterministic speaker labeling
 # Validates: Requirements 6.2, 6.3, 6.4
 # ---------------------------------------------------------------------------
 

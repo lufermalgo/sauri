@@ -81,7 +81,7 @@ async def run_retention_deletion(
                 Transcript.meeting_id == recording.meeting_id
             )
         )
-        deleted_transcripts += transcript_result.rowcount  # type: ignore[operator]
+        deleted_transcripts += transcript_result.rowcount  # type: ignore[attr-defined]
 
         # Delete the SessionRecording record
         await session.delete(recording)

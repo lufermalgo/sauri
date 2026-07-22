@@ -1,6 +1,6 @@
 """Tests for the transcription worker (worker.py).
 
-# Feature: transcripcion-asr
+# Feature: transcription-asr
 Tasks: 8.6, 8.7, 8.8, 8.9, 8.10, 8.11, 8.12, 8.13, 8.14, 8.15, 8.16
 """
 
@@ -88,7 +88,7 @@ segment_strategy = st.fixed_dictionaries(
 
 # ---------------------------------------------------------------------------
 # Property 16: Invalid input doesn't persist or raise an exception (Task 8.6)
-# Feature: transcripcion-asr, Property 16: Invalid input
+# Feature: transcription-asr, Property 16: Invalid input
 # Validates: Requirements 1.3, 1.4
 # ---------------------------------------------------------------------------
 
@@ -113,7 +113,7 @@ async def test_property_16_invalid_input_does_not_persist(
 
 # ---------------------------------------------------------------------------
 # Property 14: State machine correctness (Task 8.7)
-# Feature: transcripcion-asr, Property 14: State machine
+# Feature: transcription-asr, Property 14: State machine
 # Validates: Requirements 8.1, 8.2, 8.3, 8.5
 # ---------------------------------------------------------------------------
 
@@ -164,7 +164,7 @@ def test_property_14_terminal_state_immutable(state: str):
 
 # ---------------------------------------------------------------------------
 # Property 15: History recorded on every transition (Task 8.8)
-# Feature: transcripcion-asr, Property 15: History
+# Feature: transcription-asr, Property 15: History
 # Validates: Requirements 8.4
 # ---------------------------------------------------------------------------
 
@@ -208,7 +208,7 @@ async def test_property_15_history_recorded(
 
 # ---------------------------------------------------------------------------
 # Property 7: Mapping segments to turns preserves order and timestamps (Task 8.9)
-# Feature: transcripcion-asr, Property 7: Segment->turn mapping
+# Feature: transcription-asr, Property 7: Segment->turn mapping
 # Validates: Requirements 5.5, 7.6
 # ---------------------------------------------------------------------------
 
@@ -278,7 +278,7 @@ async def test_property_7_segment_to_turn_mapping(
 
 # ---------------------------------------------------------------------------
 # Property 9: Selection of the Transcript's language (Task 8.10)
-# Feature: transcripcion-asr, Property 9: Language selection
+# Feature: transcription-asr, Property 9: Language selection
 # Validates: Requirements 6.3, 6.4
 # ---------------------------------------------------------------------------
 
@@ -341,7 +341,7 @@ async def test_property_9_language_selection(
 
 # ---------------------------------------------------------------------------
 # Property 12: Provider metadata recording (Task 8.11)
-# Feature: transcripcion-asr, Property 12: Provider metadata
+# Feature: transcription-asr, Property 12: Provider metadata
 # Validates: Requirements 7.5
 # ---------------------------------------------------------------------------
 
@@ -396,7 +396,7 @@ async def test_property_12_provider_metadata(
 
 # ---------------------------------------------------------------------------
 # Property 8: Result with no segments produces no Transcript (Task 8.12)
-# Feature: transcripcion-asr, Property 8: No segments
+# Feature: transcription-asr, Property 8: No segments
 # Validates: Requirements 5.6, 7.2
 # ---------------------------------------------------------------------------
 
@@ -440,7 +440,7 @@ async def test_property_8_no_segments_does_not_persist(
 
 # ---------------------------------------------------------------------------
 # Property 17: Engine failure propagates without persisting (Task 8.13)
-# Feature: transcripcion-asr, Property 17: Failure propagates
+# Feature: transcription-asr, Property 17: Failure propagates
 # Validates: Requirements 9.1
 # ---------------------------------------------------------------------------
 
@@ -475,7 +475,7 @@ async def test_property_17_engine_failure_propagates(
 
 # ---------------------------------------------------------------------------
 # Property 10: Uniqueness of the Transcript per Meeting (Task 8.14)
-# Feature: transcripcion-asr, Property 10: Uniqueness
+# Feature: transcription-asr, Property 10: Uniqueness
 # Validates: Requirements 7.1, 9.5
 # ---------------------------------------------------------------------------
 
@@ -535,7 +535,7 @@ async def test_property_10_transcript_uniqueness(
 
 # ---------------------------------------------------------------------------
 # Property 11: Persistence atomicity (Task 8.15)
-# Feature: transcripcion-asr, Property 11: Atomicity
+# Feature: transcription-asr, Property 11: Atomicity
 # Validates: Requirements 7.3, 7.4, 9.6
 # ---------------------------------------------------------------------------
 

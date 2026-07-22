@@ -1,1 +1,1 @@
-# Tests for the diar-engine FastAPI service (Servicio_De_Diarizacion_Local)
+# Tests for the diar-engine FastAPI service (Local_Diarization_Service)

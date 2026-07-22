@@ -1,6 +1,6 @@
 """Tests for the diarization worker (worker.py).
 
-# Feature: identificacion-hablantes
+# Feature: speaker-identification
 Tasks: 13.1, 13.2, 13.3, 13.4, 13.5, 13.6
 Validates: Requirements 1.3, 1.4, 1.5, 1.6, 7.4, 7.5, 9.1, 9.2, 9.3, 9.4, 9.5, 10.1
 
@@ -129,7 +129,7 @@ def _mock_engine(segments: list[SpeakerSegment], is_local: bool = True) -> Async
 
 # ---------------------------------------------------------------------------
 # Property 19: Invalid input / missing prerequisite (Task 13.1)
-# Feature: identificacion-hablantes, Property 19: Invalid input or missing prerequisite
+# Feature: speaker-identification, Property 19: Invalid input or missing prerequisite
 # Validates: Requirements 1.3, 1.4, 1.5, 1.6
 # ---------------------------------------------------------------------------
 
@@ -185,7 +185,7 @@ async def test_property_19_without_transcript_does_not_persist(
 
 # ---------------------------------------------------------------------------
 # Property 11: Empty result -> valid empty Diarization (Task 13.2)
-# Feature: identificacion-hablantes, Property 11: A result with no speakers produces a valid empty Diarization
+# Feature: speaker-identification, Property 11: A result with no speakers produces a valid empty Diarization
 # Validates: Requirements 7.4, 7.5
 # ---------------------------------------------------------------------------
 
@@ -250,7 +250,7 @@ async def test_property_11_without_turns_zero_assignments(
 
 # ---------------------------------------------------------------------------
 # Property 20: Engine failure propagates without persisting a completed state (Task 13.3)
-# Feature: identificacion-hablantes, Property 20: Engine failure propagates without persisting a completed Diarization
+# Feature: speaker-identification, Property 20: Engine failure propagates without persisting a completed Diarization
 # Validates: Requirements 9.3, 10.1
 # ---------------------------------------------------------------------------
 
@@ -287,7 +287,7 @@ async def test_property_20_engine_failure_propagates_without_completed(
 
 # ---------------------------------------------------------------------------
 # Property 18: Preservation of the Meeting's ProcessState (Task 13.4)
-# Feature: identificacion-hablantes, Property 18: Preservation of the Meeting's ProcessState
+# Feature: speaker-identification, Property 18: Preservation of the Meeting's ProcessState
 # Validates: Requirements 9.5
 # ---------------------------------------------------------------------------
 
@@ -317,7 +317,7 @@ async def test_property_18_preserves_meeting_process_state(
 
 # ---------------------------------------------------------------------------
 # Property 17: Every state change records a UTC timestamp (Task 13.5)
-# Feature: identificacion-hablantes, Property 17: Every state change records a UTC timestamp
+# Feature: speaker-identification, Property 17: Every state change records a UTC timestamp
 # Validates: Requirements 9.4
 # ---------------------------------------------------------------------------
 

@@ -7,6 +7,7 @@ HTTPS, guaranteeing encryption in transit (Req. 4.1, 4.2).
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import httpx
 
@@ -120,7 +121,7 @@ class CloudProvider(ASREngine):
         )
 
     def _parse_and_validate_response(
-        self, data: dict
+        self, data: dict[str, Any]
     ) -> list[TranscriptionSegment]:
         """Parses and validates the cloud service's JSON response.
 
