@@ -1,4 +1,4 @@
-// Prueba de integración: navegación, layout y orquestación de la Vista_De_Detalle
+// Integration test: navigation, layout, and Detail_View orchestration
 // (Req. 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 7.1, 7.2, 7.3, 7.4, 7.5, 14.3)
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -20,7 +20,7 @@ function setUrl(search: string) {
   window.history.pushState({}, "", `/detail.html${search}`);
 }
 
-describe("DetailApp — navegación e identificador de Reunion (Req. 6.1, 6.2, 6.5)", () => {
+describe("DetailApp — navigation and Meeting identifier (Req. 6.1, 6.2, 6.5)", () => {
   beforeEach(() => {
     mockChrome();
   });
@@ -28,19 +28,19 @@ describe("DetailApp — navegación e identificador de Reunion (Req. 6.1, 6.2, 6
     vi.restoreAllMocks();
   });
 
-  it("presenta Estado_De_Vista error sin emitir solicitudes cuando el reunionId es inválido/ausente (Req. 6.5)", async () => {
+  it("shows View_State error without emitting requests when meetingId is invalid/absent (Req. 6.5)", async () => {
     setUrl("");
     const fetchSpy = vi.fn();
     global.fetch = fetchSpy as unknown as typeof fetch;
 
     render(<DetailApp />);
 
-    expect(await screen.findByText(/esta nota no existe/i)).toBeInTheDocument();
+    expect(await screen.findByText(/this note doesn't exist/i)).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
-describe("DetailApp — carga y estructura simultánea (Req. 6.3, 6.4, 7.1, 7.2, 7.3, 7.4, 7.5, 14.3)", () => {
+describe("DetailApp — simultaneous loading and structure (Req. 6.3, 6.4, 7.1, 7.2, 7.3, 7.4, 7.5, 14.3)", () => {
   beforeEach(() => {
     mockChrome();
   });
@@ -48,28 +48,28 @@ describe("DetailApp — carga y estructura simultánea (Req. 6.3, 6.4, 7.1, 7.2,
     vi.restoreAllMocks();
   });
 
-  it("solicita Transcripcion y Diarizacion y presenta título, Espacio_De_Resumen y Panel_De_Transcripcion (Req. 6.3, 7.1)", async () => {
-    setUrl("?reunionId=r1");
+  it("requests Transcript and Diarization and shows title, Summary_Space, and Transcript_Panel (Req. 6.3, 7.1)", async () => {
+    setUrl("?meetingId=r1");
     global.fetch = vi.fn(async (url: string) => {
-      if (url.includes("/transcripcion")) {
+      if (url.includes("/transcript")) {
         return new Response(
           JSON.stringify({
-            transcripcion_id: "tr1",
-            reunion_id: "r1",
-            segmentos: [{ id: "t1", texto: "Hola equipo", inicio_ms: 0, fin_ms: 1000, orden: 0 }],
+            transcript_id: "tr1",
+            meeting_id: "r1",
+            segments: [{ id: "t1", text: "Hola equipo", start_ms: 0, end_ms: 1000, sequence: 0 }], // spanish-sample-data
           }),
           { status: 200 }
         );
       }
-      if (url.includes("/diarizacion")) {
+      if (url.includes("/diarization")) {
         return new Response(
           JSON.stringify({
-            diarizacion_id: "d1",
-            reunion_id: "r1",
-            estado_diarizacion: "completado",
-            num_hablantes: 1,
-            hablantes: [{ id: "h1", etiqueta: "Ana", orden: 1 }],
-            asignaciones: [{ turno_id: "t1", hablante_id: "h1" }],
+            diarization_id: "d1",
+            meeting_id: "r1",
+            diarization_state: "completed",
+            speaker_count: 1,
+            speakers: [{ id: "h1", label: "Ana", sequence: 1 }], // spanish-sample-data
+            assignments: [{ turn_id: "t1", speaker_id: "h1" }],
           }),
           { status: 200 }
         );
@@ -79,26 +79,26 @@ describe("DetailApp — carga y estructura simultánea (Req. 6.3, 6.4, 7.1, 7.2,
 
     render(<DetailApp />);
 
-    expect(screen.getByText("Resumen disponible próximamente.")).toBeInTheDocument();
-    expect(screen.getByText("Nota sin título")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("Hola equipo")).toBeInTheDocument());
-    expect(screen.getAllByText("Ana").length).toBeGreaterThan(0);
+    expect(screen.getByText("Summary available soon.")).toBeInTheDocument();
+    expect(screen.getByText("Untitled note")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Hola equipo")).toBeInTheDocument()); // spanish-sample-data
+    expect(screen.getAllByText("Ana").length).toBeGreaterThan(0); // spanish-sample-data
   });
 
-  it("mantiene Estados_De_Vista independientes: el fallo de diarización no impide presentar la transcripción", async () => {
-    setUrl("?reunionId=r2");
+  it("keeps independent View_States: a diarization failure doesn't block showing the transcript", async () => {
+    setUrl("?meetingId=r2");
     global.fetch = vi.fn(async (url: string) => {
-      if (url.includes("/transcripcion")) {
+      if (url.includes("/transcript")) {
         return new Response(
           JSON.stringify({
-            transcripcion_id: "tr2",
-            reunion_id: "r2",
-            segmentos: [{ id: "t1", texto: "Contenido disponible", inicio_ms: 0, fin_ms: 1000, orden: 0 }],
+            transcript_id: "tr2",
+            meeting_id: "r2",
+            segments: [{ id: "t1", text: "Contenido disponible", start_ms: 0, end_ms: 1000, sequence: 0 }], // spanish-sample-data
           }),
           { status: 200 }
         );
       }
-      if (url.includes("/diarizacion")) {
+      if (url.includes("/diarization")) {
         return new Response("", { status: 500 });
       }
       return new Response("", { status: 404 });
@@ -106,56 +106,56 @@ describe("DetailApp — carga y estructura simultánea (Req. 6.3, 6.4, 7.1, 7.2,
 
     render(<DetailApp />);
 
-    await waitFor(() => expect(screen.getByText("Contenido disponible")).toBeInTheDocument());
-    expect(screen.getByText(/no se pudo cargar el tiempo de habla/i)).toBeInTheDocument();
-    expect(screen.getByText("Hablante no identificado")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Contenido disponible")).toBeInTheDocument()); // spanish-sample-data
+    expect(screen.getByText(/couldn't load speaking time/i)).toBeInTheDocument();
+    expect(screen.getByText("Unidentified speaker")).toBeInTheDocument();
   });
 
-  it("presenta Estado_De_Vista vacio en el Panel_De_Transcripcion cuando la Reunion no tiene Transcripcion (Req. 7.6, 8.8)", async () => {
-    setUrl("?reunionId=r3");
+  it("shows View_State empty in the Transcript_Panel when the Meeting has no Transcript (Req. 7.6, 8.8)", async () => {
+    setUrl("?meetingId=r3");
     global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
 
     render(<DetailApp />);
 
     await waitFor(() =>
-      expect(screen.getByText(/la transcripción no está disponible para esta nota/i)).toBeInTheDocument()
+      expect(screen.getByText(/the transcript is not available for this note/i)).toBeInTheDocument()
     );
   });
 
-  it("reintenta en silencio mientras la Reunion sigue procesándose, y muestra la transcripción apenas queda disponible", async () => {
-    setUrl("?reunionId=r4");
-    let transcripcionDisponible = false;
-    let estadoProceso = "transcribiendo";
+  it("retries silently while the Meeting is still processing, and shows the transcript as soon as it's available", async () => {
+    setUrl("?meetingId=r4");
+    let transcriptAvailable = false;
+    let processState = "transcribing";
 
     global.fetch = vi.fn(async (url: string) => {
-      if (url.includes("/transcripcion")) {
-        if (!transcripcionDisponible) return new Response("", { status: 404 });
+      if (url.includes("/transcript")) {
+        if (!transcriptAvailable) return new Response("", { status: 404 });
         return new Response(
           JSON.stringify({
-            transcripcion_id: "tr4",
-            reunion_id: "r4",
-            segmentos: [{ id: "t1", texto: "Texto que llega tarde", inicio_ms: 0, fin_ms: 1000, orden: 0 }],
+            transcript_id: "tr4",
+            meeting_id: "r4",
+            segments: [{ id: "t1", text: "Texto que llega tarde", start_ms: 0, end_ms: 1000, sequence: 0 }], // spanish-sample-data
           }),
           { status: 200 }
         );
       }
-      if (url.includes("/diarizacion")) return new Response("", { status: 404 });
-      // GET /api/v1/reuniones/{id} — estado de procesamiento
-      return new Response(JSON.stringify({ reunion_id: "r4", estado_proceso: estadoProceso }), { status: 200 });
+      if (url.includes("/diarization")) return new Response("", { status: 404 });
+      // GET /api/v1/meetings/{id} — processing state
+      return new Response(JSON.stringify({ meeting_id: "r4", process_state: processState }), { status: 200 });
     }) as unknown as typeof fetch;
 
     render(<DetailApp />);
 
-    // Primer intento: aún "transcribiendo", sin transcripción disponible todavía.
+    // First attempt: still "transcribing", transcript not yet available.
     await waitFor(() =>
-      expect(screen.getByText(/la transcripción no está disponible para esta nota/i)).toBeInTheDocument()
+      expect(screen.getByText(/the transcript is not available for this note/i)).toBeInTheDocument()
     );
 
-    // La reunión termina de procesarse entre reintentos (polling real, cada 3s).
-    transcripcionDisponible = true;
-    estadoProceso = "completado";
+    // The meeting finishes processing between retries (real polling, every 3s).
+    transcriptAvailable = true;
+    processState = "completed";
 
-    await waitFor(() => expect(screen.getByText("Texto que llega tarde")).toBeInTheDocument(), {
+    await waitFor(() => expect(screen.getByText("Texto que llega tarde")).toBeInTheDocument(), { // spanish-sample-data
       timeout: 6000,
     });
   }, 10000);
