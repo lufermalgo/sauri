@@ -134,9 +134,9 @@ async def upload_recording(
     await queue.conectar()
     try:
         await queue.publicar(
-            tema="transcribir",
+            tema="transcribe",
             mensaje={
-                "reunion_id": ingestion_data.meeting_id,
+                "meeting_id": ingestion_data.meeting_id,
                 "audio_ref": audio_ref,
             },
         )

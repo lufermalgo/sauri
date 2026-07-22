@@ -1,4 +1,4 @@
-"""Tests para la Fabrica_De_Motor (factory.py).
+"""Tests for the ASREngine factory (factory.py).
 
 # Feature: transcripcion-asr
 Tasks: 3.2, 3.3, 3.4
@@ -13,14 +13,14 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from app.transcripcion.factory import crear_motor_asr
-from app.transcripcion.proveedor_local import ProveedorLocal
-from app.transcripcion.proveedor_nube import ProveedorNube
+from app.transcription.factory import create_asr_engine
+from app.transcription.local_provider import LocalProvider
+from app.transcription.cloud_provider import CloudProvider
 
 
 # ---------------------------------------------------------------------------
-# Property 1: Selección del proveedor por configuración (Task 3.2)
-# Feature: transcripcion-asr, Property 1: Selección del proveedor por configuración
+# Property 1: Provider selection by configuration (Task 3.2)
+# Feature: transcripcion-asr, Property 1: Provider selection by configuration
 # Validates: Requirements 2.1, 2.2, 2.3, 2.4
 # ---------------------------------------------------------------------------
 
@@ -28,23 +28,23 @@ from app.transcripcion.proveedor_nube import ProveedorNube
 @given(
     padding=st.text(alphabet=" \t", min_size=0, max_size=5),
 )
-def test_property_1_local_con_variantes(padding: str):
-    """ASR_PROVIDER='local' (con espacios/tabs) → ProveedorLocal."""
+def test_property_1_local_with_variants(padding: str):
+    """ASR_PROVIDER='local' (with spaces/tabs) -> LocalProvider."""
     provider_value = padding + "local" + padding
     env = {
         "ASR_PROVIDER": provider_value,
         "ASR_LOCAL_URL": "http://asr-engine:8001",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_asr()
-        assert isinstance(motor, ProveedorLocal)
+        engine = create_asr_engine()
+        assert isinstance(engine, LocalProvider)
 
 
 @given(
     padding=st.text(alphabet=" \t", min_size=0, max_size=5),
 )
-def test_property_1_cloud_con_variantes(padding: str):
-    """ASR_PROVIDER='cloud' (con capitalización y espacios) → ProveedorNube."""
+def test_property_1_cloud_with_variants(padding: str):
+    """ASR_PROVIDER='cloud' (with capitalization and spaces) -> CloudProvider."""
     provider_value = padding + "cloud" + padding
     env = {
         "ASR_PROVIDER": provider_value,
@@ -52,36 +52,36 @@ def test_property_1_cloud_con_variantes(padding: str):
         "ASR_CLOUD_ENDPOINT": "https://api.example.com/transcribe",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_asr()
-        assert isinstance(motor, ProveedorNube)
+        engine = create_asr_engine()
+        assert isinstance(engine, CloudProvider)
 
 
 @given(
     value=st.sampled_from(["", "   ", "\t", "\t  "]),
 )
-def test_property_1_ausente_o_vacio_es_local(value: str):
-    """ASR_PROVIDER vacío o solo espacios → ProveedorLocal (default)."""
+def test_property_1_absent_or_empty_is_local(value: str):
+    """ASR_PROVIDER empty or whitespace-only -> LocalProvider (default)."""
     env = {
         "ASR_PROVIDER": value,
         "ASR_LOCAL_URL": "http://asr-engine:8001",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_asr()
-        assert isinstance(motor, ProveedorLocal)
+        engine = create_asr_engine()
+        assert isinstance(engine, LocalProvider)
 
 
-def test_property_1_ausente_sin_variable():
-    """ASR_PROVIDER no definido → ProveedorLocal (default)."""
+def test_property_1_absent_without_variable():
+    """ASR_PROVIDER not defined -> LocalProvider (default)."""
     env = {"ASR_LOCAL_URL": "http://asr-engine:8001"}
     with patch.dict(os.environ, env, clear=False):
         os.environ.pop("ASR_PROVIDER", None)
-        motor = crear_motor_asr()
-        assert isinstance(motor, ProveedorLocal)
+        engine = create_asr_engine()
+        assert isinstance(engine, LocalProvider)
 
 
 # ---------------------------------------------------------------------------
-# Property 2: Valor de proveedor inválido señala error con el valor recibido (Task 3.3)
-# Feature: transcripcion-asr, Property 2: Valor inválido señala error
+# Property 2: Invalid provider value flags an error with the received value (Task 3.3)
+# Feature: transcripcion-asr, Property 2: Invalid value flags an error
 # Validates: Requirements 2.5
 # ---------------------------------------------------------------------------
 
@@ -96,56 +96,56 @@ def test_property_1_ausente_sin_variable():
         max_size=20,
     ).filter(lambda s: s.strip().lower() not in ("", "local", "cloud")),
 )
-def test_property_2_valor_invalido_incluye_valor_en_error(value: str):
-    """Valor no reconocido → ValueError que incluye el valor recibido."""
+def test_property_2_invalid_value_includes_value_in_error(value: str):
+    """Unrecognized value -> ValueError that includes the received value."""
     import re
 
     env = {"ASR_PROVIDER": value}
     with patch.dict(os.environ, env, clear=False):
         with pytest.raises(ValueError, match=re.escape(value.strip())):
-            crear_motor_asr()
+            create_asr_engine()
 
 
 # ---------------------------------------------------------------------------
-# Pruebas por ejemplo de la fábrica (Task 3.4)
+# Example tests for the factory (Task 3.4)
 # Validates: Requirements 2.2, 2.3, 2.6
 # ---------------------------------------------------------------------------
 
 
-def test_ejemplo_local_con_url_valida():
-    """Req 2.2: 'local' con URL válida → ProveedorLocal configurado."""
+def test_example_local_with_valid_url():
+    """Req 2.2: 'local' with a valid URL -> configured LocalProvider."""
     env = {
         "ASR_PROVIDER": "local",
         "ASR_LOCAL_URL": "http://asr-engine:8001",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_asr()
-        assert isinstance(motor, ProveedorLocal)
+        engine = create_asr_engine()
+        assert isinstance(engine, LocalProvider)
 
 
-def test_ejemplo_cloud_con_configuracion_valida():
-    """Req 2.3: 'cloud' con API key y endpoint HTTPS → ProveedorNube."""
+def test_example_cloud_with_valid_configuration():
+    """Req 2.3: 'cloud' with an API key and HTTPS endpoint -> CloudProvider."""
     env = {
         "ASR_PROVIDER": "cloud",
         "ASR_CLOUD_API_KEY": "sk-test-123",
         "ASR_CLOUD_ENDPOINT": "https://api.example.com/v1/transcribe",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_asr()
-        assert isinstance(motor, ProveedorNube)
+        engine = create_asr_engine()
+        assert isinstance(engine, CloudProvider)
 
 
-def test_ejemplo_local_sin_url_lanza_valueerror():
-    """Req 2.6: proveedor local sin ASR_LOCAL_URL → ValueError."""
+def test_example_local_without_url_raises_valueerror():
+    """Req 2.6: local provider without ASR_LOCAL_URL -> ValueError."""
     env = {"ASR_PROVIDER": "local", "ASR_LOCAL_URL": ""}
     with patch.dict(os.environ, env, clear=False):
         with pytest.raises(ValueError, match="ASR_LOCAL_URL"):
-            crear_motor_asr()
+            create_asr_engine()
 
 
-def test_ejemplo_local_url_solo_espacios_lanza_valueerror():
-    """Req 2.6: proveedor local con ASR_LOCAL_URL solo espacios → ValueError."""
+def test_example_local_url_whitespace_only_raises_valueerror():
+    """Req 2.6: local provider with a whitespace-only ASR_LOCAL_URL -> ValueError."""
     env = {"ASR_PROVIDER": "local", "ASR_LOCAL_URL": "   "}
     with patch.dict(os.environ, env, clear=False):
         with pytest.raises(ValueError, match="ASR_LOCAL_URL"):
-            crear_motor_asr()
+            create_asr_engine()

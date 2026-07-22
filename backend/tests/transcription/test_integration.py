@@ -1,4 +1,4 @@
-"""Tests de integración del módulo transcripción-asr.
+"""Integration tests for the transcription-asr module.
 
 # Feature: transcripcion-asr
 Tasks: 11.2, 12.2
@@ -10,21 +10,21 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.transcripcion.worker import iniciar_worker
+from app.transcription.worker import start_worker
 
 
 # ---------------------------------------------------------------------------
-# Prueba de integración del contrato del asr-engine (Task 11.2)
+# asr-engine contract integration test (Task 11.2)
 # Validates: Requirements 3.3
 # ---------------------------------------------------------------------------
 
 
-class TestContratoASREngine:
-    """Verifica que el contrato POST /transcribe y GET /health es correcto."""
+class TestASREngineContract:
+    """Verifies that the POST /transcribe and GET /health contract is correct."""
 
     @pytest.mark.asyncio
-    async def test_post_transcribe_forma_respuesta(self):
-        """POST /transcribe devuelve {segments: [{text, start_ms, end_ms}], language}."""
+    async def test_post_transcribe_response_shape(self):
+        """POST /transcribe returns {segments: [{text, start_ms, end_ms}], language}."""
         from pydantic import BaseModel
 
         class Segment(BaseModel):
@@ -53,8 +53,8 @@ class TestContratoASREngine:
         assert parsed.language == "es"
 
     @pytest.mark.asyncio
-    async def test_post_transcribe_respuesta_vacia_valida(self):
-        """POST /transcribe con audio vacío devuelve segments: [], language."""
+    async def test_post_transcribe_valid_empty_response(self):
+        """POST /transcribe with empty audio returns segments: [], language."""
         from pydantic import BaseModel
 
         class Segment(BaseModel):
@@ -72,34 +72,34 @@ class TestContratoASREngine:
         assert parsed.language == "es"
 
     def test_health_endpoint_schema(self):
-        """GET /health devuelve {status: 'ok'}."""
+        """GET /health returns {status: 'ok'}."""
         health_response = {"status": "ok"}
         assert "status" in health_response
         assert health_response["status"] == "ok"
 
 
 # ---------------------------------------------------------------------------
-# Prueba de integración — suscripción al tema "transcribir" (Task 12.2)
+# Integration test — subscription to the "transcribe" topic (Task 12.2)
 # Validates: Requirements 1.1
 # ---------------------------------------------------------------------------
 
 
-class TestSuscripcionWorker:
-    """Verifica que el worker se suscribe al tema 'transcribir' al iniciar."""
+class TestWorkerSubscription:
+    """Verifies that the worker subscribes to the 'transcribe' topic on startup."""
 
     @pytest.mark.asyncio
-    async def test_worker_se_suscribe_a_tema_transcribir(self):
-        """Al iniciar, el worker se suscribe al tema 'transcribir'."""
-        mock_cola = AsyncMock()
-        mock_cola.suscribir = AsyncMock()
+    async def test_worker_subscribes_to_transcribe_topic(self):
+        """On startup, the worker subscribes to the 'transcribe' topic."""
+        mock_queue = AsyncMock()
+        mock_queue.suscribir = AsyncMock()
 
         mock_session_factory = AsyncMock()
 
-        await iniciar_worker(mock_cola, mock_session_factory)
+        await start_worker(mock_queue, mock_session_factory)
 
-        # Verify suscribir was called with "transcribir" as the topic
-        mock_cola.suscribir.assert_called_once()
-        call_args = mock_cola.suscribir.call_args
-        assert call_args[0][0] == "transcribir"
+        # Verify suscribir was called with "transcribe" as the topic
+        mock_queue.suscribir.assert_called_once()
+        call_args = mock_queue.suscribir.call_args
+        assert call_args[0][0] == "transcribe"
         # Second arg should be a callable (the handler)
         assert callable(call_args[0][1])
