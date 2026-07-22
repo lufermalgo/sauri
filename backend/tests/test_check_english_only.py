@@ -43,6 +43,34 @@ def test_zero_findings_for_english_only_file(tmp_path: Path) -> None:
     assert result.stdout.strip() == ""
 
 
+def test_excludes_alembic_migration_files(tmp_path: Path) -> None:
+    """Migration scripts legitimately rename FROM old Spanish names — a
+    rename migration must name both sides, so it's excluded rather than
+    treated as leftover Spanish code (design.md's "excluded paths" concept,
+    extended during Fase 2 implementation to cover backend/alembic/versions/
+    and files named test_migration.py, which exist to test that rename)."""
+    versions_dir = tmp_path / "backend" / "alembic" / "versions"
+    versions_dir.mkdir(parents=True)
+    migration_file = versions_dir / "007_rename_schema_to_english.py"
+    migration_file.write_text('op.rename_table("reuniones", "meetings")\n')  # spanish-sample-data
+
+    result = run_check(migration_file)
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
+def test_excludes_test_migration_files(tmp_path: Path) -> None:
+    test_migration_file = tmp_path / "backend" / "tests" / "test_migration.py"
+    test_migration_file.parent.mkdir(parents=True)
+    test_migration_file.write_text('OLD_TO_NEW = {"reuniones": "meetings"}\n')  # spanish-sample-data
+
+    result = run_check(test_migration_file)
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == ""
+
+
 def test_flags_accented_identifiers(tmp_path: Path) -> None:
     accented_file = tmp_path / "example_accented.ts"
     accented_file.write_text("export function añadirNota() {}\n")  # spanish-sample-data

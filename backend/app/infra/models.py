@@ -1,4 +1,4 @@
-"""Modelos SQLAlchemy del dominio de sauri — módulo Captura y Transcripción."""
+"""SQLAlchemy domain models for sauri — Capture and Transcription module."""
 
 from datetime import datetime
 
@@ -9,271 +9,271 @@ from app.infra.database import Base
 
 
 # ---------------------------------------------------------------------------
-# Reunion
+# Meeting
 # ---------------------------------------------------------------------------
 
 
-class Reunion(Base):
-    """Registro de una reunión de Google Meet gestionada por sauri (Req. 1, 4)."""
+class Meeting(Base):
+    """Record of a Google Meet meeting managed by sauri (Req. 1, 4)."""
 
-    __tablename__ = "reuniones"
+    __tablename__ = "meetings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    enlace_meet: Mapped[str] = mapped_column(String(512), nullable=False)
-    titulo: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    origen: Mapped[str] = mapped_column(String(64), nullable=False)  # enlace | invitacion_calendario | manual
-    id_invitacion_calendario: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    hora_inicio_programada: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    estado_proceso: Mapped[str] = mapped_column(
+    meet_link: Mapped[str] = mapped_column(String(512), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    origin: Mapped[str] = mapped_column(String(64), nullable=False)  # link | calendar_invite | manual
+    calendar_invite_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    scheduled_start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    process_state: Mapped[str] = mapped_column(
         String(64), nullable=False
-    )  # en_cola | uniendose | grabando | transcribiendo | completado | fallido
-    causa_fallo: Mapped[str | None] = mapped_column(
+    )  # queued | joining | recording | transcribing | completed | failed
+    failure_cause: Mapped[str | None] = mapped_column(
         String(64), nullable=True
-    )  # no_pudo_unirse | reunion_cancelada | fallo_del_motor
-    creada_por: Mapped[str] = mapped_column(String(36), nullable=False)
-    creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    )  # could_not_join | meeting_cancelled | engine_failure
+    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
-# EstadoHistorial
+# StateHistory
 # ---------------------------------------------------------------------------
 
 
-class EstadoHistorial(Base):
-    """Historial de transiciones de estado de una Reunion (Req. 4.2)."""
+class StateHistory(Base):
+    """History of state transitions for a Meeting (Req. 4.2)."""
 
-    __tablename__ = "estado_historial"
+    __tablename__ = "state_history"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    reunion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("reuniones.id", ondelete="CASCADE"), nullable=False
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
     )
-    estado: Mapped[str] = mapped_column(String(64), nullable=False)
-    causa_fallo: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    ocurrido_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    state: Mapped[str] = mapped_column(String(64), nullable=False)
+    failure_cause: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
-# GrabacionDeSesion
+# SessionRecording
 # ---------------------------------------------------------------------------
 
 
-class GrabacionDeSesion(Base):
-    """Grabación de audio+video asociada 1:1 a una Reunion (Req. 2.3)."""
+class SessionRecording(Base):
+    """Audio+video recording associated 1:1 with a Meeting (Req. 2.3)."""
 
-    __tablename__ = "grabaciones_de_sesion"
+    __tablename__ = "session_recordings"
     __table_args__ = (
-        UniqueConstraint("reunion_id", name="uq_grabacion_reunion_id"),
-        UniqueConstraint("clave_idempotencia", name="uq_grabacion_clave_idempotencia"),
+        UniqueConstraint("meeting_id", name="uq_session_recording_meeting_id"),
+        UniqueConstraint("idempotency_key", name="uq_session_recording_idempotency_key"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    reunion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("reuniones.id", ondelete="CASCADE"), nullable=False
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
     )
-    clave_idempotencia: Mapped[str] = mapped_column(String(256), nullable=False)
-    origen_captura: Mapped[str] = mapped_column(
+    idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    capture_origin: Mapped[str] = mapped_column(
         String(64), nullable=False
-    )  # extension_chrome | bot_servidor
+    )  # chrome_extension | server_bot
     audio_ref: Mapped[str] = mapped_column(String(1024), nullable=False)
     video_ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    duracion_segundos: Mapped[int] = mapped_column(Integer, nullable=False)
-    interrumpida: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    expira_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finalizada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    interrupted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
-# Transcripcion
+# Transcript
 # ---------------------------------------------------------------------------
 
 
-class Transcripcion(Base):
-    """Transcripción en español generada a partir de la grabación (Req. 3)."""
+class Transcript(Base):
+    """Spanish-language transcript generated from the recording (Req. 3)."""
 
-    __tablename__ = "transcripciones"
-    __table_args__ = (UniqueConstraint("reunion_id", name="uq_transcripcion_reunion_id"),)
+    __tablename__ = "transcripts"
+    __table_args__ = (UniqueConstraint("meeting_id", name="uq_transcript_meeting_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    reunion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("reuniones.id", ondelete="CASCADE"), nullable=False
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
     )
-    idioma: Mapped[str] = mapped_column(String(16), nullable=False, default="es-CO")
-    proveedor: Mapped[str] = mapped_column(String(128), nullable=False)
-    soporta_turnos: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    expira_en: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    language: Mapped[str] = mapped_column(String(16), nullable=False, default="es-CO")
+    provider: Mapped[str] = mapped_column(String(128), nullable=False)
+    supports_turns: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    turnos: Mapped[list["TurnoDeHabla"]] = relationship(
-        "TurnoDeHabla", back_populates="transcripcion", lazy="select"
+    turns: Mapped[list["SpeechTurn"]] = relationship(
+        "SpeechTurn", back_populates="transcript", lazy="select"
     )
 
 
 # ---------------------------------------------------------------------------
-# TurnoDeHabla
+# SpeechTurn
 # ---------------------------------------------------------------------------
 
 
-class TurnoDeHabla(Base):
-    """Segmento temporal de texto dentro de una Transcripcion (Req. 3.4, 3.5)."""
+class SpeechTurn(Base):
+    """Timed text segment within a Transcript (Req. 3.4, 3.5)."""
 
-    __tablename__ = "turnos_de_habla"
+    __tablename__ = "speech_turns"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    transcripcion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("transcripciones.id", ondelete="CASCADE"), nullable=False
+    transcript_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False
     )
-    texto: Mapped[str] = mapped_column(Text, nullable=False)
-    inicio_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    fin_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    orden: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    transcripcion: Mapped["Transcripcion"] = relationship(
-        "Transcripcion", back_populates="turnos"
+    transcript: Mapped["Transcript"] = relationship(
+        "Transcript", back_populates="turns"
     )
 
 
 # ---------------------------------------------------------------------------
-# NotificacionDeGrabacion
+# RecordingNotice
 # ---------------------------------------------------------------------------
 
 
-class NotificacionDeGrabacion(Base):
-    """Registro auditable de la notificación de grabación emitida (Req. 6.1, 6.5)."""
+class RecordingNotice(Base):
+    """Auditable record of the recording notice issued to participants (Req. 6.1, 6.5)."""
 
-    __tablename__ = "notificaciones_de_grabacion"
+    __tablename__ = "recording_notices"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    reunion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("reuniones.id", ondelete="CASCADE"), nullable=False
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
     )
-    emitida_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
-# RegistroDeAcceso
+# AccessLog
 # ---------------------------------------------------------------------------
 
 
-class RegistroDeAcceso(Base):
-    """Auditoría de acceso — registra intentos permitidos y denegados (Req. 7.4)."""
+class AccessLog(Base):
+    """Access audit — records allowed and denied attempts (Req. 7.4)."""
 
-    __tablename__ = "registro_de_acceso"
+    __tablename__ = "access_log"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    usuario_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    recurso: Mapped[str] = mapped_column(String(512), nullable=False)
-    resultado: Mapped[str] = mapped_column(String(16), nullable=False)  # "permitido" | "denegado"
-    ocurrido_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    resource: Mapped[str] = mapped_column(String(512), nullable=False)
+    result: Mapped[str] = mapped_column(String(16), nullable=False)  # "allowed" | "denied"
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
-# Diarizacion
+# Diarization
 # ---------------------------------------------------------------------------
 
 
-class Diarizacion(Base):
-    """Resultado de diarización asociado 1:1 a una Reunion (Req. 8.1, 8.4, 9.3, 9.4, 10.5)."""
+class Diarization(Base):
+    """Diarization result associated 1:1 with a Meeting (Req. 8.1, 8.4, 9.3, 9.4, 10.5)."""
 
-    __tablename__ = "diarizaciones"
-    __table_args__ = (UniqueConstraint("reunion_id", name="uq_diarizacion_reunion_id"),)
+    __tablename__ = "diarizations"
+    __table_args__ = (UniqueConstraint("meeting_id", name="uq_diarization_meeting_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    reunion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("reuniones.id"), nullable=False
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id"), nullable=False
     )
-    transcripcion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("transcripciones.id"), nullable=False
+    transcript_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("transcripts.id"), nullable=False
     )
-    proveedor: Mapped[str] = mapped_column(String(128), nullable=False)
-    num_hablantes: Mapped[int] = mapped_column(Integer, nullable=False)
-    estado_diarizacion: Mapped[str] = mapped_column(
+    provider: Mapped[str] = mapped_column(String(128), nullable=False)
+    speaker_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    diarization_state: Mapped[str] = mapped_column(
         String(32), nullable=False
-    )  # pendiente | en_proceso | completada | fallida
-    causa_fallo: Mapped[str | None] = mapped_column(
+    )  # pending | in_progress | completed | failed
+    failure_cause: Mapped[str | None] = mapped_column(
         String(64), nullable=True
-    )  # fallo_del_motor cuando fallida
-    creada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    actualizada_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    )  # engine_failure when failed
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    hablantes: Mapped[list["Hablante"]] = relationship(
-        "Hablante", back_populates="diarizacion", lazy="select"
+    speakers: Mapped[list["Speaker"]] = relationship(
+        "Speaker", back_populates="diarization", lazy="select"
     )
-    asignaciones: Mapped[list["AsignacionDeHablante"]] = relationship(
-        "AsignacionDeHablante", back_populates="diarizacion", lazy="select"
+    assignments: Mapped[list["SpeakerAssignment"]] = relationship(
+        "SpeakerAssignment", back_populates="diarization", lazy="select"
     )
 
 
 # ---------------------------------------------------------------------------
-# Hablante
+# Speaker
 # ---------------------------------------------------------------------------
 
 
-class Hablante(Base):
-    """Hablante anónimo detectado por la diarización (Req. 6.1, 6.2, 6.3)."""
+class Speaker(Base):
+    """Anonymous speaker detected by diarization (Req. 6.1, 6.2, 6.3)."""
 
-    __tablename__ = "hablantes"
+    __tablename__ = "speakers"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    diarizacion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("diarizaciones.id", ondelete="CASCADE"), nullable=False
+    diarization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("diarizations.id", ondelete="CASCADE"), nullable=False
     )
-    etiqueta_cruda: Mapped[str] = mapped_column(String(128), nullable=False)
-    etiqueta: Mapped[str] = mapped_column(String(64), nullable=False)  # "Hablante N"
-    orden: Mapped[int] = mapped_column(Integer, nullable=False)  # consecutivo desde 1
+    raw_label: Mapped[str] = mapped_column(String(128), nullable=False)
+    label: Mapped[str] = mapped_column(String(64), nullable=False)  # "Speaker N"
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)  # consecutive from 1
 
-    diarizacion: Mapped["Diarizacion"] = relationship(
-        "Diarizacion", back_populates="hablantes"
+    diarization: Mapped["Diarization"] = relationship(
+        "Diarization", back_populates="speakers"
     )
 
 
 # ---------------------------------------------------------------------------
-# AsignacionDeHablante
+# SpeakerAssignment
 # ---------------------------------------------------------------------------
 
 
-class AsignacionDeHablante(Base):
-    """Asignación de un TurnoDeHabla a un Hablante (Req. 7.1)."""
+class SpeakerAssignment(Base):
+    """Assignment of a SpeechTurn to a Speaker (Req. 7.1)."""
 
-    __tablename__ = "asignaciones_de_hablante"
-    __table_args__ = (UniqueConstraint("turno_id", name="uq_asignacion_turno_id"),)
+    __tablename__ = "speaker_assignments"
+    __table_args__ = (UniqueConstraint("turn_id", name="uq_speaker_assignment_turn_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    diarizacion_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("diarizaciones.id", ondelete="CASCADE"), nullable=False
+    diarization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("diarizations.id", ondelete="CASCADE"), nullable=False
     )
-    turno_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("turnos_de_habla.id"), nullable=False
+    turn_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("speech_turns.id"), nullable=False
     )
-    hablante_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("hablantes.id", ondelete="CASCADE"), nullable=False
+    speaker_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("speakers.id", ondelete="CASCADE"), nullable=False
     )
 
-    diarizacion: Mapped["Diarizacion"] = relationship(
-        "Diarizacion", back_populates="asignaciones"
+    diarization: Mapped["Diarization"] = relationship(
+        "Diarization", back_populates="assignments"
     )
-    hablante: Mapped["Hablante"] = relationship("Hablante")
+    speaker: Mapped["Speaker"] = relationship("Speaker")
 
 
 # ---------------------------------------------------------------------------
-# Usuario
+# User
 # ---------------------------------------------------------------------------
 
 
-class Usuario(Base):
-    """Almacén mínimo de usuarios comerciales autorizados de sauri (Req. 13.1, 13.2).
+class User(Base):
+    """Minimal store of authorized sauri sales users (Req. 13.1, 13.2).
 
-    NO es una integración con el IdP de Summan: es un almacén mínimo,
-    semillado de forma determinista, que respalda el Servicio_De_Autenticacion
-    (`POST /api/v1/auth/login`) mientras no exista una integración con el IdP.
+    This is NOT an integration with Summan's IdP: it is a minimal,
+    deterministically seeded store backing the Authentication_Service
+    (`POST /api/v1/auth/login`) until an IdP integration exists.
     """
 
-    __tablename__ = "usuarios"
-    __table_args__ = (UniqueConstraint("email", name="uq_usuario_email"),)
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("email", name="uq_user_email"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     email: Mapped[str] = mapped_column(String(256), nullable=False)
-    nombre: Mapped[str] = mapped_column(String(256), nullable=False)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
-    es_comercial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    creado_en: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_sales: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

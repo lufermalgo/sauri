@@ -26,6 +26,11 @@ EXCLUDED_PATH_PARTS = (
     "/.venv/",
     "/node_modules/",
     "/__pycache__/",
+    # A rename migration (and the test that verifies it happened) must name
+    # both the old and new identifiers — that's not leftover Spanish code,
+    # it's the record of the rename itself.
+    "/alembic/versions/",
+    "/test_migration.py",
 )
 
 # Requisito 1.1 / 7.1: only these trees are governed by the English-only standard.
