@@ -131,7 +131,7 @@ async def rename_meeting_endpoint(
     input: RenameInput,
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Renames a note (Mis_Notas -> rename).
+    """Renames a note (My_Notes -> rename).
 
     Only the user who created the Meeting can rename it.
     """
@@ -158,7 +158,7 @@ async def delete_meeting_endpoint(
     meeting_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> None:
-    """Deletes a note and everything associated with it (Mis_Notas -> delete).
+    """Deletes a note and everything associated with it (My_Notes -> delete).
 
     Only the user who created the Meeting can delete it.
     """

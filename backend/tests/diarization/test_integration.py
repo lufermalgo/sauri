@@ -210,7 +210,7 @@ class TestDiarizeAckNackRetries:
             queue._dlx_exchange = None
 
             async def failing_handler(_msg):
-                raise RuntimeError("fallo del motor")
+                raise RuntimeError("engine failure")
 
             mock_message = AsyncMock()
             mock_message.body = json.dumps({"meeting_id": "abc"}).encode()

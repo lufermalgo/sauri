@@ -30,7 +30,7 @@ export function PanelHeader({ captureState, onNewNote, startError }: PanelHeader
             margin: 0,
           }}
         >
-          REC Notas
+          REC Notes
         </h1>
         <button
           type="button"
@@ -47,7 +47,7 @@ export function PanelHeader({ captureState, onNewNote, startError }: PanelHeader
             cursor: enabled ? "pointer" : "not-allowed",
           }}
         >
-          + Nueva nota REC
+          + New Note REC
         </button>
       </div>
       {startError && (

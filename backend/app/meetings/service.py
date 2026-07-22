@@ -204,7 +204,7 @@ async def rename_meeting(
     meeting_id: str,
     new_title: str,
 ) -> Meeting | None:
-    """Renames a Meeting (Mis_Notas -> rename note).
+    """Renames a Meeting (My_Notes -> rename note).
 
     Returns None if the Meeting doesn't exist; the caller decides how to map
     that to an HTTP response (404).
@@ -223,7 +223,7 @@ async def delete_meeting(
     object_store: ObjectStore,
     meeting_id: str,
 ) -> bool:
-    """Deletes a Meeting and everything associated with it (Mis_Notas -> delete note).
+    """Deletes a Meeting and everything associated with it (My_Notes -> delete note).
 
     Order is necessary because `diarizations.meeting_id` and
     `diarizations.transcript_id` don't have ondelete=CASCADE (they'd block
