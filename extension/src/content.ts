@@ -1,6 +1,6 @@
-// Content script inyectado en https://meet.google.com/*
-// Detecta la reunión activa por atributos ARIA (es/en), notifica al background service worker.
-// Muestra banner de consentimiento de grabación en Shadow DOM (Notificacion_De_Grabacion).
+// Content script injected into https://meet.google.com/*
+// Detects the active meeting via ARIA attributes (es/en), notifies the background service worker.
+// Shows a recording consent banner in Shadow DOM (Recording_Notice).
 
 export {};
 
@@ -71,8 +71,8 @@ function showConsentBanner(): void {
     </style>
     <div class="sauri-banner">
       <span class="rec-dot"></span>
-      <span>sauri está grabando esta reunión</span>
-      <button class="dismiss-btn" aria-label="Cerrar">✕</button>
+      <span>sauri is recording this meeting</span>
+      <button class="dismiss-btn" aria-label="Close">✕</button>
     </div>
   `;
   shadow.appendChild(wrapper);
@@ -84,14 +84,14 @@ function showConsentBanner(): void {
     bannerHost = null;
   });
 
-  // Record timestamp of notification emission (emitida_en)
-  const emitidaEn = new Date().toISOString();
-  console.log(`[sauri] Consent banner shown, emitida_en: ${emitidaEn}`);
+  // Record the notification emission timestamp
+  const emittedAt = new Date().toISOString();
+  console.log(`[sauri] Consent banner shown, emittedAt: ${emittedAt}`);
 
   // Notify background of the emission timestamp
   chrome.runtime.sendMessage({
     type: "notification-emitted",
-    emitidaEn,
+    emittedAt,
   });
 }
 
@@ -111,11 +111,11 @@ chrome.runtime.onMessage.addListener(
       hideConsentBanner();
       sendResponse({ ok: true });
     } else if (message.type === "get-current-title") {
-      // Vuelve a leer document.title bajo demanda: al detectar la reunión
-      // (checkMeetState) Meet suele mostrar todavía el título genérico
-      // "Meet" — el nombre real de la sesión se asienta unos segundos
-      // después. Pedirlo de nuevo justo al iniciar la grabación da tiempo
-      // a que ya esté actualizado.
+      // Re-read document.title on demand: when the meeting is detected
+      // (checkMeetState) Meet is usually still showing the generic
+      // "Meet" title — the real session name settles a few seconds
+      // later. Asking again right when recording starts gives it time
+      // to have already updated.
       sendResponse({ title: extractMeetingTitle() });
     }
     return false;
@@ -131,12 +131,13 @@ const ACTIVE_CALL_SIGNALS: string[] = [
   "Turn on microphone",
   "Turn off camera",
   "Turn on camera",
-  // Spanish
+  // Spanish — literal ARIA labels Google Meet's Spanish UI renders, kept
+  // verbatim so bilingual detection keeps working (not leftover domain code).
   "Salir de la llamada",
-  "Desactivar micrófono",
-  "Activar micrófono",
-  "Desactivar cámara",
-  "Activar cámara",
+  "Desactivar micrófono", // spanish-sample-data
+  "Activar micrófono", // spanish-sample-data
+  "Desactivar cámara", // spanish-sample-data
+  "Activar cámara", // spanish-sample-data
 ];
 
 const END_SIGNALS: string[] = [
@@ -153,10 +154,10 @@ const SCREEN_SHARE_SIGNALS: string[] = [
   "Present now",
   "Stop presenting",
   "You are presenting",
-  // Spanish
+  // Spanish — literal ARIA labels, see note above
   "Presentar ahora",
   "Dejar de presentar",
-  "Estás presentando",
+  "Estás presentando", // spanish-sample-data
 ];
 
 // --- State machine (replaces boolean flags) ---

@@ -1,64 +1,64 @@
-// Composición del Side_Panel — Req. 1.3, 1.4, 1.5, 1.6, 13.2, 13.3, 13.4
+// Side_Panel composition — Req. 1.3, 1.4, 1.5, 1.6, 13.2, 13.3, 13.4
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { EncabezadoPanel } from "./components/EncabezadoPanel";
-import { ControlesDeCaptura, type MicOption } from "./components/ControlesDeCaptura";
-import { ListaDeNotas } from "./components/ListaDeNotas";
-import { VistaDeAutenticacion } from "./components/VistaDeAutenticacion";
-import { aplicarEventoCaptura } from "../core/captura";
-import { derivarEstadoDeVista } from "../core/vista";
+import { PanelHeader } from "./components/PanelHeader";
+import { CaptureControls, type MicOption } from "./components/CaptureControls";
+import { NotesList } from "./components/NotesList";
+import { AuthView } from "./components/AuthView";
+import { applyCaptureEvent } from "../core/capture";
+import { deriveViewState } from "../core/view";
 import {
-  listarReuniones,
+  listMeetings,
   login as loginApi,
-  eliminarReunion,
-  renombrarReunion,
-  BACKEND_URL_DEFECTO,
+  deleteMeeting,
+  renameMeeting,
+  DEFAULT_BACKEND_URL,
 } from "../core/api/client";
-import { construirUrlDetalle } from "../core/detailUrl";
-import type { EstadoDeCaptura, NotaDTO, SolicitudRemota } from "../core/types";
+import { buildDetailUrl } from "../core/detailUrl";
+import type { CaptureState, NoteDTO, RemoteRequest } from "../core/types";
 import "../core/design/tokens.css";
 
 interface SauriBackgroundState {
   status: "idle" | "pending" | "recording";
 }
 
-function mapEstadoDeCaptura(status: SauriBackgroundState["status"]): EstadoDeCaptura {
-  if (status === "recording") return "grabando";
-  return "inactiva";
+function mapCaptureState(status: SauriBackgroundState["status"]): CaptureState {
+  if (status === "recording") return "recording";
+  return "idle";
 }
 
 export function SidePanelApp() {
-  const [sesionVigente, setSesionVigente] = useState<boolean | null>(null);
-  const [estadoDeCaptura, setEstadoDeCaptura] = useState<EstadoDeCaptura>("inactiva");
-  const [tiempoTranscurridoMs, setTiempoTranscurridoMs] = useState(0);
-  const [microfonos, setMicrofonos] = useState<MicOption[]>([]);
-  const [microfonoSeleccionado, setMicrofonoSeleccionado] = useState<MicOption | undefined>(undefined);
-  const [errorMicrofono, setErrorMicrofono] = useState<string | null>(null);
-  const [solicitudNotas, setSolicitudNotas] = useState<SolicitudRemota<NotaDTO>>({
-    fase: "inicial",
-    datos: null,
-    previos: null,
+  const [sessionActive, setSessionActive] = useState<boolean | null>(null);
+  const [captureState, setCaptureState] = useState<CaptureState>("idle");
+  const [elapsedTimeMs, setElapsedTimeMs] = useState(0);
+  const [microphones, setMicrophones] = useState<MicOption[]>([]);
+  const [selectedMicrophone, setSelectedMicrophone] = useState<MicOption | undefined>(undefined);
+  const [microphoneError, setMicrophoneError] = useState<string | null>(null);
+  const [notesRequest, setNotesRequest] = useState<RemoteRequest<NoteDTO>>({
+    phase: "initial",
+    data: null,
+    previous: null,
   });
-  const inicioGrabacionRef = useRef<number | null>(null);
+  const recordingStartRef = useRef<number | null>(null);
 
-  const cargarSesion = useCallback(async () => {
+  const loadSession = useCallback(async () => {
     const result = await chrome.storage.sync.get("authToken");
-    setSesionVigente(Boolean(result.authToken));
+    setSessionActive(Boolean(result.authToken));
   }, []);
 
   useEffect(() => {
-    cargarSesion();
-  }, [cargarSesion]);
+    loadSession();
+  }, [loadSession]);
 
   useEffect(() => {
     chrome.storage.session.get("sauriState").then((result) => {
       const state = result.sauriState as SauriBackgroundState | undefined;
-      if (state) setEstadoDeCaptura(mapEstadoDeCaptura(state.status));
+      if (state) setCaptureState(mapCaptureState(state.status));
     });
 
     const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
       if (areaName === "session" && changes.sauriState) {
         const state = changes.sauriState.newValue as SauriBackgroundState | undefined;
-        setEstadoDeCaptura(mapEstadoDeCaptura(state?.status ?? "idle"));
+        setCaptureState(mapCaptureState(state?.status ?? "idle"));
       }
     };
     chrome.storage.onChanged.addListener(listener);
@@ -66,10 +66,11 @@ export function SidePanelApp() {
   }, []);
 
   useEffect(() => {
-    // enumerateDevices() solo devuelve deviceId/label reales si el origen ya
-    // tiene permiso de micrófono concedido — de lo contrario vienen vacíos y
-    // offscreen.ts termina tratando la grabación como "sin micrófono" aunque
-    // el panel muestre uno seleccionado. Por eso se pide el permiso primero.
+    // enumerateDevices() only returns real deviceId/label values if the
+    // origin already has microphone permission granted — otherwise they
+    // come back empty and offscreen.ts ends up treating the recording as
+    // "no microphone" even though the panel shows one selected. That's why
+    // the permission is requested first.
     navigator.mediaDevices
       ?.getUserMedia({ audio: true })
       .then((stream) => {
@@ -78,129 +79,129 @@ export function SidePanelApp() {
       })
       .then((devices) => {
         const audioInputs = devices.filter((d) => d.kind === "audioinput");
-        const opciones = audioInputs.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Micrófono ${i + 1}` }));
-        setMicrofonos(opciones);
-        setMicrofonoSeleccionado((prev) => prev ?? opciones[0]);
+        const options = audioInputs.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${i + 1}` }));
+        setMicrophones(options);
+        setSelectedMicrophone((prev) => prev ?? options[0]);
       })
       .catch((error) => {
-        const nombre = error instanceof DOMException ? error.name : String(error);
-        console.error("[sauri] No se pudo acceder al micrófono:", nombre, error);
-        setMicrofonos([]);
-        setErrorMicrofono(
-          nombre === "NotAllowedError"
-            ? "Permiso de micrófono bloqueado para sauri. Ve a chrome://settings/content/microphone, busca la extensión sauri y cambia el permiso a 'Permitir', luego recarga la extensión."
-            : nombre === "NotFoundError"
-              ? "No se detectó ningún micrófono conectado."
-              : `No se pudo acceder al micrófono (${nombre}).`
+        const name = error instanceof DOMException ? error.name : String(error);
+        console.error("[sauri] Could not access the microphone:", name, error);
+        setMicrophones([]);
+        setMicrophoneError(
+          name === "NotAllowedError"
+            ? "Microphone permission blocked for sauri. Go to chrome://settings/content/microphone, find the sauri extension, set the permission to 'Allow', then reload the extension."
+            : name === "NotFoundError"
+              ? "No microphone was detected."
+              : `Could not access the microphone (${name}).`
         );
       });
   }, []);
 
-  // Cronómetro de grabación (Req. 3.9)
+  // Recording stopwatch (Req. 3.9)
   useEffect(() => {
-    if (estadoDeCaptura === "grabando") {
-      if (inicioGrabacionRef.current === null) inicioGrabacionRef.current = Date.now();
+    if (captureState === "recording") {
+      if (recordingStartRef.current === null) recordingStartRef.current = Date.now();
       const interval = setInterval(() => {
-        setTiempoTranscurridoMs(Date.now() - (inicioGrabacionRef.current ?? Date.now()));
+        setElapsedTimeMs(Date.now() - (recordingStartRef.current ?? Date.now()));
       }, 1000);
       return () => clearInterval(interval);
     }
-    inicioGrabacionRef.current = null;
-    setTiempoTranscurridoMs(0);
-  }, [estadoDeCaptura]);
+    recordingStartRef.current = null;
+    setElapsedTimeMs(0);
+  }, [captureState]);
 
-  const cargarNotas = useCallback(async () => {
-    setSolicitudNotas((prev) => ({ fase: "en_curso", datos: null, previos: prev.datos }));
+  const loadNotes = useCallback(async () => {
+    setNotesRequest((prev) => ({ phase: "in_progress", data: null, previous: prev.data }));
     try {
-      const notas = await listarReuniones(BACKEND_URL_DEFECTO);
-      setSolicitudNotas({ fase: "exito", datos: notas, previos: null });
+      const notes = await listMeetings(DEFAULT_BACKEND_URL);
+      setNotesRequest({ phase: "success", data: notes, previous: null });
     } catch {
-      setSolicitudNotas((prev) => ({ fase: "fallo", datos: null, previos: prev.datos }));
+      setNotesRequest((prev) => ({ phase: "failure", data: null, previous: prev.data }));
     }
   }, []);
 
   useEffect(() => {
-    if (sesionVigente) cargarNotas();
-  }, [sesionVigente, cargarNotas]);
+    if (sessionActive) loadNotes();
+  }, [sessionActive, loadNotes]);
 
-  // Refresca "Mis Notas" cuando termina una grabación (grabando/deteniendo → inactiva),
-  // ya que la subida se procesa en el background sin que el panel lo sepa de otro modo.
-  const estadoAnteriorRef = useRef<EstadoDeCaptura>("inactiva");
+  // Refreshes "Mis Notas" when a recording finishes (recording/stopping → idle),
+  // since the upload is processed in the background without the panel knowing otherwise.
+  const previousStateRef = useRef<CaptureState>("idle");
   useEffect(() => {
-    if (estadoAnteriorRef.current !== "inactiva" && estadoDeCaptura === "inactiva") {
-      cargarNotas();
+    if (previousStateRef.current !== "idle" && captureState === "idle") {
+      loadNotes();
     }
-    estadoAnteriorRef.current = estadoDeCaptura;
-  }, [estadoDeCaptura, cargarNotas]);
+    previousStateRef.current = captureState;
+  }, [captureState, loadNotes]);
 
-  const handleNuevaNota = useCallback(() => {
-    setEstadoDeCaptura((prev) => aplicarEventoCaptura(prev, "iniciar"));
+  const handleNewNote = useCallback(() => {
+    setCaptureState((prev) => applyCaptureEvent(prev, "start"));
     chrome.runtime.sendMessage({
       type: "start-capture",
       resolution: { width: 1280, height: 720 },
-      micDeviceId: microfonoSeleccionado?.deviceId ?? null,
+      micDeviceId: selectedMicrophone?.deviceId ?? null,
     });
-  }, [microfonoSeleccionado]);
+  }, [selectedMicrophone]);
 
-  const handleToggleCaptura = useCallback(() => {
-    if (estadoDeCaptura === "inactiva") {
-      handleNuevaNota();
-    } else if (estadoDeCaptura === "grabando") {
-      setEstadoDeCaptura((prev) => aplicarEventoCaptura(prev, "detener"));
+  const handleToggleCapture = useCallback(() => {
+    if (captureState === "idle") {
+      handleNewNote();
+    } else if (captureState === "recording") {
+      setCaptureState((prev) => applyCaptureEvent(prev, "stop"));
       chrome.runtime.sendMessage({ type: "stop-capture" });
     }
-  }, [estadoDeCaptura, handleNuevaNota]);
+  }, [captureState, handleNewNote]);
 
-  const handleAbrirAjustes = useCallback(() => {
+  const handleOpenSettings = useCallback(() => {
     chrome.runtime.openOptionsPage?.();
   }, []);
 
-  const handleAbrirNota = useCallback((reunionId: string) => {
-    const url = construirUrlDetalle(reunionId);
+  const handleOpenNote = useCallback((meetingId: string) => {
+    const url = buildDetailUrl(meetingId);
     chrome.tabs.create({ url: chrome.runtime.getURL(url) });
   }, []);
 
-  const handleEliminarNota = useCallback(
-    async (reunionId: string) => {
+  const handleDeleteNote = useCallback(
+    async (meetingId: string) => {
       try {
-        await eliminarReunion(reunionId, BACKEND_URL_DEFECTO);
-        await cargarNotas();
+        await deleteMeeting(meetingId, DEFAULT_BACKEND_URL);
+        await loadNotes();
       } catch (error) {
-        console.error("[sauri] No se pudo eliminar la nota:", error);
+        console.error("[sauri] Could not delete the note:", error);
       }
     },
-    [cargarNotas]
+    [loadNotes]
   );
 
-  const handleRenombrarNota = useCallback(
-    async (reunionId: string, nuevoTitulo: string) => {
+  const handleRenameNote = useCallback(
+    async (meetingId: string, newTitle: string) => {
       try {
-        await renombrarReunion(reunionId, nuevoTitulo, BACKEND_URL_DEFECTO);
-        await cargarNotas();
+        await renameMeeting(meetingId, newTitle, DEFAULT_BACKEND_URL);
+        await loadNotes();
       } catch (error) {
-        console.error("[sauri] No se pudo renombrar la nota:", error);
+        console.error("[sauri] Could not rename the note:", error);
       }
     },
-    [cargarNotas]
+    [loadNotes]
   );
 
   const handleLogin = useCallback(
     async (email: string, password: string) => {
-      await loginApi(email, password, BACKEND_URL_DEFECTO);
-      setSesionVigente(true);
+      await loginApi(email, password, DEFAULT_BACKEND_URL);
+      setSessionActive(true);
     },
     []
   );
 
-  if (sesionVigente === null) {
+  if (sessionActive === null) {
     return null;
   }
 
-  if (!sesionVigente) {
-    return <VistaDeAutenticacion onLogin={handleLogin} />;
+  if (!sessionActive) {
+    return <AuthView onLogin={handleLogin} />;
   }
 
-  const estadoDeVistaNotas = derivarEstadoDeVista(solicitudNotas);
+  const notesViewState = deriveViewState(notesRequest);
 
   return (
     <div
@@ -211,24 +212,24 @@ export function SidePanelApp() {
         flexDirection: "column",
       }}
     >
-      <EncabezadoPanel estadoDeCaptura={estadoDeCaptura} onNuevaNota={handleNuevaNota} />
-      <ControlesDeCaptura
-        estadoDeCaptura={estadoDeCaptura}
-        microfonos={microfonos}
-        microfonoSeleccionado={microfonoSeleccionado}
-        onSeleccionarMicrofono={setMicrofonoSeleccionado}
-        onToggleCaptura={handleToggleCaptura}
-        onAbrirAjustes={handleAbrirAjustes}
-        tiempoTranscurridoMs={tiempoTranscurridoMs}
-        errorMicrofono={errorMicrofono}
+      <PanelHeader captureState={captureState} onNewNote={handleNewNote} />
+      <CaptureControls
+        captureState={captureState}
+        microphones={microphones}
+        selectedMicrophone={selectedMicrophone}
+        onSelectMicrophone={setSelectedMicrophone}
+        onToggleCapture={handleToggleCapture}
+        onOpenSettings={handleOpenSettings}
+        elapsedTimeMs={elapsedTimeMs}
+        microphoneError={microphoneError}
       />
-      <ListaDeNotas
-        estado={estadoDeVistaNotas}
-        notas={solicitudNotas.datos ?? solicitudNotas.previos ?? []}
-        onReintentar={cargarNotas}
-        onAbrirNota={handleAbrirNota}
-        onEliminarNota={handleEliminarNota}
-        onRenombrarNota={handleRenombrarNota}
+      <NotesList
+        state={notesViewState}
+        notes={notesRequest.data ?? notesRequest.previous ?? []}
+        onRetry={loadNotes}
+        onOpenNote={handleOpenNote}
+        onDeleteNote={handleDeleteNote}
+        onRenameNote={handleRenameNote}
       />
     </div>
   );

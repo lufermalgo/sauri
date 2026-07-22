@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import type { Reunion } from "@sauri/shared-types";
+import type { Meeting } from "@sauri/shared-types";
 import { RegisterForm } from "./components/RegisterForm";
-import { ReunionList } from "./components/ReunionList";
-import { TranscripcionView } from "./components/TranscripcionView";
+import { MeetingList } from "./components/MeetingList";
+import { TranscriptView } from "./components/TranscriptView";
 
-type View = { type: "list" } | { type: "transcripcion"; reunionId: string };
+type View = { type: "list" } | { type: "transcript"; meetingId: string };
 
 export function App() {
   const [view, setView] = useState<View>({ type: "list" });
@@ -14,8 +14,8 @@ export function App() {
     setRefreshKey((k) => k + 1);
   }
 
-  function handleSelectReunion(reunion: Reunion) {
-    setView({ type: "transcripcion", reunionId: reunion.id });
+  function handleSelectMeeting(meeting: Meeting) {
+    setView({ type: "transcript", meetingId: meeting.id });
   }
 
   function handleBack() {
@@ -25,21 +25,21 @@ export function App() {
   return (
     <main style={{ maxWidth: "800px", margin: "0 auto", padding: "1rem" }}>
       <h1>sauri</h1>
-      <p>Plataforma de inteligencia de reuniones comerciales</p>
+      <p>Commercial meeting intelligence platform</p>
       <hr />
 
       {view.type === "list" && (
         <>
           <RegisterForm onRegistered={handleRegistered} />
-          <ReunionList
+          <MeetingList
             refreshKey={refreshKey}
-            onSelectReunion={handleSelectReunion}
+            onSelectMeeting={handleSelectMeeting}
           />
         </>
       )}
 
-      {view.type === "transcripcion" && (
-        <TranscripcionView reunionId={view.reunionId} onBack={handleBack} />
+      {view.type === "transcript" && (
+        <TranscriptView meetingId={view.meetingId} onBack={handleBack} />
       )}
     </main>
   );

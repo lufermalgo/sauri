@@ -1,6 +1,6 @@
-"""Tests para la Cola de Trabajos (queue_rabbitmq.py).
+"""Tests for the JobQueue (queue_rabbitmq.py).
 
-# Feature: transcripcion-asr
+# Feature: transcription-asr
 Tasks: 10.3, 10.4
 """
 
@@ -11,138 +11,139 @@ from unittest.mock import patch
 
 import pytest
 
-from app.infra.queue_rabbitmq import _leer_max_retries, _contar_reintentos
+from app.infra.queue_rabbitmq import _read_max_retries, _count_retries
 
 
 # ---------------------------------------------------------------------------
-# Prueba por ejemplo — validación del rango de ASR_MAX_RETRIES (Task 10.3)
+# Example-based tests — ASR_MAX_RETRIES range validation (Task 10.3)
 # Validates: Requirements 9.2
 # ---------------------------------------------------------------------------
 
 
 class TestMaxRetries:
-    """Pruebas de validación del rango ASR_MAX_RETRIES."""
+    """Tests for ASR_MAX_RETRIES range validation."""
 
-    def test_default_cuando_ausente(self):
-        """ASR_MAX_RETRIES ausente → default 3."""
+    def test_default_when_absent(self):
+        """ASR_MAX_RETRIES absent → default 3."""
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ASR_MAX_RETRIES", None)
-            assert _leer_max_retries() == 3
+            assert _read_max_retries() == 3
 
-    def test_default_cuando_vacio(self):
-        """ASR_MAX_RETRIES vacío → default 3."""
+    def test_default_when_empty(self):
+        """ASR_MAX_RETRIES empty → default 3."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": ""}, clear=False):
-            assert _leer_max_retries() == 3
+            assert _read_max_retries() == 3
 
-    def test_valor_valido_0(self):
-        """ASR_MAX_RETRIES=0 → 0 (sin reintentos)."""
+    def test_valid_value_0(self):
+        """ASR_MAX_RETRIES=0 → 0 (no retries)."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "0"}, clear=False):
-            assert _leer_max_retries() == 0
+            assert _read_max_retries() == 0
 
-    def test_valor_valido_10(self):
-        """ASR_MAX_RETRIES=10 → 10 (máximo permitido)."""
+    def test_valid_value_10(self):
+        """ASR_MAX_RETRIES=10 → 10 (max allowed)."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "10"}, clear=False):
-            assert _leer_max_retries() == 10
+            assert _read_max_retries() == 10
 
-    def test_valor_valido_5(self):
+    def test_valid_value_5(self):
         """ASR_MAX_RETRIES=5 → 5."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "5"}, clear=False):
-            assert _leer_max_retries() == 5
+            assert _read_max_retries() == 5
 
-    def test_fuera_de_rango_negativo(self):
-        """ASR_MAX_RETRIES=-1 → default 3 (fuera de rango)."""
+    def test_out_of_range_negative(self):
+        """ASR_MAX_RETRIES=-1 → default 3 (out of range)."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "-1"}, clear=False):
-            assert _leer_max_retries() == 3
+            assert _read_max_retries() == 3
 
-    def test_fuera_de_rango_mayor_10(self):
-        """ASR_MAX_RETRIES=11 → default 3 (fuera de rango)."""
+    def test_out_of_range_greater_than_10(self):
+        """ASR_MAX_RETRIES=11 → default 3 (out of range)."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "11"}, clear=False):
-            assert _leer_max_retries() == 3
+            assert _read_max_retries() == 3
 
-    def test_fuera_de_rango_100(self):
+    def test_out_of_range_100(self):
         """ASR_MAX_RETRIES=100 → default 3."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "100"}, clear=False):
-            assert _leer_max_retries() == 3
+            assert _read_max_retries() == 3
 
-    def test_no_entero(self):
+    def test_not_an_integer(self):
         """ASR_MAX_RETRIES='abc' → default 3."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "abc"}, clear=False):
-            assert _leer_max_retries() == 3
+            assert _read_max_retries() == 3
 
 
 # ---------------------------------------------------------------------------
-# Pruebas de integración de la cola (Task 10.4)
+# Queue integration tests (Task 10.4)
 # Validates: Requirements 1.5, 1.6, 1.7, 9.2, 9.3, 9.4
 # ---------------------------------------------------------------------------
 
 
-class TestContarReintentos:
-    """Tests unitarios para _contar_reintentos (sin necesidad de RabbitMQ real).
+class TestCountRetries:
+    """Unit tests for _count_retries (no real RabbitMQ needed).
 
-    El conteo se rastrea con un header propio (x-sauri-reintentos), no con el
-    x-death de RabbitMQ: x-death solo lo puebla RabbitMQ cuando el mensaje pasa
-    por un dead-letter-exchange real, y en este entorno (sin QUEUE_DLX_EXCHANGE
-    configurado) un nack(requeue=True) directo nunca lo toca — lo que causaba
-    un loop infinito de reintentos, ya que _contar_reintentos siempre veía 0.
+    The count is tracked with a custom header (x-sauri-retries), not with
+    RabbitMQ's x-death: x-death is only populated by RabbitMQ when a message
+    passes through a real dead-letter-exchange, and in this environment
+    (without QUEUE_DLX_EXCHANGE configured) a direct nack(requeue=True)
+    never touches it — which caused an infinite retry loop, since
+    _count_retries always saw 0.
     """
 
-    def test_sin_header_retorna_0(self):
-        """Mensaje sin x-sauri-reintentos → 0 reintentos."""
+    def test_no_header_returns_0(self):
+        """Message without x-sauri-retries → 0 retries."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
         msg.headers = {}
-        assert _contar_reintentos(msg) == 0
+        assert _count_retries(msg) == 0
 
-    def test_sin_headers_retorna_0(self):
-        """Mensaje sin headers → 0 reintentos."""
+    def test_no_headers_returns_0(self):
+        """Message without headers → 0 retries."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
         msg.headers = None
-        assert _contar_reintentos(msg) == 0
+        assert _count_retries(msg) == 0
 
-    def test_header_con_valor_1(self):
-        """x-sauri-reintentos=1 → 1 reintento."""
+    def test_header_with_value_1(self):
+        """x-sauri-retries=1 → 1 retry."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
-        msg.headers = {"x-sauri-reintentos": 1}
-        assert _contar_reintentos(msg) == 1
+        msg.headers = {"x-sauri-retries": 1}
+        assert _count_retries(msg) == 1
 
-    def test_header_con_valor_3(self):
-        """x-sauri-reintentos=3 → 3 reintentos."""
+    def test_header_with_value_3(self):
+        """x-sauri-retries=3 → 3 retries."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
-        msg.headers = {"x-sauri-reintentos": 3}
-        assert _contar_reintentos(msg) == 3
+        msg.headers = {"x-sauri-retries": 3}
+        assert _count_retries(msg) == 3
 
-    def test_header_no_entero_retorna_0(self):
-        """x-sauri-reintentos con valor no entero → 0 reintentos."""
+    def test_header_non_integer_returns_0(self):
+        """x-sauri-retries with a non-integer value → 0 retries."""
         from unittest.mock import MagicMock
 
         msg = MagicMock()
-        msg.headers = {"x-sauri-reintentos": "no-es-un-entero"}
-        assert _contar_reintentos(msg) == 0
+        msg.headers = {"x-sauri-retries": "not-an-integer"}
+        assert _count_retries(msg) == 0
 
 
-class TestColaDeRabbitMQBehavior:
-    """Tests de comportamiento del consumidor (mock de aio-pika).
+class TestRabbitMQJobQueueBehavior:
+    """Consumer behavior tests (aio-pika mocked).
 
-    Verifica la lógica de ack/nack/requeue sin conexión real a RabbitMQ.
+    Verifies ack/nack/requeue logic without a real RabbitMQ connection.
     """
 
     @pytest.mark.asyncio
-    async def test_ack_tras_exito(self):
-        """Req 1.5: Procesamiento exitoso → ack."""
+    async def test_ack_on_success(self):
+        """Req 1.5: Successful processing → ack."""
         from unittest.mock import AsyncMock
-        from app.infra.queue_rabbitmq import ColaDeRabbitMQ
+        from app.infra.queue_rabbitmq import RabbitMQJobQueue
         import json
 
-        cola = ColaDeRabbitMQ("amqp://guest:guest@localhost/")
-        cola._max_retries = 3
-        cola._dlx_exchange = None
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        queue._max_retries = 3
+        queue._dlx_exchange = None
 
         handler_called = False
 
@@ -151,14 +152,14 @@ class TestColaDeRabbitMQBehavior:
             handler_called = True
 
         mock_message = AsyncMock()
-        mock_message.body = json.dumps({"reunion_id": "abc", "audio_ref": "x"}).encode()
+        mock_message.body = json.dumps({"meeting_id": "abc", "audio_ref": "x"}).encode()
         mock_message.headers = {}
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
-        cola._channel = AsyncMock()
+        queue._channel = AsyncMock()
         mock_queue = AsyncMock()
-        cola._channel.declare_queue.return_value = mock_queue
+        queue._channel.declare_queue.return_value = mock_queue
 
         captured_callback = None
 
@@ -168,7 +169,7 @@ class TestColaDeRabbitMQBehavior:
 
         mock_queue.consume = capture_consume
 
-        await cola.suscribir("transcribir", mock_handler)
+        await queue.subscribe("transcribe", mock_handler)
         assert captured_callback is not None
 
         await captured_callback(mock_message)
@@ -178,28 +179,28 @@ class TestColaDeRabbitMQBehavior:
         mock_message.nack.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_nack_sin_requeue_ante_excepcion_reintentos_agotados(self):
-        """Req 1.6: Excepción con reintentos agotados → nack(requeue=False)."""
+    async def test_nack_without_requeue_on_exception_retries_exhausted(self):
+        """Req 1.6: Exception with retries exhausted → nack(requeue=False)."""
         from unittest.mock import AsyncMock
-        from app.infra.queue_rabbitmq import ColaDeRabbitMQ
+        from app.infra.queue_rabbitmq import RabbitMQJobQueue
         import json
 
-        cola = ColaDeRabbitMQ("amqp://guest:guest@localhost/")
-        cola._max_retries = 3
-        cola._dlx_exchange = "dlx-exchange"
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        queue._max_retries = 3
+        queue._dlx_exchange = "dlx-exchange"
 
         async def failing_handler(msg):
             raise RuntimeError("boom")
 
         mock_message = AsyncMock()
-        mock_message.body = json.dumps({"reunion_id": "abc"}).encode()
-        mock_message.headers = {"x-sauri-reintentos": 3}
+        mock_message.body = json.dumps({"meeting_id": "abc"}).encode()
+        mock_message.headers = {"x-sauri-retries": 3}
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
-        cola._channel = AsyncMock()
+        queue._channel = AsyncMock()
         mock_queue = AsyncMock()
-        cola._channel.declare_queue.return_value = mock_queue
+        queue._channel.declare_queue.return_value = mock_queue
 
         captured_callback = None
 
@@ -209,44 +210,44 @@ class TestColaDeRabbitMQBehavior:
 
         mock_queue.consume = capture_consume
 
-        await cola.suscribir("transcribir", failing_handler)
+        await queue.subscribe("transcribe", failing_handler)
         await captured_callback(mock_message)
 
         mock_message.nack.assert_called_once_with(requeue=False)
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_republica_con_reintentos_incrementado_ante_excepcion_reintentos_disponibles(self):
-        """Req 9.2: Excepción con reintentos disponibles → republica con contador +1 y ack del original.
+    async def test_republishes_with_retries_incremented_on_exception_retries_available(self):
+        """Req 9.2: Exception with retries available → republish with counter +1 and ack the original.
 
-        No usa nack(requeue=True): sin DLX configurado eso reencola el mismo
-        mensaje sin dejar rastro en x-death, causando un loop infinito de
-        reintentos idénticos (bug real observado en vivo). En su lugar, se
-        publica una copia con x-sauri-reintentos incrementado y se hace ack
-        del mensaje original.
+        Doesn't use nack(requeue=True): without a DLX configured that requeues
+        the same message without leaving a trace in x-death, causing an
+        infinite loop of identical retries (a real bug observed in
+        production). Instead, a copy is published with x-sauri-retries
+        incremented and the original message is acked.
         """
         from unittest.mock import AsyncMock
-        from app.infra.queue_rabbitmq import ColaDeRabbitMQ
+        from app.infra.queue_rabbitmq import RabbitMQJobQueue
         import json
 
-        cola = ColaDeRabbitMQ("amqp://guest:guest@localhost/")
-        cola._max_retries = 3
-        cola._dlx_exchange = None
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        queue._max_retries = 3
+        queue._dlx_exchange = None
 
         async def failing_handler(msg):
             raise RuntimeError("boom")
 
         mock_message = AsyncMock()
-        mock_message.body = json.dumps({"reunion_id": "abc"}).encode()
-        mock_message.headers = {"x-sauri-reintentos": 1}
+        mock_message.body = json.dumps({"meeting_id": "abc"}).encode()
+        mock_message.headers = {"x-sauri-retries": 1}
         mock_message.content_type = "application/json"
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
-        cola._channel = AsyncMock()
+        queue._channel = AsyncMock()
         mock_queue = AsyncMock()
-        cola._channel.declare_queue.return_value = mock_queue
-        cola._channel.default_exchange.publish = AsyncMock()
+        queue._channel.declare_queue.return_value = mock_queue
+        queue._channel.default_exchange.publish = AsyncMock()
 
         captured_callback = None
 
@@ -256,64 +257,64 @@ class TestColaDeRabbitMQBehavior:
 
         mock_queue.consume = capture_consume
 
-        await cola.suscribir("transcribir", failing_handler)
+        await queue.subscribe("transcribe", failing_handler)
         await captured_callback(mock_message)
 
         mock_message.nack.assert_not_called()
         mock_message.ack.assert_called_once()
-        cola._channel.default_exchange.publish.assert_called_once()
-        published_message, kwargs = cola._channel.default_exchange.publish.call_args
-        assert kwargs["routing_key"] == "transcribir"
-        assert published_message[0].headers["x-sauri-reintentos"] == 2
+        queue._channel.default_exchange.publish.assert_called_once()
+        published_message, kwargs = queue._channel.default_exchange.publish.call_args
+        assert kwargs["routing_key"] == "transcribe"
+        assert published_message[0].headers["x-sauri-retries"] == 2
 
     @pytest.mark.asyncio
-    async def test_dlx_configurado_en_queue_arguments(self):
-        """Req 1.7, 9.3: DLX configurado → se pasa x-dead-letter-exchange."""
+    async def test_dlx_configured_in_queue_arguments(self):
+        """Req 1.7, 9.3: DLX configured → x-dead-letter-exchange is passed."""
         from unittest.mock import AsyncMock
-        from app.infra.queue_rabbitmq import ColaDeRabbitMQ
+        from app.infra.queue_rabbitmq import RabbitMQJobQueue
 
-        cola = ColaDeRabbitMQ("amqp://guest:guest@localhost/")
-        cola._max_retries = 3
-        cola._dlx_exchange = "my-dlx"
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        queue._max_retries = 3
+        queue._dlx_exchange = "my-dlx"
 
         async def noop_handler(msg):
             pass
 
-        cola._channel = AsyncMock()
+        queue._channel = AsyncMock()
         mock_queue = AsyncMock()
-        cola._channel.declare_queue.return_value = mock_queue
+        queue._channel.declare_queue.return_value = mock_queue
         mock_queue.consume = AsyncMock()
 
-        await cola.suscribir("transcribir", noop_handler)
+        await queue.subscribe("transcribe", noop_handler)
 
         # Check declare_queue was called with DLX argument
-        call_kwargs = cola._channel.declare_queue.call_args[1]
+        call_kwargs = queue._channel.declare_queue.call_args[1]
         arguments = call_kwargs.get("arguments")
         assert arguments is not None
         assert arguments.get("x-dead-letter-exchange") == "my-dlx"
 
     @pytest.mark.asyncio
-    async def test_descarte_sin_dlx(self):
-        """Req 9.4: Sin DLX + reintentos agotados → descarte (nack requeue=False)."""
+    async def test_discard_without_dlx(self):
+        """Req 9.4: No DLX + retries exhausted → discard (nack requeue=False)."""
         from unittest.mock import AsyncMock, patch
-        from app.infra.queue_rabbitmq import ColaDeRabbitMQ
+        from app.infra.queue_rabbitmq import RabbitMQJobQueue
         import json
 
-        cola = ColaDeRabbitMQ("amqp://guest:guest@localhost/")
-        cola._dlx_exchange = None
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        queue._dlx_exchange = None
 
         async def failing_handler(msg):
             raise RuntimeError("boom")
 
         mock_message = AsyncMock()
-        mock_message.body = json.dumps({"reunion_id": "abc"}).encode()
-        mock_message.headers = {"x-sauri-reintentos": 2}
+        mock_message.body = json.dumps({"meeting_id": "abc"}).encode()
+        mock_message.headers = {"x-sauri-retries": 2}
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
-        cola._channel = AsyncMock()
+        queue._channel = AsyncMock()
         mock_queue = AsyncMock()
-        cola._channel.declare_queue.return_value = mock_queue
+        queue._channel.declare_queue.return_value = mock_queue
 
         captured_callback = None
 
@@ -323,8 +324,8 @@ class TestColaDeRabbitMQBehavior:
 
         mock_queue.consume = capture_consume
 
-        with patch("app.infra.queue_rabbitmq._leer_max_retries", return_value=2):
-            await cola.suscribir("transcribir", failing_handler)
+        with patch("app.infra.queue_rabbitmq._read_max_retries", return_value=2):
+            await queue.subscribe("transcribe", failing_handler)
         await captured_callback(mock_message)
 
         mock_message.nack.assert_called_once_with(requeue=False)

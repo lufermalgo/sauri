@@ -1,26 +1,26 @@
-"""Esquemas Pydantic del módulo de autenticación."""
+"""Pydantic schemas for the authentication module."""
 
 from pydantic import BaseModel
 
 
-class UsuarioAutenticado(BaseModel):
-    """Representa un usuario autenticado extraído del token JWT."""
+class AuthenticatedUser(BaseModel):
+    """Represents an authenticated user extracted from the JWT token."""
 
-    id: str  # UUID como string
+    id: str  # UUID as string
     email: str
-    nombre: str
-    es_comercial: bool
+    name: str
+    is_sales: bool
 
 
 class LoginRequest(BaseModel):
-    """Solicitud de inicio de sesión (Req. 13.2)."""
+    """Login request (Req. 13.2)."""
 
     email: str
     password: str
 
 
 class LoginResponse(BaseModel):
-    """Respuesta del Servicio_De_Autenticacion con la Sesion_De_Usuario (Req. 13.3)."""
+    """Authentication_Service response with the User_Session (Req. 13.3)."""
 
     access_token: str
     token_type: str = "bearer"

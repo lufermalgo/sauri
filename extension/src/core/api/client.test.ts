@@ -1,5 +1,5 @@
-// Pruebas de integración del Cliente_De_API (RED antes de la implementación)
-// Requisitos: 13.1, 13.3, 13.4, 13.5, 14.1, 14.4, 14.5, 4.9, 6.6
+// API client integration tests (RED before implementation)
+// Requirements: 13.1, 13.3, 13.4, 13.5, 14.1, 14.4, 14.5, 4.9, 6.6
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
@@ -23,7 +23,7 @@ function mockChromeStorage(initial: Record<string, unknown> = {}) {
   return store;
 }
 
-describe("Cliente_De_API — header de autorización y almacenamiento (Req. 13.1, 13.3, 14.1)", () => {
+describe("API client — authorization header and storage (Req. 13.1, 13.3, 14.1)", () => {
   beforeEach(() => {
     mockChromeStorage({ authToken: "token-abc" });
     global.fetch = vi.fn(async () =>
@@ -32,9 +32,9 @@ describe("Cliente_De_API — header de autorización y almacenamiento (Req. 13.1
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("adjunta Authorization: Bearer {sesion} leída de chrome.storage en cada solicitud", async () => {
-    const { listarReuniones } = await import("./client");
-    await listarReuniones("http://localhost:8000");
+  it("attaches Authorization: Bearer {session} read from chrome.storage on every request", async () => {
+    const { listMeetings } = await import("./client");
+    await listMeetings("http://localhost:8000");
     expect(fetch).toHaveBeenCalled();
     const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     const init = callArgs[1] as RequestInit;
@@ -43,24 +43,24 @@ describe("Cliente_De_API — header de autorización y almacenamiento (Req. 13.1
   });
 });
 
-describe("Cliente_De_API — manejo de 401 (Req. 13.4)", () => {
-  it("descarta la sesión almacenada cuando el backend responde 401", async () => {
-    const store = mockChromeStorage({ authToken: "token-expirado" });
+describe("API client — 401 handling (Req. 13.4)", () => {
+  it("discards the stored session when the backend responds 401", async () => {
+    const store = mockChromeStorage({ authToken: "expired-token" });
     global.fetch = vi.fn(async () => new Response("", { status: 401 })) as unknown as typeof fetch;
 
-    const { listarReuniones } = await import("./client");
-    await expect(listarReuniones("http://localhost:8000")).rejects.toThrow();
+    const { listMeetings } = await import("./client");
+    await expect(listMeetings("http://localhost:8000")).rejects.toThrow();
     expect(store.authToken).toBeUndefined();
   });
 });
 
-describe("Cliente_De_API — timeout y reintento (Req. 14.4, 14.5, 4.9, 6.6)", () => {
+describe("API client — timeout and retry (Req. 14.4, 14.5, 4.9, 6.6)", () => {
   beforeEach(() => {
     mockChromeStorage({ authToken: "token-abc" });
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("aborta la solicitud tras 10s vía AbortController", async () => {
+  it("aborts the request after 10s via AbortController", async () => {
     vi.useFakeTimers();
     global.fetch = vi.fn(
       (_url: string, init?: RequestInit) =>
@@ -71,110 +71,110 @@ describe("Cliente_De_API — timeout y reintento (Req. 14.4, 14.5, 4.9, 6.6)", (
         })
     ) as unknown as typeof fetch;
 
-    const { listarReuniones } = await import("./client");
-    const promise = listarReuniones("http://localhost:8000");
-    const expectacion = expect(promise).rejects.toThrow();
+    const { listMeetings } = await import("./client");
+    const promise = listMeetings("http://localhost:8000");
+    const expectation = expect(promise).rejects.toThrow();
     await vi.advanceTimersByTimeAsync(10_000);
-    await expectacion;
+    await expectation;
     vi.useRealTimers();
   });
 
-  it("el reintento vuelve a emitir la solicitud", async () => {
-    let llamadas = 0;
+  it("retrying re-issues the request", async () => {
+    let calls = 0;
     global.fetch = vi.fn(async () => {
-      llamadas += 1;
+      calls += 1;
       return new Response(JSON.stringify([]), { status: 200 });
     }) as unknown as typeof fetch;
 
-    const { listarReuniones } = await import("./client");
-    await listarReuniones("http://localhost:8000");
-    await listarReuniones("http://localhost:8000");
-    expect(llamadas).toBe(2);
+    const { listMeetings } = await import("./client");
+    await listMeetings("http://localhost:8000");
+    await listMeetings("http://localhost:8000");
+    expect(calls).toBe(2);
   });
 });
 
-describe("Cliente_De_API — 404 distinguido de un fallo real (Req. 7.6, 8.8, 10.5)", () => {
+describe("API client — 404 distinguished from a real failure (Req. 7.6, 8.8, 10.5)", () => {
   beforeEach(() => {
     mockChromeStorage({ authToken: "token-abc" });
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("lanza ErrorNoEncontrado cuando el backend responde 404", async () => {
+  it("throws NotFoundError when the backend responds 404", async () => {
     global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
-    const { obtenerTranscripcion, ErrorNoEncontrado } = await import("./client");
-    await expect(obtenerTranscripcion("r1", "http://localhost:8000")).rejects.toBeInstanceOf(ErrorNoEncontrado);
+    const { getTranscript, NotFoundError } = await import("./client");
+    await expect(getTranscript("r1", "http://localhost:8000")).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
-describe("Cliente_De_API — renombrarReunion / eliminarReunion (Mis_Notas → administrar)", () => {
+describe("API client — renameMeeting / deleteMeeting (My Notes → manage)", () => {
   beforeEach(() => {
     mockChromeStorage({ authToken: "token-abc" });
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
-  it("renombrarReunion hace PATCH con el nuevo título en el body", async () => {
+  it("renameMeeting issues a PATCH with the new title in the body", async () => {
     global.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ reunion_id: "r1", titulo: "Nuevo título" }), { status: 200 })
+      new Response(JSON.stringify({ meeting_id: "r1", title: "New title" }), { status: 200 })
     ) as unknown as typeof fetch;
 
-    const { renombrarReunion } = await import("./client");
-    await renombrarReunion("r1", "Nuevo título", "http://localhost:8000");
+    const { renameMeeting } = await import("./client");
+    await renameMeeting("r1", "New title", "http://localhost:8000");
 
     expect(fetch).toHaveBeenCalled();
     const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[0]).toBe("http://localhost:8000/api/v1/reuniones/r1");
+    expect(callArgs[0]).toBe("http://localhost:8000/api/v1/meetings/r1");
     const init = callArgs[1] as RequestInit;
     expect(init.method).toBe("PATCH");
-    expect(JSON.parse(init.body as string)).toEqual({ titulo: "Nuevo título" });
+    expect(JSON.parse(init.body as string)).toEqual({ title: "New title" });
   });
 
-  it("renombrarReunion lanza ErrorNoEncontrado en 404", async () => {
+  it("renameMeeting throws NotFoundError on 404", async () => {
     global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
-    const { renombrarReunion, ErrorNoEncontrado } = await import("./client");
-    await expect(renombrarReunion("r1", "X", "http://localhost:8000")).rejects.toBeInstanceOf(
-      ErrorNoEncontrado
+    const { renameMeeting, NotFoundError } = await import("./client");
+    await expect(renameMeeting("r1", "X", "http://localhost:8000")).rejects.toBeInstanceOf(
+      NotFoundError
     );
   });
 
-  it("eliminarReunion hace DELETE y no falla al parsear el 204 sin cuerpo", async () => {
+  it("deleteMeeting issues a DELETE and doesn't fail parsing the bodyless 204", async () => {
     global.fetch = vi.fn(async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
-    const { eliminarReunion } = await import("./client");
-    await expect(eliminarReunion("r1", "http://localhost:8000")).resolves.toBeUndefined();
+    const { deleteMeeting } = await import("./client");
+    await expect(deleteMeeting("r1", "http://localhost:8000")).resolves.toBeUndefined();
 
     const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[0]).toBe("http://localhost:8000/api/v1/reuniones/r1");
+    expect(callArgs[0]).toBe("http://localhost:8000/api/v1/meetings/r1");
     const init = callArgs[1] as RequestInit;
     expect(init.method).toBe("DELETE");
   });
 
-  it("eliminarReunion lanza ErrorNoEncontrado en 404", async () => {
+  it("deleteMeeting throws NotFoundError on 404", async () => {
     global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
-    const { eliminarReunion, ErrorNoEncontrado } = await import("./client");
-    await expect(eliminarReunion("r1", "http://localhost:8000")).rejects.toBeInstanceOf(
-      ErrorNoEncontrado
+    const { deleteMeeting, NotFoundError } = await import("./client");
+    await expect(deleteMeeting("r1", "http://localhost:8000")).rejects.toBeInstanceOf(
+      NotFoundError
     );
   });
 });
 
-describe("Cliente_De_API — transporte cifrado (Req. 13.5)", () => {
+describe("API client — encrypted transport (Req. 13.5)", () => {
   beforeEach(() => {
     mockChromeStorage({ authToken: "token-abc" });
   });
 
-  it("rechaza un backendUrl http:// que no sea localhost", async () => {
-    const { listarReuniones } = await import("./client");
-    await expect(listarReuniones("http://api.sauri.example.com")).rejects.toThrow();
+  it("rejects a non-localhost http:// backendUrl", async () => {
+    const { listMeetings } = await import("./client");
+    await expect(listMeetings("http://api.sauri.example.com")).rejects.toThrow();
   });
 
-  it("admite http://localhost", async () => {
+  it("accepts http://localhost", async () => {
     global.fetch = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })) as unknown as typeof fetch;
-    const { listarReuniones } = await import("./client");
-    await expect(listarReuniones("http://localhost:8000")).resolves.toEqual([]);
+    const { listMeetings } = await import("./client");
+    await expect(listMeetings("http://localhost:8000")).resolves.toEqual([]);
   });
 
-  it("admite https:// en producción", async () => {
+  it("accepts https:// in production", async () => {
     global.fetch = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })) as unknown as typeof fetch;
-    const { listarReuniones } = await import("./client");
-    await expect(listarReuniones("https://api.sauri.example.com")).resolves.toEqual([]);
+    const { listMeetings } = await import("./client");
+    await expect(listMeetings("https://api.sauri.example.com")).resolves.toEqual([]);
   });
 });

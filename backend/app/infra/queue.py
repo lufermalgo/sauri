@@ -1,8 +1,9 @@
-"""Abstracción cloud-agnóstica de cola de trabajos / mensajería.
+"""Cloud-agnostic job queue / messaging abstraction.
 
-Define la interfaz `ColaDeTrabajos` con semántica de entrega al-menos-una-vez,
-reintentos y dead-letter. La implementación concreta se selecciona por configuración
-(variable de entorno QUEUE_BROKER_URL) sin modificar la lógica de negocio.
+Defines the `JobQueue` interface with at-least-once delivery semantics,
+retries, and dead-letter support. The concrete implementation is selected
+via configuration (QUEUE_BROKER_URL environment variable) without
+modifying business logic.
 """
 
 from __future__ import annotations
@@ -13,45 +14,45 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 
-class ColaDeTrabajos(ABC):
-    """Interfaz abstracta de cola de trabajos con entrega al-menos-una-vez."""
+class JobQueue(ABC):
+    """Abstract job queue interface with at-least-once delivery."""
 
     @abstractmethod
-    async def publicar(self, tema: str, mensaje: dict[str, Any]) -> None:
-        """Publica un mensaje/trabajo en el tema (queue) indicado."""
+    async def publish(self, topic: str, message: dict[str, Any]) -> None:
+        """Publishes a message/job to the given topic (queue)."""
         ...
 
     @abstractmethod
-    async def suscribir(
+    async def subscribe(
         self,
-        tema: str,
-        manejador: Callable[[dict[str, Any]], Awaitable[None]],
+        topic: str,
+        handler: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        """Suscribe un manejador para consumir mensajes de un tema.
+        """Subscribes a handler to consume messages from a topic.
 
-        El manejador recibe el mensaje deserializado. La implementación
-        hace ack tras procesamiento exitoso del manejador; en caso de
-        excepción, hace nack sin requeue (dead-letter si configurado).
+        The handler receives the deserialized message. The implementation
+        acks after the handler processes the message successfully; on
+        exception, it nacks without requeue (dead-lettering if configured).
         """
         ...
 
     @abstractmethod
-    async def conectar(self) -> None:
-        """Establece la conexión con el broker."""
+    async def connect(self) -> None:
+        """Establishes the connection with the broker."""
         ...
 
     @abstractmethod
-    async def desconectar(self) -> None:
-        """Cierra la conexión con el broker."""
+    async def disconnect(self) -> None:
+        """Closes the connection with the broker."""
         ...
 
 
-def crear_cola_de_trabajos() -> ColaDeTrabajos:
-    """Factory que crea la implementación configurada de ColaDeTrabajos.
+def create_job_queue() -> JobQueue:
+    """Factory that creates the configured JobQueue implementation.
 
-    Lee QUEUE_BROKER_URL del entorno para determinar la URL del broker.
+    Reads QUEUE_BROKER_URL from the environment to determine the broker URL.
     """
-    from app.infra.queue_rabbitmq import ColaDeRabbitMQ
+    from app.infra.queue_rabbitmq import RabbitMQJobQueue
 
     broker_url = os.environ.get("QUEUE_BROKER_URL", "amqp://guest:guest@localhost:5672/")
-    return ColaDeRabbitMQ(broker_url=broker_url)
+    return RabbitMQJobQueue(broker_url=broker_url)

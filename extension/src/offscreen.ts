@@ -1,6 +1,6 @@
-// Documento offscreen para MediaRecorder.
-// Captura Pista_De_Audio + Pista_De_Video via tabCapture stream, troceo timeslice 5s.
-// Producción: chunks persistidos en IndexedDB ensamblados por sessionId.
+// Offscreen document for MediaRecorder.
+// Captures Audio_Track + Video_Track via a tabCapture stream, chunked on a 5s timeslice.
+// Production: chunks persisted in IndexedDB, assembled by sessionId.
 
 import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME } from "./recording-db";
 

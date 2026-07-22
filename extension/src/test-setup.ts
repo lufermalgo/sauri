@@ -1,4 +1,4 @@
-// Configuración global de vitest: matchers de jest-dom para pruebas de render.
+// Global vitest configuration: jest-dom matchers for render tests.
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";

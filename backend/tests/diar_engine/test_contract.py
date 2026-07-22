@@ -1,9 +1,9 @@
 """Contract test for the diar-engine FastAPI service.
 
-# Feature: identificacion-hablantes, Task 14.1
+# Feature: speaker-identification, Task 14.1
 # Validates: Requirements 3.1, 3.3
 
-Verifies the HTTP contract of the Servicio_De_Diarizacion_Local:
+Verifies the HTTP contract of the Local_Diarization_Service:
   - POST /diarize: request {"audio_ref": str} → response {"segments": [...], "num_speakers": int}
   - GET /health → {"status": "ok"}
 
@@ -151,7 +151,7 @@ def async_client(monkeypatch):
 
 
 class TestContratoDiarEngine:
-    """Verifica el contrato HTTP del Servicio_De_Diarizacion_Local (diar-engine)."""
+    """Verifies the HTTP contract of the Local_Diarization_Service (diar-engine)."""
 
     # -------------------------------------------------------------------
     # POST /diarize — Validates: Requirement 3.1, 3.3
@@ -159,7 +159,7 @@ class TestContratoDiarEngine:
 
     @pytest.mark.asyncio
     async def test_post_diarize_respuesta_con_segmentos(self, async_client):
-        """POST /diarize con audio_ref válido devuelve segments y num_speakers.
+        """POST /diarize with a valid audio_ref returns segments and num_speakers.
 
         Contract:
           Request:  {"audio_ref": "test/audio.webm"}
@@ -204,7 +204,7 @@ class TestContratoDiarEngine:
 
     @pytest.mark.asyncio
     async def test_post_diarize_respuesta_vacia_valida(self, async_client):
-        """POST /diarize puede devolver segments: [] con num_speakers: 0 (sin hablantes)."""
+        """POST /diarize can return segments: [] with num_speakers: 0 (no speakers)."""
         async with async_client as client:
             response = await client.post(
                 "/diarize",

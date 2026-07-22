@@ -1,12 +1,12 @@
-"""Property test de conformidad de adaptadores de infraestructura (contract testing).
+"""Property test for infrastructure adapter conformance (contract testing).
 
-# Feature: meeting-capture-transcription, Property 13: Conformidad de adaptadores de infraestructura
+# Feature: meeting-capture-transcription, Property 13: Infrastructure adapter conformance
 Task: 7.3 — Validates: Requirements 8.3, 8.4
 
-Ejercita el mismo contrato observable contra múltiples implementaciones conformes
-de `AlmacenDeObjetos` y `ColaDeTrabajos` (sin depender de MinIO/RabbitMQ en vivo,
-cubiertos por el test de integración 17.3). Cualquier implementación real
-(S3/MinIO, RabbitMQ) debe satisfacer el mismo contrato.
+Exercises the same observable contract against multiple conforming
+implementations of `ObjectStore` and `JobQueue` (without depending on a live
+MinIO/RabbitMQ, covered by integration test 17.3). Any real implementation
+(S3/MinIO, RabbitMQ) must satisfy the same contract.
 """
 
 from __future__ import annotations
@@ -15,178 +15,179 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from app.infra.object_store import AlmacenDeObjetos
-from app.infra.queue import ColaDeTrabajos
+from app.infra.object_store import ObjectStore
+from app.infra.queue import JobQueue
 
 
-class _AlmacenEnMemoria(AlmacenDeObjetos):
-    """Primera implementación conforme: dict en memoria."""
-
-    def __init__(self) -> None:
-        self._objetos: dict[str, bytes] = {}
-
-    async def guardar(self, clave: str, contenido: bytes, content_type: str = "application/octet-stream") -> str:
-        self._objetos[clave] = contenido
-        return clave
-
-    async def obtener(self, referencia: str) -> bytes:
-        return self._objetos[referencia]
-
-    async def eliminar(self, referencia: str) -> None:
-        self._objetos.pop(referencia, None)
-
-    async def url_temporal_de_lectura(self, referencia: str, ttl_seconds: int = 3600) -> str:
-        return f"memoria://{referencia}?ttl={ttl_seconds}"
-
-
-class _AlmacenListaIndexada(AlmacenDeObjetos):
-    """Segunda implementación conforme: lista indexada (estructura interna distinta)."""
+class _InMemoryStore(ObjectStore):
+    """First conforming implementation: in-memory dict."""
 
     def __init__(self) -> None:
-        self._claves: list[str] = []
-        self._valores: list[bytes] = []
+        self._objects: dict[str, bytes] = {}
 
-    def _index(self, referencia: str) -> int:
-        return self._claves.index(referencia)
+    async def save(self, key: str, content: bytes, content_type: str = "application/octet-stream") -> str:
+        self._objects[key] = content
+        return key
 
-    async def guardar(self, clave: str, contenido: bytes, content_type: str = "application/octet-stream") -> str:
-        if clave in self._claves:
-            self._valores[self._index(clave)] = contenido
+    async def get(self, reference: str) -> bytes:
+        return self._objects[reference]
+
+    async def delete(self, reference: str) -> None:
+        self._objects.pop(reference, None)
+
+    async def temporary_read_url(self, reference: str, ttl_seconds: int = 3600) -> str:
+        return f"memory://{reference}?ttl={ttl_seconds}"
+
+
+class _IndexedListStore(ObjectStore):
+    """Second conforming implementation: indexed list (different internal structure)."""
+
+    def __init__(self) -> None:
+        self._keys: list[str] = []
+        self._values: list[bytes] = []
+
+    def _index(self, reference: str) -> int:
+        return self._keys.index(reference)
+
+    async def save(self, key: str, content: bytes, content_type: str = "application/octet-stream") -> str:
+        if key in self._keys:
+            self._values[self._index(key)] = content
         else:
-            self._claves.append(clave)
-            self._valores.append(contenido)
-        return clave
+            self._keys.append(key)
+            self._values.append(content)
+        return key
 
-    async def obtener(self, referencia: str) -> bytes:
-        return self._valores[self._index(referencia)]
+    async def get(self, reference: str) -> bytes:
+        return self._values[self._index(reference)]
 
-    async def eliminar(self, referencia: str) -> None:
-        if referencia in self._claves:
-            i = self._index(referencia)
-            del self._claves[i]
-            del self._valores[i]
+    async def delete(self, reference: str) -> None:
+        if reference in self._keys:
+            i = self._index(reference)
+            del self._keys[i]
+            del self._values[i]
 
-    async def url_temporal_de_lectura(self, referencia: str, ttl_seconds: int = 3600) -> str:
-        return f"lista://{referencia}?ttl={ttl_seconds}"
-
-
-ALMACEN_IMPLEMENTACIONES = [_AlmacenEnMemoria, _AlmacenListaIndexada]
+    async def temporary_read_url(self, reference: str, ttl_seconds: int = 3600) -> str:
+        return f"list://{reference}?ttl={ttl_seconds}"
 
 
-class _ColaEnMemoria(ColaDeTrabajos):
-    """Implementación conforme de ColaDeTrabajos: entrega inmediata en memoria."""
-
-    def __init__(self) -> None:
-        self._suscriptores: dict[str, list] = {}
-        self.entregados: list[tuple[str, dict]] = []
-
-    async def publicar(self, tema: str, mensaje: dict) -> None:
-        for manejador in self._suscriptores.get(tema, []):
-            await manejador(mensaje)
-            self.entregados.append((tema, mensaje))
-
-    async def suscribir(self, tema: str, manejador) -> None:
-        self._suscriptores.setdefault(tema, []).append(manejador)
-
-    async def conectar(self) -> None:
-        return None
-
-    async def desconectar(self) -> None:
-        return None
+OBJECT_STORE_IMPLEMENTATIONS = [_InMemoryStore, _IndexedListStore]
 
 
-class _ColaConBuffer(ColaDeTrabajos):
-    """Segunda implementación conforme: retiene mensajes publicados sin suscriptor y
-    los entrega en cuanto llega uno, además de entregar en vivo a suscriptores activos."""
+class _InMemoryQueue(JobQueue):
+    """Conforming JobQueue implementation: immediate in-memory delivery."""
 
     def __init__(self) -> None:
-        self._suscriptores: dict[str, list] = {}
+        self._subscribers: dict[str, list] = {}
+        self.delivered: list[tuple[str, dict]] = []
+
+    async def publish(self, topic: str, message: dict) -> None:
+        for handler in self._subscribers.get(topic, []):
+            await handler(message)
+            self.delivered.append((topic, message))
+
+    async def subscribe(self, topic: str, handler) -> None:
+        self._subscribers.setdefault(topic, []).append(handler)
+
+    async def connect(self) -> None:
+        return None
+
+    async def disconnect(self) -> None:
+        return None
+
+
+class _BufferedQueue(JobQueue):
+    """Second conforming implementation: retains published messages without a
+    subscriber and delivers them as soon as one arrives, in addition to live
+    delivery to active subscribers."""
+
+    def __init__(self) -> None:
+        self._subscribers: dict[str, list] = {}
         self._buffer: dict[str, list[dict]] = {}
-        self.entregados: list[tuple[str, dict]] = []
+        self.delivered: list[tuple[str, dict]] = []
 
-    async def publicar(self, tema: str, mensaje: dict) -> None:
-        manejadores = self._suscriptores.get(tema)
-        if manejadores:
-            for manejador in manejadores:
-                await manejador(mensaje)
-                self.entregados.append((tema, mensaje))
+    async def publish(self, topic: str, message: dict) -> None:
+        handlers = self._subscribers.get(topic)
+        if handlers:
+            for handler in handlers:
+                await handler(message)
+                self.delivered.append((topic, message))
         else:
-            self._buffer.setdefault(tema, []).append(mensaje)
+            self._buffer.setdefault(topic, []).append(message)
 
-    async def suscribir(self, tema: str, manejador) -> None:
-        self._suscriptores.setdefault(tema, []).append(manejador)
-        for mensaje in self._buffer.get(tema, []):
-            await manejador(mensaje)
-            self.entregados.append((tema, mensaje))
-        self._buffer[tema] = []
+    async def subscribe(self, topic: str, handler) -> None:
+        self._subscribers.setdefault(topic, []).append(handler)
+        for message in self._buffer.get(topic, []):
+            await handler(message)
+            self.delivered.append((topic, message))
+        self._buffer[topic] = []
 
-    async def conectar(self) -> None:
+    async def connect(self) -> None:
         return None
 
-    async def desconectar(self) -> None:
+    async def disconnect(self) -> None:
         return None
 
 
-COLA_IMPLEMENTACIONES = [_ColaEnMemoria, _ColaConBuffer]
+QUEUE_IMPLEMENTATIONS = [_InMemoryQueue, _BufferedQueue]
 
 
 # ---------------------------------------------------------------------------
-# Property 13: Conformidad de adaptadores de infraestructura
-# Feature: meeting-capture-transcription, Property 13: Conformidad de adaptadores de infraestructura
+# Property 13: Infrastructure adapter conformance
+# Feature: meeting-capture-transcription, Property 13: Infrastructure adapter conformance
 # Validates: Requirements 8.3, 8.4
 # ---------------------------------------------------------------------------
 
 
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
-    impl_cls=st.sampled_from(ALMACEN_IMPLEMENTACIONES),
-    clave=st.text(min_size=1, max_size=30),
-    contenido=st.binary(min_size=0, max_size=200),
+    impl_cls=st.sampled_from(OBJECT_STORE_IMPLEMENTATIONS),
+    key=st.text(min_size=1, max_size=30),
+    content=st.binary(min_size=0, max_size=200),
 )
 @pytest.mark.asyncio
-async def test_property_13_almacen_roundtrip_guardar_obtener(impl_cls, clave: str, contenido: bytes) -> None:
-    """Round-trip guardar→obtener devuelve el mismo contenido, para cualquier implementación conforme."""
-    almacen: AlmacenDeObjetos = impl_cls()
-    referencia = await almacen.guardar(clave, contenido)
-    recuperado = await almacen.obtener(referencia)
-    assert recuperado == contenido
+async def test_property_13_store_roundtrip_save_get(impl_cls, key: str, content: bytes) -> None:
+    """Round-trip save→get returns the same content, for any conforming implementation."""
+    store: ObjectStore = impl_cls()
+    reference = await store.save(key, content)
+    retrieved = await store.get(reference)
+    assert retrieved == content
 
 
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
-    impl_cls=st.sampled_from(ALMACEN_IMPLEMENTACIONES),
-    clave=st.text(min_size=1, max_size=30),
-    contenido=st.binary(min_size=0, max_size=200),
+    impl_cls=st.sampled_from(OBJECT_STORE_IMPLEMENTATIONS),
+    key=st.text(min_size=1, max_size=30),
+    content=st.binary(min_size=0, max_size=200),
 )
 @pytest.mark.asyncio
-async def test_property_13_almacen_eliminar_deja_indisponible(impl_cls, clave: str, contenido: bytes) -> None:
-    """eliminar deja el objeto indisponible, para cualquier implementación conforme."""
-    almacen: AlmacenDeObjetos = impl_cls()
-    referencia = await almacen.guardar(clave, contenido)
-    await almacen.eliminar(referencia)
+async def test_property_13_store_delete_leaves_unavailable(impl_cls, key: str, content: bytes) -> None:
+    """delete leaves the object unavailable, for any conforming implementation."""
+    store: ObjectStore = impl_cls()
+    reference = await store.save(key, content)
+    await store.delete(reference)
 
     with pytest.raises((KeyError, ValueError, IndexError)):
-        await almacen.obtener(referencia)
+        await store.get(reference)
 
 
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
-    impl_cls=st.sampled_from(COLA_IMPLEMENTACIONES),
-    tema=st.text(min_size=1, max_size=20),
-    mensaje=st.dictionaries(st.text(min_size=1, max_size=10), st.integers(), max_size=5),
+    impl_cls=st.sampled_from(QUEUE_IMPLEMENTATIONS),
+    topic=st.text(min_size=1, max_size=20),
+    message=st.dictionaries(st.text(min_size=1, max_size=10), st.integers(), max_size=5),
 )
 @pytest.mark.asyncio
-async def test_property_13_cola_mensaje_publicado_se_entrega_al_suscriptor(
-    impl_cls, tema: str, mensaje: dict
+async def test_property_13_queue_published_message_is_delivered_to_subscriber(
+    impl_cls, topic: str, message: dict
 ) -> None:
-    """Un mensaje publicado en un tema se entrega al suscriptor de ese tema, para cualquier implementación conforme."""
-    cola: ColaDeTrabajos = impl_cls()
-    recibidos: list[dict] = []
+    """A message published on a topic is delivered to that topic's subscriber, for any conforming implementation."""
+    queue: JobQueue = impl_cls()
+    received: list[dict] = []
 
-    async def manejador(msg: dict) -> None:
-        recibidos.append(msg)
+    async def handler(msg: dict) -> None:
+        received.append(msg)
 
-    await cola.suscribir(tema, manejador)
-    await cola.publicar(tema, mensaje)
+    await queue.subscribe(topic, handler)
+    await queue.publish(topic, message)
 
-    assert mensaje in recibidos
+    assert message in received

@@ -1,88 +1,88 @@
 /**
  * @sauri/shared-types
  *
- * Tipos de dominio compartidos entre la extensión de Chrome y el frontend web.
- * Reflejan el modelo de datos definido en design.md.
+ * Domain types shared between the Chrome extension and the web frontend.
+ * Reflect the data model defined in design.md.
  */
 
 // --- Enums ---
 
-/** Estado del ciclo de vida de la captura y transcripción de una Reunion. */
-export enum EstadoProceso {
-  EnCola = "en cola",
-  Uniendose = "uniéndose",
-  Grabando = "grabando",
-  Transcribiendo = "transcribiendo",
-  Completado = "completado",
-  Fallido = "fallido",
+/** Lifecycle state of a Meeting's capture and transcription process. */
+export enum ProcessState {
+  Queued = "queued",
+  Joining = "joining",
+  Recording = "recording",
+  Transcribing = "transcribing",
+  Completed = "completed",
+  Failed = "failed",
 }
 
-/** Causa de fallo registrada cuando el estado es "fallido". */
-export enum CausaFallo {
-  NoPudoUnirse = "no pudo unirse",
-  ReunionCancelada = "reunión cancelada",
-  FalloDelMotor = "fallo del motor",
+/** Failure cause recorded when the state is "failed". */
+export enum FailureCause {
+  CouldNotJoin = "could_not_join",
+  MeetingCancelled = "meeting_cancelled",
+  EngineFailure = "engine_failure",
 }
 
-/** Origen del registro de la Reunion. */
-export enum OrigenReunion {
-  Enlace = "enlace",
-  InvitacionCalendario = "invitacion_calendario",
+/** Origin of the Meeting record. */
+export enum MeetingOrigin {
+  Link = "link",
+  CalendarInvite = "calendar_invite",
   Manual = "manual",
 }
 
-/** Origen de la captura de la grabación. */
-export enum OrigenCaptura {
-  ExtensionChrome = "extension_chrome",
-  BotServidor = "bot_servidor",
+/** Origin of the recording capture. */
+export enum CaptureOrigin {
+  ChromeExtension = "chrome_extension",
+  ServerBot = "server_bot",
 }
 
 // --- Interfaces ---
 
-/** Registro de una sesión de Google Meet en sauri. */
-export interface Reunion {
+/** Record of a Google Meet meeting in sauri. */
+export interface Meeting {
   id: string;
-  enlaceMeet: string;
-  origen: OrigenReunion;
-  idInvitacionCalendario?: string;
-  horaInicioProgramada?: string;
-  estadoProceso: EstadoProceso;
-  causaFallo?: CausaFallo;
-  creadaPor: string;
-  creadaEn: string;
+  meetLink: string;
+  origin: MeetingOrigin;
+  calendarInviteId?: string;
+  scheduledStartTime?: string;
+  processState: ProcessState;
+  failureCause?: FailureCause;
+  createdBy: string;
+  createdAt: string;
 }
 
-/** Contenedor de la grabación de una reunión (audio + video). */
-export interface GrabacionDeSesion {
+/** Container for a meeting's recording (audio + video). */
+export interface SessionRecording {
   id: string;
-  reunionId: string;
-  claveIdempotencia: string;
-  origenCaptura: OrigenCaptura;
+  meetingId: string;
+  idempotencyKey: string;
+  captureOrigin: CaptureOrigin;
   audioRef: string;
   videoRef?: string;
-  duracionSegundos: number;
-  interrumpida: boolean;
-  expiraEn?: string;
-  finalizadaEn: string;
+  durationSeconds: number;
+  interrupted: boolean;
+  expiresAt?: string;
+  finishedAt: string;
 }
 
-/** Documento de transcripción generado a partir de la pista de audio. */
-export interface Transcripcion {
+/** Transcript document generated from the audio track. */
+export interface Transcript {
   id: string;
-  reunionId: string;
-  idioma: string;
-  proveedor: string;
-  soportaTurnos: boolean;
-  expiraEn?: string;
-  creadaEn: string;
+  meetingId: string;
+  language: string;
+  provider: string;
+  supportsTurns: boolean;
+  expiresAt?: string;
+  createdAt: string;
 }
 
-/** Segmento temporal de habla dentro de una Transcripcion. */
-export interface TurnoDeHabla {
+/** Timed speech segment within a Transcript. */
+export interface SpeechTurn {
   id: string;
-  transcripcionId: string;
-  texto: string;
-  inicioMs: number;
-  finMs: number;
-  orden: number;
+  transcriptId: string;
+  text: string;
+  startMs: number;
+  endMs: number;
+  sequence: number;
 }

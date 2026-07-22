@@ -1,11 +1,11 @@
 /**
- * Tests de la capa de captura del documento offscreen (offscreen.ts).
+ * Tests for the offscreen document's capture layer (offscreen.ts).
  *
  * Feature: meeting-capture-transcription
  * Task: 14.8 — Validates: Requirements 2.1, 2.2
  *
- * Cubre: composición A/V según modo de captura, mimeType seleccionado,
- * y mezcla de audio de micrófono con el audio de la pestaña.
+ * Covers: A/V composition per capture mode, selected mimeType,
+ * and mixing microphone audio with tab audio.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -92,7 +92,7 @@ async function loadOffscreenWithMocks(getUserMediaImpl: (constraints: unknown) =
   await import("./offscreen");
 }
 
-describe("Documento offscreen — composición A/V y captura", () => {
+describe("Offscreen document — A/V composition and capture", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -101,7 +101,7 @@ describe("Documento offscreen — composición A/V y captura", () => {
     vi.unstubAllGlobals();
   });
 
-  it("modo screen_audio: solicita video con la resolución dada y usa mimeType de video", async () => {
+  it("screen_audio mode: requests video at the given resolution and uses a video mimeType", async () => {
     const tabStream = new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]);
     const getUserMedia = vi.fn(async (_constraints: unknown) => tabStream);
     await loadOffscreenWithMocks(getUserMedia);
@@ -130,7 +130,7 @@ describe("Documento offscreen — composición A/V y captura", () => {
     expect(FakeMediaRecorder.lastInstance?.options.mimeType).toMatch(/^video\/webm/);
   });
 
-  it("modo audio_only: no solicita video y usa mimeType de audio", async () => {
+  it("audio_only mode: does not request video and uses an audio mimeType", async () => {
     const tabStream = new FakeMediaStream([new FakeTrack("audio")]);
     const getUserMedia = vi.fn(async (_constraints: unknown) => tabStream);
     await loadOffscreenWithMocks(getUserMedia);
@@ -152,7 +152,7 @@ describe("Documento offscreen — composición A/V y captura", () => {
     expect(FakeMediaRecorder.lastInstance?.options.mimeType).toMatch(/^audio\/webm/);
   });
 
-  it("con micDeviceId: mezcla el audio del micrófono con el de la pestaña vía AudioContext", async () => {
+  it("with micDeviceId: mixes microphone audio with tab audio via AudioContext", async () => {
     const tabStream = new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]);
     const micStream = new FakeMediaStream([new FakeTrack("audio")]);
     const getUserMedia = vi.fn(async (constraints: any) => {
@@ -181,7 +181,7 @@ describe("Documento offscreen — composición A/V y captura", () => {
     expect(micCallConstraints.audio.deviceId.exact).toBe("mic-device-1");
   });
 
-  it("sin micDeviceId: solo solicita el stream de la pestaña", async () => {
+  it("without micDeviceId: only requests the tab stream", async () => {
     const tabStream = new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]);
     const getUserMedia = vi.fn(async () => tabStream);
     await loadOffscreenWithMocks(getUserMedia);

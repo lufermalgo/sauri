@@ -1,2 +1,2 @@
-// Cliente_De_API compartido (Side_Panel + Vista_De_Detalle)
+// Shared API client (Side Panel + Detail View)
 export * from "./client";

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.infra.database import Base
-from app.infra.models import Reunion
+from app.infra.models import Meeting
 
 # ---------------------------------------------------------------------------
 # Hypothesis profile: min 100 examples for property-based tests
@@ -74,18 +74,18 @@ async def db_session(
 
 
 @pytest.fixture
-def reunion_grabando() -> Reunion:
-    """A Reunion fixture in state 'grabando' ready for transcription."""
-    return Reunion(
+def meeting_recording() -> Meeting:
+    """A Meeting fixture in state 'recording' ready for transcription."""
+    return Meeting(
         id=str(uuid.uuid4()),
-        enlace_meet="https://meet.google.com/abc-defg-hij",
-        origen="enlace",
-        id_invitacion_calendario=None,
-        hora_inicio_programada=None,
-        estado_proceso="grabando",
-        causa_fallo=None,
-        creada_por="test-user",
-        creada_en=datetime.now(timezone.utc),
+        meet_link="https://meet.google.com/abc-defg-hij",
+        origin="link",
+        calendar_invite_id=None,
+        scheduled_start_time=None,
+        process_state="recording",
+        failure_cause=None,
+        created_by="test-user",
+        created_at=datetime.now(timezone.utc),
     )
 
 
@@ -95,11 +95,11 @@ def reunion_grabando() -> Reunion:
 
 
 @pytest.fixture
-def mock_cola() -> AsyncMock:
-    """A mock ColaDeTrabajos for testing without RabbitMQ."""
-    cola = AsyncMock()
-    cola.publicar = AsyncMock()
-    cola.suscribir = AsyncMock()
-    cola.conectar = AsyncMock()
-    cola.desconectar = AsyncMock()
-    return cola
+def mock_queue() -> AsyncMock:
+    """A mock JobQueue for testing without RabbitMQ."""
+    queue = AsyncMock()
+    queue.publish = AsyncMock()
+    queue.subscribe = AsyncMock()
+    queue.connect = AsyncMock()
+    queue.disconnect = AsyncMock()
+    return queue

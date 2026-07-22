@@ -1,62 +1,62 @@
-"""Autorización y auditoría de denegaciones."""
+"""Authorization and denial auditing."""
 
 from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.audit import registrar_acceso
-from app.auth.dependencies import obtener_usuario_actual
-from app.auth.schemas import UsuarioAutenticado
+from app.auth.audit import record_access
+from app.auth.dependencies import get_current_user
+from app.auth.schemas import AuthenticatedUser
 
 
-def verificar_autorizacion(usuario: UsuarioAutenticado, recurso: str, accion: str) -> bool:
-    """Verifica si el usuario está autorizado para la acción sobre el recurso.
+def verify_authorization(user: AuthenticatedUser, resource: str, action: str) -> bool:
+    """Checks whether the user is authorized for the action on the resource.
 
-    Política actual: solo usuarios con es_comercial=True tienen acceso.
+    Current policy: only users with is_sales=True have access.
 
     Args:
-        usuario: Usuario autenticado.
-        recurso: Recurso al que se intenta acceder.
-        accion: Acción que se intenta realizar.
+        user: Authenticated user.
+        resource: Resource being accessed.
+        action: Action being attempted.
 
     Returns:
-        True si autorizado, False si denegado.
+        True if authorized, False if denied.
     """
-    return usuario.es_comercial
+    return user.is_sales
 
 
-def requerir_comercial(
+def require_sales(
     get_session: Callable[..., Any],
 ) -> Any:
-    """Crea una dependencia FastAPI que requiere usuario comercial autorizado.
+    """Creates a FastAPI dependency that requires an authorized sales user.
 
     Args:
-        get_session: Callable que provee la AsyncSession de SQLAlchemy (dependencia de DB).
+        get_session: Callable providing the SQLAlchemy AsyncSession (DB dependency).
 
     Returns:
-        Dependencia FastAPI que retorna UsuarioAutenticado si autorizado.
+        FastAPI dependency that returns AuthenticatedUser if authorized.
     """
 
     async def _dependency(
         request: Request,
-        usuario: UsuarioAutenticado = Depends(obtener_usuario_actual),
+        user: AuthenticatedUser = Depends(get_current_user),
         session: AsyncSession = Depends(get_session),
-    ) -> UsuarioAutenticado:
-        recurso = f"{request.method} {request.url.path}"
+    ) -> AuthenticatedUser:
+        resource = f"{request.method} {request.url.path}"
 
-        if not verificar_autorizacion(usuario, recurso, request.method):
-            await registrar_acceso(
+        if not verify_authorization(user, resource, request.method):
+            await record_access(
                 session=session,
-                usuario_id=usuario.id,
-                recurso=recurso,
-                resultado="denegado",
+                user_id=user.id,
+                resource=resource,
+                result="denied",
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Acceso restringido a usuarios comerciales autorizados",
+                detail="Access restricted to authorized sales users",
             )
 
-        return usuario
+        return user
 
     return _dependency

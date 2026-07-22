@@ -1,4 +1,4 @@
-"""Fixtures compartidas para pruebas del Servicio_De_Autenticacion."""
+"""Shared fixtures for testing the Authentication_Service."""
 
 from __future__ import annotations
 

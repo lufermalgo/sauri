@@ -1,17 +1,18 @@
-"""Test de integración end-to-end del pipeline (ingesta → transcripción → persistencia).
+"""End-to-end integration test for the pipeline (ingestion -> transcription -> persistence).
 
 # Feature: meeting-capture-transcription
 Task: 17.3 — Validates: Requirements 2.2, 5.3, 5.4, 6.1
 
-Ejercita el pipeline completo contra dependencias reales en contenedores locales
-(PostgreSQL, MinIO, RabbitMQ vía docker-compose): subida multipart autenticada
-(incluida reentrega con la misma clave_idempotencia), transcripción y persistencia.
-Verifica que el adaptador ASR local no hace llamadas externas (solo al servicio
-local levantado en el propio test) y que el adaptador externo (cloud) es el que
-efectivamente se invoca cuando así lo configura ASR_PROVIDER.
+Exercises the full pipeline against real dependencies in local containers
+(PostgreSQL, MinIO, RabbitMQ via docker-compose): authenticated multipart
+upload (including redelivery with the same idempotency_key), transcription,
+and persistence. Verifies that the local ASR adapter makes no external calls
+(only to the local service started within the test itself) and that the
+external (cloud) adapter is the one actually invoked when ASR_PROVIDER is
+configured that way.
 
-Se salta automáticamente si Postgres/MinIO/RabbitMQ no están disponibles en
-localhost (ver docker-compose.yml: `docker compose up -d postgres minio rabbitmq`).
+Automatically skipped if Postgres/MinIO/RabbitMQ aren't available on
+localhost (see docker-compose.yml: `docker compose up -d postgres minio rabbitmq`).
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ import socket
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import pytest
 import uvicorn
@@ -39,7 +41,7 @@ _MINIO_PASSWORD = "minioadmin"
 _QUEUE_BROKER_URL = "amqp://guest:guest@localhost:5672/"
 
 
-def _puerto_abierto(host: str, port: int, timeout: float = 1.5) -> bool:
+def _port_open(host: str, port: int, timeout: float = 1.5) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
@@ -47,40 +49,40 @@ def _puerto_abierto(host: str, port: int, timeout: float = 1.5) -> bool:
         return False
 
 
-def _infra_disponible() -> bool:
+def _infra_available() -> bool:
     return (
-        _puerto_abierto("localhost", 5432)
-        and _puerto_abierto("localhost", 9000)
-        and _puerto_abierto("localhost", 5672)
+        _port_open("localhost", 5432)
+        and _port_open("localhost", 9000)
+        and _port_open("localhost", 5672)
     )
 
 
-requiere_infra = pytest.mark.skipif(
-    not _infra_disponible(),
+requires_infra = pytest.mark.skipif(
+    not _infra_available(),
     reason=(
-        "Requiere Postgres/MinIO/RabbitMQ en localhost. "
-        "Levantar con: docker compose up -d postgres minio rabbitmq"
+        "Requires Postgres/MinIO/RabbitMQ on localhost. "
+        "Start with: docker compose up -d postgres minio rabbitmq"
     ),
 )
 
 
 class _FakeASRServer:
-    """Servidor HTTP local (loopback) que simula el contenedor asr-engine,
-    para verificar que el proveedor local NUNCA sale a una red externa."""
+    """Local (loopback) HTTP server that simulates the asr-engine container,
+    to verify that the local provider NEVER reaches an external network."""
 
     def __init__(self) -> None:
         self.requests_received = 0
         self._app = FastAPI()
 
         @self._app.post("/transcribe")
-        async def transcribe(request: Request) -> dict:  # type: ignore[unused-ignore]
+        async def transcribe(request: Request) -> dict[str, Any]:
             self.requests_received += 1
             await request.json()
             return {
                 "language": "es-CO",
                 "segments": [
-                    {"text": "hola, buenas tardes", "start_ms": 0, "end_ms": 1200},
-                    {"text": "¿cómo estás?", "start_ms": 1200, "end_ms": 2500},
+                    {"text": "hola, buenas tardes", "start_ms": 0, "end_ms": 1200},  # spanish-sample-data
+                    {"text": "¿cómo estás?", "start_ms": 1200, "end_ms": 2500},  # spanish-sample-data
                 ],
             }
 
@@ -100,10 +102,10 @@ class _FakeASRServer:
         self._thread.start()
 
         for _ in range(50):
-            if _puerto_abierto("127.0.0.1", self.port, timeout=0.2):
+            if _port_open("127.0.0.1", self.port, timeout=0.2):
                 return
             time.sleep(0.1)
-        raise RuntimeError("El servidor ASR fake no arrancó a tiempo")
+        raise RuntimeError("The fake ASR server did not start in time")
 
     def stop(self) -> None:
         if self._server is not None:
@@ -129,19 +131,17 @@ def _env_infra(fake_asr_server: _FakeASRServer, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("MINIO_ROOT_PASSWORD", _MINIO_PASSWORD)
     monkeypatch.setenv("QUEUE_BROKER_URL", _QUEUE_BROKER_URL)
     monkeypatch.setenv("AUTH_DISABLED", "true")
+    monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("ASR_PROVIDER", "local")
     monkeypatch.setenv("ASR_LOCAL_URL", f"http://127.0.0.1:{fake_asr_server.port}")
 
-    # app.auth.dependencies reads AUTH_DISABLED once at import time, so setting
-    # the env var alone has no effect if the module was already imported by an
-    # earlier test in the same session — patch the module attribute directly.
-    import app.auth.dependencies as auth_dependencies
-
-    monkeypatch.setattr(auth_dependencies, "_AUTH_DISABLED", True)
+    # app.auth.dependencies._bypass_active() reads AUTH_DISABLED/APP_ENV live via
+    # os.getenv() on every call (Req. 13.1, 13.4), so setting the env vars above
+    # is sufficient — no module attribute needs patching.
 
 
 @pytest.fixture(scope="module")
-def _bucket_creado() -> None:
+def _bucket_created() -> None:
     import boto3
     from botocore.config import Config
     from botocore.exceptions import ClientError
@@ -158,7 +158,7 @@ def _bucket_creado() -> None:
 
 
 @pytest.fixture(autouse=True)
-async def _esquema_bd() -> None:
+async def _db_schema() -> AsyncIterator[None]:
     from app.infra.database import Base
 
     engine = create_async_engine(_DATABASE_URL)
@@ -170,115 +170,117 @@ async def _esquema_bd() -> None:
     await engine.dispose()
 
 
-@requiere_infra
+@requires_infra
 @pytest.mark.asyncio
-async def test_subida_multipart_autenticada_idempotente_y_transcripcion(
-    _bucket_creado: None,
+async def test_authenticated_idempotent_multipart_upload_and_transcription(
+    _bucket_created: None,
     fake_asr_server: _FakeASRServer,
 ) -> None:
-    """Subida multipart autenticada, reentrega idempotente, y transcripción con
-    persistencia real (Postgres + MinIO), usando el adaptador ASR local
-    que NUNCA llama a un servicio externo (solo al fake local del test)."""
+    """Authenticated multipart upload, idempotent redelivery, and transcription
+    with real persistence (Postgres + MinIO), using the local ASR adapter
+    that NEVER calls an external service (only the test's local fake)."""
     from sqlalchemy import select
 
     from app.infra.database import create_engine, create_session_factory
-    from app.infra.models import GrabacionDeSesion, Reunion, Transcripcion, TurnoDeHabla
+    from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
     from app.main import app
-    from app.transcripcion.worker import _procesar_transcripcion
+    from app.transcription.worker import _process_transcription
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        registro = await client.post(
-            "/api/v1/reuniones/",
-            json={"enlace_meet": "https://meet.google.com/abc-defg-hij"},
+        registration = await client.post(
+            "/api/v1/meetings/",
+            json={"meet_link": "https://meet.google.com/abc-defg-hij"},
         )
-        assert registro.status_code == 201
-        reunion_id = registro.json()["reunion_id"]
+        assert registration.status_code == 201
+        meeting_id = registration.json()["meeting_id"]
 
-        # Simula que la extensión ya se unió y está grabando (Req. 1.2/2.1),
-        # que es el estado previo real desde el que la ingesta transiciona.
+        # Simulates that the extension already joined and is recording (Req.
+        # 1.2/2.1), which is the real prior state from which ingestion
+        # transitions.
         engine_setup = create_engine()
         session_factory_setup = create_session_factory(engine_setup)
         async with session_factory_setup() as session, session.begin():
-            reunion = await session.get(Reunion, reunion_id)
-            assert reunion is not None
-            reunion.estado_proceso = "grabando"
+            meeting = await session.get(Meeting, meeting_id)
+            assert meeting is not None
+            meeting.process_state = "recording"
         await engine_setup.dispose()
 
-        clave_idempotencia = str(uuid.uuid4())
-        datos = {
-            "reunion_id": reunion_id,
-            "clave_idempotencia": clave_idempotencia,
-            "origen_captura": "extension_chrome",
-            "duracion_segundos": 5,
-            "interrumpida": False,
+        idempotency_key = str(uuid.uuid4())
+        data: dict[str, Any] = {
+            "meeting_id": meeting_id,
+            "idempotency_key": idempotency_key,
+            "capture_origin": "chrome_extension",
+            "duration_seconds": 5,
+            "interrupted": False,
         }
-        audio_bytes = b"contenido-de-audio-simulado"
+        audio_bytes = b"simulated-audio-content"
 
-        primera = await client.post(
-            "/api/v1/ingesta/subir",
+        first = await client.post(
+            "/api/v1/ingestion/upload",
             files={"audio": ("audio.webm", audio_bytes, "audio/webm")},
-            data={"datos": __import__("json").dumps(datos)},
+            data={"data": __import__("json").dumps(data)},
         )
-        assert primera.status_code == 200
-        assert primera.json()["estado"] == "transcribiendo"
-        grabacion_id = primera.json()["grabacion_id"]
+        assert first.status_code == 200
+        assert first.json()["state"] == "transcribing"
+        recording_id = first.json()["recording_id"]
 
-        # Reentrega con la misma clave_idempotencia: no debe duplicar.
-        segunda = await client.post(
-            "/api/v1/ingesta/subir",
+        # Redelivery with the same idempotency_key: must not duplicate.
+        second = await client.post(
+            "/api/v1/ingestion/upload",
             files={"audio": ("audio.webm", audio_bytes, "audio/webm")},
-            data={"datos": __import__("json").dumps(datos)},
+            data={"data": __import__("json").dumps(data)},
         )
-        assert segunda.status_code == 200
-        assert segunda.json()["estado"] == "duplicado_idempotente"
-        assert segunda.json()["grabacion_id"] == grabacion_id
+        assert second.status_code == 200
+        assert second.json()["state"] == "idempotent_duplicate"
+        assert second.json()["recording_id"] == recording_id
 
     engine = create_engine()
     session_factory = create_session_factory(engine)
     async with session_factory() as session:
-        result = await session.execute(
-            select(GrabacionDeSesion).where(GrabacionDeSesion.reunion_id == reunion_id)
+        recordings_result = await session.execute(
+            select(SessionRecording).where(SessionRecording.meeting_id == meeting_id)
         )
-        grabaciones = result.scalars().all()
-        assert len(grabaciones) == 1
+        recordings = recordings_result.scalars().all()
+        assert len(recordings) == 1
 
-    # Procesar el trabajo de transcripción (worker) contra el adaptador local.
-    audio_ref = grabaciones[0].audio_ref
-    await _procesar_transcripcion(
-        {"reunion_id": reunion_id, "audio_ref": audio_ref}, session_factory
+    # Process the transcription job (worker) against the local adapter.
+    audio_ref = recordings[0].audio_ref
+    await _process_transcription(
+        {"meeting_id": meeting_id, "audio_ref": audio_ref}, session_factory
     )
 
     assert fake_asr_server.requests_received == 1
 
     async with session_factory() as session:
-        result = await session.execute(
-            select(Transcripcion).where(Transcripcion.reunion_id == reunion_id)
+        transcript_result = await session.execute(
+            select(Transcript).where(Transcript.meeting_id == meeting_id)
         )
-        transcripcion = result.scalar_one()
-        assert transcripcion.idioma == "es-CO"
-        assert transcripcion.proveedor == "local"
+        transcript = transcript_result.scalar_one()
+        assert transcript.language == "es-CO"
+        assert transcript.provider == "local"
 
-        turnos_result = await session.execute(
-            select(TurnoDeHabla).where(TurnoDeHabla.transcripcion_id == transcripcion.id)
+        turns_result = await session.execute(
+            select(SpeechTurn).where(SpeechTurn.transcript_id == transcript.id)
         )
-        turnos = turnos_result.scalars().all()
-        assert len(turnos) == 2
+        turns = turns_result.scalars().all()
+        assert len(turns) == 2
 
-        reunion = await session.get(Reunion, reunion_id)
-        assert reunion is not None
-        assert reunion.estado_proceso == "completado"
+        meeting = await session.get(Meeting, meeting_id)
+        assert meeting is not None
+        assert meeting.process_state == "completed"
 
     await engine.dispose()
 
 
-@requiere_infra
+@requires_infra
 @pytest.mark.asyncio
-async def test_adaptador_cloud_es_el_invocado_cuando_asr_provider_es_cloud(
+async def test_cloud_adapter_is_invoked_when_asr_provider_is_cloud(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Con ASR_PROVIDER=cloud, el worker persiste la Transcripcion con proveedor='cloud'
-    (Req. 5.4): el adaptador externo es el efectivamente invocado por la fábrica."""
+    """With ASR_PROVIDER=cloud, the worker persists the Transcript with
+    provider='cloud' (Req. 5.4): the external adapter is the one actually
+    invoked by the factory."""
     monkeypatch.setenv("ASR_PROVIDER", "cloud")
     monkeypatch.setenv("ASR_CLOUD_API_KEY", "test-key")
     monkeypatch.setenv("ASR_CLOUD_ENDPOINT", "https://api.example.com/v1/transcribe")
@@ -286,33 +288,33 @@ async def test_adaptador_cloud_es_el_invocado_cuando_asr_provider_es_cloud(
     from sqlalchemy import select
 
     from app.infra.database import create_engine, create_session_factory
-    from app.infra.models import Transcripcion
-    from app.reuniones.service import registrar_reunion
-    from app.transcripcion.worker import _procesar_transcripcion
+    from app.infra.models import Transcript
+    from app.meetings.service import register_meeting
+    from app.transcription.worker import _process_transcription
 
     engine = create_engine()
     session_factory = create_session_factory(engine)
 
-    reunion_id: str
+    meeting_id: str
     async with session_factory() as session, session.begin():
-        reunion = await registrar_reunion(
+        meeting = await register_meeting(
             session,
-            {"enlace_meet": "https://meet.google.com/xyz-defg-hij"},
-            creada_por="test-user",
+            {"meet_link": "https://meet.google.com/xyz-defg-hij"},
+            created_by="test-user",
         )
-        reunion_id = reunion.id
-        reunion.estado_proceso = "grabando"
+        meeting_id = meeting.id
+        meeting.process_state = "recording"
         await session.flush()
 
-    await _procesar_transcripcion(
-        {"reunion_id": reunion_id, "audio_ref": "audio/fake.webm"}, session_factory
+    await _process_transcription(
+        {"meeting_id": meeting_id, "audio_ref": "audio/fake.webm"}, session_factory
     )
 
     async with session_factory() as session:
         result = await session.execute(
-            select(Transcripcion).where(Transcripcion.reunion_id == reunion_id)
+            select(Transcript).where(Transcript.meeting_id == meeting_id)
         )
-        transcripcion = result.scalar_one()
-        assert transcripcion.proveedor == "cloud"
+        transcript = result.scalar_one()
+        assert transcript.provider == "cloud"
 
     await engine.dispose()

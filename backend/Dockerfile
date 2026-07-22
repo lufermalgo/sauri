@@ -2,13 +2,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copiar pyproject.toml primero para aprovechar cache de capas Docker
+# Copy pyproject.toml first to take advantage of Docker layer caching
 COPY pyproject.toml .
 
-# Instalar dependencias (sin dev extras en producción)
+# Install dependencies (without dev extras in production)
 RUN pip install --no-cache-dir .
 
-# Copiar el código fuente
+# Copy the source code
 COPY . .
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

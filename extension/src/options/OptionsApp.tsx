@@ -1,104 +1,104 @@
-// Ajustes de sauri — pestaña completa (no side panel) para conceder el permiso
-// de micrófono. getUserMedia() desde el Side_Panel no siempre puede mostrar el
-// prompt nativo de Chrome; una página de opciones normal sí lo garantiza. El
-// permiso se concede por origen (chrome-extension://<id>), así que una vez
-// otorgado aquí, el Side_Panel también puede usar el micrófono.
+// sauri settings — full tab (not side panel) to grant the microphone
+// permission. getUserMedia() from the Side_Panel can't always show Chrome's
+// native prompt; a regular options page does guarantee it. The permission is
+// granted per origin (chrome-extension://<id>), so once granted here, the
+// Side_Panel can use the microphone too.
 import React, { useCallback, useEffect, useState } from "react";
 import { COLOR_TOKENS, SPACING_TOKENS, TYPOGRAPHY_TOKENS, RADIUS_TOKENS } from "../core/design/tokens";
 
-type EstadoPermiso = "desconocido" | PermissionState;
+type PermissionStateOrUnknown = "unknown" | PermissionState;
 
 export function OptionsApp() {
-  const [estado, setEstado] = useState<EstadoPermiso>("desconocido");
-  const [dispositivos, setDispositivos] = useState<string[]>([]);
+  const [state, setState] = useState<PermissionStateOrUnknown>("unknown");
+  const [devices, setDevices] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const consultarEstado = useCallback(async () => {
+  const queryState = useCallback(async () => {
     try {
-      const permiso = await navigator.permissions.query({
+      const permission = await navigator.permissions.query({
         name: "microphone" as PermissionName,
       });
-      setEstado(permiso.state as EstadoPermiso);
+      setState(permission.state as PermissionStateOrUnknown);
     } catch {
-      setEstado("desconocido");
+      setState("unknown");
     }
   }, []);
 
   useEffect(() => {
-    consultarEstado();
-  }, [consultarEstado]);
+    queryState();
+  }, [queryState]);
 
-  const solicitarPermiso = useCallback(async () => {
+  const requestPermission = useCallback(async () => {
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      setDispositivos(
-        devices.filter((d) => d.kind === "audioinput").map((d) => d.label || "Micrófono")
+      const mediaDevices = await navigator.mediaDevices.enumerateDevices();
+      setDevices(
+        mediaDevices.filter((d) => d.kind === "audioinput").map((d) => d.label || "Microphone")
       );
-      await consultarEstado();
+      await queryState();
     } catch (e) {
-      const nombre = e instanceof DOMException ? e.name : String(e);
+      const name = e instanceof DOMException ? e.name : String(e);
       setError(
-        nombre === "NotAllowedError"
-          ? "Permiso denegado. Ve a chrome://settings/content/microphone, busca sauri y cambia el permiso a 'Permitir'."
-          : nombre === "NotFoundError"
-            ? "No se detectó ningún micrófono conectado."
-            : `No se pudo acceder al micrófono (${nombre}).`
+        name === "NotAllowedError"
+          ? "Permission denied. Go to chrome://settings/content/microphone, find sauri, and change the permission to 'Allow'."
+          : name === "NotFoundError"
+            ? "No connected microphone was detected."
+            : `Could not access the microphone (${name}).`
       );
-      await consultarEstado();
+      await queryState();
     }
-  }, [consultarEstado]);
+  }, [queryState]);
 
   return (
     <div
       style={{
         maxWidth: "480px",
         margin: "0 auto",
-        padding: SPACING_TOKENS.esp5,
-        fontFamily: TYPOGRAPHY_TOKENS.fuenteBase,
-        color: COLOR_TOKENS.texto,
-        background: COLOR_TOKENS.fondo,
+        padding: SPACING_TOKENS.space5,
+        fontFamily: TYPOGRAPHY_TOKENS.baseFont,
+        color: COLOR_TOKENS.text,
+        background: COLOR_TOKENS.background,
         minHeight: "100vh",
       }}
     >
-      <h1 style={{ fontSize: TYPOGRAPHY_TOKENS.textoXl }}>Ajustes de sauri</h1>
+      <h1 style={{ fontSize: TYPOGRAPHY_TOKENS.textXl }}>sauri settings</h1>
 
       <section
         style={{
-          background: COLOR_TOKENS.superficie,
-          borderRadius: RADIUS_TOKENS.radioMd,
-          padding: SPACING_TOKENS.esp4,
-          marginTop: SPACING_TOKENS.esp4,
+          background: COLOR_TOKENS.surface,
+          borderRadius: RADIUS_TOKENS.radiusMd,
+          padding: SPACING_TOKENS.space4,
+          marginTop: SPACING_TOKENS.space4,
         }}
       >
-        <h2 style={{ fontSize: TYPOGRAPHY_TOKENS.textoLg, marginTop: 0 }}>Micrófono</h2>
-        <p style={{ color: COLOR_TOKENS.textoTenue, fontSize: TYPOGRAPHY_TOKENS.textoSm }}>
-          Estado actual:{" "}
-          {estado === "granted"
-            ? "concedido ✅"
-            : estado === "denied"
-              ? "denegado ❌"
-              : estado === "prompt"
-                ? "sin decidir aún"
-                : "desconocido"}
+        <h2 style={{ fontSize: TYPOGRAPHY_TOKENS.textLg, marginTop: 0 }}>Microphone</h2>
+        <p style={{ color: COLOR_TOKENS.textMuted, fontSize: TYPOGRAPHY_TOKENS.textSm }}>
+          Current status:{" "}
+          {state === "granted"
+            ? "granted ✅"
+            : state === "denied"
+              ? "denied ❌"
+              : state === "prompt"
+                ? "not decided yet"
+                : "unknown"}
         </p>
 
-        <button type="button" onClick={solicitarPermiso}>
-          Habilitar micrófono
+        <button type="button" onClick={requestPermission}>
+          Enable microphone
         </button>
 
         {error && (
-          <p role="alert" style={{ color: COLOR_TOKENS.error, fontSize: TYPOGRAPHY_TOKENS.textoSm }}>
+          <p role="alert" style={{ color: COLOR_TOKENS.error, fontSize: TYPOGRAPHY_TOKENS.textSm }}>
             {error}
           </p>
         )}
 
-        {dispositivos.length > 0 && (
+        {devices.length > 0 && (
           <ul>
-            {dispositivos.map((label, i) => (
-              <li key={i} style={{ fontSize: TYPOGRAPHY_TOKENS.textoSm }}>
+            {devices.map((label, i) => (
+              <li key={i} style={{ fontSize: TYPOGRAPHY_TOKENS.textSm }}>
                 {label}
               </li>
             ))}

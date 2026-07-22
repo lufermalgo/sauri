@@ -1,86 +1,86 @@
-// Tipos compartidos del núcleo (extension/src/core). Sin dependencias de DOM/red.
+// Shared core types (extension/src/core). No DOM/network dependencies.
 
-export type EstadoDeCaptura = "inactiva" | "grabando" | "deteniendo";
-export type EventoCaptura = "iniciar" | "detener" | "finalizada" | "fallo_inicio";
+export type CaptureState = "idle" | "recording" | "stopping";
+export type CaptureEvent = "start" | "stop" | "finished" | "start_failure";
 
-export type EstadoDeVista = "cargando" | "con_datos" | "vacio" | "error";
+export type ViewState = "loading" | "withData" | "empty" | "error";
 
-export interface SolicitudRemota<T> {
-  fase: "inicial" | "en_curso" | "exito" | "fallo";
-  datos: T[] | null;
-  previos: T[] | null;
+export interface RemoteRequest<T> {
+  phase: "initial" | "in_progress" | "success" | "failure";
+  data: T[] | null;
+  previous: T[] | null;
 }
 
-export interface NotaDTO {
-  reunionId: string;
-  titulo: string | null;
-  estadoProceso: string;
-  creadaEn: string | null;
+export interface NoteDTO {
+  meetingId: string;
+  title: string | null;
+  processState: string;
+  createdAt: string | null;
 }
 
-export interface TarjetaDeNota {
-  reunionId: string;
-  tituloMostrado: string;
-  fechaMostrada: string;
-  estadoProceso: string;
-  creadaEn: string | null;
+export interface NoteCard {
+  meetingId: string;
+  displayedTitle: string;
+  displayedDate: string;
+  processState: string;
+  createdAt: string | null;
 }
 
-export interface FiltroDeNotas {
-  estadoProceso?: string;
-  desde?: string; // ISO-8601
-  hasta?: string; // ISO-8601
+export interface NotesFilter {
+  processState?: string;
+  from?: string; // ISO-8601
+  to?: string; // ISO-8601
 }
 
-export interface TurnoDeHablaDTO {
+export interface SpeechTurnDTO {
   id: string;
-  texto: string;
-  inicioMs: number;
-  finMs: number;
-  orden: number;
+  text: string;
+  startMs: number;
+  endMs: number;
+  sequence: number;
 }
 
-export interface TranscripcionDTO {
-  transcripcionId: string;
-  reunionId: string;
-  segmentos: TurnoDeHablaDTO[];
+export interface TranscriptDTO {
+  transcriptId: string;
+  meetingId: string;
+  segments: SpeechTurnDTO[];
 }
 
-export interface HablanteDTO {
+export interface SpeakerDTO {
   id: string;
-  etiqueta: string;
-  orden: number;
+  label: string;
+  sequence: number;
 }
 
-export interface AsignacionDeHablanteDTO {
-  turnoId: string;
-  hablanteId: string;
+export interface SpeakerAssignmentDTO {
+  turnId: string;
+  speakerId: string;
 }
 
-export interface DiarizacionDTO {
-  diarizacionId: string;
-  reunionId: string;
-  estadoDiarizacion: string;
-  numHablantes: number;
-  hablantes: HablanteDTO[];
-  asignaciones: AsignacionDeHablanteDTO[];
+export interface DiarizationDTO {
+  diarizationId: string;
+  meetingId: string;
+  diarizationState: string;
+  speakerCount: number;
+  speakers: SpeakerDTO[];
+  assignments: SpeakerAssignmentDTO[];
 }
 
-export interface IntervencionDTO {
-  turnoId: string;
-  texto: string;
-  inicioMs: number;
-  finMs: number;
-  orden: number;
-  hablante: HablanteDTO | null;
+export interface InterventionDTO {
+  turnId: string;
+  text: string;
+  startMs: number;
+  endMs: number;
+  sequence: number;
+  speaker: SpeakerDTO | null;
 }
 
-export interface EntradaTiempoDeHabla {
-  hablante: HablanteDTO;
-  tiempoMs: number;
+export interface SpeakingTimeEntry {
+  speaker: SpeakerDTO;
+  timeMs: number;
 }
 
-export interface IntentoDeAutenticacion {
-  exito: boolean;
-  enMs: number;
+export interface AuthAttempt {
+  success: boolean;
+  atMs: number;
 }

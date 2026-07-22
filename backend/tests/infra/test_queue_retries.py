@@ -1,12 +1,12 @@
-"""Tests para la lectura/validación de reintentos por tema en queue_rabbitmq.py.
+"""Tests for reading/validating retries per topic in queue_rabbitmq.py.
 
-# Feature: identificacion-hablantes
-# Task: 12.1 — Escribir prueba de la lectura/validación de reintentos por tema (RED)
+# Feature: speaker-identification
+# Task: 12.1 — Write test for reading/validating retries per topic (RED)
 # Validates: Requirements 10.2
 
-Verifica que `_leer_max_retries` generalizada honra `DIARIZATION_MAX_RETRIES`
-para el tema "diarizar" (rango 0–10, default 3) sin romper la lectura de
-`ASR_MAX_RETRIES` para "transcribir".
+Verifies that the generalized `_read_max_retries` honors
+`DIARIZATION_MAX_RETRIES` for the "diarize" topic (range 0-10, default 3)
+without breaking the `ASR_MAX_RETRIES` reading for "transcribe".
 """
 
 from __future__ import annotations
@@ -16,48 +16,48 @@ from unittest.mock import patch
 
 import pytest
 
-from app.infra.queue_rabbitmq import _leer_max_retries
+from app.infra.queue_rabbitmq import _read_max_retries
 
 
-class TestLeerMaxRetriesDiarizar:
-    """Pruebas de _leer_max_retries para el tema 'diarizar' con DIARIZATION_MAX_RETRIES."""
+class TestReadMaxRetriesDiarize:
+    """Tests for _read_max_retries for the 'diarize' topic with DIARIZATION_MAX_RETRIES."""
 
-    def test_valor_explicito_5(self):
-        """DIARIZATION_MAX_RETRIES=5 → para tema 'diarizar', max retries = 5."""
+    def test_explicit_value_5(self):
+        """DIARIZATION_MAX_RETRIES=5 → for topic 'diarize', max retries = 5."""
         with patch.dict(os.environ, {"DIARIZATION_MAX_RETRIES": "5"}, clear=False):
-            assert _leer_max_retries("diarizar") == 5
+            assert _read_max_retries("diarize") == 5
 
-    def test_default_cuando_ausente(self):
-        """DIARIZATION_MAX_RETRIES ausente → default 3 para 'diarizar'."""
+    def test_default_when_absent(self):
+        """DIARIZATION_MAX_RETRIES absent → default 3 for 'diarize'."""
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("DIARIZATION_MAX_RETRIES", None)
-            assert _leer_max_retries("diarizar") == 3
+            assert _read_max_retries("diarize") == 3
 
-    def test_valor_0_valido(self):
-        """DIARIZATION_MAX_RETRIES=0 → 0 reintentos (válido)."""
+    def test_value_0_valid(self):
+        """DIARIZATION_MAX_RETRIES=0 → 0 retries (valid)."""
         with patch.dict(os.environ, {"DIARIZATION_MAX_RETRIES": "0"}, clear=False):
-            assert _leer_max_retries("diarizar") == 0
+            assert _read_max_retries("diarize") == 0
 
-    def test_valor_10_valido(self):
-        """DIARIZATION_MAX_RETRIES=10 → 10 reintentos (edge válido)."""
+    def test_value_10_valid(self):
+        """DIARIZATION_MAX_RETRIES=10 → 10 retries (valid edge)."""
         with patch.dict(os.environ, {"DIARIZATION_MAX_RETRIES": "10"}, clear=False):
-            assert _leer_max_retries("diarizar") == 10
+            assert _read_max_retries("diarize") == 10
 
-    def test_valor_11_fuera_de_rango(self):
-        """DIARIZATION_MAX_RETRIES=11 → acotado a default 3."""
+    def test_value_11_out_of_range(self):
+        """DIARIZATION_MAX_RETRIES=11 → clamped to default 3."""
         with patch.dict(os.environ, {"DIARIZATION_MAX_RETRIES": "11"}, clear=False):
-            assert _leer_max_retries("diarizar") == 3
+            assert _read_max_retries("diarize") == 3
 
-    def test_valor_negativo_fuera_de_rango(self):
-        """DIARIZATION_MAX_RETRIES=-1 → acotado a default 3."""
+    def test_negative_value_out_of_range(self):
+        """DIARIZATION_MAX_RETRIES=-1 → clamped to default 3."""
         with patch.dict(os.environ, {"DIARIZATION_MAX_RETRIES": "-1"}, clear=False):
-            assert _leer_max_retries("diarizar") == 3
+            assert _read_max_retries("diarize") == 3
 
 
-class TestLeerMaxRetriesTranscribirNoRoto:
-    """Verifica que la generalización no rompe el comportamiento de 'transcribir'."""
+class TestReadMaxRetriesTranscribeNotBroken:
+    """Verifies the generalization doesn't break 'transcribe' behavior."""
 
-    def test_asr_max_retries_sigue_funcionando(self):
-        """ASR_MAX_RETRIES=2 con tema 'transcribir' → sigue leyendo 2."""
+    def test_asr_max_retries_still_works(self):
+        """ASR_MAX_RETRIES=2 with topic 'transcribe' → still reads 2."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "2"}, clear=False):
-            assert _leer_max_retries("transcribir") == 2
+            assert _read_max_retries("transcribe") == 2

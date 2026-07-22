@@ -1,187 +1,187 @@
-// Composición de la Vista_De_Detalle — Req. 6.1-6.6, 7.1-7.6, 14.3
+// Detail_View composition — Req. 6.1-6.6, 7.1-7.6, 14.3
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { EspacioDeResumen } from "./EspacioDeResumen";
-import { PanelDeTranscripcion } from "./PanelDeTranscripcion";
-import { BuscadorDeTranscripcion } from "./BuscadorDeTranscripcion";
-import { VistaTiempoDeHabla } from "./VistaTiempoDeHabla";
-import { leerReunionId } from "../core/detailUrl";
-import { derivarEstadoDeVista } from "../core/vista";
+import { SummarySpace } from "./SummarySpace";
+import { TranscriptPanel } from "./TranscriptPanel";
+import { TranscriptSearch } from "./TranscriptSearch";
+import { SpeakingTimeView } from "./SpeakingTimeView";
+import { readMeetingId } from "../core/detailUrl";
+import { deriveViewState } from "../core/view";
 import {
-  obtenerTranscripcion,
-  obtenerDiarizacion,
-  obtenerReunion,
-  BACKEND_URL_DEFECTO,
-  ErrorNoEncontrado,
+  getTranscript,
+  getDiarization,
+  getMeeting,
+  DEFAULT_BACKEND_URL,
+  NotFoundError,
 } from "../core/api/client";
-import { atribuirHablante } from "../core/intervenciones";
-import { ordenarIntervenciones } from "../core/orden";
-import { calcularTiempoDeHabla } from "../core/speakerTime";
-import { tituloParaMostrar } from "../core/notas";
+import { attributeSpeaker } from "../core/interventions";
+import { sortInterventions } from "../core/order";
+import { calculateSpeakingTime } from "../core/speakerTime";
+import { displayTitle } from "../core/notes";
 import type {
-  SolicitudRemota,
-  TurnoDeHablaDTO,
-  HablanteDTO,
-  AsignacionDeHablanteDTO,
+  RemoteRequest,
+  SpeechTurnDTO,
+  SpeakerDTO,
+  SpeakerAssignmentDTO,
 } from "../core/types";
-import type { ResultadoBusquedaTranscripcion } from "../core/busqueda";
+import type { TranscriptSearchResult } from "../core/search";
 import { COLOR_TOKENS, SPACING_TOKENS, TYPOGRAPHY_TOKENS } from "../core/design/tokens";
 import "../core/design/tokens.css";
 
-const SOLICITUD_INICIAL = { fase: "inicial", datos: null, previos: null } as const;
-// Referencias vacías estables: evitan que `?? []` cree un array nuevo en cada
-// render, lo que rompería la memoización aguas abajo y produciría un bucle
-// de renders (efecto -> setState -> render -> nueva referencia -> efecto...).
-const SIN_TURNOS: TurnoDeHablaDTO[] = [];
-const SIN_HABLANTES: HablanteDTO[] = [];
+const INITIAL_REQUEST = { phase: "initial", data: null, previous: null } as const;
+// Stable empty references: avoids `?? []` creating a new array on every
+// render, which would break downstream memoization and cause a render loop
+// (effect -> setState -> render -> new reference -> effect...).
+const NO_TURNS: SpeechTurnDTO[] = [];
+const NO_SPEAKERS: SpeakerDTO[] = [];
 
-// Mientras la Reunion sigue procesándose (en_cola/uniendose/grabando/
-// transcribiendo), la transcripción/diarización aún no existen (404) sin que
-// eso signifique "no disponible" — sólo significa "todavía no". Se reintenta
-// en silencio (sin pasar por el estado "cargando") hasta un estado terminal.
-const ESTADOS_TERMINALES = new Set(["completado", "fallido"]);
-const INTERVALO_POLLING_MS = 3000;
-const MAX_INTENTOS_POLLING = 20; // ~60s
+// While the Meeting is still processing (queued/joining/recording/
+// transcribing), the transcript/diarization don't exist yet (404) without
+// that meaning "unavailable" — it just means "not yet". It retries silently
+// (without going through the "loading" state) until a terminal state.
+const TERMINAL_STATES = new Set(["completed", "failed"]);
+const POLLING_INTERVAL_MS = 3000;
+const MAX_POLLING_ATTEMPTS = 20; // ~60s
 
 export function DetailApp() {
-  const reunionId = useMemo(() => leerReunionId(window.location.href), []);
+  const meetingId = useMemo(() => readMeetingId(window.location.href), []);
 
-  const [solicitudTranscripcion, setSolicitudTranscripcion] = useState<SolicitudRemota<TurnoDeHablaDTO>>(
-    SOLICITUD_INICIAL
+  const [transcriptRequest, setTranscriptRequest] = useState<RemoteRequest<SpeechTurnDTO>>(
+    INITIAL_REQUEST
   );
-  const [solicitudDiarizacion, setSolicitudDiarizacion] = useState<SolicitudRemota<HablanteDTO>>(
-    SOLICITUD_INICIAL
+  const [diarizationRequest, setDiarizationRequest] = useState<RemoteRequest<SpeakerDTO>>(
+    INITIAL_REQUEST
   );
-  const [asignaciones, setAsignaciones] = useState<AsignacionDeHablanteDTO[]>([]);
-  const [resultadoBusqueda, setResultadoBusqueda] = useState<ResultadoBusquedaTranscripcion>({
-    intervenciones: [],
-    turnoIdsCoincidentes: [],
-    primeraCoincidenciaId: null,
+  const [assignments, setAssignments] = useState<SpeakerAssignmentDTO[]>([]);
+  const [searchResult, setSearchResult] = useState<TranscriptSearchResult>({
+    interventions: [],
+    matchingTurnIds: [],
+    firstMatchId: null,
   });
 
-  const cargarTranscripcion = useCallback(
-    async (silencioso = false) => {
-      if (!reunionId) return;
-      if (!silencioso) {
-        setSolicitudTranscripcion((prev) => ({ fase: "en_curso", datos: null, previos: prev.datos }));
+  const loadTranscript = useCallback(
+    async (silent = false) => {
+      if (!meetingId) return;
+      if (!silent) {
+        setTranscriptRequest((prev) => ({ phase: "in_progress", data: null, previous: prev.data }));
       }
       try {
-        const transcripcion = await obtenerTranscripcion(reunionId, BACKEND_URL_DEFECTO);
-        setSolicitudTranscripcion({ fase: "exito", datos: transcripcion.segmentos, previos: null });
+        const transcript = await getTranscript(meetingId, DEFAULT_BACKEND_URL);
+        setTranscriptRequest({ phase: "success", data: transcript.segments, previous: null });
       } catch (err) {
-        if (err instanceof ErrorNoEncontrado) {
-          setSolicitudTranscripcion({ fase: "exito", datos: [], previos: null });
+        if (err instanceof NotFoundError) {
+          setTranscriptRequest({ phase: "success", data: [], previous: null });
         } else {
-          setSolicitudTranscripcion((prev) => ({ fase: "fallo", datos: null, previos: prev.datos }));
+          setTranscriptRequest((prev) => ({ phase: "failure", data: null, previous: prev.data }));
         }
       }
     },
-    [reunionId]
+    [meetingId]
   );
 
-  const cargarDiarizacion = useCallback(
-    async (silencioso = false) => {
-      if (!reunionId) return;
-      if (!silencioso) {
-        setSolicitudDiarizacion((prev) => ({ fase: "en_curso", datos: null, previos: prev.datos }));
+  const loadDiarization = useCallback(
+    async (silent = false) => {
+      if (!meetingId) return;
+      if (!silent) {
+        setDiarizationRequest((prev) => ({ phase: "in_progress", data: null, previous: prev.data }));
       }
       try {
-        const diarizacion = await obtenerDiarizacion(reunionId, BACKEND_URL_DEFECTO);
-        setSolicitudDiarizacion({ fase: "exito", datos: diarizacion.hablantes, previos: null });
-        setAsignaciones(diarizacion.asignaciones);
+        const diarization = await getDiarization(meetingId, DEFAULT_BACKEND_URL);
+        setDiarizationRequest({ phase: "success", data: diarization.speakers, previous: null });
+        setAssignments(diarization.assignments);
       } catch (err) {
-        if (err instanceof ErrorNoEncontrado) {
-          setSolicitudDiarizacion({ fase: "exito", datos: [], previos: null });
-          setAsignaciones([]);
+        if (err instanceof NotFoundError) {
+          setDiarizationRequest({ phase: "success", data: [], previous: null });
+          setAssignments([]);
         } else {
-          setSolicitudDiarizacion((prev) => ({ fase: "fallo", datos: null, previos: prev.datos }));
+          setDiarizationRequest((prev) => ({ phase: "failure", data: null, previous: prev.data }));
         }
       }
     },
-    [reunionId]
+    [meetingId]
   );
 
   useEffect(() => {
-    if (!reunionId) return;
-    let cancelado = false;
+    if (!meetingId) return;
+    let canceled = false;
 
-    async function cicloPolling() {
-      await cargarTranscripcion();
-      await cargarDiarizacion();
+    async function pollingCycle() {
+      await loadTranscript();
+      await loadDiarization();
 
-      for (let intento = 0; intento < MAX_INTENTOS_POLLING && !cancelado; intento++) {
-        const reunion = await obtenerReunion(reunionId!, BACKEND_URL_DEFECTO).catch(() => null);
-        // Si la consulta de estado falla (nota inexistente, error de red), no
-        // tiene sentido seguir reintentando por 60s — se detiene el polling.
-        if (cancelado || !reunion || ESTADOS_TERMINALES.has(reunion.estadoProceso)) break;
+      for (let attempt = 0; attempt < MAX_POLLING_ATTEMPTS && !canceled; attempt++) {
+        const meeting = await getMeeting(meetingId!, DEFAULT_BACKEND_URL).catch(() => null);
+        // If the status query fails (missing note, network error), retrying
+        // for 60s makes no sense — polling stops.
+        if (canceled || !meeting || TERMINAL_STATES.has(meeting.processState)) break;
 
-        await new Promise((resolve) => setTimeout(resolve, INTERVALO_POLLING_MS));
-        if (cancelado) break;
-        await cargarTranscripcion(true);
-        await cargarDiarizacion(true);
+        await new Promise((resolve) => setTimeout(resolve, POLLING_INTERVAL_MS));
+        if (canceled) break;
+        await loadTranscript(true);
+        await loadDiarization(true);
       }
     }
 
-    cicloPolling();
+    pollingCycle();
     return () => {
-      cancelado = true;
+      canceled = true;
     };
-  }, [reunionId, cargarTranscripcion, cargarDiarizacion]);
+  }, [meetingId, loadTranscript, loadDiarization]);
 
-  const turnos = solicitudTranscripcion.datos ?? solicitudTranscripcion.previos ?? SIN_TURNOS;
-  const hablantes = solicitudDiarizacion.datos ?? solicitudDiarizacion.previos ?? SIN_HABLANTES;
+  const turns = transcriptRequest.data ?? transcriptRequest.previous ?? NO_TURNS;
+  const speakers = diarizationRequest.data ?? diarizationRequest.previous ?? NO_SPEAKERS;
 
-  const intervenciones = useMemo(
-    () => ordenarIntervenciones(turnos.map((turno) => atribuirHablante(turno, asignaciones, hablantes))),
-    [turnos, asignaciones, hablantes]
+  const interventions = useMemo(
+    () => sortInterventions(turns.map((turn) => attributeSpeaker(turn, assignments, speakers))),
+    [turns, assignments, speakers]
   );
 
-  const entradasTiempoDeHabla = useMemo(
-    () => calcularTiempoDeHabla(turnos, asignaciones, hablantes),
-    [turnos, asignaciones, hablantes]
+  const speakingTimeEntries = useMemo(
+    () => calculateSpeakingTime(turns, assignments, speakers),
+    [turns, assignments, speakers]
   );
 
-  if (!reunionId) {
+  if (!meetingId) {
     return (
-      <div style={{ padding: SPACING_TOKENS.esp5, color: COLOR_TOKENS.texto }}>
-        <p style={{ color: COLOR_TOKENS.error }}>Esta nota no existe.</p>
+      <div style={{ padding: SPACING_TOKENS.space5, color: COLOR_TOKENS.text }}>
+        <p style={{ color: COLOR_TOKENS.error }}>This note doesn't exist.</p>
       </div>
     );
   }
 
-  const estadoTranscripcion = derivarEstadoDeVista(solicitudTranscripcion);
-  const estadoDiarizacion = derivarEstadoDeVista(solicitudDiarizacion);
+  const transcriptState = deriveViewState(transcriptRequest);
+  const diarizationState = deriveViewState(diarizationRequest);
 
   return (
     <div
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: SPACING_TOKENS.esp5,
-        padding: SPACING_TOKENS.esp5,
-        color: COLOR_TOKENS.texto,
-        backgroundColor: COLOR_TOKENS.fondo,
+        gap: SPACING_TOKENS.space5,
+        padding: SPACING_TOKENS.space5,
+        color: COLOR_TOKENS.text,
+        backgroundColor: COLOR_TOKENS.background,
         minHeight: "100vh",
       }}
     >
-      <h1 style={{ fontSize: TYPOGRAPHY_TOKENS.textoXl, margin: 0 }}>{tituloParaMostrar(null)}</h1>
+      <h1 style={{ fontSize: TYPOGRAPHY_TOKENS.textXl, margin: 0 }}>{displayTitle(null)}</h1>
 
-      <EspacioDeResumen />
+      <SummarySpace />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: SPACING_TOKENS.esp3 }}>
-        <BuscadorDeTranscripcion intervenciones={intervenciones} onResultado={setResultadoBusqueda} />
-        <PanelDeTranscripcion
-          estado={estadoTranscripcion}
-          intervenciones={intervenciones}
-          turnoIdsCoincidentes={resultadoBusqueda.turnoIdsCoincidentes}
-          primeraCoincidenciaId={resultadoBusqueda.primeraCoincidenciaId}
-          onReintentar={cargarTranscripcion}
+      <div style={{ display: "flex", flexDirection: "column", gap: SPACING_TOKENS.space3 }}>
+        <TranscriptSearch interventions={interventions} onResult={setSearchResult} />
+        <TranscriptPanel
+          state={transcriptState}
+          interventions={interventions}
+          matchingTurnIds={searchResult.matchingTurnIds}
+          firstMatchId={searchResult.firstMatchId}
+          onRetry={loadTranscript}
         />
       </div>
 
-      <VistaTiempoDeHabla
-        estado={estadoDiarizacion}
-        entradas={entradasTiempoDeHabla}
-        onReintentar={cargarDiarizacion}
+      <SpeakingTimeView
+        state={diarizationState}
+        entries={speakingTimeEntries}
+        onRetry={loadDiarization}
       />
     </div>
   );

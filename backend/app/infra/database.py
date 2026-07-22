@@ -31,16 +31,6 @@ def create_engine(database_url: str | None = None) -> AsyncEngine:
     return create_async_engine(url, echo=False)
 
 
-def crear_engine(database_url: str) -> AsyncEngine:
-    """Crear un motor async SQLAlchemy (interfaz en español del dominio)."""
-    return create_async_engine(database_url, echo=False)
-
-
-def crear_session(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
-    """Crear una fábrica de sesiones async ligada al motor dado."""
-    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     """Create an async session factory bound to the given engine."""
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

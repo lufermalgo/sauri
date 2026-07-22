@@ -1,4 +1,4 @@
-import type { Reunion, Transcripcion, TurnoDeHabla } from "@sauri/shared-types";
+import type { Meeting, Transcript, SpeechTurn } from "@sauri/shared-types";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const TOKEN_KEY = "sauri_token";
@@ -6,7 +6,7 @@ const TOKEN_KEY = "sauri_token";
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem(TOKEN_KEY);
   if (!token) {
-    throw new Error("No autenticado: token no encontrado");
+    throw new Error("Not authenticated: token not found");
   }
   return {
     Authorization: `Bearer ${token}`,
@@ -22,32 +22,32 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function registrarReunion(enlaceMeet: string): Promise<Reunion> {
-  const response = await fetch(`${BASE_URL}/api/v1/reuniones`, {
+export async function registerMeeting(meetLink: string): Promise<Meeting> {
+  const response = await fetch(`${BASE_URL}/api/v1/meetings`, {
     method: "POST",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ enlace_meet: enlaceMeet }),
+    body: JSON.stringify({ meet_link: meetLink }),
   });
-  return handleResponse<Reunion>(response);
+  return handleResponse<Meeting>(response);
 }
 
-export async function listarReuniones(): Promise<Reunion[]> {
-  const response = await fetch(`${BASE_URL}/api/v1/reuniones`, {
+export async function listMeetings(): Promise<Meeting[]> {
+  const response = await fetch(`${BASE_URL}/api/v1/meetings`, {
     method: "GET",
     headers: getAuthHeaders(),
   });
-  return handleResponse<Reunion[]>(response);
+  return handleResponse<Meeting[]>(response);
 }
 
-export async function obtenerTranscripcion(
-  reunionId: string
-): Promise<Transcripcion & { turnos: TurnoDeHabla[] }> {
+export async function getTranscript(
+  meetingId: string
+): Promise<Transcript & { turns: SpeechTurn[] }> {
   const response = await fetch(
-    `${BASE_URL}/api/v1/reuniones/${reunionId}/transcripcion`,
+    `${BASE_URL}/api/v1/meetings/${meetingId}/transcript`,
     {
       method: "GET",
       headers: getAuthHeaders(),
     }
   );
-  return handleResponse<Transcripcion & { turnos: TurnoDeHabla[] }>(response);
+  return handleResponse<Transcript & { turns: SpeechTurn[] }>(response);
 }

@@ -1,60 +1,60 @@
-// Sistema_De_Diseno: tokens de color, tipografía, espaciado, radios, elevaciones
-// y paleta de avatares, compartidos por el Side_Panel y la Vista_De_Detalle.
-// Requisitos: 12.1, 12.2, 12.4
+// Design system: color, typography, spacing, radius, elevation tokens
+// and avatar palette, shared by the Side Panel and the Detail View.
+// Requirements: 12.1, 12.2, 12.4
 
 export const COLOR_TOKENS = {
-  fondo: "#0f1115",
-  superficie: "#181b21",
-  superficieAlterna: "#20242c",
-  primario: "#5b8cff",
-  texto: "#f2f4f8",
-  textoTenue: "#9aa3b2",
+  background: "#0f1115",
+  surface: "#181b21",
+  surfaceAlt: "#20242c",
+  primary: "#5b8cff",
+  text: "#f2f4f8",
+  textMuted: "#9aa3b2",
   error: "#ff6b6b",
-  grabando: "#ff5c5c",
-  foco: "#ffd166",
+  recording: "#ff5c5c",
+  focus: "#ffd166",
 } as const;
 
-/** Alias exportados individualmente para pruebas de contraste (Req. 12.4) */
-export const FOCUS_RING_COLOR = COLOR_TOKENS.foco;
-export const SURFACE_COLOR = COLOR_TOKENS.superficie;
+/** Individually exported aliases for contrast tests (Req. 12.4) */
+export const FOCUS_RING_COLOR = COLOR_TOKENS.focus;
+export const SURFACE_COLOR = COLOR_TOKENS.surface;
 
 export const TYPOGRAPHY_TOKENS = {
-  fuenteBase:
+  baseFont:
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-  textoSm: "12px",
-  textoBase: "14px",
-  textoLg: "16px",
-  textoXl: "20px",
-  pesoRegular: 400,
-  pesoMedio: 500,
-  pesoSemibold: 600,
+  textSm: "12px",
+  textBase: "14px",
+  textLg: "16px",
+  textXl: "20px",
+  weightRegular: 400,
+  weightMedium: 500,
+  weightSemibold: 600,
 } as const;
 
 export const SPACING_TOKENS = {
-  esp1: "4px",
-  esp2: "8px",
-  esp3: "12px",
-  esp4: "16px",
-  esp5: "24px",
-  esp6: "32px",
+  space1: "4px",
+  space2: "8px",
+  space3: "12px",
+  space4: "16px",
+  space5: "24px",
+  space6: "32px",
 } as const;
 
 export const RADIUS_TOKENS = {
-  radioSm: "4px",
-  radioMd: "8px",
-  radioLg: "16px",
+  radiusSm: "4px",
+  radiusMd: "8px",
+  radiusLg: "16px",
 } as const;
 
 export const ELEVATION_TOKENS = {
-  sombraSm: "0 1px 2px rgba(0,0,0,0.24)",
-  sombraMd: "0 4px 12px rgba(0,0,0,0.32)",
+  shadowSm: "0 1px 2px rgba(0,0,0,0.24)",
+  shadowMd: "0 4px 12px rgba(0,0,0,0.32)",
 } as const;
 
 /**
- * Paleta ordenada de colores para el Avatar_De_Hablante (Req. 8.4).
- * `colorDeAvatar(orden)` indexa esta paleta de forma cíclica.
+ * Ordered color palette for the speaker avatar (Req. 8.4).
+ * `avatarColor(sequence)` indexes this palette cyclically.
  */
-export const PALETA_AVATAR: string[] = [
+export const AVATAR_PALETTE: string[] = [
   "#5b8cff",
   "#ff8a5b",
   "#5bffb0",
@@ -65,9 +65,9 @@ export const PALETA_AVATAR: string[] = [
   "#8aff5b",
 ];
 
-/** Anillo de foco visible derivado de los tokens (Req. 12.4) */
+/** Visible focus ring derived from the tokens (Req. 12.4) */
 export const FOCUS_RING = {
-  color: COLOR_TOKENS.foco,
+  color: COLOR_TOKENS.focus,
   width: "2px",
   offset: "2px",
 } as const;

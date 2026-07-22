@@ -1,51 +1,53 @@
 # sauri
 
-Plataforma interna de inteligencia de reuniones comerciales de Summan.
+Summan's internal commercial-meeting intelligence platform.
 
-## Qué hace
+## What it does
 
-sauri captura reuniones de Google Meet (audio + video), las transcribe automáticamente en español y las asocia a la gestión comercial del equipo. Es una solución propia que se desarrolla por módulos incrementales.
+sauri captures Google Meet sessions (audio + video), automatically transcribes them in Spanish
+— the language spoken in the meetings — and links them to the team's commercial management.
+It's an in-house solution built incrementally, module by module.
 
-## Módulos (roadmap)
+## Modules (roadmap)
 
-| # | Módulo | Estado |
+| # | Module | Status |
 |---|--------|--------|
-| 1 | Captura de reuniones | ✅ MVP implementado |
-| 2 | Transcripción (ASR) | Pendiente |
-| 3 | Identificación de hablantes | Pendiente |
-| 4 | Notas e inteligencia | Pendiente |
-| 5 | Integración con CRM (ClickUp) | Pendiente |
-| 6 | Biblioteca y búsqueda | Pendiente |
-| 7 | Analítica comercial | Pendiente |
-| 8 | Administración | Pendiente |
+| 1 | Meeting capture | ✅ MVP implemented |
+| 2 | Transcription (ASR) | Pending |
+| 3 | Speaker identification | Pending |
+| 4 | Notes & intelligence | Pending |
+| 5 | CRM integration (ClickUp) | Pending |
+| 6 | Library & search | Pending |
+| 7 | Commercial analytics | Pending |
+| 8 | Administration | Pending |
 
-## Stack tecnológico
+## Tech stack
 
 - **Backend**: Python / FastAPI / SQLAlchemy / PostgreSQL
-- **Extensión Chrome**: TypeScript / MV3 / React (Vite + CRXJS)
+- **Chrome extension**: TypeScript / MV3 / React (Vite + CRXJS)
 - **Frontend web**: TypeScript / React (Vite)
-- **Motor ASR local**: faster-whisper (contenedor propio)
-- **Infraestructura**: Docker Compose (PostgreSQL, MinIO, RabbitMQ, ASR engine)
+- **Local ASR engine**: faster-whisper (own container)
+- **Infrastructure**: Docker Compose (PostgreSQL, MinIO, RabbitMQ, ASR engine)
 
-## Desarrollo local
+## Local development
 
-### Requisitos
+### Requirements
 
 - Docker Desktop (macOS)
 - Node.js >= 20
 - Python >= 3.11
 
-### Levantar el backend
+### Start the backend
 
 ```bash
-make up        # Levanta todo el stack Docker
-make build     # Rebuild + levanta
-make down      # Detiene todo
-make logs      # Ver logs
-make migrate   # Ejecutar migraciones de BD
+make up        # Start the full Docker stack
+make build     # Rebuild + start
+make down      # Stop everything
+make logs      # View logs
+make migrate   # Run DB migrations
 ```
 
-### Extensión de Chrome
+### Chrome extension
 
 ```bash
 cd extension
@@ -53,7 +55,7 @@ npm install
 npm run build
 ```
 
-Luego cargar `extension/dist/` como extensión sin empaquetar en `chrome://extensions/` (modo desarrollador).
+Then load `extension/dist/` as an unpacked extension at `chrome://extensions/` (developer mode).
 
 ### Frontend web
 
@@ -63,29 +65,29 @@ npm install
 npm run dev
 ```
 
-## Estructura del proyecto
+## Project structure
 
 ```
 sauri/
 ├── backend/           # Python/FastAPI (API + workers)
-├── extension/         # Chrome MV3 (captura de reuniones)
-├── frontend/          # React SPA (consulta de reuniones)
-├── packages/          # Tipos compartidos (@sauri/shared-types)
-├── .spectra/specs/    # Especificaciones de módulos (Spectra)
-├── docker-compose.yml # Stack local completo
-├── Makefile           # Comandos de desarrollo
-└── AGENTS.md          # Reglas y workflow del proyecto
+├── extension/         # Chrome MV3 (meeting capture)
+├── frontend/          # React SPA (meeting browsing)
+├── packages/          # Shared types (@sauri/shared-types)
+├── .spectra/specs/    # Module specs (Spectra)
+├── docker-compose.yml # Full local stack
+├── Makefile           # Development commands
+└── AGENTS.md          # Project rules and workflow
 ```
 
-## Workflow de desarrollo
+## Development workflow
 
-Ver [AGENTS.md](./AGENTS.md) para las reglas completas. En resumen:
+See [AGENTS.md](./AGENTS.md) for the full rules. In summary:
 
-1. Cada módulo tiene un spec en `.spectra/specs/` (requirements/bugfix → design → tasks)
-2. Cada tarea atómica → issue en GitHub asignado al milestone del módulo
-3. Cada issue → branch → PR → merge a main
-4. Milestones en GitHub reflejan el progreso del roadmap
+1. Each module has a spec in `.spectra/specs/` (requirements/bugfix → design → tasks)
+2. Each atomic task → GitHub issue assigned to the module's milestone
+3. Each issue → branch → PR → merge to main
+4. GitHub milestones reflect roadmap progress
 
-## Seguridad
+## Security
 
-Ver [SECURITY.md](./SECURITY.md) para notas sobre TLS, cifrado y manejo de datos personales.
+See [SECURITY.md](./SECURITY.md) for notes on TLS, encryption, and handling of personal data.
