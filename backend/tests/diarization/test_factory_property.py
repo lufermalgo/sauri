@@ -1,6 +1,6 @@
-"""Tests de propiedad para la Fabrica_De_Diarizacion (factory.py).
+"""Property tests for the DiarizationEngine factory (factory.py).
 
-# Feature: identificacion-hablantes, Property 1: Selección del proveedor por configuración
+# Feature: identificacion-hablantes, Property 1: Provider selection by configuration
 """
 
 from __future__ import annotations
@@ -12,14 +12,14 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from app.diarizacion.factory import crear_motor_diarizacion
-from app.diarizacion.proveedor_local import ProveedorLocal
-from app.diarizacion.proveedor_nube import ProveedorNube
+from app.diarization.factory import create_diarization_engine
+from app.diarization.local_provider import LocalProvider
+from app.diarization.cloud_provider import CloudProvider
 
 
 # ---------------------------------------------------------------------------
-# Property 1: Selección del proveedor por configuración
-# Feature: identificacion-hablantes, Property 1: Selección del proveedor por configuración
+# Property 1: Provider selection by configuration
+# Feature: identificacion-hablantes, Property 1: Provider selection by configuration
 # Validates: Requirements 2.1, 2.2, 2.3, 2.4
 # ---------------------------------------------------------------------------
 
@@ -35,18 +35,18 @@ _padding = st.text(alphabet=" \t", min_size=0, max_size=5)
     padding_left=_padding,
     padding_right=_padding,
 )
-def test_property_1_local_con_capitalizacion_y_espacios(
+def test_property_1_local_with_capitalization_and_spaces(
     word: str, padding_left: str, padding_right: str
 ):
-    """DIARIZATION_PROVIDER='local' (capitalización/espacios arbitrarios) → ProveedorLocal."""
+    """DIARIZATION_PROVIDER='local' (arbitrary capitalization/spaces) -> LocalProvider."""
     provider_value = padding_left + word + padding_right
     env = {
         "DIARIZATION_PROVIDER": provider_value,
         "DIARIZATION_LOCAL_URL": "http://diar-engine:8000",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_diarizacion()
-        assert isinstance(motor, ProveedorLocal)
+        engine = create_diarization_engine()
+        assert isinstance(engine, LocalProvider)
 
 
 @settings(max_examples=100)
@@ -55,10 +55,10 @@ def test_property_1_local_con_capitalizacion_y_espacios(
     padding_left=_padding,
     padding_right=_padding,
 )
-def test_property_1_cloud_con_capitalizacion_y_espacios(
+def test_property_1_cloud_with_capitalization_and_spaces(
     word: str, padding_left: str, padding_right: str
 ):
-    """DIARIZATION_PROVIDER='cloud' (capitalización/espacios arbitrarios) → ProveedorNube."""
+    """DIARIZATION_PROVIDER='cloud' (arbitrary capitalization/spaces) -> CloudProvider."""
     provider_value = padding_left + word + padding_right
     env = {
         "DIARIZATION_PROVIDER": provider_value,
@@ -66,37 +66,37 @@ def test_property_1_cloud_con_capitalizacion_y_espacios(
         "DIARIZATION_CLOUD_API_KEY": "test-key",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_diarizacion()
-        assert isinstance(motor, ProveedorNube)
+        engine = create_diarization_engine()
+        assert isinstance(engine, CloudProvider)
 
 
 @settings(max_examples=100)
 @given(
     value=st.sampled_from(["", "   ", "\t", "\t  "]),
 )
-def test_property_1_vacio_es_local(value: str):
-    """DIARIZATION_PROVIDER vacío o solo espacios → ProveedorLocal (default)."""
+def test_property_1_empty_is_local(value: str):
+    """DIARIZATION_PROVIDER empty or whitespace-only -> LocalProvider (default)."""
     env = {
         "DIARIZATION_PROVIDER": value,
         "DIARIZATION_LOCAL_URL": "http://diar-engine:8000",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_diarizacion()
-        assert isinstance(motor, ProveedorLocal)
+        engine = create_diarization_engine()
+        assert isinstance(engine, LocalProvider)
 
 
-def test_property_1_ausente_sin_variable():
-    """DIARIZATION_PROVIDER no definido → ProveedorLocal (default)."""
+def test_property_1_absent_without_variable():
+    """DIARIZATION_PROVIDER not defined -> LocalProvider (default)."""
     env = {"DIARIZATION_LOCAL_URL": "http://diar-engine:8000"}
     with patch.dict(os.environ, env, clear=False):
         os.environ.pop("DIARIZATION_PROVIDER", None)
-        motor = crear_motor_diarizacion()
-        assert isinstance(motor, ProveedorLocal)
+        engine = create_diarization_engine()
+        assert isinstance(engine, LocalProvider)
 
 
 # ---------------------------------------------------------------------------
-# Property 2: Valor de proveedor inválido señala error con el valor recibido
-# Feature: identificacion-hablantes, Property 2: Valor de proveedor inválido señala error con el valor recibido
+# Property 2: Invalid provider value flags an error with the received value
+# Feature: identificacion-hablantes, Property 2: Invalid provider value flags an error with the received value
 # Validates: Requirements 2.5
 # ---------------------------------------------------------------------------
 
@@ -105,7 +105,7 @@ def test_property_1_ausente_sin_variable():
 _invalid_provider = st.text(
     alphabet=st.characters(
         blacklist_characters="\x00",
-        blacklist_categories=("Cs",),  # Excluir surrogates (no válidos en env vars)
+        blacklist_categories=("Cs",),  # Exclude surrogates (invalid in env vars)
     ),
     min_size=1,
     max_size=50,
@@ -114,8 +114,8 @@ _invalid_provider = st.text(
 
 @settings(max_examples=100)
 @given(provider_value=_invalid_provider)
-def test_property_2_valor_invalido_senala_error(provider_value: str):
-    """Un DIARIZATION_PROVIDER inválido (normalizado ≠ local/cloud/vacío) lanza ValueError con el valor recibido."""
+def test_property_2_invalid_value_flags_error(provider_value: str):
+    """An invalid DIARIZATION_PROVIDER (normalized != local/cloud/empty) raises ValueError with the received value."""
     import re
 
     env = {
@@ -124,52 +124,52 @@ def test_property_2_valor_invalido_senala_error(provider_value: str):
     }
     with patch.dict(os.environ, env, clear=False):
         with pytest.raises(ValueError, match=re.escape(provider_value.strip())):
-            crear_motor_diarizacion()
+            create_diarization_engine()
 
 # ---------------------------------------------------------------------------
-# Pruebas por ejemplo de la Fabrica_De_Diarizacion (Task 4.3)
+# Example tests for the DiarizationEngine factory (Task 4.3)
 # Validates: Requirements 2.2, 2.3, 2.6
 # ---------------------------------------------------------------------------
 
 
-def test_ejemplo_local_con_url_definida():
-    """Req 2.2: DIARIZATION_PROVIDER='local' con DIARIZATION_LOCAL_URL definida → ProveedorLocal."""
+def test_example_local_with_url_defined():
+    """Req 2.2: DIARIZATION_PROVIDER='local' with DIARIZATION_LOCAL_URL defined -> LocalProvider."""
     env = {
         "DIARIZATION_PROVIDER": "local",
         "DIARIZATION_LOCAL_URL": "http://diar-engine:8002",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_diarizacion()
-        assert isinstance(motor, ProveedorLocal)
+        engine = create_diarization_engine()
+        assert isinstance(engine, LocalProvider)
 
 
-def test_ejemplo_cloud_con_endpoint_y_key():
-    """Req 2.3: DIARIZATION_PROVIDER='cloud' con endpoint HTTPS y API key → ProveedorNube."""
+def test_example_cloud_with_endpoint_and_key():
+    """Req 2.3: DIARIZATION_PROVIDER='cloud' with HTTPS endpoint and API key -> CloudProvider."""
     env = {
         "DIARIZATION_PROVIDER": "cloud",
         "DIARIZATION_CLOUD_ENDPOINT": "https://api.diarization.example.com/diarize",
         "DIARIZATION_CLOUD_API_KEY": "sk-test-key-12345",
     }
     with patch.dict(os.environ, env, clear=False):
-        motor = crear_motor_diarizacion()
-        assert isinstance(motor, ProveedorNube)
+        engine = create_diarization_engine()
+        assert isinstance(engine, CloudProvider)
 
 
-def test_ejemplo_local_url_ausente_lanza_valueerror():
-    """Req 2.6: Proveedor local seleccionado pero DIARIZATION_LOCAL_URL ausente → ValueError."""
+def test_example_local_url_missing_raises_valueerror():
+    """Req 2.6: Local provider selected but DIARIZATION_LOCAL_URL missing -> ValueError."""
     env = {"DIARIZATION_PROVIDER": "local"}
     with patch.dict(os.environ, env, clear=False):
         os.environ.pop("DIARIZATION_LOCAL_URL", None)
         with pytest.raises(ValueError, match="DIARIZATION_LOCAL_URL"):
-            crear_motor_diarizacion()
+            create_diarization_engine()
 
 
-def test_ejemplo_local_url_vacia_lanza_valueerror():
-    """Req 2.6: Proveedor local seleccionado pero DIARIZATION_LOCAL_URL vacía → ValueError."""
+def test_example_local_url_empty_raises_valueerror():
+    """Req 2.6: Local provider selected but DIARIZATION_LOCAL_URL empty -> ValueError."""
     env = {
         "DIARIZATION_PROVIDER": "local",
         "DIARIZATION_LOCAL_URL": "   ",
     }
     with patch.dict(os.environ, env, clear=False):
         with pytest.raises(ValueError, match="DIARIZATION_LOCAL_URL"):
-            crear_motor_diarizacion()
+            create_diarization_engine()

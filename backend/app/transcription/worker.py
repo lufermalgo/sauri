@@ -164,9 +164,9 @@ async def _process_transcription(
     # committed (Req. 1.2 of identificacion-hablantes). Doesn't alter the
     # Meeting's ProcessState (Req. 9.5).
     if queue is not None and transcript_created:
-        await queue.publicar("diarizar", {"reunion_id": meeting_id})
+        await queue.publicar("diarize", {"meeting_id": meeting_id})
         logger.info(
-            "Diarization_Message enqueued for meeting_id=%s (topic 'diarizar')",
+            "Diarization_Message enqueued for meeting_id=%s (topic 'diarize')",
             meeting_id,
         )
 

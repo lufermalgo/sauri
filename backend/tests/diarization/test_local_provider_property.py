@@ -1,6 +1,6 @@
-"""Tests de propiedad para el ProveedorLocal de diarización.
+"""Property tests for the diarization LocalProvider.
 
-# Feature: identificacion-hablantes, Property 4: Mapeo fiel de la respuesta local a Segmentos_De_Hablante
+# Feature: identificacion-hablantes, Property 4: Faithful mapping of the local response to SpeakerSegments
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.diarizacion.proveedor_local import ProveedorLocal
-from app.diarizacion.motor_diarizacion import OpcionesDiarizacion
+from app.diarization.local_provider import LocalProvider
+from app.diarization.diarization_engine import DiarizationOptions
 
 
 # ---------------------------------------------------------------------------
@@ -30,8 +30,8 @@ segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=20)
 
 
 # ---------------------------------------------------------------------------
-# Property 4: Mapeo fiel de la respuesta local a Segmentos_De_Hablante
-# Feature: identificacion-hablantes, Property 4: Mapeo fiel de la respuesta local a Segmentos_De_Hablante
+# Property 4: Faithful mapping of the local response to SpeakerSegments
+# Feature: identificacion-hablantes, Property 4: Faithful mapping of the local response to SpeakerSegments
 # Validates: Requirements 3.4
 # ---------------------------------------------------------------------------
 
@@ -39,17 +39,17 @@ segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=20)
 @settings(max_examples=100)
 @given(segments=segments_list_strategy)
 @pytest.mark.asyncio
-async def test_property_4_mapeo_fiel_respuesta_local_diarizacion(
+async def test_property_4_faithful_mapping_of_local_diarization_response(
     segments: list[dict],
 ):
-    """Para cualquier respuesta válida con N elementos {speaker, start_ms, end_ms},
-    el ProveedorLocal produce exactamente N SegmentoDeHablante preservando
-    etiqueta_cruda=speaker, inicio_ms=start_ms, fin_ms=end_ms en el mismo orden.
+    """For any valid response with N elements {speaker, start_ms, end_ms},
+    LocalProvider produces exactly N SpeakerSegment preserving
+    raw_label=speaker, start_ms=start_ms, end_ms=end_ms in the same order.
 
     **Validates: Requirements 3.4**
     """
-    proveedor = ProveedorLocal(url="http://fake-diar-engine:8002")
-    opciones = OpcionesDiarizacion()
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    options = DiarizationOptions()
 
     response_data = {
         "segments": segments,
@@ -62,7 +62,7 @@ async def test_property_4_mapeo_fiel_respuesta_local_diarizacion(
     mock_response.json.return_value = response_data
 
     with patch(
-        "app.diarizacion.proveedor_local.httpx.AsyncClient"
+        "app.diarization.local_provider.httpx.AsyncClient"
     ) as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -70,25 +70,25 @@ async def test_property_4_mapeo_fiel_respuesta_local_diarizacion(
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client_cls.return_value = mock_client
 
-        resultado = await proveedor.diarizar("audio/test.webm", opciones)
+        result = await provider.diarize("audio/test.webm", options)
 
-    # Exactamente N segmentos producidos
-    assert len(resultado.segmentos) == len(segments)
+    # Exactly N segments produced
+    assert len(result.segments) == len(segments)
 
-    # Preservación fiel de cada campo (el ResultadoDiarizacion ordena por inicio_ms
-    # según Property 6 / Req. 5.1, así que comparamos tras ordenar la entrada)
+    # Faithful preservation of each field (DiarizationResult orders by start_ms
+    # per Property 6 / Req. 5.1, so we compare after sorting the input)
     expected_tuples = sorted(
         [(s["speaker"], s["start_ms"], s["end_ms"]) for s in segments],
         key=lambda t: t[1],
     )
     actual_tuples = [
-        (s.etiqueta_cruda, s.inicio_ms, s.fin_ms) for s in resultado.segmentos
+        (s.raw_label, s.start_ms, s.end_ms) for s in result.segments
     ]
     assert actual_tuples == expected_tuples
 
 
 # ---------------------------------------------------------------------------
-# Pruebas por ejemplo del ProveedorLocal de diarización (Task 5.2)
+# Example tests for the diarization LocalProvider (Task 5.2)
 # Validates: Requirements 3.5, 3.6, 3.7
 # ---------------------------------------------------------------------------
 
@@ -96,10 +96,10 @@ import httpx
 
 
 @pytest.mark.asyncio
-async def test_ejemplo_error_http_500_no_produce_segmentos_parciales():
-    """Req 3.5: Error HTTP (status 500) → el proveedor señala fallo sin segmentos parciales."""
-    proveedor = ProveedorLocal(url="http://fake-diar-engine:8002")
-    opciones = OpcionesDiarizacion()
+async def test_example_http_500_error_produces_no_partial_segments():
+    """Req 3.5: HTTP error (status 500) -> the provider signals failure with no partial segments."""
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    options = DiarizationOptions()
 
     mock_response = MagicMock()
     mock_response.status_code = 500
@@ -110,7 +110,7 @@ async def test_ejemplo_error_http_500_no_produce_segmentos_parciales():
     )
 
     with patch(
-        "app.diarizacion.proveedor_local.httpx.AsyncClient"
+        "app.diarization.local_provider.httpx.AsyncClient"
     ) as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -119,17 +119,17 @@ async def test_ejemplo_error_http_500_no_produce_segmentos_parciales():
         mock_client_cls.return_value = mock_client
 
         with pytest.raises(httpx.HTTPStatusError):
-            await proveedor.diarizar("audio/test.webm", opciones)
+            await provider.diarize("audio/test.webm", options)
 
 
 @pytest.mark.asyncio
-async def test_ejemplo_timeout_senala_fallo():
-    """Req 3.6: Timeout (httpx.TimeoutException) → el proveedor señala fallo."""
-    proveedor = ProveedorLocal(url="http://fake-diar-engine:8002")
-    opciones = OpcionesDiarizacion()
+async def test_example_timeout_signals_failure():
+    """Req 3.6: Timeout (httpx.TimeoutException) -> the provider signals failure."""
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    options = DiarizationOptions()
 
     with patch(
-        "app.diarizacion.proveedor_local.httpx.AsyncClient"
+        "app.diarization.local_provider.httpx.AsyncClient"
     ) as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ConnectTimeout("Connection timed out")
@@ -138,17 +138,17 @@ async def test_ejemplo_timeout_senala_fallo():
         mock_client_cls.return_value = mock_client
 
         with pytest.raises(httpx.TimeoutException):
-            await proveedor.diarizar("audio/test.webm", opciones)
+            await provider.diarize("audio/test.webm", options)
 
 
 @pytest.mark.asyncio
-async def test_ejemplo_connect_error_senala_fallo():
-    """Req 3.6: ConnectError (httpx.ConnectError) → el proveedor señala fallo."""
-    proveedor = ProveedorLocal(url="http://fake-diar-engine:8002")
-    opciones = OpcionesDiarizacion()
+async def test_example_connect_error_signals_failure():
+    """Req 3.6: ConnectError (httpx.ConnectError) -> the provider signals failure."""
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    options = DiarizationOptions()
 
     with patch(
-        "app.diarizacion.proveedor_local.httpx.AsyncClient"
+        "app.diarization.local_provider.httpx.AsyncClient"
     ) as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.side_effect = httpx.ConnectError("Connection refused")
@@ -157,23 +157,23 @@ async def test_ejemplo_connect_error_senala_fallo():
         mock_client_cls.return_value = mock_client
 
         with pytest.raises(httpx.ConnectError):
-            await proveedor.diarizar("audio/test.webm", opciones)
+            await provider.diarize("audio/test.webm", options)
 
 
 @pytest.mark.asyncio
-async def test_ejemplo_respuesta_sin_segments_lanza_valueerror():
-    """Req 3.7: Respuesta sin clave 'segments' → ValueError (estructura inválida)."""
-    proveedor = ProveedorLocal(url="http://fake-diar-engine:8002")
-    opciones = OpcionesDiarizacion()
+async def test_example_response_without_segments_raises_valueerror():
+    """Req 3.7: Response missing the 'segments' key -> ValueError (invalid structure)."""
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    options = DiarizationOptions()
 
-    # Respuesta sin la clave "segments" — estructura inválida
+    # Response missing the "segments" key — invalid structure
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
     mock_response.json.return_value = {"num_speakers": 2}
 
     with patch(
-        "app.diarizacion.proveedor_local.httpx.AsyncClient"
+        "app.diarization.local_provider.httpx.AsyncClient"
     ) as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -182,25 +182,25 @@ async def test_ejemplo_respuesta_sin_segments_lanza_valueerror():
         mock_client_cls.return_value = mock_client
 
         with pytest.raises(ValueError, match="segments"):
-            await proveedor.diarizar("audio/test.webm", opciones)
+            await provider.diarize("audio/test.webm", options)
 
 
 @pytest.mark.asyncio
-async def test_ejemplo_segments_vacia_es_resultado_valido():
-    """Req 3.7: `segments: []` (lista vacía) es un resultado válido — no lanza error.
-    Esto distingue la ausencia de la clave (ValueError) del resultado sin hablantes.
+async def test_example_empty_segments_is_a_valid_result():
+    """Req 3.7: `segments: []` (empty list) is a valid result — doesn't raise.
+    This distinguishes a missing key (ValueError) from a result with no speakers.
     """
-    proveedor = ProveedorLocal(url="http://fake-diar-engine:8002")
-    opciones = OpcionesDiarizacion()
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    options = DiarizationOptions()
 
-    # segments: [] es una respuesta válida (sin hablantes detectados)
+    # segments: [] is a valid response (no speakers detected)
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
     mock_response.json.return_value = {"segments": [], "num_speakers": 0}
 
     with patch(
-        "app.diarizacion.proveedor_local.httpx.AsyncClient"
+        "app.diarization.local_provider.httpx.AsyncClient"
     ) as mock_client_cls:
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -208,7 +208,7 @@ async def test_ejemplo_segments_vacia_es_resultado_valido():
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client_cls.return_value = mock_client
 
-        resultado = await proveedor.diarizar("audio/test.webm", opciones)
+        result = await provider.diarize("audio/test.webm", options)
 
-    # No lanza excepción y produce cero segmentos
-    assert resultado.segmentos == []
+    # Doesn't raise and produces zero segments
+    assert result.segments == []
