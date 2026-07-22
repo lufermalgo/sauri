@@ -78,7 +78,7 @@ async def test_property_6_a_meeting_has_at_most_one_recording(
 
     successes = 0
     for i in range(n_attempts):
-        recording = _create_recording(meeting_id, key=f"clave-{uuid.uuid4()}-{i}")
+        recording = _create_recording(meeting_id, key=f"key-{uuid.uuid4()}-{i}")
         try:
             async with db_session.begin_nested():
                 db_session.add(recording)

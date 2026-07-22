@@ -35,14 +35,14 @@ describe("SidePanelApp", () => {
     mockChrome(false);
     render(<SidePanelApp />);
     await waitFor(() => expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument());
-    expect(screen.queryByText("Mis Notas")).not.toBeInTheDocument();
+    expect(screen.queryByText("My Notes")).not.toBeInTheDocument();
   });
 
   it("renders Header + Controls + List with an active session (Req. 1.4)", async () => {
     mockChrome(true);
     render(<SidePanelApp />);
-    await waitFor(() => expect(screen.getByText("REC Notas")).toBeInTheDocument());
-    expect(screen.getByText("Mis Notas")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("REC Notes")).toBeInTheDocument());
+    expect(screen.getByText("My Notes")).toBeInTheDocument();
     expect(screen.getByText("Screen + audio")).toBeInTheDocument();
   });
 });

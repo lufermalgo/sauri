@@ -124,7 +124,7 @@ export function SidePanelApp() {
     if (sessionActive) loadNotes();
   }, [sessionActive, loadNotes]);
 
-  // Refreshes "Mis Notas" when a recording finishes (recording/stopping → idle),
+  // Refreshes "My Notes" when a recording finishes (recording/stopping → idle),
   // since the upload is processed in the background without the panel knowing otherwise.
   const previousStateRef = useRef<CaptureState>("idle");
   useEffect(() => {

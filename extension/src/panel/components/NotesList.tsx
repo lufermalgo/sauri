@@ -63,7 +63,7 @@ export function NotesList({
 
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: SPACING_TOKENS.space2, padding: SPACING_TOKENS.space4 }}>
-      <h2 style={{ fontSize: TYPOGRAPHY_TOKENS.textLg, margin: 0 }}>Mis Notas</h2>
+      <h2 style={{ fontSize: TYPOGRAPHY_TOKENS.textLg, margin: 0 }}>My Notes</h2>
 
       <input
         type="text"

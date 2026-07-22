@@ -14,11 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.auth.token import create_token
 from app.infra.models import Meeting
 
-USER_ID = "user-titulo-test"
+USER_ID = "user-title-test"
 
 
 def _auth_header() -> dict[str, str]:
-    token = create_token(USER_ID, "titulo@sauri.local", "Titulo Test", True)
+    token = create_token(USER_ID, "title@sauri.local", "Title Test", True)
     return {"Authorization": f"Bearer {token}"}
 
 

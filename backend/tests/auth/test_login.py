@@ -24,9 +24,9 @@ async def test_login_valid_credentials_issues_jwt(api_client: AsyncClient, api_s
         session.add(
             User(
                 id=str(uuid.uuid4()),
-                email="valido@summan.com",
-                name="Valido",
-                password_hash=hash_password("clave-correcta"),
+                email="valid@summan.com",
+                name="Valid",
+                password_hash=hash_password("correct-password"),
                 is_sales=True,
                 created_at=datetime.now(UTC),
             )
@@ -34,14 +34,14 @@ async def test_login_valid_credentials_issues_jwt(api_client: AsyncClient, api_s
 
     resp = await api_client.post(
         "/api/v1/auth/login",
-        json={"email": "valido@summan.com", "password": "clave-correcta"},
+        json={"email": "valid@summan.com", "password": "correct-password"},
     )
     assert resp.status_code == 200
     body = resp.json()
     assert body["token_type"] == "bearer"
     assert body["expires_in"] > 0
     payload = jwt.decode(body["access_token"], JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    assert payload["email"] == "valido@summan.com"
+    assert payload["email"] == "valid@summan.com"
     assert payload["is_sales"] is True
 
 
@@ -51,9 +51,9 @@ async def test_login_invalid_credentials_returns_401(api_client: AsyncClient, ap
         session.add(
             User(
                 id=str(uuid.uuid4()),
-                email="valido2@summan.com",
-                name="Valido2",
-                password_hash=hash_password("clave-correcta"),
+                email="valid2@summan.com",
+                name="Valid2",
+                password_hash=hash_password("correct-password"),
                 is_sales=True,
                 created_at=datetime.now(UTC),
             )
@@ -61,7 +61,7 @@ async def test_login_invalid_credentials_returns_401(api_client: AsyncClient, ap
 
     resp = await api_client.post(
         "/api/v1/auth/login",
-        json={"email": "valido2@summan.com", "password": "clave-incorrecta"},
+        json={"email": "valid2@summan.com", "password": "incorrect-password"},
     )
     assert resp.status_code == 401
 

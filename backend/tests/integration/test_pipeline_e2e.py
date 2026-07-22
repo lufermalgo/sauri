@@ -11,13 +11,27 @@ and persistence. Verifies that the local ASR adapter makes no external calls
 external (cloud) adapter is the one actually invoked when ASR_PROVIDER is
 configured that way.
 
-Automatically skipped if Postgres/MinIO/RabbitMQ aren't available on
-localhost (see docker-compose.yml: `docker compose up -d postgres minio rabbitmq`).
+Automatically skipped unless BOTH Postgres/MinIO/RabbitMQ are reachable on
+localhost AND SAURI_RUN_DESTRUCTIVE_INTEGRATION_TESTS=1 is set explicitly
+(see docker-compose.yml: `docker compose up -d postgres minio rabbitmq`).
+
+DESTRUCTIVE: the `_db_schema` fixture below runs `Base.metadata.drop_all()`
+in its teardown, against whatever `_DATABASE_URL` points at (by default the
+same Postgres instance/database `make up`'s dev stack uses). If you run this
+against a shared dev DB -- including by accident, e.g. `pytest` picking this
+file up while `make up` happens to be running for manual testing elsewhere
+-- **it wipes every table**, no confirmation, no backup. The
+SAURI_RUN_DESTRUCTIVE_INTEGRATION_TESTS gate exists specifically so a plain
+`pytest`/`pytest -q` run can never trigger this by coincidence: infra being
+reachable is no longer sufficient on its own, you must opt in explicitly.
+Prefer a dedicated Postgres/MinIO/RabbitMQ instance (not `make up`'s dev
+stack) when you do opt in.
 """
 
 from __future__ import annotations
 
 import contextlib
+import os
 import socket
 import threading
 import time
@@ -57,11 +71,17 @@ def _infra_available() -> bool:
     )
 
 
+def _explicitly_opted_in() -> bool:
+    return os.getenv("SAURI_RUN_DESTRUCTIVE_INTEGRATION_TESTS", "").lower() in ("1", "true", "yes")
+
+
 requires_infra = pytest.mark.skipif(
-    not _infra_available(),
+    not (_infra_available() and _explicitly_opted_in()),
     reason=(
-        "Requires Postgres/MinIO/RabbitMQ on localhost. "
-        "Start with: docker compose up -d postgres minio rabbitmq"
+        "Requires Postgres/MinIO/RabbitMQ on localhost AND explicit opt-in "
+        "(this test DROPS ALL TABLES on the DB it's pointed at). Start infra "
+        "with: docker compose up -d postgres minio rabbitmq -- then run with: "
+        "SAURI_RUN_DESTRUCTIVE_INTEGRATION_TESTS=1 pytest tests/integration/test_pipeline_e2e.py"
     ),
 )
 

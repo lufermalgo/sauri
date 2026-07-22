@@ -1,4 +1,4 @@
-"""Contract for PATCH/DELETE /api/v1/meetings/{id} — managing Mis_Notas (rename, delete).
+"""Contract for PATCH/DELETE /api/v1/meetings/{id} — managing My_Notes (rename, delete).
 
 Validates: note management (rename and delete) from the Side_Panel.
 """
@@ -23,12 +23,12 @@ from app.infra.models import (
     Transcript,
 )
 
-USER_ID = "user-gestion-notas"
+USER_ID = "user-note-management"
 OTHER_USER_ID = "other-user"
 
 
 def _auth_header(user_id: str = USER_ID) -> dict[str, str]:
-    token = create_token(user_id, "gestion@sauri.local", "Gestion Test", True)
+    token = create_token(user_id, "management@sauri.local", "Management Test", True)
     return {"Authorization": f"Bearer {token}"}
 
 
