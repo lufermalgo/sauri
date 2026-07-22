@@ -10,10 +10,18 @@ progressively add speaker diarization, notes/intelligence, CRM (ClickUp) integra
 searchable library, and commercial analytics. It's built module by module — see the roadmap
 table in [README.md](README.md).
 
-Domain code, comments, and docstrings are written in **Spanish** (e.g. `Reunion`, `estado_proceso`,
-`Motor_ASR`, `Proveedor_De_Transcripcion`) because this mirrors the ubiquitous language used with
-the business. Match this convention in backend/domain code; the AGENTS.md workflow doc and this
-file are in English.
+All code — domain included — is written in **English**, per the English_Codebase_Standard
+(`.spectra/specs/english-codebase-standard/`). Domain entities, tables, columns, state/event
+literals, API routes, and module names use their canonical English names (e.g. `Meeting`,
+`process_state`, `ASREngine`, `TranscriptionProvider`) rather than the original Spanish
+ubiquitous-language terms. The `design.md` for that spec (§ Componentes e Interfaces) holds the
+Domain_Term_Mapping — the single source of truth for these names; cite it rather than
+re-deriving a translation.
+
+One exception: `Transcript_Content` — the actual transcribed text, i.e. what was said in a
+meeting — stays in **Spanish**, since it reflects the spoken language of the business's
+meetings, not a naming choice. UI copy defaults to English unless a feature explicitly requires
+otherwise.
 
 ## Stack
 
@@ -50,7 +58,7 @@ pip install -e ".[dev]"
 pytest                              # full suite
 pytest tests/test_repository.py     # single file
 pytest tests/test_repository.py::test_name  # single test
-pytest tests/diarizacion            # a module's tests
+pytest tests/diarization            # a module's tests
 ruff check .                        # lint
 mypy .                               # typecheck (strict mode is on)
 ```
@@ -114,26 +122,26 @@ Key points from AGENTS.md worth internalizing:
 
 ### Backend module layout (`backend/app/`)
 
-Each domain module (`ingesta`, `reuniones`, `transcripcion`, `diarizacion`, `retencion`, `auth`)
+Each domain module (`ingestion`, `meetings`, `transcription`, `diarization`, `retention`, `auth`)
 follows the same internal shape: `router.py` (FastAPI endpoints) → `service.py` (orchestration)
 → `repository.py` (DB access) → `schemas.py` (Pydantic I/O models). Shared infra (DB engine,
 object store, message queue) lives in `app/infra/`.
 
-**Provider/factory pattern for external engines**: both `transcripcion` and `diarizacion` follow
+**Provider/factory pattern for external engines**: both `transcription` and `diarization` follow
 the same shape — a `factory.py` reads an env var (`ASR_PROVIDER`, analogous var for diarization)
-and returns either a `*_local` provider (calls the self-hosted engine container over HTTP) or a
-`*_nube` (cloud) provider, both implementing a common protocol (`MotorASR`, `MotorDiarizacion`).
-This lets `reuniones`/`service.py` stay provider-agnostic. Follow this pattern for any new
+and returns either a `local_provider` (calls the self-hosted engine container over HTTP) or a
+`cloud_provider`, both implementing a common protocol (`ASREngine`, `DiarizationEngine`).
+This lets `meetings`/`service.py` stay provider-agnostic. Follow this pattern for any new
 pluggable external engine rather than branching on config inline.
 
-**State machine**: `app/reuniones/state_machine.py` defines `aplicar_evento`, a pure function
-(no DB/IO) computing valid `Reunion` state transitions (`en_cola → uniendose → grabando →
-transcribiendo → completado/fallido`). Keep transition logic here pure and push side effects
-(persisting the new state, writing `EstadoHistorial`) into the service layer.
+**State machine**: `app/meetings/state_machine.py` defines `apply_event`, a pure function
+(no DB/IO) computing valid `Meeting` state transitions (`queued → joining → recording →
+transcribing → completed/failed`). Keep transition logic here pure and push side effects
+(persisting the new state, writing `StateHistory`) into the service layer.
 
 **Async workers**: background processing (transcription, diarization, retention) runs as
-separate worker processes (`app/worker.py`, `app/transcripcion/worker.py`,
-`app/diarizacion/worker.py`, `app/retencion/worker.py`) consuming from RabbitMQ
+separate worker processes (`app/worker.py`, `app/transcription/worker.py`,
+`app/diarization/worker.py`, `app/retention/worker.py`) consuming from RabbitMQ
 (`app/infra/queue.py` / `queue_rabbitmq.py`), not inline in request handlers.
 
 ### Extension layout (`extension/src/`)
@@ -154,4 +162,4 @@ behavior) — match this when adding tests in this package.
 Audio, video, and transcripts are personal data under Colombian law (Ley 1581 de 2012).
 Retention is enforced automatically per `RETENTION_DAYS` via the retention worker — see
 [SECURITY.md](SECURITY.md) before changing anything related to storage, retention, or access
-control (JWT auth, `es_comercial` claim, `RegistroDeAcceso` audit logging).
+control (JWT auth, `is_sales` claim, `AccessLog` audit logging).
