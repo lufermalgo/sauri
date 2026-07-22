@@ -1,25 +1,25 @@
-// Cálculo del Tiempo_De_Habla — Req. 10.1, 10.2
-import type { TurnoDeHablaDTO, AsignacionDeHablanteDTO, HablanteDTO, EntradaTiempoDeHabla } from "./types";
+// SpeakingTime calculation — Req. 10.1, 10.2
+import type { SpeechTurnDTO, SpeakerAssignmentDTO, SpeakerDTO, SpeakingTimeEntry } from "./types";
 
-/** Suma (fin_ms - inicio_ms) por Hablante; incluye hablantes con tiempo 0 (Req. 10.1, 10.2) */
-export function calcularTiempoDeHabla(
-  turnos: TurnoDeHablaDTO[],
-  asignaciones: AsignacionDeHablanteDTO[],
-  hablantes: HablanteDTO[]
-): EntradaTiempoDeHabla[] {
-  const turnosPorId = new Map(turnos.map((t) => [t.id, t]));
+/** Sums (end_ms - start_ms) per Speaker; includes speakers with time 0 (Req. 10.1, 10.2) */
+export function calculateSpeakingTime(
+  turns: SpeechTurnDTO[],
+  assignments: SpeakerAssignmentDTO[],
+  speakers: SpeakerDTO[]
+): SpeakingTimeEntry[] {
+  const turnsById = new Map(turns.map((t) => [t.id, t]));
 
-  return hablantes.map((hablante) => {
-    const turnoIds = asignaciones
-      .filter((a) => a.hablanteId === hablante.id)
-      .map((a) => a.turnoId);
+  return speakers.map((speaker) => {
+    const turnIds = assignments
+      .filter((a) => a.speakerId === speaker.id)
+      .map((a) => a.turnId);
 
-    const tiempoMs = turnoIds.reduce((acc, turnoId) => {
-      const turno = turnosPorId.get(turnoId);
-      if (!turno) return acc;
-      return acc + (turno.finMs - turno.inicioMs);
+    const timeMs = turnIds.reduce((acc, turnId) => {
+      const turn = turnsById.get(turnId);
+      if (!turn) return acc;
+      return acc + (turn.endMs - turn.startMs);
     }, 0);
 
-    return { hablante, tiempoMs };
+    return { speaker, timeMs };
   });
 }

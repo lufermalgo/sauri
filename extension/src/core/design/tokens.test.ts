@@ -1,23 +1,23 @@
 /**
- * Prueba por ejemplo: contraste del anillo de foco (RED)
+ * Example-based test: focus ring contrast (RED)
  * Validates: Requirement 12.4
  *
- * Verifica que los tokens de foco exportados por tokens.ts cumplen
- * una relación de contraste WCAG ≥ 3:1 y que PALETA_AVATAR es un array no vacío.
+ * Verifies that the focus tokens exported by tokens.ts meet a WCAG contrast
+ * ratio >= 3:1 and that AVATAR_PALETTE is a non-empty array.
  *
- * Esta prueba DEBE FALLAR (RED) porque tokens.ts aún no existe.
+ * This test MUST FAIL (RED) because tokens.ts doesn't exist yet.
  */
 
 import { describe, it, expect } from "vitest";
-import { FOCUS_RING_COLOR, SURFACE_COLOR, PALETA_AVATAR } from "./tokens";
+import { FOCUS_RING_COLOR, SURFACE_COLOR, AVATAR_PALETTE } from "./tokens";
 
 // ---------------------------------------------------------------------------
-// Helper: cálculo de luminancia relativa WCAG 2.x
+// Helper: WCAG 2.x relative luminance calculation
 // https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
 // ---------------------------------------------------------------------------
 
 /**
- * Convierte un canal de color sRGB (0–255) a su componente lineal.
+ * Converts an sRGB color channel (0-255) to its linear component.
  */
 function linearChannel(c8bit: number): number {
   const c = c8bit / 255;
@@ -25,8 +25,8 @@ function linearChannel(c8bit: number): number {
 }
 
 /**
- * Parsea un color hexadecimal (#RRGGBB o #RGB) y devuelve [r, g, b] en 0–255.
- * Lanza si el formato no es reconocido.
+ * Parses a hexadecimal color (#RRGGBB or #RGB) and returns [r, g, b] in 0-255.
+ * Throws if the format isn't recognized.
  */
 function parseHex(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
@@ -44,11 +44,11 @@ function parseHex(hex: string): [number, number, number] {
       parseInt(h.slice(4, 6), 16),
     ];
   }
-  throw new Error(`Color hexadecimal no reconocido: "${hex}"`);
+  throw new Error(`Unrecognized hexadecimal color: "${hex}"`);
 }
 
 /**
- * Calcula la luminancia relativa WCAG de un color hexadecimal.
+ * Calculates the WCAG relative luminance of a hexadecimal color.
  */
 function relativeLuminance(hex: string): number {
   const [r, g, b] = parseHex(hex);
@@ -60,8 +60,8 @@ function relativeLuminance(hex: string): number {
 }
 
 /**
- * Calcula la relación de contraste WCAG entre dos colores hexadecimales.
- * Siempre devuelve un valor >= 1.
+ * Calculates the WCAG contrast ratio between two hexadecimal colors.
+ * Always returns a value >= 1.
  */
 function contrastRatio(hex1: string, hex2: string): number {
   const l1 = relativeLuminance(hex1);
@@ -75,27 +75,27 @@ function contrastRatio(hex1: string, hex2: string): number {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("Sistema_De_Diseno – tokens de foco (Req. 12.4)", () => {
-  it("FOCUS_RING_COLOR está definido y es un color hexadecimal válido", () => {
+describe("Design_System – focus tokens (Req. 12.4)", () => {
+  it("FOCUS_RING_COLOR is defined and is a valid hexadecimal color", () => {
     expect(FOCUS_RING_COLOR).toBeDefined();
     expect(typeof FOCUS_RING_COLOR).toBe("string");
-    // Debe ser parseable como hex; parseHex lanza si no lo es
+    // Must be parseable as hex; parseHex throws if it isn't
     expect(() => parseHex(FOCUS_RING_COLOR)).not.toThrow();
   });
 
-  it("SURFACE_COLOR está definido y es un color hexadecimal válido", () => {
+  it("SURFACE_COLOR is defined and is a valid hexadecimal color", () => {
     expect(SURFACE_COLOR).toBeDefined();
     expect(typeof SURFACE_COLOR).toBe("string");
     expect(() => parseHex(SURFACE_COLOR)).not.toThrow();
   });
 
-  it("el contraste entre FOCUS_RING_COLOR y SURFACE_COLOR es >= 3:1 (Req. 12.4)", () => {
+  it("the contrast between FOCUS_RING_COLOR and SURFACE_COLOR is >= 3:1 (Req. 12.4)", () => {
     const ratio = contrastRatio(FOCUS_RING_COLOR, SURFACE_COLOR);
     expect(ratio).toBeGreaterThanOrEqual(3.0);
   });
 
-  it("PALETA_AVATAR es un array no vacío", () => {
-    expect(Array.isArray(PALETA_AVATAR)).toBe(true);
-    expect(PALETA_AVATAR.length).toBeGreaterThan(0);
+  it("AVATAR_PALETTE is a non-empty array", () => {
+    expect(Array.isArray(AVATAR_PALETTE)).toBe(true);
+    expect(AVATAR_PALETTE.length).toBeGreaterThan(0);
   });
 });

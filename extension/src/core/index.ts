@@ -1,13 +1,13 @@
-// Núcleo compartido: lógica pura, Cliente_De_API, Sistema_De_Diseno
-export * from "./tiempo";
-export * from "./hablantes";
-export * from "./notas";
-export * from "./orden";
-export * from "./intervenciones";
-export * from "./busqueda";
+// Shared core: pure logic, API client, design system
+export * from "./time";
+export * from "./speakers";
+export * from "./notes";
+export * from "./order";
+export * from "./interventions";
+export * from "./search";
 export * from "./speakerTime";
-export * from "./vista";
-export * from "./captura";
+export * from "./view";
+export * from "./capture";
 export * from "./detailUrl";
-export * from "./authBloqueo";
+export * from "./authLock";
 export * from "./design";

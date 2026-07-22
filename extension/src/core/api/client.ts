@@ -1,88 +1,88 @@
-// Cliente_De_API compartido (Side_Panel + Vista_De_Detalle) — Req. 13.1, 13.3,
+// Shared API client (Side Panel + Detail View) — Req. 13.1, 13.3,
 // 13.4, 13.5, 14.1, 14.4, 14.5
-import type { NotaDTO, TranscripcionDTO, DiarizacionDTO } from "../types";
+import type { NoteDTO, TranscriptDTO, DiarizationDTO } from "../types";
 
-export const BACKEND_URL_DEFECTO = "http://localhost:8000";
+export const DEFAULT_BACKEND_URL = "http://localhost:8000";
 const TIMEOUT_MS = 10_000;
-const CLAVE_SESION = "authToken";
+const SESSION_KEY = "authToken";
 
-export class ErrorSesionInvalida extends Error {
+export class InvalidSessionError extends Error {
   constructor() {
-    super("Sesión inválida o expirada");
-    this.name = "ErrorSesionInvalida";
+    super("Invalid or expired session");
+    this.name = "InvalidSessionError";
   }
 }
 
-export class ErrorTransporteNoSeguro extends Error {
+export class InsecureTransportError extends Error {
   constructor(url: string) {
-    super(`El backend debe usarse por HTTPS (o http://localhost en desarrollo): ${url}`);
-    this.name = "ErrorTransporteNoSeguro";
+    super(`The backend must be used over HTTPS (or http://localhost in development): ${url}`);
+    this.name = "InsecureTransportError";
   }
 }
 
-/** Recurso ausente (404) — distinto de un fallo real, para derivar Estado_De_Vista "vacio" (Req. 7.6, 8.8, 10.5) */
-export class ErrorNoEncontrado extends Error {
+/** Missing resource (404) — distinct from a real failure, to derive ViewState "empty" (Req. 7.6, 8.8, 10.5) */
+export class NotFoundError extends Error {
   constructor() {
-    super("Recurso no encontrado");
-    this.name = "ErrorNoEncontrado";
+    super("Resource not found");
+    this.name = "NotFoundError";
   }
 }
 
-/** Exige https:// salvo en http://localhost (desarrollo) — Req. 13.5 */
-function validarTransporte(backendUrl: string): void {
+/** Requires https:// except on http://localhost (development) — Req. 13.5 */
+function validateTransport(backendUrl: string): void {
   const url = new URL(backendUrl);
-  const esLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
   if (url.protocol === "https:") return;
-  if (url.protocol === "http:" && esLocalhost) return;
-  throw new ErrorTransporteNoSeguro(backendUrl);
+  if (url.protocol === "http:" && isLocalhost) return;
+  throw new InsecureTransportError(backendUrl);
 }
 
-async function leerSesion(): Promise<string | undefined> {
-  const result = await chrome.storage.sync.get(CLAVE_SESION);
-  return result[CLAVE_SESION] as string | undefined;
+async function readSession(): Promise<string | undefined> {
+  const result = await chrome.storage.sync.get(SESSION_KEY);
+  return result[SESSION_KEY] as string | undefined;
 }
 
-async function descartarSesion(): Promise<void> {
-  await chrome.storage.sync.remove(CLAVE_SESION);
+async function discardSession(): Promise<void> {
+  await chrome.storage.sync.remove(SESSION_KEY);
 }
 
-/** Almacena la Sesion_De_Usuario en chrome.storage (Req. 13.3) */
-export async function almacenarSesion(token: string): Promise<void> {
-  await chrome.storage.sync.set({ [CLAVE_SESION]: token });
+/** Stores the user session in chrome.storage (Req. 13.3) */
+export async function storeSession(token: string): Promise<void> {
+  await chrome.storage.sync.set({ [SESSION_KEY]: token });
 }
 
-async function solicitar<T>(backendUrl: string, ruta: string, init?: RequestInit): Promise<T> {
-  validarTransporte(backendUrl);
+async function request<T>(backendUrl: string, path: string, init?: RequestInit): Promise<T> {
+  validateTransport(backendUrl);
 
-  const sesion = await leerSesion();
+  const session = await readSession();
   const headers: Record<string, string> = {
     ...(init?.headers as Record<string, string> | undefined),
   };
-  if (sesion) {
-    headers["Authorization"] = `Bearer ${sesion}`;
+  if (session) {
+    headers["Authorization"] = `Bearer ${session}`;
   }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${backendUrl}${ruta}`, {
+    const response = await fetch(`${backendUrl}${path}`, {
       ...init,
       headers,
       signal: controller.signal,
     });
 
     if (response.status === 401) {
-      await descartarSesion();
-      throw new ErrorSesionInvalida();
+      await discardSession();
+      throw new InvalidSessionError();
     }
 
     if (response.status === 404) {
-      throw new ErrorNoEncontrado();
+      throw new NotFoundError();
     }
 
     if (!response.ok) {
-      throw new Error(`Solicitud fallida: ${response.status}`);
+      throw new Error(`Request failed: ${response.status}`);
     }
 
     return (await response.json()) as T;
@@ -91,139 +91,139 @@ async function solicitar<T>(backendUrl: string, ruta: string, init?: RequestInit
   }
 }
 
-/** GET /api/v1/reuniones/ — historial de Notas (Req. 4.1) */
-export async function listarReuniones(backendUrl: string = BACKEND_URL_DEFECTO): Promise<NotaDTO[]> {
-  const crudo = await solicitar<
+/** GET /api/v1/meetings/ — Note history (Req. 4.1) */
+export async function listMeetings(backendUrl: string = DEFAULT_BACKEND_URL): Promise<NoteDTO[]> {
+  const raw = await request<
     Array<{
-      reunion_id: string;
-      titulo: string | null;
-      estado_proceso: string;
-      creada_en: string | null;
+      meeting_id: string;
+      title: string | null;
+      process_state: string;
+      created_at: string | null;
     }>
-  >(backendUrl, "/api/v1/reuniones/");
+  >(backendUrl, "/api/v1/meetings/");
 
-  return crudo.map((r) => ({
-    reunionId: r.reunion_id,
-    titulo: r.titulo ?? null,
-    estadoProceso: r.estado_proceso,
-    creadaEn: r.creada_en,
+  return raw.map((r) => ({
+    meetingId: r.meeting_id,
+    title: r.title ?? null,
+    processState: r.process_state,
+    createdAt: r.created_at,
   }));
 }
 
-/** GET /api/v1/reuniones/{id} — estado de procesamiento (Vista_De_Detalle → polling mientras transcribe) */
-export async function obtenerReunion(
-  reunionId: string,
-  backendUrl: string = BACKEND_URL_DEFECTO
-): Promise<{ reunionId: string; estadoProceso: string }> {
-  const crudo = await solicitar<{ reunion_id: string; estado_proceso: string }>(
+/** GET /api/v1/meetings/{id} — processing state (Detail View → polling while transcribing) */
+export async function getMeeting(
+  meetingId: string,
+  backendUrl: string = DEFAULT_BACKEND_URL
+): Promise<{ meetingId: string; processState: string }> {
+  const raw = await request<{ meeting_id: string; process_state: string }>(
     backendUrl,
-    `/api/v1/reuniones/${reunionId}`
+    `/api/v1/meetings/${meetingId}`
   );
-  return { reunionId: crudo.reunion_id, estadoProceso: crudo.estado_proceso };
+  return { meetingId: raw.meeting_id, processState: raw.process_state };
 }
 
-/** GET /api/v1/reuniones/{id}/transcripcion (Req. 6.3) */
-export async function obtenerTranscripcion(
-  reunionId: string,
-  backendUrl: string = BACKEND_URL_DEFECTO
-): Promise<TranscripcionDTO> {
-  const crudo = await solicitar<{
-    transcripcion_id: string;
-    reunion_id: string;
-    segmentos: Array<{ id: string; texto: string; inicio_ms: number; fin_ms: number; orden: number }>;
-  }>(backendUrl, `/api/v1/reuniones/${reunionId}/transcripcion`);
+/** GET /api/v1/meetings/{id}/transcript (Req. 6.3) */
+export async function getTranscript(
+  meetingId: string,
+  backendUrl: string = DEFAULT_BACKEND_URL
+): Promise<TranscriptDTO> {
+  const raw = await request<{
+    transcript_id: string;
+    meeting_id: string;
+    segments: Array<{ id: string; text: string; start_ms: number; end_ms: number; sequence: number }>;
+  }>(backendUrl, `/api/v1/meetings/${meetingId}/transcript`);
 
   return {
-    transcripcionId: crudo.transcripcion_id,
-    reunionId: crudo.reunion_id,
-    segmentos: crudo.segmentos.map((s) => ({
+    transcriptId: raw.transcript_id,
+    meetingId: raw.meeting_id,
+    segments: raw.segments.map((s) => ({
       id: s.id,
-      texto: s.texto,
-      inicioMs: s.inicio_ms,
-      finMs: s.fin_ms,
-      orden: s.orden,
+      text: s.text,
+      startMs: s.start_ms,
+      endMs: s.end_ms,
+      sequence: s.sequence,
     })),
   };
 }
 
-/** GET /api/v1/reuniones/{id}/diarizacion (Req. 6.3, endpoint nuevo) */
-export async function obtenerDiarizacion(
-  reunionId: string,
-  backendUrl: string = BACKEND_URL_DEFECTO
-): Promise<DiarizacionDTO> {
-  const crudo = await solicitar<{
-    diarizacion_id: string;
-    reunion_id: string;
-    estado_diarizacion: string;
-    num_hablantes: number;
-    hablantes: Array<{ id: string; etiqueta: string; orden: number }>;
-    asignaciones: Array<{ turno_id: string; hablante_id: string }>;
-  }>(backendUrl, `/api/v1/reuniones/${reunionId}/diarizacion`);
+/** GET /api/v1/meetings/{id}/diarization (Req. 6.3) */
+export async function getDiarization(
+  meetingId: string,
+  backendUrl: string = DEFAULT_BACKEND_URL
+): Promise<DiarizationDTO> {
+  const raw = await request<{
+    diarization_id: string;
+    meeting_id: string;
+    diarization_state: string;
+    speaker_count: number;
+    speakers: Array<{ id: string; label: string; sequence: number }>;
+    assignments: Array<{ turn_id: string; speaker_id: string }>;
+  }>(backendUrl, `/api/v1/meetings/${meetingId}/diarization`);
 
   return {
-    diarizacionId: crudo.diarizacion_id,
-    reunionId: crudo.reunion_id,
-    estadoDiarizacion: crudo.estado_diarizacion,
-    numHablantes: crudo.num_hablantes,
-    hablantes: crudo.hablantes,
-    asignaciones: crudo.asignaciones.map((a) => ({
-      turnoId: a.turno_id,
-      hablanteId: a.hablante_id,
+    diarizationId: raw.diarization_id,
+    meetingId: raw.meeting_id,
+    diarizationState: raw.diarization_state,
+    speakerCount: raw.speaker_count,
+    speakers: raw.speakers,
+    assignments: raw.assignments.map((a) => ({
+      turnId: a.turn_id,
+      speakerId: a.speaker_id,
     })),
   };
 }
 
-/** PATCH /api/v1/reuniones/{id} — renombra una nota (Mis_Notas → renombrar) */
-export async function renombrarReunion(
-  reunionId: string,
-  nuevoTitulo: string,
-  backendUrl: string = BACKEND_URL_DEFECTO
+/** PATCH /api/v1/meetings/{id} — renames a note (My Notes → rename) */
+export async function renameMeeting(
+  meetingId: string,
+  newTitle: string,
+  backendUrl: string = DEFAULT_BACKEND_URL
 ): Promise<void> {
-  await solicitar<{ reunion_id: string; titulo: string }>(
+  await request<{ meeting_id: string; title: string }>(
     backendUrl,
-    `/api/v1/reuniones/${reunionId}`,
+    `/api/v1/meetings/${meetingId}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ titulo: nuevoTitulo }),
+      body: JSON.stringify({ title: newTitle }),
     }
   );
 }
 
-/** DELETE /api/v1/reuniones/{id} — elimina una nota (Mis_Notas → eliminar) */
-export async function eliminarReunion(
-  reunionId: string,
-  backendUrl: string = BACKEND_URL_DEFECTO
+/** DELETE /api/v1/meetings/{id} — deletes a note (My Notes → delete) */
+export async function deleteMeeting(
+  meetingId: string,
+  backendUrl: string = DEFAULT_BACKEND_URL
 ): Promise<void> {
-  validarTransporte(backendUrl);
+  validateTransport(backendUrl);
 
-  const sesion = await leerSesion();
+  const session = await readSession();
   const headers: Record<string, string> = {};
-  if (sesion) {
-    headers["Authorization"] = `Bearer ${sesion}`;
+  if (session) {
+    headers["Authorization"] = `Bearer ${session}`;
   }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    // Respuesta 204 sin cuerpo — no reutiliza solicitar<T>() porque esa
-    // función siempre intenta parsear JSON de la respuesta.
-    const response = await fetch(`${backendUrl}/api/v1/reuniones/${reunionId}`, {
+    // 204 response with no body — doesn't reuse request<T>() because that
+    // function always tries to parse the response as JSON.
+    const response = await fetch(`${backendUrl}/api/v1/meetings/${meetingId}`, {
       method: "DELETE",
       headers,
       signal: controller.signal,
     });
 
     if (response.status === 401) {
-      await descartarSesion();
-      throw new ErrorSesionInvalida();
+      await discardSession();
+      throw new InvalidSessionError();
     }
     if (response.status === 404) {
-      throw new ErrorNoEncontrado();
+      throw new NotFoundError();
     }
     if (!response.ok) {
-      throw new Error(`Solicitud fallida: ${response.status}`);
+      throw new Error(`Request failed: ${response.status}`);
     }
   } finally {
     clearTimeout(timeoutId);
@@ -234,9 +234,9 @@ export async function eliminarReunion(
 export async function login(
   email: string,
   password: string,
-  backendUrl: string = BACKEND_URL_DEFECTO
+  backendUrl: string = DEFAULT_BACKEND_URL
 ): Promise<{ accessToken: string; expiresIn: number }> {
-  validarTransporte(backendUrl);
+  validateTransport(backendUrl);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
@@ -249,11 +249,11 @@ export async function login(
     });
 
     if (!response.ok) {
-      throw new Error("Credenciales inválidas");
+      throw new Error("Invalid credentials");
     }
 
     const body = (await response.json()) as { access_token: string; expires_in: number };
-    await almacenarSesion(body.access_token);
+    await storeSession(body.access_token);
     return { accessToken: body.access_token, expiresIn: body.expires_in };
   } finally {
     clearTimeout(timeoutId);
