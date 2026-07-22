@@ -22,7 +22,7 @@ import socket
 import threading
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import pytest
@@ -75,7 +75,7 @@ class _FakeASRServer:
         self._app = FastAPI()
 
         @self._app.post("/transcribe")
-        async def transcribe(request: Request) -> dict:  # type: ignore[unused-ignore]
+        async def transcribe(request: Request) -> dict[str, Any]:
             self.requests_received += 1
             await request.json()
             return {
@@ -158,7 +158,7 @@ def _bucket_created() -> None:
 
 
 @pytest.fixture(autouse=True)
-async def _db_schema() -> None:
+async def _db_schema() -> AsyncIterator[None]:
     from app.infra.database import Base
 
     engine = create_async_engine(_DATABASE_URL)
@@ -238,10 +238,10 @@ async def test_authenticated_idempotent_multipart_upload_and_transcription(
     engine = create_engine()
     session_factory = create_session_factory(engine)
     async with session_factory() as session:
-        result = await session.execute(
+        recordings_result = await session.execute(
             select(SessionRecording).where(SessionRecording.meeting_id == meeting_id)
         )
-        recordings = result.scalars().all()
+        recordings = recordings_result.scalars().all()
         assert len(recordings) == 1
 
     # Process the transcription job (worker) against the local adapter.
@@ -253,10 +253,10 @@ async def test_authenticated_idempotent_multipart_upload_and_transcription(
     assert fake_asr_server.requests_received == 1
 
     async with session_factory() as session:
-        result = await session.execute(
+        transcript_result = await session.execute(
             select(Transcript).where(Transcript.meeting_id == meeting_id)
         )
-        transcript = result.scalar_one()
+        transcript = transcript_result.scalar_one()
         assert transcript.language == "es-CO"
         assert transcript.provider == "local"
 
