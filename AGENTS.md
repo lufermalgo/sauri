@@ -254,6 +254,12 @@ name in the same checkout still stomp on each other's index and working tree. So
 each spec/issue gets **its own git worktree**, not just its own branch, as a
 sibling directory of the repo (`../sauri-worktrees/<branch-name>`):
 
+**Owner-authorized exception (only for Sauri issues #85 and #86 together):**
+tasks 1.1 and 1.2 may share the existing `feature/issue-85-factory-fail-closed-red`
+branch/worktree and be delivered in one PR to `main`, with the PR and task tracking
+explicitly preserving traceability to both issues and both task IDs. This exception
+does not change the one-issue/one-branch/one-worktree rule for any other work.
+
 ```bash
 # 1. Create an isolated worktree + branch, fresh off origin/main
 _tools/new-worktree.sh feature/issue-{id}-{desc}
