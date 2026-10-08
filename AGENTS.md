@@ -15,10 +15,12 @@ These rules govern how agents must behave before, during, and after any task.
 * **Runtime**: Codex CLI is the only execution runtime for Sauri agents. Launch work through
   APX with `runtime=codex`; do not switch to Claude Code, a direct APX engine, or another provider.
   Use the Codex/APX-native skills and worktree tools where available.
-* **Subagents**: use for exploration, research, or parallel independent work. Never for
-  single-file edits. Instructions must be self-contained and scoped. Pass only relevant
-  excerpts, never full files. Validate result; retry once with a sharper prompt if wrong;
-  handle inline if it fails twice.
+* **Specialist agents**: do not delegate trivial isolated edits merely to change one file.
+  Required role-specific Spectra phases and independent reviews are valid exceptions even
+  when their deliverable is a single artifact. Give each agent a scoped brief and validate it.
+* **Parallelism**: after a task plan is approved, dispatch independent dependency-ready tasks
+  concurrently in separate worktrees; serialize only real dependencies or shared-resource
+  conflicts. A blocked task must not stall unrelated ready work.
 
 ### Engineering Rigor
 
@@ -36,7 +38,7 @@ These rules govern how agents must behave before, during, and after any task.
 
 ## 2. Project Execution Model
 
-Features are built from specs, not from ad-hoc prompts. The workflow is:
+Features are built from specs, not from ad-hoc prompts. For the product reset, the user and Cyrus establish the approved target in `PRODUCT_BASELINE.md`; until that exists, legacy roadmaps and architecture are historical only. The workflow for approved product work is:
 
 ```text
 Idea → Spec (requirements + design + tasks) → Implementation → PR → main
@@ -66,6 +68,21 @@ status). Each spec folder contains:
 | `requirements.md` (feature) or `bugfix.md` (bugfix) | What the feature must do, or the bug's current/expected/unchanged behavior |
 | `design.md`                    | How it will be built — architecture, data flow, key decisions        |
 | `tasks.md`                     | Ordered implementation tasks with status tracking                    |
+| `product-acceptance.md`        | Cyrus's evidence-based acceptance for the exact tested version         |
+
+### Product baseline and acceptance
+
+* The user and Cyrus establish the approved product baseline in `PRODUCT_BASELINE.md` before
+  new product requirements are authored. Until then, previous roadmaps, README product claims,
+  specs, and technical architecture describe history/current code only—not approved target scope.
+* For each user-visible feature, approved `requirements.md` contains the observable product
+  acceptance criteria. After technical QA, Cyrus evaluates the exact candidate version against
+  those frozen criteria and records scenarios, representative-user evidence, limitations, and
+  one result (`PRODUCT_ACCEPTED`, `PRODUCT_NOT_ACCEPTED`, or `INSUFFICIENT_USER_EVIDENCE`) in
+  `product-acceptance.md` in the same spec folder.
+* QA passing is technical evidence, not product acceptance. Do not call a user-visible feature
+  or its milestone complete until Cyrus records `PRODUCT_ACCEPTED` for that exact version.
+  Infrastructure-only work may mark product acceptance `N/A` with a rationale.
 
 #### How to create a spec with Spectra
 
@@ -73,7 +90,8 @@ status). Each spec folder contains:
    `.spectra/specs/[slug]/requirements.md` or `bugfix.md` + `.config.spectra`.
 2. `/spectra-design` — reads the pending spec, writes `design.md`.
 3. `/spectra-tasks` — reads the approved design, writes `tasks.md`.
-4. Work through `tasks.md` in order — one task = one atomic unit of work.
+4. Work through the approved dependency graph in `tasks.md` — one task = one atomic unit of work.
+   Independent ready tasks may run concurrently in separate worktrees; serialize only real dependencies or shared-resource conflicts.
 
 ### Spec discipline rules
 
@@ -118,7 +136,7 @@ Every behavior change follows strict TDD. No exceptions:
 * Never say "done" without confirming acceptance criteria pass.
 * If tests can't run automatically, document exactly what to verify manually.
 * Bug reports: diagnose root cause before touching code. Never patch symptoms.
-* Test failure limit: 3 failed attempts → document the blocker in the task → surface to the human in plain language.
+* Test failure limit: 3 failed attempts → document the blocker in that task and report it plainly; do not pause unrelated dependency-ready work. Ask the human only if the next step needs their decision or action.
 * If the project has no test framework yet, state that clearly and recommend the smallest useful future test strategy. Do not invent a test framework unless explicitly asked.
 * **No mocks in production code.** The application must be 100% real functionality. Mocks, stubs, and fakes are ONLY acceptable inside test files (`tests/`) to simulate external I/O (HTTP responses, message brokers, databases) when the real infrastructure is not available during test execution. Production code (`app/`, services, workers) must never contain mock objects, conditional test paths, or fake implementations. Every implementation must be the real, deployable version.
 * Behavior changes require test consideration. Behavior changes include:
@@ -398,7 +416,7 @@ These rules apply once the project has a repository, a default branch, and a PR 
 
 ## 13. Spec → GitHub Traceability Workflow
 
-Each module of the product roadmap maps 1:1 to a **Spectra spec** and a **GitHub milestone**:
+Each approved product module maps 1:1 to a **Spectra spec** and a **GitHub milestone**. Do not revive legacy roadmap modules or milestones unless the approved `PRODUCT_BASELINE.md` adopts them:
 
 ```text
 Spectra Spec (.spectra/specs/{slug}/)  ←→  GitHub Milestone
@@ -415,6 +433,11 @@ Spectra Spec (.spectra/specs/{slug}/)  ←→  GitHub Milestone
 4. **Track:** The milestone progress in GitHub reflects the spec progress. When all required issues in a milestone are closed, the milestone is closed.
 5. **Bugs:** Bugs discovered during execution are filed as issues with label `bug`, assigned to the relevant milestone.
 
+After the tasks plan is approved, Ansel schedules its dependency graph: launch ready, independent
+tasks concurrently up to APX/runtime capacity, each in its own worktree. Start tasks serially only
+when an explicit dependency or shared-resource constraint requires it. A blocked task does not stop
+unrelated ready tasks.
+
 ### Mapping rules
 
 | Spectra artifact             | GitHub artifact                              |
@@ -427,8 +450,8 @@ Spectra Spec (.spectra/specs/{slug}/)  ←→  GitHub Milestone
 
 ### When to create issues
 
-* **From milestone 2 onward:** every atomic task in tasks.md gets a GitHub issue at spec creation time (before implementation starts).
-* **Milestone 1 (retroactive):** only bugs and pending items were filed as issues. Completed tasks are tracked in tasks.md only.
+* For milestones created from the approved baseline, every atomic task in `tasks.md` gets a GitHub issue before implementation starts.
+* The former “milestone 1 retroactive” convention is historical and does not govern new baseline work.
 
 ### TDD execution order (NON-NEGOTIABLE)
 
@@ -455,5 +478,7 @@ A milestone is **closed** when:
 * The spec's tasks.md reflects all tasks as completed.
 * No open `bug` issues block the module's acceptance criteria.
 * All property tests pass with the configured minimum examples (≥100).
+* For user-visible product work, Cyrus records `PRODUCT_ACCEPTED` in the spec's
+  `product-acceptance.md` for the exact candidate version; technical QA alone is insufficient.
 
 ---

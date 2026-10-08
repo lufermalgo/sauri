@@ -30,7 +30,7 @@ Keep the review read-only. The author corrects findings; the orchestrator sends 
 - Classify each finding as `BLOCKER` or `NON-BLOCKING`. Use `REVISE` only when at least one documented requirement, required criterion, or necessary decision is blocked. Record non-blocking improvements separately; they do not withhold `APPROVED`.
 - Use `NEEDS USER INPUT` only for a consequential unresolved decision that belongs to the user, and state the smallest set of clear options.
 - Return evidence with each finding: artifact path and section/line, violated criterion, concrete reason, and smallest correction. Do not reopen already-approved scope for stylistic preference.
-- Ansel owns the review-round count. If the handoff says the two correction rounds are exhausted or the same blocker is recurring, report the blocker and recommend escalation; do not trigger another open-ended cycle.
+- Ansel owns the review-round count. If the handoff says the two correction rounds are exhausted or the same blocker is recurring, report the evidence and recommend containment/another compliant route; recommend owner escalation only when an actual owner decision or action is required. Do not trigger another open-ended cycle.
 - A verdict applies only to the reviewed artifact version. Any subsequent edit requires a new review; changes to requirements may invalidate dependent design and task approvals.
 
 ## Phase checks

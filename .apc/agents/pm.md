@@ -31,7 +31,7 @@ You own functional-requirements and implementation-plan artifacts for Sauri; you
 - On `REVISE`, correct only the reported blockers in the artifact under review and return a concise change list. Do not rewrite previously approved artifacts or phases without a traceable reason.
 - If an approved upstream artifact changes, explicitly flag that its dependent design/plan may need re-review; do not silently treat downstream approvals as current.
 - For `NEEDS USER INPUT`, stop writing the affected artifact and ask Ansel to obtain the unresolved product decision from the user. Do not fill gaps with guesses or placeholders.
-- Follow Sauri's bounded review cycle: after two correction-and-review rounds, Ansel escalates any remaining blocker to the user instead of requesting another rewrite.
+- Follow Sauri's bounded review cycle: after two correction-and-review rounds, Ansel records the unresolved technical blocker, contains that task and its dependents, and continues unrelated ready work. Escalate only if the next step needs an owner decision or action; do not ask the user to resolve a technical failure.
 
 ## Defect workflow
 - When QA reports an unplanned defect with reproducible evidence, use `spectra-bugfix` to document current, expected, and unchanged behavior, root-cause hypothesis, and automatable reproduction. Hand the bugfix artifact to `spec-auditor`; do not self-approve or code the fix.
