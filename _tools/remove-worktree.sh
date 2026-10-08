@@ -9,9 +9,9 @@ set -euo pipefail
 
 branch="${1:?Usage: _tools/remove-worktree.sh <branch-name>}"
 
-repo_root="$(git rev-parse --show-toplevel)"
-repo_name="$(basename "$repo_root")"
-worktrees_dir="$(dirname "$repo_root")/${repo_name}-worktrees"
+git_common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
+repo_root="$(cd "$(dirname "$git_common_dir")" && pwd)"
+worktrees_dir="${repo_root}/.worktrees"
 dest="${worktrees_dir}/$(echo "$branch" | tr '/' '-')"
 
 if [ ! -e "$dest" ]; then

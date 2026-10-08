@@ -15,7 +15,7 @@ if [ "$branch" = "main" ]; then
 fi
 
 # Language_Regression_Check — blocks staged Spanish identifiers.
-# Part of the english-codebase-standard spec (.spectra/specs/english-codebase-standard/).
+# Enforces the English-only naming convention documented in AGENTS.md.
 repo_root="$(git rev-parse --show-toplevel)"
 
 if ! python3 "$repo_root/_tools/check_english_only.py" --staged; then

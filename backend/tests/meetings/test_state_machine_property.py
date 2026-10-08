@@ -4,8 +4,8 @@
 # Feature: meeting-capture-transcription, Property 4: Every transition to "failed" records a valid cause
 Tasks: 5.2, 5.3
 
-Also covers design.md's Propiedad 2 (english-codebase-standard spec): renaming
-the state/event literals must not change any transition outcome. Since the
+Also verifies that renaming the state/event literals does not change any
+transition outcome. Since the
 old Spanish-literal function no longer exists to compare against, this is
 verified by preserving the exact same assertions against the new English
 literals -- an equivalence-preserving rename, not a behavior change.

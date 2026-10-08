@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 
+# APX-visible isolated worktrees kept inside the registered project root
+.worktrees/
+
 # Build outputs
 extension/dist/
 frontend/dist/

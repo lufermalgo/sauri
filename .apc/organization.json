@@ -1,0 +1,78 @@
+{
+  "areas": [
+    {
+      "slug": "direction",
+      "name": "Direction",
+      "goal": null
+    },
+    {
+      "slug": "engineering",
+      "name": "Engineering",
+      "goal": null
+    },
+    {
+      "slug": "product",
+      "name": "Product",
+      "goal": null
+    },
+    {
+      "slug": "quality",
+      "name": "Quality",
+      "goal": null
+    },
+    {
+      "slug": "growth",
+      "name": "Growth",
+      "goal": null
+    },
+    {
+      "slug": "finance",
+      "name": "Finance",
+      "goal": null
+    }
+  ],
+  "roles": [
+    {
+      "slug": "orchestrator",
+      "name": "Lead Orchestrator",
+      "area": "direction",
+      "description": "Autonomous pipeline orchestrator that coordinates all specialist agents from initial research through deployment."
+    },
+    {
+      "slug": "pm",
+      "name": "Project Manager",
+      "area": "product",
+      "description": "Senior project manager that converts requirements and research into actionable, implementable development task lists. No scope creep, no fantasy specs, just clear tasks."
+    },
+    {
+      "slug": "developer",
+      "name": "Senior Developer",
+      "area": "engineering",
+      "description": "Senior full-stack developer implementing multi-tenant SaaS applications task by task. Writes code in English and follows the project's UI language convention."
+    },
+    {
+      "slug": "architect",
+      "name": "Software Architect",
+      "area": "engineering",
+      "description": "Software architect for multi-tenant SaaS systems. Designs scalable, maintainable architectures with clear trade-off documentation."
+    },
+    {
+      "slug": "qa-engineer",
+      "name": "QA Engineer",
+      "area": "quality",
+      "description": "Skeptical QA specialist for multi-tenant SaaS apps. Validates every task implementation, catches bugs, never self-certifies. Requires proof before approving."
+    },
+    {
+      "slug": "security",
+      "name": "Security Engineer",
+      "area": "engineering",
+      "description": "Security specialist for a multi-tenant SaaS platform. Audits tenant isolation (IDOR), webhook signature verification, CSRF, security headers, and auth flows. Fixes what can be fixed in-session, documents the rest. Use proactively before deploys or after adding new webhooks or billing flows."
+    },
+    {
+      "slug": "product-owner",
+      "name": "Product Owner",
+      "area": "product",
+      "description": "Owns product intent and evidence-based acceptance; decides product acceptance for a tested version using predeclared user-test criteria, without approving privacy, security, specs, or release readiness."
+    }
+  ]
+}

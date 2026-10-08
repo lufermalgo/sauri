@@ -16,7 +16,7 @@ every run of the suite.
 
 Note: the table/column names asserted here reflect the current
 backend/app/infra/models.py, renamed to English by migration
-007_rename_schema_to_english (english-codebase-standard spec) -- this test
+007_rename_schema_to_english -- this test
 uses the in-memory SQLite engine built from the current ORM state
 (async_engine fixture), not a live run of the Alembic chain (see
 tests/test_migration.py for why).
