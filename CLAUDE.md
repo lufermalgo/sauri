@@ -10,8 +10,8 @@ progressively add speaker diarization, notes/intelligence, CRM (ClickUp) integra
 searchable library, and commercial analytics. It's built module by module — see the roadmap
 table in [README.md](README.md).
 
-All code — domain included — is written in **English**, per the English_Codebase_Standard
-(`.spectra/specs/english-codebase-standard/`). Domain entities, tables, columns, state/event
+All code — domain included — is written in **English**, per the project rules in
+[AGENTS.md](AGENTS.md). Domain entities, tables, columns, state/event
 literals, API routes, and module names use their canonical English names (e.g. `Meeting`,
 `process_state`, `ASREngine`, `TranscriptionProvider`) rather than the original Spanish
 ubiquitous-language terms. The `design.md` for that spec (§ Componentes e Interfaces) holds the
@@ -89,16 +89,18 @@ API at `http://localhost:8000`.
 ### Spec-driven development (Spectra)
 
 Features are not built ad hoc. This project started in the Kiro IDE (specs under
-`.kiro/specs/`); now that Claude Code is the primary driver, specs live under
-`.spectra/specs/{slug}/` instead, authored via the `spectra-*` Claude Code skills
-(`/spectra-req` or `/spectra-bugfix` → `/spectra-design` → `/spectra-tasks`). Each spec
-folder has `requirements.md` (feature) or `bugfix.md` (bug) → `design.md` → `tasks.md`,
-tracked by a `.config.spectra`. All pre-existing Kiro specs were migrated in one pass —
-`.kiro/specs/` no longer exists; `.kiro/hooks/` (Kiro IDE automation) remains but is unused
-by Claude Code. Small bugfixes, docs, and config changes may skip a full spec but still
-need scoped validation. Full workflow, branch naming, commit format, and PR rules are
-documented in [AGENTS.md](AGENTS.md) — read it before doing git/PR work in this repo,
-since it's more detailed than the summary below.
+`.kiro/specs/`); specs now live under `.spectra/specs/{slug}/`. The commands
+(`/spectra-req` or `/spectra-bugfix` → `/spectra-design` → `/spectra-tasks`) are
+provided by Agent Skills from the canonical personal library managed by Skill-manager
+and exposed via Skill-manager in the native host locations `.agents/skills/`,
+`.claude/skills/`, and `.kiro/skills/`. `.spectra/` is reserved for specs; skills are
+not stored there. Each spec folder has `requirements.md` (feature) or `bugfix.md` (bug)
+→ `design.md` → `tasks.md`, tracked by a `.config.spectra`. All pre-existing Kiro specs
+were migrated in one pass — `.kiro/specs/` no longer exists; `.kiro/hooks/` (Kiro IDE
+automation) remains but is unused by Claude Code. Small bugfixes, docs, and config
+changes may skip a full spec but still need scoped validation. Full workflow, branch
+naming, commit format, and PR rules are documented in [AGENTS.md](AGENTS.md) — read it
+before doing git/PR work in this repo, since it's more detailed than the summary below.
 
 Key points from AGENTS.md worth internalizing:
 - **TDD is non-negotiable**: red (failing test) → green (minimal implementation) → refactor,
@@ -106,7 +108,8 @@ Key points from AGENTS.md worth internalizing:
   passes — static analysis doesn't count.
 - **No mocks in production code.** Mocks/stubs are only for test files simulating external I/O.
 - **Never work directly on `main`, and give each spec/issue its own git worktree**
-  (`_tools/new-worktree.sh feature/issue-{id}-{desc}`), not just its own branch — this repo is
+  inside the registered project root at `.worktrees/`, created with
+  `_tools/new-worktree.sh feature/issue-{id}-{desc}`, not just its own branch — this repo is
   routinely worked on by multiple concurrent sessions, and a shared checkout means they stomp
   on each other's index. This is enforced locally via `.githooks/` (`core.hooksPath`, auto-wired
   by `npm install`'s `prepare` script) and a Claude Code `PreToolUse` hook in

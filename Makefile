@@ -22,7 +22,7 @@ worktree-rm:
 	_tools/remove-worktree.sh $(BRANCH)
 
 ## Escanear todo el repo en busca de identificadores en español (Language_Regression_Check).
-## Ver .spectra/specs/english-codebase-standard/
+## Ver AGENTS.md para las reglas de idioma del código.
 check-english:
 	python3 _tools/check_english_only.py $$(git ls-files 'backend/**' 'extension/src/**' 'frontend/src/**' 'packages/shared-types/**')
 

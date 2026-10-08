@@ -22,7 +22,7 @@ if echo "$cmd" | grep -qE '(^|[;&|]|\s)git\s+push\b.*(--delete|\s-d\s)'; then
 fi
 
 # Respect a leading `cd <dir> &&`/`;` so a worktree command (e.g.
-# `cd ../sauri-worktrees/feature-x && git commit ...`) is checked against
+# `cd .worktrees/feature-x && git commit ...`) is checked against
 # that directory's branch, not this hook process's own cwd.
 dir="."
 leading_cd="$(echo "$cmd" | grep -oE '^[[:space:]]*cd[[:space:]]+[^;&]+' | head -1)"

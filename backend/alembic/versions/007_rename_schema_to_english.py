@@ -1,12 +1,8 @@
-"""Rename Spanish schema to English (english-codebase-standard spec).
+"""Rename Spanish schema to English while preserving existing data.
 
-Renames every table/column/stored-literal from Spanish to English per
-.spectra/specs/english-codebase-standard/design.md > Componentes e
-Interfaces > "1. Esquema de base de datos". Uses op.rename_table /
-op.alter_column exclusively (never drop_table/create_table) so existing
-row data is preserved — see design.md > Decisiones de Diseño Clave >
-"Una sola migración Alembic para todo el esquema" and "op.rename_table /
-op.alter_column, nunca drop_table + create_table".
+Renames every table, column, and stored literal from Spanish to English.
+Uses op.rename_table and op.alter_column exclusively (never drop_table or
+create_table) so existing row data is preserved.
 
 Revision ID: 007_rename_schema_to_english
 Revises: 006_add_titulo_reunion

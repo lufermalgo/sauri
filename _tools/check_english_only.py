@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Language_Regression_Check — flags Spanish identifiers in new/modified code.
 
-Part of the english-codebase-standard spec
-(.spectra/specs/english-codebase-standard/design.md > Decisiones de Diseño
-Clave > "Language_Regression_Check como un único script...").
+Enforces the English-only naming convention documented in AGENTS.md.
 
 Usage:
     check_english_only.py <path> [<path> ...]

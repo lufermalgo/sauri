@@ -1,7 +1,6 @@
 """Tests for the Language_Regression_Check tool (_tools/check_english_only.py).
 
-See .spectra/specs/english-codebase-standard/design.md > Propiedades de
-Correctitud > Propiedad 5, and tasks.md > Fase 1 > Tarea 1.1/1.2.
+These tests verify the English-only identifier policy documented in AGENTS.md.
 """
 
 from __future__ import annotations

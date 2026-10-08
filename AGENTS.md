@@ -44,13 +44,15 @@ Idea → Spec (requirements + design + tasks) → Implementation → PR → main
 ### Spec-Driven Development (SDD) with Spectra
 
 This project started in the Kiro IDE, whose spec methodology lived under
-`.kiro/specs/[module-name]/`. Now that Claude Code is the primary driver, specs
-live under **`.spectra/specs/[slug]/`** instead, authored via the `spectra-*`
-Claude Code skills (`.spectra/skills/`, invoked as `/spectra-req`,
-`/spectra-design`, `/spectra-tasks`, `/spectra-bugfix`). All pre-existing specs
-were migrated from `.kiro/specs/` to `.spectra/specs/` in one pass — `.kiro/specs/`
-no longer exists. `.kiro/hooks/` (Kiro IDE automation) is untouched and unrelated
-to this workflow; it simply isn't used by Claude Code.
+`.kiro/specs/[module-name]/`. Specs now live under **`.spectra/specs/[slug]/`**.
+The `/spectra-req`, `/spectra-design`, `/spectra-tasks`, and `/spectra-bugfix`
+commands are provided by Agent Skills from the canonical personal library managed by
+Skill-manager and exposed in each
+host's native location: `.agents/skills/`, `.claude/skills/`, and `.kiro/skills/`.
+`.spectra/` is reserved for specs; do not store or manage Agent Skills there.
+All pre-existing specs were migrated from `.kiro/specs/` to `.spectra/specs/`
+in one pass — `.kiro/specs/` no longer exists. `.kiro/hooks/` (Kiro IDE
+automation) is untouched and unrelated to the spec workflow.
 
 #### Spec location
 
@@ -251,19 +253,14 @@ protection on top; don't remove the local hooks, since they also cover worktrees
 Multiple sessions (Claude Code or otherwise) may work on this repo concurrently.
 Branch isolation alone isn't enough for that — two sessions on the same branch
 name in the same checkout still stomp on each other's index and working tree. So
-each spec/issue gets **its own git worktree**, not just its own branch, as a
-sibling directory of the repo (`../sauri-worktrees/<branch-name>`):
-
-**Owner-authorized exception (only for Sauri issues #85 and #86 together):**
-tasks 1.1 and 1.2 may share the existing `feature/issue-85-factory-fail-closed-red`
-branch/worktree and be delivered in one PR to `main`, with the PR and task tracking
-explicitly preserving traceability to both issues and both task IDs. This exception
-does not change the one-issue/one-branch/one-worktree rule for any other work.
+each spec/issue gets **its own git worktree**, not just its own branch, inside
+the registered project root at `.worktrees/<branch-name>`. This lets APX inspect
+the active worktree without widening access to sibling projects:
 
 ```bash
 # 1. Create an isolated worktree + branch, fresh off origin/main
 _tools/new-worktree.sh feature/issue-{id}-{desc}
-cd ../sauri-worktrees/feature-issue-{id}-{desc}   # path is printed by the script
+cd .worktrees/feature-issue-{id}-{desc}   # path is printed by the script
 
 # 2. Implement, then commit
 git add <specific files>
@@ -336,8 +333,8 @@ Types:
 
 | Directory         | Purpose                                        | Rule                                                         |
 | ----------------- | ----------------------------------------------- | ------------------------------------------------------------ |
-| `.spectra/specs/` | Feature/bugfix specs: requirements, design, tasks | Created via `/spectra-req`, `/spectra-design`, `/spectra-tasks`, `/spectra-bugfix` |
-| `.spectra/skills/` | Spectra skill definitions (SKILL.md + references) | Not project content — don't hand-edit unless changing the methodology itself |
+| `.spectra/` | Feature/bugfix specs: requirements, design, tasks | Reserved for `.spectra/specs/`; create specs via `/spectra-req`, `/spectra-design`, `/spectra-tasks`, `/spectra-bugfix` |
+| `.agents/skills/`, `.claude/skills/`, `.kiro/skills/` | Agent Skills exposed from the canonical library | Manage bindings with Skill-manager; do not copy skills into `.spectra/` |
 | `.kiro/hooks/`    | Legacy Kiro IDE automation hooks                | Historical; unused by Claude Code, kept as-is                |
 | `_tools/`         | Optional session state and tooling notes        | Use only when persistent session state is explicitly enabled |
 

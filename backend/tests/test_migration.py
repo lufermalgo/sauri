@@ -1,4 +1,4 @@
-"""Tests for the Schema_Rename_Migration (Fase 2 of english-codebase-standard).
+"""Tests for the schema rename migration.
 
 Adaptation note: the project's existing migrations (001, 003, 005) use
 Postgres-native `UUID` columns and raw `::uuid` casts, so the Alembic chain
@@ -17,8 +17,8 @@ long-running instance other sessions may depend on). Data-preservation
      other test in this suite uses) exposes the new English table/column
      names and no longer exposes the old Spanish ones.
 
-See .spectra/specs/english-codebase-standard/design.md > Propiedades de
-Correctitud > Propiedad 1, and tasks.md > Fase 2.
+These checks preserve migrated data and verify the current ORM schema without
+running a destructive migration against the shared development database.
 """
 
 from __future__ import annotations
