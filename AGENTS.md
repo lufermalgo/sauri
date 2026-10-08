@@ -12,8 +12,9 @@ These rules govern how agents must behave before, during, and after any task.
 * **Surgical reads**: only the file being edited, only the relevant lines. No project-wide scans.
 * **Focused diffs**: touch only what the task requires. Zero side edits.
 * **Lazy loading**: pull context just-in-time, never preemptively.
-* **Platform capabilities**: use Claude Code's native tools — skills, hooks, worktrees — never
-  do manually what the platform can do automatically.
+* **Runtime**: Codex CLI is the only execution runtime for Sauri agents. Launch work through
+  APX with `runtime=codex`; do not switch to Claude Code, a direct APX engine, or another provider.
+  Use the Codex/APX-native skills and worktree tools where available.
 * **Subagents**: use for exploration, research, or parallel independent work. Never for
   single-file edits. Instructions must be self-contained and scoped. Pass only relevant
   excerpts, never full files. Validate result; retry once with a sharper prompt if wrong;
@@ -181,6 +182,16 @@ file, which is now deprecated when Kiro is the sole agent on this project.
   * The task requires loading 3+ large files simultaneously
 
 ---
+
+### Canonical Handoff
+
+* The `handoff` skill is the only workflow for creating or updating session handoff state.
+* At session start, read `<registered-project-root>/handoff.md` if it exists and resume from
+  `7 · Siguiente paso`; do not repeat items recorded under `6 · Qué ha fallado`.
+* Before ending or restarting a session, invoke the `handoff` skill from the registered Sauri
+  project root and update only `<registered-project-root>/handoff.md` using its seven fields.
+* Sauri has exactly one canonical handoff. Never create a `handoff.md` inside a worktree,
+  agent folder, or subproject; if an old duplicate is found, do not treat it as authoritative.
 
 ## 5. Validation & Quality Gates
 
