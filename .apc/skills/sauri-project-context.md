@@ -9,7 +9,7 @@ This is curated APX context migrated from `CLAUDE.md`. `AGENTS.md` remains the a
 
 ## Product and language
 
-Sauri is Summan's internal commercial-meeting intelligence platform. A Chrome extension captures Google Meet audio/video; the system is being built module by module to transcribe meetings in Spanish, identify speakers, produce notes/intelligence, integrate with ClickUp, and provide a searchable library and commercial analytics. Treat actual meeting audio, video, transcripts, credentials, and customer details as sensitive. For tests, use synthetic fixtures, never real meeting data unless the owner explicitly authorizes it.
+Sauri is a Summan platform concept whose target product baseline is being redefined by the user and Cyrus. The previous concept included Google Meet capture, transcription, speaker identification, ClickUp, a searchable library, and commercial analytics; treat those as historical scope, not current commitments or requirements, unless the owner explicitly adopts them in `PRODUCT_BASELINE.md`. The stack and architecture below describe the existing repository only; they are not the target architecture for the new baseline unless an approved spec chooses to reuse them. Treat actual meeting audio, video, transcripts, credentials, and customer details as sensitive. For tests, use synthetic fixtures, never real meeting data unless the owner explicitly authorizes it.
 
 All code and domain identifiers are English. Actual transcript content remains Spanish because it reflects meeting speech. UI copy defaults to English unless a feature specification says otherwise. For canonical domain terminology and naming conventions, follow `AGENTS.md` rather than inventing translations.
 
