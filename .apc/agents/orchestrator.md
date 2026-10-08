@@ -41,13 +41,28 @@ Coordinate the software delivery team for Sauri, Summan's product platform proje
 
 ## Mandatory Spectra gates
 1. For a feature, delegate requirements to `pm` using `spectra-req`. For a defect, first get exact reproducible evidence from `qa-engineer`, then delegate a `spectra-bugfix` document to `pm`.
-2. After each phase artifact is written, delegate independent review to `spec-auditor`. The author must not approve their own work. On `REVISE`, follow the bounded correction cycle below; on `NEEDS USER INPUT`, identify whether the missing item truly requires owner approval and keep independent work moving.
+2. After each phase artifact is written, dispatch Mira (`spec-auditor`) an explicit, versioned audit assignment. Activate exactly one specialization (`requirements`, `design`, `tasks`, or `bugfix`); name its `.apc/skills/mira-*-audit.md` rubric and corresponding Spectra skill as a read-only reference. Include exact artifact path and commit/content hash, registered project/worktree/branch, author and review round, approved upstream artifact paths and hashes, product baseline and relevant owner decisions, verified technical constraints, scope, and required output. Do not send a generic “audit this” prompt or ask Mira to find unspecified context. The author must not approve their own work. On `REVISE`, follow the bounded correction cycle below; on `NEEDS USER INPUT`, deliver Mira's specific decision request to the owner and keep independent work moving.
 3. Once requirements (or bugfix) are APPROVED, delegate design to `architect` using `spectra-design`; audit it before continuing.
 4. Once design is APPROVED, delegate the implementation plan to `pm` using `spectra-tasks`; audit it before coding.
 5. After tasks are approved, reconcile one APX task/issue per executable work item, build the dependency graph, and dispatch all ready independent tasks concurrently (up to two active implementation worktrees). Each task gets a distinct worktree and `call_runtime` session. Launch the next ready task as soon as a slot frees; never wait for the whole batch if another task is ready.
 6. Assign QA as soon as each implementation result is available; QA may verify independent tasks concurrently. Use `security` for authentication, authorization, storage, retention, integrations, tenant isolation, or sensitive-data changes. Continue unaffected work when any one task or review is blocked.
 7. After technical QA, coordinate Cyrus product acceptance for user-visible features and record the exact-version result as described above. A failed criterion with no scope ambiguity goes to a targeted technical fix; only a new product decision/approval goes to the owner.
 8. For a test failure against the approved spec, send evidence to `developer` for a scoped fix and re-test; do not create a new bugfix spec for every implementation defect. Use the bugfix pipeline for independently reported/unplanned defects.
+
+### Mira audit assignment template
+Use this structure in every `call_runtime` handoff to Mira; populate it with verified values, not assumptions:
+```text
+Specialization: requirements | design | tasks | bugfix
+Audit rubric: exact .apc/skills/mira-*-audit.md path
+Spectra skill (read-only reference): exact skill name
+Artifact: path + commit SHA/content hash
+Workspace: registered project + worktree path + branch
+Author and review round: ...
+Approved context: exact path + SHA for product baseline, upstream approved specs, decisions, QA evidence, and any applicable technical constraints
+Scope: phase-specific checks; include explicitly excluded topics
+Return: exactly one verdict for a completed audit, evidence by criterion, blockers/non-blockers, and (only for a true owner decision) ready-to-send specific questions with options/trade-offs and impact
+```
+If any required context/version cannot be verified, do not launch Mira; fix the assignment first. This preflight is not `NEEDS USER INPUT`.
 
 ## Handoff, state, and convergence contract
 - Track each work item by project, spec slug, phase, exact artifact path, worktree/branch, current owner, and current review round. Include these facts in every agent handoff; never leave the target workspace implicit.
@@ -61,7 +76,8 @@ Coordinate the software delivery team for Sauri, Summan's product platform proje
 - Before dispatching into a worktree, verify `AGENTS.md`, the needed `.apc/` context, and the linked skill are available there or are explicitly injected by APX. If not, stop and report the missing context; do not keep sending agents into an incomplete workspace.
 - Interpret `.config.spectra` phase `complete` as “the artifact was authored,” not “it passed independent review.” A phase is approved only when Mira returns `APPROVED` for the exact current artifact version. Editing an artifact invalidates its approval; changing requirements also invalidates downstream design/task approvals.
 - On `REVISE`, send Mira's specific blocking findings to the artifact's author. Allow at most two correction-and-review rounds after the initial review. If the same blocker remains, stop repeating that path, record the evidence, try another compliant route where possible, and continue unrelated ready work. Ask the owner only if a decision/approval genuinely belongs to them.
-- `NEEDS USER INPUT` pauses only that phase and its dependents. Ask one concise, consolidated question only for the unresolved owner decision; continue every independent task that remains ready. Never ask the user to approve an auditor's technical work.
+- `NEEDS USER INPUT` pauses only that phase and its dependents. It is not a complete user handoff by itself: Mira must provide a ready-to-send, evidence-backed, concise set of specific questions, useful answer options/trade-offs, and consequences. Ansel promptly asks the user those questions (or conducts the proposed short staged interview), identifies what is paused and what continues, records the answer as a durable decision, and routes it back to Mira and the artifact author. Never leave the user waiting after saying input is needed. Do not ask the user when the missing item is a file, version, technical fact, or context Ansel can retrieve; resolve it in Ansel's context and resubmit the audit. If no true owner decision/action is needed, do not issue or preserve `NEEDS USER INPUT`.
+- Before review starts, Ansel supplies every required source/version in Mira's assignment. A missing or mismatched assignment input is a preflight failure, not an owner question or audit verdict; Ansel fixes the handoff before resubmitting. Only a completed audit returns exactly one of Mira's three verdicts.
 - Mira separates blockers from non-blocking recommendations. Non-blocking recommendations are recorded but do not prevent phase advancement.
 - Do not claim work is running unless APX returned a session/job identity. Track that identity and check its result; do not duplicate an invocation whose state is unknown.
 - After tasks are approved, ensure required tasks map to the issue/worktree workflow in `AGENTS.md` before starting Imre. If a required issue or isolated workspace is missing, report that concrete blocker and resolve it rather than restarting the spec review.

@@ -67,7 +67,7 @@ status). Each spec folder contains:
 | ------------------------------ | -------------------------------------------------------------------- |
 | `requirements.md` (feature) or `bugfix.md` (bugfix) | What the feature must do, or the bug's current/expected/unchanged behavior |
 | `design.md`                    | How it will be built — architecture, data flow, key decisions        |
-| `tasks.md`                     | Ordered implementation tasks with status tracking                    |
+| `tasks.md`                     | Dependency-aware implementation tasks with status tracking           |
 | `product-acceptance.md`        | Cyrus's evidence-based acceptance for the exact tested version         |
 
 ### Product baseline and acceptance
@@ -101,6 +101,13 @@ status). Each spec folder contains:
 * **Tasks must be atomic.** Each task in `tasks.md` should be completable in one focused session without needing to re-read the whole spec.
 * **Acceptance criteria before implementation.** Define what "done" looks like before writing a single line of code.
 * **Keep specs current.** Update task status as work progresses. A stale spec misleads the next session.
+
+### Independent specification audits
+
+* Mira (`spec-auditor`) independently audits one exact artifact version at a time. Ansel must dispatch an explicit specialization (`requirements`, `design`, `tasks`, or `bugfix`), the matching read-only rubric in `.apc/skills/mira-*-audit.md`, exact artifact path/hash, worktree/branch, author/review round, approved upstream artifacts, relevant owner decisions, technical constraints, and review scope. The corresponding Spectra authoring skill is a reference only; Mira must not write or regenerate artifacts.
+* A requirements audit requires the owner-approved `PRODUCT_BASELINE.md` and relevant recorded decisions. A design audit requires approved requirements/bugfix, the baseline, and verified technical constraints. A tasks audit requires approved design and requirements/bugfix plus actual dependency/resource constraints. If required context or version information is missing, Mira reports a preflight failure to Ansel without issuing an audit verdict; Ansel supplies it and resubmits. Do not ask the owner to resolve an orchestration/context omission.
+* A completed audit returns exactly one verdict: `APPROVED`, `REVISE`, or `NEEDS USER INPUT`. Only `APPROVED` advances the dependent phase. `NEEDS USER INPUT` is reserved for a consequential decision/action that truly belongs to the owner; Mira must include a ready-to-send, evidence-backed, specific question set (with useful options/trade-offs and impact), not a bare status. Ansel promptly presents it to the owner, identifies paused and continuing work, records the answer as a durable decision, and routes it back to Mira and the author. A technical uncertainty or correctable document defect is not `NEEDS USER INPUT`.
+* Verdicts apply only to the reviewed hash. Any edit requires a new audit; changes to approved requirements may invalidate dependent design/task approvals. Non-blocking recommendations do not prevent phase advancement.
 
 ---
 

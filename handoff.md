@@ -1,9 +1,9 @@
 # handoff.md
 
-1 · Objetivo        Mantener coherente el workflow de agentes Sauri y la transición de definición de producto hacia ingeniería.
-2 · Estado actual   PR #142 fue fusionado e issue #141 está cerrado. `main` local estaba sincronizado con `origin/main` en `419fea4` antes de esta actualización. `PRODUCT_BASELINE.md` aún no existe.
-3 · Archivos        `.apc/agents/pm.md` (clarifica orden por dependencias y paralelismo); `handoff.md` (este estado).
-4 · Qué ha cambiado Zoya debe producir un `tasks.md` test-first con dependencias explícitas; el orden refleja prerrequisitos, no serialización obligatoria. El handoff ya indica el estado posterior al merge de Cyrus/Zoya.
-5 · Qué he intentado Contrasté Zoya con `AGENTS.md`, Cyrus y Ansel; confirmé que la única ambigüedad restante era la palabra `ordered` en la planificación de tareas.
-6 · Qué ha fallado No se ejecutaron pruebas de aplicación ni evals conductuales; este cambio es documental y su alcance es eliminar una ambigüedad.
-7 · Siguiente paso   El usuario iniciará con Cyrus la definición y aprobación de `PRODUCT_BASELINE.md`. Luego Zoya traducirá el baseline aprobado a requisitos de ingeniería; no crear specs de producto antes de esa aprobación.
+1 · Objetivo        Definir a Mira como auditora independiente con especialidad activada por etapa y una ruta explícita para pedir decisiones humanas.
+2 · Estado actual   El issue #145 está creado; cambios de documentación en `feature/issue-145-mira-audit-specializations`, con checks documentales aprobados y listos para commit/PR. `PRODUCT_BASELINE.md` aún no existe, por lo que no deben auditarse ni producirse nuevos requisitos de producto todavía.
+3 · Archivos        `AGENTS.md`; `.apc/agents/spec-auditor.md`; `.apc/agents/orchestrator.md`; `.apc/skills/mira-requirements-audit.md`; `.apc/skills/mira-design-audit.md`; `.apc/skills/mira-tasks-audit.md`; `.apc/skills/mira-bugfix-audit.md`; `handoff.md`.
+4 · Qué ha cambiado Mira recibe una modalidad explícita por auditoría; requiere identidad/versiones de artefacto y fuentes aprobadas; la falta de contexto se devuelve a Ansel como preflight, no se escala al usuario. Si sí requiere decisión humana, debe preparar preguntas concretas, opciones e impacto; Ansel debe presentarlas, registrar la respuesta y reanudar. Los Skills Spectra de autoría se usan solo como referencia de lectura.
+5 · Qué he intentado Leí los contratos de Mira, Ansel y Zoya, `AGENTS.md`, el contexto APC y las instrucciones `wiki-maintainer`/`handoff`; validé referencias de rúbricas y ejecuté `git diff --check` más una comprobación de frontmatter con `python3`.
+6 · Qué ha fallado No se ejecutaron pruebas de aplicación: el cambio es documental. El shell no tiene `python`; la comprobación equivalente con `python3` pasó. No se revisó la conducta real de Mira en un runtime.
+7 · Siguiente paso   Abrir PR para el issue #145 y esperar revisión; no confundir las rúbricas APC con Skills runtime independientes. En paralelo, continuar la definición de producto con Cyrus y aprobar `PRODUCT_BASELINE.md` antes de iniciar requisitos de producto.
