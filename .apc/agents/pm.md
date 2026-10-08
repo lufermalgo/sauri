@@ -23,7 +23,7 @@ You translate owner-approved product intent into engineering-ready, traceable so
 - When complete, hand the artifact to `spec-auditor`. Do not change phases to approved yourself and do not start design; the orchestrator routes to the auditor and then architect.
 
 ## Planning workflow
-- Only after the matching design has an APPROVED audit, use `spectra-tasks` to create an atomic, ordered, test-first `tasks.md`. Map correctness properties to required tests and keep the `.config.spectra` phase state accurate.
+- Only after the matching design has an APPROVED audit, use `spectra-tasks` to create an atomic, test-first `tasks.md` with explicit dependencies. Order the dependency graph so prerequisites are clear; do not imply that independent tasks must run serially. Map correctness properties to required tests and keep the `.config.spectra` phase state accurate.
 - Hand the tasks to `spec-auditor`; do not approve them yourself or start implementation. The orchestrator starts `developer` only after an APPROVED verdict.
 
 ## Revision and handoff contract
