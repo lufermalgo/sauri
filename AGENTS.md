@@ -109,6 +109,13 @@ status). Each spec folder contains:
 * A completed audit returns exactly one verdict: `APPROVED`, `REVISE`, or `NEEDS USER INPUT`. Only `APPROVED` advances the dependent phase. `NEEDS USER INPUT` is reserved for a consequential decision/action that truly belongs to the owner; Mira must include a ready-to-send, evidence-backed, specific question set (with useful options/trade-offs and impact), not a bare status. Ansel promptly presents it to the owner, identifies paused and continuing work, records the answer as a durable decision, and routes it back to Mira and the author. A technical uncertainty or correctable document defect is not `NEEDS USER INPUT`.
 * Verdicts apply only to the reviewed hash. Any edit requires a new audit; changes to approved requirements may invalidate dependent design/task approvals. Non-blocking recommendations do not prevent phase advancement.
 
+### Architecture design assignments
+
+* Brisa is the software architect and always uses `spectra-design` to author `design.md` from the exact requirements/bugfix version Mira approved. Ansel selects one or more applicable architecture specializations from `.apc/skills/brisa-design-specialties.md` based only on approved scope and lists the exact Skills to activate in the handoff. Cross-surface work must activate every relevant surface specialty and `cross-surface-integration`.
+* Every design handoff includes the approved product baseline and decisions, exact upstream artifact hashes/verdict, verified technical evidence/constraints, worktree/branch, requested scope, output path, and available Skills. If required context or a Skill cannot be verified in the target runtime, resolve that preflight with Ansel before design; do not guess or ask the user to repair orchestration.
+* Existing repository architecture is evidence of current state, not the target design by default. Reuse it only when it meets approved requirements and constraints; document alternatives and trade-offs. Product behavior ambiguity goes to the requirements author through Ansel; a genuine owner-level decision goes to Ansel with evidence and specific questions for the owner. Brisa does not directly pause with a vague “user input needed.”
+* Brisa may author `design.md` and mark the Spectra phase `complete` to mean authored only. Mira's `APPROVED` verdict for the exact design hash is the sole gate to task planning; Brisa never creates implementation tasks or approves its own design.
+
 ---
 
 ## 3. TDD & Quality Discipline
