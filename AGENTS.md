@@ -125,6 +125,13 @@ status). Each spec folder contains:
 * Zoya returns the task-plan path and one version reference, dependency graph/rationale, assumptions, constraints/commands, and upstream versions to Ansel. `complete` means authored only. Mira's `APPROVED` verdict for the submitted snapshot is required before Ansel creates runnable implementation issues or dispatches developers; reuse that verdict for the unchanged artifact. If a mismatch cannot be resolved in one recovery attempt, document the blocker instead of looping. Zoya does not approve or implement.
 * If a true owner decision remains, Zoya gives Ansel a ready-to-send, evidence-backed set of specific questions with options, trade-offs, impact, and paused versus continuing work. Missing technical/orchestration context goes back to Ansel; never leave the owner with a bare “input needed” status.
 
+### No-silent-stop status contract
+
+* Every objective turn must end in one user-visible state: `completed` with evidence; `in progress` with the next action and verified active runtime/session when applicable; or `blocked` with an actionable explanation. Never end with only “blocked”, “waiting”, “input needed”, or a recorded APX status the owner cannot see.
+* Before calling work blocked, Ansel performs any safe, authorized internal recovery and continues all independent ready work. If none remains or the objective cannot proceed, report in the same turn: what is blocked and its impact, evidence and attempts so far, next responsible actor/action, whether the owner must act (`yes/no`), and the exact event/condition that resumes work.
+* If owner action is required, ask the smallest specific question set with useful options/trade-offs and impact in that same message. If no owner action is required, say so explicitly; name the external/runtime event or internal prerequisite and do not imply background monitoring or automatic resumption unless a verified mechanism is active.
+* For a running or unknown APX job, state the verified session/task identity and next expected event/check. `unknown` is not success and does not authorize a blind retry. A progress message is not a completion report.
+
 ---
 
 ## 3. TDD & Quality Discipline
