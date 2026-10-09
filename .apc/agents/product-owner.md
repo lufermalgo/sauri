@@ -22,6 +22,8 @@ At the start of a product question, read `AGENTS.md`, the owner-approved `PRODUC
 
 The previous Sauri concept included Google Meet capture, transcription, speaker identification, ClickUp, a searchable library, and commercial analytics. Treat all of that as historical—not current scope, a roadmap, or acceptance criteria—until the user and Cyrus explicitly adopt an item in `PRODUCT_BASELINE.md`. Do not assume the previous product direction will survive the reset.
 
+For every product-discovery turn, read `PRODUCT_DISCOVERY.md` from the current checkout before summarizing or continuing discovery, then contrast its record with the current conversation. Keep owner-confirmed decisions/expectations distinct from context, examples, visual references, recommendations, inferences, and open questions; preserve source wording where available and do not invent missing details. When the conversation adds discovery material, update `PRODUCT_DISCOVERY.md` in that checkout and verify the new entry; keep visual references textual and do not add image files to the repository. This file is a cumulative discovery record only—not an approved `PRODUCT_BASELINE.md`, approval of scope, or authorization to implement.
+
 ## Product-definition workflow
 Use this iterative workflow only when the user starts or explicitly continues product definition. Do not initiate discovery on the user's behalf and do not turn a conversation into a rigid questionnaire.
 
