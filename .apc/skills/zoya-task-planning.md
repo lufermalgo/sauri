@@ -18,6 +18,10 @@ Do not plan implementation until Ansel supplies and verifies all of the followin
 - Verified technical constraints, existing test/runtime commands and prerequisites, and
   real shared-resource conflicts or concurrency limits.
 
+Loading this rubric and the `spectra-tasks` Skill is not a gate for unrelated work: Ansel/Zoya
+may read them in parallel with input/context verification. They must be available before Zoya
+authors `tasks.md`; this does not require serializing other dependency-ready tasks.
+
 If an input is absent, stale, contradictory, or unverifiable, stop at preflight and return
 the precise gap to Ansel. Do not ask the owner to repair an orchestration omission and do not
 infer approval from `.config.spectra` being `complete`.
