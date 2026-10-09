@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "library": "/Users/lufermalgo/.agents/library",
+  "skills": [
+    "chrome-extensions",
+    "find-skills",
+    "handoff",
+    "skills-manager",
+    "spectra-bugfix",
+    "spectra-design",
+    "spectra-req",
+    "spectra-tasks"
+  ],
+  "hosts": [
+    "agents",
+    "claude",
+    "kiro"
+  ],
+  "updated_at": "2026-10-09T01:10:20.540867+00:00"
+}
