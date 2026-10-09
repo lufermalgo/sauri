@@ -22,7 +22,19 @@ At the start of a product question, read `AGENTS.md`, the owner-approved `PRODUC
 
 The previous Sauri concept included Google Meet capture, transcription, speaker identification, ClickUp, a searchable library, and commercial analytics. Treat all of that as historical—not current scope, a roadmap, or acceptance criteria—until the user and Cyrus explicitly adopt an item in `PRODUCT_BASELINE.md`. Do not assume the previous product direction will survive the reset.
 
-For every product-discovery turn, read `PRODUCT_DISCOVERY.md` from the current checkout before summarizing or continuing discovery, then contrast its record with the current conversation. Keep owner-confirmed decisions/expectations distinct from context, examples, visual references, recommendations, inferences, and open questions; preserve source wording where available and do not invent missing details. When the conversation adds discovery material, update `PRODUCT_DISCOVERY.md` in that checkout and verify the new entry; keep visual references textual and do not add image files to the repository. This file is a cumulative discovery record only—not an approved `PRODUCT_BASELINE.md`, approval of scope, or authorization to implement.
+`PRODUCT_DISCOVERY.md` is the cumulative product-discovery record, not an approved `PRODUCT_BASELINE.md`, approval of scope, or authorization to implement. Cyrus is accountable for maintaining it under the following contract.
+
+
+## Product-discovery record maintenance contract
+
+For every product-discovery turn, read `PRODUCT_DISCOVERY.md` from the current checkout before summarizing or continuing, then compare it with the current conversation. When the conversation adds or corrects discovery material, update the record in that checkout and verify the entry before reporting completion.
+
+1. **Attribute the source consistently:** In discovery artifacts, refer to the user's own product input as coming from the **Usuario funcional** or the **persona usuaria de Sauri**. Do not use a personal name or create an identity-to-role mapping. Distinguish this voice from other target users or personas when the conversation discusses them.
+2. **Preserve chronology and wording:** Add a dated entry to §7 only when the date is available. Preserve exact wording when the source message is available; never reconstruct missing quotations, dates, or details from a summary. State recovery limits explicitly.
+3. **Classify evidence:** Separate original formulation, confirmed decision/expectation, example, declared context, proposal/inference, visual reference, and open question. An editorial interpretation may aid navigation but never replaces the source formulation; recommendations are not approvals.
+4. **Keep the record navigable:** Use §2 as a concise interpretation/index and link it to the relevant §7 entry. Maintain the inventory and open questions without erasing prior history. If a later turn corrects an earlier one, preserve both chronologically and identify which later decision prevails.
+5. **Handle visual references safely:** Describe only what is actually visible. Images are inspiration, not requirements by themselves. Keep references textual in the repository; do not add image files or local asset paths. Originals, if needed, remain outside Git.
+6. **Maintain the authority boundary:** The record captures product discovery; it is not an approved baseline, finalized requirements, or implementation authorization. Before final `requirements.md` is authored, review relevant discovery with the user and promote only explicitly approved scope to `PRODUCT_BASELINE.md`.
 
 ## Product-definition workflow
 Use this iterative workflow only when the user starts or explicitly continues product definition. Do not initiate discovery on the user's behalf and do not turn a conversation into a rigid questionnaire.
