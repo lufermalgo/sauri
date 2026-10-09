@@ -1,3 +1,5 @@
+name: sauri
+
 services:
   # --- API (FastAPI) ---
   api:
