@@ -11,10 +11,10 @@ Do not plan implementation until Ansel supplies and verifies all of the followin
 
 - Spec slug, requested planning scope, and exact target worktree and branch.
 - Owner-approved `PRODUCT_BASELINE.md` and relevant durable decisions, when applicable.
-- Exact requirements or bugfix artifact path, content/commit hash, and Mira `APPROVED`
-  verdict for that version.
-- Exact matching design path, content/commit hash, and Mira `APPROVED` verdict for that
-  version.
+- Approved requirements or bugfix path and Mira `APPROVED` verdict; Ansel supplies its
+  already-recorded version reference (commit SHA, or one content digest if it is uncommitted).
+- Matching approved design path and Mira `APPROVED` verdict, with its already-recorded version
+  reference. These references identify the snapshots; they are not recurring validation tasks.
 - Verified technical constraints, existing test/runtime commands and prerequisites, and
   real shared-resource conflicts or concurrency limits.
 
@@ -22,9 +22,11 @@ Loading this rubric and the `spectra-tasks` Skill is not a gate for unrelated wo
 may read them in parallel with input/context verification. They must be available before Zoya
 authors `tasks.md`; this does not require serializing other dependency-ready tasks.
 
-If an input is absent, stale, contradictory, or unverifiable, stop at preflight and return
-the precise gap to Ansel. Do not ask the owner to repair an orchestration omission and do not
-infer approval from `.config.spectra` being `complete`.
+If an input is absent, contradictory, or unavailable, return the precise gap to Ansel once. Do
+not poll, recompute hashes, or relaunch the same audit while waiting. Ansel resolves the source
+snapshot once; if it cannot be recovered, record the concrete blocker, contain only dependent
+work, and continue unrelated ready work. Do not ask the owner to repair an orchestration omission
+or infer approval from `.config.spectra` being `complete`.
 
 ## Construct the plan
 
@@ -58,10 +60,14 @@ infer approval from `.config.spectra` being `complete`.
   input” or leave the user waiting without specific questions.
 - Write/update only `.spectra/specs/<slug>/tasks.md` and its `.config.spectra` task-phase state
   as authorized. `complete` means authored, not approved.
-- Return the exact path and content/commit hash, ordered task list, dependency graph and rationale,
-  validation prerequisites/commands, assumptions or unresolved questions, and upstream artifact
-  hashes/verdicts to Ansel. Ansel assigns Mira the exact version using
+- Return the artifact path and one version reference (commit SHA, or a single content digest for
+  an uncommitted artifact), ordered task list, dependency graph and rationale, validation
+  prerequisites/commands, assumptions or unresolved questions, and upstream version references/
+  verdicts to Ansel. Ansel passes this same snapshot reference to Mira using
   `.apc/skills/mira-tasks-audit.md` and the `spectra-tasks` Skill as read-only reference.
 - Do not self-approve, create/launch implementation tasks, or tell anyone to begin coding. Only
-  Mira `APPROVED` for the exact task-plan hash allows Ansel to reconcile implementation issues
-  and dispatch developers.
+  Mira `APPROVED` for the submitted task-plan snapshot allows Ansel to reconcile implementation
+  issues and dispatch developers. Record and reuse that verdict; do not re-hash or re-audit an
+  unchanged snapshot. If its contents actually change, send the changed artifact for one targeted
+  audit within the bounded review cycle. A version mismatch Ansel cannot resolve in one recovery
+  attempt is a documented blocker, not a reason to repeat the same validation loop.

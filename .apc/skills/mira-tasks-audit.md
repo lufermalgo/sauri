@@ -8,11 +8,18 @@ description: Read-only rubric for Mira to audit Sauri implementation plans for t
 Use this rubric only when Ansel explicitly assigns the `tasks` specialization. Audit execution readiness; do not author, reorder, or edit tasks.
 
 ## Required evidence
-- Exact `tasks.md` version under review.
+- `tasks.md` snapshot/reference supplied by Ansel. Record the reference once in the report so
+  the verdict can be associated with the submitted snapshot; do not require Ansel to repeatedly
+  recalculate or re-submit it.
 - APPROVED, exact-version design and requirements/bugfix artifacts.
 - Relevant repo/worktree/branch context and known resource constraints.
 
-If required evidence is absent or mismatched, stop before audit and report the missing context to Ansel. Do not treat issues/APX cards as substitutes for approved specs.
+If required evidence is absent or contradictory, report the specific preflight gap to Ansel once
+and do not issue an audit verdict. Ansel resolves the source once; if it cannot be recovered,
+document the blocker and stop this audit path rather than looping. Do not treat issues/APX cards as
+substitutes for approved specs. If the submitted artifact remains unchanged, its completed verdict
+stands; only an actual edit to that artifact warrants a targeted new audit under the bounded review
+cycle. Unrelated repository edits do not invalidate the verdict.
 
 ## Review questions
 1. Does each required design/requirements property map to one or more explicit tasks and acceptance checks?
