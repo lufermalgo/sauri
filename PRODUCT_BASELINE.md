@@ -1,6 +1,6 @@
 # Sauri Product Baseline
 
-> **Status: DRAFT — prepared from owner-confirmed discovery; this exact document still requires owner approval.** The user authorized preparing the final product definition, not silently approving every unresolved detail. This baseline is the product authority only for the explicitly confirmed intent and decisions below. Proposed, deferred, and open items are not implementation authorization.
+> **Status: APPROVED — the owner approved the product content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) on 2026-10-09.** This approval applies to that exact content. Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
 
 ## 1. Product purpose
 
@@ -60,7 +60,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 
 ## 5. Capability catalogue and scope state
 
-“Confirmed intent” means the capability is grounded in the user's discovery and belongs in this proposed baseline; it does **not** mean the user has approved this exact baseline version. Product acceptance and runtime delivery are separate later gates.
+“Confirmed intent” means the capability is grounded in the user's discovery and included in this approved baseline. It does not settle implementation details or the open boundaries in the Dependencies column. Product acceptance and runtime delivery remain separate later gates.
 
 | Capability | User / outcome | State in this baseline | Dependencies or boundary |
 | --- | --- | --- | --- |
@@ -132,4 +132,4 @@ Numerical targets, measurement windows, and representative-user acceptance evide
 
 This baseline was prepared from `PRODUCT_DISCOVERY.md`, especially §§1–6 and the latest chronological clarifications in §7 (2026-10-09). Later clarifications govern earlier descriptions where they differ: `Speaker N` for unknown/uncertain voices; hiding the indicator means no in-recording controls are required and capture ends by stopping Chrome tab sharing; notes are separate from the transcript and attached to the recording; speaker corrections apply across Sauri's future recognition; CRM and its AI agent remain outside current scope.
 
-The discovery record preserves examples, references, and distinctions in greater detail. It is not itself a baseline or implementation authorization. This document becomes the approved product baseline only after the owner explicitly approves this exact version. Until then, use the stated confirmed intent as the proposed product direction, retain all open/deferred boundaries, and do not treat this draft as approval to implement user-visible functionality.
+The owner approved the product content of this baseline as published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) on 2026-10-09. This status annotation records that approval; no product-scope content was changed after the approved version. The discovery record preserves examples, references, and distinctions in greater detail. Open and deferred decisions remain unresolved and outside the approved scope. Product acceptance and runtime delivery are separate gates.
