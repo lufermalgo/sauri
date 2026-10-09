@@ -165,6 +165,13 @@ status). Each spec folder contains:
 
 ### Product baseline and acceptance
 
+#### Product discovery before requirements
+
+* `PRODUCT_DISCOVERY.md` is the cumulative working record for product definition before the final requirements document. The user, as product owner, owns product intent and approval; Cyrus, in the product-owner role, is responsible for reading this record before every discovery turn and updating it with new expectations, corrections, decisions, evidence, inferences, proposals, and open questions.
+* Keep user-confirmed expectations and decisions distinct from context, examples, visual references, hypotheses, recommendations, and unanswered questions. Cyrus must not present an inference or proposal as user-approved scope.
+* Before authoring final `.spectra/specs/[slug]/requirements.md`, Cyrus and the user review the relevant discovery record and confirm the intended product scope. Only explicitly approved target scope is promoted into `PRODUCT_BASELINE.md`; unresolved items remain questions or are explicitly deferred. Requirements derive from that approved baseline and preserve traceability to the relevant discovery decisions.
+* `PRODUCT_DISCOVERY.md` is not itself a requirements document, an approved baseline, or authorization to implement. Do not start final feature requirements until the user-approved baseline exists.
+
 * The user and Cyrus establish the approved product baseline in `PRODUCT_BASELINE.md` before
   new product requirements are authored. Until then, previous roadmaps, README product claims,
   specs, and technical architecture describe history/current code only—not approved target scope.

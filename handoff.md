@@ -1,9 +1,0 @@
-# handoff.md
-
-1 · Objetivo        Hacer que Brisa diseñe a partir de requisitos aprobados con especialidad de arquitectura explícita por plataforma, y Skills verificados en cada activación.
-2 · Estado actual   Issue #147 y PR #148 abiertos. Cambios en `feature/issue-147-brisa-design-specialties`, commit `1f1b524`. La base del worktree es `63727c1` (PR #146 ya fusionado); a la espera de revisión/merge. `PRODUCT_BASELINE.md` sigue pendiente; no diseñar funcionalidades de producto hasta que baseline y requisitos estén aprobados.
-3 · Archivos        `.apc/agents/architect.md`; `.apc/agents/orchestrator.md`; `.apc/skills/brisa-design-specialties.md`; `AGENTS.md`; `handoff.md`.
-4 · Qué ha cambiado Brisa conserva `spectra-design` como Skill autoral obligatorio; Ansel debe seleccionar una o más especialidades derivadas de los requisitos aprobados y enumerar Skills exactos. Chrome extension activa `chrome-extensions`; los casos multicanal activan extensión, backend, web e integración en conjunto. Se prohíbe tratar arquitectura heredada como objetivo por defecto y pedir input directamente sin pasar por Ansel.
-5 · Qué he intentado Contrasté Brisa, Ansel, `AGENTS.md`, el contexto APC, la rúbrica de auditoría de diseño de Mira y los requisitos de `spectra-design`; verifiqué que `.agents/skills/` está visible en el worktree y corrí `git diff --check` y comprobaciones documentales.
-6 · Qué ha fallado No se ejecutaron pruebas de aplicación: el cambio afecta contratos y rúbricas. No se ha evaluado conducta de Brisa en un runtime real. Skills nativos web/móvil/backend no se asumieron ni inventaron; se usarán solo si se verifican disponibles.
-7 · Siguiente paso   Esperar revisión y merge del PR #148 que cierra #147. No tocar `PRODUCT_BASELINE.md` ni los cambios locales del checkout principal.
