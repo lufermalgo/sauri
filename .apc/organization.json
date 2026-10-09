@@ -66,7 +66,7 @@
       "slug": "security",
       "name": "Security Engineer",
       "area": "engineering",
-      "description": "Security specialist for a multi-tenant SaaS platform. Audits tenant isolation (IDOR), webhook signature verification, CSRF, security headers, and auth flows. Fixes what can be fixed in-session, documents the rest. Use proactively before deploys or after adding new webhooks or billing flows."
+      "description": "Independent application-security reviewer who evaluates exact Sauri candidates from an attacker's perspective, demonstrates applicable risks, and provides evidence-backed remediation guidance without claiming absolute security."
     },
     {
       "slug": "product-owner",
