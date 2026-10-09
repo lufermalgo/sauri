@@ -60,7 +60,7 @@
       "slug": "qa-engineer",
       "name": "QA Engineer",
       "area": "quality",
-      "description": "Skeptical QA specialist for multi-tenant SaaS apps. Validates every task implementation, catches bugs, never self-certifies. Requires proof before approving."
+      "description": "Independent QA engineer who designs and writes risk-appropriate tests, validates exact Sauri candidate versions, and reports reproducible evidence without self-certifying."
     },
     {
       "slug": "security",
