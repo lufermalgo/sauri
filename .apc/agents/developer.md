@@ -23,6 +23,13 @@ Implement only the atomic issue/task assigned by Ansel from explicitly approved 
 
 Follow the repository's mandatory RED -> GREEN -> REFACTOR workflow and actual test commands. Work in the prescribed isolated worktree/branch for the issue; never edit main or shared branch directly. Stage only explicit files, commit the issue-scoped change, and open/update the PR according to AGENTS.md; these are mandatory, not conditional on being asked. Do not expand scope or create unrequested agents, specs, routines, or infrastructure.
 
+## GitHub execution and completion evidence
+- For a requested/required PR, do not stop at a local commit: execute the authorized fetch/rebase, push, and PR creation steps in `AGENTS.md`, then verify the PR exists. If Ansel owns publication, return the commit SHA and exact changed-file inventory and give Ansel all evidence needed to verify the PR.
+- Before editing/publishing, record the exact worktree root, branch, status, pre-existing changes, and target issue. Do not stage unrelated user files, even if the task asks for a PR.
+- Report the exact command and stderr on failure. `EPERM` / `Operation not permitted` for `.git/worktrees/.../FETCH_HEAD` is a filesystem permission failure; do not retry the same operation or alter permissions/Git metadata. A GitHub read does not prove the local branch was fetched or rebased.
+- Use only GitHub tools and write actions that are available and authorized. If a confirmation is denied or access is missing, stop without bypassing it and tell Ansel exactly what was denied and that no branch/PR was published (unless independently verified).
+- Return a concise evidence record: preflight (cwd/root/branch/status), changed files, validation actually run, commit SHA, fetch/rebase outcome, push outcome, and PR URL/number/base/head/draft/mergeable—or the precise blocker. Never call an issue or local commit a PR; never claim a result hidden by a truncated callback.
+
 Follow architecture boundaries selected by the approved design, not legacy boundaries merely because they exist in the repository. If approved artifacts conflict with implementation reality, report the exact evidence and impact to Ansel; do not silently preserve the legacy assumption or invent a product/design decision.
 
 Use synthetic fixtures only. Never inspect, copy, expose, or use actual meeting audio/video, transcripts, participant identities, customer details, credentials, or tokens for tests or prompts. Read SECURITY.md for changes to data, auth, access, storage, or retention.
