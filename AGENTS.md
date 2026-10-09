@@ -116,6 +116,15 @@ status). Each spec folder contains:
 * Existing repository architecture is evidence of current state, not the target design by default. Reuse it only when it meets approved requirements and constraints; document alternatives and trade-offs. Product behavior ambiguity goes to the requirements author through Ansel; a genuine owner-level decision goes to Ansel with evidence and specific questions for the owner. Brisa does not directly pause with a vague “user input needed.”
 * Brisa may author `design.md` and mark the Spectra phase `complete` to mean authored only. Mira's `APPROVED` verdict for the exact design hash is the sole gate to task planning; Brisa never creates implementation tasks or approves its own design.
 
+### Task-plan authoring contract
+
+* Zoya (`pm`) uses `spectra-tasks` together with `.apc/skills/zoya-task-planning.md`. The Sauri rubric and this file override conflicting generic Skill advice; use the shared Skill for its format/workflow only and never edit its canonical contents.
+* Ansel supplies the exact spec slug, owner-approved baseline/decisions, approved requirements or bugfix path+hash+verdict, matching approved design path+hash+verdict, verified technical/test-environment constraints, real shared-resource limits, target worktree/branch, scope, and output path. Missing or stale assignment context is Ansel's preflight to resolve, not a question for the owner.
+* Every correctness property has a required RED test task before its GREEN implementation task; tests are never optional. Each task has observable completion evidence and a real validation command/prerequisite. Do not invent requirements, test commands, or dependency edges.
+* Task dependencies represent only actual prerequisites, mandatory test-before-code order, or verified shared-resource conflicts. Independent dependency-ready work stays parallelizable; grouping/phase labels do not imply serial execution. Ansel dispatches ready independent tasks concurrently within runtime capacity in separate worktrees.
+* Zoya returns the exact task-plan path/hash, dependency graph/rationale, assumptions, constraints/commands, and upstream versions to Ansel. `complete` means authored only. Mira's `APPROVED` verdict for that exact tasks hash is required before Ansel creates runnable implementation issues or dispatches developers; Zoya does not approve or implement.
+* If a true owner decision remains, Zoya gives Ansel a ready-to-send, evidence-backed set of specific questions with options, trade-offs, impact, and paused versus continuing work. Missing technical/orchestration context goes back to Ansel; never leave the owner with a bare “input needed” status.
+
 ---
 
 ## 3. TDD & Quality Discipline
@@ -442,7 +451,7 @@ Spectra Spec (.spectra/specs/{slug}/)  ←→  GitHub Milestone
 ### Lifecycle of a module
 
 1. **Plan (Spectra):** Create the spec → `/spectra-req` or `/spectra-bugfix` → `/spectra-design` → `/spectra-tasks`.
-2. **Sync to GitHub:** For each atomic task in tasks.md, create a GitHub issue assigned to the corresponding milestone. Label with `task`. Optional tasks (tests marked `*`) get label `optional`.
+2. **Sync to GitHub:** Only after Mira approves the exact `tasks.md` version, create a GitHub issue assigned to the corresponding milestone for each atomic required task. Label with `task` and the relevant test labels. Tests are never optional and must not receive an `optional` label.
 3. **Execute:** For each issue, create a worktree + branch (`_tools/new-worktree.sh feature/issue-{id}-{desc}`, see §7), implement, open PR referencing `Closes #{id}`.
 4. **Track:** The milestone progress in GitHub reflects the spec progress. When all required issues in a milestone are closed, the milestone is closed.
 5. **Bugs:** Bugs discovered during execution are filed as issues with label `bug`, assigned to the relevant milestone.
