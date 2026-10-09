@@ -1,5 +1,100 @@
 # AGENTS.md
 
+## Project overview and current code map
+
+Sauri is Summan's internal commercial-meeting intelligence platform. This is a source-code map,
+not a product-acceptance or release claim. The inventory below was checked against code at
+`ee78916` on 2026-10-08; refresh it when implementation changes. The README roadmap is stale as
+an implementation-status source: it marks transcription and speaker identification pending even
+though code and tests for both exist. Do not treat source presence or tests as proof of product
+acceptance or a working deployment.
+
+All code and domain identifiers use English. Actual transcript content remains in Spanish because
+it represents meeting speech. UI language is feature-specific; do not infer a global language from
+this rule. If an approved spec contains a `Domain_Term_Mapping`, follow it, but do not assume that
+spec exists: this checkout currently has no `.spectra/specs/` or `PRODUCT_BASELINE.md`.
+
+### Stack and runtime
+
+- **Backend**: Python >=3.11, FastAPI, SQLAlchemy async, PostgreSQL, Alembic (`backend/`).
+- **Chrome extension**: TypeScript, Manifest V3, React, Vite + CRXJS (`extension/`).
+- **Web frontend**: TypeScript, React, Vite (`frontend/`).
+- **Shared types**: `@sauri/shared-types` in `packages/shared-types`; current consumer is the web frontend.
+- **ASR engine**: faster-whisper service in `backend/asr-engine/`.
+- **Diarization engine**: pyannote service source in `backend/diar-engine/`, requiring a Hugging Face token for gated model access.
+- **Docker Compose at this snapshot**: API, worker, PostgreSQL, MinIO, RabbitMQ, and ASR engine. It does **not** define a diarization-engine service; `DIARIZATION_LOCAL_URL` is required by the backend factory but is not configured in the Compose worker. Do not claim diarization is deployable through the checked-in Compose stack until that gap is resolved.
+- The root npm workspaces are `extension`, `frontend`, and `packages/*`; Node >=20.
+
+### Implemented source surfaces (presence only; validate runtime separately)
+
+- **API wiring**: `backend/app/main.py` includes `/api/v1/auth`, `/api/v1/ingestion`, and
+  `/api/v1/meetings` plus `/health`.
+- **Meetings** (`backend/app/meetings/`): register/list/get/rename/delete meetings, request a
+  meeting join, retrieve transcript and diarization, and pure meeting-state transition logic.
+- **Ingestion** (`backend/app/ingestion/`): accept recording uploads, store objects, and enqueue
+  processing.
+- **Transcription** (`backend/app/transcription/`): ASR interface, local and cloud providers,
+  provider factory, persistence, and asynchronous worker. The factory supports `local` and `cloud`.
+- **Diarization** (`backend/app/diarization/`): engine interface, local/cloud provider classes,
+  assignment/labeling, persistence, state logic, and worker. At this snapshot the factory only
+  accepts the local provider despite the cloud class being present; runtime also lacks the Compose
+  service/configuration noted above.
+- **Retention** (`backend/app/retention/`): expiration policy/configuration and deletion worker.
+- **Auth** (`backend/app/auth/`): login, password/token handling, current-user dependency,
+  authorization, seed users, and access audit.
+- **Infrastructure** (`backend/app/infra/`): database, S3-compatible object store, RabbitMQ queue,
+  and SQLAlchemy models.
+- **Extension** (`extension/src/`): Meet content script/background service worker, offscreen
+  capture, IndexedDB recording persistence, retryable upload queue, Chrome side panel, options,
+  and transcript detail UI with search/speaker/time helpers.
+- **Web frontend** (`frontend/src/`): small React SPA with meeting registration, meeting list, and
+  transcript view; it is not a full administrative/analytics product surface.
+- **Contracts/tests**: shared meeting/recording/transcript types and backend/frontend/extension
+  unit, property, integration, and extension E2E test sources exist. Test files are evidence of
+  intended behavior only; do not report them passing unless the relevant command was run.
+
+### Layout and commands
+
+Backend modules do **not** all follow one router/service/repository/schema template. `meetings` and
+`ingestion` have those layers; `auth` is organized around router/dependencies/token/password/audit;
+`transcription` and `diarization` use engine/factory/provider/repository/worker modules; `retention`
+uses policy/configuration/worker. Shared adapters are in `backend/app/infra/`.
+
+```bash
+# Full local services; `make clean` removes volumes and local DB/object data
+make up
+make build
+make logs
+make migrate
+make down
+
+# Backend, from backend/
+pip install -e ".[dev]"
+pytest
+pytest tests/meetings/test_state_machine_property.py
+ruff check .
+mypy .
+
+# Extension or web frontend, from the corresponding package directory
+npm run dev
+npm run build
+npm run typecheck
+npm run test
+# Extension only:
+npm run test:e2e
+```
+
+From the repository root, `npm run typecheck` and `npm run test` fan out to npm workspaces.
+To load the extension, build it from `extension/` and load `extension/dist/` as an unpacked
+extension in Chrome. Confirm API/auth configuration for the target environment before testing.
+
+### Data handling
+
+Meeting audio, video, and transcripts can contain personal or confidential information. Read
+[SECURITY.md](SECURITY.md) before changing capture, storage, retention, or access control. The
+retention worker uses `RETENTION_DAYS`; verify auth and audit behavior in the target deployment
+rather than assuming local defaults.
+
 ## 1. Agent Operating Principles
 
 These rules govern how agents must behave before, during, and after any task.
