@@ -48,13 +48,13 @@
       "slug": "developer",
       "name": "Senior Developer",
       "area": "engineering",
-      "description": "Senior full-stack developer implementing multi-tenant SaaS applications task by task. Writes code in English and follows the project's UI language convention."
+      "description": "Implements one approved Sauri engineering task at a time using the specialization and Skills assigned by Ansel. Writes code in English and follows the project's UI language convention."
     },
     {
       "slug": "architect",
       "name": "Software Architect",
       "area": "engineering",
-      "description": "Software architect for multi-tenant SaaS systems. Designs scalable, maintainable architectures with clear trade-off documentation."
+      "description": "Designs Sauri solutions from audited requirements using task-specific architecture specializations and documented trade-offs."
     },
     {
       "slug": "qa-engineer",

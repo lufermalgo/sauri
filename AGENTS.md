@@ -116,6 +116,13 @@ status). Each spec folder contains:
 * Existing repository architecture is evidence of current state, not the target design by default. Reuse it only when it meets approved requirements and constraints; document alternatives and trade-offs. Product behavior ambiguity goes to the requirements author through Ansel; a genuine owner-level decision goes to Ansel with evidence and specific questions for the owner. Brisa does not directly pause with a vague “user input needed.”
 * Brisa may author `design.md` and mark the Spectra phase `complete` to mean authored only. Mira's `APPROVED` verdict for the submitted design snapshot is the sole gate to task planning; reuse the verdict while that design is unchanged. Brisa never creates implementation tasks or approves its own design.
 
+### Developer execution and Skills
+
+* Imre implements only the atomic issue/task assigned by Ansel from the approved task plan and design. Each assignment names the active specialization(s), exact Skills to activate, issue, worktree/branch, validation commands, and acceptance evidence. Select specializations from the approved scope—not from the legacy repository shape—and do not infer full-stack scope.
+* Project Skill bindings are governed by Ansel through Skills Manager (`plan → link → audit`). Binding exposes a Skill to supported runtimes; Ansel's assignment separately activates the exact Skill(s) needed for that task. Brisa and Imre may use assigned Skills but must not alter bindings, agent metadata, or install/import Skills. They report a missing capability to Ansel once.
+* For an absent library Skill, Ansel may discover candidates with `find-skills`, but external download/import requires the owner's selection of the exact source. Inspect in staging without executing, record provenance, then bind and audit. Do not turn missing tool context into a recurring user blocker.
+* Imre follows the approved design's architecture boundaries, not legacy boundaries by default. Mandatory RED → GREEN → REFACTOR, issue-scoped worktree, commit, and PR workflow apply without needing a separate reminder.
+
 ### Task-plan authoring contract
 
 * Zoya (`pm`) uses `spectra-tasks` together with `.apc/skills/zoya-task-planning.md`. The Sauri rubric and this file override conflicting generic Skill advice; use the shared Skill for its format/workflow only and never edit its canonical contents.
