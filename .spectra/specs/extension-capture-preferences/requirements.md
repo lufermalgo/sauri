@@ -66,6 +66,7 @@ This specification defines the extension's on-demand capture journey for a user-
 6. WHEN the user stops a Capture_Session from the Floating_Indicator, THE Extension SHALL end recording, store the recording in Sauri, and start transcription.
 7. WHERE the Floating_Indicator is displayed, THE Extension SHALL provide a microphone-selection control; this requirement does not define selection persistence or its effect on capture.
 8. WHERE the Floating_Indicator is displayed, THE Extension SHALL allow the user to move it to another on-screen position.
+
 **Traceability:** Approved `PRODUCT_BASELINE.md` content (`d738e78`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`; approval recorded by `22df139`), §4.A item 4 and §5 (visible indicator and capture controls); `PRODUCT_DISCOVERY.md` (commit `a8cb4adaeb9320ddc59999c174825fb5a489e86f`, blob `261cc6f3ec17db462aa1e2ff6fd13e3c8f07c90d`), 2026-10-09 “Controles esperados durante la grabación,” “Precisión sobre cancelar, pausar y detener,” and “Precisión de diarización e indicador flotante” (visible timer, cancel/pause/resume/stop, microphone selector, and movement; stop outcome stored in the baseline is specified above).
 
 ### Requirement 4: End capture when the indicator is hidden
