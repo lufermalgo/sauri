@@ -141,12 +141,10 @@ Idea → Spec (requirements + design + tasks) → Implementation → PR → main
 
 ### Spec-Driven Development (SDD) with Spectra
 
-This project started in the Kiro IDE, whose spec methodology lived under
-`.kiro/specs/[module-name]/`. Specs now live under **`.spectra/specs/[slug]/`**.
+Specs live under **`.spectra/specs/[slug]/`**.
 The `/spectra-req`, `/spectra-design`, `/spectra-tasks`, and `/spectra-bugfix`
 commands are provided by Agent Skills from the canonical personal library managed by
-Skill-manager and exposed in each
-host's native location: `.agents/skills/`, `.claude/skills/`, and `.kiro/skills/`.
+Skill-manager and exposed in each host's native location: `.agents/skills/`, `.claude/skills/`, and `.kiro/skills/`.
 `.spectra/` is reserved for specs; do not store or manage Agent Skills there.
 All pre-existing specs were migrated from `.kiro/specs/` to `.spectra/specs/`
 in one pass — `.kiro/specs/` no longer exists. `.kiro/hooks/` (Kiro IDE
@@ -299,53 +297,7 @@ Every behavior change follows strict TDD. No exceptions:
 
 ---
 
-## 4. Context, Memory & Session Hygiene
-
-### Session Memory & State Management
-
-Session state may live in `_tools/SESSION_STATUS.md` once the project requires persistent multi-session coordination.
-
-Until the project structure is established, do not create or update this file unless explicitly instructed.
-
-When session tracking is enabled, `_tools/SESSION_STATUS.md` becomes the single source of truth for what is currently in progress.
-
-**Read it at the start of every session when it exists and session tracking is enabled.**
-
-**Update it whenever session tracking is enabled and:**
-
-* You start a new branch or issue
-* You open a PR
-* You finish a rebase
-* You go idle
-
-**Required fields when session tracking is enabled:**
-
-* Current branch
-* Status: `idle` | `in-progress` | `pr-open` | `awaiting-review` | `blocked`
-* Files being touched
-* Pending PR number, if any
-
-**Why `_tools/` and not `.kiro/`?**
-
-`_tools/SESSION_STATUS.md` is tracked in git and readable by any tool or agent.
-It is the evolved replacement for the old `.kiro/status.md` multi-agent coordination
-file, which is now deprecated when Kiro is the sole agent on this project.
-
-### Session Hygiene
-
-* **Cold start**: if `_tools/SESSION_STATUS.md` exists and session tracking is enabled, read it first. It tells you what was in progress and what the next step is.
-* **Before ending a session**: if session tracking is enabled, update `_tools/SESSION_STATUS.md` with current branch, status, and next step. Never leave it stale.
-* **Context budget**: when approaching context limits — summarize decisions, update session status if enabled, and tell the user to open a fresh session.
-* **Hard rotation triggers** — open a new session immediately:
-
-  * A single response would exceed 2K output tokens
-  * A file to load exceeds 500 lines and only part is needed
-  * More than 3 subagents ran in this session
-  * The task requires loading 3+ large files simultaneously
-
----
-
-### Canonical Handoff
+## 4. Canonical Handoff
 
 * The `handoff` skill is the only workflow for creating or updating session handoff state.
 * At session start, read `<registered-project-root>/handoff.md` if it exists and resume from
