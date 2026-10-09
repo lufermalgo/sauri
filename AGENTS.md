@@ -451,6 +451,7 @@ Types:
 * If the project uses Rust, the configured Rust validation command must pass before opening a Rust PR.
 * If the project uses TypeScript, the configured project typecheck command must pass before opening a TypeScript PR.
 * Stage specific files — never `git add .` blindly.
+* At task completion, APX reviews every tracked modification and untracked file in the active worktree, assigns each a disposition (this PR, another PR, or pending with reason and next step), and reports the complete inventory; never silently omit a path.
 
 ---
 
