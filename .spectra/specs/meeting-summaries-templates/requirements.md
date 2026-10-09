@@ -10,7 +10,7 @@ The baseline snapshot assigned to this task defines a structured summary associa
 
 **Out of scope / unresolved boundaries:** This spec does not select a summary-generation method or accuracy threshold, prescribe a template schema or fixed visual layout, settle whether templates/defaults are personal or shared or how defaults apply across categories, or define the meeting portal layout. These remain open and must not be silently decided here. This spec does not extend to CRM integration.
 
-**Authority and traceability:** This spec uses only the baseline snapshot assigned to task `t_1mifoa` (`PRODUCT_BASELINE.md`, commit `d738e78d65940f17d209edf9a54af5d34e92e059`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) for approved scope. The requirements trace to its §4.C.5 and §5 capability entries, and to `PRODUCT_DISCOVERY.md` §2.4 for the discovery record and the open template-sharing/default-selection boundary in §5. The task's baseline identity is the source of authority for this artifact; no other baseline version or current implementation is used to extend scope.
+**Authority and traceability:** This spec is scoped to the owner-approved baseline content assigned to task `t_1mifoa` (`PRODUCT_BASELINE.md`, commit `d738e78d65940f17d209edf9a54af5d34e92e059`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`). The approval record in the current `PRODUCT_BASELINE.md` applies to that exact content. The requirements trace to its §4.C.5 and §5 capability entries, and to the recorded product intent in `PRODUCT_DISCOVERY.md` §2.4 and the open template-sharing/default-selection boundary in §5. No other baseline version or current implementation is used to extend scope.
 
 Existing source code, tests, and prior implementation choices are evidence of current state only. They do not constitute product acceptance or authorization to extend existing behavior; any future implementation must be evaluated against approved requirements and evidence.
 
@@ -57,27 +57,28 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 
 **Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (user-defined, editable templates); `PRODUCT_DISCOVERY.md` §2.4 (template intent).
 
-### Requirement 4: Group templates by category
+### Requirement 4: Optionally group templates by category
 
-**User Story:** As a Sauri user, I want to group summary templates by category when useful, so I can distinguish templates serving different purposes.
+**User Story:** As a Sauri user, I want to group summary templates by category when useful, so I can distinguish templates serving different purposes without requiring every template to belong to a category.
 
 #### Acceptance Criteria
 
-1. THE user SHALL be able to assign a **Summary_Template** to a **Template_Category**.
+1. WHEN the user chooses to group templates, THE user SHALL be able to assign a **Summary_Template** to a **Template_Category**.
 2. THE system SHALL allow multiple **Summary_Template** instances to be assigned to the same **Template_Category**.
+3. THE system SHALL allow a **Summary_Template** to exist without assignment to a **Template_Category**.
 
-**Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (categories can group multiple templates); `PRODUCT_DISCOVERY.md` §2.4 (category grouping).
+**Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (templates may be grouped by category, with multiple templates per category); `PRODUCT_DISCOVERY.md` §2.4 (category grouping) and §5, question 3 (default scope across categories remains open).
 
-### Requirement 5: Select a default summary template
+### Requirement 5: Designate a default summary template
 
-**User Story:** As a Sauri user, I want to designate a default summary template, so it is available as my preferred template.
+**User Story:** As a Sauri user, I want to designate a default summary template, so I can choose my preferred template.
 
 #### Acceptance Criteria
 
 1. THE user SHALL be able to designate a user-defined **Summary_Template** as the default template.
 2. WHEN the system presents available summary templates, THE system SHALL identify the template designated as default.
 
-**Constraint:** These criteria do not define whether a default is personal or shared, or how default selection is scoped across categories; those decisions remain open.
+**Constraint:** This requirement defines designation and identification only. It does not specify whether designation automatically selects a template when producing a **Meeting_Summary** or how default selection is scoped across categories. Whether templates/defaults are personal or shared also remains open.
 
 **Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (selectable default); `PRODUCT_DISCOVERY.md` §2.4 and §5, open question 3 (sharing and category scope unresolved).
 
