@@ -1,0 +1,12 @@
+{
+  "specId": "c11db15c-a42a-4c97-882f-184704e83da2",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-10-09",
+  "idea": "Requisitos para un único módulo: procesamiento de grabaciones almacenadas y revisión de hablantes, según el snapshot de PRODUCT_BASELINE.md indicado y las decisiones pertinentes de PRODUCT_DISCOVERY.md. Sin notas ni otros módulos/capacidades.",
+  "phases": {
+    "requirements": "complete",
+    "design": "pending",
+    "tasks": "pending"
+  }
+}

@@ -10,7 +10,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta.
 
 **Alcance:** este documento cubre únicamente el procesamiento de una grabación almacenada para transcripción e identificación automática de hablantes, la presentación de nombres o `Speaker N`, y la revisión/corrección de esas atribuciones.
 
-**Fuera de alcance:** captura y controles de grabación; biblioteca y metadatos; reproducción o sincronización multimedia; notas; edición del texto de la transcripción; resúmenes; progreso, tiempos y errores visibles del procesamiento; y cualquier otro módulo o capacidad. Las referencias visuales y el código existente no amplían este alcance.
+**Fuera de alcance:** captura y controles de grabación; biblioteca y metadatos; reproducción y sincronización multimedia general entre la grabación y la transcripción (sin excluir la reproducción del fragmento claro de audio de cada hablante para revisar sus atribuciones, incluida en el requisito 3.2); notas; edición del texto de la transcripción; resúmenes; progreso, tiempos y errores visibles del procesamiento; y cualquier otro módulo o capacidad. Las referencias visuales y el código existente no amplían este alcance.
 
 **Límites abiertos:** no se seleccionan técnicas, modelos, umbrales de confianza ni criterios cuantitativos de calidad; el diseño técnico los deberá definir sin alterar los resultados observables aquí establecidos. La disponibilidad de identidades entre usuarios, su compartición y los permisos/accesos siguen abiertos y no se autorizan por estos requisitos. La expectativa de reutilización y efecto futuro no decide cómo se almacenan o gobiernan los datos de identidad.
 
