@@ -8,9 +8,9 @@ This specification defines the extension's on-demand capture journey for a user-
 
 **Central thesis:** Capture starts only after the user deliberately selects the Google Meet tab, and the user has an explicit way to finish capture whether the floating indicator is visible or hidden.
 
-**Scope:** Extension preferences for countdown duration and indicator visibility; deliberate, on-demand selection of a Google Meet Chrome tab; the configured countdown and expected audio/video capture; visible indicator timer, controls, and outcomes; and ending capture by stopping Chrome tab sharing when the indicator is hidden.
+**Scope:** Extension preferences for countdown duration and indicator visibility; deliberate, on-demand selection of a Google Meet Chrome tab; the configured countdown and expected audio/video capture; visible indicator timer, controls, access to notes associated with the active recording, and outcomes; and ending capture by stopping Chrome tab sharing when the indicator is hidden.
 
-**Out of scope:** Exact selector composition/options and what happens if the user clicks record again after closing the selector without selecting a tab; countdown values/default; microphone selection persistence or effect; 720p or other resolution settings; alternate capture modes shown only in references; notes access and notes behavior (to avoid duplication, they belong in a distinct notes specification); processing feedback; consent/privacy governance; and cancel disposal or retention. Stopping is expected to store the recording in Sauri and start transcription, as specified below; this does not establish a technical reliability threshold.
+**Out of scope:** Exact selector composition/options and what happens if the user clicks record again after closing the selector without selecting a tab; countdown values/default; microphone selection persistence or effect; 720p or other resolution settings; alternate capture modes shown only in references; notes creation, content, format, and editing (to avoid duplication, they belong in a distinct notes specification); processing feedback; consent/privacy governance; and cancel disposal or retention. Stopping is expected to store the recording in Sauri and start transcription, as specified below; this does not establish a technical reliability threshold.
 
 ## Glossary
 
@@ -66,8 +66,9 @@ This specification defines the extension's on-demand capture journey for a user-
 6. WHEN the user stops a Capture_Session from the Floating_Indicator, THE Extension SHALL end recording, store the recording in Sauri, and start transcription.
 7. WHERE the Floating_Indicator is displayed, THE Extension SHALL provide a microphone-selection control; this requirement does not define selection persistence or its effect on capture.
 8. WHERE the Floating_Indicator is displayed, THE Extension SHALL allow the user to move it to another on-screen position.
+9. WHEN a Capture_Session is recording and the Floating_Indicator is displayed, THE Extension SHALL provide an entry point from that Floating_Indicator to access notes associated with that Capture_Session.
 
-**Traceability:** Approved `PRODUCT_BASELINE.md` content (`d738e78`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`; approval recorded by `22df139`), §4.A item 4 and §5 (visible indicator and capture controls); `PRODUCT_DISCOVERY.md` (commit `a8cb4adaeb9320ddc59999c174825fb5a489e86f`, blob `261cc6f3ec17db462aa1e2ff6fd13e3c8f07c90d`), 2026-10-09 “Controles esperados durante la grabación,” “Precisión sobre cancelar, pausar y detener,” and “Precisión de diarización e indicador flotante” (visible timer, cancel/pause/resume/stop, microphone selector, and movement; stop outcome stored in the baseline is specified above).
+**Traceability:** Approved `PRODUCT_BASELINE.md` content (`d738e78`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`; approval recorded by `22df139`), §4.A item 4 and §5 (visible indicator, capture controls, and access to notes); `PRODUCT_DISCOVERY.md` (commit `a8cb4adaeb9320ddc59999c174825fb5a489e86f`, blob `261cc6f3ec17db462aa1e2ff6fd13e3c8f07c90d`), 2026-10-09 “Controles esperados durante la grabación,” “Precisión sobre cancelar, pausar y detener,” and “Precisión de diarización e indicador flotante” (visible timer, cancel/pause/resume/stop, microphone selector, movement, and notes access; stop outcome stored in the baseline is specified above).
 
 ### Requirement 4: End capture when the indicator is hidden
 
@@ -81,7 +82,7 @@ This specification defines the extension's on-demand capture journey for a user-
 
 **Traceability:** Approved `PRODUCT_BASELINE.md` content (`d738e78`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`; approval recorded by `22df139`), §§3, 4.A items 4–5, and 5–6 (hiding is intentional, no in-recording controls required, end by stopping tab sharing); `PRODUCT_DISCOVERY.md` (commit `a8cb4adaeb9320ddc59999c174825fb5a489e86f`, blob `261cc6f3ec17db462aa1e2ff6fd13e3c8f07c90d`), 2026-10-09 “Precisiones sobre captura, diarización, notas, portal y CRM” (latest clarification that stopping sharing ends capture and no hidden control is inferred).
 
-**Boundary:** Notes access is intentionally not specified in this capture/preferences artifact; the notes access journey belongs in a distinct notes specification to avoid duplicate criteria. Access when the indicator is hidden remains an open product/design boundary (`PRODUCT_BASELINE.md` §§4.A.4, 7.5).
+**Boundary:** This artifact specifies notes access from the visible Floating_Indicator only. Notes creation, content, format, and editing belong in a distinct notes specification. Access when the indicator is hidden remains an open product/design boundary (`PRODUCT_BASELINE.md` §§4.A.4, 7.5).
 
 ### Requirement 5: Preserve unresolved decisions and scope boundaries
 
@@ -92,7 +93,7 @@ This specification defines the extension's on-demand capture journey for a user-
 1. THE Extension capture feature SHALL NOT define the exact tab-selector composition/options or the behavior after the selector closes without a selection and the user clicks record again.
 2. THE Extension capture feature SHALL NOT define a countdown default, values, or option list; the screenshot's “3s” is not a confirmed value.
 3. THE Extension capture feature SHALL NOT define microphone-selection persistence or effect, a 720p requirement, or alternate capture modes shown only in visual references.
-4. THE Extension capture feature SHALL NOT define notes access or note creation/content, processing feedback, a consent workflow, privacy/data-governance policy, or cancel disposal/retention.
+4. THE Extension capture feature SHALL NOT define notes creation, content, format, or editing, processing feedback, a consent workflow, privacy/data-governance policy, or cancel disposal/retention; notes access from the visible Floating_Indicator is specified in Requirement 3.
 5. THE Extension capture feature SHALL NOT define transcript editing, speaker review, web meeting-library behavior, or CRM/CRM-AI behavior.
 
 **Traceability:** Approved `PRODUCT_BASELINE.md` content (`d738e78`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`; approval recorded by `22df139`), §§4.A, 6–7 (selector, notes, processing, privacy/governance boundaries, and non-goals); `PRODUCT_DISCOVERY.md` (commit `a8cb4adaeb9320ddc59999c174825fb5a489e86f`, blob `261cc6f3ec17db462aa1e2ff6fd13e3c8f07c90d`), 2026-10-09 “Referencias de controles de la extensión y visibilidad del indicador,” “Referencia visual de selector de pestaña/ventana/pantalla,” “Cerrar el selector sin elegir una pestaña,” and “Precisiones sobre captura, diarización, notas, portal y CRM” (visual-only settings and unresolved interactions).
