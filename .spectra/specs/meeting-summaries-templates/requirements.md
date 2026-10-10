@@ -29,7 +29,7 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 #### Acceptance Criteria
 
 1. THE Sauri meeting view SHALL present the **Meeting_Summary** as a distinct meeting artifact, separate from meeting notes and the transcript.
-2. WHEN a **Meeting_Summary** is available, THE Sauri meeting view SHALL organize its content clearly so that its main topic and key arguments or points can each be identified.
+2. THE system SHALL make a **Meeting_Summary** available for the meeting and SHALL organize its content clearly so that its main topic and key arguments or points can each be identified.
 3. THE **Meeting_Summary** SHALL be associated with the meeting it summarizes.
 
 **Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §4.C.5 and §5 (structured summary capability); `PRODUCT_DISCOVERY.md` §2.4 and §2.3 (summary content and distinction from transcript/notes).
@@ -77,8 +77,9 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 
 1. THE user SHALL be able to designate a user-defined **Summary_Template** as the default template.
 2. WHEN the system presents available summary templates, THE system SHALL identify the template designated as default.
+3. WHEN the user requests a **Meeting_Summary** without selecting a template, THE system SHALL use the designated default **Summary_Template** to shape the summary.
 
-**Constraint:** This requirement defines designation and identification only. It does not specify whether designation automatically selects a template when producing a **Meeting_Summary** or how default selection is scoped across categories. Whether templates/defaults are personal or shared also remains open.
+**Constraint:** This requirement does not specify how a **Meeting_Summary** is produced or how default selection is scoped across categories. Whether templates/defaults are personal or shared also remains open.
 
 **Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (selectable default); `PRODUCT_DISCOVERY.md` §2.4 and §5, open question 3 (sharing and category scope unresolved).
 
