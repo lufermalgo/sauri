@@ -6,11 +6,11 @@ The baseline snapshot assigned to this task defines a structured summary associa
 
 **Core idea:** Treat each meeting summary as a distinct, clearly organized meeting artifact, and let users shape its structure through their own editable templates.
 
-**Scope:** These requirements cover the observable content and retrieval of meeting summaries, and creating, editing, optionally categorizing, and selecting a default for user-defined summary templates.
+**Scope:** These requirements cover the observable content and retrieval of meeting summaries, and creating, editing, optionally categorizing, and selecting a default for user-defined summary templates. Each template belongs personally to the user who creates it. A user's designated default applies across that user's categories rather than being selected separately per category.
 
-**Out of scope / unresolved boundaries:** This spec does not select a summary-generation method or accuracy threshold, prescribe a template schema or fixed visual layout, settle whether templates/defaults are personal or shared or how defaults apply across categories, or define the meeting portal layout. These remain open and must not be silently decided here. This spec does not extend to CRM integration.
+**Out of scope / unresolved boundaries:** Template ownership is personal to the creating user, and the user's designated default applies across categories. Still unresolved are the summary-generation method and accuracy threshold, template schema and fixed visual layout, broader access-control mechanisms or policy, retention/deletion rules, and meeting portal layout. These matters must not be silently decided here. This spec does not extend to CRM integration.
 
-**Authority and traceability:** This spec is scoped to the owner-approved baseline content assigned to task `t_1mifoa` (`PRODUCT_BASELINE.md`, commit `d738e78d65940f17d209edf9a54af5d34e92e059`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`). The approval record in the current `PRODUCT_BASELINE.md` applies to that exact content. The requirements trace to its §4.C.5 and §5 capability entries, and to the recorded product intent in `PRODUCT_DISCOVERY.md` §2.4 and the open template-sharing/default-selection boundary in §5. No other baseline version or current implementation is used to extend scope.
+**Authority and traceability:** This spec is scoped to the owner-approved baseline content assigned to task `t_1mifoa` (`PRODUCT_BASELINE.md`, commit `d738e78d65940f17d209edf9a54af5d34e92e059`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`), with the subsequent owner decision recorded as `d_qfyygr` on task `t_i680bu`: templates are personal to each user, and each user's default is user-wide across categories. The requirements trace to baseline §4.C.5 and §5 capability entries, discovery §2.4 and the cited owner decision. The baseline's earlier open boundary is resolved only for template ownership and default scope; other policy questions remain open. No current implementation is used to extend scope.
 
 Existing source code, tests, and prior implementation choices are evidence of current state only. They do not constitute product acceptance or authorization to extend existing behavior; any future implementation must be evaluated against approved requirements and evidence.
 
@@ -51,11 +51,11 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 
 #### Acceptance Criteria
 
-1. THE user SHALL be able to create a user-defined **Summary_Template**.
-2. THE user SHALL be able to edit a user-defined **Summary_Template** after it has been created.
+1. THE user SHALL be able to create a personal **Summary_Template**.
+2. THE user SHALL be able to edit a personal **Summary_Template** after it has been created.
 3. WHEN a **Summary_Template** is used to shape a **Meeting_Summary**, THE resulting summary structure SHALL reflect the selected template.
 
-**Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (user-defined, editable templates); `PRODUCT_DISCOVERY.md` §2.4 (template intent).
+**Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (user-defined, editable templates); `PRODUCT_DISCOVERY.md` §2.4 (template intent); owner decision `d_qfyygr` on task `t_i680bu` (templates are personal to each user).
 
 ### Requirement 4: Optionally group templates by category
 
@@ -67,7 +67,7 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 2. THE system SHALL allow multiple **Summary_Template** instances to be assigned to the same **Template_Category**.
 3. THE system SHALL allow a **Summary_Template** to exist without assignment to a **Template_Category**.
 
-**Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (templates may be grouped by category, with multiple templates per category); `PRODUCT_DISCOVERY.md` §2.4 (category grouping) and §5, question 3 (default scope across categories remains open).
+**Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (templates may be grouped by category, with multiple templates per category); `PRODUCT_DISCOVERY.md` §2.4 (category grouping) and §5, question 3 (historical open question on template sharing/default scope, superseded only for ownership and default scope by owner decision `d_qfyygr`).
 
 ### Requirement 5: Designate a default summary template
 
@@ -75,12 +75,12 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 
 #### Acceptance Criteria
 
-1. THE user SHALL be able to designate a user-defined **Summary_Template** as the default template.
-2. WHEN the system presents available summary templates, THE system SHALL identify the template designated as default.
-3. WHEN the user requests a **Meeting_Summary** without selecting a template, THE system SHALL use the designated default **Summary_Template** to shape the summary.
+1. THE user SHALL be able to designate a personal **Summary_Template** as that user's single default across all **Template_Category** instances.
+2. WHEN the system presents available summary templates, THE system SHALL identify the user's designated default **Summary_Template** across categories.
+3. WHEN the user requests a **Meeting_Summary** without selecting a template, THE system SHALL use that user's designated default **Summary_Template** to shape the summary, regardless of the template's **Template_Category**.
 
-**Constraint:** This requirement does not specify how a **Meeting_Summary** is produced or how default selection is scoped across categories. Whether templates/defaults are personal or shared also remains open.
+**Constraint:** The default is user-wide across categories, not category-specific. This requirement does not specify how a **Meeting_Summary** is produced, broader access-control mechanisms or policy, or retention/deletion behavior.
 
-**Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (selectable default); `PRODUCT_DISCOVERY.md` §2.4 and §5, open question 3 (sharing and category scope unresolved).
+**Traceability:** Assigned baseline `PRODUCT_BASELINE.md` §5 (selectable default); `PRODUCT_DISCOVERY.md` §2.4; owner decision `d_qfyygr` on task `t_i680bu` (personal ownership and user-wide default across categories). This decision supersedes only the corresponding open boundary noted in the earlier discovery record.
 
-**Scope boundaries:** This spec does not select a summary-generation method, accuracy threshold, or fixed layout. It does not decide whether templates/defaults are personal or shared, how default selection is scoped across categories, or whether templates must be assigned to a category. The proposed example `General > Resumen básico` and visual-reference labels are not approved defaults. CRM integration and CRM AI are excluded as deferred scope. These are scope limits, not additional user-visible acceptance behaviors.
+**Scope boundaries:** This spec does not select a summary-generation method, accuracy threshold, or fixed layout. Templates are personal to their creating user; the designated default is that user's default across categories. It does not determine broader access-control mechanisms or policy, retention/deletion rules, or whether templates must be assigned to a category. The proposed example `General > Resumen básico` and visual-reference labels are not approved defaults. CRM integration and CRM AI are excluded as deferred scope. These are scope limits, not additional user-visible acceptance behaviors.
