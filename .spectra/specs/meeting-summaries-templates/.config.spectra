@@ -6,7 +6,7 @@
   "idea": "Author requirements for summaries and templates",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
+    "design": "complete",
     "tasks": "pending"
   }
 }
