@@ -6,7 +6,7 @@
   "idea": "Author requirements for meeting notes",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
+    "design": "complete",
     "tasks": "pending"
   }
 }

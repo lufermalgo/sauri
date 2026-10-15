@@ -4,9 +4,9 @@
 
 Este documento especifica el comportamiento aprobado para añadir notas asociadas a una grabación y mantenerlas distinguibles de su transcripción. El recorrido general de captura se conserva como contexto en `PRODUCT_BASELINE.md`, §4, Journey A; no se vuelve a especificar aquí.
 
-**Alcance:** añadir notas desde la extensión o desde el control flotante cuando está visible, asociarlas con la grabación correspondiente y presentarlas como contenido distinto de la transcripción.
+**Alcance:** añadir notas desde la extensión o desde el control flotante cuando está visible, asociarlas con la grabación correspondiente y consultarlas desde esa grabación en el portal web, en un apartado distinto de la transcripción.
 
-**Trazabilidad y autoridad:** el alcance deriva exclusivamente de `PRODUCT_BASELINE.md` en `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`): §3, principio “Keep related content distinct”; §4, Journey A, pasos 4 y 6; §5, capacidad “Recording-associated notes, separate from transcript”; y §7, decisión abierta #5. Para rastrear el descubrimiento, véase `PRODUCT_DISCOVERY.md`, §2.1, entrada “Notas de grabación”, y §7, “2026-10-09 — Precisiones sobre captura, diarización, notas, portal y CRM” (apartado “Notas — expectativa”). Las referencias visuales y las ideas que solo constan en el descubrimiento no amplían el alcance aprobado.
+**Trazabilidad y autoridad:** el alcance deriva exclusivamente de `PRODUCT_BASELINE.md` en `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`): §2, resultado 4; §3, principio “Keep related content distinct”; §4, Journey A, pasos 4 y 6, y Journey C, paso 5; §5, capacidad “Recording-associated notes, separate from transcript”; y §7, decisión abierta #5. Para rastrear el descubrimiento, véase `PRODUCT_DISCOVERY.md`, §2.1, entrada “Notas de grabación”, y §7, “2026-10-09 — Precisiones sobre captura, diarización, notas, portal y CRM” (apartado “Notas — expectativa”). Las referencias visuales y las ideas que solo constan en el descubrimiento no amplían el alcance aprobado.
 
 **Idea fuerza:** una nota se asocia a la grabación que contextualiza y se mantiene aparte de su transcripción.
 
@@ -34,11 +34,12 @@ Este documento especifica el comportamiento aprobado para añadir notas asociada
 1. WHEN el usuario añade una Nota desde la extensión, THE Sauri SHALL asociar esa Nota con la Grabación correspondiente.
 2. WHEN el Control_Flotante está visible y el usuario añade una Nota desde él, THE Sauri SHALL asociar esa Nota con la Grabación correspondiente.
 
-### Requisito 2: Mantener las notas distintas de la transcripción
+### Requisito 2: Consultar las notas de una grabación en el portal web, separadas de la transcripción
 
-**Historia de Usuario:** Como usuario funcional, quiero distinguir las notas de la transcripción de una grabación, para consultar cada contenido como un artefacto separado.
+**Historia de Usuario:** Como usuario funcional, quiero consultar las notas desde su grabación en el portal web, para acceder a ellas como contenido distinto de la transcripción.
 
 #### Criterios de Aceptación
 
-1. WHEN una Grabación tiene una Nota y una Transcripción disponibles para consulta, THE Sauri SHALL presentar la Nota en un apartado separado de la Transcripción.
-2. WHEN el usuario consulta la Transcripción de una Grabación que tiene Notas asociadas, THE Sauri SHALL mantener esas Notas identificables como contenido distinto de la Transcripción.
+1. WHEN el usuario consulta una Grabación con Notas asociadas en el portal web, THE Sauri SHALL permitir consultar esas Notas desde esa Grabación.
+2. WHEN una Grabación tiene una Nota y una Transcripción disponibles para consulta en el portal web, THE Sauri SHALL presentar la Nota en un apartado separado de la Transcripción.
+3. WHEN el usuario consulta la Transcripción de una Grabación que tiene Notas asociadas, THE Sauri SHALL mantener esas Notas identificables como contenido distinto de la Transcripción.
