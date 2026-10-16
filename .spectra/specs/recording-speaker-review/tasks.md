@@ -4,11 +4,26 @@
 
 | Phase | Description | Tasks | Dependencies |
 |---|---|---|---|
+| 0 | Required independent pre-implementation security gate for voice-derived sample handling | T-20 | Must complete before T-13 starts; no voice-sample storage implementation before evidence |
 | 1 | Required RED tests for backend invariants and web review | T-1–T-9 | None; independent test suites may run in parallel |
-| 2 | Backend GREEN implementation | T-10–T-17 | Each implementation task depends on its matching RED test; T-17 also depends on T-14 |
+| 2 | Backend GREEN implementation | T-10–T-17 | Each implementation task depends on its matching RED test and any additional prerequisites below |
 | 3 | Web GREEN implementation and cross-surface verification | T-18–T-19 | T-18 depends on T-9; T-19 depends on T-10–T-18 |
 
 The numbered order is for readability, not a launch schedule. Dependencies below are the actual DAG. Every RED task must be run and its expected failure recorded before its corresponding GREEN task begins. Backend commands run from `backend/`; frontend commands run from `frontend/`. Use synthetic audio, transcript, identity and owner fixtures only.
+
+## Phase 0: Required Pre-implementation Security Gate
+
+### T-20: GATE — independently review voice-derived sample handling before implementation
+
+**Files:** Security review evidence attached to the task issue/card; no source-code changes.
+
+**Action:** Before T-13 begins, Zev independently reviews the planned voice-derived identity sample storage and source-recording cleanup against the approved design, records the applicable handling controls and any blockers, and identifies any unresolved policy/product decision for Ansel. Do not define new privacy policy or start T-13 storage work while a blocking finding or required owner-level decision remains unresolved.
+
+**Acceptance evidence:** A written security review is linked from the task card; applicable controls are recorded and all blockers are resolved before T-13 starts. If a decision is needed, T-13 remains blocked pending Ansel's resolution.
+
+**Validation:** Review-only gate; no code validation command applies. The required evidence is the independent security review record and its disposition.
+
+**Dependencies:** None.
 
 ## Phase 1: Required RED Tests
 
@@ -16,9 +31,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/tests/speaker_review/test_review_state.py` (create)
 
-**Action:** Add tests for correctness properties 1 and 2: recording one valid disposition changes only its target speaker item; review status is pending while any item lacks a valid disposition and complete iff all items have one. Assert there is no request-level way to set completion directly.
+**Action:** Add deterministic tests and Hypothesis property tests for correctness properties 1 and 2: recording one valid disposition changes only its target speaker item; review status is pending while any item lacks a valid disposition and complete iff all items have one. Generate varied review sizes and disposition combinations with at least 100 examples per property. Assert there is no request-level way to set completion directly.
 
-**Acceptance evidence:** From `backend/`, `pytest tests/speaker_review/test_review_state.py` fails on the missing/incorrect review behavior before implementation; preserve the failing output in the issue/PR evidence.
+**Acceptance evidence:** From `backend/`, `pytest tests/speaker_review/test_review_state.py` fails on the missing/incorrect review behavior before implementation; preserve the failing output in the issue/PR evidence. Hypothesis reports at least 100 examples for each property.
 
 **Validation command:** `pytest tests/speaker_review/test_review_state.py` (from `backend/`).
 
@@ -28,9 +43,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/tests/speaker_review/test_disposition_idempotency.py` (create)
 
-**Action:** Add tests for correctness property 9: same idempotency key and canonical request replays the saved result without a second sample/disposition mutation; reuse of a key with a different request hash conflicts; a different key with stale expected version conflicts without mutation; transaction failure rolls back disposition and identity-sample changes together.
+**Action:** Add deterministic tests and Hypothesis property tests for correctness property 9: same idempotency key and canonical request replays the saved result without a second sample/disposition mutation; reuse of a key with a different request hash conflicts; a different key with stale expected version conflicts without mutation; transaction failure rolls back disposition and identity-sample changes together. Generate varied retry sequences and request hashes with at least 100 examples per property.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_disposition_idempotency.py` fails against the unimplemented contract; retain the failure output before GREEN work.
+**Acceptance evidence:** `pytest tests/speaker_review/test_disposition_idempotency.py` fails against the unimplemented contract; retain the failure output before GREEN work. Hypothesis reports at least 100 examples for each property.
 
 **Validation command:** `pytest tests/speaker_review/test_disposition_idempotency.py` (from `backend/`).
 
@@ -52,7 +67,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/tests/speaker_review/test_identity_matching.py` (create)
 
-**Action:** Add deterministic fake-matcher tests for correctness properties 5 and 6: only the current owner's active samples can be read/used; calibrated threshold and runner-up margin must both pass or result is uncertain; named/corrected samples inform later same-owner matches; a correction changes only the current item's association and preserves the wrongly suggested identity's samples; no global model is trained or modified. Include two distinct speaker items in one recording assigned to one identity and replay of either item's idempotency key without duplicate samples.
+**Action:** Add deterministic fake-matcher tests for correctness properties 5 and 6: only the current owner's active samples can be read/used; calibrated threshold and runner-up margin must both pass or result is uncertain; named/corrected samples inform later same-owner matches; a correction changes only the current item's association and preserves the wrongly suggested identity's samples; no global model is trained or modified. Include two distinct speaker items in one recording assigned to one identity and replay of either item's idempotency key without duplicate samples. Verify source-recording expiry/deletion removes its linked voice samples in the same cleanup transaction, while samples linked to other recordings remain.
 
 **Acceptance evidence:** `pytest tests/speaker_review/test_identity_matching.py` fails on the missing identity boundary/behavior before implementation; record the output.
 
@@ -76,7 +91,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/tests/speaker_review/test_processing_readiness.py` (create)
 
-**Action:** Add tests for correctness property 8: review becomes visible only after transcript, diarization, speaker set and validated excerpts for one revision commit ready together; duplicate stage/finalizer delivery creates no duplicate output or review and does not rerun a completed provider stage; a finalizer failure after committed stages retries from persisted results.
+**Action:** Add tests for correctness property 8: review becomes visible only after transcript, diarization, speaker set and validated excerpts for one revision commit ready together; duplicate stage/finalizer delivery creates no duplicate output or review and does not rerun a completed provider stage; an unexpired `(processing_revision_id, stage)` lease blocks duplicate provider execution, while an expired lease permits recovery; stage output, completion and outbox event commit atomically (failure rolls all three back); a finalizer failure after committed stages retries from persisted results.
 
 **Acceptance evidence:** `pytest tests/speaker_review/test_processing_readiness.py` fails on the missing processing/readiness behavior before implementation; record the output.
 
@@ -100,7 +115,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/tests/speaker_review/test_processing_revisions.py` (create)
 
-**Action:** Add tests for correctness property 11 and the approved revision design: migration backfills existing transcript/diarization rows to compatibility revision 1 and scopes uniqueness by meeting plus revision; legacy reads pin one revision; GET/admission locking is covered in both lock orders; only one concurrent initial candidate is admitted when active pointer is null; exact retries resume the in-flight revision; a pending active review rejects distinct reprocessing without mutation; completed review permits candidate processing and atomic activation; stale/non-current finalizers and revision-qualified PUT/excerpt requests cannot displace/read/write another revision; no response combines revisions. Cover complete and partial legacy records.
+**Action:** Add tests for correctness property 11 and the revision-state boundary: migration backfills existing transcript/diarization rows to compatibility revision 1 and scopes uniqueness by meeting plus revision; legacy reads pin one revision; GET/admission locking is covered in both lock orders; only one concurrent initial candidate is admitted when active pointer is null; exact retries resume the in-flight revision; a pending active review rejects distinct reprocessing without mutation; a pre-marked ready current candidate can atomically activate and clear the in-flight pointer; non-current candidate activation and revision-qualified PUT/excerpt requests cannot displace/read/write another revision; no response combines revisions. Do not test stage-lease, outbox delivery or finalizer recovery here; T-6/T-15 cover those after the revision boundary exists. Cover complete and partial legacy records.
 
 **Acceptance evidence:** `pytest tests/speaker_review/test_processing_revisions.py` fails on missing migration/revision behavior before implementation; record the output.
 
@@ -160,15 +175,15 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-13: GREEN — implement owner-scoped identity matching and corrections
 
-**Files:** `backend/app/` identity matcher/repository modules; `backend/app/infra/models.py`; migration under `backend/alembic/versions/` as needed.
+**Files:** `backend/app/` identity matcher/repository modules; `backend/app/infra/models.py`; `backend/app/retention/` cleanup worker; migration under `backend/alembic/versions/` as needed.
 
-**Action:** Implement versioned embedding adapter and owner-scoped immutable samples, calibrated model-version threshold and runner-up margin checks, fail-closed uncertainty when uncalibrated, and target resolution that rejects cross-owner IDs. Named/corrected dispositions append source-review-item-keyed samples; correction changes only the current item's association and leaves source samples unchanged; confirmed writes no sample. No global training/model modification.
+**Action:** Before implementation begins, require independent security-review evidence resolving applicable handling for voice-derived identity samples; attach the review outcome to this task/issue, and do not proceed while a security blocker remains. Then implement the versioned embedding adapter and owner-scoped immutable samples, calibrated model-version threshold and runner-up margin checks, fail-closed uncertainty when uncalibrated, and target resolution that rejects cross-owner IDs. Named/corrected dispositions append source-review-item-keyed samples; correction changes only the current item's association and leaves source samples unchanged; confirmed writes no sample. Extend the existing recording expiry/deletion cleanup transaction to delete only samples linked to that source recording. No global training/model modification or new retention policy.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_identity_matching.py` passes for ownership, uncertainty, correction lineage, same-recording multiple samples and replay. Matching behavior without calibration remains `uncertain`.
+**Acceptance evidence:** `pytest tests/speaker_review/test_identity_matching.py` passes for ownership, uncertainty, correction lineage, same-recording multiple samples/replay, and source-linked sample deletion in the same cleanup transaction. Matching behavior without calibration remains `uncertain`. The independent security review record is attached and contains no unresolved blocker before implementation starts.
 
 **Validation command:** `pytest tests/speaker_review/test_identity_matching.py` (from `backend/`).
 
-**Dependencies:** T-4, T-10, T-11.
+**Dependencies:** T-4, T-10, T-11, T-20. The independent security review evidence is a blocking prerequisite; no voice-sample storage work starts before it.
 
 ### T-14: GREEN — derive and validate speaker-specific excerpts
 
@@ -186,13 +201,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/app/transcription/`; `backend/app/diarization/`; `backend/app/infra/` queue/outbox and stage persistence modules.
 
-**Action:** After revision state exists, extend the existing async pipeline with lease-based idempotent stage claims keyed by `(processing_revision_id, stage)`, transactional stage output/outbox events and a finalizer that creates review/excerpts only after both exact-revision stage outputs are complete. Persist readiness atomically; retry finalization from committed outputs without rerunning successful provider stages; do not expose partial reviews.
+**Action:** After revision, review, identity-matching and excerpt boundaries exist, extend the async pipeline with conditional lease-based stage claims keyed by `(processing_revision_id, stage)`: an unexpired claim blocks duplicate provider execution, a completed stage replays its persisted result, and an expired claim permits recovery. Persist each stage output, completion state and outbox event in one transaction with uniqueness by revision/stage. Finalize only after both exact-revision stage outputs are complete; create review/excerpts once and activate only the current ready candidate atomically. Retry finalization from committed outputs without rerunning successful provider stages; do not expose partial reviews.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_processing_readiness.py` passes for readiness barrier, duplicate deliveries and finalizer recovery.
+**Acceptance evidence:** `pytest tests/speaker_review/test_processing_readiness.py` passes for readiness barrier, unexpired/expired leases, atomic output/completion/outbox rollback, duplicate deliveries and finalizer recovery.
 
 **Validation command:** `pytest tests/speaker_review/test_processing_readiness.py` (from `backend/`).
 
-**Dependencies:** T-6, T-14, T-17.
+**Dependencies:** T-6, T-10, T-13, T-14, T-17.
 
 ### T-16: GREEN — enforce resource-owner checks on existing and new routes
 
@@ -204,7 +219,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Validation command:** `pytest tests/meetings/test_speaker_review_ownership.py` (from `backend/`).
 
-**Dependencies:** T-7, T-10, T-13.
+**Dependencies:** T-7, T-10, T-11, T-12, T-13, T-14, T-17.
 
 ### T-17: GREEN — migrate and enforce exact processing revisions
 
@@ -216,7 +231,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Validation command:** `pytest tests/speaker_review/test_processing_revisions.py` (from `backend/`).
 
-**Dependencies:** T-8, T-14.
+**Dependencies:** T-8, T-10, T-12, T-14.
 
 ## Phase 3: Web GREEN and Cross-Surface Validation
 
@@ -248,12 +263,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 - RED suites T-1 through T-9 have no prerequisite edges and can be prepared independently.
 - GREEN pairs: T-1 → T-10; T-2 → T-11; T-3 → T-12; T-4 → T-13; T-5 → T-14; T-6 → T-15; T-7 → T-16; T-8 → T-17; T-9 → T-18. These are mandatory RED-before-GREEN edges.
-- T-10 → T-11/T-12/T-13/T-16 because those components require the persisted review model/service; T-11 → T-13 because identity sample writes share its transactional idempotency boundary; T-13 → T-16 because route ownership must cover the identity repository; T-14 → T-15/T-17 because readiness/finalization/revision activation cannot complete until validated excerpts are available. T-17 establishes revision state and exact-ID boundaries before T-15 adds stage claims/outbox/finalizer recovery keyed to that revision, avoiding a schema/pipeline dependency cycle. T-19 waits for all implementation tasks because it is whole-feature validation.
+- T-20 → T-13 is the explicit pre-implementation security gate required by the design; voice-sample storage cannot start until the independent review evidence is recorded and blockers are resolved.
+- T-10 → T-11/T-12/T-13/T-15/T-16/T-17 because those components require the persisted review model/service; T-11 → T-13/T-16 because identity sample writes share its transactional idempotency boundary and the route contract includes disposition writes; T-12 → T-16/T-17 because revision-aware review retrieval depends on persisted resume state; T-13 → T-15/T-16 because finalization creates attributed review items and route ownership covers identity repositories; T-14 → T-15/T-16/T-17 because readiness/finalization/revision activation and excerpt routes require validated excerpts. T-17 establishes revision state, exact-ID boundaries and atomic activation of an already-ready candidate before T-15 adds stage claims/outbox/recovery mechanics keyed to that revision, avoiding a schema/pipeline dependency cycle. T-16 waits for the review, identity, excerpt and revision contracts used by its full route tests. T-19 waits for all implementation tasks because it is whole-feature validation.
 - No other edges are implied. In particular, unrelated RED suites and their implementation units remain parallel where the listed prerequisites permit.
 
 ## Traceability, Assumptions, and Open Implementation Dependencies
 
 - Approved source: `.spectra/specs/recording-speaker-review/requirements.md` (Mira approved; blob `4ed34b66`, approved requirements PR #232); `.spectra/specs/recording-speaker-review/design.md` (Mira approved at commit `014d84c635201d037225b1e0f162264c45e2e2e8`); `PRODUCT_BASELINE.md` approved at commit `f5ff445fd508983740cd6b5a89c08adafcbb9295`, blob `c43cad6515b01a52037ad9cd4e09010a40477fb4` (approval annotation commit `b071a7c6d2c72613aa42543d15e47b81f4999077`).
 - Assumptions: existing backend `pytest` and frontend `npm run test` commands are the configured validation entry points; named new test modules are introduced by the RED tasks. The exact embedding model/adapter remains an implementation dependency from the approved design; before calibration, matching must fail closed to uncertain. No threshold or margin value is invented here.
-- No product decision is requested. Security review is a required downstream gate for voice-derived identity samples and media access; no security/privacy policy or retention guarantee is decided by this plan.
+- No product decision is requested by this plan. The design-required independent security review is an explicit prerequisite to T-13; if it identifies a policy/product decision, T-13 remains blocked and the question is routed to Ansel. No security/privacy policy or retention guarantee is decided by this plan.
 - Scope excludes capture/control, library, transcript editing, notes, summaries, general media synchronization, visible processing progress/errors, global voice modeling, cross-user sharing, authentication rollout, and retention guarantees.
