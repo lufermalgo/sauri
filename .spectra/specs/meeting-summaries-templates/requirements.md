@@ -53,7 +53,7 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 #### Acceptance Criteria
 
 1. THE system SHALL associate each personal **Summary_Template** with the user who created it.
-2. THE owner of a personal **Summary_Template** SHALL be able to provide specific instructions for it and create multiple personal templates in Sauri web.
+2. THE user SHALL be able to create multiple personal **Summary_Template** instances in Sauri web, each with specific instructions.
 3. THE owner of a personal **Summary_Template** SHALL be able to edit it after it has been created.
 4. WHEN a user attempts to edit a **Summary_Template** owned by another user, THE system SHALL prevent the edit.
 5. WHEN a user attempts to select a **Summary_Template** owned by another user for a **Meeting_Summary**, THE system SHALL prevent applying that template.
