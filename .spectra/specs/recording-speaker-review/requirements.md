@@ -4,7 +4,7 @@
 
 Después de guardar una grabación detenida, Sauri debe producir una transcripción e intentar identificar automáticamente a quienes hablan. La atribución debe distinguir lo que el sistema reconoce de lo que no puede atribuir con confianza: una persona reconocida aparece por su nombre; una voz desconocida o una atribución incierta permanece como `Speaker N` hasta que la persona usuaria la revise. La revisión humana permite escuchar evidencia de audio, asignar una identidad a hablantes sin identificar y corregir nombres automáticos incorrectos.
 
-La revisión no se considera terminada si la persona usuaria la deja incompleta. Al regresar a esa grabación, Sauri vuelve a solicitar la revisión pendiente. Las identidades ya establecidas deben poder reutilizarse pese a variaciones acústicas, y una corrección de identificación automática debe influir en el reconocimiento futuro en toda Sauri.
+La revisión no se considera terminada si la persona usuaria la deja incompleta: se resuelve hablante por hablante, y solo alcanza Revisión_Completa cuando todo hablante presentado tiene una disposición explícita registrada (nombrar, corregir o confirmar la atribución). Al abandonar una revisión no completa, Sauri la mantiene como Revisión_Pendiente y vuelve a solicitarla al regresar a esa grabación, sin cerrarla como terminada. Las identidades ya establecidas deben poder reutilizarse pese a variaciones acústicas, y una corrección de identificación automática debe influir en el reconocimiento futuro en toda Sauri.
 
 **Idea fuerza:** la identificación automática debe ser explícita sobre la incertidumbre, permitir corrección humana informada y llevar esas correcciones a reconocimientos futuros.
 
@@ -22,7 +22,10 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta.
 - **Atribución_Incierta**: caso en que Sauri no reconoce una voz o duda de a qué persona corresponde; no equivale a una identidad confirmada.
 - **Etiqueta_Speaker_N**: identificador `Speaker N` mostrado para una voz desconocida o una atribución incierta hasta su revisión humana.
 - **Revisión_de_Hablantes**: revisión por la persona usuaria de las atribuciones de los hablantes de una grabación, incluida la escucha de fragmentos claros y la asignación o corrección de nombres/etiquetas.
-- **Revisión_Pendiente**: estado de una Revisión_de_Hablantes que la persona usuaria aún no ha completado.
+- **Hablante_en_Revisión**: cada hablante incluido en la Revisión_de_Hablantes de una Grabación_Almacenada y presentado a la persona usuaria para revisarlo.
+- **Disposición_por_Hablante**: resultado explícito del paso de la persona usuaria por un Hablante_en_Revisión: asignar un nombre o etiqueta donde había una Etiqueta_Speaker_N, corregir un nombre asignado automáticamente, o indicar que la atribución presentada es correcta. El mecanismo concreto para expresar cada disposición lo define el diseño; estos requisitos no lo prescriben.
+- **Revisión_Completa**: estado de una Revisión_de_Hablantes en el que todo Hablante_en_Revisión tiene una Disposición_por_Hablante registrada.
+- **Revisión_Pendiente**: estado de una Revisión_de_Hablantes que aún no alcanza Revisión_Completa.
 - **Identidad_Establecida**: identidad de hablante definida mediante una identificación previa o una corrección/asignación humana.
 
 ## Requisitos
@@ -57,9 +60,11 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta.
 2. WHEN se presenta la Revisión_de_Hablantes, THE Sauri SHALL permitir reproducir un fragmento claro de audio de cada hablante incluido en la revisión.
 3. WHEN la persona usuaria revisa una atribución con Etiqueta_Speaker_N, THE Sauri SHALL permitir reemplazarla por un nombre o etiqueta elegidos por la persona usuaria.
 4. WHEN la persona usuaria revisa un nombre asignado automáticamente que es incorrecto, THE Sauri SHALL permitir corregirlo con el nombre o etiqueta elegidos por la persona usuaria.
-5. WHEN la persona usuaria completa la revisión de una grabación, THE Sauri SHALL mostrar la transcripción con las atribuciones revisadas correspondientes.
+5. WHEN la persona usuaria registra una Disposición_por_Hablante para un Hablante_en_Revisión, THE Sauri SHALL registrarla para ese hablante sin dar por dispuestos los demás Hablantes_en_Revisión de la misma Revisión_de_Hablantes.
+6. WHEN todo Hablante_en_Revisión de una Grabación_Almacenada tiene una Disposición_por_Hablante registrada, THE Sauri SHALL tratar esa Revisión_de_Hablantes como Revisión_Completa y mostrar la transcripción con las atribuciones revisadas correspondientes.
+7. WHILE exista al menos un Hablante_en_Revisión sin Disposición_por_Hablante registrada, THE Sauri SHALL tratar esa Revisión_de_Hablantes como Revisión_Pendiente y no como Revisión_Completa.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B, 5, 6; `PRODUCT_DISCOVERY.md` §2.5, §2.6 paso 5 y §7 “Precisión de diarización e indicador flotante” (2026-10-09). No se derivan controles, diseño visual ni cantidad fija de hablantes de la imagen/modal de referencia.
+**Trazabilidad:** `PRODUCT_BASELINE.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B paso 3 (“For each speaker, the user can play a clear audio excerpt, replace `Speaker N` with a chosen name/label, or correct an automatically assigned name.”) y 4.B paso 4, 5, 6; `PRODUCT_DISCOVERY.md` §2.5, §2.6 paso 5 y §7 “Precisión de diarización e indicador flotante” (2026-10-09). No se derivan controles, diseño visual ni cantidad fija de hablantes de la imagen/modal de referencia; la forma de registrar cada Disposición_por_Hablante y de presentar los hablantes pendientes queda al diseño.
 
 ### Requisito 4: Persistencia de una revisión incompleta
 
@@ -67,11 +72,12 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta.
 
 #### Criterios de Aceptación
 
-1. WHEN la persona usuaria abandona la Revisión_de_Hablantes antes de completarla, THE Sauri SHALL mantener esa revisión como Revisión_Pendiente.
-2. WHEN la persona usuaria regresa a una grabación con Revisión_Pendiente, THE Sauri SHALL solicitar nuevamente la revisión de hablantes pendiente.
-3. WHILE exista una Revisión_Pendiente, THE Sauri SHALL NOT tratarla como completada.
+1. WHEN la persona usuaria abandona una Revisión_de_Hablantes que aún no es Revisión_Completa, THE Sauri SHALL mantenerla como Revisión_Pendiente y conservar las Disposiciones_por_Hablante ya registradas junto con el conjunto de Hablantes_en_Revisión que aún no tienen una.
+2. WHEN la persona usuaria regresa a una Grabación_Almacenada con Revisión_Pendiente, THE Sauri SHALL solicitar nuevamente esa Revisión_de_Hablantes y presentar los Hablantes_en_Revisión sin Disposición_por_Hablante registrada.
+3. WHILE exista una Revisión_Pendiente, THE Sauri SHALL NOT tratarla como Revisión_Completa ni cerrarla como terminada, y SHALL NOT dar por revisados los Hablantes_en_Revisión sin Disposición_por_Hablante registrada.
+4. WHEN la persona usuaria registra la Disposición_por_Hablante del último Hablante_en_Revisión pendiente, THE Sauri SHALL dejar de solicitar nuevamente esa Revisión_de_Hablantes al regresar a la grabación.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§3 (“Human correction matters”), 4.B pasos 3–4, 5, 6; `PRODUCT_DISCOVERY.md` §2.5 y §2.6 paso 5.
+**Trazabilidad:** `PRODUCT_BASELINE.md` §§3 (“Human correction matters”: “incomplete speaker review remains pending and is requested again when the user returns”), 4.B paso 3 y 4 (“If the user leaves before completing review, the review remains pending and is requested again on returning to the recording. It cannot be dismissed as complete without finishing.”), 5, 6; `PRODUCT_DISCOVERY.md` §2.5 y §2.6 paso 5.
 
 ### Requisito 5: Reutilización de identidades ante variación acústica
 
