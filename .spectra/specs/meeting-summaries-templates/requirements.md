@@ -52,10 +52,12 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 
 #### Acceptance Criteria
 
-1. THE user SHALL be able to create multiple personal **Summary_Template** instances in Sauri web.
-2. THE user SHALL be able to provide specific instructions for each personal **Summary_Template**.
-3. THE user SHALL be able to edit each personal **Summary_Template** after it has been created.
-4. WHEN a **Summary_Template** is applied to a **Meeting_Summary**, THE resulting summary SHALL reflect that template's specific instructions.
+1. THE system SHALL associate each personal **Summary_Template** with the user who created it.
+2. THE owner of a personal **Summary_Template** SHALL be able to provide specific instructions for it and create multiple personal templates in Sauri web.
+3. THE owner of a personal **Summary_Template** SHALL be able to edit it after it has been created.
+4. WHEN a user attempts to edit a **Summary_Template** owned by another user, THE system SHALL prevent the edit.
+5. WHEN a user attempts to select a **Summary_Template** owned by another user for a **Meeting_Summary**, THE system SHALL prevent applying that template.
+6. WHEN a **Summary_Template** is applied to a **Meeting_Summary**, THE resulting summary SHALL reflect that template's specific instructions.
 
 **Traceability:** Owner-approved `PRODUCT_BASELINE.md` §5 confirms user-defined, editable templates. Fer's 2026-10-16 decision establishes multiple personal templates, each with specific instructions. Internal template structure, schema, and format remain deferred.
 
@@ -77,12 +79,13 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 
 #### Acceptance Criteria
 
-1. THE user SHALL be able to configure one personal **Summary_Template** as their default in Sauri web.
-2. WHEN the system presents available summary templates to the user, THE system SHALL identify that user's configured default **Summary_Template**.
-3. WHEN the user explicitly chooses a personal **Summary_Template** for a transcript summary, THE system SHALL apply that chosen template to that summary.
-4. WHEN the user summarizes a transcript without making an explicit template choice for that summary, THE system SHALL automatically apply that user's configured default **Summary_Template** without requiring an additional confirmation.
-5. WHEN the user changes their configured default **Summary_Template**, THE system SHALL apply the newly configured default to subsequent transcript summaries for which the user makes no explicit template choice.
-6. THE personal default SHALL apply across template categories.
+1. THE user SHALL be able to configure one **Summary_Template** that they own as their personal default in Sauri web.
+2. WHEN a user attempts to configure a **Summary_Template** owned by another user as their default, THE system SHALL prevent that configuration.
+3. WHEN the system presents available summary templates to the user, THE system SHALL identify that user's configured default **Summary_Template**.
+4. WHEN the user explicitly chooses a personal **Summary_Template** for a transcript summary, THE system SHALL apply that chosen template to that summary.
+5. WHEN the user summarizes a transcript without making an explicit template choice for that summary, THE system SHALL automatically apply that user's configured default **Summary_Template** without requiring an additional confirmation.
+6. WHEN the user changes their configured default **Summary_Template**, THE system SHALL apply the newly configured default to subsequent transcript summaries for which the user makes no explicit template choice.
+7. THE personal default SHALL apply across template categories.
 
 **Constraint:** This requirement does not define behavior when no personal default is configured, category-specific defaults, template fallback behavior, or any additional template-choice flow beyond the stated automatic application. It does not specify how a **Meeting_Summary** is generated.
 
