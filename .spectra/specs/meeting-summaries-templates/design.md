@@ -78,14 +78,14 @@ default table contradicts the recorded decision; a general key/value settings ta
 unapproved future settings semantics and couples unrelated features.
 
 **D4 — Freeze the triggering event's template; redelivery never replaces history.** Each
-summary job carries the template id, version and selection snapshot resolved for the pertinent
-transcription event. Retries/redeliveries reuse that immutable event data and an event idempotency
-key, so the same event is a no-op after its first successful persist; a later default change
-cannot rewrite an already-produced historical summary. A subsequent transcription event uses
-the then-current default. Template version increments when its selection changes. *Alternativas
-descartadas:* resolving the current default at worker execution time can change an in-flight
-job's template after a user changes settings; overwriting historical content on redelivery
-violates event idempotency and the “subsequent summaries” boundary.
+summary job carries the template id and version resolved for the pertinent transcription event.
+Retries/redeliveries reuse that immutable event data and an event idempotency key, so the same
+event is a no-op after its first successful persist; a later default change cannot rewrite an
+already-produced historical summary. A subsequent transcription event uses the then-current
+default. Template versioning must track changes to the eventual approved instruction format.
+*Alternativas descartadas:* resolving the current default at worker execution time can change an
+in-flight job's template after a user changes settings; overwriting historical content on
+redelivery violates event idempotency and the “subsequent summaries” boundary.
 
 **D5 — Lineage is data, not authorization; template names are visible, definitions are not.**
 Requirement 3.3 is verified through lineage: a generated summary records which template shaped
@@ -140,12 +140,14 @@ overwrites the same local file), ASCII-safe, and free of locale-dependent date f
 locale decisions the spec does not make; meeting-title-based names would leak rename history
 into filenames.
 
-**D12 — Template-driven content selection, not template-side rendering.** The renderer owns
-all rendering; a template never carries markup. This keeps the template schema
-requirements-shaped (D2) and makes "structure reflects the template" testable as selection
-invariants (P1, P2) instead of string comparisons. *Alternativas descartadas:* template-carried
-markup would smuggle layout authority into user data — an unapproved layout decision — and
-would require sanitization the spec does not ask for.
+**D12 — Do not prescribe the template's internal representation.** The approved requirements
+require user-created templates with specific instructions but explicitly defer their internal
+structure, schema, and format. This design therefore does not define template fields, validation,
+serialization, rendering instructions, or a selection mechanism. The instruction representation
+is a requirements-level design blocker to resolve before implementation planning. Summary
+presentation must still make topic and key points identifiable (R1.2). *Alternativas
+ descartadas:* a selection schema, prompt string, or markup format would each resolve the
+explicitly deferred template format without approval.
 
 **D13 — New API returns snake_case; the frontend maps explicitly.** The existing backend
 endpoints serialize snake_case keys (verified: `GET /api/v1/meetings/{id}/transcript` returns
@@ -256,40 +258,11 @@ New module following the project's router → service → repository → schemas
 **`schemas.py`** (Pydantic v2; `backend/pyproject.toml` declares `pydantic>=2.0.0`):
 
 ```python
-class TemplateSelectionSpec(BaseModel):
-    """Declarative content-selection spec stored on a template (D2)."""
-    include_topic: Literal[True] = True
-    include_key_points: Literal[True] = True
-
-    @model_validator(mode="after")
-    def require_both_elements(self) -> "TemplateSelectionSpec":
-        if not (self.include_topic and self.include_key_points):
-            raise ValueError("topic and key_points are both required")
-        return self
-
-class TemplateCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=128)
-    category_id: str | None = None
-    selection: TemplateSelectionSpec = TemplateSelectionSpec()
-
-class TemplateUpdate(BaseModel):
-    # Omitted fields remain unchanged; explicit JSON null clears category_id.
-    name: str | None = Field(None, min_length=1, max_length=128)
-    category_id: str | None = None
-    selection: TemplateSelectionSpec | None = None
-
-# Service uses model_fields_set to distinguish omitted category_id from explicit null.
-
-class TemplateOut(BaseModel):
-    id: str
-    name: str
-    owner_user_id: str
-    category_id: str | None
-    version: int
-    selection: TemplateSelectionSpec
-    is_default: bool
-    created_at: str  # ISO 8601
-    updated_at: str  # ISO 8601
+# Template instructions are required by R3.2, but their internal representation and
+# serialization are explicitly deferred by the approved requirements. Do not define
+# TemplateCreate/TemplateUpdate/TemplateOut payload fields for them until that boundary
+# is resolved. The stable API responsibilities are create/edit/list/get personal templates,
+# assign an optional category, and identify/set the personal default.
 
 class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
@@ -312,7 +285,7 @@ existing `require_sales` authorization dependency (pattern verified in
 | GET | `/api/v1/templates/categories` | list own categories | 200 + `CategoryOut[]` | declared before `/{template_id}` (see guard below) |
 | POST | `/api/v1/templates/categories` | create category | 201 + `CategoryOut` | |
 | GET | `/api/v1/templates/{template_id}` | get own template | 200 / 404 | 404 also for another user's template (no existence leak) |
-| PATCH | `/api/v1/templates/{template_id}` | edit own template | 200 + `TemplateOut` | bumps `version` when the selection changes (D4) |
+| PATCH | `/api/v1/templates/{template_id}` | edit own template | 200 + `TemplateOut` | version tracks approved instruction changes (D4); exact payload deferred (D12) |
 | PUT | `/api/v1/templates/default` | set own default | 204 | body `{"template_id": str}`; template must be owned by the user, else 422 |
 
 Static route ordering guard: `GET /api/v1/templates/categories` must be registered before
@@ -331,10 +304,10 @@ class SummarizationEngine(Protocol):
     async def generate(self, transcript_text: str) -> CanonicalSummary: ...
 ```
 
-`CanonicalSummary` (Pydantic model): `topic: str`, `key_points: list[str]`. The engine is
-selection-agnostic: it always produces the canonical elements from the transcript text; the
-worker applies template selection (P1) afterwards, so selection stays testable without any
-engine and engines stay interchangeable (D1).
+`CanonicalSummary` (Pydantic model): `topic: str`, `key_points: list[str]`, matching the two
+identifiable content elements required by R1.2. The engine protocol remains independent of the
+still-unspecified template representation (D12); how instructions shape generated content is a
+requirements-level blocker, not a selection stage designed here.
 
 **`repository.py`** — `SummaryRepository`: `upsert(summary_row)`,
 `get_by_meeting(meeting_id)`, with the same session/transaction ownership conventions as
@@ -347,43 +320,21 @@ response.
 
 **`renderer.py`** — pure functions (no I/O):
 
-```python
-def apply_selection(summary: CanonicalSummary, selection: TemplateSelectionSpec) -> CanonicalSummary:
-    """Returns the summary restricted to the selected structural elements (D2, D6)."""
-
-def render_markdown(summary: CanonicalSummary) -> str:
-    """Renders the fixed Markdown layout (D12). Never produces whitespace-only output."""
-```
-
-Renderer Markdown layout (fixed by design, not by template):
-
-```markdown
-# Meeting Summary
-
-## Topic
-
-<topic text>
-
-## Key Points
-
-- <point 1>
-- <point 2>
-```
-
-Both sections are always present in the fixed order above. Empty content is rendered as an
-empty-value marker within its section; no quality threshold or fallback content is specified.
+The approved requirements do not define a renderer contract, fixed Markdown layout, or internal
+instruction representation. These interfaces remain deferred. The eventual presentation must
+make the main topic and key points identifiable (R1.2) and support copy/download (R2), without
+this design prescribing format.
 
 **`worker.py`** — mirrors `transcription/worker.py` (verified message-validation and
 exception disciplines at `f5aa6b3e`):
 
-- Subscribes to topic `"summarize"`; message includes `event_id`, `meeting_id`, frozen `template_id`, `template_version`, and
-  the event's template-selection snapshot.
+- Subscribes to topic `"summarize"`; message includes `event_id`, `meeting_id`, frozen `template_id` and `template_version`. The approved instruction snapshot's representation remains deferred (D12).
 - Discards invalid/empty `meeting_id` with a warning log (same discipline as the
   transcription worker).
 - Loads the meeting and its transcript; if either is missing, logs and returns (queue
   redelivery governs; no custom retry loop).
-- Uses the immutable event payload's `template_id`, version and selection snapshot; it does
-  not resolve the user's current default during processing. If no default was configured at
+- Uses the immutable event payload's `template_id` and version; it does not resolve the user's
+  current default during processing. Instruction snapshot handling is deferred (D12). If no default was configured at
   the triggering event, no job is emitted; no fallback is invented.
 - **Idempotent skip (D4):** if the event id was already successfully applied, ack without
   regenerating or changing the historical summary.
@@ -478,8 +429,7 @@ class SummaryTemplate(Base):
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    include_topic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    include_key_points: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Template instruction fields and storage format are intentionally deferred (D12).
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -550,18 +500,11 @@ Alembic migration `008_summaries_and_templates.py`
    follow the source transcript/event, not a mutable “latest summary” slot.
 4. `ALTER TABLE users ADD COLUMN default_summary_template_id VARCHAR(36) NULL REFERENCES
    summary_templates(id) ON DELETE SET NULL`.
-5. Seed the one defined template (R5.1) **for each existing user**: `id` uuid4,
-   `owner_user_id = user.id`, `name = 'Default Summary Template'`, `category_id = NULL`,
-   `version = 1`, `include_topic = TRUE`, `include_key_points = TRUE`,
-   `created_at = updated_at = now()`; then set each user's `default_summary_template_id` to
-   their own copy's id. Naming rationale: the requirements and baseline explicitly state that
-   `General > Resumen básico` is a proposal, not an approved default/template, so the seed
-   uses a neutral name instead of silently adopting an unapproved label. The seed makes R5.1
-   immediately satisfiable and demonstrates the default mechanism for existing users without
-   inventing per-user fallback logic. It skips users that already own a template (guard).
-   New users created afterwards by `backend/app/auth/seed.py` receive the same treatment in
-   the application layer (a post-seed step creating the defined template + default per
-   seeded user).
+5. Do not seed a template or configure a default in this migration. Requirements do not
+   define a seed template, and R5.1 only allows users to configure a template they own as their
+   personal default; it does not require a default to exist for every user (D12). The ownership
+   and onboarding behavior for template instructions/default setup remains unresolved pending
+   an approved requirements decision.
 6. `downgrade()` reverses in exact reverse order: drop `users.default_summary_template_id`,
    then `meeting_summaries`, `processed_summary_events`, `summary_templates`, and
    `template_categories`.
@@ -613,7 +556,7 @@ export interface SummaryTemplate {
   ownerId: string;
   categoryId?: string;
   version: number;
-  selection: { includeTopic: boolean; includeKeyPoints: boolean };
+  // Instruction payload shape is deferred by the approved requirements (D12).
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -637,18 +580,12 @@ shared types, D13):
 ```typescript
 export async function getSummary(meetingId: string): Promise<MeetingSummary>;
 export async function listTemplates(): Promise<SummaryTemplate[]>;
-export async function createTemplate(input: {
-  name: string;
-  categoryId?: string | null;
-  selection: { includeTopic: boolean; includeKeyPoints: boolean };
-}): Promise<SummaryTemplate>;
+// Template instruction payload shape and serialization are deferred by the approved
+// requirements (D12); do not define request fields for them before that boundary is resolved.
+export async function createTemplate(input: { name: string; categoryId?: string | null }): Promise<SummaryTemplate>;
 export async function updateTemplate(
   id: string,
-  input: Partial<{
-    name: string;
-    categoryId: string | null;
-    selection: { includeTopic: boolean; includeKeyPoints: boolean };
-  }>,
+  input: Partial<{ name: string; categoryId: string | null }>,
 ): Promise<SummaryTemplate>;
 export async function listCategories(): Promise<TemplateCategory[]>;
 export async function createCategory(name: string): Promise<TemplateCategory>;
@@ -677,8 +614,9 @@ and a nav entry. Contains:
 
 - Template list with `isDefault` identification (R5.4) and a "Set as default" action per
   template (R5.3); the current default is visually marked.
-- Create/edit template form: `name`, category dropdown (own categories + "No category",
-  R4.3), and the two selection checkboxes (D2). Validation errors from 422 render inline.
+- Create/edit template form supports a template name and optional category (R3.2, R4.3).
+  Template instruction controls and payload serialization remain unspecified under D12; no
+  selection checkboxes or implied include/exclude behavior are designed.
 - Category creation inline form (R4).
 
 ### 8. Worker bootstrap and configuration
@@ -709,10 +647,9 @@ erDiagram
 
 Key data contracts:
 
-- `summary_templates` selection is stored as two boolean columns (`include_topic`,
-  `include_key_points`), not JSON, so DB-level NOT NULL/defaults are enforceable and the
-  "at least one selected" rule is validated in the schema layer
-  (`TemplateSelectionSpec` validator, D2).
+- The internal representation and storage format of template instructions are not specified;
+  the approved requirements defer them (D12). Do not add a selection schema, boolean columns,
+  or constraints that encode optional inclusion behavior without an approved decision.
 - `meeting_summaries.key_points_json` preserves order; the renderer emits list items in
   stored order (P2).
 - `meeting_summaries` has no `state`/`failure_cause` columns: a row exists only after a
@@ -733,30 +670,27 @@ The summary also records the template and immutable template-version/instruction
 for that event; later edits do not rewrite the already-persisted result (D2, D4, D6).
 *Valida: R1.2, R3.3, R5.5.*
 
-**P2 — Renderer determinism and content preservation.**
-For any shaped summary `S'`:
-`render_markdown(S')` is deterministic (same input → same output string); it preserves the
-stored order of `key_points`; it contains the topic text iff it is non-empty (an empty topic
-renders as `-`); it never produces an empty or whitespace-only string (minimum artifact is
-`# Meeting Summary`); every element not present in `S'` is absent from the output.
-*Valida: R1.2 (clearly organized content), R2.1/R2.2 (copy/download carry the exact content).*
+**P2 — Preserve required content in the presented summary (R1.2).**
+The summary presentation makes its main topic and key points identifiable and preserves their
+content for copy/download (R2). The approved requirements do not define a fixed layout, output
+format, empty-value marker, or renderer algorithm; those details remain unresolved (D12).
 
 **P3 — Default resolution is unique, personal, and category-blind (R5.3–R5.6).**
 For any user `u` and any snapshot of `users`/`summary_templates`:
 - at most one default exists for `u` (single nullable column, D3);
-- default resolution at transcription-event creation returns the then-configured template's
-  `(id, version, selection snapshot)`, or `None` iff the column is null (D9: no fallback);
+- default resolution at transcription-event creation identifies the then-configured template
+  `(id, version)`, or `None` iff the column is null (D9: no fallback); instruction snapshot
+  representation is deferred with the template format (D12);
 - the resolved template's `owner_user_id == u.id` (personal; enforced by FK + service checks);
 - resolution never reads the template's category (category-blind, R5.3/R5.5);
 - the outbox event freezes that resolution for delivery/retry; a later transcription event
   resolves the then-current default, so subsequent summaries use the new selection (R5.6).
 *Valida: R5.3, R5.4, R5.5, R5.6.*
 
-**P4 — Initial-release invariant: exactly one defined template per user.**
-After seeding/migration, every user has exactly one `Summary_Template` row (the defined one),
-it is that user's default, and it selects both structural elements. Creating additional
-templates is allowed (R5.2) but the seeded one remains the only auto-seeded template.
-*Valida: R5.1, R5.2.*
+**P4 — No template schema or initial-template invariant is derived here.**
+The approved requirements defer the template's internal structure, schema, and format, and do
+not define a seed template or require a personal default to be preconfigured. Do not encode
+these behaviors as schema or property-test invariants without an approved decision.
 
 **P5 — Summary is a distinct artifact associated with its meeting (R1.1, R1.3).**
 For any persisted summary row, `meeting_id` references the meeting it summarizes; multiple
@@ -795,7 +729,7 @@ no independent summary retention period is implied.
 | Scenario | Behavior |
 |----------|----------|
 | `POST /api/v1/templates` with `category_id` not owned by user | 422, no row created |
-| Template create/update with neither element selected | 422 (`TemplateSelectionSpec` validator) |
+| Template instruction payload validation | Unspecified until the approved template format is resolved (D12) |
 | `PUT /api/v1/templates/default` with another user's template id | 422, no change |
 | `GET /api/v1/templates/{id}` for another user's template | 404 (no existence leak) |
 | Meeting summary GET for nonexistent or not-owned meeting | 404 (existing meetings convention) |
@@ -902,13 +836,11 @@ this design fixes (D11, P6).
 
 These amendments are normative for implementation and supersede any conflicting text above.
 
-1. **Mandatory content selection (D2/P1).** Every valid template MUST set both
-   `include_topic = true` and `include_key_points = true`. These are required content
-   fields for every generated artifact, not optional checkboxes. Template selection remains
-   explicit as stored schema fields for forward-compatible implementation, but no current
-   template can omit either field. Remove the “at least one” rule, empty-section behavior,
-   and any user-facing claim that selecting either element is optional. Both fields are
-   validated true on create/update and by database constraints.
+1. **Template format boundary (D12).** The approved requirements defer the internal
+   structure, schema, and format of template instructions. Do not define fixed fields,
+   selection controls, storage constraints, or renderer layout until that boundary is resolved.
+   Preserve only the approved outcome: the applied template's specific instructions shape the
+   resulting summary, whose topic and key points remain identifiable (R1.2, R3.6).
 
 2. **Freeze template choice at the triggering event (D4/P8).** Resolve the user's selected
    default and read its immutable selection/version snapshot in the transcription workflow
