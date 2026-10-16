@@ -35,9 +35,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/tests/speaker_review/test_review_state.py` (create)
 
-**Action:** Add deterministic tests and Hypothesis property tests for correctness properties 1 and 2: recording one valid disposition changes only its target speaker item; review status is pending while any item lacks a valid disposition and complete iff all items have one. Generate varied review sizes and disposition combinations with at least 100 examples per property. Assert there is no request-level way to set completion directly.
+**Action:** Add deterministic tests and Hypothesis property tests for correctness properties 1 and 2: recording one valid disposition changes only its target speaker item; review status is pending while any item lacks a valid disposition and complete iff all items have one. Generate varied review sizes and disposition combinations with at least 100 examples per property. Keep the domain tests distinct and name them with `domain_disposition_isolation` and `domain_derived_completion` so T-10 can target only those tests. Also keep the request-level OpenAPI PUT schema assertion as a distinct test named `test_review_put_schema_excludes_completion`; it must reject client-supplied completion state.
 
-**Acceptance evidence:** From `backend/`, `pytest tests/speaker_review/test_review_state.py` fails on the missing/incorrect review behavior before implementation; preserve the failing output in the issue/PR evidence. Hypothesis reports at least 100 examples for each property.
+**Acceptance evidence:** From `backend/`, `pytest tests/speaker_review/test_review_state.py` fails on the missing/incorrect domain behavior and the unavailable/incorrect request schema before implementation; preserve the failing output in the issue/PR evidence. Hypothesis reports at least 100 examples for each property.
 
 **Validation command:** `pytest tests/speaker_review/test_review_state.py` (from `backend/`).
 
@@ -165,9 +165,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Action:** Implement the recording/revision-scoped review aggregate and per-speaker immutable key/disposition state, with `named`, `corrected`, and `confirmed` validation. Derive pending/complete exclusively from item dispositions; persist one item's change without changing other items. Map the logical design fields onto existing SQLAlchemy/Alembic conventions.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_review_state.py` passes, including proof that no caller can set completion directly.
+**Acceptance evidence:** `pytest tests/speaker_review/test_review_state.py -k "domain_disposition_isolation or domain_derived_completion"` passes the domain isolation and derived-status tests, including at least 100 Hypothesis examples per property. This task does not claim the request-level OpenAPI assertion passes; T-16 must make that assertion pass.
 
-**Validation command:** `pytest tests/speaker_review/test_review_state.py` (from `backend/`).
+**Validation command:** `pytest tests/speaker_review/test_review_state.py -k "domain_disposition_isolation or domain_derived_completion"` (from `backend/`).
 
 **Dependencies:** T-1.
 
@@ -249,9 +249,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Action:** Require meeting ID and authenticated principal owner in transcript/diarization legacy handlers and every new review/disposition/excerpt operation. Derive owner only from the authenticated principal, scope all recording/identity/excerpt lookups, and return not-found for absent or non-owned meetings without leaking data.
 
-**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_ownership.py` passes for legacy and new routes, including cross-owner identity/excerpt attempts.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_ownership.py tests/speaker_review/test_review_state.py` passes for legacy and new routes, including cross-owner identity/excerpt attempts. The request-level OpenAPI PUT schema assertion `test_review_put_schema_excludes_completion` passes and proves completion state cannot be supplied by a caller; this closes the RED assertion retained by T-1.
 
-**Validation command:** `pytest tests/meetings/test_speaker_review_ownership.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_ownership.py tests/speaker_review/test_review_state.py` (from `backend/`).
 
 **Dependencies:** T-7, T-10, T-11, T-12, T-13, T-14, T-17.
 
