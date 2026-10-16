@@ -31,7 +31,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-1: RED — review disposition isolation and derived completion
 
-**Tracking:** Issue #234 · Card task_61bf056b1aec4081
+**Tracking:** Issue #234 · Card task_61bf056b1aec4081 · PR #255
 
 **Files:** `backend/tests/speaker_review/test_review_state.py` (create)
 
