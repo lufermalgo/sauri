@@ -186,13 +186,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/app/transcription/`; `backend/app/diarization/`; `backend/app/infra/` queue/outbox and stage persistence modules.
 
-**Action:** Extend the existing async pipeline with lease-based idempotent stage claims, transactional stage output/outbox events and a finalizer that creates review/excerpts only after both stage outputs are complete. Persist readiness atomically; retry finalization from committed outputs without rerunning successful provider stages; do not expose partial reviews.
+**Action:** After revision state exists, extend the existing async pipeline with lease-based idempotent stage claims keyed by `(processing_revision_id, stage)`, transactional stage output/outbox events and a finalizer that creates review/excerpts only after both exact-revision stage outputs are complete. Persist readiness atomically; retry finalization from committed outputs without rerunning successful provider stages; do not expose partial reviews.
 
 **Acceptance evidence:** `pytest tests/speaker_review/test_processing_readiness.py` passes for readiness barrier, duplicate deliveries and finalizer recovery.
 
 **Validation command:** `pytest tests/speaker_review/test_processing_readiness.py` (from `backend/`).
 
-**Dependencies:** T-6, T-14.
+**Dependencies:** T-6, T-14, T-17.
 
 ### T-16: GREEN — enforce resource-owner checks on existing and new routes
 
@@ -210,13 +210,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/app/infra/models.py`; `backend/app/transcription/`; `backend/app/diarization/`; `backend/app/meetings/`; Alembic migration under `backend/alembic/versions/`.
 
-**Action:** Add per-recording processing state and revision rows, backfill existing stage rows to compatibility revision 1, scope transcript/diarization uniqueness to `(meeting_id, processing_revision_id)`, pin all queue, worker, repository, legacy read, review GET/PUT and excerpt operations to exact revision IDs. Serialize candidate admission and activation with the shared state-row lock. Maintain separate active and in-flight pointers, atomically activate only the current ready candidate, preserve a pending review against distinct reprocessing, and retain the in-flight slot through retryable failures.
+**Action:** Add per-recording processing state and revision rows, backfill existing stage rows to compatibility revision 1, scope transcript/diarization uniqueness to `(meeting_id, processing_revision_id)`, and establish exact revision IDs on candidate admission, queue envelopes, repositories, legacy reads, review GET/PUT and excerpt operations. Serialize candidate admission and activation with the shared state-row lock. Maintain separate active and in-flight pointers, atomically activate only the current ready candidate, preserve a pending review against distinct reprocessing, and retain the in-flight slot through retryable failures. Provide the revision-aware stage/finalizer boundary; T-15 adds lease/outbox/recovery mechanics on that boundary.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_processing_revisions.py` passes all migration, legacy compatibility, locking, concurrency, retry, pending-review preservation, stale revision and no-mixed-read cases.
+**Acceptance evidence:** `pytest tests/speaker_review/test_processing_revisions.py` passes migration, legacy compatibility, admission/activation locking, concurrency, pending-review preservation, stale revision and no-mixed-read cases.
 
 **Validation command:** `pytest tests/speaker_review/test_processing_revisions.py` (from `backend/`).
 
-**Dependencies:** T-8, T-14, T-15.
+**Dependencies:** T-8, T-14.
 
 ## Phase 3: Web GREEN and Cross-Surface Validation
 
@@ -248,7 +248,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 - RED suites T-1 through T-9 have no prerequisite edges and can be prepared independently.
 - GREEN pairs: T-1 → T-10; T-2 → T-11; T-3 → T-12; T-4 → T-13; T-5 → T-14; T-6 → T-15; T-7 → T-16; T-8 → T-17; T-9 → T-18. These are mandatory RED-before-GREEN edges.
-- T-10 → T-11/T-12/T-13/T-16 because those components require the persisted review model/service; T-11 → T-13 because identity sample writes share its transactional idempotency boundary; T-13 → T-16 because route ownership must cover the identity repository; T-14 → T-15/T-17 because readiness/finalization/revision activation cannot complete until validated excerpts are available; T-15 → T-17 because revision processing builds on the stage/finalizer pipeline. T-19 waits for all implementation tasks because it is whole-feature validation.
+- T-10 → T-11/T-12/T-13/T-16 because those components require the persisted review model/service; T-11 → T-13 because identity sample writes share its transactional idempotency boundary; T-13 → T-16 because route ownership must cover the identity repository; T-14 → T-15/T-17 because readiness/finalization/revision activation cannot complete until validated excerpts are available. T-17 establishes revision state and exact-ID boundaries before T-15 adds stage claims/outbox/finalizer recovery keyed to that revision, avoiding a schema/pipeline dependency cycle. T-19 waits for all implementation tasks because it is whole-feature validation.
 - No other edges are implied. In particular, unrelated RED suites and their implementation units remain parallel where the listed prerequisites permit.
 
 ## Traceability, Assumptions, and Open Implementation Dependencies
