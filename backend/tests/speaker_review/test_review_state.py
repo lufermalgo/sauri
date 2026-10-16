@@ -45,7 +45,7 @@ def speaker_states(draw: st.DrawFn) -> SpeakerState:
 
 @settings(max_examples=100)
 @given(state=speaker_states(), data=st.data(), disposition=st.sampled_from(VALID_DISPOSITIONS))
-def test_disposition_changes_only_its_target_speaker(
+def test_domain_disposition_isolation(
     state: SpeakerState, data: st.DataObject, disposition: Disposition
 ) -> None:
     """Recording a disposition returns new state and leaves non-target items unchanged."""
@@ -67,7 +67,7 @@ def test_disposition_changes_only_its_target_speaker(
 
 @settings(max_examples=100)
 @given(state=speaker_states())
-def test_review_completion_is_derived_from_every_speaker_disposition(
+def test_domain_derived_completion(
     state: SpeakerState,
 ) -> None:
     """A review is complete iff all items have one valid non-null disposition."""
@@ -78,7 +78,7 @@ def test_review_completion_is_derived_from_every_speaker_disposition(
     )
 
 
-def test_speaker_review_put_request_cannot_set_completion_directly() -> None:
+def test_review_put_schema_excludes_completion() -> None:
     """The public disposition request schema must not expose derived completion."""
     from app.main import app
 
