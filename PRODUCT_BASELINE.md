@@ -1,10 +1,10 @@
 # Sauri Product Baseline
 
-> **Status: APPROVED — the owner approved the product content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) on 2026-10-09.** This approval applies to that exact content. Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
+> **Status: DRAFT — this revision adds the owner's 2026-10-16 clarification on per-user speaker identity reuse. The prior content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09; this revised snapshot requires the owner's approval.** Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
 
 ## 1. Product purpose
 
-Sauri is an internal Summan platform for capturing commercial meetings and making their recordings, speaker-attributed transcripts, notes, and summaries useful for later review. The initial user is the functional user of Sauri; the product should be conceived as an internal tool with potential to scale to many Summan users. The way that scale affects identities, access, and sharing is not decided.
+Sauri is an internal Summan platform for capturing commercial meetings and making their recordings, speaker-attributed transcripts, notes, and summaries useful for later review. The initial user is the functional user of Sauri; the product should be conceived as an internal tool with potential to scale to many Summan users. Speaker name/identity associations are per-user and not shared with other users. Multi-user rollout, authentication, and detailed access policy remain undecided.
 
 The user needs to be able to record a meeting on demand, trust that the resulting audio/video and transcript are available for later use, understand who spoke (and correct uncertain or wrong attributions), and return to a recording in a web portal to review or download it.
 
@@ -19,7 +19,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 
 1. A user can start a meeting capture from the Chrome extension and later find the resulting recording in Sauri.
 2. The recording preserves usable audio and video, and the transcript is attributed to known speakers where possible; uncertain speakers remain visibly unresolved rather than being assigned an unsupported identity.
-3. The user can review and correct speaker identities, and corrections inform future recognition across Sauri.
+3. The user can review and correct speaker identities. A user's saved name/identity associations are that user's preferences/data and may help recognize speakers in later recordings for that same user only; they are not shared with other users.
 4. The user can revisit a recording in the web portal, navigate between its media and transcript, access notes and summary separately, and download the video or transcript.
 
 ## 3. Experience principles
@@ -27,7 +27,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 - **On-demand capture:** capture starts only when the user initiates it from the extension and selects the Google Meet tab.
 - **Configurable capture presence:** the extension preferences include whether the floating recording indicator is shown. Hiding it is intentional; the user does not need in-recording controls in that mode and can end capture by stopping Chrome tab sharing.
 - **Honest attribution:** show a known speaker's name when recognized; use `Speaker N` when the voice is unknown or attribution is uncertain. Do not imply an uncertain match is confirmed.
-- **Human correction matters:** incomplete speaker review remains pending and is requested again when the user returns. A correction to a wrong speaker identification applies to future recognition across Sauri, not only that recording.
+- **Human correction matters:** incomplete speaker review remains pending and is requested again when the user returns. A user's speaker-name/identity associations are that user's own preferences/data; corrections may inform later recognition for that same user, not other users. Do not infer cross-user sharing of labels, names, or voice data.
 - **Keep related content distinct:** notes are associated with a recording but kept in a section separate from the transcript. Summaries are also presented as a distinct meeting artifact.
 - **Do not let visual references invent scope:** screenshots are inspiration only. Their values, labels, layout, and controls are not product commitments unless separately confirmed below.
 
@@ -48,7 +48,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 2. A recognized speaker appears by name. An unknown or uncertain speaker appears as `Speaker N`.
 3. When processing finishes, the user is asked to review speaker names. For each speaker, the user can play a clear audio excerpt, replace `Speaker N` with a chosen name/label, or correct an automatically assigned name.
 4. If the user leaves before completing review, the review remains pending and is requested again on returning to the recording. It cannot be dismissed as complete without finishing.
-5. Previously established identities should be reused despite acoustic variation. The design chooses the mechanism; no voiceprint, model, or other particular technique is selected here. Corrections to an automatic identification affect future recognition throughout Sauri.
+5. Previously established identities should be reused despite acoustic variation for the same user. The user's saved name/identity associations are that user's preferences/data and may help recognize speakers in that user's later recordings only; they are not shared with other users. The design chooses the mechanism; no voiceprint, model, or other particular technique is selected here.
 
 ### C. Find and revisit a recording in the web portal
 
@@ -70,7 +70,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 | Cancel / pause-resume / stop outcomes | Recorder can abandon, temporarily pause, or finish capture | Confirmed intent | Cancel creates no further action; stop stores the recording and starts transcription |
 | Recording-associated notes, separate from transcript | Recorder adds context for later review | Confirmed intent | Note format/editing and access when indicator is hidden remain open/design work |
 | Recording storage, transcription, and automatic speaker identification | Recorder can review the captured meeting and who spoke | Confirmed intent | Transcription/diarization technology and quality thresholds are not chosen here |
-| Speaker review, `Speaker N` for unknown/uncertain voices, and platform-wide future effect of corrections | Recorder resolves attribution and improves future recognition | Confirmed intent | Identity reuse across users, permissions, and technical recognition mechanism remain unresolved |
+| Speaker review, `Speaker N` for unknown/uncertain voices, and same-user future effect of corrections | Recorder resolves attribution and improves future recognition for that same user | Confirmed intent | Cross-user sharing of speaker labels, names, and voice data is not implied; future multi-user implementation must preserve per-user isolation. Permissions and technical recognition mechanism remain unresolved |
 | Web recording library with search, newest-first ordering, metadata-derived filters, session selection | User finds recordings later | Confirmed intent | Search semantics and filter catalogue are for design; do not infer full-text transcript search |
 | Rename/delete/download recording video and transcript | User manages and takes away a session's artifacts | Confirmed intent | Retention, deletion guarantees, and export formats are not specified |
 | Editable company, project, participant metadata; predefined and user-created tags | User organizes recordings | Confirmed intent | Tag governance and extra fields are not specified |
@@ -89,7 +89,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 - A recording is initiated on demand from the extension; the current described journey selects a Google Meet browser tab.
 - The user expects usable audio and video, transcription, and speaker attribution. Expectations do not represent technical verification or a guaranteed outcome.
 - Unknown or uncertain speaker attribution must be represented as `Speaker N` until human review.
-- A user correction to speaker identity must influence later recognition throughout Sauri.
+- A user's saved speaker name/identity associations are that user's preferences/data and may influence later recognition for that same user only. They are not shared with other users; future per-user isolation is required. This does not authorize global voice modeling.
 - Meeting notes, transcript, and summary are distinct content types associated with the meeting as described above.
 - The functional user reports that Sauri is authorized and attendees are asked before recording. This baseline does not independently validate that assertion or decide a consent workflow.
 
@@ -99,12 +99,13 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 - Assuming that a UI screenshot selects a framework, technology, exact layout, default value, capture mode, or additional preference.
 - Treating the six-person example as a maximum or assuming all automatic speaker matches will be correct.
 - Treating existing source code, old roadmaps, or tests as product approval or evidence of deployment.
+- Sharing speaker labels, names, or voice data between users, or using them for global voice modeling, is not authorized by this baseline clarification.
 
 ## 7. Open and deferred decisions
 
 These are not questions already answered by the user; they are the remaining boundaries for discovery or design.
 
-1. **Multi-user scale and identity boundaries:** how speaker identities are available across users, and what permissions/access boundaries apply.
+1. **Future multi-user platform and access policy:** multi-user rollout and authentication (including Google authentication) are separate future work. The speaker identity boundary is decided: associations are per-user and must not be shared across users. Detailed permissions/access policy remains open.
 2. **Technical design:** transcription and diarization/identity-reuse mechanisms. The user expects strong identification and considers current ML/deep-learning methods if useful, but has not selected a model or implementation.
 3. **Templates:** whether templates/defaults are personal or shared and how a default is chosen across categories. Do not treat “General > Resumen básico” as settled.
 4. **Capture design:** exact selector composition and options, and the result of clicking record/note again after closing the selector without a selection.
@@ -121,7 +122,7 @@ These are not questions already answered by the user; they are the remaining bou
 These are outcome signals for later measurement, not committed targets or acceptance thresholds:
 
 - Users can locate a saved meeting and reopen its video and transcript.
-- Users can identify and correct speaker labels, and later recordings can reuse those corrections.
+- Users can identify and correct speaker labels, and later recordings for that same user can reuse those corrections.
 - Users can navigate between transcript passages and corresponding media time.
 - Users can add and later distinguish meeting notes, transcript, and summary.
 - Users can retrieve a meeting summary and download the relevant recording artifacts.
@@ -130,6 +131,6 @@ Numerical targets, measurement windows, and representative-user acceptance evide
 
 ## 9. Source and authority
 
-This baseline was prepared from `PRODUCT_DISCOVERY.md`, especially §§1–6 and the latest chronological clarifications in §7 (2026-10-09). Later clarifications govern earlier descriptions where they differ: `Speaker N` for unknown/uncertain voices; hiding the indicator means no in-recording controls are required and capture ends by stopping Chrome tab sharing; notes are separate from the transcript and attached to the recording; speaker corrections apply across Sauri's future recognition; CRM and its AI agent remain outside current scope.
+This baseline was prepared from `PRODUCT_DISCOVERY.md`, especially §§1–6 and the chronological clarifications in §7. The 2026-10-16 owner clarification, relayed by Teo in `th_24d098a54e5c4187`, narrows the earlier speaker-correction wording: Speaker N can be reviewed/named per recording; saved name/identity associations are that user's data/preferences and may assist recognition in later recordings for that same user only; there is no implied sharing of labels, names, or voice data with other users. Future per-user isolation is intended; multi-user rollout and Google authentication are separate work. This does not authorize global voice modeling. Other clarifications remain: `Speaker N` for unknown/uncertain voices; hiding the indicator means no in-recording controls are required and capture ends by stopping Chrome tab sharing; notes are separate from the transcript and attached to the recording; CRM and its AI agent remain outside current scope.
 
-The owner approved the product content of this baseline as published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) on 2026-10-09. This status annotation records that approval; no product-scope content was changed after the approved version. The discovery record preserves examples, references, and distinctions in greater detail. Open and deferred decisions remain unresolved and outside the approved scope. Product acceptance and runtime delivery are separate gates.
+The owner approved the previous product content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) on 2026-10-09. This revision changes the speaker-identity boundary based on the owner's 2026-10-16 clarification and is DRAFT pending approval of this exact snapshot; it is not implementation authorization. The discovery record preserves examples, references, and distinctions in greater detail. Other open and deferred decisions remain unresolved and outside approved scope. Product acceptance and runtime delivery are separate gates.
