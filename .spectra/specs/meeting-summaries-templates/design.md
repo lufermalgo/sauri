@@ -37,14 +37,14 @@ The solution consists of:
 3. **Summaries module** (`backend/app/summaries/`): a `Meeting_Summary` entity associated
    with its meeting and frozen template/event lineage, produced by a dedicated `summarize`
    worker from a durable outbox event committed atomically with the transcript.
-4. **A canonical summary model** (`topic` + `key_points`), both mandatory in every valid
-   template and generated artifact, rendered to Markdown by a pure renderer.
+4. **Structured summary content** that makes the main topic and key arguments or points
+   identifiable (R1.2), without imposing a fixed presentation or template schema.
 5. **Meeting-view integration**: a new summary section in the portal's meeting view, distinct
    from transcript and notes, with copy and download actions; a platform-settings view for
    template CRUD and default selection.
-6. **Tests-first TDD plan**: property tests (with `hypothesis`, ≥100 examples) for the
-   resolver/renderer/selection contracts and unit/integration tests for API and worker
-   behavior, each property sequenced RED before its implementation.
+6. **Tests-first TDD plan**: property tests (with `hypothesis`, ≥100 examples) for approved
+   invariants, plus unit/integration tests for API, worker, and UI behavior, each property
+   sequenced RED before its implementation.
 
 ## Decisiones de Diseño Clave
 
@@ -113,11 +113,12 @@ left/center/right layout is recorded as future inspiration, not adopted. *Altern
 descartadas:* adopting the imagined layout would decide an explicitly open question; skipping
 frontend integration entirely would leave the requirements unverifiable end-to-end.
 
-**D8 — Copy/download without extra endpoints.** Copy uses `navigator.clipboard` on already
-fetched summary content; download serializes the same fetched content client-side as a
-`.md` file via `URL.createObjectURL` + anchor click. No new backend endpoint is needed.
-*Alternativas descartadas:* a backend `/download` endpoint adds auth surface for zero
-requirement value; any extension clipboard bridge is outside this spec's surfaces.
+**D8 — Copy/download the available summary without extra endpoints.** Copy and download use
+content already fetched for the meeting summary; no separate backend download endpoint is
+needed. The serialized representation, file format, and renderer remain unresolved because
+the approved requirements specify copy/download capability but no format or layout (R2, D12).
+*Alternativas descartadas:* a backend `/download` endpoint adds auth surface without a stated
+requirement; choosing a specific client-side serialization here would invent an output format.
 
 **D9 — No default-behavior invented where the spec is silent.** Where the approved
 requirements deliberately leave behavior unspecified, the design does not fill the gap: no
@@ -133,18 +134,19 @@ small, structured, per-meeting artifact queried by meeting id, like transcripts;
 is for media blobs. *Alternativas descartadas:* object-store storage would complicate querying
 and lineage without any requirement benefit at this scale.
 
-**D11 — Stable, meeting-scoped download filename.** The downloaded file is named
-`meeting-summary-<meetingId>.md`: stable across downloads of the same meeting (re-downloading
-overwrites the same local file), ASCII-safe, and free of locale-dependent date formatting.
-*Alternativas descartadas:* date-stamped names would accumulate duplicate files and introduce
-locale decisions the spec does not make; meeting-title-based names would leak rename history
-into filenames.
+**D11 — Download filename and format remain unresolved.** The approved requirements require
+download capability but do not define a filename, file extension, serialization, or renderer.
+Implementation planning must preserve that boundary or obtain an approved product clarification;
+this design does not choose a format or filename. *Alternativas descartadas:* hard-coding a
+Markdown extension, date, or meeting-title naming policy would add choices absent from R2.
 
 **D12 — Do not prescribe the template's internal representation.** The approved requirements
 require user-created templates with specific instructions but explicitly defer their internal
 structure, schema, and format. This design therefore does not define template fields, validation,
-serialization, rendering instructions, or a selection mechanism. The instruction representation
-is a requirements-level design blocker to resolve before implementation planning. Summary
+serialization, rendering instructions, or field-level selection controls within a template.
+The requirements do specify selection of a personal template (R5.4–R5.5); that user choice is
+distinct from the deferred internal template format. The instruction representation is a
+requirements-level design blocker to resolve before implementation planning. Summary
 presentation must still make topic and key points identifiable (R1.2). *Alternativas
  descartadas:* a selection schema, prompt string, or markup format would each resolve the
 explicitly deferred template format without approval.
@@ -179,7 +181,6 @@ graph TD
         SS["summaries/service.py"]
         SREP["summaries/repository.py"]
         RES["templates/default_resolver.py"]
-        REN["summaries/renderer.py (pure)"]
     end
 
     subgraph "Workers (queue consumers)"
@@ -202,7 +203,6 @@ graph TD
     TW -->|publish summarize on transcript commit| SW
     SW --> RES
     SW --> ENG
-    SW --> REN
     SW --> SREP
     TR --> TS --> TREP
     SR --> SS --> SREP
@@ -315,15 +315,12 @@ requirements-level blocker, not a selection stage designed here.
 open, close, or commit the session).
 
 **`service.py`** — `SummaryService`: `get_summary_for_user(meeting_id, user)` enforcing
-meeting ownership (404 semantics below) and composing `render_markdown` output for the
-response.
+meeting ownership (404 semantics below) and returning the structured summary artifact.
 
-**`renderer.py`** — pure functions (no I/O):
-
-The approved requirements do not define a renderer contract, fixed Markdown layout, or internal
-instruction representation. These interfaces remain deferred. The eventual presentation must
-make the main topic and key points identifiable (R1.2) and support copy/download (R2), without
-this design prescribing format.
+**Presentation/serialization** — the approved requirements do not define a renderer contract,
+fixed layout, serialized copy/download format, or internal instruction representation. These
+interfaces remain unresolved. The eventual presentation must make the main topic and key points
+identifiable (R1.2) and support copy/download (R2), without this design prescribing a format.
 
 **`worker.py`** — mirrors `transcription/worker.py` (verified message-validation and
 exception disciplines at `f5aa6b3e`):
@@ -389,7 +386,6 @@ GET response body (snake_case keys, D13):
   "template_version": 3,
   "topic": "...",
   "key_points": ["..."],
-  "rendered_markdown": "# Meeting Summary\n\n## Topic\n\n...",
   "generation": 2,
   "created_at": "2026-10-15T21:04:00+00:00",
   "updated_at": "2026-10-15T21:04:00+00:00"
@@ -465,9 +461,8 @@ class MeetingSummary(Base):
         String(36), ForeignKey("summary_templates.id"), nullable=False
     )
     template_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    topic: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    key_points_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    rendered_markdown: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    key_points_json: Mapped[str] = mapped_column(Text, nullable=False)
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -543,7 +538,6 @@ export interface MeetingSummary {
   templateVersion: number;
   topic: string;
   keyPoints: string[];
-  renderedMarkdown: string;
   generation: number;
   createdAt: string;
   updatedAt: string;
@@ -594,14 +588,14 @@ export async function setDefaultTemplate(templateId: string): Promise<void>;
 
 **`components/SummarySection.tsx`** (new): rendered inside the meeting view as a **separate
 section** from the transcript view (R1.1). Owns local state only (`summary | null`,
-`loading`, `error`); fetches on mount via `getSummary`; renders `renderedMarkdown` as
-pre-formatted text (no new Markdown dependency); provides:
+`loading`, `error`); fetches on mount via `getSummary`; presents the structured summary so
+its main topic and key points are identifiable (R1.2). Provides copy and download actions on
+the available summary content (R2); serialization and file format remain unspecified (D8, D11).
 
-- **Copy** button → `navigator.clipboard.writeText(summary.renderedMarkdown)` (R2.1); success
-  feedback is local UI state ("Copied"), no alert/dialog.
-- **Download** button → serializes `summary.renderedMarkdown` into a `Blob`
-  (`type: "text/markdown;charset=utf-8"`), object URL, anchor click named
-  `meeting-summary-<meetingId>.md` (R2.2, D11).
+- **Copy** button uses the browser clipboard API for the available summary content (R2.1);
+  success feedback is local UI state ("Copied"), no alert/dialog.
+- **Download** button downloads the available summary content (R2.2); filename and serialization
+  are not prescribed by the approved requirements.
 - **Not-available state**: if `getSummary` returns 404 (no summary yet — e.g. no default
   configured, or generation not run), the section renders a neutral "No summary available for
   this meeting yet." message. This is a UI-state design, not a no-default fallback behavior
@@ -650,8 +644,8 @@ Key data contracts:
 - The internal representation and storage format of template instructions are not specified;
   the approved requirements defer them (D12). Do not add a selection schema, boolean columns,
   or constraints that encode optional inclusion behavior without an approved decision.
-- `meeting_summaries.key_points_json` preserves order; the renderer emits list items in
-  stored order (P2).
+- `meeting_summaries.key_points_json` preserves the order of key points (P2); presentation
+  layout and serialization remain unspecified.
 - `meeting_summaries` has no `state`/`failure_cause` columns: a row exists only after a
   successful generation (failed attempts leave no row; queue redelivery governs retries,
   D9) — the artifact's existence is its state.
@@ -662,12 +656,12 @@ Key data contracts:
 
 ## Propiedades de Correctitud
 
-**P1 — Required summary content is present for every applied template (R1.2, R3.3, R5.5).**
-For every successfully persisted summary, `topic` and `key_points` are both represented as
-identifiable structured content; no template option can omit either element. The applicable
-template's specific instructions shape the content of both elements, not whether either exists.
-The summary also records the template and immutable template-version/instruction snapshot used
-for that event; later edits do not rewrite the already-persisted result (D2, D4, D6).
+**P1 — Required summary content is identifiable for every applied template (R1.2, R3.3, R5.5).**
+For every successfully persisted summary, its main topic and key points remain identifiable as
+required by R1.2. The applicable template's specific instructions shape the content; this design
+does not prescribe template fields, controls, or an internal instruction representation. The
+summary also records the template and immutable template-version association used for that event;
+later edits do not rewrite the already-persisted result (D2, D4, D6).
 *Valida: R1.2, R3.3, R5.5.*
 
 **P2 — Preserve required content in the presented summary (R1.2).**
@@ -699,10 +693,11 @@ meeting view presents the available summary in a section distinct from transcrip
 (component boundary, verified by component test rather than property test).
 *Valida: R1.1, R1.3.*
 
-**P6 — Copy/download exactness (R2.1, R2.2).**
-The clipboard write payload and the downloaded file's text equal `summary.renderedMarkdown`
-exactly; the download filename is `meeting-summary-<meetingId>.md` (verified by component
-test with mocked clipboard/object-URL).
+**P6 — Copy and download are available for the meeting summary (R2.1, R2.2).**
+The meeting-summary UI exposes copy and download actions for the available summary content.
+The approved requirements do not prescribe exact serialized text, MIME type, file extension, or
+filename; tests verify the actions can operate on the fetched summary without asserting those
+unspecified representation choices.
 *Valida: R2.1, R2.2.*
 
 **P7 — API and storage privacy boundaries.**
@@ -714,14 +709,15 @@ recorded in `access_log`. Boundary check (repository/service level): for any use
 restriction + access audit apply to the new endpoints).*
 
 **P8 — Event-scoped idempotency and transcript-coupled deletion (D4/R6).**
-For any durable summary event `e` with frozen transcript id, template id/version, and selection
-snapshot: processing or redelivering the same `event_id` more than once persists at most one
-summary row, and a duplicate after successful commit leaves the stored summary unchanged.
-The event ledger and summary row commit atomically; failures before that commit leave neither
-marked complete nor partially persisted. A distinct later transcription event is not a retry
-of `e` and uses the template snapshot resolved for that later event. Deleting the source
-transcript (including transcript expiry) deletes its persisted summary through the FK cascade;
-no independent summary retention period is implied.
+For any durable summary event `e` with frozen transcript id and template id/version: processing
+or redelivering the same `event_id` more than once persists at most one summary row, and a
+duplicate after successful commit leaves the stored summary unchanged. The event ledger and
+summary row commit atomically; failures before that commit leave neither marked complete nor
+partially persisted. A distinct later transcription event is not a retry of `e` and uses the
+template id/version resolved for that later event; the representation of frozen template
+instructions remains deferred with D12. Deleting the source transcript (including transcript
+expiry) deletes its persisted summary through the FK cascade; no independent summary retention
+period is implied.
 *Valida: R5.5–R5.6 boundary, R6.1, D4.*
 
 ## Manejo de Errores
@@ -738,8 +734,8 @@ no independent summary retention period is implied.
 | Worker: meeting or transcript row missing at process time | Log + return (queue redelivery governs; no custom retry) |
 | Worker: no default configured for the meeting owner | Log "no default configured; skipping" and return — behavior unspecified by requirements; no fallback (D9) |
 | Worker: engine raises | Exception propagates uncaught (transcription-worker discipline); queue redelivery governs; no failed row is persisted (D9) |
-| Worker: stored lineage equals resolved default lineage | Idempotent no-op ack (D4, P8) |
-| Worker: engine returns empty topic and empty key_points with both selected | Stored as-is; renderer guarantees a non-whitespace artifact (P2). Engine-quality thresholds are unapproved scope (D1) |
+| Worker: duplicate `event_id` already committed | Idempotent no-op ack; never upsert or replace the stored summary (D4, P8) |
+| Worker: engine returns empty topic or key points | Output handling remains unspecified; no renderer or empty-value policy is introduced by this design (D1, D8, D12) |
 | `SUMMARIZATION_PROVIDER` unrecognized at worker startup | `ValueError` at startup, mirroring `create_asr_engine()` |
 | `GET /api/v1/templates/categories` vs `/{template_id}` route conflict | Static route registered first (implementation-order guard in the router file) |
 | Frontend copy blocked (clipboard permission) | Button shows a transient "Copy failed" state; no data loss |
@@ -747,17 +743,19 @@ no independent summary retention period is implied.
 
 ## Estrategia de Testing
 
-**Enfoque dual: unit/integration + property-based.** Rationale: the resolver, selection, and
-renderer are pure functions — ideal property-test territory; API/worker behavior is
-integration-tested like the existing modules.
+**Enfoque dual: unit/integration + property-based.** Rationale: the default resolver is a
+pure function suitable for property tests; API/worker behavior and required summary content
+are covered by integration and component tests. No tests infer a template-instruction schema
+or a fixed summary serialization from the deferred requirements.
 
 - **Property-based** (`hypothesis`, verified present in `backend` dev dependencies;
-  ≥100 examples per property, per AGENTS.md milestone criteria): P1–P5, P8 where automatable
-  (P1, P2, P3, P4 seed shape, P5 DB constraint via integration fixture, P8).
-- **Unit/integration**: router behavior (auth, 404/422 semantics), worker message handling
-  and idempotent skip, frontend component tests (`vitest` + `@testing-library/react`,
-  already in `frontend` devDependencies) for SummarySection states and copy/download
-  exactness (P6, P7 frontend half).
+  ≥100 examples per property, per AGENTS.md milestone criteria): approved properties P1–P5
+  and P8 where automatable (P3 default resolution; P4 protects against adding an initial
+  template invariant; P5 persistence behavior; P8 event and transcript lifecycle).
+- **Unit/integration**: router behavior (auth, 404/422 semantics), worker message handling,
+  required summary content, and frontend component tests (`vitest` + `@testing-library/react`,
+  already in `frontend` devDependencies) for SummarySection states and available copy/download
+  actions without asserting unspecified serialization (P6, P7 frontend half).
 
 **Estructura de archivos (backend):**
 
@@ -765,10 +763,8 @@ integration-tested like the existing modules.
 backend/tests/
 ├── templates/
 │   ├── test_templates_api.py             # unit/integration
-│   ├── test_default_resolver_property.py # P3 (property)
-│   └── test_selection_spec.py            # validator unit tests
+│   └── test_default_resolver_property.py # P3 (property)
 ├── summaries/
-│   ├── test_renderer_property.py         # P1, P2 (property)
 │   ├── test_worker.py                    # integration (skip/no-default/idempotent paths)
 │   └── test_summary_api.py               # unit/integration
 └── integration/
@@ -797,10 +793,10 @@ graph (AGENTS.md non-negotiable TDD order).
   branched at `f5aa6b3e4d1e2c8a0816743f11de8a7a6ad8c43a` (merge-base with `main`:
   `a753dee72703f3aeaf97c3b163de6b4954ab80e9`).
 - Failing-command evidence to produce at RED time: `cd backend && pytest
-  tests/summaries/test_renderer_property.py tests/templates/test_default_resolver_property.py
-  -q` must fail with collection errors naming the missing modules
-  (`app.summaries.renderer`, `app.templates.default_resolver`) — this captured RED output is
-  the required transfer evidence for the implementation task.
+  tests/templates/test_default_resolver_property.py -q` must fail with a collection error
+  for the missing `app.templates.default_resolver` module — this captured RED output is the
+  required transfer evidence for the implementation task. Do not add renderer or template
+  schema tests while those contracts remain unresolved.
 - Authorized integration route: the `transcribe` → `summarize` enqueue in
   `backend/app/transcription/worker.py` and the worker subscription in
   `backend/app/worker.py`.
@@ -820,7 +816,7 @@ cd backend && ruff check . && mypy .
 ## Scope Boundaries (explicit non-decisions)
 
 Restated for the auditor: this design does not select a summarization method or accuracy
-threshold (D1); does not define template visual layout beyond the fixed renderer layout
+threshold (D1); does not define template schema, summary visual layout, or serialization
 (D2, D12); does not define access control beyond the existing sales-user policy (P7); does
 defines deletion only as removing the persisted structured summary together with its transcript
 when that transcript expires or is deleted (R6), with no retention period or broader deletion
@@ -842,17 +838,15 @@ These amendments are normative for implementation and supersede any conflicting 
    Preserve only the approved outcome: the applied template's specific instructions shape the
    resulting summary, whose topic and key points remain identifiable (R1.2, R3.6).
 
-2. **Freeze template choice at the triggering event (D4/P8).** Resolve the user's selected
-   default and read its immutable selection/version snapshot in the transcription workflow
-   at the point the transcript is committed. The durable `summarize` message carries
-   `{meeting_id, template_id, template_version}` (and the resolved selection snapshot needed
-   to complete a job without reading a later-edited definition). The worker MUST use that
-   event snapshot, never re-resolve a newer default when processing/retrying/redelivering.
+2. **Freeze template choice at the triggering event (D4/P8).** Resolve the user's configured
+   default in the transcription workflow when the transcript is committed. The durable
+   `summarize` event identifies the chosen `template_id` and `template_version`; internal
+   instruction snapshot representation remains unresolved with D12. The worker MUST use that
+   event's choice and version, never re-resolve a newer default during retries/redelivery.
    Persist with a uniqueness/idempotency key for the pertinent transcript/generation event;
    repeated delivery of that same event is a no-op and MUST NOT overwrite an existing
    historical summary after a later default change. Subsequent transcription events use the
-   then-current default. A versioned immutable template snapshot or equivalent event payload
-   must make the event reproducible. A default change alone does not regenerate old summaries.
+   then-current default. A default change alone does not regenerate old summaries.
 
 3. **Generation engine integration boundary (D1).** The application invokes a configured
    `SummarizationEngine` adapter; business services and workers depend only on its protocol.
