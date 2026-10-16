@@ -15,6 +15,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-20: GATE — independently review voice-derived sample handling before implementation
 
+**Tracking:** Issue #253 · Card task_9dc19306fda14af2
+
 **Files:** Security review evidence attached to the task issue/card; no source-code changes.
 
 **Action:** Before T-13 begins, Zev independently reviews the planned voice-derived identity sample storage and source-recording cleanup against the approved design, records the applicable handling controls and any blockers, and identifies any unresolved policy/product decision for Ansel. Do not define new privacy policy or start T-13 storage work while a blocking finding or required owner-level decision remains unresolved.
@@ -29,6 +31,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-1: RED — review disposition isolation and derived completion
 
+**Tracking:** Issue #234 · Card task_61bf056b1aec4081
+
 **Files:** `backend/tests/speaker_review/test_review_state.py` (create)
 
 **Action:** Add deterministic tests and Hypothesis property tests for correctness properties 1 and 2: recording one valid disposition changes only its target speaker item; review status is pending while any item lacks a valid disposition and complete iff all items have one. Generate varied review sizes and disposition combinations with at least 100 examples per property. Assert there is no request-level way to set completion directly.
@@ -40,6 +44,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** None.
 
 ### T-2: RED — idempotent disposition writes
+
+**Tracking:** Issue #235 · Card task_6b82254160eb4a98
 
 **Files:** `backend/tests/speaker_review/test_disposition_idempotency.py` (create)
 
@@ -53,6 +59,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-3: RED — pending-review persistence and resume
 
+**Tracking:** Issue #236 · Card task_08a5bfffd13e4fd9
+
 **Files:** `backend/tests/speaker_review/test_review_resume.py` (create)
 
 **Action:** Add tests for correctness property 3: a pending review retains completed speaker dispositions after leaving/reloading, returns only undisposed items as remaining, and does not request review again after the last disposition.
@@ -64,6 +72,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** None.
 
 ### T-4: RED — same-owner identity matching and correction boundaries
+
+**Tracking:** Issue #237 · Card task_3d9851b90af54464
 
 **Files:** `backend/tests/speaker_review/test_identity_matching.py` (create)
 
@@ -77,6 +87,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-5: RED — speaker excerpt correspondence and validation
 
+**Tracking:** Issue #238 · Card task_8e1ed7b3a5f54922
+
 **Files:** `backend/tests/speaker_review/test_excerpts.py` (create)
 
 **Action:** Add tests for correctness property 7: each item resolves only to its target speaker's own recording excerpt; candidate selection follows the approved duration/VAD/tie-break ordering; reject out-of-bounds, undecodable, non-speech or other-speaker candidates; no review item is ready without a validated excerpt; playback failure does not substitute another excerpt or complete the item.
@@ -88,6 +100,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** None.
 
 ### T-6: RED — processing readiness, stage replay and finalizer recovery
+
+**Tracking:** Issue #239 · Card task_c6ef43a295bb41a1
 
 **Files:** `backend/tests/speaker_review/test_processing_readiness.py` (create)
 
@@ -101,6 +115,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-7: RED — owner checks on legacy and review routes
 
+**Tracking:** Issue #240 · Card task_0ac855a6ef27411e
+
 **Files:** `backend/tests/meetings/test_speaker_review_ownership.py` (create)
 
 **Action:** Add route integration tests for correctness property 10: transcript, diarization, review, disposition and excerpt reads/writes return not-found for another owner's meeting; owner ID is sourced from the authenticated principal; identity repository access and excerpt lookup are owner-scoped. Assert the review GET/PUT schemas and authenticated owner propagation match the approved cross-surface contract. Cover legacy routes so they cannot remain an existence-only bypass.
@@ -113,6 +129,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-8: RED — revision consistency, admission races and migration
 
+**Tracking:** Issue #241 · Card task_903b5c3055754303
+
 **Files:** `backend/tests/speaker_review/test_processing_revisions.py` (create)
 
 **Action:** Add tests for correctness property 11 and the revision-state boundary: migration backfills existing transcript/diarization rows to compatibility revision 1 and scopes uniqueness by meeting plus revision; legacy reads pin one revision; GET/admission locking is covered in both lock orders; only one concurrent initial candidate is admitted when active pointer is null; exact retries resume the in-flight revision; a pending active review rejects distinct reprocessing without mutation; a pre-marked ready current candidate can atomically activate and clear the in-flight pointer; non-current candidate activation and revision-qualified PUT/excerpt requests cannot displace/read/write another revision; no response combines revisions. Do not test stage-lease, outbox delivery or finalizer recovery here; T-6/T-15 cover those after the revision boundary exists. Cover complete and partial legacy records.
@@ -124,6 +142,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** None.
 
 ### T-9: RED — transcript review UI states and actions
+
+**Tracking:** Issue #242 · Card task_b1830561654c41e5
 
 **Files:** `frontend/src/components/TranscriptView.test.tsx`
 
@@ -139,6 +159,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-10: GREEN — persist speaker review aggregate and derived item dispositions
 
+**Tracking:** Issue #243 · Card task_5c10aed73c464472
+
 **Files:** `backend/app/meetings/` review domain/service modules; `backend/app/infra/models.py`; migration under `backend/alembic/versions/`.
 
 **Action:** Implement the recording/revision-scoped review aggregate and per-speaker immutable key/disposition state, with `named`, `corrected`, and `confirmed` validation. Derive pending/complete exclusively from item dispositions; persist one item's change without changing other items. Map the logical design fields onto existing SQLAlchemy/Alembic conventions.
@@ -150,6 +172,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** T-1.
 
 ### T-11: GREEN — make disposition persistence idempotent and atomic
+
+**Tracking:** Issue #244 · Card task_25899bc56c6346bf
 
 **Files:** `backend/app/meetings/` review service/repository modules; `backend/app/infra/models.py`; migration under `backend/alembic/versions/` as needed.
 
@@ -163,6 +187,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-12: GREEN — persist and return review state for resume
 
+**Tracking:** Issue #245 · Card task_5aaf06a24a074090
+
 **Files:** `backend/app/meetings/` review service/repository modules.
 
 **Action:** Implement active-review retrieval from persisted dispositions so reopening a pending review returns its saved decisions and only outstanding speaker items; completed review no longer requests a review. Do not add a revision-history UI.
@@ -174,6 +200,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** T-3, T-10.
 
 ### T-13: GREEN — implement owner-scoped identity matching and corrections
+
+**Tracking:** Issue #246 · Card task_7ffcf8082710427b
 
 **Files:** `backend/app/` identity matcher/repository modules; `backend/app/infra/models.py`; `backend/app/retention/` cleanup worker; migration under `backend/alembic/versions/` as needed.
 
@@ -187,6 +215,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-14: GREEN — derive and validate speaker-specific excerpts
 
+**Tracking:** Issue #247 · Card task_486562bbb0d7425b
+
 **Files:** `backend/app/` excerpt derivation/service modules; `backend/app/infra/` media boundary as needed.
 
 **Action:** Derive candidates solely from target-speaker assigned segments, apply the approved duration/VAD/earliest-start ordering, validate bounds/decoding/speech activity/assignment, and persist an opaque recording- and speaker-bound excerpt reference. Do not expose object-store keys or substitute an excerpt. A missing valid excerpt keeps the revision not-ready and retryable.
@@ -198,6 +228,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** T-5.
 
 ### T-15: GREEN — gate readiness on durable pipeline stages and recover finalization
+
+**Tracking:** Issue #248 · Card task_04a1d8c47e0241bf
 
 **Files:** `backend/app/transcription/`; `backend/app/diarization/`; `backend/app/infra/` queue/outbox and stage persistence modules.
 
@@ -211,6 +243,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-16: GREEN — enforce resource-owner checks on existing and new routes
 
+**Tracking:** Issue #249 · Card task_2c4350aa34a94025
+
 **Files:** `backend/app/meetings/router.py`; `backend/app/meetings/service.py`; meeting review/excerpt route modules.
 
 **Action:** Require meeting ID and authenticated principal owner in transcript/diarization legacy handlers and every new review/disposition/excerpt operation. Derive owner only from the authenticated principal, scope all recording/identity/excerpt lookups, and return not-found for absent or non-owned meetings without leaking data.
@@ -222,6 +256,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** T-7, T-10, T-11, T-12, T-13, T-14, T-17.
 
 ### T-17: GREEN — migrate and enforce exact processing revisions
+
+**Tracking:** Issue #250 · Card task_2fe36f6fd508483b
 
 **Files:** `backend/app/infra/models.py`; `backend/app/transcription/`; `backend/app/diarization/`; `backend/app/meetings/`; Alembic migration under `backend/alembic/versions/`.
 
@@ -237,6 +273,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-18: GREEN — add per-speaker review to the transcript view
 
+**Tracking:** Issue #251 · Card task_45143a5c381f471a
+
 **Files:** `frontend/src/components/TranscriptView.tsx`; `frontend/src/api.ts`; `frontend/src/components/TranscriptView.test.tsx`.
 
 **Action:** Integrate typed meeting review GET, per-speaker disposition PUT and opaque excerpt playback operations in the existing transcript view. Render uncertain speakers as `Speaker N`, explicit Confirm/Name/Correct controls, pending/complete state and one-item updates; reload server state on remount; keep controls keyboard-operable and show failures without advancing an item locally.
@@ -248,6 +286,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 **Dependencies:** T-9.
 
 ### T-19: Verify feature package validation and cross-surface contract
+
+**Tracking:** Issue #252 · Card task_4fb9ede796454770
 
 **Files:** backend and frontend test/configuration surfaces touched by this plan.
 
