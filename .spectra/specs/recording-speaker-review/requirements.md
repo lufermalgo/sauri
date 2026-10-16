@@ -4,7 +4,7 @@
 
 Después de guardar una grabación detenida, Sauri debe producir una transcripción e intentar identificar automáticamente a quienes hablan. La atribución debe distinguir lo que el sistema reconoce de lo que no puede atribuir con confianza: una persona reconocida aparece por su nombre; una voz desconocida o una atribución incierta permanece como `Speaker N` hasta que la persona usuaria la revise. La revisión humana permite escuchar evidencia de audio, asignar una identidad a hablantes sin identificar y corregir nombres automáticos incorrectos.
 
-La revisión no se considera terminada si la persona usuaria la deja incompleta: se resuelve hablante por hablante, y solo alcanza Revisión_Completa cuando todo hablante presentado tiene una disposición explícita registrada (nombrar, corregir o confirmar la atribución). Al abandonar una revisión no completa, Sauri la mantiene como Revisión_Pendiente y vuelve a solicitarla al regresar a esa grabación, sin cerrarla como terminada. Las identidades ya establecidas deben poder reutilizarse pese a variaciones acústicas, y una corrección de identificación automática debe influir en el reconocimiento futuro en toda Sauri.
+La revisión no se considera terminada si la persona usuaria la deja incompleta: se resuelve hablante por hablante, y solo alcanza Revisión_Completa cuando todo hablante presentado tiene una disposición explícita registrada (nombrar, corregir o confirmar la atribución). Al abandonar una revisión no completa, Sauri la mantiene como Revisión_Pendiente y vuelve a solicitarla al regresar a esa grabación, sin cerrarla como terminada. Las asociaciones de nombre/identidad guardadas por una persona usuaria son sus propios datos/preferencias y pueden ayudar al reconocimiento en grabaciones posteriores de esa misma persona usuaria. No se comparten con otras personas usuarias. Una corrección de identificación automática debe influir en reconocimientos futuros para esa misma persona usuaria, sin implicar compartición entre usuarios ni entrenamiento global.
 
 **Idea fuerza:** la identificación automática debe ser explícita sobre la incertidumbre, permitir corrección humana informada y llevar esas correcciones a reconocimientos futuros.
 
@@ -12,9 +12,9 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 
 **Fuera de alcance:** captura y controles de grabación; biblioteca y metadatos; reproducción y sincronización multimedia general entre la grabación y la transcripción (sin excluir la reproducción del fragmento claro de audio de cada hablante para revisar sus atribuciones, incluida en el requisito 3.2); notas; edición del texto de la transcripción; resúmenes; progreso, tiempos y errores visibles del procesamiento; y cualquier otro módulo o capacidad. Las referencias visuales y el código existente no amplían este alcance.
 
-**Límites abiertos:** no se seleccionan técnicas, modelos, umbrales de confianza ni criterios cuantitativos de calidad; el diseño técnico los deberá definir sin alterar los resultados observables aquí establecidos. La disponibilidad de identidades entre usuarios, su compartición y los permisos/accesos siguen abiertos y no se autorizan por estos requisitos. La expectativa de reutilización y efecto futuro no decide cómo se almacenan o gobiernan los datos de identidad.
+**Límites abiertos:** no se seleccionan técnicas, modelos, umbrales de confianza ni criterios cuantitativos de calidad; el diseño técnico los deberá definir sin alterar los resultados observables aquí establecidos. Las asociaciones de nombre/identidad, etiquetas y datos de voz pertenecen a la persona usuaria que las guarda y no se comparten con otras personas usuarias; el despliegue multiusuario, la autenticación y los detalles de acceso siguen separados y no se especifican aquí. No se prescribe almacenamiento, gobernanza, política de acceso ni entrenamiento global.
 
-**Autoridad y trazabilidad:** el alcance deriva del `PRODUCT_BASELINE.md` marcado como aprobado en este checkout (HEAD `3cdb3ea1404d2b25a9ec4a0ee56c7e51b9b22e9d`, blob `fc498d2f0b79b780725238be388b61b908381811`), cuyo encabezado atribuye la aprobación al contenido publicado en `d738e78` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`), junto con las decisiones pertinentes de `PRODUCT_DISCOVERY.md` indicadas en cada requisito. El estado de desarrollo existente es evidencia del estado actual únicamente: no constituye aceptación de producto ni autorización para ampliar o conservar comportamiento sin evaluarlo frente a estos requisitos y evidencia.
+**Autoridad y trazabilidad:** el alcance deriva del `PRODUCT_BASELINE.md` aprobado por Fer el 2026-10-16 para el contenido exacto del commit `f5ff445fd508983740cd6b5a89c08adafcbb9294` (blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`), con la anotación de aprobación en el commit `b071a7c6d2c72613aa42543d15e47b81f4999077`, junto con las decisiones pertinentes de `PRODUCT_DISCOVERY.md` indicadas en cada requisito. El estado de desarrollo existente es evidencia del estado actual únicamente: no constituye aceptación de producto ni autorización para ampliar o conservar comportamiento sin evaluarlo frente a estos requisitos y evidencia.
 
 ## Glosario
 
@@ -26,7 +26,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 - **Disposición_por_Hablante**: resultado explícito del paso de la persona usuaria por un Hablante_en_Revisión: asignar un nombre o etiqueta donde había una Etiqueta_Speaker_N, corregir un nombre asignado automáticamente, o indicar que la atribución presentada es correcta. El mecanismo concreto para expresar cada disposición lo define el diseño; estos requisitos no lo prescriben.
 - **Revisión_Completa**: estado de una Revisión_de_Hablantes en el que todo Hablante_en_Revisión tiene una Disposición_por_Hablante registrada.
 - **Revisión_Pendiente**: estado de una Revisión_de_Hablantes que aún no alcanza Revisión_Completa.
-- **Identidad_Establecida**: identidad de hablante definida mediante una identificación previa o una corrección/asignación humana.
+- **Identidad_Establecida**: asociación de nombre/identidad de hablante guardada o definida previamente por una persona usuaria; pertenece a esa persona usuaria y puede reutilizarse para su reconocimiento futuro, pero no se comparte con otras personas usuarias.
 
 ## Requisitos
 
@@ -81,20 +81,21 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 
 ### Requisito 5: Reutilización de identidades ante variación acústica
 
-**Historia de Usuario:** Como persona usuaria, quiero que Sauri pueda reutilizar identidades ya establecidas aunque cambien las condiciones acústicas, para evitar tratar repetidamente como nuevas a personas ya reconocidas.
+**Historia de Usuario:** Como persona usuaria, quiero que Sauri pueda reutilizar mis identidades ya establecidas aunque cambien las condiciones acústicas, para evitar tratar repetidamente como nuevas a personas ya reconocidas en mis grabaciones.
 
 #### Criterios de Aceptación
 
-1. WHEN una persona con Identidad_Establecida aparece en una Grabación_Almacenada posterior con variaciones acústicas en su voz, THE Sauri SHALL mostrar el nombre previamente establecido para esa atribución; IF la atribución es incierta, THEN THE Sauri SHALL mostrar una Etiqueta_Speaker_N en lugar de asignar otra identidad.
+1. WHEN una persona con Identidad_Establecida de la persona usuaria actual aparece en una Grabación_Almacenada posterior de esa misma persona usuaria con variaciones acústicas en su voz, THE Sauri SHALL mostrar el nombre previamente establecido para esa atribución; IF la atribución es incierta, THEN THE Sauri SHALL mostrar una Etiqueta_Speaker_N en lugar de asignar otra identidad.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§3 (“Human correction matters”), 4.B paso 5, 5, 6 y 7 (decisión técnica abierta 2); `PRODUCT_DISCOVERY.md` §2.5, §2.6 paso 5, §7 “Plataforma interna e identificación de hablantes” y §7 “Precisiones sobre captura, diarización, notas, portal y CRM” (2026-10-09). No se prescribe huella de voz, modelo ni otro mecanismo.
+**Trazabilidad:** `PRODUCT_BASELINE.md` §§3 (“Human correction matters”), 4.B paso 5 y 9 (asociaciones por usuario y reutilización para esa misma persona usuaria); la decisión técnica abierta en §7 mantiene sin seleccionar el mecanismo. No se prescribe huella de voz, modelo ni otro mecanismo.
 
 ### Requisito 6: Efecto futuro de las correcciones
 
-**Historia de Usuario:** Como persona usuaria, quiero que corregir una identificación automática equivocada influya en reconocimientos futuros en Sauri, para que la corrección no se limite a la grabación donde la hice.
+**Historia de Usuario:** Como persona usuaria, quiero que corregir una identificación automática equivocada influya en el reconocimiento de mis grabaciones futuras, para que la corrección no se limite a la grabación donde la hice.
 
 #### Criterios de Aceptación
 
-1. WHEN la persona usuaria corrige una identificación automática equivocada, THE Sauri SHALL aplicar esa corrección al reconocimiento futuro de ese hablante en toda la plataforma Sauri, no solo en la grabación corregida.
+1. WHEN la persona usuaria corrige una identificación automática equivocada, THE Sauri SHALL permitir que esa corrección informe el reconocimiento futuro de ese hablante en grabaciones posteriores de esa misma persona usuaria, no solo en la grabación corregida.
+2. THE Sauri SHALL NOT compartir con otras personas usuarias las asociaciones de nombre/identidad, etiquetas ni datos de voz guardados por una persona usuaria.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B paso 5, 5, 6 y 7 (decisión abierta 1); `PRODUCT_DISCOVERY.md` §2.5, §7 “Alcance de corregir una identificación automática” (decisión confirmada, 2026-10-09) y §7 “Plataforma interna e identificación de hablantes”. La influencia futura en Sauri está definida; identidad entre usuarios y permisos no.
+**Trazabilidad:** `PRODUCT_BASELINE.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B paso 5 y 9 (aclaración del 2026-10-16 sobre asociaciones por usuario, uso futuro para esa misma persona usuaria y ausencia de compartición entre usuarios). La influencia en reconocimientos futuros queda limitada a la misma persona usuaria; no se especifican aquí despliegue multiusuario, autenticación ni detalles de acceso, ni se autoriza entrenamiento global.
