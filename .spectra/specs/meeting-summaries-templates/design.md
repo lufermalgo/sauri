@@ -1,13 +1,15 @@
 # Design Document — Meeting Summaries and Templates
 
 Spec: `.spectra/specs/meeting-summaries-templates/`
-Requirements source: `requirements.md` @ commit `f5aa6b3e4d1e2c8a0816743f11de8a7a6ad8c43a`
-(blob `4778a46e72f5022a5baf272cf987db0299ac1c0b`, SHA-256 `68fbb706d03d0c0bc7c397d6aaccf0c1297eb5777bb4c69563eaa2909e25389a`), Mira-APPROVED round 4, 2026-10-15 16:19, run `run_65668bdab7b74476`.
-Baseline source: `PRODUCT_BASELINE.md` @ blob `fc498d2f0b79b780725238be388b61b908381811`
-(approval record `22df139`; blob `6c6a3c3e…` @ `d738e78` carries the same product content).
-Owner decision: Fer, 2026-10-15 — templates personal per user; one personal default selected
-in platform settings, applied automatically across all categories to each transcription
-summary until changed; initial release ships exactly one defined template.
+Requirements source: `requirements.md` @ commit `cdce9c34c566b72f42bb6db5eecdd76bdacb4532`
+(blob `12025987ad4ac44ac52a9acb5373ddf0f5f4520b`), Mira-APPROVED; PR #231 merged to main.
+Baseline source: `PRODUCT_BASELINE.md` @ commit `26d44ca7b212097c82415d0ae038bd9d096873d4`
+(blob `3afefd5e3da230cc3e26d7b89e74f48dc01d82ae`), owner-approved snapshot assigned by Ansel.
+Owner decision: Fer, 2026-10-16 — templates are personal; users create multiple templates with
+specific instructions in Sauri web and configure their personal default there. That default is
+automatically applied across categories when a transcript summary is requested without an
+explicit template choice. Requirements do not define a seed template or behavior when no default
+is configured; this design adds neither.
 
 ## Resumen
 
@@ -18,7 +20,9 @@ of that summary, (c) user-owned, editable summary templates with optional catego
 single personal default template selected in platform settings that is applied automatically to
 every transcription summary for that user until changed. The spec deliberately leaves the
 summary-generation method, accuracy thresholds, template visual layout, broader access-control
-policy, and retention/deletion rules unresolved; this design does not decide them.
+policy, and any retention period or broader deletion guarantee unresolved. It requires only that
+the persisted structured summary be deleted together with its transcript when that transcript
+expires or is deleted.
 
 The solution consists of:
 
@@ -30,13 +34,11 @@ The solution consists of:
    per the owner decision it applies to transcription summaries automatically, across all
    categories. Behavior when no default is configured stays unspecified and the resolver
    returns `None` without guessing a fallback.
-3. **Summaries module** (`backend/app/summaries/`): a `Meeting_Summary` entity persisted
-   1:1 per meeting with a `template_id`/`template_version` lineage, produced by a dedicated
-   `summarize` queue worker triggered when the transcription transaction commits (same
-   enqueue pattern as the existing `transcribe` → `diarize` handoff).
-4. **A fixed, structure-agnostic canonical summary model** (`topic` + `key_points`, the only
-   two structural elements the requirements name), shaped by template-driven content selection
-   and rendered to Markdown by a pure renderer.
+3. **Summaries module** (`backend/app/summaries/`): a `Meeting_Summary` entity associated
+   with its meeting and frozen template/event lineage, produced by a dedicated `summarize`
+   worker from a durable outbox event committed atomically with the transcript.
+4. **A canonical summary model** (`topic` + `key_points`), both mandatory in every valid
+   template and generated artifact, rendered to Markdown by a pure renderer.
 5. **Meeting-view integration**: a new summary section in the portal's meeting view, distinct
    from transcript and notes, with copy and download actions; a platform-settings view for
    template CRUD and default selection.
@@ -56,17 +58,14 @@ provider here would invent unapproved product scope; leaving generation entirely
 leave the architecture under-specified for Zoya's task plan, since the worker, persistence, and
 lineage model do not depend on which engine fills the protocol.
 
-**D2 — Template applies to content selection, not visual layout.** A `Summary_Template`'s
-stored form is a declarative **content-selection spec** (which structural elements to include),
-validated at save time. `topic` and `key_points` are the only structural elements named by the
-approved requirements, so the initial release defines exactly those two, both `true` in the one
-defined template. What the requirements call "structure" is realized as content selection over
-that fixed set; the Markdown layout of the rendered artifact is fixed by the renderer and is
-not part of the template. *Alternativas descartadas:* a free-form prompt/markdown template
-would be a generation method (unapproved, unbounded validation); a free-form section schema
-would invent product structure the spec does not define; an empty set (a template selecting
-nothing) would allow a template that produces no summary, which no acceptance criterion
-supports — minimum selection is one element.
+**D2 — Every summary identifies both required content elements (R1.2).** Every persisted
+summary contains identifiable main-topic and key-arguments/points content. Template instructions
+shape those contents but cannot suppress either one. The requirements explicitly defer the
+internal structure, schema, and format of templates; this design therefore does not prescribe a
+template schema, template-side markup, or a user-configurable inclusion switch. Presentation
+layout remains unspecified beyond making both elements identifiable. *Alternativas descartadas:*
+optional output elements fail R1.2; defining a template schema or fixed visual layout would
+resolve matters explicitly deferred by the approved requirements.
 
 **D3 — Default is one nullable column on `users`, not a row in a per-user settings table.**
 The owner decision gives every user at most one default template across all categories. A
@@ -78,18 +77,15 @@ default is category-independent by construction. *Alternativas descartadas:* a p
 default table contradicts the recorded decision; a general key/value settings table invites
 unapproved future settings semantics and couples unrelated features.
 
-**D4 — One summary per meeting; lineage-keyed idempotent overwrite.** `meeting_summaries`
-carries a unique constraint on `meeting_id` (same 1:1 pattern as `transcripts`/`diarizations`).
-The stored row's lineage (`template_id`, `template_version`) records what shaped it. The
-requirements bind the default only to **subsequent** summaries (R5.6), so no automatic
-re-shaping of historical summaries is defined; the upsert mechanism exists so that a further
-`summarize` delivery (e.g. queue redelivery) is a deterministic no-op when the stored lineage
-matches the currently resolved default, and an overwrite (with `generation + 1`) when lineage
-differs. Template `version` increments exactly when the selection spec changes (name/category
-edits do not alter what the template selects). *Alternativas descartadas:* a version-history
-table invents retention the spec excludes and gives the initial release no requirement to
-satisfy; regenerating on every delivery without lineage comparison makes worker behavior
-nondeterministic under redelivery.
+**D4 — Freeze the triggering event's template; redelivery never replaces history.** Each
+summary job carries the template id, version and selection snapshot resolved for the pertinent
+transcription event. Retries/redeliveries reuse that immutable event data and an event idempotency
+key, so the same event is a no-op after its first successful persist; a later default change
+cannot rewrite an already-produced historical summary. A subsequent transcription event uses
+the then-current default. Template version increments when its selection changes. *Alternativas
+descartadas:* resolving the current default at worker execution time can change an in-flight
+job's template after a user changes settings; overwriting historical content on redelivery
+violates event idempotency and the “subsequent summaries” boundary.
 
 **D5 — Lineage is data, not authorization; template names are visible, definitions are not.**
 Requirement 3.3 is verified through lineage: a generated summary records which template shaped
@@ -101,14 +97,13 @@ identifiable in the UI (R5.4) without exposing definitions. *Alternativas descar
 full definition read-through would silently create template sharing, which the owner decision
 does not grant; hiding lineage entirely would leave "identify the default" (R5.4) unverifiable.
 
-**D6 — The stored summary is the shaped artifact, in structured form plus rendered Markdown.**
-The worker persists the **post-selection** content (the canonical elements restricted by the
-template's selection) as structured columns, plus `rendered_markdown` for exact copy/download.
-The summary IS the template-shaped output (R3.3), so storing unshaped engine output would
-misrepresent the artifact; structured columns (not just the rendered string) keep the
-selection invariants (P1) verifiable at the artifact level. *Alternativas descartadas:*
-storing rendered Markdown only would make selection properties untestable against stored data;
-storing unshaped engine output would decouple the artifact from the template that produced it.
+**D6 — Persist the structured summary shaped by the selected template's instructions (R1.2,
+R3.3).** The worker persists the summary's structured main-topic and key-points content so both
+remain identifiable and available for copy/download. The template's specific instructions shape
+both elements; they do not make either optional. This specifies the summary artifact, not the
+deferred internal schema or format of `Summary_Template`. *Alternativas descartadas:* storing
+only rendered text would discard the required structured artifact; designing a template schema
+here would exceed the approved scope.
 
 **D7 — Design fixes data + transport only; portal layout stays open.** The requirements and
 baseline explicitly leave portal layout unresolved. The design therefore specifies the API
@@ -263,13 +258,13 @@ New module following the project's router → service → repository → schemas
 ```python
 class TemplateSelectionSpec(BaseModel):
     """Declarative content-selection spec stored on a template (D2)."""
-    include_topic: bool = True
-    include_key_points: bool = True
+    include_topic: Literal[True] = True
+    include_key_points: Literal[True] = True
 
     @model_validator(mode="after")
-    def at_least_one_element(self) -> "TemplateSelectionSpec":
-        if not (self.include_topic or self.include_key_points):
-            raise ValueError("at least one structural element must be selected")
+    def require_both_elements(self) -> "TemplateSelectionSpec":
+        if not (self.include_topic and self.include_key_points):
+            raise ValueError("topic and key_points are both required")
         return self
 
 class TemplateCreate(BaseModel):
@@ -278,11 +273,12 @@ class TemplateCreate(BaseModel):
     selection: TemplateSelectionSpec = TemplateSelectionSpec()
 
 class TemplateUpdate(BaseModel):
-    # All fields optional; None means "leave unchanged" (partial PATCH).
-    # A PATCH convention detail (e.g. explicit-null clearing) is a task-level decision.
+    # Omitted fields remain unchanged; explicit JSON null clears category_id.
     name: str | None = Field(None, min_length=1, max_length=128)
     category_id: str | None = None
     selection: TemplateSelectionSpec | None = None
+
+# Service uses model_fields_set to distinguish omitted category_id from explicit null.
 
 class TemplateOut(BaseModel):
     id: str
@@ -374,47 +370,49 @@ Renderer Markdown layout (fixed by design, not by template):
 - <point 2>
 ```
 
-Sections are omitted when not selected (template-driven) and rendered in the fixed order
-above. When the stored topic text is empty, the renderer emits `-` for it (never empty
-output).
+Both sections are always present in the fixed order above. Empty content is rendered as an
+empty-value marker within its section; no quality threshold or fallback content is specified.
 
 **`worker.py`** — mirrors `transcription/worker.py` (verified message-validation and
 exception disciplines at `f5aa6b3e`):
 
-- Subscribes to topic `"summarize"`; message `{"meeting_id": str}`.
+- Subscribes to topic `"summarize"`; message includes `event_id`, `meeting_id`, frozen `template_id`, `template_version`, and
+  the event's template-selection snapshot.
 - Discards invalid/empty `meeting_id` with a warning log (same discipline as the
   transcription worker).
 - Loads the meeting and its transcript; if either is missing, logs and returns (queue
   redelivery governs; no custom retry loop).
-- Resolves the default template for `meeting.created_by` via
-  `templates.default_resolver` (repository joins `users.default_summary_template_id` →
-  `summary_templates`); if `None`, logs "no default configured; skipping summary generation"
-  and returns. No fallback behavior is invented (D9).
-- **Idempotent skip (D4):** if a stored summary exists whose `(template_id, template_version)`
-  equals the resolved default's, acks without regenerating.
+- Uses the immutable event payload's `template_id`, version and selection snapshot; it does
+  not resolve the user's current default during processing. If no default was configured at
+  the triggering event, no job is emitted; no fallback is invented.
+- **Idempotent skip (D4):** if the event id was already successfully applied, ack without
+  regenerating or changing the historical summary.
 - Calls the configured `SummarizationEngine` via `create_summarization_engine()` (factory
   reading `SUMMARIZATION_PROVIDER` from env, same pattern as `transcription/factory.py`;
   an unrecognized value raises `ValueError` at worker startup, mirroring
   `create_asr_engine()`). Engine exceptions propagate uncaught — the same discipline as the
   transcription worker — so queue redelivery governs retries (D9).
-- Applies `apply_selection(content, template.selection)`, then persists via
-  `SummaryRepository.upsert` in a single transaction with the shaped content
-  (`topic`, `key_points_json`), `rendered_markdown = render_markdown(shaped)` stored for
-  exact-copy integrity, `template_id`, `template_version = template.version`,
-  `generation = previous.generation + 1` (or 1 when none), and `updated_at = now(UTC)`.
+- Applies the template instructions frozen in the event to both required summary elements;
+  it never reads a mutable template row to determine the event's instructions or version. Within
+  one DB transaction, it atomically claims `event_id` in `processed_summary_events` (unique
+  primary key), inserts the structured summary artifact with both elements, rendered content,
+  and lineage copied from that immutable event, then commits both writes together. It does not
+  upsert or overwrite a persisted summary. A unique claim conflict means this event already
+  committed: ack without regenerating or changing any stored summary, even if the user's default
+  has since changed. A failed generation/persist rolls back the claim so queue redelivery can
+  retry.
 - Publishes nothing downstream; does not mutate `Meeting.process_state`.
 
 **Wiring in `backend/app/worker.py`**: `start_worker` imported from `app.summaries.worker`
 and subscribed after the diarization worker (one import + one call, matching the existing
 bootstrap; verified structure of `backend/app/worker.py`).
 
-**Enqueue point**: `backend/app/transcription/worker.py` gains one call after the transcript
-transaction commits, alongside the existing `diarize` publish:
-
-```python
-if queue is not None and transcript_created:
-    await queue.publish("summarize", {"meeting_id": meeting_id})
-```
+**Enqueue point and recovery**: write an outbox row in the same transaction that commits
+the transcript, containing event id, meeting id, and the default-template id/version/selection
+snapshot resolved for that event. A dispatcher publishes the outbox record to RabbitMQ and
+marks it delivered only after broker confirmation; retry is idempotent by event id. Do not use
+a bare post-commit publish as the only recovery mechanism: a crash or broker failure after DB
+commit would lose the summary trigger. No outbox implementation currently exists in the repo.
 
 ### 3. Backend API surface: meeting summary read
 
@@ -486,14 +484,32 @@ class SummaryTemplate(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class MeetingSummary(Base):
-    """Structured summary artifact, 1:1 with a meeting (R1, R5)."""
-    __tablename__ = "meeting_summaries"
-    __table_args__ = (UniqueConstraint("meeting_id", name="uq_meeting_summary_meeting_id"),)
+class ProcessedSummaryEvent(Base):
+    """Transactional idempotency ledger for successfully applied summary events (D4)."""
+    __tablename__ = "processed_summary_events"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     meeting_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MeetingSummary(Base):
+    """Persisted structured summary for a source transcript (R1, R5, R6)."""
+    __tablename__ = "meeting_summaries"
+    __table_args__ = (
+        UniqueConstraint("event_id", name="uq_meeting_summary_event_id"),
+        UniqueConstraint("transcript_id", name="uq_meeting_summary_transcript_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
+    )
+    transcript_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False
     )
     template_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("summary_templates.id"), nullable=False
@@ -525,10 +541,16 @@ Alembic migration `008_summaries_and_templates.py`
 1. `CREATE TABLE template_categories`, then `CREATE TABLE summary_templates` (columns as
    above; creation order matters — `users` must exist, and `users.default_summary_template_id`
    will reference `summary_templates`).
-2. `CREATE TABLE meeting_summaries` (unique `meeting_id`).
-3. `ALTER TABLE users ADD COLUMN default_summary_template_id VARCHAR(36) NULL REFERENCES
+2. `CREATE TABLE processed_summary_events` with `event_id` primary key, meeting FK, and
+   completion timestamp; this ledger is committed atomically with its successful summary write.
+3. `CREATE TABLE meeting_summaries` with unique `event_id` and unique `transcript_id`; the
+   latter is a non-null FK to `transcripts.id ON DELETE CASCADE` (R6), and `meeting_id` is a
+   non-unique FK to `meetings.id ON DELETE CASCADE`. Retries of an already-processed event do
+   not update this row. Do not add a unique constraint on `meeting_id`: identity and deletion
+   follow the source transcript/event, not a mutable “latest summary” slot.
+4. `ALTER TABLE users ADD COLUMN default_summary_template_id VARCHAR(36) NULL REFERENCES
    summary_templates(id) ON DELETE SET NULL`.
-4. Seed the one defined template (R5.1) **for each existing user**: `id` uuid4,
+5. Seed the one defined template (R5.1) **for each existing user**: `id` uuid4,
    `owner_user_id = user.id`, `name = 'Default Summary Template'`, `category_id = NULL`,
    `version = 1`, `include_topic = TRUE`, `include_key_points = TRUE`,
    `created_at = updated_at = now()`; then set each user's `default_summary_template_id` to
@@ -540,8 +562,9 @@ Alembic migration `008_summaries_and_templates.py`
    New users created afterwards by `backend/app/auth/seed.py` receive the same treatment in
    the application layer (a post-seed step creating the defined template + default per
    seeded user).
-5. `downgrade()` reverses in exact reverse order (drop `users.default_summary_template_id`,
-   drop `meeting_summaries`, drop `summary_templates`, drop `template_categories`).
+6. `downgrade()` reverses in exact reverse order: drop `users.default_summary_template_id`,
+   then `meeting_summaries`, `processed_summary_events`, `summary_templates`, and
+   `template_categories`.
 
 ### 5. Default-template resolver (`backend/app/templates/default_resolver.py`)
 
@@ -702,15 +725,13 @@ Key data contracts:
 
 ## Propiedades de Correctitud
 
-**P1 — Template application is content selection (R3.3, R5.5).**
-For any template `T` with selection `S` and any canonical summary `C`:
-`shaped = apply_selection(C, S)`; then
-`shaped.topic == C.topic` iff `S.include_topic`, else `shaped.topic == ""`;
-`shaped.key_points == C.key_points` iff `S.include_key_points`, else `shaped.key_points == []`.
-Also: the summary persisted for a generation carries `template_id == T.id` and
-`template_version == T.version` at generation time, and its stored structured content equals
-`apply_selection(engine_output, S)` (lineage + shaped artifact, D4/D5/D6).
-*Valida: R3.3, R5.5.*
+**P1 — Required summary content is present for every applied template (R1.2, R3.3, R5.5).**
+For every successfully persisted summary, `topic` and `key_points` are both represented as
+identifiable structured content; no template option can omit either element. The applicable
+template's specific instructions shape the content of both elements, not whether either exists.
+The summary also records the template and immutable template-version/instruction snapshot used
+for that event; later edits do not rewrite the already-persisted result (D2, D4, D6).
+*Valida: R1.2, R3.3, R5.5.*
 
 **P2 — Renderer determinism and content preservation.**
 For any shaped summary `S'`:
@@ -723,12 +744,12 @@ renders as `-`); it never produces an empty or whitespace-only string (minimum a
 **P3 — Default resolution is unique, personal, and category-blind (R5.3–R5.6).**
 For any user `u` and any snapshot of `users`/`summary_templates`:
 - at most one default exists for `u` (single nullable column, D3);
-- `resolve_default` returns that template's `(id, version)`, or `None` iff the column is null
-  (D9: no fallback invented);
+- default resolution at transcription-event creation returns the then-configured template's
+  `(id, version, selection snapshot)`, or `None` iff the column is null (D9: no fallback);
 - the resolved template's `owner_user_id == u.id` (personal; enforced by FK + service checks);
 - resolution never reads the template's category (category-blind, R5.3/R5.5);
-- workers re-resolve the default per message (no cached default), so after the user changes
-  the default, subsequent generations use the new one (R5.6).
+- the outbox event freezes that resolution for delivery/retry; a later transcription event
+  resolves the then-current default, so subsequent summaries use the new selection (R5.6).
 *Valida: R5.3, R5.4, R5.5, R5.6.*
 
 **P4 — Initial-release invariant: exactly one defined template per user.**
@@ -737,11 +758,11 @@ it is that user's default, and it selects both structural elements. Creating add
 templates is allowed (R5.2) but the seeded one remains the only auto-seeded template.
 *Valida: R5.1, R5.2.*
 
-**P5 — Summary is a distinct artifact with meeting-bound identity (R1.1, R1.3).**
-For any meeting `m`: at most one `meeting_summaries` row exists for `m` (unique constraint);
-its `meeting_id` references `m`; the portal's meeting view presents it in a section distinct
-from transcript and notes (component boundary, verified by component test rather than
-property test).
+**P5 — Summary is a distinct artifact associated with its meeting (R1.1, R1.3).**
+For any persisted summary row, `meeting_id` references the meeting it summarizes; multiple
+summary events for the same meeting are not conflated by meeting-level uniqueness. The portal's
+meeting view presents the available summary in a section distinct from transcript and notes
+(component boundary, verified by component test rather than property test).
 *Valida: R1.1, R1.3.*
 
 **P6 — Copy/download exactness (R2.1, R2.2).**
@@ -758,13 +779,16 @@ recorded in `access_log`. Boundary check (repository/service level): for any use
 *Valida: cross-surface privacy boundary; `SECURITY.md` access-control rules (JWT + sales-user
 restriction + access audit apply to the new endpoints).*
 
-**P8 — Idempotent redelivery under lineage (D4).**
-For any meeting whose stored summary has lineage `(T, v)`: a `summarize` delivery resolving
-the same `(T, v)` is a no-op (stored content and `generation` unchanged); a delivery
-resolving a different lineage (`T' ≠ T` or `v' ≠ v`, e.g. after the user changes the default
-or the template's selection is edited) overwrites the row with the new shaped content and
-`generation + 1`.
-*Valida: R5.6 boundary, D4.*
+**P8 — Event-scoped idempotency and transcript-coupled deletion (D4/R6).**
+For any durable summary event `e` with frozen transcript id, template id/version, and selection
+snapshot: processing or redelivering the same `event_id` more than once persists at most one
+summary row, and a duplicate after successful commit leaves the stored summary unchanged.
+The event ledger and summary row commit atomically; failures before that commit leave neither
+marked complete nor partially persisted. A distinct later transcription event is not a retry
+of `e` and uses the template snapshot resolved for that later event. Deleting the source
+transcript (including transcript expiry) deletes its persisted summary through the FK cascade;
+no independent summary retention period is implied.
+*Valida: R5.5–R5.6 boundary, R6.1, D4.*
 
 ## Manejo de Errores
 
@@ -864,11 +888,109 @@ cd backend && ruff check . && mypy .
 Restated for the auditor: this design does not select a summarization method or accuracy
 threshold (D1); does not define template visual layout beyond the fixed renderer layout
 (D2, D12); does not define access control beyond the existing sales-user policy (P7); does
-not define retention/deletion beyond existing `RETENTION_DAYS` flows and FK cascade behavior,
-and defines no template/category deletion endpoints (D9); does not adopt the baseline's
+defines deletion only as removing the persisted structured summary together with its transcript
+when that transcript expires or is deleted (R6), with no retention period or broader deletion
+guarantee; and defines no template/category deletion endpoints (D9); does not adopt the baseline's
 imagined portal layout (D7); does not define behavior for users without a configured default
 beyond "generation does not run" (D9); and defines no summary-regeneration endpoint, because
 the requirements bind the default to subsequent transcription summaries only — historical
 summaries keep their lineage as recorded. Category names are free text owned by the user; no
 category taxonomy is invented. The download filename is the one concrete user-visible string
 this design fixes (D11, P6).
+
+## Correcciones de auditoría — ronda 1 (sustituyen reglas incompatibles anteriores)
+
+These amendments are normative for implementation and supersede any conflicting text above.
+
+1. **Mandatory content selection (D2/P1).** Every valid template MUST set both
+   `include_topic = true` and `include_key_points = true`. These are required content
+   fields for every generated artifact, not optional checkboxes. Template selection remains
+   explicit as stored schema fields for forward-compatible implementation, but no current
+   template can omit either field. Remove the “at least one” rule, empty-section behavior,
+   and any user-facing claim that selecting either element is optional. Both fields are
+   validated true on create/update and by database constraints.
+
+2. **Freeze template choice at the triggering event (D4/P8).** Resolve the user's selected
+   default and read its immutable selection/version snapshot in the transcription workflow
+   at the point the transcript is committed. The durable `summarize` message carries
+   `{meeting_id, template_id, template_version}` (and the resolved selection snapshot needed
+   to complete a job without reading a later-edited definition). The worker MUST use that
+   event snapshot, never re-resolve a newer default when processing/retrying/redelivering.
+   Persist with a uniqueness/idempotency key for the pertinent transcript/generation event;
+   repeated delivery of that same event is a no-op and MUST NOT overwrite an existing
+   historical summary after a later default change. Subsequent transcription events use the
+   then-current default. A versioned immutable template snapshot or equivalent event payload
+   must make the event reproducible. A default change alone does not regenerate old summaries.
+
+3. **Generation engine integration boundary (D1).** The application invokes a configured
+   `SummarizationEngine` adapter; business services and workers depend only on its protocol.
+   Configuration is supplied through backend environment (`SUMMARIZATION_PROVIDER` plus
+   provider-specific endpoint/model/credential settings, with credentials supplied through
+   the deployment secret mechanism and never logged). Factory validation fails closed at
+   worker startup for unsupported/missing configuration; adapter uses authenticated TLS for
+   remote calls, bounded request timeouts, and propagates provider failures to the queue's
+   retry/dead-letter handling. The adapter receives only the transcript text required to
+   produce the canonical `topic` and `key_points`; it must not send recording/audio/video,
+   user identity, template names, or unrelated meeting metadata. Output is parsed/validated
+   into the canonical schema before persistence. Provider choice, model, prompt, deployment,
+   accuracy threshold, and any new observable quality or fallback rule remain explicitly
+   unselected because approved requirements do not select them. Do not claim an existing
+   summarization provider or deployed endpoint: none was verified in this repository. Before
+   implementation, the provider/configuration/deployment binding is a technical prerequisite
+   for Zoya's task plan; choosing a provider requires approval if it changes privacy, cost,
+   or product behavior.
+
+4. **Post-commit enqueue recovery.** Transcript persistence and summary-job publication are
+   separate systems; publication after commit can fail or the process can stop between commit
+   and publish. Therefore the transcription service records a durable pending-summary outbox
+   event in the same DB transaction as transcript commit, keyed by transcript/event identity.
+   A dispatcher publishes pending events to RabbitMQ and marks them delivered only after
+   broker confirmation; retry is safe through the event idempotency key. Alternatively an
+   equivalent verified transactional-outbox mechanism must be specified and tested. A bare
+   post-commit `queue.publish` is not recoverable and does not satisfy this design. No
+   outbox implementation was found in the current repository; this is a new component, not
+   an existing capability.
+
+5. **Migration distinction.** The initial release's single defined template is the
+   application-provided template, not a personal selection. Migration seeds exactly one
+   system-defined/available template without setting `users.default_summary_template_id`.
+   Each user's personal default is nullable and changes only through an explicit personal
+   selection; the system template may be selected if and only if requirements/owner policy
+   permit it as a selectable personal template. Do not describe the initial template as
+   automatically selected for a user or substitute it for an explicit default. Since personal
+   ownership and the availability of one defined template do not specify a shared/system
+   ownership model, the table's ownership/selection mechanics for that initial defined template
+   remain an explicit implementation decision for Ansel to reconcile upstream before task
+   planning; do not seed per-user defaults by assumption.
+
+6. **Transcript-coupled summary deletion (R6).** The approved requirement is narrowly scoped:
+   when a transcript expires or is deleted, delete its associated persisted structured summary
+   together with it. The `meeting_summaries.transcript_id` foreign key uses `ON DELETE CASCADE`
+   to enforce that relationship, including for deletions issued by the existing retention worker.
+   This design specifies no retention period for transcripts or summaries and no broader deletion
+   guarantee; it does not add an independent summary expiry policy.
+
+7. **PATCH category clearing and frontend 204 handling.** `TemplateUpdate.category_id` uses
+   field-presence semantics: omitted means no change; explicit JSON `null` clears the
+   category; a string assigns an owned category. Use Pydantic `model_fields_set` (or the
+   equivalent validated distinction) so `None` is not conflated with omission. The default
+   setter's `204 No Content` response is consumed without JSON parsing in `frontend/src/api.ts`;
+   no response-body decode is attempted for 204.
+
+8. **Cross-task TDD transfer.** For every property, the test task must commit its RED test
+   before implementation starts and hand the implementation task the test commit/diff, exact
+   pre-production base branch and SHA, exact failing command and captured failing output,
+   and expected failure. Both tasks must converge through the authorized integration route
+   into the same eventual delivery candidate/worktree; candidate must include the predecessor
+   test commit plus implementation. A late QA test is not evidence of RED. Keep RED/green/
+   refactor ordering explicit in the task dependency graph.
+
+9. **Evidence-backed current boundaries.** Existing transcription performs a direct
+   post-commit `queue.publish("diarize", ...)` (`backend/app/transcription/worker.py`), and
+   RabbitMQ queue implementation provides persistent messages/retries but no observed
+   transactional outbox (`backend/app/infra/queue_rabbitmq.py`). The retention worker deletes
+   `SessionRecording` and `Transcript`; no summary table exists in this current snapshot. The
+   design's transcript FK cascade couples future persisted summaries to transcript deletion.
+   The repo contains configurable ASR
+   factories/providers but no summary engine implementation or summary provider endpoint;
+   `SummarizationEngine` is a new adapter seam, not a claim of verified provider availability.
