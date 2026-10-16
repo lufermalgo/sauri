@@ -95,7 +95,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 
 #### Criterios de Aceptación
 
-1. WHEN la persona usuaria corrige una identificación automática equivocada, THE Sauri SHALL permitir que esa corrección informe el reconocimiento futuro de ese hablante en grabaciones posteriores de esa misma persona usuaria, no solo en la grabación corregida.
+1. WHEN la persona usuaria corrige una identificación automática equivocada, THE Sauri SHALL considerar esa corrección al evaluar la identidad del hablante en grabaciones posteriores procesadas para esa misma persona usuaria; IF la atribución posterior sigue siendo incierta, THEN THE Sauri SHALL mostrar una Etiqueta_Speaker_N y SHALL NOT presentar la identidad corregida como confirmada.
 2. THE Sauri SHALL NOT compartir con otras personas usuarias las asociaciones de nombre/identidad, etiquetas ni datos de voz guardados por una persona usuaria.
 
 **Trazabilidad:** `PRODUCT_BASELINE.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B paso 5 y 9 (aclaración del 2026-10-16 sobre asociaciones por usuario, uso futuro para esa misma persona usuaria y ausencia de compartición entre usuarios). La influencia en reconocimientos futuros queda limitada a la misma persona usuaria; no se especifican aquí despliegue multiusuario, autenticación ni detalles de acceso, ni se autoriza entrenamiento global.
