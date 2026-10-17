@@ -404,6 +404,12 @@ Added in `backend/app/summaries/router.py`, registered in `backend/app/main.py`:
 | GET | `/api/v1/meetings/{meeting_id}/summary-requests/latest` | resume status of the highest-generation accepted request on view load | 200 status / 404 no accepted request | 404 meeting or no request / 403 non-sales |
 | GET | `/api/v1/meetings/{meeting_id}/summary-requests/{event_id}` | read one accepted request's status while polling | 200 status | 404 meeting / request not in meeting / 403 non-sales |
 
+Static route ordering guard: register `GET /api/v1/meetings/{meeting_id}/summary-requests/latest`
+before `GET /api/v1/meetings/{meeting_id}/summary-requests/{event_id}` in
+`backend/app/summaries/router.py`. FastAPI resolves matching routes in registration order; if the
+dynamic route is registered first, it captures the literal `latest` segment as `event_id` and the
+status-resume endpoint is unreachable.
+
 Access rule: same as every meeting route — meeting must exist and
 `meeting.created_by == user.id`, else `404` (the existing meetings routes' 404-not-403
 ownership convention, verified at `backend/app/meetings/router.py`); `require_sales` still
@@ -884,11 +890,15 @@ or a fixed summary serialization from the deferred requirements.
   required summary content, request-status transitions and per-event status ownership; verify
   repeated POST requests for one transcript receive distinct generations and persist separately,
   current-summary retrieval does not displace a successful artifact on later failure, and
-  `latest` status selects the highest accepted generation. Frontend component tests (`vitest` +
-  `@testing-library/react`, already in `frontend` devDependencies) cover initial status resume,
-  post-POST polling, refresh on success, terminal failure while preserving an older summary,
-  polling/network error recovery, empty state, and available copy/download actions without
-  asserting unspecified serialization (P5–P8).
+  `latest` status selects the highest accepted generation. Add
+  `test_latest_summary_request_route_resolves_before_event_id` in `test_summary_api.py`: issue a
+  request to the literal `/summary-requests/latest` path with multiple accepted generations and
+  assert it returns the highest-generation event status, not the event-specific lookup result.
+  This guards the static-before-dynamic route registration contract. Frontend component tests
+  (`vitest` + `@testing-library/react`, already in `frontend` devDependencies) cover initial status
+  resume, post-POST polling, refresh on success, terminal failure while preserving an older
+  summary, polling/network error recovery, empty state, and available copy/download actions
+  without asserting unspecified serialization (P5–P8).
 
 **Estructura de archivos (backend):**
 
