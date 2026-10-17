@@ -1,5 +1,21 @@
 # AGENTS.md
 
+## Dialectical Rigor & Context Integrity Protocol
+
+### 1. Anti-Sycophancy & Lexical Ban
+- **Strict Lexical Ban:** Never open or frame a response with validation phrases such as "You're right," "Tienes razón," "Good point," "That makes sense," or "I agree."
+- **Fallible User Premise:** Treat every user observation, suggestion, or correction as a potentially incomplete, biased, or locally optimized hypothesis—never as an absolute directive that automatically overrides prior context.
+
+### 2. Full-Context Stress-Testing (Defend Against Recency Bias)
+- **Systemic Audit Before Concession:** When the user introduces a new constraint, critique, or pivot, DO NOT immediately pivot to accommodate it. First, cross-examine the user's input against the entire session history, architectural decisions, business goals, and previously established constraints.
+- **Explicit Trade-off Evaluation:** Before adopting any user suggestion, explicitly evaluate and state:
+  1. **What it solves locally:** The immediate merit of the user's observation.
+  2. **What it breaks globally:** Hidden regressions, technical debt, second-order risks, or contradictions with earlier decisions in the session.
+- **Hold Your Ground:** If the user's observation is flawed, shortsighted, or inferior to the existing approach when viewed against the full context, reject the premise directly and defend the stronger position with technical/strategic evidence.
+
+### 3. Qualified Integration (When the User IS Right)
+- **Analytical Delta Only:** If rigorous evaluation proves the user's observation is genuinely valid, do not flatter the user. State * strictly why* the new variable changes the structural calculus, identify which prior assumption is now invalidated, and immediately map out the ripple effects across the rest of the system.
+
 ## Project overview and current code map
 
 Sauri is Summan's internal commercial-meeting intelligence platform. This is a source-code map,
@@ -170,126 +186,39 @@ These rules govern how agents must behave before, during, and after any task.
 * If the project uses TypeScript, the configured project typecheck command must pass before opening any PR that touches TypeScript. Do not assume raw `tsc --noEmit` unless the project defines it.
 
 ---
+## 2. Execution model and roles
 
-## 2. Project Execution Model
+Features are built from specs, not ad-hoc prompts: `Idea → Spec (requirements + design + tasks) → Implementation → PR → main`. Until the owner approves `PRODUCT_BASELINE.md`, legacy roadmaps, README claims and old specs are history, not target scope.
 
-Features are built from specs, not from ad-hoc prompts. For the product reset, the user and Cyrus establish the approved target in `PRODUCT_BASELINE.md`; until that exists, legacy roadmaps and architecture are historical only. The workflow for approved product work is:
+### Specs (Spectra)
 
-```text
-Idea → Spec (requirements + design + tasks) → Implementation → PR → main
-```
+Specs live in `.spectra/specs/[slug]/` with `.config.spectra` (`specType`: feature|bugfix; phase status). Files: `requirements.md` (or `bugfix.md`), `design.md`, `tasks.md`, `product-acceptance.md`. Skills `spectra-req`, `spectra-bugfix`, `spectra-design`, `spectra-tasks` author them; `.spectra/` is reserved for specs.
 
-### Spec-Driven Development (SDD) with Spectra
+* No feature implementation before the spec is approved. Small bugfixes, docs/config changes and explicit spikes may skip a full spec but still need scoped validation.
+* One spec per feature. Tasks are atomic. Acceptance criteria come before code. Keep task status current.
+* `PRODUCT_DISCOVERY.md` is the cumulative record of product definition and is not a baseline or an authorization. Only scope the owner explicitly approves is promoted into `PRODUCT_BASELINE.md`; requirements derive from it.
+* QA passing is technical evidence, not product acceptance. A user-visible feature is complete only when Cyrus records `PRODUCT_ACCEPTED` for the exact version in `product-acceptance.md` (infrastructure-only work may record `N/A` with a rationale).
 
-Specs live under **`.spectra/specs/[slug]/`**.
-The `/spectra-req`, `/spectra-design`, `/spectra-tasks`, and `/spectra-bugfix`
-commands are provided by Agent Skills from the canonical personal library managed by
-Skill-manager and exposed in each host's native location: `.agents/skills/`, `.claude/skills/`, and `.kiro/skills/`.
-`.spectra/` is reserved for specs; do not store or manage Agent Skills there.
-All pre-existing specs were migrated from `.kiro/specs/` to `.spectra/specs/`
-in one pass — `.kiro/specs/` no longer exists. `.kiro/hooks/` (Kiro IDE
-automation) is untouched and unrelated to the spec workflow.
+### Roles and gates
 
-#### Spec location
+| Agent | Role | Output |
+|---|---|---|
+| Ansel | Orchestrator | sequencing, cards, exceptions, owner messages |
+| Cyrus | Product owner | discovery, baseline, product acceptance |
+| Zoya | PM | requirements/bugfix, `tasks.md`, GitHub issues |
+| Brisa | Architect | `design.md` |
+| Mira | Spec auditor | verdict `APPROVED` / `REVISE` / `NEEDS USER INPUT` per artifact snapshot |
+| Imre | Developer | one issue per worktree, RED → GREEN → REFACTOR, PR |
+| Nia | QA | `PASS` / `FAIL` / `BLOCKED` on an exact commit |
+| Zev | Security | `NO_ACTIONABLE_FINDINGS` / `FINDINGS` / `BLOCKED` on an exact commit |
 
-All specs live in `.spectra/specs/[slug]/`, tracked via a `.config.spectra`
-(`specId`, `specType`: `feature`|`bugfix`, `phases`: requirements/design/tasks
-status). Each spec folder contains:
+* Only Mira's `APPROVED` on the submitted snapshot advances a spec phase; the verdict stays valid while that artifact is unchanged. Audits iterate until approved and list every blocker at once.
+* Each agent's contract in `.apc/agents/` defines its steps and who follows it; work is handed on by reassigning the APX task card. The contract prevails over this file on coordination.
+* Design, tasks and implementation use only the skills named on the card. Independent ready tasks run in parallel in separate worktrees; blocked tasks never stall unrelated ready ones.
 
-| File                          | Purpose                                                              |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `requirements.md` (feature) or `bugfix.md` (bugfix) | What the feature must do, or the bug's current/expected/unchanged behavior |
-| `design.md`                    | How it will be built — architecture, data flow, key decisions        |
-| `tasks.md`                     | Dependency-aware implementation tasks with status tracking           |
-| `product-acceptance.md`        | Cyrus's evidence-based acceptance for the exact tested version         |
+### No-silent-stop status
 
-### Product baseline and acceptance
-
-#### Product discovery before requirements
-
-* `PRODUCT_DISCOVERY.md` is the cumulative working record for product definition before the final requirements document. The user, as product owner, owns product intent and approval; Cyrus, in the product-owner role, is responsible for reading this record before every discovery turn and updating it with new expectations, corrections, decisions, evidence, inferences, proposals, and open questions.
-* Keep user-confirmed expectations and decisions distinct from context, examples, visual references, hypotheses, recommendations, and unanswered questions. Cyrus must not present an inference or proposal as user-approved scope.
-* Before authoring final `.spectra/specs/[slug]/requirements.md`, Cyrus and the user review the relevant discovery record and confirm the intended product scope. Only explicitly approved target scope is promoted into `PRODUCT_BASELINE.md`; unresolved items remain questions or are explicitly deferred. Requirements derive from that approved baseline and preserve traceability to the relevant discovery decisions.
-* `PRODUCT_DISCOVERY.md` is not itself a requirements document, an approved baseline, or authorization to implement. Do not start final feature requirements until the user-approved baseline exists.
-
-* The user and Cyrus establish the approved product baseline in `PRODUCT_BASELINE.md` before
-  new product requirements are authored. Until then, previous roadmaps, README product claims,
-  specs, and technical architecture describe history/current code only—not approved target scope.
-* For each user-visible feature, approved `requirements.md` contains the observable product
-  acceptance criteria. After technical QA, Cyrus evaluates the exact candidate version against
-  those frozen criteria and records scenarios, representative-user evidence, limitations, and
-  one result (`PRODUCT_ACCEPTED`, `PRODUCT_NOT_ACCEPTED`, or `INSUFFICIENT_USER_EVIDENCE`) in
-  `product-acceptance.md` in the same spec folder.
-* QA passing is technical evidence, not product acceptance. Do not call a user-visible feature
-  or its milestone complete until Cyrus records `PRODUCT_ACCEPTED` for that exact version.
-  Infrastructure-only work may mark product acceptance `N/A` with a rationale.
-
-#### How to create a spec with Spectra
-
-1. `/spectra-req <idea>` (feature) or `/spectra-bugfix <description>` (bug) — writes
-   `.spectra/specs/[slug]/requirements.md` or `bugfix.md` + `.config.spectra`.
-2. `/spectra-design` — reads the pending spec, writes `design.md`.
-3. `/spectra-tasks` — reads the approved design, writes `tasks.md`.
-4. Work through the approved dependency graph in `tasks.md` — one task = one atomic unit of work.
-   Independent ready tasks may run concurrently in separate worktrees; serialize only real dependencies or shared-resource conflicts.
-
-### Spec discipline rules
-
-* **No feature implementation before the spec is validated.** Writing code to "figure out" the design is a token and time sink. Define behavior first.
-* **Small exceptions are allowed when appropriate.** Small bugfixes, documentation changes, configuration changes, and explicit technical spikes may proceed without a full spec, but still require scoped validation.
-* **One spec per feature/module.** Don't accumulate multiple features in one spec.
-* **Tasks must be atomic.** Each task in `tasks.md` should be completable in one focused session without needing to re-read the whole spec.
-* **Acceptance criteria before implementation.** Define what "done" looks like before writing a single line of code.
-* **Keep specs current.** Update task status as work progresses. A stale spec misleads the next session.
-
-### Independent specification audits
-
-* Mira (`spec-auditor`) independently audits one submitted artifact snapshot at a time. Ansel dispatches an explicit specialization (`requirements`, `design`, `tasks`, or `bugfix`), matching read-only rubric, artifact path and one version reference (commit SHA or a single content digest when uncommitted), worktree/branch, author/review round, approved upstream references, relevant owner decisions, technical constraints, and review scope. This reference identifies the snapshot; it is not a recurring hash-validation task. The corresponding Spectra authoring skill is a reference only; Mira must not write or regenerate artifacts.
-* A requirements audit requires the owner-approved `PRODUCT_BASELINE.md` and relevant recorded decisions. A design audit requires approved requirements/bugfix, the baseline, and verified technical constraints. A tasks audit requires approved design and requirements/bugfix plus actual dependency/resource constraints. If required context is missing or contradictory, Mira reports the precise preflight gap once without a verdict; Ansel gets one source-recovery attempt. If the snapshot/context cannot be recovered, document the blocker, contain only dependent work, and continue unrelated ready work. Do not repeatedly recompute hashes, resubmit the same audit, or ask the owner to resolve an orchestration omission.
-* A completed audit returns exactly one verdict: `APPROVED`, `REVISE`, or `NEEDS USER INPUT`. Only `APPROVED` advances the dependent phase. `NEEDS USER INPUT` is reserved for a consequential decision/action that truly belongs to the owner; Mira must include a ready-to-send, evidence-backed, specific question set (with useful options/trade-offs and impact), not a bare status. Ansel promptly presents it to the owner, identifies paused and continuing work, records the answer as a durable decision, and routes it back to Mira and the author. A technical uncertainty or correctable document defect is not `NEEDS USER INPUT`.
-* A verdict applies to the submitted artifact snapshot. Reuse it while that artifact remains unchanged; unrelated repository edits do not invalidate it. Only an actual edit to the reviewed artifact requires a targeted new audit, within the bounded review cycle; changes to approved requirements may invalidate dependent design/task approvals. Do not trigger repeat reviews by recalculating an unchanged version reference. Non-blocking recommendations do not prevent phase advancement.
-
-### Architecture design assignments
-
-* Brisa is the software architect and always uses `spectra-design` to author `design.md` from the exact requirements/bugfix version Mira approved. Ansel selects one or more applicable architecture specializations from `.apc/skills/brisa-design-specialties.md` based only on approved scope and lists the exact Skills to activate in the handoff. Cross-surface work must activate every relevant surface specialty and `cross-surface-integration`.
-* Every design handoff includes the approved product baseline and decisions, upstream artifact references/verdicts recorded once, verified technical evidence/constraints, worktree/branch, requested scope, output path, and available Skills. If required context or a Skill cannot be verified in the target runtime, resolve that preflight once with Ansel before design; do not guess or ask the user to repair orchestration.
-* Existing repository architecture is evidence of current state, not the target design by default. Reuse it only when it meets approved requirements and constraints; document alternatives and trade-offs. Product behavior ambiguity goes to the requirements author through Ansel; a genuine owner-level decision goes to Ansel with evidence and specific questions for the owner. Brisa does not directly pause with a vague “user input needed.”
-* Brisa may author `design.md` and mark the Spectra phase `complete` to mean authored only. Mira's `APPROVED` verdict for the submitted design snapshot is the sole gate to task planning; reuse the verdict while that design is unchanged. Brisa never creates implementation tasks or approves its own design.
-
-### Developer execution and Skills
-
-* Imre implements only the atomic issue/task assigned by Ansel from the approved task plan and design. Each assignment names the active specialization(s), exact Skills to activate, issue, worktree/branch, validation commands, and acceptance evidence. Select specializations from the approved scope—not from the legacy repository shape—and do not infer full-stack scope.
-* Project Skill bindings are governed by Ansel through Skills Manager (`plan → link → audit`). Binding exposes a Skill to supported runtimes; Ansel's assignment separately activates the exact Skill(s) needed for that task. Brisa, Imre, Nia, and Zev may use assigned Skills but must not alter bindings, agent metadata, or install/import Skills. They report a missing capability to Ansel once.
-* For an absent library Skill, Ansel may discover candidates with `find-skills`, but external download/import requires the owner's selection of the exact source. Inspect in staging without executing, record provenance, then bind and audit. Do not turn missing tool context into a recurring user blocker.
-* Imre follows the approved design's architecture boundaries, not legacy boundaries by default. Mandatory RED → GREEN → REFACTOR, issue-scoped worktree, commit, and PR workflow apply without needing a separate reminder.
-
-### QA test authorship and evidence
-
-* Nia (`qa-engineer`) is independent from the implementation owner and designs/writes test-only coverage for assigned approved work, selecting unit, integration, contract, end-to-end, example-based, property-based, or other existing-project test techniques according to criteria, design, and risk. Do not force every test level onto every task or introduce a framework/dependency without approval. Nia may not change production code or the implementation candidate under review; keep QA-authored test changes distinct and identify their diff/commit separately.
-* Imre remains accountable for each implementation task's TDD sequence: a relevant test must be written and shown RED before production implementation, then GREEN and still passing after refactor. QA tests added later supplement coverage but do not retroactively satisfy the RED gate. A failed test for the active task routes to Imre; an independent defect routes through Zoya's bugfix flow; security/privacy findings also go to Ansel and Zev.
-* Ansel's QA packet distinguishes approved baseline/requirements/design/tasks references from the exact candidate commit SHA or immutable build under test and supplies the criteria, branch/worktree, test environment, scope, and required commands. Nia reports exactly one technical outcome: `PASS`, `FAIL`, or `BLOCKED`, with criterion-by-criterion evidence, exact commands/results, coverage, candidate identity, limitations, and next actor. `PASS` is not Cyrus's product acceptance, a Mira spec verdict, Zev's security/privacy approval, or release approval. `BLOCKED` is used when required context/validation is unavailable after one Ansel recovery attempt.
-
-### Security review and findings
-
-* Every implementation task considers security properties relevant to its scope. Ansel assigns Zev for independent, pre-merge security review when approved scope touches an attack surface, authentication/authorization, privilege or ownership boundaries, sensitive-data handling, storage/retention, external integrations, or other material security risks. If independent review is not applicable, Ansel records `N/A` with a brief rationale rather than silently omitting the decision. The packet names the approved baseline/spec/design and verdicts, exact candidate SHA/build, worktree/branch, threat scope, environment, authorized test methods, and relevant project constraints. Zev derives applicable attack surfaces from approved scope and current code; he does not assume legacy SaaS, tenant, webhook, billing, meeting-media, or auth architecture.
-* Zev tests realistic abuse paths and reports reproducible findings with severity, confidence, attacker preconditions, affected asset, impact, evidence, and remediation direction. The review outcome is exactly `NO_ACTIONABLE_FINDINGS`, `FINDINGS`, or `BLOCKED`, bound to the candidate and scoped review. `NO_ACTIONABLE_FINDINGS` is not a guarantee of security, product acceptance, privacy/legal approval, spec approval, or release readiness; skipped required checks cannot be reported as a clean outcome.
-* Zev does not change production behavior or security posture during review. An active-candidate finding goes to Ansel and Imre as an authorized issue-scoped fix, followed by an independent retest of the new exact candidate. Privacy-sensitive use or policy decisions go to the owner through Ansel. Zev may use only verified Skills assigned by Ansel and cannot manage bindings or import Skills.
-
-### Task-plan authoring contract
-
-* Zoya (`pm`) uses `spectra-tasks` together with `.apc/skills/zoya-task-planning.md`. The Sauri rubric and this file override conflicting generic Skill advice; use the shared Skill for its format/workflow only and never edit its canonical contents.
-* Ansel supplies the exact spec slug, owner-approved baseline/decisions, approved requirements or bugfix path+verdict+already-recorded version reference, matching approved design path+verdict+version reference, verified technical/test-environment constraints, real shared-resource limits, target worktree/branch, scope, and output path. Record each version reference once; missing context gets one Ansel recovery attempt, not repeated hash checks or a question to the owner.
-* Every correctness property has a required RED test task before its GREEN implementation task; tests are never optional. Each task has observable completion evidence and a real validation command/prerequisite. Do not invent requirements, test commands, or dependency edges.
-* Task dependencies represent only actual prerequisites, mandatory test-before-code order, or verified shared-resource conflicts. Independent dependency-ready work stays parallelizable; grouping/phase labels do not imply serial execution. Ansel dispatches ready independent tasks concurrently within runtime capacity in separate worktrees.
-* Zoya returns the task-plan path and one version reference, dependency graph/rationale, assumptions, constraints/commands, and upstream versions to Ansel. `complete` means authored only. Mira's `APPROVED` verdict for the submitted snapshot is required before Ansel creates runnable implementation issues or dispatches developers; reuse that verdict for the unchanged artifact. If a mismatch cannot be resolved in one recovery attempt, document the blocker instead of looping. Zoya does not approve or implement.
-* If a true owner decision remains, Zoya gives Ansel a ready-to-send, evidence-backed set of specific questions with options, trade-offs, impact, and paused versus continuing work. Missing technical/orchestration context goes back to Ansel; never leave the owner with a bare “input needed” status.
-
-### No-silent-stop status contract
-
-* Every objective turn must end in one user-visible state: `completed` with evidence; `in progress` with the next action and verified active runtime/session when applicable; or `blocked` with an actionable explanation. Never end with only “blocked”, “waiting”, “input needed”, or a recorded APX status the owner cannot see.
-* Before calling work blocked, Ansel performs any safe, authorized internal recovery and continues all independent ready work. If none remains or the objective cannot proceed, report in the same turn: what is blocked and its impact, evidence and attempts so far, next responsible actor/action, whether the owner must act (`yes/no`), and the exact event/condition that resumes work.
-* If owner action is required, ask the smallest specific question set with useful options/trade-offs and impact in that same message. If no owner action is required, say so explicitly; name the external/runtime event or internal prerequisite and do not imply background monitoring or automatic resumption unless a verified mechanism is active.
-* For a running or unknown APX job, state the verified session/task identity and next expected event/check. `unknown` is not success and does not authorize a blind retry. A progress message is not a completion report.
+Every turn ends as one of: `completed` with evidence; `in progress` with the next action and a verified active run; or `blocked` with what is blocked, evidence and attempts, next actor, whether the owner must act, and the exact condition that resumes work. `unknown` is not success and does not justify a blind retry. Do not promise background monitoring unless a verified mechanism is active.
 
 ---
 
@@ -397,26 +326,7 @@ Validation must use the project’s actual commands and conventions. Do not assu
 
 **NEVER work on `main` or any shared branch directly.**
 
-### Enforcement
-
-This repo is private on the GitHub Free plan, so server-side branch protection /
-rulesets are unavailable (they require GitHub Pro or a public repo). The rule above
-is therefore enforced **locally, not by GitHub**, via two layers:
-
-1. **Git hooks** (`.githooks/pre-commit`, `.githooks/pre-push`), wired through
-   `core.hooksPath .githooks`. This applies regardless of which tool drives git
-   (any Claude Code session, another agent, or a human) and to every worktree of
-   this repo, since they all share the same `.git`. Auto-installed by `npm install`
-   at the repo root (the `prepare` script); run `make setup-hooks` if you never run
-   npm at the root (e.g. backend-only work).
-2. **A Claude Code `PreToolUse` hook** (`.claude/settings.json` →
-   `.claude/hooks/block-main-git.sh`) that blocks `git commit`/`git push` on `main`
-   before the command even runs, inside any Claude Code session with this repo open.
-
-Both are bypassable (`--no-verify`, or simply not having the hooks installed in a
-given clone) — this is a guardrail against accidental slips, not a security boundary.
-If the team later moves to GitHub Pro or makes the repo public, add real branch
-protection on top; don't remove the local hooks, since they also cover worktrees.
+Enforcement is local (git hooks in `.githooks/`, `make setup-hooks`, and the Claude Code hook); GitHub branch protection is unavailable on this plan.
 
 ---
 
@@ -468,7 +378,6 @@ worktrees so they don't need a full reinstall each time).
 * Clean up branches **and worktrees** after merge (`_tools/remove-worktree.sh`).
 
 ---
-
 ## 8. Commit Format — Conventional Commits
 
 ```text
@@ -500,15 +409,9 @@ Types:
 * Stage specific files — never `git add .` blindly.
 * At task completion, APX reviews every tracked modification and untracked file in the active worktree, assigns each a disposition (this PR, another PR, or pending with reason and next step), and reports the complete inventory; never silently omit a path.
 
-### GitHub operation and failure recovery (mandatory for APX/Codex)
+### GitHub operations and failure recovery
 
-- Before changing or publishing anything, report/check `pwd`, `git rev-parse --show-toplevel`, branch, `git status --short`, and the complete tracked/untracked inventory. Preserve all pre-existing user changes; never clean, reset, or stage them unless explicitly assigned.
-- When the owner requests a PR, treat the request as end-to-end: verify or create the issue, use its dedicated worktree/branch, make and validate the scoped change, stage named files only, commit, fetch/rebase, push, and create the PR. An issue or local commit is not a completed PR. Do not stop with “I can continue” when no verified asynchronous job is running.
-- Classify errors from their actual output. `EPERM` / `Operation not permitted` on `.git/worktrees/<name>/FETCH_HEAD` is a local filesystem-permission failure, not proof of network failure or remote branch state. Do not repeat the identical command, change permissions, remove Git metadata, recreate the worktree, edit `main`, or use another path to bypass the permission boundary. Preserve the checkout and report the exact failing command/error.
-- If shell Git access fails, Ansel may use an already configured and authorized GitHub integration for the specific read or write operations it supports. A remote read can verify GitHub state but does not prove the local branch fetched/rebased. If an integration action is approval-denied or lacks write capability, do not retry or bypass it; report the denied action, what remains unpublished, and the exact permission/environment prerequisite.
-- Do not claim a PR exists until verifying it on GitHub. Confirm its URL/number, base (`main`), head branch and SHA, issue reference, changed-file inventory, draft state, and mergeability. Distinguish “issue created,” “commit made,” “branch pushed,” and “PR opened.” Never claim sync/merge from a planned or failed command.
-- If APX returns a truncated callback, recover the complete current-run result from its source session/tool output once when available. If it cannot be recovered, report only confirmed facts and mark the PR/result unconfirmed; do not invent the missing error or imply that a result is still running without a session/job ID.
-- After the owner reports a merge, verify the PR is merged and linked issue closed. Update only a clean local `main` via fast-forward, verify it matches `origin/main`, then remove only that issue's worktree/branch using `_tools/remove-worktree.sh` and delete its remote branch per §7. Never clean another worktree.
+Before publishing, check `pwd`, the toplevel, branch, `git status --short` and the full tracked/untracked inventory, and preserve pre-existing changes. A PR request is end-to-end (issue, worktree, scoped change, validation, named-file commit, rebase, push, PR). Never claim a PR before verifying URL, base `main`, head SHA, issue link, files, draft state and mergeability. `EPERM` on `.git/worktrees/<name>/FETCH_HEAD` is a local permission failure: preserve the checkout, report the exact command and error, do not retry or bypass it. Full procedure: skill `sauri-git-recovery`.
 
 ---
 
@@ -598,72 +501,18 @@ These rules apply once the project has a repository, a default branch, and a PR 
 7. **Keep session state accurate when session tracking is enabled.** A stale session file is worse than no session file.
 
 ---
+## 13. Spec → GitHub Traceability
 
-## 13. Spec → GitHub Traceability Workflow
+Each approved product module maps to a Spectra spec and a GitHub milestone:
 
-Each approved product module maps 1:1 to a **Spectra spec** and a **GitHub milestone**. Do not revive legacy roadmap modules or milestones unless the approved `PRODUCT_BASELINE.md` adopts them:
+| Spectra artifact | GitHub artifact |
+|---|---|
+| Spec slug | Milestone |
+| Atomic task from `tasks.md` | Issue, label `task` |
+| Property test task | Issue, labels `task`, `test`, `pbt` |
+| Bug found during execution | Issue, label `bug` |
 
-```text
-Spectra Spec (.spectra/specs/{slug}/)  ←→  GitHub Milestone
-  requirements.md or bugfix.md              (defines acceptance criteria)
-  design.md                                 (defines architecture)
-  tasks.md                                  (defines atomic work items)
-```
-
-### Lifecycle of a module
-
-1. **Plan (Spectra):** Create the spec → `/spectra-req` or `/spectra-bugfix` → `/spectra-design` → `/spectra-tasks`.
-2. **Sync to GitHub:** Only after Mira approves the exact `tasks.md` version, create a GitHub issue assigned to the corresponding milestone for each atomic required task. Label with `task` and the relevant test labels. Tests are never optional and must not receive an `optional` label.
-3. **Execute:** For each issue, create a worktree + branch (`_tools/new-worktree.sh feature/issue-{id}-{desc}`, see §7), implement, open PR referencing `Closes #{id}`.
-4. **Track:** The milestone progress in GitHub reflects the spec progress. When all required issues in a milestone are closed, the milestone is closed.
-5. **Bugs:** Bugs discovered during execution are filed as issues with label `bug`, assigned to the relevant milestone.
-
-After the tasks plan is approved, Ansel schedules its dependency graph: launch ready, independent
-tasks concurrently up to APX/runtime capacity, each in its own worktree. Start tasks serially only
-when an explicit dependency or shared-resource constraint requires it. A blocked task does not stop
-unrelated ready tasks.
-
-### Mapping rules
-
-| Spectra artifact             | GitHub artifact                              |
-| ----------------------------- | -------------------------------------------- |
-| Spec slug                    | Milestone title (numbered: "1. Captura...")   |
-| Requirement (user story)     | Referenced in issue body for context          |
-| Atomic task from tasks.md    | GitHub issue (label: `task`)                  |
-| Bug found during execution   | GitHub issue (label: `bug`)                   |
-| Property test task           | GitHub issue (labels: `task`, `test`, `pbt`)  |
-
-### When to create issues
-
-* For milestones created from the approved baseline, every atomic task in `tasks.md` gets a GitHub issue before implementation starts.
-* The former “milestone 1 retroactive” convention is historical and does not govern new baseline work.
-
-### TDD execution order (NON-NEGOTIABLE)
-
-Test tasks are **NOT optional** in the execution plan. They follow strict TDD order:
-
-1. Write the test (property, example, or integration) — it must FAIL (red).
-2. Write the implementation — the test must PASS (green).
-3. Refactor if needed — the test must still pass.
-
-In `tasks.md`, test tasks are **never marked with `*` (optional)**. They are
-regular required tasks sequenced BEFORE their corresponding implementation task
-in the dependency graph. The task plan generator must produce pairs:
-`test (red)` → `implementation (green)`.
-
-If the test infrastructure is not yet available (no venv, no DB, etc.), the FIRST
-task in any implementation plan must set it up. Tests that cannot run due to
-external blockers (missing CI, hardware, etc.) are documented as blocked — not
-skipped.
-
-### Milestone closure criteria
-
-A milestone is **closed** when:
-* All task issues (including tests) are closed.
-* The spec's tasks.md reflects all tasks as completed.
-* No open `bug` issues block the module's acceptance criteria.
-* All property tests pass with the configured minimum examples (≥100).
-* For user-visible product work, Cyrus records `PRODUCT_ACCEPTED` in the spec's
-  `product-acceptance.md` for the exact candidate version; technical QA alone is insufficient.
-
----
+* Only after Mira approves the exact `tasks.md`, Zoya creates, for every required task, one issue in the milestone and one board card (one task = one issue = one card) and records `Issue #n · Card task_x` in `tasks.md`; Imre adds the PR number when he opens the PR after QA (and security) pass and closes the card. Tests are never optional and never labeled `optional`.
+* Every approved spec artifact and every implemented issue ends in its own PR by its author; a security finding that needs a spec change or separate code gets its own `security` issue, card and PR. Local and remote must stay in step: push before hand-offs, rebase on `origin/main`, and fast-forward `main` and remove the worktree after a human merge.
+* Each issue is implemented in its own worktree and PR (`Closes #id`); the milestone closes when all its issues are closed, no open `bug` blocks acceptance, property tests pass with ≥100 examples, and user-visible work has `PRODUCT_ACCEPTED`.
+* Test tasks are required, sequenced before their implementation (`test (red)` → `implementation (green)`). If test infrastructure is missing, the first task sets it up; tests blocked by external limits are documented as blocked, not skipped.
