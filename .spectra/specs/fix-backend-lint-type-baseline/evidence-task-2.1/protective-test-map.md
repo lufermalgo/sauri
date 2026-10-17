@@ -274,3 +274,67 @@ Result: **14 passed in 0.38s**. The 6 migration nodes exercise the lineage/upgra
 ## Current disposition
 
 Evidence now includes current-base tests and individual Ruff results for the original 25-path T1.2 inventory, plus scoped mypy evidence for the production application paths and migration files where the assigned command can analyze them. There are no production edits; test changes remain separate test-only commits. T-2.1 is still **BLOCKED**, not PASS: exception chaining/cleanup and FastAPI signature behavior remain under the no-runtime-change ruling, service parameter rename needs callsite review, model-registration import order needs confirmation, and the three 009 failures remain unresolved. Next actor: Ansel must decide whether any behavior-changing lint fixes are allowed and the handling of the 009 failures before implementation proceeds.
+
+## Follow-up: rebased safe static-path packets (2026-10-17)
+
+### Candidate identity and run evidence
+
+- Before this update, QA HEAD was `08342a3a167e3e328532e79954f8e42381d17fd6`, rebased onto `origin/main` `0d6f2713abcf08d960e98451b04bbdd31b4c8843`. Worktree `/Users/lufermalgo/Proyectos/sauri/.worktrees/feature-issue-264-lint-baseline-protective-tests`, branch `feature/issue-264-lint-baseline-protective-tests`.
+- `git diff --quiet 576a6a992db4452a653a7112f394e73da5177792..0d6f2713abcf08d960e98451b04bbdd31b4c8843 -- backend` exited 0: production files are identical across the previous tested production base and new `origin/main`; no production edits exist.
+- Environment: `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python` (Python 3.14.7, Ruff 0.17.1, mypy 2.4.0, previously recorded). This is not Task 1.1's fresh environment; none was provisioned in this run.
+- Rebase replaced local commit IDs; initial status was ahead 13/behind 11 of the old remote. Verify remote head before any lease-protected update; do not overwrite unrelated commits.
+
+### Static-path packets ready before production edits
+
+“No new test diff” means existing focused nodes on the pre-edit candidate. Test-only commits already included: `2818a91fb101dbbe0c3f2f1df171323be879e1b3` (auth invalid-token contract) and `5d3079bc0d85e21fbd9eb7cae9952463899010b1` (diar-engine tests); neither changes production. Exact pre-edit candidate/base is `08342a3` / `origin/main` `0d6f271`. This QA worktree is not an authorized production writer route; Ansel must assign that route before edits.
+
+| Production path | Current Ruff RED | Semantic-equivalence boundary | Existing focused tests run |
+|---|---|---|---|
+| `app/auth/audit.py` | exit 1, UP017×1 | `timezone.utc`→`datetime.UTC` is the same UTC singleton; no control flow, values or DB behavior change. | audit denial/access property nodes below |
+| `app/auth/token.py` | exit 1, UP017×1 | Same UTC singleton; payload, expiry arithmetic, signing/defaults unchanged. | valid-login JWT and auth property nodes below |
+| `app/diarization/assignment.py` | exit 1, I001×1 | Import sort only; `labeling` imports the same engine type module; function body unchanged. | assignment property nodes below |
+| `app/diarization/state.py` | exit 1, I001×1 | Dataclass import ordering only; state constants/function body unchanged. | diarization state property nodes below |
+| `app/meetings/state_machine.py` | exit 1, I001×1 | Dataclass import ordering only; transition constants/function body unchanged. | meeting state property nodes below |
+| `alembic/versions/001_initial_schema.py` | exit 1, I001×1, UP007×3, UP035×1 | Imports/metadata annotations only; preserve revision values and migration operations. | six migration nodes below |
+| `alembic/versions/002_unique_transcripcion_reunion_id.py` | exit 1, UP007×3, UP035×1 | Preserve revision values and operation sequence. | six migration nodes below |
+| `alembic/versions/003_diarizacion_schema.py` | exit 1, I001×1, UP007×3, UP035×1 | Preserve revision values and operation sequence. | six migration nodes below |
+| `alembic/versions/004_usuarios_schema.py` | exit 1, I001×1, UP007×3, UP035×1 | Preserve revision values and operation sequence. | six migration nodes below |
+| `alembic/versions/005_fix_uuid_columns_to_varchar.py` | exit 1, E501×4, UP007×3, UP035×1 | Literal-preserving wrapping only; preserve each SQL string, FK order and schema/data effects. | six migration nodes below |
+| `alembic/versions/006_add_titulo_reunion.py` | exit 1, I001×1, UP007×3, UP035×1 | Preserve revision values and operation sequence. | six migration nodes below |
+| `alembic/versions/007_rename_schema_to_english.py` | exit 1, E501×6, UP007×3, UP035×1 | Literal-preserving wrapping only; preserve SQL arguments, rename order and data effects. | six migration nodes below |
+
+Exact focused run from `backend/`:
+
+```bash
+/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m pytest -q \
+ tests/auth/test_access_control_property.py::test_property_10_access_granted_iff_authorized \
+ tests/auth/test_access_control_property.py::test_property_10_every_denial_generates_exactly_one_record \
+ tests/auth/test_login.py::test_login_valid_credentials_issues_jwt \
+ tests/diarization/test_assignment_property.py::test_property_9_exactly_one_assignment_per_turn \
+ tests/diarization/test_assignment_property.py::test_property_9_assignment_to_speaker_with_maximum_overlap \
+ tests/diarization/test_assignment_property.py::test_property_9_tie_break_by_lower_sequence \
+ tests/diarization/test_assignment_property.py::test_property_10_preservation_of_speech_turns \
+ tests/diarization/test_state_property.py::test_property_16_valid_transitions_produce_correct_state \
+ tests/diarization/test_state_property.py::test_property_16_terminal_states_are_immutable \
+ tests/diarization/test_state_property.py::test_property_16_unrecognized_events_reject_transition \
+ tests/meetings/test_state_machine_property.py::test_property_3_only_valid_transitions_produce_a_new_state \
+ tests/meetings/test_state_machine_property.py::test_property_3_terminal_states_are_immutable \
+ tests/meetings/test_state_machine_property.py::test_property_4_transition_to_failed_has_a_valid_cause \
+ tests/test_migration.py::test_revision_007_chains_after_006 \
+ tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data \
+ tests/test_migration.py::test_downgrade_reverses_every_rename \
+ tests/test_migration.py::test_orm_schema_uses_english_table_names \
+ tests/test_migration.py::test_orm_schema_meetings_has_english_columns \
+ tests/test_migration.py::test_orm_schema_users_has_english_columns
+```
+
+Result **19 passed in 2.36s**. Scoped mypy passed on `app/auth/audit.py app/auth/token.py app/diarization/assignment.py app/diarization/state.py app/meetings/state_machine.py app/infra/models.py` (6 files) and exact migration paths 001–007 (7 files). `ruff check --output-format concise` on the seven exact migration paths exited 1 with 42 REDs: 001:5, 002:4, 003:5, 004:5, 005:8, 006:5, 007:10 (32 fixable); the full concise per-line output is in the run record. Individual app-path Ruff REDs are recorded in prior checker batches and rerun in this turn. `app/infra/models.py` is current Ruff-clean; no correction packet. Passing tests are expected pre-edit evidence; no behavioral RED fabricated.
+
+### Exclusions and blockers
+
+- `alembic/env.py` I001 includes `app.infra.models` registration import; import order may change model registration/autogenerate, so not certified static.
+- `app/diarization/worker.py` SIM117; `app/meetings/schemas.py` UP007 runtime alias; auth authorization/dependencies B008/B904; cloud providers, engines B904/SIM105/SIM115; ingestion/meeting routers and meeting service require error-context/FastAPI/callsite review. Keep blocked under no-runtime-change ruling.
+- Three existing 009 migration test failures remain out of scope/unfixed; no investigation was done here. Newer non-T1.2 paths remain excluded.
+- No production integration route is authorized on this QA card. Ansel must assign the matching T3.1 worktree/route before any edit. Status remains partial/BLOCKED, not PASS; no production changes.
+
+## Current disposition
