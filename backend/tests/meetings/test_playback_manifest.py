@@ -124,3 +124,194 @@ async def test_invalid_token_cannot_receive_manifest(api_client: AsyncClient):
     )
     assert response.status_code == 401
     assert "private/" not in response.text
+
+
+async def _meeting_and_recording(api_db_url: str) -> tuple[str, str]:
+    engine = create_async_engine(api_db_url, echo=False)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    meeting_id = str(uuid.uuid4())
+    recording_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    async with session_factory() as session, session.begin():
+        session.add(
+            Meeting(
+                id=meeting_id,
+                meet_link="https://meet.google.com/abc-defg-hij",
+                origin="link",
+                calendar_invite_id=None,
+                scheduled_start_time=None,
+                process_state="completed",
+                failure_cause=None,
+                created_by=OWNER_ID,
+                created_at=now,
+            )
+        )
+        session.add(
+            SessionRecording(
+                id=recording_id,
+                meeting_id=meeting_id,
+                idempotency_key=str(uuid.uuid4()),
+                capture_origin="chrome_extension",
+                audio_ref="private/synthetic/audio.webm",
+                video_ref=None,
+                duration_seconds=45,
+                interrupted=False,
+                expires_at=None,
+                finished_at=now,
+            )
+        )
+    await engine.dispose()
+    return meeting_id, recording_id
+
+
+class _SyntheticObjectStore:
+    def __init__(self):
+        self.signed: list[tuple[str, int]] = []
+
+    async def temporary_read_url(self, reference: str, ttl_seconds: int = 3600) -> str:
+        self.signed.append((reference, ttl_seconds))
+        return f"https://media.example.test/signed/{len(self.signed)}"
+
+
+def _synthetic_inventory(*, video_presence: str, audio_source=None, video_sources=()):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        video_presence=video_presence,
+        audio_source=audio_source,
+        video_sources=list(video_sources),
+    )
+
+
+def _source(source_id: str, object_ref: str, *, mime_type="video/webm", offset=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=source_id,
+        object_ref=object_ref,
+        mime_type=mime_type,
+        quality_label="Original",
+        width=None,
+        height=None,
+        video_offset_ms=offset,
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_recording_or_playable_audio_source_returns_no_playback_manifest(
+    api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
+):
+    meeting_id = await _meeting_with_recording(api_db_url)
+    from app.meetings import service
+
+    async def no_audio(session, recording_id):
+        return _synthetic_inventory(video_presence="absent", audio_source=None)
+
+    monkeypatch.setattr(service, "load_playback_source_inventory", no_audio, raising=False)
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header()
+    )
+    assert response.status_code == 404
+    assert "private/" not in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("video_presence", "mime_type", "video_ref"),
+    [("unknown", "video/webm", "private/legacy/video.webm"),
+     ("unknown", None, "private/legacy/video.webm"),
+     ("unknown", "video/webm", None)],
+)
+async def test_legacy_unknown_video_evidence_is_audio_only(
+    api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch,
+    video_presence: str, mime_type: str | None, video_ref: str | None,
+):
+    from app.meetings import service
+
+    meeting_id, _ = await _meeting_and_recording(api_db_url)
+    audio = _source("audio-id", "private/synthetic/audio.webm", mime_type=mime_type)
+    videos = [] if video_ref is None else [
+        _source("legacy-video", video_ref, mime_type=mime_type, offset=None)
+    ]
+
+    async def inventory(session, recording_id):
+        return _synthetic_inventory(
+            video_presence=video_presence, audio_source=audio, video_sources=videos
+        )
+
+    monkeypatch.setattr(service, "load_playback_source_inventory", inventory, raising=False)
+    store = _SyntheticObjectStore()
+    from app.meetings import router
+    monkeypatch.setattr(router, "_get_object_store", lambda: store, raising=False)
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header()
+    )
+    assert response.status_code == 200
+    assert response.json()["video_sources"] == []
+    assert all(reference == "private/synthetic/audio.webm" for reference, _ in store.signed)
+    assert "private/" not in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("video_presence", ["absent", "unknown"])
+async def test_only_explicit_muxed_evidence_selects_muxed_container(
+    api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch,
+    video_presence: str,
+):
+    from app.meetings import router, service
+
+    meeting_id, _ = await _meeting_and_recording(api_db_url)
+    audio = _source("audio-id", "private/synthetic/muxed.webm", mime_type="video/webm")
+
+    async def inventory(session, recording_id):
+        return _synthetic_inventory(video_presence=video_presence, audio_source=audio)
+
+    monkeypatch.setattr(service, "load_playback_source_inventory", inventory, raising=False)
+    store = _SyntheticObjectStore()
+    monkeypatch.setattr(router, "_get_object_store", lambda: store, raising=False)
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header()
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body.get("muxed_video_source") is None
+    assert body["video_sources"] == []
+    assert all("private/" not in value for value in response.text.split())
+
+
+@pytest.mark.asyncio
+async def test_separate_video_choices_include_only_known_signed_offsets_and_sign_with_ttl_3600(
+    api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
+):
+    from app.meetings import router, service
+
+    meeting_id, _ = await _meeting_and_recording(api_db_url)
+    audio = _source("audio-id", "private/synthetic/audio.opus", mime_type="audio/ogg")
+    videos = [
+        _source("positive", "private/synthetic/video-positive.webm", offset=250),
+        _source("negative", "private/synthetic/video-negative.webm", offset=-125),
+        _source("legacy", "private/synthetic/video-unknown.webm", offset=None),
+    ]
+
+    async def inventory(session, recording_id):
+        return _synthetic_inventory(
+            video_presence="separate", audio_source=audio, video_sources=videos
+        )
+
+    monkeypatch.setattr(service, "load_playback_source_inventory", inventory, raising=False)
+    store = _SyntheticObjectStore()
+    monkeypatch.setattr(router, "_get_object_store", lambda: store, raising=False)
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header()
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [source["source_id"] for source in body["video_sources"]] == ["positive", "negative"]
+    assert [source["video_offset_ms"] for source in body["video_sources"]] == [250, -125]
+    assert len(body["video_sources"]) == 2
+    assert store.signed == [
+        ("private/synthetic/audio.opus", 3600),
+        ("private/synthetic/video-positive.webm", 3600),
+        ("private/synthetic/video-negative.webm", 3600),
+    ]
+    assert "private/" not in response.text
