@@ -98,3 +98,44 @@ The focused module commands total 99 passes for selected in-scope test files plu
 - No production edits have occurred; therefore final semantic equivalence of static corrections cannot yet be proven. Current static-only classification is limited to import sorting, line length, annotation/import modernization; any actual diff must still be checked against executable statements before its writer's handoff. Behavior-sensitive paths are identified above and must receive their exact pre-edit RED/test packet.
 
 T-2.1 remains **incomplete / BLOCKED**, not PASS. Remaining next move: Ansel to decide whether the endpoint B904 cause-chain change is acceptable and confirm next work sequencing; then QA can finish any remaining path-specific test-node/semantic-equivalence record. Migration failures must remain documented, not repaired in this card.
+
+## Bounded follow-up batch: next five in-scope production paths
+
+Ansel's 14:46 instruction was to process only the next five unresolved paths. I selected the next five independent production paths after the isolated migration paths: `app/auth/audit.py`, `app/auth/authorization.py`, `app/auth/dependencies.py`, `app/auth/token.py`, and `app/diarization/assignment.py`. Worktree was fetched/rebased first; `origin/main` remained `576a6a992db4452a653a7112f394e73da5177792`, and no production path was edited. Test-only commit `2818a91fb101dbbe0c3f2f1df171323be879e1b3` adds a synthetic malformed-JWT response-contract node; pushed separately.
+
+### Exact current-path Ruff REDs and per-path evidence
+
+Ran `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/ruff check <path>` separately from `backend/` for each exact production path; all five commands exited 1:
+
+| Production path | Exact RED | Classification / reason | Focused node(s), exact command result |
+|---|---|---|---|
+| `app/auth/audit.py` | UP017 ×1 at `datetime.now(timezone.utc)` | Purely static: use `datetime.UTC`, an alias of the same UTC singleton; same call/result, no control flow or persisted fields changed. | `tests/auth/test_access_control_property.py::test_property_10_every_denial_generates_exactly_one_record` passed; exercises emitted denied AccessLog and adjacent audit path. |
+| `app/auth/authorization.py` | UP035 ×1 (`Callable`) and B008 ×2 (`Depends` defaults) | Behavior-bearing due to FastAPI dependency declarations; UP035 import modernization is static. | `tests/auth/test_access_control_property.py::test_property_10_access_granted_iff_authorized` and `::test_property_10_every_denial_generates_exactly_one_record` passed. Covers allow/deny and exactly-one denial audit. |
+| `app/auth/dependencies.py` | B008 ×1 (`Depends(_bearer_scheme)`) and B904 ×1 (JWTError→401) | Behavior-bearing: B008 can alter FastAPI dependency interpretation; B904 can change observable exception context. | `tests/auth/test_auth_disabled_scope.py` bypass nodes and new `::test_invalid_token_preserves_unauthorized_error_contract` passed; exact node protects malformed-token 401/detail without assuming cause chaining. |
+| `app/auth/token.py` | UP017 ×1 at `datetime.now(timezone.utc)` | Purely static: `datetime.UTC` is the same UTC singleton; generated claims/signature path is unchanged. | `tests/auth/test_login.py::test_login_valid_credentials_issues_jwt` passed; verifies issued token claims and decoding. |
+| `app/diarization/assignment.py` | I001 ×1, import order only | Purely static if the correction only reorders the existing two imports. Inspected `labeling.py` and `diarization_engine.py`: module-level code is imports, class/type definitions and dataclass definitions, with no I/O or registration side effects. The import names/set are unchanged; property tests exercise output semantics. | All four nodes passed: `test_property_9_exactly_one_assignment_per_turn`, `test_property_9_assignment_to_speaker_with_maximum_overlap`, `test_property_9_tie_break_by_lower_sequence`, `test_property_10_preservation_of_speech_turns`. |
+
+Exact selected-node command (all invoked from `backend/`):
+
+```bash
+/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m pytest -q \
+ tests/auth/test_access_control_property.py::test_property_10_access_granted_iff_authorized \
+ tests/auth/test_access_control_property.py::test_property_10_every_denial_generates_exactly_one_record \
+ tests/auth/test_auth_disabled_scope.py::test_bypass_active_in_test_environment \
+ tests/auth/test_auth_disabled_scope.py::test_bypass_inactive_outside_test_environment \
+ tests/auth/test_auth_disabled_scope.py::test_bypass_inactive_without_app_env \
+ tests/auth/test_auth_disabled_scope.py::test_invalid_token_preserves_unauthorized_error_contract \
+ tests/auth/test_login.py::test_login_valid_credentials_issues_jwt \
+ tests/diarization/test_assignment_property.py::test_property_9_exactly_one_assignment_per_turn \
+ tests/diarization/test_assignment_property.py::test_property_9_assignment_to_speaker_with_maximum_overlap \
+ tests/diarization/test_assignment_property.py::test_property_9_tie_break_by_lower_sequence \
+ tests/diarization/test_assignment_property.py::test_property_10_preservation_of_speech_turns
+```
+
+Result: **11 passed in 1.92s**. The added malformed-JWT node was also rerun alone and passed **1/1**. `ruff check tests/auth/test_auth_disabled_scope.py` passed. Targeted `mypy tests/auth/test_auth_disabled_scope.py` exits 1 with the same three existing `no-untyped-def` findings in the three prior functions; the new test has an explicit return type and adds no mypy error. No production mypy findings are in the configured T1.2 inventory.
+
+### Remaining decision in this batch
+
+The behavior-preserving test asserts 401 and the existing detail but intentionally does not choose between `raise ... from err` and `raise ... from None`; both alter the observable exception context relative to the current `except JWTError` behavior. As on the diar-engine endpoint B904 path, Ansel must direct whether either cause behavior is authorized before Imre changes it. The other four paths now have focused current-base evidence and recorded static/behavior classifications; any implementation diff still needs to stay within the described equivalent transformation, with post-edit checker GREEN and tests rerun.
+
+Current test-only HEAD is `2818a91fb101dbbe0c3f2f1df171323be879e1b3`; evidence ledger updates for this bounded batch remain to be committed and pushed in a separate docs commit.
