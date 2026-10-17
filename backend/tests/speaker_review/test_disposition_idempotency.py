@@ -182,6 +182,15 @@ async def test_same_key_reused_for_another_item_is_a_conflict(db_session: Any) -
     assert replay["outcome"] == "conflict_key_hash_mismatch"
 
 
+async def test_receipt_schema_is_persistently_available(async_engine: Any) -> None:
+    """The database schema exposes durable idempotency receipts."""
+    from sqlalchemy import inspect
+
+    async with async_engine.connect() as connection:
+        tables = await connection.run_sync(lambda sync_connection: inspect(sync_connection).get_table_names())
+    assert "speaker_review_idempotency_receipts" in tables
+
+
 async def test_database_receipt_failure_rolls_back_disposition(db_session: Any) -> None:
     """A real SQLite constraint failure in receipt insertion rolls back the item update."""
     from sqlalchemy import select, text
