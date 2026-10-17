@@ -1,0 +1,8 @@
+Python 3.14.7
+python_version_exit=0
+ruff 0.17.1
+ruff_version_exit=0
+mypy 2.4.0 (compiled: yes)
+mypy_version_exit=0
+pytest 9.1.1
+pytest_version_exit=0
