@@ -159,7 +159,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-10: GREEN — persist speaker review aggregate and derived item dispositions
 
-**Tracking:** Issue #243 · Card task_5c10aed73c464472
+**Tracking:** Issue #243 · Card task_5c10aed73c464472 · PR #257
 
 **Files:** `backend/app/meetings/` review domain/service modules; `backend/app/infra/models.py`; migration under `backend/alembic/versions/`.
 
