@@ -7,6 +7,6 @@
   "phases": {
     "requirements": "complete",
     "design": "complete",
-    "tasks": "pending"
+    "tasks": "complete"
   }
 }
