@@ -63,6 +63,12 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 
 **Dependencies:** Task 1.2; for a production path, the matching Task 2.1 handoff must be complete before editing. Instances for distinct paths are dependency-ready in parallel; this plan asserts no numeric concurrency limit, because none was verified in the packet. Ansel schedules ready instances within effective runtime capacity and any real shared-resource conflict he has verified. Each instance works from the same recorded base and transfers its exact commit/diff to the one candidate worktree only through Ansel's authorized integration route; integration into that shared candidate is serialized. Instances targeting the same path are prohibited because Ruff and mypy findings for one path are combined into this single instance.
 
+### Task 3.1.09: Clear UP017 in `backend/app/auth/audit.py`
+
+**Status:** Done (QA passed; implementation PR open)
+
+**Tracking:** Issue #334 · Card task_fc0a88aa3262413e · PR #392
+
 ## Phase 4: Integrated Candidate Validation and Handoff
 
 ### Task 4.1: Run complete backend validation after all file-scoped corrections are integrated
