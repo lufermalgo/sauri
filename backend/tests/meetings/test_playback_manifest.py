@@ -216,6 +216,62 @@ async def test_no_recording_or_playable_audio_source_returns_no_playback_manifes
 
 
 @pytest.mark.asyncio
+async def test_meeting_without_recording_has_no_playback_manifest(
+    api_client: AsyncClient, api_db_url: str
+):
+    engine = create_async_engine(api_db_url, echo=False)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    meeting_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(
+            Meeting(
+                id=meeting_id,
+                meet_link="https://meet.google.com/abc-defg-hij",
+                origin="link",
+                calendar_invite_id=None,
+                scheduled_start_time=None,
+                process_state="completed",
+                failure_cause=None,
+                created_by=OWNER_ID,
+                created_at=datetime.now(UTC),
+            )
+        )
+    await engine.dispose()
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header()
+    )
+    assert response.status_code == 404
+    assert "private/" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_explicit_muxed_evidence_returns_muxed_video_source(
+    api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
+):
+    from app.meetings import router, service
+
+    meeting_id, _ = await _meeting_and_recording(api_db_url)
+    audio = _source("muxed-id", "private/synthetic/muxed.webm", mime_type="video/webm")
+
+    async def inventory(session, recording_id):
+        return _synthetic_inventory(video_presence="muxed", audio_source=audio)
+
+    monkeypatch.setattr(service, "load_playback_source_inventory", inventory, raising=False)
+    store = _SyntheticObjectStore()
+    monkeypatch.setattr(router, "_get_object_store", lambda: store, raising=False)
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header()
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["muxed_video_source"]["source_id"] == "muxed-id"
+    assert body["muxed_video_source"]["mime_type"] == "video/webm"
+    assert body["video_sources"] == []
+    assert store.signed == [("private/synthetic/muxed.webm", 3600)]
+    assert "private/" not in response.text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("video_presence", "mime_type", "video_ref"),
     [("unknown", "video/webm", "private/legacy/video.webm"),
