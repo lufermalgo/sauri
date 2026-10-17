@@ -164,6 +164,53 @@ describe("PlaybackController media modes and synchronization", () => {
     expect(video.play).not.toHaveBeenCalled();
   });
 
+  it("changes only the video source and preserves the audio position", () => {
+    const audio = mediaElement();
+    const video = mediaElement();
+    audio.src = "signed-audio-url";
+    audio.currentTime = 12.5;
+    const controller = new PlaybackController({
+      videoPresence: "separate",
+      audioElement: audio,
+      videoElement: video,
+      passages,
+      mediaSources: [
+        { id: "low", label: "Low", videoSrc: "video-low", audioSrc: "ignored-audio", mimeType: "video/webm", videoOffsetMs: -250 },
+        { id: "high", label: "High", videoSrc: "video-high", audioSrc: "ignored-audio", mimeType: "video/webm", videoOffsetMs: -250 },
+      ],
+    });
+
+    controller.selectSource("high");
+
+    expect(video.src).toBe("video-high");
+    expect(audio.src).toBe("signed-audio-url");
+    expect(audio.currentTime).toBe(12.5);
+    expect(controller.getState().selectedSourceId).toBe("high");
+    expect(video.muted).toBe(true);
+  });
+
+  it("pauses both elements and reports a paired startup failure", async () => {
+    const audio = mediaElement();
+    const video = mediaElement();
+    const onError = vi.fn();
+    video.play = vi.fn().mockRejectedValue(new Error("synthetic video failure"));
+    const controller = new PlaybackController({
+      videoPresence: "separate",
+      audioElement: audio,
+      videoElement: video,
+      passages,
+      videoOffsetMs: -100,
+      onError,
+    });
+
+    await controller.resume();
+
+    expect(audio.pause).toHaveBeenCalled();
+    expect(video.pause).toHaveBeenCalled();
+    expect(controller.getState().isPlaying).toBe(false);
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
   it("does not pair or offer separate video when its offset is null", async () => {
     const audio = mediaElement();
     const video = mediaElement();
