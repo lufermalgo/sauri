@@ -24,6 +24,8 @@ Task 1.1 also excludes the paused Imre worktree/branch and its approximately 49 
 
 **Dependencies:** None
 
+**Tracking:** Issue #262 · Card task_be16b64676d747d2
+
 ### Task 1.2: Capture all pre-correction checker and default-test evidence
 
 **Files:** Complete configured backend target as reported by the checks; no source edits.
