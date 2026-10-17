@@ -104,6 +104,24 @@ describe("PlaybackController state and controls", () => {
     audio.emit("timeupdate");
     expect(controller.getState().activePassageId).toBeNull();
   });
+
+  it("keeps playback paused and reports a rejected play request", async () => {
+    const audio = mediaElement();
+    const onError = vi.fn();
+    audio.play = vi.fn().mockRejectedValue(new Error("synthetic playback failure"));
+    const controller = new PlaybackController({
+      videoPresence: "absent",
+      audioElement: audio,
+      passages,
+      onError,
+    });
+
+    await controller.resume();
+
+    expect(audio.pause).toHaveBeenCalled();
+    expect(controller.getState().isPlaying).toBe(false);
+    expect(onError).toHaveBeenCalledOnce();
+  });
 });
 
 describe("PlaybackController media modes and synchronization", () => {
