@@ -32,7 +32,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-2: Implement recording source inventory and offset persistence
 
-**Tracking:** Issue #300 · Card `task_939e38b11c53404d`
+**Tracking:** Issue #300 · Card `task_939e38b11c53404d` · PR #320
 
 **Files:** `backend/app/infra/models.py`; `backend/app/ingestion/schemas.py`, `backend/app/ingestion/router.py`, `backend/app/ingestion/service.py`; new migration under `backend/alembic/versions/` after `008_speaker_review_aggregate`; `extension/src/background.ts` and the capture helper used by that path.
 
