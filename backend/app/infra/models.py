@@ -256,6 +256,75 @@ class SpeakerAssignment(Base):
 
 
 # ---------------------------------------------------------------------------
+# SpeakerReview (recording-speaker-review T-10)
+# ---------------------------------------------------------------------------
+
+
+class SpeakerReview(Base):
+    """Recording/revision-scoped speaker-review aggregate (Req. 3.3-3.7, 4.1-4.4).
+
+    Status is derived from its items; the column caches the derivation so a
+    single-item disposition write cannot silently disagree with item state.
+    One aggregate exists per processing revision once that revision is ready.
+    """
+
+    __tablename__ = "speaker_reviews"
+    __table_args__ = (
+        UniqueConstraint("meeting_id", "processing_revision", name="uq_speaker_review_revision"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
+    )
+    # Processing revision this aggregate belongs to; 1 for legacy recordings.
+    processing_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Derived only: "pending" | "complete" (see app.meetings.speaker_review_state).
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    items: Mapped[list["SpeakerReviewItem"]] = relationship(
+        "SpeakerReviewItem", back_populates="review", lazy="select"
+    )
+
+
+# ---------------------------------------------------------------------------
+# SpeakerReviewItem
+# ---------------------------------------------------------------------------
+
+
+class SpeakerReviewItem(Base):
+    """One immutable speaker key with an optional explicit disposition (Req. 3.3-3.7, 4.1-4.4).
+
+    ``speaker_key`` is the immutable identifier of the initial diarization
+    speaker within the review. ``disposition`` stays NULL until an explicit
+    named/corrected/confirmed decision is recorded; ``version`` supports
+    concurrent-write detection (T-11/T-12). Excerpt validation and identity
+    linkage are later tasks and are not stored here yet.
+    """
+
+    __tablename__ = "speaker_review_items"
+    __table_args__ = (
+        UniqueConstraint("review_id", "speaker_key", name="uq_speaker_review_item_speaker"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("speaker_reviews.id", ondelete="CASCADE"), nullable=False
+    )
+    speaker_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    current_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    # NULL while undisposed; otherwise one of named | corrected | confirmed.
+    disposition: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    chosen_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # attributed | uncertain — how the speaker is currently rendered.
+    attribution_state: Mapped[str] = mapped_column(String(16), nullable=False, default="uncertain")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    review: Mapped["SpeakerReview"] = relationship("SpeakerReview", back_populates="items")
+
+
+# ---------------------------------------------------------------------------
 # User
 # ---------------------------------------------------------------------------
 
