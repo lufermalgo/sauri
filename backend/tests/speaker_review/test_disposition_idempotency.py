@@ -446,3 +446,93 @@ def test_property_9_canonical_request_hash_is_stable_and_payload_sensitive(
     baseline = canonical_request_hash(request)
     for variant in data.draw(st.permutations(variants)):
         assert canonical_request_hash(variant) != baseline
+
+
+async def _persisted_review(db_session: Any) -> tuple[str, str]:
+    """Create a minimal, synthetic database-backed review fixture."""
+    from datetime import UTC, datetime
+
+    from app.infra.models import Meeting, SpeakerReview, SpeakerReviewItem
+
+    meeting_id = "meeting-db-test"
+    review_id = "review-db-test"
+    db_session.add(Meeting(
+        id=meeting_id,
+        meet_link="https://meet.google.com/abc-defg-hij",
+        origin="link",
+        calendar_invite_id=None,
+        scheduled_start_time=None,
+        process_state="completed",
+        failure_cause=None,
+        created_by="owner-db-test",
+        created_at=datetime.now(UTC),
+    ))
+    db_session.add(SpeakerReview(
+        id=review_id,
+        meeting_id=meeting_id,
+        processing_revision=1,
+        status="pending",
+        created_at=datetime.now(UTC),
+    ))
+    db_session.add(SpeakerReviewItem(
+        id="item-db-test",
+        review_id=review_id,
+        speaker_key="speaker-db-test",
+        current_label="Speaker 1",
+        disposition=None,
+        chosen_label=None,
+        attribution_state="uncertain",
+        version=1,
+    ))
+    await db_session.flush()
+    return meeting_id, review_id
+
+
+async def test_persistent_disposition_replay_returns_receipt_without_advancing_item_twice(db_session: Any) -> None:
+    """A replay reads the durable response and keeps one item transition."""
+    from sqlalchemy import select
+
+    from app.infra.models import SpeakerReviewIdempotencyReceipt, SpeakerReviewItem
+    from app.meetings.speaker_review_service import SpeakerReviewService
+
+    meeting_id, _ = await _persisted_review(db_session)
+    service = SpeakerReviewService(db_session)
+    request = {"disposition": "named", "label": "Synthetic person", "expected_version": 1,
+               "idempotency_key": "key-db-test"}
+    async with db_session.begin_nested():
+        applied = await service.record_disposition("owner-db-test", meeting_id, "1", "speaker-db-test", request, 1)
+    async with db_session.begin_nested():
+        replayed = await service.record_disposition("owner-db-test", meeting_id, "1", "speaker-db-test", request, 1)
+    assert applied["outcome"] == "apply"
+    assert replayed == {"outcome": "replay", "result": applied["result"]}
+    item = await db_session.scalar(select(SpeakerReviewItem).where(SpeakerReviewItem.id == "item-db-test"))
+    receipts = list((await db_session.scalars(select(SpeakerReviewIdempotencyReceipt))).all())
+    assert item is not None and item.version == 2 and item.disposition == "named"
+    assert len(receipts) == 1
+
+
+async def test_persistent_stale_version_and_key_hash_reuse_do_not_mutate(db_session: Any) -> None:
+    """Persistent conflicts neither advance the item nor add a receipt."""
+    from sqlalchemy import select
+
+    from app.infra.models import SpeakerReviewIdempotencyReceipt, SpeakerReviewItem
+    from app.meetings.speaker_review_service import SpeakerReviewService
+
+    meeting_id, _ = await _persisted_review(db_session)
+    service = SpeakerReviewService(db_session)
+    request = {"disposition": "confirmed", "expected_version": 1, "idempotency_key": "key-db-conflict"}
+    async with db_session.begin_nested():
+        first = await service.record_disposition("owner-db-test", meeting_id, "1", "speaker-db-test", request, 1)
+    async with db_session.begin_nested():
+        key_conflict = await service.record_disposition("owner-db-test", meeting_id, "1", "speaker-db-test",
+            {**request, "disposition": "named", "label": "Changed"}, 1)
+    async with db_session.begin_nested():
+        stale = await service.record_disposition("owner-db-test", meeting_id, "1", "speaker-db-test",
+            {"disposition": "confirmed", "expected_version": 1, "idempotency_key": "new-key"}, 1)
+    assert first["outcome"] == "apply"
+    assert key_conflict["outcome"] == "conflict_key_hash_mismatch"
+    assert stale["outcome"] == "conflict_stale_version"
+    item = await db_session.scalar(select(SpeakerReviewItem).where(SpeakerReviewItem.id == "item-db-test"))
+    receipts = list((await db_session.scalars(select(SpeakerReviewIdempotencyReceipt))).all())
+    assert item is not None and item.version == 2
+    assert len(receipts) == 1
