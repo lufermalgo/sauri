@@ -1,6 +1,7 @@
 // Feature: chrome-side-panel, Property 17: CaptureState state machine
 // Feature: chrome-side-panel, Property 18: New Note button enablement based on CaptureState
 
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
 import { applyCaptureEvent, newNoteButtonEnabled, videoPresenceFromStream } from "./capture";
@@ -33,6 +34,25 @@ describe("applyCaptureEvent", () => {
       ),
       { numRuns: 100 }
     );
+  });
+});
+
+describe("capture source evidence", () => {
+  it("reports observed video tracks before constructing the interleaved upload", () => {
+    const captureSource = readFileSync("src/offscreen.ts", "utf8");
+    const uploadSource = readFileSync("src/background.ts", "utf8");
+    const trackEvidenceIndex = captureSource.indexOf("videoPresenceFromStream");
+    const recorderConstructionIndex = captureSource.indexOf("new MediaRecorder");
+    const evidenceMessageIndex = captureSource.indexOf("videoPresence:", trackEvidenceIndex);
+    const uploadEvidenceIndex = uploadSource.indexOf("video_presence:");
+    const formConstructionIndex = uploadSource.indexOf("new FormData()");
+
+    expect(trackEvidenceIndex).toBeGreaterThanOrEqual(0);
+    expect(recorderConstructionIndex).toBeGreaterThan(trackEvidenceIndex);
+    expect(evidenceMessageIndex).toBeGreaterThan(trackEvidenceIndex);
+    expect(uploadEvidenceIndex).toBeGreaterThanOrEqual(0);
+    expect(formConstructionIndex).toBeGreaterThan(uploadEvidenceIndex);
+    expect(uploadSource).toContain('formData.append("audio", blob, "recording.webm")');
   });
 });
 

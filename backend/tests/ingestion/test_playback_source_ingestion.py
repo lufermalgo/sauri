@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import HTTPException
@@ -101,3 +103,49 @@ async def test_invalid_capture_metadata_returns_422_before_object_storage(
         )
 
     assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("video_presence", "include_video", "video_offset_ms"),
+    [
+        ("muxed", True, None),  # Muxed is the single-object upload path.
+        ("absent", True, None),  # An uploaded video contradicts absent evidence.
+        ("separate", False, 40),  # Separate requires a distinct video object.
+    ],
+)
+@pytest.mark.asyncio
+async def test_upload_rejects_video_evidence_inconsistent_with_object_path_before_storage_or_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+    video_presence: str,
+    include_video: bool,
+    video_offset_ms: int | None,
+) -> None:
+    object_store = Mock()
+    object_store.save = AsyncMock(return_value="synthetic-object-ref")
+    monkeypatch.setattr(router, "_get_object_store", Mock(return_value=object_store))
+    monkeypatch.setattr(router, "_get_queue", Mock())
+    create_engine = Mock(
+        side_effect=AssertionError("invalid metadata must be rejected before persistence")
+    )
+    monkeypatch.setattr(router, "create_engine", create_engine)
+    audio = UploadFile(filename="synthetic-audio.webm", file=BytesIO(b"audio"))
+    video = (
+        UploadFile(filename="synthetic-video.webm", file=BytesIO(b"video"))
+        if include_video
+        else None
+    )
+    metadata = _payload(video_presence=video_presence)
+    if video_offset_ms is not None:
+        metadata["video_offset_ms"] = video_offset_ms
+
+    with pytest.raises(HTTPException) as error:
+        await router.upload_recording(
+            audio=audio,
+            video=video,
+            data=json.dumps(metadata),
+            user=type("User", (), {"id": "synthetic-user"})(),
+        )
+
+    assert error.value.status_code == 422
+    object_store.save.assert_not_awaited()
+    create_engine.assert_not_called()
