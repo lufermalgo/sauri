@@ -35,7 +35,7 @@ Task 1.1 also excludes the paused Imre worktree/branch and its approximately 49 
 
 **Dependencies:** Task 1.1
 
-**Tracking:** Issue #263 · Card task_c4abf99598f64377
+**Tracking:** Issue #263 · Card task_c4abf99598f64377 · PR #314
 
 ## Phase 2: Behavior-Preservation Evidence
 
