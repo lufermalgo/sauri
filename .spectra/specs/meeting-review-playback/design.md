@@ -146,7 +146,7 @@ export async function getTranscript(meetingId: string): Promise<TranscriptRespon
 
 `GET /api/v1/meetings/{meeting_id}/playback` returns the manifest described above. It requires a valid JWT and the authenticated user must own the meeting; for absent/non-owned meetings return the same 404 response. The backend reads the recording source inventory and signs only the recorded objects through `ObjectStore.temporary_read_url(reference, ttl_seconds=3600)`. The web client requests this authenticated manifest, then the browser fetches media bytes from the signed URL; the object-store URL is not persisted or shared. A failed/expired URL causes one manifest refresh and retry at the saved current time, then an accessible error. Object-store CORS and byte-range support must permit the configured frontend origin and browser seeking; verify this contract in integration tests before enabling the feature in a deployment.
 
-The existing transcript route's actual JSON has `segments`, each with `id`, `text`, `start_ms`, `end_ms`, `sequence`; the web adapter must correct the current frontend type mismatch (`turns`/camelCase) and map each segment to `TimedPassage` as `{ id: segment.id, text: segment.text, startMs: segment.start_ms, endMs: segment.end_ms }`. Preserve the backend's sequence order and source text. Reject/skip invalid timing for playback actions while retaining the segment text. The playback backend work is in this feature's implementation scope: the source registry migration, manifest route, owner check, and API/adapter mapping are needed for the approved web playback behavior. No media transcoder or new encoding-generation behavior is included.
+The existing transcript route's actual JSON has `segments`, each with `id`, `text`, `start_ms`, `end_ms`, `sequence`; the web adapter must correct the current frontend type mismatch (`turns`/camelCase) and map each segment to `TimedPassage` as `{ id: segment.id, text: segment.text, startMs: segment.start_ms, endMs: segment.end_ms }`. Preserve the backend's sequence order and source text. Reject/skip invalid timing for playback actions while retaining the segment text. The current `get_transcript` route authenticates but only checks that the meeting exists; it must additionally apply the same per-meeting ownership check as the playback manifest, returning indistinguishable 404 responses for absent and non-owned meetings before returning transcript text. This is a scoped access boundary for this feature's media/transcript retrieval, not a decision about broader multi-user, sharing, role, or identity policy. The playback backend work is in this feature's implementation scope: source registry migration, manifest route, aligned ownership checks, and API/adapter mapping are needed for the approved web playback behavior. No media transcoder or new encoding-generation behavior is included.
 
 ## Data Models
 
@@ -159,12 +159,17 @@ The existing transcript route's actual JSON has `segments`, each with `id`, `tex
 3. **Passage jump (Requirement 3.1):** activating a passage control sets media time to that passage's `startMs` and requests playback.
 4. **Scope boundaries (Requirements 4.1–4.4):** the feature introduces no transcript editing, library, notes, summary, metadata, mandated control form, mandated user-visible time format, video-only behavior, fixed speed values, or fixed quality options.
 5. **Playback-state consistency:** displayed playing, rate, volume, mute, current-time, and active-passage state are derived from media events/current media state and do not advance independently of the media element.
+6. **Playback/transcript access boundary:** a valid authenticated owner can receive only their meeting's transcript and signed media-source URLs; unauthenticated, absent, or non-owner requests return no transcript/object references, and absent/non-owned ids are indistinguishable at the API boundary.
 
 ## Error Handling
 
 | Condition | Behavior |
 |---|---|
-| Media or transcript request fails | Show an inline, accessible error for the failed content; do not present stale transcript as synchronized to a different meeting. |
+| Missing/invalid JWT for manifest or transcript | Return 401; never sign a media URL or return transcript content. |
+| Meeting is absent or not owned by the authenticated user | Return the same 404 response for both cases; do not reveal the distinction or sign any object URL. |
+| Media manifest, signed-URL generation, or transcript request fails | Show an inline, accessible error for the failed content; do not present stale transcript as synchronized to a different meeting. |
+| Signed URL expires or storage denies/does not support range/CORS access | Refresh the manifest once at the saved media time; if retry fails, stop playback and show an accessible error. Do not fall back to a public URL or unauthenticated API path. |
+| Source-inventory migration/backfill fails | Let the migration transaction fail and roll back; do not remove or rewrite the existing `SessionRecording` references. Deployment stays on the prior schema until the migration succeeds. |
 | Media metadata is loading or duration is unavailable | Keep applicable controls disabled until the media element reports the needed capability; show loading state. |
 | Browser rejects playback (including passage-triggered playback) | Keep paused state, surface an accessible playback error, and allow another user action. |
 | Selected quality/source fails | Surface an accessible error and retain the last usable player state where the browser permits; do not claim the failed source is active. |
@@ -174,11 +179,12 @@ The existing transcript route's actual JSON has `segments`, each with `id`, `tex
 
 ## Testing Strategy
 
-Use frontend unit/component tests with synthetic media-source and transcript fixtures. Mock the media element's properties/events where a real browser decoder is not available; test the user-visible controls and controller logic independently.
+Use unit/component tests with synthetic media and transcript fixtures plus backend migration, route, and object-store integration tests. Mock browser media events for control logic; exercise database and storage contracts against disposable test infrastructure where required. Do not use real meeting recordings or transcripts.
 
-- Unit-test `findPassageAt` for interval starts, end-exclusive boundaries, gaps, overlaps, invalid intervals, and empty input.
-- Component-test seek, pause/resume, playback rate, volume, mute, conditional quality selector, active highlight changes, scroll-on-change, and passage-triggered seek/play.
-- Test rejected `play()`, media load errors, failed source changes, and missing/invalid transcript timing without asserting unavailable runtime infrastructure.
-- Verify the meeting review view contains no transcript-editing or unrelated feature controls.
+- `frontend/src/**/__tests__/PlaybackController.test.ts`: test interval starts, end-exclusive boundaries, gaps, overlaps, invalid timing, empty input; test control state transitions and active-passage changes.
+- `frontend/src/**/__tests__/MeetingPlaybackView.test.tsx`: test seek, pause/resume, rate, volume, mute, source selection only for multiple options, passage seek/play, URL refresh retry once at the saved time, and accessible errors; assert no editing or out-of-scope meeting controls.
+- `backend/tests/test_migration.py`: start from revision `008_speaker_review_aggregate`, seed recordings with and without `video_ref`, upgrade to the new source-inventory revision, and assert exactly one backfilled original video source per non-null reference and no fabricated video source for null refs. Downgrade to `008` and assert original `session_recordings.audio_ref`/`video_ref` data remains intact while the derived source table is removed; re-upgrade must recreate the derived rows. Verify duplicate `(recording_id, kind, object_ref)` is rejected.
+- `backend/tests/meetings/test_playback_manifest.py`: test authenticated owner success, missing/invalid JWT (401), absent and non-owned meetings (same 404 response), no recording/no playable source, one vs multiple source options, and that only owner-authorized object refs are passed to `temporary_read_url` with TTL 3600 and never serialized in the response. Test transcript route applies the identical ownership boundary and does not return another user's text.
+- `backend/tests/meetings/test_playback_storage_integration.py`: with disposable S3-compatible storage, fetch a signed source URL using HTTP `Range` and verify 206/`Content-Range`/correct bytes; run browser-origin CORS preflight and GET from the configured frontend origin. A deployment must pass this integration contract before playback is enabled; configuration failure blocks playback delivery rather than bypassing authorization.
 
-Run the relevant frontend tests and typecheck from `frontend/`; no test result is claimed by this design artifact.
+Run backend tests from `backend/` (`pytest`) and frontend tests/typecheck from `frontend/`; these are required implementation validations, not claims that this design run executed them.
