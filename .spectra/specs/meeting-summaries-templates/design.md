@@ -53,7 +53,11 @@ method.** The requirements do not select a generation method or accuracy thresho
 therefore defines where summaries are produced (a queue worker triggered by transcription), what
 they persist (a structured model), and what the worker requires to run (a `SummarizationEngine`
 protocol). The engine's internal method is a task-level implementation choice, constrained by
-the protocol, not a product decision made here. *Alternativas descartadas:* choosing an LLM
+the protocol, not a product decision made here. The design does not claim any verified
+provider, deployment, or executable generation path exists in this repository; it specifies
+only a testable adapter boundary and a hard technical prerequisite: no implementation task may
+begin end-to-end summary generation until the provider/configuration/deployment binding is
+selected, configured, and verified (D14). *Alternativas descartadas:* choosing an LLM
 provider here would invent unapproved product scope; leaving generation entirely open would
 leave the architecture under-specified for Zoya's task plan, since the worker, persistence, and
 lineage model do not depend on which engine fills the protocol.
@@ -343,9 +347,12 @@ exception disciplines at `f5aa6b3e`):
 - Applies the template instructions frozen in the event to both required summary elements;
   it never reads a mutable template row to determine the event's instructions or version. Within
   one DB transaction, it atomically claims `event_id` in `processed_summary_events` (unique
-  primary key), inserts the structured summary artifact with both elements, rendered content,
-  and lineage copied from that immutable event, then commits both writes together. It does not
-  upsert or overwrite a persisted summary. A unique claim conflict means this event already
+  primary key), inserts the structured summary artifact with both required identifiable
+  elements and lineage copied from that immutable event, then commits both writes together.
+  the persisted row carries only structured data (`topic`, `key_points`); it stores no
+  rendered text, markup, or presentation artifact, because the presentation format is
+  unspecified (D12). It does not upsert or overwrite a persisted summary. A unique claim
+  conflict means this event already
   committed: ack without regenerating or changing any stored summary, even if the user's default
   has since changed. A failed generation/persist rolls back the claim so queue redelivery can
   retry.
@@ -355,12 +362,23 @@ exception disciplines at `f5aa6b3e`):
 and subscribed after the diarization worker (one import + one call, matching the existing
 bootstrap; verified structure of `backend/app/worker.py`).
 
-**Enqueue point and recovery**: write an outbox row in the same transaction that commits
-the transcript, containing event id, meeting id, and the default-template id/version/selection
-snapshot resolved for that event. A dispatcher publishes the outbox record to RabbitMQ and
-marks it delivered only after broker confirmation; retry is idempotent by event id. Do not use
-a bare post-commit publish as the only recovery mechanism: a crash or broker failure after DB
-commit would lose the summary trigger. No outbox implementation currently exists in the repo.
+**Enqueue point and recovery (D15)**: transcript persistence and summary-job publication are
+separate systems, so a bare post-commit `queue.publish` is not acceptable: a crash or broker
+failure between DB commit and publish would permanently lose the summary trigger. Therefore the
+transcription path writes a durable outbox row **in the same DB transaction** that commits the
+transcript, containing `event_id`, `meeting_id`, and the default-template `template_id` /
+`template_version` resolved for that event. A dispatcher publishes pending outbox rows to
+RabbitMQ and marks a row delivered **only after broker confirmation** (publisher confirm;
+verified: the current `RabbitMQJobQueue.publish()` uses persistent `delivery_mode=2` but does
+not enable publisher confirms, so the dispatcher's confirmation requirement is new capability,
+not an existing one). A committed-but-undelivered row survives process restart and is
+redispatched, so delivery is eventually at-least-once; consumer-side idempotency on `event_id`
+(the `processed_summary_events` claim) makes republishing the same event a safe no-op. The
+concrete dispatch mechanism (a periodic dispatcher loop, a startup recovery sweep over
+undelivered rows, or an equivalent verified transactional-outbox pattern) is an implementation
+decision for Zoya's task plan; whichever is chosen must satisfy both invariants: no committed
+pending event can be lost, and republished duplicates cannot duplicate or overwrite a stored
+summary. No outbox implementation currently exists in the repo; this is a new component.
 
 ### 3. Backend API surface: meeting summary read
 
@@ -619,6 +637,19 @@ and a nav entry. Contains:
   `summaries/factory.py::create_summarization_engine()`; recognized values and their default
   are fixed at task level (the protocol, not the provider, is the design contract). Startup
   raises `ValueError` on an unrecognized value, mirroring `create_asr_engine()`.
+- **Generation prerequisite (B3 containment, D14).** This design specifies the adapter seam and
+  fail-closed factory validation; it does **not** select or verify a summarization provider,
+  model, endpoint, credential, or deployment route, and no executable end-to-end generation
+  path exists in this repository today (verified: `backend/app/` has ASR/diarization
+  factories/providers but no summary engine implementation or provider endpoint). Selecting
+  that binding is a technical prerequisite that Zoya's plan must schedule before any task whose
+  acceptance depends on actually producing a summary (worker engine call, integration test of
+  generated content, UI states that assume a summary appears); if the choice changes privacy,
+  cost, or product behavior it needs upstream approval. Tasks that depend only on the protocol
+  seam — repository, resolver, persistence, event idempotency, API surface, UI empty state, and
+  the outbox/dispatcher of D15 — are independent of that prerequisite and may proceed without
+  it. Until the binding is verified, a worker that cannot construct an engine fails closed at
+  startup rather than emitting summaries of unknown provenance.
 - No new Compose service is introduced. The summaries worker subscribes inside the existing
   worker process (`backend/app/worker.py`), avoiding the known Compose/diarization-engine gap
   pattern (AGENTS.md: the Compose stack does not define a diarization-engine service; do not
@@ -863,19 +894,25 @@ These amendments are normative for implementation and supersede any conflicting 
    unselected because approved requirements do not select them. Do not claim an existing
    summarization provider or deployed endpoint: none was verified in this repository. Before
    implementation, the provider/configuration/deployment binding is a technical prerequisite
-   for Zoya's task plan; choosing a provider requires approval if it changes privacy, cost,
-   or product behavior.
+   for Zoya's task plan (D14); choosing a provider requires approval if it changes privacy,
+   cost, or product behavior. This design therefore specifies a viable integration *boundary*
+   with fail-closed validation and bounded data transfer, not a verified executable generation
+   path; tasks that depend only on the protocol seam are independent of that prerequisite.
 
-4. **Post-commit enqueue recovery.** Transcript persistence and summary-job publication are
-   separate systems; publication after commit can fail or the process can stop between commit
-   and publish. Therefore the transcription service records a durable pending-summary outbox
-   event in the same DB transaction as transcript commit, keyed by transcript/event identity.
-   A dispatcher publishes pending events to RabbitMQ and marks them delivered only after
-   broker confirmation; retry is safe through the event idempotency key. Alternatively an
-   equivalent verified transactional-outbox mechanism must be specified and tested. A bare
-   post-commit `queue.publish` is not recoverable and does not satisfy this design. No
-   outbox implementation was found in the current repository; this is a new component, not
-   an existing capability.
+4. **Post-commit enqueue recovery (D15).** Transcript persistence and summary-job publication
+   are separate systems; publication after commit can fail or the process can stop between
+   commit and publish. Therefore the transcription path records a durable pending-summary
+   outbox event in the same DB transaction as transcript commit, keyed by transcript/event
+   identity. A dispatcher publishes pending events to RabbitMQ and marks them delivered only
+   after broker confirmation (publisher confirm, which the current `queue_rabbitmq.py` does not
+   enable); a committed-but-undelivered row survives restart and is redispatched, so delivery
+   is eventually at-least-once and cannot be lost by a crash or broker failure after commit.
+   Consumer-side idempotency on `event_id` makes republished duplicates a safe no-op. The
+   concrete dispatch mechanism (periodic dispatcher, startup recovery sweep, or equivalent
+   verified transactional-outbox pattern) is an implementation decision for Zoya's task plan,
+   constrained by those two invariants; it must be tested. A bare post-commit `queue.publish`
+   is not recoverable and does not satisfy this design. No outbox implementation was found in
+   the current repository; this is a new component, not an existing capability.
 
 5. **Migration distinction.** The initial release's single defined template is the
    application-provided template, not a personal selection. Migration seeds exactly one
