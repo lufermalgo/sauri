@@ -45,7 +45,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-2: RED — idempotent disposition writes
 
-**Tracking:** Issue #235 · Card task_6b82254160eb4a98
+**Tracking:** Issue #235 · Card task_6b82254160eb4a98 · PR #258
 
 **Files:** `backend/tests/speaker_review/test_disposition_idempotency.py` (create)
 
