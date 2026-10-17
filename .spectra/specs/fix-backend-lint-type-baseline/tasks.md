@@ -122,7 +122,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.60 | `tests/transcription/test_repository.py` | Ruff F401×1, I001×1, SIM117×1, UP017×2; mypy no-untyped-def×2, type-arg×2 | `task, test` |
 | T-3.1.61 | `tests/transcription/test_worker.py` | Ruff I001×2, SIM117×14, UP017×1; mypy arg-type×2, no-untyped-def×13, type-arg×11, var-annotated×2 | `task, test` |
 
-### Issue/card tracking for T-3.1.01–T-3.1.50
+### Issue/card tracking for T-3.1.01–T-3.1.61
 
 | Task | Tracking |
 |---|---|
