@@ -1,0 +1,151 @@
+"""RED contract tests for explicit playback-source capture metadata."""
+
+from __future__ import annotations
+
+import json
+from io import BytesIO
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+from fastapi import HTTPException
+from starlette.datastructures import UploadFile
+
+from app.ingestion import router
+from app.ingestion.schemas import IngestionData
+
+
+def _payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "meeting_id": "meeting-synthetic-1",
+        "idempotency_key": "capture-synthetic-1",
+        "capture_origin": "chrome_extension",
+        "duration_seconds": 12,
+        "video_presence": "muxed",
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_presence", "expected_offset"),
+    [
+        ({"video_presence": "muxed"}, "muxed", None),
+        ({"video_presence": "absent"}, "absent", None),
+        (
+            {
+                "video_presence": "separate",
+                "video_offset_ms": -125,
+            },
+            "separate",
+            -125,
+        ),
+        (
+            {
+                "video_presence": "separate",
+                "video_offset_ms": 250,
+            },
+            "separate",
+            250,
+        ),
+    ],
+)
+def test_ingestion_contract_preserves_explicit_capture_evidence(
+    overrides: dict[str, object], expected_presence: str, expected_offset: int | None
+) -> None:
+    data = IngestionData(**_payload(**overrides))
+
+    assert data.video_presence == expected_presence
+    assert data.video_offset_ms == expected_offset
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"video_presence": None},  # Presence evidence is required.
+        {"video_presence": "separate"},  # Separate video requires an offset.
+        {"video_presence": "muxed", "video_offset_ms": 12},
+        {"video_presence": "absent", "video_offset_ms": -12},
+        {
+            "capture_mode": "separate",
+            "video_presence": "separate",
+            "video_offset_ms": 1.5,
+        },
+    ],
+)
+def test_inconsistent_or_incomplete_capture_metadata_is_rejected(
+    overrides: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        IngestionData(**_payload(**overrides))
+
+
+@pytest.mark.asyncio
+async def test_invalid_capture_metadata_returns_422_before_object_storage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def storage_must_not_be_initialized():
+        raise AssertionError("invalid metadata must be rejected before storage")
+
+    monkeypatch.setattr(router, "_get_object_store", storage_must_not_be_initialized)
+    audio = UploadFile(filename="synthetic.webm", file=None)  # type: ignore[arg-type]
+
+    with pytest.raises(HTTPException) as error:
+        await router.upload_recording(
+            audio=audio,
+            video=None,
+            data=json.dumps(
+                _payload(
+                    video_presence="separate",
+                    video_offset_ms=40,
+                )
+            ),
+            user=type("User", (), {"id": "synthetic-user"})(),
+        )
+
+    assert error.value.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("video_presence", "include_video", "video_offset_ms"),
+    [
+        ("muxed", True, None),  # Muxed is the single-object upload path.
+        ("absent", True, None),  # An uploaded video contradicts absent evidence.
+        ("separate", False, 40),  # Separate requires a distinct video object.
+    ],
+)
+@pytest.mark.asyncio
+async def test_upload_rejects_video_evidence_inconsistent_with_object_path_before_storage_or_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+    video_presence: str,
+    include_video: bool,
+    video_offset_ms: int | None,
+) -> None:
+    object_store = Mock()
+    object_store.save = AsyncMock(return_value="synthetic-object-ref")
+    monkeypatch.setattr(router, "_get_object_store", Mock(return_value=object_store))
+    monkeypatch.setattr(router, "_get_queue", Mock())
+    create_engine = Mock(
+        side_effect=AssertionError("invalid metadata must be rejected before persistence")
+    )
+    monkeypatch.setattr(router, "create_engine", create_engine)
+    audio = UploadFile(filename="synthetic-audio.webm", file=BytesIO(b"audio"))
+    video = (
+        UploadFile(filename="synthetic-video.webm", file=BytesIO(b"video"))
+        if include_video
+        else None
+    )
+    metadata = _payload(video_presence=video_presence)
+    if video_offset_ms is not None:
+        metadata["video_offset_ms"] = video_offset_ms
+
+    with pytest.raises(HTTPException) as error:
+        await router.upload_recording(
+            audio=audio,
+            video=video,
+            data=json.dumps(metadata),
+            user=type("User", (), {"id": "synthetic-user"})(),
+        )
+
+    assert error.value.status_code == 422
+    object_store.save.assert_not_awaited()
+    create_engine.assert_not_called()
