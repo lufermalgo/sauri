@@ -20,7 +20,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and the data
 
 **Files:** `backend/tests/test_migration.py`; ingestion tests under `backend/tests/ingestion/test_playback_source_ingestion.py` (new)
 
-**Action:** Add synthetic-data tests for migration from revision `008_speaker_review_aggregate`: backfill exactly one `Original` audio source per existing `audio_ref`, one video source per non-null `video_ref`, leave unavailable legacy MIME/offset null, preserve original recording refs through downgrade/re-upgrade, and reject duplicate `(recording_id, kind, object_ref)`. Cover ingestion accepting separate video only with a finite signed integer `video_offset_ms`, rejecting missing/invalid offset with 422 before persistence, and allowing null when no separate video is supplied. Do not use real recordings.
+**Action:** Add synthetic-data tests for migration from revision `008_speaker_review_aggregate`: backfill exactly one `Original` audio source per existing `audio_ref`, one video source per non-null `video_ref`, leave unavailable legacy MIME/offset null, preserve original recording refs through downgrade/re-upgrade, and reject duplicate `(recording_id, kind, object_ref)`. Cover ingestion accepting separate video only with a finite signed integer `video_offset_ms`, rejecting missing/invalid offset with 422 before storing uploaded media or persisting a recording, and allowing null when no separate video is supplied. Do not use real recordings. Current-producer evidence: `extension/src/background.ts` submits one interleaved WebM as `audio` and no separate video; there is no in-repository separate-track producer. Do not invent an offset for that muxed path. The upload API contract for any caller supplying a distinct video requires an offset measured from the same monotonic capture clock.
 
 **Acceptance evidence:** The new tests fail against the pre-feature schema/ingestion behavior for the expected missing source-inventory and offset-contract behavior.
 
@@ -30,11 +30,11 @@ The dependency graph contains only mandatory RED-before-GREEN edges and the data
 
 ### T-2: Implement recording source inventory and offset persistence
 
-**Files:** Backend recording ORM/model and repository modules; new Alembic migration after `008_speaker_review_aggregate`; ingestion schemas/service and source persistence modules identified by the tests.
+**Files:** `backend/app/infra/models.py`; `backend/app/ingestion/schemas.py`, `backend/app/ingestion/router.py`, `backend/app/ingestion/service.py`; new migration under `backend/alembic/versions/` after `008_speaker_review_aggregate`.
 
-**Action:** Implement the `RecordingMediaSource` table/model with UUID id, cascading recording FK, `audio`/`video` kind, private object reference, nullable MIME/dimensions/signed video offset, quality label, and uniqueness constraint. Backfill legacy refs as specified without rewriting `SessionRecording` refs. Persist the supplied signed offset for distinct video uploads and reject missing/invalid offsets before persistence; keep the existing single interleaved upload path valid without an offset.
+**Action:** Implement the `RecordingMediaSource` table/model with UUID id, cascading recording FK, `audio`/`video` kind, private object reference, nullable MIME/dimensions/signed video offset, quality label, and uniqueness constraint. Backfill legacy refs as specified without rewriting `SessionRecording` refs. Persist the supplied signed offset for distinct video uploads and reject missing/invalid offsets with 422 before storing uploaded media or persisting a recording; keep the existing extension's single interleaved WebM upload path valid without an offset. No in-repository separate-track producer currently exists, so do not add or infer one: any caller of the separate-video upload path must provide the signed start offset measured from the same monotonic capture clock.
 
-**Acceptance evidence:** `cd backend && pytest tests/test_migration.py` and the ingestion test module pass, including downgrade/re-upgrade preservation and duplicate rejection.
+**Acceptance evidence:** `cd backend && pytest tests/test_migration.py tests/ingestion/test_playback_source_ingestion.py` passes, including downgrade/re-upgrade preservation, duplicate rejection, and request rejection before media storage.
 
 **Dependencies:** T-1
 
@@ -116,7 +116,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and the data
 
 **Files:** `frontend/src/**/__tests__/MeetingPlaybackView.test.tsx` (place in the established frontend test location).
 
-**Action:** Add synthetic component tests for seek, pause/resume, speed, volume, mute, passage play action, and visible active-passage highlight/scroll behavior. Assert quality selection exists and changes source only for multiple playable video options, preserves audio source and playback position, and is absent for audio-only/single-video cases. Cover single muxed-media behavior, inaccessible legacy separate video with null offset, metadata-loading disabled controls, URL refresh exactly once at saved time then accessible error/stop on failure, failures to start either paired element pausing both, and accessible empty/unavailable/error states. Assert the view adds no editing, library, notes, summary, metadata, or other out-of-scope controls.
+**Action:** Add synthetic component tests for seek, pause/resume, speed, volume, mute, passage play action, and visible active-passage highlight/scroll behavior. Assert quality selection exists and changes source only for multiple playable video options, preserves audio source and playback position, and is absent for audio-only/single-video cases. Cover a legacy recording with no separate `video_ref` whose audio source is a muxed audio/video container: render and play that one asset in one native video element, preserving its own timestamps and audio controls (not paired audio/video elements). Also cover inaccessible legacy separate video with null offset, metadata-loading disabled controls, URL refresh exactly once at saved time then accessible error/stop on failure, failures to start either paired element pausing both, and accessible empty/unavailable/error states. Assert the view adds no editing, library, notes, summary, metadata, or other out-of-scope controls.
 
 **Acceptance evidence:** Tests fail against the pre-feature meeting review view for the missing approved playback behaviors.
 
@@ -130,7 +130,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and the data
 
 **Files:** `frontend/src/components/MeetingPlaybackView.tsx` (new); existing meeting review route/view integration point.
 
-**Action:** Add the view around the playback controller and typed adapter data. Provide accessible native media controls for seek, pause/resume, speed, volume, mute and conditional quality selection; render the transcript and active passage from playback time; provide a per-passage control that seeks to `startMs` and requests play. Disable controls during unavailable metadata, preserve content on invalid timing without time-linked controls, and display accessible loading/empty/error states. Add no feature excluded by the requirements.
+**Action:** Add the view around the playback controller and typed adapter data. When the manifest describes a legacy muxed audio/video asset with no separate video source, play that asset in one native video element with its own timestamps and audio controls. For separate audio/video sources, use the audio element as authoritative audible clock and the muted aligned video element. Provide accessible native media controls for seek, pause/resume, speed, volume, mute and conditional quality selection; render the transcript and active passage from playback time; provide a per-passage control that seeks to `startMs` and requests play. Disable controls during unavailable metadata, preserve content on invalid timing without time-linked controls, and display accessible loading/empty/error states. Add no feature excluded by the requirements.
 
 **Acceptance evidence:** `cd frontend && npm run test` and `cd frontend && npm run typecheck` pass, including T-9 tests and the existing frontend suite/typecheck.
 
