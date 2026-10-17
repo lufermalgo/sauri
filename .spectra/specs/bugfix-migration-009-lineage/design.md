@@ -128,7 +128,7 @@ All test rows and database contexts are synthetic and disposable.
 
 **Property 3 — Deterministic inventory target.** For every directory enumeration order, the inventory-test loader resolves revision `009_recording_media_sources`; no parent-only first-match lookup can select the receipts migration. Validates AC 1.
 
-**Property 4 — Effects exactly once on the common-base path.** An offline `upgrade head --sql` path from 008 contains the media-source schema/backfill operations and receipt schema operation once each and has no multiple-head failure. Validates AC 3 and the “both approved migration effects” expected behavior.
+**Property 4 — Effects exactly once from common predecessor 008.** An offline upgrade explicitly bounded from `008_speaker_review_aggregate` to `head` contains the media-source schema/backfill operations and receipt schema operation once each and has no multiple-head failure. Validate by executing `alembic upgrade 008_speaker_review_aggregate:head --sql` and asserting each effect appears exactly once in the generated SQL. Validates AC 3 and the “both approved migration effects” expected behavior.
 
 **Property 5 — Either-009 forward compatibility.** For a database version recorded at either existing 009 ID, upgrading to the merge head preserves that ID as historical state, applies the other sibling effect, and records convergence without repeating the already-applied branch. Validate using migration-path planning plus a disposable, synthetic integration path if available; never extrapolate from the empty no-op merge alone.
 
@@ -158,14 +158,14 @@ Use deterministic unit/graph checks, the three independently runnable source-inv
 /path/to/configured/python -m pytest -q tests/test_migration.py::test_source_inventory_downgrade_preserves_refs_and_reupgrade_backfills
 /path/to/configured/python -m pytest -q tests/test_migration.py::test_source_inventory_rejects_duplicate_recording_kind_and_reference
 /path/to/configured/python -m alembic heads
-/path/to/configured/python -m alembic upgrade head --sql
+/path/to/configured/python -m alembic upgrade 008_speaker_review_aggregate:head --sql
 ```
 
 Replace `/path/to/configured/python` with the exact configured interpreter recorded in `qa-reproduction.md`; do not substitute unqualified `python` in an environment where it is unavailable. Also run the complete `tests/test_migration.py` module. The acceptance evidence must include:
 
 1. all three named nodes passing independently and selecting the source-inventory ID;
 2. `alembic heads` listing exactly one head with both 009 ancestors;
-3. offline SQL generation from the common predecessor completing without ambiguity and containing both migration effects exactly once;
+3. the explicit offline range `008_speaker_review_aggregate:head` completing without ambiguity and its generated SQL containing each branch's migration effects exactly once;
 4. explicit graph/path compatibility checks from each historical 009 starting state, with clear separation between structurally proven behavior and database-executed evidence.
 
 No live/shared database, destructive migration, real recording, or non-synthetic test data is used. This design does not claim tests have been run or that the defect is fixed; those are implementation/QA outcomes.
