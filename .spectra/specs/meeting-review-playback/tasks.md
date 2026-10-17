@@ -18,7 +18,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-1: Add failing source-inventory migration and ingestion tests
 
-**Tracking:** Issue #299 · Card `task_4fbc236854b540d2`
+**Tracking:** Issue #299 · Card `task_4fbc236854b540d2` · PR #311
 
 **Files:** `backend/tests/test_migration.py`; `backend/tests/ingestion/test_playback_source_ingestion.py` (new); `extension/src/core/capture.test.ts`.
 
