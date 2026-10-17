@@ -173,7 +173,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-11: GREEN — make disposition persistence idempotent and atomic
 
-**Tracking:** Issue #244 · Card task_25899bc56c6346bf
+**Tracking:** Issue #244 · Card task_25899bc56c6346bf · PR #322
+
+**Status:** Done — PR #322 open for review.
 
 **Files:** `backend/app/meetings/` review service/repository modules; `backend/app/infra/models.py`; migration under `backend/alembic/versions/` as needed.
 
