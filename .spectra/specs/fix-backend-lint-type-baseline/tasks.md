@@ -264,6 +264,12 @@ For each task, scope remains only its listed source file. Its dependency is the 
 
 **Task 3.1.36 tracking:** Done · Issue #361 · Card `task_679c84ddba6544df` · PR #389
 
+### Task 3.1.09: Clear UP017 in `backend/app/auth/audit.py`
+
+**Status:** Done (QA passed; implementation PR open)
+
+**Tracking:** Issue #334 · Card task_fc0a88aa3262413e · PR #392
+
 ## Phase 4: Integrated Candidate Validation and Handoff
 
 ### Task 4.1: Run complete backend validation after all file-scoped corrections are integrated

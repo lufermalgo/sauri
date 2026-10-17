@@ -1,6 +1,6 @@
 """Access audit — records allowed and denied attempts."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +27,7 @@ async def record_access(
         user_id=user_id,
         resource=resource,
         result=result,
-        occurred_at=datetime.now(timezone.utc),
+        occurred_at=datetime.now(UTC),
     )
     session.add(entry)
     await session.commit()
