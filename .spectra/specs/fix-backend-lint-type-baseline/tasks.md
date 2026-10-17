@@ -262,6 +262,8 @@ For each task, scope remains only its listed source file. Its dependency is the 
 
 **Dependencies:** Current-base evidence snapshot and Task 1.2; for each production path, its matching Task 2.1 evidence/handoff before edits. Distinct paths have no invented pairwise dependency; each runs in its own issue worktree. Ansel sequences only real prerequisites and verified shared-resource conflicts. Changes integrate to the single candidate only through Ansel's authorized route. The excluded `009_recording_media_sources.py` I001 remains with separate card `task_6ccdc76cbc0f4fe9`, not among these 61 instances.
 
+**Task 3.1.36 tracking:** Done · Issue #361 · Card `task_679c84ddba6544df` · PR #389
+
 ## Phase 4: Integrated Candidate Validation and Handoff
 
 ### Task 4.1: Run complete backend validation after all file-scoped corrections are integrated
