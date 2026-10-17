@@ -1,0 +1,14 @@
+Current-base checker reconciliation context
+
+Exact checked base: 0d6f2713abcf08d960e98451b04bbdd31b4c8843 (origin/main, merge PR #324); verified local branch and origin/main were identical after fetch/rebase.
+T1.2 inventory base: a6c74bb92b286e7819602a07e47785ee7ba1f78c, recorded in evidence-task-1.2/context.txt. Approved Task 1.1 identifies a753dee72703f3aeaf97c3b163de6b4954ab80e9 or a later base Ansel explicitly verifies. The T1.2 report is historical evidence, not current-base RED.
+T2.1 current-base test map/checker recheck base: 576a6a992db4452a653a7112f394e73da5177792 (map commit 57b7912715191703d3492a5c64d04857b166f85e). The only commits between that base and the exact current base were non-backend for this comparison: git diff --name-status 576a6a992db4452a653a7112f394e73da5177792..0d6f2713abcf08d960e98451b04bbdd31b4c8843 -- backend returned no paths.
+Current versions: Python 3.14.7, Ruff 0.17.1, mypy 2.4.0.
+
+Versus the T1.2 diagnostic file-path inventory:
+- Ruff: current 190 findings / 47 paths (historical 189 / 46); added paths `alembic/versions/009_recording_media_sources.py` (I001 ×1) and `app/ingestion/schemas.py` (UP037 ×1); no-longer-diagnostic path `app/infra/models.py` (I001 ×1 historically).
+- mypy: current 303 errors / 31 files (historical 292 / 30); added paths `app/meetings/speaker_review_service.py` (union-attr ×1) and `tests/ingestion/test_playback_source_ingestion.py` (arg-type ×5, no-untyped-def ×1); no-longer-diagnostic path `tests/speaker_review/test_disposition_idempotency.py` (import-untyped ×2 historically).
+- The 009 migration diagnostic is recorded but is not authorized to create a correction task here: `task_6ccdc76cbc0f4fe9` tracks the separate 009 lineage defect. No runtime or migration behavior is authorized to change.
+- The two added application paths were absent from T1.2's fixed file list; their current findings are recorded for task reconciliation, but their exact Task 2.1 handoffs still govern any production edits. No stale historical path gets an issue/card instance solely because of old findings.
+
+Full unfiltered command output is in `ruff-check.txt` and `mypy-check.txt`; `ruff-check.json` is the machine-readable diagnostic inventory source. Commands ran from backend/ on the exact base above.
