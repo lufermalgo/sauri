@@ -1,6 +1,10 @@
 // CaptureState state machine — Req. 2.4, 2.5, 3.3, 3.4, 3.5
 import type { CaptureState, CaptureEvent } from "./types";
 
+export function videoPresenceFromStream(stream: MediaStream): "muxed" | "absent" {
+  return stream.getVideoTracks().length > 0 ? "muxed" : "absent";
+}
+
 const TRANSITIONS: Record<CaptureState, Partial<Record<CaptureEvent, CaptureState>>> = {
   idle: { start: "recording" },
   recording: { stop: "stopping" },

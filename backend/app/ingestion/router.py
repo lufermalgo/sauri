@@ -68,6 +68,15 @@ async def upload_recording(
         )
 
     # b. Authentication already validated by the dependency
+    has_separate_video = video is not None
+    if (
+        (ingestion_data.video_presence == "separate") != has_separate_video
+        or ingestion_data.video_presence in {"muxed", "absent"} and has_separate_video
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Video upload does not match the declared video_presence",
+        )
 
     # Get infrastructure
     object_store = _get_object_store()

@@ -29,6 +29,7 @@ interface SauriState {
   sessionId?: string;
   resolution?: Resolution;
   captureMode?: CaptureMode;
+  videoPresence?: "muxed" | "absent";
   micDeviceId?: string | null;
   notificationEmittedAt?: string;
   tabId?: number;
@@ -79,7 +80,8 @@ async function uploadRecording(
   sessionId: string,
   notificationEmittedAt?: string,
   title?: string,
-  meetLink?: string
+  meetLink?: string,
+  videoPresence: "muxed" | "absent" = "absent"
 ): Promise<void> {
   try {
     // Read Blob directly from shared sauri-recordings IndexedDB
@@ -92,6 +94,7 @@ async function uploadRecording(
       capture_origin: "chrome_extension",
       duration_seconds: 0,
       interrupted: false,
+      video_presence: videoPresence,
       notice_issued_at: notificationEmittedAt ?? null,
       title: title ?? null,
       meet_link: meetLink ?? null,
@@ -185,6 +188,7 @@ chrome.runtime.onMessage.addListener(
       error?: string;
       resolution?: Resolution;
       captureMode?: CaptureMode;
+      videoPresence?: "muxed" | "absent";
       micDeviceId?: string | null;
       emittedAt?: string;
     },
@@ -214,6 +218,11 @@ chrome.runtime.onMessage.addListener(
 
       case "recording-stopped":
         handleRecordingStopped(message.size!, message.mimeType!, message.sessionId);
+        sendResponse({ ok: true });
+        break;
+
+      case "capture-video-presence":
+        handleCaptureVideoPresence(message.videoPresence);
         sendResponse({ ok: true });
         break;
 
@@ -384,6 +393,7 @@ async function handleRecordingStopped(
     notificationEmittedAt,
     title: currentState.meetingTitle,
     meetLink: currentState.meetingUrl,
+    videoPresence: currentState.videoPresence ?? "absent",
   });
   console.log(`[sauri] Upload job enqueued for session: ${sid}`);
 
@@ -422,6 +432,14 @@ async function handleNotificationEmitted(emittedAt?: string): Promise<void> {
   console.log(`[sauri] Notification emitted at: ${emittedAt}`);
 }
 
+async function handleCaptureVideoPresence(
+  videoPresence?: "muxed" | "absent"
+): Promise<void> {
+  if (!videoPresence) return;
+  const currentState = await getState();
+  await setState({ ...currentState, videoPresence });
+}
+
 async function handleSetCaptureMode(captureMode?: CaptureMode): Promise<void> {
   const mode: CaptureMode = captureMode ?? "screen_audio";
   const currentState = await getState();
@@ -450,7 +468,14 @@ async function processUploadQueue(): Promise<void> {
   await markProcessing(job.id);
 
   try {
-    await uploadRecording(job.mimeType, job.sessionId, job.notificationEmittedAt, job.title, job.meetLink);
+    await uploadRecording(
+      job.mimeType,
+      job.sessionId,
+      job.notificationEmittedAt,
+      job.title,
+      job.meetLink,
+      job.videoPresence ?? "absent"
+    );
     await markDone(job.id);
     console.log(`[sauri] Upload job done: ${job.id}`);
   } catch (error) {

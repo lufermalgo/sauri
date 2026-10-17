@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class IngestionData(BaseModel):
@@ -21,6 +21,19 @@ class IngestionData(BaseModel):
     ingestion -> transcription -> persistence pipeline behaves identically
     regardless of its value (Req. 2.1, 2.2).
     """
+
+    model_config = ConfigDict(extra="forbid")
+
+    video_presence: Literal["muxed", "separate", "absent"]
+    video_offset_ms: int | None = Field(default=None, strict=True)
+
+    @model_validator(mode="after")
+    def validate_video_evidence(self) -> "IngestionData":
+        if self.video_presence == "separate" and self.video_offset_ms is None:
+            raise ValueError("separate video requires a signed video_offset_ms")
+        if self.video_presence != "separate" and self.video_offset_ms is not None:
+            raise ValueError("video_offset_ms is only valid for separate video")
+        return self
 
     meeting_id: str = Field(
         ...,
