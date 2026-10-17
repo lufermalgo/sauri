@@ -182,6 +182,33 @@ async def test_same_key_reused_for_another_item_is_a_conflict(db_session: Any) -
     assert replay["outcome"] == "conflict_key_hash_mismatch"
 
 
+async def test_database_receipt_failure_rolls_back_disposition(db_session: Any) -> None:
+    """A real SQLite constraint failure in receipt insertion rolls back the item update."""
+    from sqlalchemy import select, text
+    from sqlalchemy.exc import IntegrityError
+
+    from app.infra.models import SpeakerReviewItem
+
+    meeting_id, _ = await _persisted_review(db_session)
+    await db_session.execute(
+        text(
+            "CREATE TRIGGER reject_synthetic_receipt BEFORE INSERT "
+            "ON speaker_review_idempotency_receipts BEGIN "
+            "SELECT RAISE(ABORT, 'synthetic receipt rejection'); END"
+        )
+    )
+    request = {
+        "disposition": "confirmed",
+        "expected_version": 1,
+        "idempotency_key": "key-db-trigger-failure",
+    }
+    with pytest.raises(IntegrityError, match="synthetic receipt rejection"):
+        await _write(db_session, meeting_id, request)
+
+    item = await db_session.scalar(select(SpeakerReviewItem).where(SpeakerReviewItem.id == "item-db-test"))
+    assert item is not None and item.version == 1 and item.disposition is None
+
+
 async def test_outer_transaction_failure_rolls_back_disposition_and_receipt(db_session: Any) -> None:
     """A failed enclosing transaction leaves neither persistent write behind."""
     from sqlalchemy import select
