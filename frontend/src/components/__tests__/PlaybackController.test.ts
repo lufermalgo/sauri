@@ -107,10 +107,16 @@ describe("PlaybackController state and controls", () => {
 });
 
 describe("PlaybackController media modes and synchronization", () => {
-  it("uses one element for muxed playback and audio only for absent or unknown video", () => {
+  it("uses one element and its clock for muxed playback, and audio only for absent or unknown video", () => {
     const muxedAudio = mediaElement();
     const muxed = new PlaybackController({ videoPresence: "muxed", audioElement: muxedAudio, passages });
     expect(muxed.getState().isPlaying).toBe(false);
+
+    muxedAudio.currentTime = 7.25;
+    muxedAudio.emit("timeupdate");
+    expect(muxed.getState().currentTimeMs).toBe(7250);
+    muxed.seekTo(8500);
+    expect(muxedAudio.currentTime).toBe(8.5);
 
     for (const videoPresence of ["absent", "unknown"] as const) {
       const audio = mediaElement();
@@ -119,6 +125,45 @@ describe("PlaybackController media modes and synchronization", () => {
       controller.seekTo(500);
       expect(audio.currentTime).toBe(0.5);
     }
+  });
+
+  it("does not pair or offer separate video when its offset is missing", async () => {
+    const audio = mediaElement();
+    const video = mediaElement();
+    const controller = new PlaybackController({
+      videoPresence: "separate",
+      audioElement: audio,
+      videoElement: video,
+      passages,
+    });
+
+    expect(controller.getState().selectedSourceId).toBeNull();
+    audio.currentTime = 2;
+    audio.emit("timeupdate");
+    controller.seekTo(500);
+    await controller.resume();
+    expect(video.currentTime).toBe(0);
+    expect(video.play).not.toHaveBeenCalled();
+  });
+
+  it("does not pair or offer separate video when its offset is null", async () => {
+    const audio = mediaElement();
+    const video = mediaElement();
+    const controller = new PlaybackController({
+      videoPresence: "separate",
+      audioElement: audio,
+      videoElement: video,
+      passages,
+      videoOffsetMs: null,
+    });
+
+    expect(controller.getState().selectedSourceId).toBeNull();
+    audio.currentTime = 2;
+    audio.emit("timeupdate");
+    controller.seekTo(500);
+    await controller.resume();
+    expect(video.currentTime).toBe(0);
+    expect(video.play).not.toHaveBeenCalled();
   });
 
   it("aligns paired video with signed offsets and waits for positive offsets", async () => {
