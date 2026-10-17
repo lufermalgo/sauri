@@ -224,3 +224,53 @@ Result: **54 passed, 4 Starlette deprecation warnings in 13.10s**. Nodes:
 `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m mypy app/diarization/cloud_provider.py app/transcription/cloud_provider.py app/ingestion/router.py app/meetings/router.py app/meetings/service.py` — **Success: no issues found in 5 source files**.
 
 T-2.1 remains **incomplete / BLOCKED**. Tests map current behavior, but B904 cause/context behavior remains unapproved, FastAPI dependency/body changes require explicit semantic-equivalence review, and paths not yet accounted for remain. The 009 migration failures remain untouched; do not report PASS.
+
+## Fourth bounded batch: Alembic environment and first four migrations
+
+On production base `576a6a992db4452a653a7112f394e73da5177792`, I verified `alembic/env.py` and migrations `001_initial_schema.py` through `004_usuarios_schema.py`. For each path I ran the assigned Ruff and mypy binaries individually from `backend/`. Ruff REDs: `alembic/env.py` I001 ×2 (standard/import sorting and model-registration import ordering); `001_initial_schema.py` UP035 ×1, I001 ×1, UP007 ×3; `002_unique_transcripcion_reunion_id.py` UP035 ×1, UP007 ×3; `003_diarizacion_schema.py` UP035 ×1, I001 ×1, UP007 ×3; `004_usuarios_schema.py` UP035 ×1, I001 ×1, UP007 ×3. Mypy passed on all five files, one source file per invocation. Migration annotation fixes are narrow if only `Sequence`/`Union` imports and revision metadata annotations change; migration operations must remain identical. For `env.py`, the Ruff import-order recommendation crosses Alembic model-registration imports; treat only exact import reordering as a candidate and verify no effect on metadata registration.
+
+Focused migration command from `backend/`:
+
+```bash
+/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m pytest -q \
+ tests/test_migration.py::test_revision_007_chains_after_006 \
+ tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data \
+ tests/test_migration.py::test_downgrade_reverses_every_rename \
+ tests/test_migration.py::test_orm_schema_uses_english_table_names \
+ tests/test_migration.py::test_orm_schema_meetings_has_english_columns \
+ tests/test_migration.py::test_orm_schema_users_has_english_columns
+```
+
+Result: **6 passed in 0.15s**. This confirms chain/upgrade/downgrade/schema behavior through migration 007, not a per-migration isolated assertion. The separate full migration suite remains 6 passed/3 failed at the 009 duplicate-table cases already documented; no migration files were changed.
+
+T-2.1 remains **incomplete / BLOCKED**: migration 005–007 and engine target paths still need their individual current-base checker and test evidence. The earlier incorrect guessed filenames for migrations 002–004 returned `E902`/cannot-read-file; I listed the tracked migration folder and reran the corrected paths successfully. The corrected results above are authoritative.
+
+## Fifth bounded batch: final three in-scope migrations and engine entrypoints
+
+On the same production base, I individually ran Ruff for `alembic/versions/005_fix_uuid_columns_to_varchar.py`, `006_add_titulo_reunion.py`, `007_rename_schema_to_english.py`, `asr-engine/main.py`, and `diar-engine/main.py`. Results: 005 has UP035 ×1, UP007 ×3, E501 ×4 (8 total); 006 has UP035 ×1, I001 ×1, UP007 ×3 (5 total); 007 has UP035 ×1, I001 ×1, UP007 ×3, E501 ×5 (10 total). The migration diagnostics are import/annotation modernization and line wrapping; preserve migration operation values, SQL, and strings exactly. Mypy passed on each of migrations 005–007 individually (one source file per command). The isolated engine Ruff findings are behavior-bearing: both `asr-engine/main.py` and `diar-engine/main.py` have SIM115 ×1, B904 ×2, SIM105 ×1 (4 each); cleanup and exception context must not change without an approved disposition. Direct engine mypy remains outside configured `mypy .` and earlier invocation evidence reports missing external type stubs plus `no-untyped-def` findings (`faster_whisper` for ASR; `torch`/`pyannote.audio` for diarization).
+
+Exact selected-node test command from `backend/`:
+
+```bash
+/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m pytest -q \
+ tests/test_migration.py::test_revision_007_chains_after_006 \
+ tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data \
+ tests/test_migration.py::test_downgrade_reverses_every_rename \
+ tests/test_migration.py::test_orm_schema_uses_english_table_names \
+ tests/test_migration.py::test_orm_schema_meetings_has_english_columns \
+ tests/test_migration.py::test_orm_schema_users_has_english_columns \
+ tests/transcription/test_asr_engine_service.py::test_failed_s3_download_removes_partial_file_and_chains_cause \
+ tests/transcription/test_asr_engine_service.py::test_transcription_failure_returns_500_and_removes_audio_file \
+ tests/diar_engine/test_contract.py::TestContratoDiarEngine::test_post_diarize_respuesta_con_segmentos \
+ tests/diar_engine/test_contract.py::TestContratoDiarEngine::test_post_diarize_respuesta_vacia_valida \
+ tests/diar_engine/test_contract.py::TestContratoDiarEngine::test_health_endpoint \
+ tests/diar_engine/test_contract.py::test_failed_s3_download_removes_partial_file_and_chains_cause \
+ tests/diar_engine/test_contract.py::test_diarization_failure_removes_downloaded_temp_file \
+ tests/diar_engine/test_contract.py::test_download_http_error_preserves_status_and_detail
+```
+
+Result: **14 passed in 0.38s**. The 6 migration nodes exercise the lineage/upgrade/downgrade/schema through 007; 2 ASR nodes cover partial-download cleanup/cause and transcription error plus cleanup; 6 diar-engine nodes cover response contracts, health, failed download cleanup/cause, error cleanup and HTTP status/detail. The three known 009 migration failures are excluded from this selected-node command and remain unresolved as previously recorded.
+
+## Current disposition
+
+Evidence now includes current-base tests and individual Ruff results for the original 25-path T1.2 inventory, plus scoped mypy evidence for the production application paths and migration files where the assigned command can analyze them. There are no production edits; test changes remain separate test-only commits. T-2.1 is still **BLOCKED**, not PASS: exception chaining/cleanup and FastAPI signature behavior remain under the no-runtime-change ruling, service parameter rename needs callsite review, model-registration import order needs confirmation, and the three 009 failures remain unresolved. Next actor: Ansel must decide whether any behavior-changing lint fixes are allowed and the handling of the 009 failures before implementation proceeds.
