@@ -36,7 +36,10 @@ The solution consists of:
    returns `None` without guessing a fallback.
 3. **Summaries module** (`backend/app/summaries/`): a `Meeting_Summary` entity associated
    with its meeting and frozen template/event lineage, produced by a dedicated `summarize`
-   worker from a durable outbox event committed atomically with the transcript.
+   worker from a durable outbox event committed atomically with the user's summary request.
+   The request accepts an optional explicit personal template choice; otherwise it resolves the
+   user's configured personal default at request time. No job is triggered merely by transcript
+   commit.
 4. **Structured summary content** that makes the main topic and key arguments or points
    identifiable (R1.2), without imposing a fixed presentation or template schema.
 5. **Meeting-view integration**: a new summary section in the portal's meeting view, distinct
@@ -50,7 +53,7 @@ The solution consists of:
 
 **D1 — Summary generation stays out of scope; the design defines the mechanism, not the
 method.** The requirements do not select a generation method or accuracy threshold. The design
-therefore defines where summaries are produced (a queue worker triggered by transcription), what
+therefore defines where summaries are produced (a queue worker triggered only by a user summary request), what
 they persist (a structured model), and what the worker requires to run (a `SummarizationEngine`
 protocol). The engine's internal method is a task-level implementation choice, constrained by
 the protocol, not a product decision made here. The design does not claim any verified
@@ -81,15 +84,7 @@ default is category-independent by construction. *Alternativas descartadas:* a p
 default table contradicts the recorded decision; a general key/value settings table invites
 unapproved future settings semantics and couples unrelated features.
 
-**D4 — Freeze the triggering event's template; redelivery never replaces history.** Each
-summary job carries the template id and version resolved for the pertinent transcription event.
-Retries/redeliveries reuse that immutable event data and an event idempotency key, so the same
-event is a no-op after its first successful persist; a later default change cannot rewrite an
-already-produced historical summary. A subsequent transcription event uses the then-current
-default. Template versioning must track changes to the eventual approved instruction format.
-*Alternativas descartadas:* resolving the current default at worker execution time can change an
-in-flight job's template after a user changes settings; overwriting historical content on
-redelivery violates event idempotency and the “subsequent summaries” boundary.
+**D4 — Resolve and snapshot the user's chosen template at summary-request time; redelivery never changes it.** A user-initiated summary request may name an explicitly selected personal `template_id`; absent that input, the request resolves the user's personal default. In the same transaction that writes the durable outbox event, the service freezes the selected template id, its current version, and the opaque instructions payload. Retries/redeliveries reuse that immutable event snapshot; they never re-read a mutable template row or re-resolve a later default. The same event is a no-op after successful persistence. Editing a template affects only requests created afterward; no instruction-version history table is required because in-flight work carries its own snapshot. *Alternativas descartadas:* resolving the current default at worker execution time can change in-flight work after settings change; storing only an id/version requires mutable history or risks applying different instructions on retry.
 
 **D5 — Lineage is data, not authorization; template names are visible, definitions are not.**
 Requirement 3.3 is verified through lineage: a generated summary records which template shaped
@@ -124,14 +119,7 @@ the approved requirements specify copy/download capability but no format or layo
 *Alternativas descartadas:* a backend `/download` endpoint adds auth surface without a stated
 requirement; choosing a specific client-side serialization here would invent an output format.
 
-**D9 — No default-behavior invented where the spec is silent.** Where the approved
-requirements deliberately leave behavior unspecified, the design does not fill the gap: no
-fallback template exists, so the resolver returns `None` when no default is configured and
-generation simply does not run; engine failures follow the existing transcription-worker
-discipline (exceptions propagate uncaught; queue redelivery governs) without new retry
-semantics; access control reuses the existing sales-user policy without extending it; template
-or category deletion is not designed because the requirements do not grant it. These silences
-are requirements-scope boundaries, not gaps this design may close.
+**D9 — Do not invent the no-template request outcome.** An explicit personal template or the configured personal default selects the instructions for a summary request. The approved requirements do not state what happens when a request omits an explicit choice and the user has no default. The request outcome in that case is an implementation gate pending an approved product decision; this design specifies neither silent skipping, fallback, prompting, nor an error response. Engine failures follow the existing worker discipline (exceptions propagate to queue retry handling) without new retry semantics; access control reuses the existing sales-user policy; template/category deletion is not designed because the requirements do not grant it.
 
 **D10 — Summaries in relational storage, not the object store.** The meeting summary is a
 small, structured, per-meeting artifact queried by meeting id, like transcripts; object storage
@@ -144,16 +132,7 @@ Implementation planning must preserve that boundary or obtain an approved produc
 this design does not choose a format or filename. *Alternativas descartadas:* hard-coding a
 Markdown extension, date, or meeting-title naming policy would add choices absent from R2.
 
-**D12 — Do not prescribe the template's internal representation.** The approved requirements
-require user-created templates with specific instructions but explicitly defer their internal
-structure, schema, and format. This design therefore does not define template fields, validation,
-serialization, rendering instructions, or field-level selection controls within a template.
-The requirements do specify selection of a personal template (R5.4–R5.5); that user choice is
-distinct from the deferred internal template format. The instruction representation is a
-requirements-level design blocker to resolve before implementation planning. Summary
-presentation must still make topic and key points identifiable (R1.2). *Alternativas
- descartadas:* a selection schema, prompt string, or markup format would each resolve the
-explicitly deferred template format without approval.
+**D12 — Treat template instructions as an opaque payload; do not impose a grammar or renderer.** R3 requires each user-created template to have specific instructions but defers their internal structure, schema, and format. The minimum cross-component boundary is an opaque instruction string: the web API accepts and returns it unchanged, persistence stores it unchanged, and the summary request snapshots it unchanged for the engine adapter. No markup, prompt syntax, field-level selectors, validation rules beyond the string transport type, or renderer semantics are defined. The engine receives this payload alongside transcript text and is responsible for applying the instructions while producing canonical topic and key-points fields. If the approved author interprets even the opaque string transport boundary as requiring a product-level format decision, implementation is gated until clarified. *Alternatives discarded:* omitting instruction transport makes R3.2/R3.6 impossible to implement; defining a grammar or renderer would resolve the explicitly deferred format.
 
 **D13 — New API returns snake_case; the frontend maps explicitly.** The existing backend
 endpoints serialize snake_case keys (verified: `GET /api/v1/meetings/{id}/transcript` returns
@@ -188,7 +167,8 @@ graph TD
     end
 
     subgraph "Workers (queue consumers)"
-        TW["transcription worker (existing)"]
+        UIREQ["summary request API (new)"]
+        OUT["summary-request outbox + dispatcher (new)"]
         SW["summaries worker (new, topic 'summarize')"]
         ENG["SummarizationEngine protocol"]
     end
@@ -204,7 +184,8 @@ graph TD
     TSV --> APIF
     APIF -->|REST + JWT| TR
     APIF -->|REST + JWT| SR
-    TW -->|publish summarize on transcript commit| SW
+    UIREQ -->|transactional request event| OUT
+    OUT -->|confirmed publish| SW
     SW --> RES
     SW --> ENG
     SW --> SREP
@@ -216,41 +197,43 @@ graph TD
     SREP --> MS
 ```
 
-Data flow — automatic default-template application (Requirements 5.5, 5.6):
+Data flow — user-initiated summary request and immutable template selection (Requirements 5.4–5.6):
 
 ```mermaid
 sequenceDiagram
-    participant TW as transcription worker
+    participant U as User
+    participant UI as MeetingView
+    participant API as Summary request API
+    participant RES as default_resolver
+    participant DB as PostgreSQL + outbox
+    participant DISP as Outbox dispatcher
     participant Q as JobQueue (RabbitMQ)
     participant SW as summaries worker
-    participant RES as default_resolver
-    participant DB as PostgreSQL
     participant ENG as SummarizationEngine
 
-    TW->>Q: publish "summarize" {meeting_id} (after transcript tx commit)
-    Q->>SW: deliver message
-    SW->>DB: load meeting, transcript, stored summary lineage
-    alt default configured (users.default_summary_template_id not null)
-        SW->>RES: resolve(user default row)
-        RES-->>SW: template_id + version (or None if row vanished)
-        alt stored lineage == resolved lineage
-            SW->>DB: no-op (idempotent skip, D4)
-        else lineage differs or no stored summary
-            SW->>ENG: generate(transcript text)
-            ENG-->>SW: canonical topic + key_points
-            SW->>DB: upsert shaped summary + lineage + generation
-        end
-    else no default configured (unspecified by requirements)
-        SW->>DB: nothing to do; skip silently
+    U->>UI: Request summary; optionally select an owned template
+    UI->>API: POST summary request {template_id?}
+    API->>DB: load owned meeting + transcript
+    alt explicit template_id supplied
+        API->>DB: verify template owner; read version + instructions
+    else no explicit template choice
+        API->>RES: resolve current personal default
+        RES-->>API: selected template row or None
     end
+    API->>DB: atomically persist request outbox event with selected id/version/instructions snapshot
+    DISP->>Q: publish pending event; mark delivered only after broker confirm
+    Q->>SW: deliver event
+    SW->>ENG: generate(transcript text, frozen instructions)
+    ENG-->>SW: canonical topic + key_points
+    SW->>DB: atomically persist summary + event idempotency claim
 ```
 
-Sequence notes (verified against `backend/app/transcription/worker.py` at `f5aa6b3e`): the
-transcription worker currently publishes `{"meeting_id": ...}` to `"diarize"` after the
-transcript transaction commits and does not alter `Meeting.process_state`. The summaries
-worker receives the same message shape and likewise does not mutate `Meeting.process_state` —
-summary generation is not a state-machine transition, so no new `ProcessState` value is
-introduced (editing the state machine is outside this spec's approved scope).
+If no explicit choice and no default exists, the approved requirements do not define the
+request outcome; this case is blocked pending product clarification and is not represented as a
+silent skip or fallback. Transcript commit alone does not enqueue summary generation. The
+existing transcription worker's post-commit diarization publish is unrelated and remains
+unchanged; summary requests use their own durable outbox transaction. Summary generation does
+not mutate `Meeting.process_state`.
 
 ## Componentes e Interfaces
 
@@ -262,11 +245,32 @@ New module following the project's router → service → repository → schemas
 **`schemas.py`** (Pydantic v2; `backend/pyproject.toml` declares `pydantic>=2.0.0`):
 
 ```python
-# Template instructions are required by R3.2, but their internal representation and
-# serialization are explicitly deferred by the approved requirements. Do not define
-# TemplateCreate/TemplateUpdate/TemplateOut payload fields for them until that boundary
-# is resolved. The stable API responsibilities are create/edit/list/get personal templates,
-# assign an optional category, and identify/set the personal default.
+# Instructions are an opaque string payload (D12): transport and persist unchanged;
+# do not add a grammar, renderer syntax, content validation, or maximum length here.
+class TemplateCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    instructions: str
+    category_id: str | None = None
+
+class TemplateUpdate(BaseModel):
+    name: str | None = None
+    instructions: str | None = None
+    category_id: str | None = None
+
+class TemplateOut(BaseModel):
+    id: str
+    name: str
+    instructions: str
+    owner_user_id: str
+    category_id: str | None
+    version: int
+    is_default: bool
+    created_at: str
+    updated_at: str
+
+class SummaryRequest(BaseModel):
+    # Omitted means resolve the current personal default; null is not a template id.
+    template_id: str | None = None
 
 class CategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
@@ -289,7 +293,7 @@ existing `require_sales` authorization dependency (pattern verified in
 | GET | `/api/v1/templates/categories` | list own categories | 200 + `CategoryOut[]` | declared before `/{template_id}` (see guard below) |
 | POST | `/api/v1/templates/categories` | create category | 201 + `CategoryOut` | |
 | GET | `/api/v1/templates/{template_id}` | get own template | 200 / 404 | 404 also for another user's template (no existence leak) |
-| PATCH | `/api/v1/templates/{template_id}` | edit own template | 200 + `TemplateOut` | version tracks approved instruction changes (D4); exact payload deferred (D12) |
+| PATCH | `/api/v1/templates/{template_id}` | edit own template | 200 + `TemplateOut` | omitted `instructions` means unchanged; supplied string replaces it and increments version; payload remains opaque (D4, D12) |
 | PUT | `/api/v1/templates/default` | set own default | 204 | body `{"template_id": str}`; template must be owned by the user, else 422 |
 
 Static route ordering guard: `GET /api/v1/templates/categories` must be registered before
@@ -305,13 +309,15 @@ parameter first and returns 404 with `template_id="categories"`.
 
 ```python
 class SummarizationEngine(Protocol):
-    async def generate(self, transcript_text: str) -> CanonicalSummary: ...
+    async def generate(
+        self, transcript_text: str, instructions_snapshot: str
+    ) -> CanonicalSummary: ...
 ```
 
 `CanonicalSummary` (Pydantic model): `topic: str`, `key_points: list[str]`, matching the two
-identifiable content elements required by R1.2. The engine protocol remains independent of the
-still-unspecified template representation (D12); how instructions shape generated content is a
-requirements-level blocker, not a selection stage designed here.
+identifiable content elements required by R1.2. `instructions_snapshot` is the opaque, unchanged
+string stored on the selected template and frozen into the request event (D4, D12); the adapter
+applies it without requiring a grammar or renderer contract.
 
 **`repository.py`** — `SummaryRepository`: `upsert(summary_row)`,
 `get_by_meeting(meeting_id)`, with the same session/transaction ownership conventions as
@@ -329,14 +335,12 @@ identifiable (R1.2) and support copy/download (R2), without this design prescrib
 **`worker.py`** — mirrors `transcription/worker.py` (verified message-validation and
 exception disciplines at `f5aa6b3e`):
 
-- Subscribes to topic `"summarize"`; message includes `event_id`, `meeting_id`, frozen `template_id` and `template_version`. The approved instruction snapshot's representation remains deferred (D12).
+- Subscribes to topic `"summarize"`; message includes `event_id`, `meeting_id`, `transcript_id`, frozen `template_id`, `template_version`, and exact `instructions_snapshot` string.
 - Discards invalid/empty `meeting_id` with a warning log (same discipline as the
   transcription worker).
 - Loads the meeting and its transcript; if either is missing, logs and returns (queue
   redelivery governs; no custom retry loop).
-- Uses the immutable event payload's `template_id` and version; it does not resolve the user's
-  current default during processing. Instruction snapshot handling is deferred (D12). If no default was configured at
-  the triggering event, no job is emitted; no fallback is invented.
+- Uses the immutable event payload's template id, version, transcript id, and instruction snapshot; it never resolves the user's current default during processing. If a request omits an explicit template and no default exists, generation is gated pending the approved product decision (D9); the worker does not define skip, fallback, prompt, or error behavior.
 - **Idempotent skip (D4):** if the event id was already successfully applied, ack without
   regenerating or changing the historical summary.
 - Calls the configured `SummarizationEngine` via `create_summarization_engine()` (factory
@@ -362,12 +366,13 @@ exception disciplines at `f5aa6b3e`):
 and subscribed after the diarization worker (one import + one call, matching the existing
 bootstrap; verified structure of `backend/app/worker.py`).
 
-**Enqueue point and recovery (D15)**: transcript persistence and summary-job publication are
+**Enqueue point and recovery (D15)**: summary-request persistence and summary-job publication are
 separate systems, so a bare post-commit `queue.publish` is not acceptable: a crash or broker
-failure between DB commit and publish would permanently lose the summary trigger. Therefore the
-transcription path writes a durable outbox row **in the same DB transaction** that commits the
-transcript, containing `event_id`, `meeting_id`, and the default-template `template_id` /
-`template_version` resolved for that event. A dispatcher publishes pending outbox rows to
+failure between DB commit and publish would permanently lose the requested summary. Therefore
+the summary request service writes a durable outbox row **in the same DB transaction** that
+accepts the user request, containing `event_id`, `meeting_id`, `transcript_id`, selected
+`template_id`, `template_version`, and exact `instructions_snapshot`. An explicit template
+choice is owner-checked; otherwise the personal default is resolved at request time. A dispatcher publishes pending outbox rows to
 RabbitMQ and marks a row delivered **only after broker confirmation** (publisher confirm;
 verified: the current `RabbitMQJobQueue.publish()` uses persistent `delivery_mode=2` but does
 not enable publisher confirms, so the dispatcher's confirmation requirement is new capability,
@@ -386,6 +391,7 @@ Added in `backend/app/summaries/router.py`, registered in `backend/app/main.py`:
 
 | Method | Path | Purpose | Success | Errors |
 |--------|------|---------|---------|--------|
+| POST | `/api/v1/meetings/{meeting_id}/summary-requests` | request generation for an available transcript | 202 + `{event_id}` | body `{template_id?: string}`; explicit id must be owned by caller; omitted id resolves personal default |
 | GET | `/api/v1/meetings/{meeting_id}/summary` | get the meeting's summary artifact | 200 | 404 meeting / 404 summary / 403 non-sales |
 
 Access rule: same as every meeting route — meeting must exist and
@@ -443,9 +449,22 @@ class SummaryTemplate(Base):
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    # Template instruction fields and storage format are intentionally deferred (D12).
+    instructions: Mapped[str] = mapped_column(Text, nullable=False)  # opaque payload (D12)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SummaryRequestOutbox(Base):
+    """Durable accepted request, including immutable template instructions (D4/D15)."""
+    __tablename__ = "summary_request_outbox"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
+    transcript_id: Mapped[str] = mapped_column(String(36), ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False)
+    template_id: Mapped[str] = mapped_column(String(36), ForeignKey("summary_templates.id"), nullable=False)
+    template_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    instructions_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ProcessedSummaryEvent(Base):
@@ -504,8 +523,11 @@ Alembic migration `008_summaries_and_templates.py`
 1. `CREATE TABLE template_categories`, then `CREATE TABLE summary_templates` (columns as
    above; creation order matters — `users` must exist, and `users.default_summary_template_id`
    will reference `summary_templates`).
-2. `CREATE TABLE processed_summary_events` with `event_id` primary key, meeting FK, and
-   completion timestamp; this ledger is committed atomically with its successful summary write.
+2. `CREATE TABLE summary_request_outbox` with immutable request fields (`event_id`, meeting,
+   transcript, selected template id/version, instructions snapshot) and nullable delivery
+   timestamp; it is committed atomically with the accepted request. `CREATE TABLE
+   processed_summary_events` with `event_id` primary key, meeting FK, and completion timestamp;
+   this ledger is committed atomically with its successful summary write.
 3. `CREATE TABLE meeting_summaries` with unique `event_id` and unique `transcript_id`; the
    latter is a non-null FK to `transcripts.id ON DELETE CASCADE` (R6), and `meeting_id` is a
    non-unique FK to `meetings.id ON DELETE CASCADE`. Retries of an already-processed event do
@@ -591,13 +613,12 @@ shared types, D13):
 
 ```typescript
 export async function getSummary(meetingId: string): Promise<MeetingSummary>;
+export async function requestSummary(meetingId: string, input?: { templateId?: string }): Promise<{ eventId: string }>;
 export async function listTemplates(): Promise<SummaryTemplate[]>;
-// Template instruction payload shape and serialization are deferred by the approved
-// requirements (D12); do not define request fields for them before that boundary is resolved.
-export async function createTemplate(input: { name: string; categoryId?: string | null }): Promise<SummaryTemplate>;
+export async function createTemplate(input: { name: string; instructions: string; categoryId?: string | null }): Promise<SummaryTemplate>;
 export async function updateTemplate(
   id: string,
-  input: Partial<{ name: string; categoryId: string | null }>,
+  input: Partial<{ name: string; instructions: string; categoryId: string | null }>,
 ): Promise<SummaryTemplate>;
 export async function listCategories(): Promise<TemplateCategory[]>;
 export async function createCategory(name: string): Promise<TemplateCategory>;
@@ -614,10 +635,8 @@ the available summary content (R2); serialization and file format remain unspeci
   success feedback is local UI state ("Copied"), no alert/dialog.
 - **Download** button downloads the available summary content (R2.2); filename and serialization
   are not prescribed by the approved requirements.
-- **Not-available state**: if `getSummary` returns 404 (no summary yet — e.g. no default
-  configured, or generation not run), the section renders a neutral "No summary available for
-  this meeting yet." message. This is a UI-state design, not a no-default fallback behavior
-  (D9).
+- **Request flow**: when the meeting has an available transcript, the view offers a summary-request action and an optional selector populated only with the user's own templates. The configured default is identified in that selector; submitting without an explicit selection asks the API to resolve it automatically. No job is created on transcript commit.
+- **Not-available state**: if `getSummary` returns 404, the section renders a neutral "No summary available for this meeting yet." message. This UI state is separate from the unresolved request outcome when no default exists (D9).
 
 **`components/TemplateSettingsView.tsx`** (new): platform-settings surface for templates.
 Reached from `App.tsx` by extending the `View` union type (verified current shape:
@@ -626,9 +645,7 @@ and a nav entry. Contains:
 
 - Template list with `isDefault` identification (R5.4) and a "Set as default" action per
   template (R5.3); the current default is visually marked.
-- Create/edit template form supports a template name and optional category (R3.2, R4.3).
-  Template instruction controls and payload serialization remain unspecified under D12; no
-  selection checkboxes or implied include/exclude behavior are designed.
+- Create/edit template form supports a template name, opaque instruction string, and optional category (R3.2, R4.3). The instructions editor transports the string unchanged; no grammar, markup, selection controls, or include/exclude behavior is defined (D12).
 - Category creation inline form (R4).
 
 ### 8. Worker bootstrap and configuration
@@ -708,13 +725,11 @@ format, empty-value marker, or renderer algorithm; those details remain unresolv
 **P3 — Default resolution is unique, personal, and category-blind (R5.3–R5.6).**
 For any user `u` and any snapshot of `users`/`summary_templates`:
 - at most one default exists for `u` (single nullable column, D3);
-- default resolution at transcription-event creation identifies the then-configured template
-  `(id, version)`, or `None` iff the column is null (D9: no fallback); instruction snapshot
-  representation is deferred with the template format (D12);
-- the resolved template's `owner_user_id == u.id` (personal; enforced by FK + service checks);
+- on a summary request without explicit choice, default resolution identifies the then-configured template `(id, version)` and its exact opaque instructions string;
+- the resolved or explicitly selected template's `owner_user_id == u.id` (personal; enforced by service checks);
 - resolution never reads the template's category (category-blind, R5.3/R5.5);
-- the outbox event freezes that resolution for delivery/retry; a later transcription event
-  resolves the then-current default, so subsequent summaries use the new selection (R5.6).
+- the accepted request outbox event freezes that resolution for delivery/retry; a later request resolves the then-current default, so subsequent summaries use the new selection (R5.6);
+- if there is neither an explicit selection nor a configured default, processing is gated for an approved product decision; this property does not assert skip, fallback, prompt, or error behavior (D9).
 *Valida: R5.3, R5.4, R5.5, R5.6.*
 
 **P4 — No template schema or initial-template invariant is derived here.**
@@ -744,31 +759,30 @@ recorded in `access_log`. Boundary check (repository/service level): for any use
 *Valida: cross-surface privacy boundary; `SECURITY.md` access-control rules (JWT + sales-user
 restriction + access audit apply to the new endpoints).*
 
-**P8 — Event-scoped idempotency and transcript-coupled deletion (D4/R6).**
-For any durable summary event `e` with frozen transcript id and template id/version: processing
-or redelivering the same `event_id` more than once persists at most one summary row, and a
-duplicate after successful commit leaves the stored summary unchanged. The event ledger and
-summary row commit atomically; failures before that commit leave neither marked complete nor
-partially persisted. A distinct later transcription event is not a retry of `e` and uses the
-template id/version resolved for that later event; the representation of frozen template
-instructions remains deferred with D12. Deleting the source transcript (including transcript
-expiry) deletes its persisted summary through the FK cascade; no independent summary retention
-period is implied.
-*Valida: R5.5–R5.6 boundary, R6.1, D4.*
+**P8 — Request-event idempotency, immutable template snapshot, and transcript-coupled deletion (D4/R6/D15).**
+For any accepted summary request event `e`, delivery and redelivery use its frozen transcript id,
+template id/version, and opaque instructions snapshot. Processing the same `event_id` more than
+once persists at most one summary row; a duplicate after successful commit leaves stored
+content unchanged. The summary row and processed-event ledger commit atomically; failures before
+that commit do not mark processing complete. A later user request is a distinct event and
+resolves the selection applicable to that request, not a transcript commit. Deleting the source
+transcript (including expiry) deletes its persisted summary through the FK cascade; no
+independent summary retention period is implied.
+*Valida: R5.5–R5.6, R6.1, D4, D15.*
 
 ## Manejo de Errores
 
 | Scenario | Behavior |
 |----------|----------|
 | `POST /api/v1/templates` with `category_id` not owned by user | 422, no row created |
-| Template instruction payload validation | Unspecified until the approved template format is resolved (D12) |
+| Template instruction payload | Transport as an opaque string unchanged; do not impose grammar or semantic validation (D12) |
 | `PUT /api/v1/templates/default` with another user's template id | 422, no change |
 | `GET /api/v1/templates/{id}` for another user's template | 404 (no existence leak) |
 | Meeting summary GET for nonexistent or not-owned meeting | 404 (existing meetings convention) |
 | Summary GET when no summary exists for the meeting | 404 (same style as the transcript endpoint's "not available" detail); frontend shows the neutral empty state |
 | Worker message with missing/empty `meeting_id` | Discarded with warning log (transcription-worker convention) |
 | Worker: meeting or transcript row missing at process time | Log + return (queue redelivery governs; no custom retry) |
-| Worker: no default configured for the meeting owner | Log "no default configured; skipping" and return — behavior unspecified by requirements; no fallback (D9) |
+| Summary request omits an explicit template and no personal default exists | Request processing is gated pending an approved product decision (D9); no skip, fallback, prompt, or error behavior is specified |
 | Worker: engine raises | Exception propagates uncaught (transcription-worker discipline); queue redelivery governs; no failed row is persisted (D9) |
 | Worker: duplicate `event_id` already committed | Idempotent no-op ack; never upsert or replace the stored summary (D4, P8) |
 | Worker: engine returns empty topic or key points | Output handling remains unspecified; no renderer or empty-value policy is introduced by this design (D1, D8, D12) |
@@ -801,10 +815,10 @@ backend/tests/
 │   ├── test_templates_api.py             # unit/integration
 │   └── test_default_resolver_property.py # P3 (property)
 ├── summaries/
-│   ├── test_worker.py                    # integration (skip/no-default/idempotent paths)
-│   └── test_summary_api.py               # unit/integration
+│   ├── test_worker.py                    # immutable snapshot, idempotency, engine-failure paths
+│   └── test_summary_api.py               # unit/integration, including explicit selection
 └── integration/
-    └── test_summary_pipeline.py          # transcribe→summarize end-to-end
+    └── test_summary_pipeline.py          # request→outbox→summarize end-to-end; no transcript trigger
 ```
 
 **Estructura de archivos (frontend):**
@@ -828,14 +842,13 @@ graph (AGENTS.md non-negotiable TDD order).
 - Pre-production base branch/SHA: `feature/issue-task_23304e68098a4c6b-meeting-summaries-design`
   branched at `f5aa6b3e4d1e2c8a0816743f11de8a7a6ad8c43a` (merge-base with `main`:
   `a753dee72703f3aeaf97c3b163de6b4954ab80e9`).
-- Failing-command evidence to produce at RED time: `cd backend && pytest
-  tests/templates/test_default_resolver_property.py -q` must fail with a collection error
-  for the missing `app.templates.default_resolver` module — this captured RED output is the
-  required transfer evidence for the implementation task. Do not add renderer or template
-  schema tests while those contracts remain unresolved.
-- Authorized integration route: the `transcribe` → `summarize` enqueue in
-  `backend/app/transcription/worker.py` and the worker subscription in
-  `backend/app/worker.py`.
+- At RED time, the test task records the exact pre-implementation candidate SHA, command,
+  and captured failing output; tests must target the approved request→outbox→summarize flow.
+  No test may assert a no-default outcome until the product decision is approved, and no
+  test may invent a template grammar, renderer, or summary serialization.
+- Authorized integration route: the user summary-request API persists an outbox event;
+  the dispatcher publishes it and the summary worker consumes it. Transcript commit alone
+  does not enqueue summary generation.
 - Candidate worktree: this branch's worktree or a successor created by
   `_tools/new-worktree.sh` per AGENTS.md §7.
 
@@ -852,37 +865,37 @@ cd backend && ruff check . && mypy .
 ## Scope Boundaries (explicit non-decisions)
 
 Restated for the auditor: this design does not select a summarization method or accuracy
-threshold (D1); does not define template schema, summary visual layout, or serialization
-(D2, D12); does not define access control beyond the existing sales-user policy (P7); does
-defines deletion only as removing the persisted structured summary together with its transcript
-when that transcript expires or is deleted (R6), with no retention period or broader deletion
-guarantee; and defines no template/category deletion endpoints (D9); does not adopt the baseline's
-imagined portal layout (D7); does not define behavior for users without a configured default
-beyond "generation does not run" (D9); and defines no summary-regeneration endpoint, because
-the requirements bind the default to subsequent transcription summaries only — historical
-summaries keep their lineage as recorded. Category names are free text owned by the user; no
-category taxonomy is invented. The download filename is the one concrete user-visible string
-this design fixes (D11, P6).
+threshold (D1); define a template grammar or summary visual layout (D2, D12); broaden access
+control beyond the existing sales-user policy (P7); add retention periods or deletion guarantees
+beyond deleting a persisted summary with its transcript (R6); or define template/category
+deletion endpoints (D9). It does not adopt the baseline's imagined portal layout (D7), nor define
+what a request does when neither explicit template nor configured default exists; that case is
+gated pending product decision (D9). It adds no automatic transcript-commit generation, and
+no standalone regeneration endpoint. A later user request is a subsequent summary and resolves
+the then-current selection; historical summaries retain their recorded lineage. Category names
+are free text owned by the user; no taxonomy is invented. The download filename is the one
+concrete user-visible string fixed by this design (D11, P6).
 
 ## Correcciones de auditoría — ronda 1 (sustituyen reglas incompatibles anteriores)
 
 These amendments are normative for implementation and supersede any conflicting text above.
 
-1. **Template format boundary (D12).** The approved requirements defer the internal
-   structure, schema, and format of template instructions. Do not define fixed fields,
-   selection controls, storage constraints, or renderer layout until that boundary is resolved.
-   Preserve only the approved outcome: the applied template's specific instructions shape the
-   resulting summary, whose topic and key points remain identifiable (R1.2, R3.6).
+1. **Template format boundary (D12).** The approved requirements defer internal structure,
+   schema, and format. The implementable cross-component boundary is an opaque string payload:
+   create/update API accepts it, persistence stores it unchanged, and summary requests freeze
+   the exact value for the engine. Do not define a grammar, validation beyond string transport,
+   selection controls, or renderer layout. The engine applies the instructions while preserving
+   identifiable topic and key points (R1.2, R3.6). If product approval is required to establish
+   even this transport boundary, implementation is gated pending that clarification.
 
-2. **Freeze template choice at the triggering event (D4/P8).** Resolve the user's configured
-   default in the transcription workflow when the transcript is committed. The durable
-   `summarize` event identifies the chosen `template_id` and `template_version`; internal
-   instruction snapshot representation remains unresolved with D12. The worker MUST use that
-   event's choice and version, never re-resolve a newer default during retries/redelivery.
-   Persist with a uniqueness/idempotency key for the pertinent transcript/generation event;
-   repeated delivery of that same event is a no-op and MUST NOT overwrite an existing
-   historical summary after a later default change. Subsequent transcription events use the
-   then-current default. A default change alone does not regenerate old summaries.
+2. **Freeze template choice at the summary request (D4/P8).** A user request may select an
+   owned template; absent explicit selection, the service resolves the personal default. In the
+   same transaction as the accepted request's outbox event, freeze `template_id`, current
+   `template_version`, and exact opaque `instructions_snapshot`. The worker MUST use that event
+   snapshot, never re-read a mutable template or re-resolve a newer default during retries.
+   Persist with event-id idempotency; duplicate delivery is a no-op and MUST NOT overwrite a
+   historical summary. A later request uses the then-current selection; a default change alone
+   does not regenerate old summaries.
 
 3. **Generation engine integration boundary (D1).** The application invokes a configured
    `SummarizationEngine` adapter; business services and workers depend only on its protocol.
@@ -904,20 +917,19 @@ These amendments are normative for implementation and supersede any conflicting 
    with fail-closed validation and bounded data transfer, not a verified executable generation
    path; tasks that depend only on the protocol seam are independent of that prerequisite.
 
-4. **Post-commit enqueue recovery (D15).** Transcript persistence and summary-job publication
+4. **Post-commit enqueue recovery (D15).** Acceptance of a summary request and job publication
    are separate systems; publication after commit can fail or the process can stop between
-   commit and publish. Therefore the transcription path records a durable pending-summary
-   outbox event in the same DB transaction as transcript commit, keyed by transcript/event
-   identity. A dispatcher publishes pending events to RabbitMQ and marks them delivered only
-   after broker confirmation (publisher confirm, which the current `queue_rabbitmq.py` does not
-   enable); a committed-but-undelivered row survives restart and is redispatched, so delivery
-   is eventually at-least-once and cannot be lost by a crash or broker failure after commit.
-   Consumer-side idempotency on `event_id` makes republished duplicates a safe no-op. The
-   concrete dispatch mechanism (periodic dispatcher, startup recovery sweep, or equivalent
-   verified transactional-outbox pattern) is an implementation decision for Zoya's task plan,
-   constrained by those two invariants; it must be tested. A bare post-commit `queue.publish`
-   is not recoverable and does not satisfy this design. No outbox implementation was found in
-   the current repository; this is a new component, not an existing capability.
+   commit and publish. Therefore the request service records a durable pending-summary outbox
+   event in the same DB transaction that accepts the request, keyed by `event_id` and carrying
+   meeting/transcript ids plus the immutable template id/version/instructions snapshot. A
+   dispatcher publishes pending events to RabbitMQ and marks them delivered only after broker
+   confirmation (publisher confirm, which the current `queue_rabbitmq.py` does not enable); a
+   committed-but-undelivered row survives restart and is redispatched, so delivery is eventually
+   at-least-once. Consumer-side idempotency on `event_id` makes republished duplicates a safe
+   no-op. The concrete dispatch mechanism (periodic dispatcher, startup recovery sweep, or
+   equivalent verified transactional-outbox pattern) is an implementation decision for the
+   task plan, constrained by those invariants; it must be tested. A bare post-commit
+   `queue.publish` is not recoverable. No outbox implementation exists in the current repository.
 
 5. **No implied template seed or personal default (R3/R5).** The approved requirements do
    not specify a seed template, a system-provided template, or onboarding behavior. Migration
