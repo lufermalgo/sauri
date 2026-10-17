@@ -283,8 +283,8 @@
 - T2 + T9 → T11 → T12: event-worker RED test precedes worker implementation, which consumes T10's accepted event.
 - T10 + T12 → T13 → T14: required-content integration RED precedes engine seam/generation integration. The real provider binding is a separate D14 gate; it does not block independent work.
 - T2 + T9 → T15 → T16: summary/status route tests precede route/query implementation; T16 consumes persisted request/summary data.
-- T16 + T18 → T19 → T20 → T21 → T22: frontend summary UI tests precede implementation, then copy/download tests precede controls.
-- T8 + T18 → T23 → T24: settings UI tests precede implementation and use the approved template/default API.
+- T16 + T18 → T19 → T20 → T21 → T22: frontend summary UI tests precede implementation, then copy/download tests precede controls; T6 → T20 because the summary selector consumes the implemented own-template list API.
+- T8 + T18 → T23 → T24: settings UI tests precede implementation and use the approved template/default API. T20 → T24 serializes their edits to shared `frontend/src/api.ts`; T20 owns summary/status calls and `listTemplates`, while T24 adds only settings-specific template/category calls.
 - T25 → T26 → T27: integration RED precedes final wiring; final validation depends on all implementation branches.
 - T17 → T18: shared types contract tests precede type additions; T17 must verify the package's real test runner before task execution and report a missing test harness rather than inventing one.
 - No other edges are implied by phase order. Independent ready tasks remain parallelizable in separate worktrees. Cross-task RED/GREEN branches must preserve the exact RED commit in the eventual implementation candidate as required by design correction 8.
