@@ -163,9 +163,6 @@ These rules govern how agents must behave before, during, and after any task.
 * **Surgical reads**: only the file being edited, only the relevant lines. No project-wide scans.
 * **Focused diffs**: touch only what the task requires. Zero side edits.
 * **Lazy loading**: pull context just-in-time, never preemptively.
-* **Runtime**: Codex CLI is the only execution runtime for Sauri agents. Launch work through
-  APX with `runtime=codex`; do not switch to Claude Code, a direct APX engine, or another provider.
-  Use the Codex/APX-native skills and worktree tools where available.
 * **Specialist agents**: do not delegate trivial isolated edits merely to change one file.
   Required role-specific Spectra phases and independent reviews are valid exceptions even
   when their deliverable is a single artifact. Give each agent a scoped brief and validate it.
