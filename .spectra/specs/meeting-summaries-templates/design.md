@@ -319,13 +319,15 @@ identifiable content elements required by R1.2. `instructions_snapshot` is the o
 string stored on the selected template and frozen into the request event (D4, D12); the adapter
 applies it without requiring a grammar or renderer contract.
 
-**`repository.py`** — `SummaryRepository`: `upsert(summary_row)`,
-`get_by_meeting(meeting_id)`, with the same session/transaction ownership conventions as
-`TranscriptRepository` (verified: the caller controls the transaction; the repository does not
-open, close, or commit the session).
+**`repository.py`** — `SummaryRepository`: `insert(summary_row)`,
+`get_current_by_meeting(meeting_id)`, and request lookup/status methods, with the same
+session/transaction ownership conventions as `TranscriptRepository` (verified: the caller
+controls the transaction; the repository does not open, close, or commit the session). The
+current-summary query returns the successful artifact with the highest request `generation`.
 
-**`service.py`** — `SummaryService`: `get_summary_for_user(meeting_id, user)` enforcing
-meeting ownership (404 semantics below) and returning the structured summary artifact.
+**`service.py`** — `SummaryService`: `get_current_summary_for_user(meeting_id, user)` enforcing
+meeting ownership (404 semantics below) and returning the current successful structured
+summary artifact; request-status reads are likewise scoped to the meeting and caller.
 
 **Presentation/serialization** — the approved requirements do not define a renderer contract,
 fixed layout, serialized copy/download format, or internal instruction representation. These
@@ -335,7 +337,7 @@ identifiable (R1.2) and support copy/download (R2), without this design prescrib
 **`worker.py`** — mirrors `transcription/worker.py` (verified message-validation and
 exception disciplines at `f5aa6b3e`):
 
-- Subscribes to topic `"summarize"`; message includes `event_id`, `meeting_id`, `transcript_id`, frozen `template_id`, `template_version`, and exact `instructions_snapshot` string.
+- Subscribes to topic `"summarize"`; message includes `event_id`, `meeting_id`, `transcript_id`, `generation`, frozen `template_id`, `template_version`, and exact `instructions_snapshot` string.
 - Discards invalid/empty `meeting_id` with a warning log (same discipline as the
   transcription worker).
 - Loads the meeting and its transcript; if either is missing, logs and returns (queue
@@ -343,6 +345,9 @@ exception disciplines at `f5aa6b3e`):
 - Uses the immutable event payload's template id, version, transcript id, and instruction snapshot; it never resolves the user's current default during processing. If a request omits an explicit template and no default exists, generation is gated pending the approved product decision (D9); the worker does not define skip, fallback, prompt, or error behavior.
 - **Idempotent skip (D4):** if the event id was already successfully applied, ack without
   regenerating or changing the historical summary.
+- On first delivery, mark the outbox request `running` before invoking the engine; retries keep
+  it nonterminal (`running`). The terminal dead-letter handler marks it `failed` only after
+  retry exhaustion. Status writes are scoped by `event_id` and do not expose exception details.
 - Calls the configured `SummarizationEngine` via `create_summarization_engine()` (factory
   reading `SUMMARIZATION_PROVIDER` from env, same pattern as `transcription/factory.py`;
   an unrecognized value raises `ValueError` at worker startup, mirroring
@@ -351,15 +356,17 @@ exception disciplines at `f5aa6b3e`):
 - Applies the template instructions frozen in the event to both required summary elements;
   it never reads a mutable template row to determine the event's instructions or version. Within
   one DB transaction, it atomically claims `event_id` in `processed_summary_events` (unique
-  primary key), inserts the structured summary artifact with both required identifiable
-  elements and lineage copied from that immutable event, then commits both writes together.
-  the persisted row carries only structured data (`topic`, `key_points`); it stores no
-  rendered text, markup, or presentation artifact, because the presentation format is
-  unspecified (D12). It does not upsert or overwrite a persisted summary. A unique claim
-  conflict means this event already
-  committed: ack without regenerating or changing any stored summary, even if the user's default
-  has since changed. A failed generation/persist rolls back the claim so queue redelivery can
-  retry.
+  primary key), inserts one structured summary artifact for that event with both required
+  identifiable elements and lineage copied from that immutable event, marks the request
+  succeeded, then commits these writes together. The persisted row carries only structured data
+  (`topic`, `key_points`); it stores no rendered text, markup, or presentation artifact, because
+  the presentation format is unspecified (D12). Every accepted event has its own request
+  `generation`, assigned in the request transaction; distinct later events for the same
+  transcript therefore create distinct persisted summary rows rather than replacing earlier
+  results. A unique event claim conflict means this event already committed: ack without
+  regenerating or changing any stored summary, even if the user's default has since changed. A
+  failed generation/persist rolls back the claim so queue redelivery can retry; only terminal
+  dead-letter handling marks the request failed.
 - Publishes nothing downstream; does not mutate `Meeting.process_state`.
 
 **Wiring in `backend/app/worker.py`**: `start_worker` imported from `app.summaries.worker`
@@ -370,8 +377,9 @@ bootstrap; verified structure of `backend/app/worker.py`).
 separate systems, so a bare post-commit `queue.publish` is not acceptable: a crash or broker
 failure between DB commit and publish would permanently lose the requested summary. Therefore
 the summary request service writes a durable outbox row **in the same DB transaction** that
-accepts the user request, containing `event_id`, `meeting_id`, `transcript_id`, selected
-`template_id`, `template_version`, and exact `instructions_snapshot`. An explicit template
+accepts the user request, containing `event_id`, `meeting_id`, `transcript_id`, per-transcript
+`generation`, selected `template_id`, `template_version`, and exact `instructions_snapshot`.
+An explicit template
 choice is owner-checked; otherwise the personal default is resolved at request time. A dispatcher publishes pending outbox rows to
 RabbitMQ and marks a row delivered **only after broker confirmation** (publisher confirm;
 verified: the current `RabbitMQJobQueue.publish()` uses persistent `delivery_mode=2` but does
@@ -391,15 +399,26 @@ Added in `backend/app/summaries/router.py`, registered in `backend/app/main.py`:
 
 | Method | Path | Purpose | Success | Errors |
 |--------|------|---------|---------|--------|
-| POST | `/api/v1/meetings/{meeting_id}/summary-requests` | request generation for an available transcript | 202 + `{event_id}` | body `{template_id?: string}`; explicit id must be owned by caller; omitted id resolves personal default |
-| GET | `/api/v1/meetings/{meeting_id}/summary` | get the meeting's summary artifact | 200 | 404 meeting / 404 summary / 403 non-sales |
+| POST | `/api/v1/meetings/{meeting_id}/summary-requests` | accept a distinct generation request for an available transcript | 202 + `{event_id, generation}` | body `{template_id?: string}`; explicit id must be owned by caller; omitted id resolves personal default |
+| GET | `/api/v1/meetings/{meeting_id}/summary` | get the current successful summary artifact | 200 | 404 meeting / 404 when no generation has succeeded / 403 non-sales |
+| GET | `/api/v1/meetings/{meeting_id}/summary-requests/latest` | resume status of the highest-generation accepted request on view load | 200 status / 404 no accepted request | 404 meeting or no request / 403 non-sales |
+| GET | `/api/v1/meetings/{meeting_id}/summary-requests/{event_id}` | read one accepted request's status while polling | 200 status | 404 meeting / request not in meeting / 403 non-sales |
 
 Access rule: same as every meeting route — meeting must exist and
 `meeting.created_by == user.id`, else `404` (the existing meetings routes' 404-not-403
 ownership convention, verified at `backend/app/meetings/router.py`); `require_sales` still
 gates the route itself with `403` + audit log for non-sales users.
 
-GET response body (snake_case keys, D13):
+`GET /summary` returns the successfully persisted row with the greatest per-transcript
+`generation` (the current successful artifact); it does not return a pending or failed event in
+place of an available summary. If no generation has succeeded, it returns 404. The request-status
+routes return `{event_id, generation, status}` where status is `pending`, `running`, `succeeded`,
+or terminal `failed`; they expose no provider exception details. `latest` selects the accepted
+request with greatest generation, allowing a remounted meeting view to resume status polling.
+Meeting ownership and `require_sales` apply to all three GET routes, and event-specific lookup
+also verifies that the event belongs to the path meeting.
+
+GET summary response body (snake_case keys, D13):
 
 ```json
 {
@@ -417,9 +436,10 @@ GET response body (snake_case keys, D13):
 ```
 
 `template_name` is always included (name only; definitions are never exposed through this
-endpoint, D5). There is no regeneration endpoint: the requirements bind the default to
-subsequent transcription summaries only, so historical summaries are not re-shaped on demand
-(see Scope Boundaries).
+endpoint, D5). There is no separate regeneration endpoint: repeated user-initiated summary requests for a
+transcript use the same `POST /summary-requests` flow and create distinct generations. Changing
+the default alone creates no request and does not reshape an existing summary; a later request
+resolves the then-current explicit selection or default (see Scope Boundaries).
 
 ### 4. Data model additions (`backend/app/infra/models.py` + Alembic migration `008_`)
 
@@ -455,8 +475,11 @@ class SummaryTemplate(Base):
 
 
 class SummaryRequestOutbox(Base):
-    """Durable accepted request, including immutable template instructions (D4/D15)."""
+    """Durable accepted request, immutable payload, and status ledger (D4/D15)."""
     __tablename__ = "summary_request_outbox"
+    __table_args__ = (
+        UniqueConstraint("transcript_id", "generation", name="uq_summary_request_transcript_generation"),
+    )
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
@@ -464,6 +487,8 @@ class SummaryRequestOutbox(Base):
     template_id: Mapped[str] = mapped_column(String(36), ForeignKey("summary_templates.id"), nullable=False)
     template_version: Mapped[int] = mapped_column(Integer, nullable=False)
     instructions_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -479,11 +504,13 @@ class ProcessedSummaryEvent(Base):
 
 
 class MeetingSummary(Base):
-    """Persisted structured summary for a source transcript (R1, R5, R6)."""
+    """Persisted structured summary for one request generation on a source transcript (R1, R5, R6)."""
     __tablename__ = "meeting_summaries"
     __table_args__ = (
         UniqueConstraint("event_id", name="uq_meeting_summary_event_id"),
-        UniqueConstraint("transcript_id", name="uq_meeting_summary_transcript_id"),
+        UniqueConstraint(
+            "transcript_id", "generation", name="uq_meeting_summary_transcript_generation"
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -524,15 +551,20 @@ Alembic migration `008_summaries_and_templates.py`
    above; creation order matters — `users` must exist, and `users.default_summary_template_id`
    will reference `summary_templates`).
 2. `CREATE TABLE summary_request_outbox` with immutable request fields (`event_id`, meeting,
-   transcript, selected template id/version, instructions snapshot) and nullable delivery
-   timestamp; it is committed atomically with the accepted request. `CREATE TABLE
-   processed_summary_events` with `event_id` primary key, meeting FK, and completion timestamp;
-   this ledger is committed atomically with its successful summary write.
-3. `CREATE TABLE meeting_summaries` with unique `event_id` and unique `transcript_id`; the
-   latter is a non-null FK to `transcripts.id ON DELETE CASCADE` (R6), and `meeting_id` is a
-   non-unique FK to `meetings.id ON DELETE CASCADE`. Retries of an already-processed event do
-   not update this row. Do not add a unique constraint on `meeting_id`: identity and deletion
-   follow the source transcript/event, not a mutable “latest summary” slot.
+   transcript, selected template id/version, instructions snapshot), per-transcript `generation`,
+   request `status` (`pending`, `running`, `succeeded`, or terminal `failed`), and nullable
+   delivery timestamp; it is committed atomically with the accepted request and retained as the
+   request-status record. Allocate `generation` under a lock on the source transcript in this
+   transaction so accepted requests for one transcript have a unique, increasing order. `CREATE
+   TABLE processed_summary_events` with `event_id` primary key, meeting FK, and completion
+   timestamp; this ledger is committed atomically with its successful summary write.
+3. `CREATE TABLE meeting_summaries` with unique `event_id` and unique `(transcript_id,
+   generation)`; `transcript_id` is a non-null FK to `transcripts.id ON DELETE CASCADE` (R6),
+   and `meeting_id` is a non-unique FK to `meetings.id ON DELETE CASCADE`. A transcript may
+   have multiple summary rows, one per accepted request that succeeds; retries of an
+   already-processed event do not update its row. Do not add uniqueness on `transcript_id`
+   alone or on `meeting_id`: each request event remains distinct, and the current artifact is
+   a query over successful rows ordered by request generation, not a mutable singleton slot.
 4. `ALTER TABLE users ADD COLUMN default_summary_template_id VARCHAR(36) NULL REFERENCES
    summary_templates(id) ON DELETE SET NULL`.
 5. Do not seed a template or configure a default in this migration. Requirements do not
@@ -541,8 +573,9 @@ Alembic migration `008_summaries_and_templates.py`
    and onboarding behavior for template instructions/default setup remains unresolved pending
    an approved requirements decision.
 6. `downgrade()` reverses in exact reverse order: drop `users.default_summary_template_id`,
-   then `meeting_summaries`, `processed_summary_events`, `summary_templates`, and
-   `template_categories`.
+   then `meeting_summaries`, `processed_summary_events`, `summary_request_outbox`,
+   `summary_templates`, and `template_categories`. Drop the outbox after any dependent summary
+   rows/ledger and before its referenced template table.
 
 ### 5. Default-template resolver (`backend/app/templates/default_resolver.py`)
 
@@ -569,7 +602,7 @@ row vanished inside a transaction race, the resolver's `None` path covers it.
 ### 6. Shared types (`packages/shared-types/src/index.ts`)
 
 ```typescript
-/** Structured summary artifact associated 1:1 with a meeting (R1). */
+/** Current successful structured summary artifact for a meeting (R1). */
 export interface MeetingSummary {
   summaryId: string;
   meetingId: string;
@@ -581,6 +614,13 @@ export interface MeetingSummary {
   generation: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Durable lifecycle state of one accepted summary request. */
+export interface SummaryRequestStatus {
+  eventId: string;
+  generation: number;
+  status: "pending" | "running" | "succeeded" | "failed";
 }
 
 /** User-owned summary template (R3–R5). */
@@ -613,7 +653,17 @@ shared types, D13):
 
 ```typescript
 export async function getSummary(meetingId: string): Promise<MeetingSummary>;
-export async function requestSummary(meetingId: string, input?: { templateId?: string }): Promise<{ eventId: string }>;
+export async function requestSummary(
+  meetingId: string,
+  input?: { templateId?: string },
+): Promise<{ eventId: string; generation: number }>;
+export async function getLatestSummaryRequest(
+  meetingId: string,
+): Promise<SummaryRequestStatus | null>; // null on 404 (no accepted request)
+export async function getSummaryRequest(
+  meetingId: string,
+  eventId: string,
+): Promise<SummaryRequestStatus>;
 export async function listTemplates(): Promise<SummaryTemplate[]>;
 export async function createTemplate(input: { name: string; instructions: string; categoryId?: string | null }): Promise<SummaryTemplate>;
 export async function updateTemplate(
@@ -626,17 +676,32 @@ export async function setDefaultTemplate(templateId: string): Promise<void>;
 ```
 
 **`components/SummarySection.tsx`** (new): rendered inside the meeting view as a **separate
-section** from the transcript view (R1.1). Owns local state only (`summary | null`,
-`loading`, `error`); fetches on mount via `getSummary`; presents the structured summary so
-its main topic and key points are identifiable (R1.2). Provides copy and download actions on
-the available summary content (R2); serialization and file format remain unspecified (D8, D11).
+section** from the transcript view (R1.1). Owns local state for the current successful
+`summary | null`, loading/error, and latest `SummaryRequestStatus`; fetches `getSummary` and
+`getLatestSummaryRequest` on mount. Presents the structured summary so its main topic and key
+points are identifiable (R1.2), with copy/download actions for available content (R2);
+serialization and file format remain unspecified (D8, D11).
 
 - **Copy** button uses the browser clipboard API for the available summary content (R2.1);
   success feedback is local UI state ("Copied"), no alert/dialog.
 - **Download** button downloads the available summary content (R2.2); filename and serialization
   are not prescribed by the approved requirements.
-- **Request flow**: when the meeting has an available transcript, the view offers a summary-request action and an optional selector populated only with the user's own templates. The configured default is identified in that selector; submitting without an explicit selection asks the API to resolve it automatically. No job is created on transcript commit.
-- **Not-available state**: if `getSummary` returns 404, the section renders a neutral "No summary available for this meeting yet." message. This UI state is separate from the unresolved request outcome when no default exists (D9).
+- **Request flow**: when the meeting has an available transcript, the view offers a
+  summary-request action and an optional selector populated only with the user's own templates.
+  The configured default is identified in that selector; submitting without an explicit
+  selection asks the API to resolve it automatically. No job is created on transcript commit.
+  On accepted POST 202, retain the returned `event_id` and `generation`, show pending status,
+  and poll that event's status every 3 seconds while mounted. On mount, resume by polling the
+  latest accepted event returned by `getLatestSummaryRequest`; stop polling on `succeeded` or
+  `failed`. On success, refetch `getSummary` so the current artifact is shown. On terminal
+  failure, show a generic generation-failed state without provider details and preserve any
+  previously fetched current summary. A status-endpoint/network error is not a generation
+  failure; surface a retry-status action and continue polling while mounted. No-default behavior
+  remains unspecified (D9).
+- **Not-available state**: if `getSummary` returns 404 and there is no pending/running request,
+  the section renders a neutral "No summary available for this meeting yet." message. While a
+  request is pending/running, show that status instead of treating the missing artifact as a
+  generation failure.
 
 **`components/TemplateSettingsView.tsx`** (new): platform-settings surface for templates.
 Reached from `App.tsx` by extending the `View` union type (verified current shape:
@@ -685,7 +750,7 @@ erDiagram
     SUMMARY_TEMPLATES ||--o{ MEETING_SUMMARIES : "lineage (template_id, template_version)"
     MEETINGS ||--o{ MEETING_SUMMARIES : "associated summaries (meeting_id is non-unique)"
     MEETINGS ||--o| TRANSCRIPTS : "input to generation"
-    TRANSCRIPTS ||--o| MEETING_SUMMARIES : "source transcript_id (ON DELETE CASCADE)"
+    TRANSCRIPTS ||--o{ MEETING_SUMMARIES : "source transcript_id (ON DELETE CASCADE)"
 ```
 
 Key data contracts:
@@ -696,16 +761,18 @@ Key data contracts:
 - `meeting_summaries.key_points_json` preserves the order of key points (P2); presentation
   layout and serialization remain unspecified.
 - `meeting_summaries` has no `state`/`failure_cause` columns: a row exists only after a
-  successful generation (failed attempts leave no row; queue redelivery governs retries,
-  D9) — the artifact's existence is its state.
-- Foreign keys: `meeting_summaries.transcript_id` is non-null, unique, and uses
-  `ON DELETE CASCADE`; deletion of a transcript (including expiry by the retention worker)
-  therefore deletes its associated persisted summary as required by R6. `meeting_summaries.meeting_id`
-  is a non-unique FK that also cascades with the meeting; this association does not replace the
-  transcript-coupled deletion path. No independent summary retention period or broader deletion
-  guarantee is specified. `meeting_summaries.template_id` has no cascade and no deletion endpoint
-  exists, so lineage rows remain resolvable (D5); `users.default_summary_template_id` uses
-  `SET NULL` (D3).
+  successful generation (failed attempts leave no row). Durable request status is stored on
+  `summary_request_outbox`, separately from the summary artifact; retries remain governed by
+  the queue (D9).
+- Foreign keys: `meeting_summaries.transcript_id` is non-null and uses `ON DELETE CASCADE`;
+  multiple summary rows may refer to one transcript, with uniqueness enforced on
+  `(transcript_id, generation)` rather than `transcript_id` alone. Deleting a transcript
+  (including expiry by the retention worker) therefore deletes all its associated persisted
+  summaries as required by R6. `meeting_summaries.meeting_id` is a non-unique FK that also
+  cascades with the meeting; this association does not replace the transcript-coupled deletion
+  path. No independent summary retention period or broader deletion guarantee is specified.
+  `meeting_summaries.template_id` has no cascade and no deletion endpoint exists, so lineage
+  rows remain resolvable (D5); `users.default_summary_template_id` uses `SET NULL` (D3).
 
 ## Propiedades de Correctitud
 
@@ -737,12 +804,14 @@ The approved requirements defer the template's internal structure, schema, and f
 not define a seed template or require a personal default to be preconfigured. Do not encode
 these behaviors as schema or property-test invariants without an approved decision.
 
-**P5 — Summary is a distinct artifact associated with its meeting (R1.1, R1.3).**
-For any persisted summary row, `meeting_id` references the meeting it summarizes; multiple
-summary events for the same meeting are not conflated by meeting-level uniqueness. The portal's
-meeting view presents the available summary in a section distinct from transcript and notes
-(component boundary, verified by component test rather than property test).
-*Valida: R1.1, R1.3.*
+**P5 — Summary is a distinct artifact with an explicit current-summary rule (R1.1, R1.3).**
+For any persisted summary row, `meeting_id` references the meeting it summarizes; each accepted
+event for a transcript may persist a distinct generation. `GET /meetings/{id}/summary` and the
+meeting view expose the successfully persisted row with the highest per-transcript `generation`;
+pending or failed later requests do not displace the most recent successful artifact. The
+portal presents it in a section distinct from transcript and notes (component boundary, verified
+by component test rather than property test).
+*Valida: R1.1, R1.3, R5.6.*
 
 **P6 — Copy and download are available for the meeting summary (R2.1, R2.2).**
 The meeting-summary UI exposes copy and download actions for the available summary content.
@@ -759,15 +828,18 @@ recorded in `access_log`. Boundary check (repository/service level): for any use
 *Valida: cross-surface privacy boundary; `SECURITY.md` access-control rules (JWT + sales-user
 restriction + access audit apply to the new endpoints).*
 
-**P8 — Request-event idempotency, immutable template snapshot, and transcript-coupled deletion (D4/R6/D15).**
-For any accepted summary request event `e`, delivery and redelivery use its frozen transcript id,
-template id/version, and opaque instructions snapshot. Processing the same `event_id` more than
-once persists at most one summary row; a duplicate after successful commit leaves stored
-content unchanged. The summary row and processed-event ledger commit atomically; failures before
-that commit do not mark processing complete. A later user request is a distinct event and
-resolves the selection applicable to that request, not a transcript commit. Deleting the source
-transcript (including expiry) deletes its persisted summary through the FK cascade; no
-independent summary retention period is implied.
+**P8 — Request-event idempotency, repeated-request persistence, status, and transcript-coupled deletion (D4/R5.6/R6/D15).**
+For any accepted event `e`, delivery/redelivery uses its frozen transcript id, template
+id/version, and opaque instructions snapshot. Every accepted request gets a unique increasing
+`generation` per transcript; distinct events for one transcript may each persist a summary,
+while duplicate processing of one `event_id` persists at most one row and leaves it unchanged.
+The summary row, processed-event ledger, and request `succeeded` status commit atomically;
+failed attempts remain retryable, and terminal dead-letter handling marks the request `failed`.
+Status transitions are `pending` → `running` → `succeeded` or terminal `failed`. A later request
+uses the then-current explicit selection/default; changing a default alone creates no event and
+never regenerates an earlier summary. Deleting the source transcript (including expiry) deletes
+all its persisted summaries through the FK cascade; no independent summary retention period is
+implied.
 *Valida: R5.5–R5.6, R6.1, D4, D15.*
 
 ## Manejo de Errores
@@ -779,17 +851,20 @@ independent summary retention period is implied.
 | `PUT /api/v1/templates/default` with another user's template id | 422, no change |
 | `GET /api/v1/templates/{id}` for another user's template | 404 (no existence leak) |
 | Meeting summary GET for nonexistent or not-owned meeting | 404 (existing meetings convention) |
-| Summary GET when no summary exists for the meeting | 404 (same style as the transcript endpoint's "not available" detail); frontend shows the neutral empty state |
+| Summary GET when no generation has succeeded for the meeting | 404 (same style as the transcript endpoint's "not available" detail); frontend shows the neutral empty state only when no request is pending/running |
 | Worker message with missing/empty `meeting_id` | Discarded with warning log (transcription-worker convention) |
 | Worker: meeting or transcript row missing at process time | Log + return (queue redelivery governs; no custom retry) |
 | Summary request omits an explicit template and no personal default exists | Request processing is gated pending an approved product decision (D9); no skip, fallback, prompt, or error behavior is specified |
-| Worker: engine raises | Exception propagates uncaught (transcription-worker discipline); queue redelivery governs; no failed row is persisted (D9) |
+| Worker: engine raises | Exception propagates uncaught (transcription-worker discipline); queue retry governs; request remains nonterminal until retry succeeds or terminal dead-letter handling marks it failed; no summary row is persisted for the failed attempt (D9) |
 | Worker: duplicate `event_id` already committed | Idempotent no-op ack; never upsert or replace the stored summary (D4, P8) |
+| Request status polled while retries are active | Return `running`; do not present transient provider/transport failures as terminal to the user |
+| Request exhausts retries and reaches dead-letter handling | Mark that outbox request `failed`; status response includes no exception detail and the prior current summary remains available |
+| Frontend status endpoint/network error | Keep generation status distinct from polling error; expose retry-status action and continue polling while mounted |
 | Worker: engine returns empty topic or key points | Output handling remains unspecified; no renderer or empty-value policy is introduced by this design (D1, D8, D12) |
 | `SUMMARIZATION_PROVIDER` unrecognized at worker startup | `ValueError` at startup, mirroring `create_asr_engine()` |
 | `GET /api/v1/templates/categories` vs `/{template_id}` route conflict | Static route registered first (implementation-order guard in the router file) |
 | Frontend copy blocked (clipboard permission) | Button shows a transient "Copy failed" state; no data loss |
-| Frontend `getSummary` 404 | Neutral "No summary available for this meeting yet." (UI state, not fallback behavior) |
+| Frontend `getSummary` 404 | Show neutral "No summary available for this meeting yet." only if no latest request is pending/running; otherwise show the request status (UI state, not fallback behavior) |
 
 ## Estrategia de Testing
 
@@ -801,11 +876,19 @@ or a fixed summary serialization from the deferred requirements.
 - **Property-based** (`hypothesis`, verified present in `backend` dev dependencies;
   ≥100 examples per property, per AGENTS.md milestone criteria): approved properties P1–P5
   and P8 where automatable (P3 default resolution; P4 protects against adding an initial
-  template invariant; P5 persistence behavior; P8 event and transcript lifecycle).
+  template invariant; P5 verifies that current-summary lookup selects the highest-generation
+  successful row, including when later requests are pending/failed; P8 verifies distinct
+  generations for distinct events, idempotency for repeated delivery of one event, and
+  transcript lifecycle).
 - **Unit/integration**: router behavior (auth, 404/422 semantics), worker message handling,
-  required summary content, and frontend component tests (`vitest` + `@testing-library/react`,
-  already in `frontend` devDependencies) for SummarySection states and available copy/download
-  actions without asserting unspecified serialization (P6, P7 frontend half).
+  required summary content, request-status transitions and per-event status ownership; verify
+  repeated POST requests for one transcript receive distinct generations and persist separately,
+  current-summary retrieval does not displace a successful artifact on later failure, and
+  `latest` status selects the highest accepted generation. Frontend component tests (`vitest` +
+  `@testing-library/react`, already in `frontend` devDependencies) cover initial status resume,
+  post-POST polling, refresh on success, terminal failure while preserving an older summary,
+  polling/network error recovery, empty state, and available copy/download actions without
+  asserting unspecified serialization (P5–P8).
 
 **Estructura de archivos (backend):**
 
@@ -815,10 +898,10 @@ backend/tests/
 │   ├── test_templates_api.py             # unit/integration
 │   └── test_default_resolver_property.py # P3 (property)
 ├── summaries/
-│   ├── test_worker.py                    # immutable snapshot, idempotency, engine-failure paths
-│   └── test_summary_api.py               # unit/integration, including explicit selection
+│   ├── test_worker.py                    # immutable snapshot, idempotency, retries/status, generations
+│   └── test_summary_api.py               # selection, repeated requests, current summary, latest status
 └── integration/
-    └── test_summary_pipeline.py          # request→outbox→summarize end-to-end; no transcript trigger
+    └── test_summary_pipeline.py          # request→outbox→summarize; repeated event generations; no transcript trigger
 ```
 
 **Estructura de archivos (frontend):**
