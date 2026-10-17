@@ -35,6 +35,8 @@ Task 1.1 also excludes the paused Imre worktree/branch and its approximately 49 
 
 **Dependencies:** Task 1.1
 
+**Tracking:** Issue #263 · Card task_c4abf99598f64377
+
 ## Phase 2: Behavior-Preservation Evidence
 
 ### Task 2.1: Map and verify protective tests for each affected production path
@@ -47,6 +49,8 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 **Completion Criteria:** Every production-file correction instance has either mapped and passing pre-correction protective-test evidence (behavior-bearing) or a recorded semantic-equivalence justification (purely static/formatting), plus a complete RED handoff ready before its first production edit. Newly authored tests are in a distinct identified predecessor commit/diff. No production edit begins without the matching handoff, RED on the exact immediately-preceding base, and Ansel-authorized integration route. No evidence is drawn from the paused Imre worktree or its approximately 49 modified paths.
 
 **Dependencies:** Task 1.2
+
+**Tracking:** Issue #264 · Card task_e93f0a97ce6f4e12
 
 ## Phase 3: File-Scoped Diagnostic Corrections
 
@@ -70,6 +74,8 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 
 **Dependencies:** All Task 3.1.N instances and their authorized integration into the candidate worktree.
 
+**Tracking:** Issue #265 · Card task_f6e79b01ba8a4ea0
+
 ### Task 4.2: Transfer the exact candidate and acceptance evidence to Ansel
 
 **Files:** Existing candidate PR/task handoff; no new repository artifact is prescribed.
@@ -78,3 +84,5 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 **Completion Criteria:** Ansel can trace every recorded baseline diagnostic to a file-scoped correction or explicit escalation and can evaluate each bugfix criterion against the identified candidate and evidence. No unresolved or blocked item is represented as passed.
 
 **Dependencies:** Task 4.1
+
+**Tracking:** Issue #266 · Card task_7d757a86d38a4385
