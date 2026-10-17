@@ -178,3 +178,49 @@ Result: **24 passed in 1.12s**. Exact node IDs collected and run:
 - `tests/meetings/test_state_machine_property.py`: `test_property_3_only_valid_transitions_produce_a_new_state`; `test_property_3_terminal_states_are_immutable`; `test_property_4_transition_to_failed_has_a_valid_cause`.
 
 T-2.1 remains **incomplete / BLOCKED**: this batch advances five paths only. Remaining in-scope paths still need equivalent evidence or a documented blocker; the behavior-changing B904 paths and 009 migration failures remain blocked/unmodified. No full PASS is claimed.
+
+## Third bounded independent batch: five current-base paths
+
+On unchanged production base `576a6a992db4452a653a7112f394e73da5177792`, I verified `app/diarization/cloud_provider.py`, `app/transcription/cloud_provider.py`, `app/ingestion/router.py`, `app/meetings/router.py`, and `app/meetings/service.py`. No production edits or new tests were made. Test coverage is run-only evidence; it does not authorize behavior changes.
+
+### Exact per-path checker REDs
+
+From `backend/`, individually ran `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/ruff check <path>`:
+
+| Path | Result | Classification / blocker |
+|---|---|---|
+| `app/diarization/cloud_provider.py` | exit 1, B904 ×1 (timeout→ExternalServiceError) | Adding cause or suppressing context changes observable exception details; blocked under no-runtime-change ruling. |
+| `app/transcription/cloud_provider.py` | exit 1, B904 ×1 (timeout→ExternalServiceError) | Same exception-context behavior risk; blocked pending an approved behavior disposition. |
+| `app/ingestion/router.py` | exit 1, B008 ×3, B904 ×1, SIM117 ×1 | B008 can affect FastAPI injection; B904 changes exception context; SIM117 rewrites nested async transaction/session contexts and requires exact cleanup equivalence. Overall path remains behavior-sensitive. |
+| `app/meetings/router.py` | exit 1, I001 ×1, A002 ×2, B008 ×8, B904 ×2, SIM117 ×4 (17 total) | I001 is import-only; A002 route parameter rename can change FastAPI body/API shape; B008/B904 and transaction context rewrites are behavior-sensitive. |
+| `app/meetings/service.py` | exit 1, A002 ×1 (`input`) | Internal callable parameter rename may break keyword callers; audit all callers and update atomically before classifying as semantics-preserving. |
+
+### Exact tests and result
+
+Collected 54 exact node IDs, then ran this command from `backend/`:
+
+```bash
+/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m pytest -q \
+ tests/diarization/test_cloud_provider_property.py \
+ tests/transcription/test_cloud_provider.py \
+ tests/ingestion/test_playback_source_ingestion.py \
+ tests/meetings
+```
+
+Result: **54 passed, 4 Starlette deprecation warnings in 13.10s**. Nodes:
+
+- `tests/diarization/test_cloud_provider_property.py`: `test_property_3_rejects_unencrypted_endpoint`; `test_property_5_speaker_segment_validity`; `test_example_missing_api_key_raises_valueerror`; `test_example_empty_api_key_raises_valueerror`; `test_example_120s_timeout_raises_external_service_error`; `test_example_http_error_raises_external_service_error`; `test_example_response_without_valid_segments_returns_empty`.
+- `tests/transcription/test_cloud_provider.py`: `test_property_3_rejects_unencrypted_endpoint`; `test_property_5_only_valid_segments_in_result`; `test_example_missing_api_key_raises_valueerror`; `test_example_cloud_timeout_raises_service_error`; `test_example_integration_https_and_auth_header`.
+- `tests/ingestion/test_playback_source_ingestion.py`: `test_ingestion_contract_preserves_explicit_capture_evidence[overrides0-muxed-None]`; `[overrides1-absent-None]`; `[overrides2-separate--125]`; `[overrides3-separate-250]`; `test_inconsistent_or_incomplete_capture_metadata_is_rejected[overrides0]`; `[overrides1]`; `[overrides2]`; `[overrides3]`; `[overrides4]`; `test_invalid_capture_metadata_returns_422_before_object_storage`; `test_upload_rejects_video_evidence_inconsistent_with_object_path_before_storage_or_persistence[muxed-True-None]`; `[absent-True-None]`; `[separate-False-40]`.
+- `tests/meetings/test_diarization_endpoint.py`: `test_diarization_200_with_speakers_and_assignments`; `test_diarization_404_nonexistent_meeting`; `test_diarization_404_without_diarization`; `test_diarization_requires_authentication`.
+- `tests/meetings/test_get_meeting_property.py`: `test_property_5_failure_cause_present_iff_failed`; `test_example_get_nonexistent_meeting_raises_error`.
+- `tests/meetings/test_join_triggers.py`: `test_request_join_manual_transitions_and_enqueues`; `test_request_join_nonexistent_meeting_does_not_publish`; `test_schedule_join_by_calendar_fires_when_the_time_arrives`.
+- `tests/meetings/test_note_management.py`: `test_rename_200_updates_title`; `test_rename_404_nonexistent_meeting`; `test_rename_404_meeting_of_another_user`; `test_rename_422_empty_title`; `test_rename_requires_authentication`; `test_delete_204_removes_the_meeting`; `test_delete_404_nonexistent_meeting`; `test_delete_404_meeting_of_another_user`; `test_delete_requires_authentication`; `test_delete_with_full_diarization_does_not_violate_fk`.
+- `tests/meetings/test_register_meeting_property.py`: `test_property_1_registration_starts_queued`; `test_property_2_accepts_link_input`; `test_property_2_accepts_calendar_input`; `test_property_2_accepts_manual_input`; `test_property_2_rejects_invalid_links`.
+- `tests/meetings/test_state_machine_property.py`: `test_property_3_only_valid_transitions_produce_a_new_state`; `test_property_3_terminal_states_are_immutable`; `test_property_4_transition_to_failed_has_a_valid_cause`.
+- `tests/meetings/test_title_history.py`: `test_listing_includes_null_title`.
+- `tests/meetings/test_transcript_turn_id.py`: `test_segments_include_the_turn_id`.
+
+`/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m mypy app/diarization/cloud_provider.py app/transcription/cloud_provider.py app/ingestion/router.py app/meetings/router.py app/meetings/service.py` — **Success: no issues found in 5 source files**.
+
+T-2.1 remains **incomplete / BLOCKED**. Tests map current behavior, but B904 cause/context behavior remains unapproved, FastAPI dependency/body changes require explicit semantic-equivalence review, and paths not yet accounted for remain. The 009 migration failures remain untouched; do not report PASS.
