@@ -14,9 +14,11 @@ The approved feature adds interactive playback to the meeting review view and co
 
 **Use a browser-native HTML media element, with a small React control layer.** The media element already implements seeking, pause/resume, playback rate, volume, mute, and playback events. React should render controls and transcript state around that single source of playback truth. *Rejected alternative:* a custom playback engine duplicates browser media behavior and creates unnecessary synchronization and accessibility risks.
 
-**Use milliseconds for transcript boundaries and seconds only at the media-element boundary.** The current web transcript contract already represents turn timestamps as `startMs` and `endMs`; a conversion at the player adapter keeps units explicit. *Rejected alternative:* introducing a second time unit in the UI/domain contract makes passage matching error-prone. This is a technical representation choice, not a requirement that fixes a user-visible time format.
+**Use milliseconds for transcript boundaries and seconds only at the media-element boundary.** The backend transcript response provides `segments` with `start_ms` and `end_ms`; the frontend adapter maps those fields to `TimedPassage.startMs` and `endMs`, with conversion to seconds only when interacting with the media element. *Rejected alternative:* mixing units in the UI/domain contract makes passage matching error-prone. This is a technical representation choice, not a requirement that fixes a user-visible time format.
 
-**Keep source selection behind the web API adapter and represent available quality choices as source options.** The player UI displays a quality/resolution selector only when the supplied media has more than one playable option. *Rejected alternative:* inferring quality choices from browser settings or hard-coding a list would not reflect media actually available for that meeting. The exact delivery endpoint and encoding catalogue are not specified by the approved requirements and must be aligned with the existing backend contract during implementation; do not invent an endpoint here.
+**Add a backend playback-manifest endpoint and use short-lived object-store read URLs after per-meeting authorization.** The web player cannot attach the API's bearer token to a native `<video>` source request, and sending full recording bytes through the current `ObjectStore.get()` (which returns an in-memory `bytes`) would not be a scalable delivery path. `GET /api/v1/meetings/{meeting_id}/playback` therefore requires `get_current_user`, loads the meeting and its recording, verifies `Meeting.created_by == user.id` (returning 404 for absent or non-owned meetings), and returns only source URLs minted by `ObjectStore.temporary_read_url()` for that recording's stored objects. URLs use a 3600-second TTL (the existing object-store default); on an expired/failed source, the client refetches the manifest and retries at the current playback time once, then reports an error. *Rejected alternative:* a public object-store URL or unbounded in-memory API proxy would either bypass the auth boundary or duplicate large media in API memory.
+
+**Represent quality choices as the actual recording source inventory, not invented encodings.** Add a `recording_media_sources` table keyed to `SessionRecording`, with source id, kind (`video` or `audio`), object reference, MIME type, optional width/height, and a user-visible quality label. Recording persistence registers the existing `video_ref` (and audio when used) as the original source; it registers any additional already-available source renditions when present, but this feature does not add transcoding or promise new renditions. The manifest returns all playable video sources with their labels; show a quality/resolution selector only when there are multiple video sources. Selecting one uses its signed URL while preserving time and play/pause state. *Rejected alternative:* hard-coded quality levels or inferring multiple renditions from one file misrepresents actual assets. This adds the minimum source inventory/API work needed for the conditional selector; the feature does not alter capture/transcoding policy.
 
 **Derive active passage rather than persisting a second playback cursor.** On time updates, find the passage whose interval contains the current media time; update the visible highlight and scroll the active passage into view only when the active passage changes. *Rejected alternative:* maintaining a separately updated transcript cursor risks drift after seeking, rate changes, or source changes.
 
@@ -26,13 +28,18 @@ The approved feature adds interactive playback to the meeting review view and co
 
 ```mermaid
 graph TD
-  API[Web API adapter] --> DATA[Meeting media and timed transcript data]
+  USER[Authenticated user] -->|JWT| ROUTE[Backend playback manifest route]
+  ROUTE -->|owner check| MEETING[Meeting and recording source inventory]
+  ROUTE -->|temporary signed read URLs| STORE[Object store]
+  WEBAPI[frontend/src/api.ts] -->|JWT manifest request| ROUTE
+  WEBAPI --> DATA[Timed transcript segments and source options]
   DATA --> VIEW[Meeting review playback view]
   VIEW --> PLAYER[Media element and playback controls]
   PLAYER -->|timeupdate, play, pause, ended, error| CTRL[Playback controller state]
   CTRL -->|current time and active passage| VIEW
   VIEW -->|activate passage control| CTRL
   CTRL -->|seek and play| PLAYER
+  PLAYER -->|signed URL with byte-range requests| STORE
 ```
 
 ### Playback and passage navigation
@@ -101,11 +108,49 @@ A source change selects the supplied source option and lets the media element lo
 
 ### API/data boundary
 
-Add typed media/transcript retrieval methods to `frontend/src/api.ts` only after matching them to the actual backend API contract. Existing frontend rules require HTTP access through this adapter. The current `TranscriptView` fetches timed `SpeechTurn` records via `getTranscript`; its source is evidence of a timestamped transcript, not an approved media endpoint or a complete target interface. Map backend transcript records to `TimedPassage` without changing transcript content. Do not make backend endpoint or media storage changes part of this design absent an approved API contract.
+Add typed retrieval methods to `frontend/src/api.ts`; all web HTTP calls remain in this adapter. The playback manifest contract is:
+
+```typescript
+export interface PlaybackManifest {
+  meeting_id: string;
+  duration_seconds: number;
+  sources: Array<{
+    source_id: string;
+    kind: "video" | "audio";
+    url: string;                 // short-lived presigned read URL
+    mime_type: string;
+    quality_label: string;
+    width: number | null;
+    height: number | null;
+  }>;
+}
+
+export interface TranscriptResponse {
+  transcript_id: string;
+  meeting_id: string;
+  language: string;
+  provider: string;
+  supports_turns: boolean;
+  segments: Array<{
+    id: string;
+    text: string;
+    start_ms: number;
+    end_ms: number;
+    sequence: number;
+  }>;
+}
+
+export async function getPlaybackManifest(meetingId: string): Promise<PlaybackManifest>;
+export async function getTranscript(meetingId: string): Promise<TranscriptResponse>;
+```
+
+`GET /api/v1/meetings/{meeting_id}/playback` returns the manifest described above. It requires a valid JWT and the authenticated user must own the meeting; for absent/non-owned meetings return the same 404 response. The backend reads the recording source inventory and signs only the recorded objects through `ObjectStore.temporary_read_url(reference, ttl_seconds=3600)`. The web client requests this authenticated manifest, then the browser fetches media bytes from the signed URL; the object-store URL is not persisted or shared. A failed/expired URL causes one manifest refresh and retry at the saved current time, then an accessible error. Object-store CORS and byte-range support must permit the configured frontend origin and browser seeking; verify this contract in integration tests before enabling the feature in a deployment.
+
+The existing transcript route's actual JSON has `segments`, each with `id`, `text`, `start_ms`, `end_ms`, `sequence`; the web adapter must correct the current frontend type mismatch (`turns`/camelCase) and map each segment to `TimedPassage` as `{ id: segment.id, text: segment.text, startMs: segment.start_ms, endMs: segment.end_ms }`. Preserve the backend's sequence order and source text. Reject/skip invalid timing for playback actions while retaining the segment text. The playback backend work is in this feature's implementation scope: the source registry migration, manifest route, owner check, and API/adapter mapping are needed for the approved web playback behavior. No media transcoder or new encoding-generation behavior is included.
 
 ## Data Models
 
-`TimedPassage` and `MediaSourceOption` above are view-facing types. `startMs` and `endMs` are non-negative finite millisecond offsets relative to the media timeline; a passage is eligible for synchronization only when its times are valid and `endMs > startMs`. Media sources are the actual options available for that meeting; `label` is user-visible, and `src` is consumed by the player but must not be rendered as untrusted HTML. The approved requirements do not require persisting playback position or source selection.
+`TimedPassage` is a view-facing type mapped from API `segments` as specified above. Add a `RecordingMediaSource` persistence model/table with: `id` (string UUID primary key), `recording_id` (FK to `session_recordings.id`, cascade delete), `kind` (`video` or `audio`), `object_ref` (private object-store key), `mime_type`, `quality_label`, nullable integer `width` and `height`, and a uniqueness constraint on `(recording_id, kind, object_ref)`. Migration backfills one `video` source from each non-null existing `SessionRecording.video_ref` (label `Original`, dimensions unknown); the recording persistence path registers its audio source and video source(s) for new recordings. No raw object-store references are exposed in API JSON. The manifest maps stored source rows to `MediaSourceOption`, generating a fresh signed URL per response. `startMs` and `endMs` are non-negative finite millisecond offsets relative to the media timeline; a passage is eligible for synchronization only when `endMs > startMs`. Do not persist playback position or selected source.
 
 ## Correctness Properties
 
