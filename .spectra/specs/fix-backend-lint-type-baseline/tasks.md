@@ -122,7 +122,75 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.60 | `tests/transcription/test_repository.py` | Ruff F401×1, I001×1, SIM117×1, UP017×2; mypy no-untyped-def×2, type-arg×2 | `task, test` |
 | T-3.1.61 | `tests/transcription/test_worker.py` | Ruff I001×2, SIM117×14, UP017×1; mypy arg-type×2, no-untyped-def×13, type-arg×11, var-annotated×2 | `task, test` |
 
-For each row, scope is only its listed path. The dependency is the frozen T1.2 evidence plus the exact current-base snapshot in `evidence-current-base/`; for production paths, the matching Task 2.1 handoff (test seam/node IDs and classification) must be complete before any edit. Task 2.1 is a gate to production edits, not a claim that its current incomplete map is complete. The targeted checker RED must be captured on the exact base immediately before the first edit using `ruff check <path>` and/or `mypy <path>` as applicable, and transferred to the writer. Test-only files use the same-path checker RED and focused pytest evidence; do not modify production files from a test-path task. No source edit or behavior change is authorized by this plan amendment.
+### Focused RED/test seams for every file task
+
+The exact node/fixture seam is specified per task below; execute its node with `python -m pytest -q <node>` from `backend/` as applicable. These are seam references, not claims that all listed tests were already run: only results explicitly documented in the T-2.1 evidence map are completed evidence. Each writer still captures that task's exact checker RED on the immediate pre-edit base and the matching test result before any production edit. `tests/library/conftest.py` is a fixture-only module with no discovered test consumer; its seam is the `async_engine` fixture lifecycle, and its UP017/W292 corrections are static-only (no behavior test is added). The added `app/ingestion/schemas.py` and `app/meetings/speaker_review_service.py` paths have candidate seams below, but remain production-edit blocked until the T-2.1 per-path classification, test mapping, and handoff are completed on the authorized base.
+
+| Task | Focused test seam (module path + function/route) |
+|---|---|
+| T-3.1.01 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.02 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_orm_schema_uses_english_table_names` |
+| T-3.1.03 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.04 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.05 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.06 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.07 | `tests/test_migration.py::test_revision_007_chains_after_006`; `::test_upgrade_renames_every_table_without_dropping_data` |
+| T-3.1.08 | `tests/test_migration.py::test_revision_007_chains_after_006`; `::test_upgrade_renames_every_table_without_dropping_data` |
+| T-3.1.09 | `tests/auth/test_access_control_property.py::test_property_10_every_denial_generates_exactly_one_record` |
+| T-3.1.10 | `tests/auth/test_access_control_property.py::test_property_10_access_granted_iff_authorized`; `::test_property_10_every_denial_generates_exactly_one_record` |
+| T-3.1.11 | `tests/auth/test_auth_disabled_scope.py::test_invalid_token_preserves_unauthorized_error_contract`; `::test_bypass_active_in_test_environment` |
+| T-3.1.12 | `tests/auth/test_login.py::test_login_valid_credentials_issues_jwt` |
+| T-3.1.13 | `tests/diarization/test_assignment_property.py::test_property_9_exactly_one_assignment_per_turn`; `::test_property_9_tie_break_by_lower_sequence` |
+| T-3.1.14 | `tests/diarization/test_cloud_provider_property.py::test_example_120s_timeout_raises_external_service_error` |
+| T-3.1.15 | `tests/diarization/test_state_property.py::test_property_16_valid_transitions_produce_correct_state` |
+| T-3.1.16 | `tests/diarization/test_worker.py::test_property_20_engine_failure_propagates_without_completed` |
+| T-3.1.17 | `tests/ingestion/test_playback_source_ingestion.py::test_invalid_capture_metadata_returns_422_before_object_storage` |
+| T-3.1.18 | `tests/ingestion/test_playback_source_ingestion.py::test_ingestion_contract_preserves_explicit_capture_evidence[overrides0-muxed-None]` |
+| T-3.1.19 | `tests/meetings/test_join_triggers.py::test_request_join_manual_transitions_and_enqueues`; `tests/meetings/test_note_management.py::test_rename_200_updates_title` |
+| T-3.1.20 | `tests/meetings/test_register_meeting_property.py::test_property_2_accepts_link_input`; `::test_property_2_rejects_invalid_links` |
+| T-3.1.21 | `tests/meetings/test_register_meeting_property.py::test_property_2_accepts_link_input`; `::test_property_2_accepts_manual_input` |
+| T-3.1.22 | `tests/speaker_review/test_disposition_idempotency.py::test_persistent_replay_returns_original_result_without_second_mutation` |
+| T-3.1.23 | `tests/meetings/test_state_machine_property.py::test_property_3_only_valid_transitions_produce_a_new_state` |
+| T-3.1.24 | `tests/transcription/test_cloud_provider.py::test_example_cloud_timeout_raises_service_error` |
+| T-3.1.25 | `tests/transcription/test_asr_engine_service.py::test_failed_s3_download_removes_partial_file_and_chains_cause`; `::test_transcription_failure_returns_500_and_removes_audio_file` |
+| T-3.1.26 | `tests/diar_engine/test_contract.py::test_diarization_failure_removes_downloaded_temp_file`; `::test_download_http_error_preserves_status_and_detail` |
+| T-3.1.27 | `tests/auth/conftest.py::api_client` → `tests/auth/test_login.py::test_login_valid_credentials_issues_jwt` |
+| T-3.1.28 | `tests/auth/test_access_control_property.py::test_property_10_access_granted_iff_authorized` |
+| T-3.1.29 | `tests/auth/test_auth_disabled_scope.py::test_bypass_active_in_test_environment` |
+| T-3.1.30 | `tests/auth/test_login.py::test_login_valid_credentials_issues_jwt` |
+| T-3.1.31 | `tests/auth/test_user_model.py::test_user_can_be_created_and_read` |
+| T-3.1.32 | `tests/conftest.py::async_engine` → `tests/meetings/test_join_triggers.py::test_request_join_manual_transitions_and_enqueues` |
+| T-3.1.33 | `tests/diar_engine/test_contract.py::TestContratoDiarEngine::test_health_endpoint` |
+| T-3.1.34 | `tests/diarization/test_assignment_property.py::test_property_9_exactly_one_assignment_per_turn` |
+| T-3.1.35 | `tests/diarization/test_cloud_provider_property.py::test_example_http_error_raises_external_service_error` |
+| T-3.1.36 | `tests/diarization/test_diarization_engine_property.py::test_property_6_diarization_result_ascending_order` |
+| T-3.1.37 | `tests/diarization/test_factory_property.py::test_property_1_local_with_capitalization_and_spaces` |
+| T-3.1.38 | `tests/diarization/test_integration.py::TestDiarizationWorkerSubscription::test_worker_subscribes_to_diarize_topic` |
+| T-3.1.39 | `tests/diarization/test_labeling_property.py::test_property_7_speaker_count_equals_distinct_raw_labels` |
+| T-3.1.40 | `tests/diarization/test_local_provider_property.py::test_property_4_faithful_mapping_of_local_diarization_response` |
+| T-3.1.41 | `tests/diarization/test_migration.py::test_migration_003_creates_three_tables` |
+| T-3.1.42 | `tests/diarization/test_repository.py::test_property_12_diarization_uniqueness_per_meeting` |
+| T-3.1.43 | `tests/diarization/test_state_property.py::test_property_16_valid_transitions_produce_correct_state` |
+| T-3.1.44 | `tests/diarization/test_worker.py::test_property_20_engine_failure_propagates_without_completed` |
+| T-3.1.45 | `tests/infra/test_adaptadores_conformidad_property.py::test_property_13_store_roundtrip_save_get` |
+| T-3.1.46 | `tests/infra/test_queue_retries.py::TestReadMaxRetriesDiarize::test_default_when_absent` |
+| T-3.1.47 | `tests/ingestion/test_playback_source_ingestion.py::test_ingestion_contract_preserves_explicit_capture_evidence[overrides0-muxed-None]` |
+| T-3.1.48 | `tests/library/conftest.py::async_engine` fixture lifecycle; no `tests/library/` consumer test is currently discovered |
+| T-3.1.49 | `tests/meetings/test_diarization_endpoint.py::test_diarization_200_with_speakers_and_assignments` |
+| T-3.1.50 | `tests/meetings/test_note_management.py::test_rename_200_updates_title` |
+| T-3.1.51 | `tests/meetings/test_title_history.py::test_listing_includes_null_title` |
+| T-3.1.52 | `tests/meetings/test_transcript_turn_id.py::test_segments_include_the_turn_id` |
+| T-3.1.53 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data` (through migration 007; the separate 009 failing nodes remain outside this task) |
+| T-3.1.54 | `tests/test_queue.py::TestRabbitMQJobQueueBehavior::test_ack_on_success` |
+| T-3.1.55 | `tests/transcription/test_cloud_provider.py::test_example_integration_https_and_auth_header` |
+| T-3.1.56 | `tests/transcription/test_factory.py::test_property_1_absent_or_empty_is_local` |
+| T-3.1.57 | `tests/transcription/test_integration.py::TestASREngineContract::test_post_transcribe_response_shape` |
+| T-3.1.58 | `tests/transcription/test_local_provider.py::test_property_4_faithful_mapping_of_local_response` |
+| T-3.1.59 | `tests/transcription/test_meeting_capture_property.py::test_property_7_temporal_invariant_of_persisted_turns` |
+| T-3.1.60 | `tests/transcription/test_repository.py::test_property_13_persistence_roundtrip` |
+| T-3.1.61 | `tests/transcription/test_worker.py::test_property_16_invalid_input_does_not_persist` |
+
+For each task, scope remains only its listed source file. Its dependency is the frozen T1.2 evidence plus the exact current-base snapshot in `evidence-current-base/`; production-file edits additionally require the matching Task 2.1 per-path classification, exact focused-node result, and complete handoff before editing. Task 2.1 remains incomplete, so this table names executable candidate seams but does not assert all evidence or approval is complete. The targeted checker RED must be captured on the exact base immediately before the first edit using `ruff check <path>` and/or `mypy <path>` as applicable, and transferred to the writer with the listed test-node run result. Test-only files use the same-path checker RED and the named focused pytest node; do not modify production files from a test-path task. No source edit or behavior change is authorized by this plan amendment.
 
 **Completion Criteria (each instance):** Only the listed file changes; all listed checker findings are absent on the same targeted checker rerun; applicable focused pytest evidence passes; for production files, the matching Task 2.1 handoff is present and semantics-preserving equivalence is recorded. Migration edits preserve operations, order, resulting schema/data semantics; no exception context, FastAPI injection/body shape, cleanup, or runtime behavior changes without a separate authorized disposition. Findings that cannot be fixed within these bounds are escalated to Ansel, not suppressed.
 
