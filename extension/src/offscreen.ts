@@ -3,6 +3,7 @@
 // Production: chunks persisted in IndexedDB, assembled by sessionId.
 
 import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME } from "./recording-db";
+import { videoPresenceFromStream } from "./core/capture";
 
 console.log("[sauri] Offscreen document loaded");
 
@@ -124,6 +125,8 @@ async function startRecording(
 
     const tabStream =
       await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    const videoPresence = videoPresenceFromStream(tabStream);
+    chrome.runtime.sendMessage({ type: "capture-video-presence", videoPresence: videoPresence });
 
     // CRITICAL - Audio loopback: connect tab audio to AudioContext destination
     // so the tab audio is NOT muted for the user

@@ -81,6 +81,38 @@ class SessionRecording(Base):
     interrupted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    video_presence: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unknown", server_default="unknown"
+    )
+
+    media_sources: Mapped[list["RecordingMediaSource"]] = relationship(
+        back_populates="recording", cascade="all, delete-orphan"
+    )
+
+
+class RecordingMediaSource(Base):
+    """A private stored media object belonging to a session recording."""
+
+    __tablename__ = "recording_media_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "recording_id", "kind", "object_ref", name="uq_recording_media_source_ref"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    recording_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("session_recordings.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    object_ref: Mapped[str] = mapped_column(String(1024), nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    video_offset_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quality_label: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    recording: Mapped[SessionRecording] = relationship(back_populates="media_sources")
 
 
 # ---------------------------------------------------------------------------

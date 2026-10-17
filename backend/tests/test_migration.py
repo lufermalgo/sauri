@@ -188,6 +188,8 @@ def _source_inventory_migration():
 
 async def _seed_legacy_recordings(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
+        await connection.execute(text("DROP TABLE IF EXISTS recording_media_sources"))
+        await connection.execute(text("DROP TABLE IF EXISTS session_recordings"))
         await connection.execute(
             text(
                 "CREATE TABLE session_recordings ("

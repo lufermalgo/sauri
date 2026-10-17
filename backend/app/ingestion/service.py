@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import Meeting, RecordingNotice, SessionRecording
+from app.infra.models import Meeting, RecordingMediaSource, RecordingNotice, SessionRecording
 from app.ingestion.schemas import IngestionData
 
 
@@ -66,11 +66,32 @@ async def process_ingestion(
         capture_origin=data.capture_origin,
         audio_ref=audio_ref,
         video_ref=video_ref,
+        video_presence=data.video_presence,
         duration_seconds=data.duration_seconds,
         interrupted=data.interrupted,
         finished_at=now,
     )
     session.add(recording)
+    session.add(
+        RecordingMediaSource(
+            id=str(uuid.uuid4()),
+            recording_id=recording.id,
+            kind="audio",
+            object_ref=audio_ref,
+            quality_label="Original",
+        )
+    )
+    if video_ref is not None:
+        session.add(
+            RecordingMediaSource(
+                id=str(uuid.uuid4()),
+                recording_id=recording.id,
+                kind="video",
+                object_ref=video_ref,
+                video_offset_ms=data.video_offset_ms,
+                quality_label="Original",
+            )
+        )
 
     # 4. Record a RecordingNotice if the timestamp was provided.
     if data.notice_issued_at is not None:

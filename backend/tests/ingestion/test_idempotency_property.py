@@ -28,6 +28,7 @@ def _ingestion_data(meeting_id: str, key: str, notice: str | None = None) -> Ing
         meeting_id=meeting_id,
         idempotency_key=key,
         capture_origin="chrome_extension",
+        video_presence="absent",
         duration_seconds=60,
         interrupted=False,
         notice_issued_at=notice,
