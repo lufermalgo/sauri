@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import sys
 import types
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -52,7 +54,7 @@ sys.path.insert(0, str(_DIAR_ENGINE_DIR))
 # ---------------------------------------------------------------------------
 
 
-def _ensure_module(name: str, factory) -> None:
+def _ensure_module(name: str, factory: Callable[[], None]) -> None:
     """Register a stand-in module under ``name`` if it cannot be imported."""
     if name in sys.modules:
         return
@@ -63,18 +65,20 @@ def _ensure_module(name: str, factory) -> None:
 
 
 def _install_torch_stub() -> None:
-    torch_stub = types.ModuleType("torch")
+    torch_stub = cast(Any, types.ModuleType("torch"))
     torch_stub.device = lambda *args, **kwargs: ("torch.device", args, kwargs)
     sys.modules["torch"] = torch_stub
 
 
 def _install_pyannote_stub() -> None:
-    pyannote_pkg = sys.modules.get("pyannote") or types.ModuleType("pyannote")
-    pyannote_audio = types.ModuleType("pyannote.audio")
+    pyannote_pkg = cast(
+        Any, sys.modules.get("pyannote") or types.ModuleType("pyannote")
+    )
+    pyannote_audio = cast(Any, types.ModuleType("pyannote.audio"))
 
     class Pipeline:  # minimal stand-in for the symbol imported by main
         @staticmethod
-        def from_pretrained(*args, **kwargs):  # pragma: no cover - not used here
+        def from_pretrained(*args: Any, **kwargs: Any) -> None:  # pragma: no cover - not used here
             raise RuntimeError("stub pipeline; inject main.diarization_pipeline in tests")
 
     pyannote_audio.Pipeline = Pipeline
@@ -87,10 +91,8 @@ _ensure_module("torch", _install_torch_stub)
 _ensure_module("pyannote.audio", _install_pyannote_stub)
 
 import httpx  # noqa: E402
-
 import main  # type: ignore[import-not-found]  # noqa: E402
-from main import app  # type: ignore[import-not-found]  # noqa: E402
-
+from main import app  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fake diarization pipeline (test double for the pyannote model boundary).
@@ -111,7 +113,7 @@ class _FakeAnnotation:
     def __init__(self, tracks: list[tuple[float, float, str]]) -> None:
         self._tracks = tracks
 
-    def itertracks(self, yield_label: bool = False):
+    def itertracks(self, yield_label: bool = False) -> Any:
         for start, end, speaker in self._tracks:
             turn = _FakeTurn(start, end)
             if yield_label:
@@ -138,7 +140,7 @@ class _FakePipeline:
 
 
 @pytest.fixture
-def async_client(monkeypatch):
+def async_client(monkeypatch: pytest.MonkeyPatch) -> httpx.AsyncClient:
     """httpx AsyncClient bound to the diar-engine app with injected doubles."""
     # Inject the fake model in place of the real (unloaded) pyannote pipeline.
     monkeypatch.setattr(main, "diarization_pipeline", _FakePipeline())
@@ -158,7 +160,9 @@ class TestContratoDiarEngine:
     # -------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_post_diarize_respuesta_con_segmentos(self, async_client):
+    async def test_post_diarize_respuesta_con_segmentos(
+        self, async_client: httpx.AsyncClient
+    ) -> None:
         """POST /diarize with a valid audio_ref returns segments and num_speakers.
 
         Contract:
@@ -203,7 +207,9 @@ class TestContratoDiarEngine:
         assert data["num_speakers"] == len(distinct)
 
     @pytest.mark.asyncio
-    async def test_post_diarize_respuesta_vacia_valida(self, async_client):
+    async def test_post_diarize_respuesta_vacia_valida(
+        self, async_client: httpx.AsyncClient
+    ) -> None:
         """POST /diarize can return segments: [] with num_speakers: 0 (no speakers)."""
         async with async_client as client:
             response = await client.post(
@@ -226,7 +232,7 @@ class TestContratoDiarEngine:
     # -------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_health_endpoint(self, async_client):
+    async def test_health_endpoint(self, async_client: httpx.AsyncClient) -> None:
         """GET /health devuelve {"status": "ok"}."""
         async with async_client as client:
             response = await client.get("/health")
