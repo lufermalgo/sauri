@@ -5,14 +5,14 @@
 | Phase | Description | Tasks | Dependencies |
 |---|---|---|---|
 | 1 | RED: source inventory and authenticated retrieval contracts | T-1, T-3 | None |
-| 2 | GREEN: persistence, ingestion, and authorized playback/transcript APIs | T-2, T-4 | T-1 → T-2; T-3 → T-4 |
-| 3 | RED: frontend data mapping and playback-controller behavior | T-5, T-7 | T-4 → T-5; T-5 → T-7 |
+| 2 | GREEN: persistence, ingestion, and authorized playback/transcript APIs | T-2, T-4 | T-1 → T-2; T-2 and T-3 → T-4 |
+| 3 | RED: frontend data mapping and playback-controller behavior | T-5, T-7 | T-4 → T-5; T-7 has no prerequisite |
 | 4 | GREEN: frontend mapping and playback controller | T-6, T-8 | T-5 → T-6; T-7 → T-8 |
 | 5 | RED: playback view, controls, and error behavior | T-9 | T-6, T-8 |
 | 6 | GREEN: meeting playback view | T-10 | T-9 |
 | 7 | Storage delivery integration contract | T-11 | T-4 |
 
-The dependency graph contains only mandatory RED-before-GREEN edges and the data/API prerequisites needed by the frontend. T-1 and T-3 are independent. T-2 and T-4 are independent after their respective RED tasks; frontend tasks wait for the authorized API contract. T-11 is independent of frontend work once the manifest route exists.
+The dependency graph contains only mandatory RED-before-GREEN edges and real data/API prerequisites. T-1 and T-3 are independent. T-2 waits for T-1; T-4 waits for both T-2 (persisted source inventory) and T-3 (route contract tests). T-5 waits for T-4, while controller test task T-7 is independent of API mapping; T-6 and T-8 each wait only for their corresponding RED task. T-9 waits for T-6 and T-8. T-11 waits for T-4 and is otherwise independent of frontend work.
 
 ## Phase 1: RED — Persistence and API Contracts
 
@@ -96,7 +96,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and the data
 
 **Validation:** `cd frontend && npm run test`.
 
-**Dependencies:** T-5
+**Dependencies:** None
 
 ## Phase 4: GREEN — Data Mapping and Playback Controller
 
