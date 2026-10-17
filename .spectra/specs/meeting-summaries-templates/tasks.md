@@ -64,16 +64,16 @@
 ### T5: RED — Specify personal template API ownership and category rules (P7)
 
 **Archivo:** `backend/tests/templates/test_templates_api.py` (create/extend)
-**Acción:** Add tests for own-template CRUD/listing, multiple templates, optional category assignment (including multiple templates per category), cross-owner edit/read denial, rejecting a foreign category, and ensuring API responses expose only the requesting user's templates. Assert specified 404/422 behavior and no unauthorized mutation; use synthetic users/templates.
+**Acción:** Add tests for own-template CRUD/listing, multiple templates, optional category assignment (including multiple templates per category), cross-owner edit/read denial, and ensuring API responses expose only the requesting user's templates. Cover `GET /api/v1/templates/categories` returning only the caller's categories, `POST /api/v1/templates/categories` creating a caller-owned category, rejection (422) when a template references a foreign category, and no unauthorized mutation or category disclosure. Include the literal category route ordering guard required by the design. Use synthetic users/templates/categories.
 
-**Criterio de Completado:** Before API implementation, `cd backend && pytest tests/templates/test_templates_api.py -q` fails on missing routes/behavior; commit RED test and record SHA/output.
+**Criterio de Completado:** Before API implementation, `cd backend && pytest tests/templates/test_templates_api.py -q` fails on missing template/category routes or behavior, including own-category list/create and foreign-category isolation; commit RED test and record SHA/output.
 
 **Dependencias:** T2 (models required for fixture/schema tests)
 
 ### T6: GREEN — Implement personal template/category CRUD API
 
 **Archivo:** `backend/app/templates/router.py`; `backend/app/templates/service.py`; `backend/app/templates/repository.py`; `backend/app/templates/schemas.py`; `backend/app/main.py`
-**Acción:** Implement the designed authenticated templates module and route registration. Restrict list/read/update operations to caller-owned templates; validate category ownership; transport `instructions` as an unchanged opaque string; support optional category, multiple templates per category, and the specified 404/422 semantics. Do not add template deletion, schema/grammar validation, or cross-user sharing.
+**Acción:** Implement the designed authenticated templates module and route registration, including `GET /api/v1/templates/categories` (list only caller-owned categories) and `POST /api/v1/templates/categories` (create a caller-owned category). Register the static `/categories` routes before `/{template_id}`. Restrict template/category list/read/update operations to caller-owned records; validate category ownership; transport `instructions` as an unchanged opaque string; support optional category, multiple templates per category, and the specified 404/422 semantics. Do not add template deletion, schema/grammar validation, or cross-user sharing.
 
 **Criterio de Completado:** T5's RED test passes: `cd backend && pytest tests/templates/test_templates_api.py -q`.
 
@@ -203,11 +203,11 @@
 ### T20: GREEN — Implement frontend API client and summary section
 
 **Archivo:** `frontend/src/api.ts`; `frontend/src/components/SummarySection.tsx`; `frontend/src/components/TranscriptView.tsx`
-**Acción:** Add designed summary/status/template API calls with explicit snake_case-to-camelCase mapping and 404 behavior; render summary in its own section, implement request selection/status polling and the tested empty/error/success behavior. Use own templates only; identify configured default; do not invent no-default fallback or fixed layout.
+**Acción:** Implement the summary/status API functions and `listTemplates` needed by the summary request selector, with explicit snake_case-to-camelCase mapping and designed 404 behavior. This task owns only summary/status endpoints plus `listTemplates` in `frontend/src/api.ts`; T24 owns the remaining template/category settings endpoints. Render summary in its own section, implement request selection/status polling and the tested empty/error/success behavior. Use only the caller's templates, identify the configured default, and do not invent no-default fallback or fixed layout.
 
 **Criterio de Completado:** T19 RED tests pass with `cd frontend && npm run test -- --run src/components/SummarySection.test.tsx`; `cd frontend && npm run typecheck` succeeds.
 
-**Dependencias:** T19 (mandatory RED→GREEN), T16, T18
+**Dependencias:** T19 (mandatory RED→GREEN), T16, T18, T6 (template list API prerequisite)
 
 ### T21: RED — Specify copy/download actions for available summaries (P2/P6)
 
@@ -239,11 +239,11 @@
 ### T24: GREEN — Implement web template settings view and API integration
 
 **Archivo:** `frontend/src/api.ts`; `frontend/src/components/TemplateSettingsView.tsx`; `frontend/src/App.tsx`
-**Acción:** Implement the designed template/category API client calls and settings view, including create/edit, optional category, category creation, default identification/selection, and navigation entry in `App.tsx`. Instructions remain an opaque string and PATCH category field-presence semantics are preserved. Consume the default setter's 204 response without JSON parsing.
+**Acción:** Implement only the settings-specific API calls in `frontend/src/api.ts` (`createTemplate`, `updateTemplate`, `listCategories`, `createCategory`, and `setDefaultTemplate`), reusing T20's `listTemplates`; implement the settings view including create/edit, optional category, category creation, default identification/selection, and navigation entry in `App.tsx`. Instructions remain an opaque string and PATCH category field-presence semantics are preserved. Consume the default setter's 204 response without JSON parsing.
 
 **Criterio de Completado:** T23's RED tests pass with `cd frontend && npm run test -- --run src/components/TemplateSettingsView.test.tsx`; `cd frontend && npm run typecheck` succeeds.
 
-**Dependencias:** T23 (mandatory RED→GREEN), T6, T8, T18
+**Dependencias:** T23 (mandatory RED→GREEN), T6, T8, T18, T20 (shared `frontend/src/api.ts` prerequisite)
 
 ## Fase 5: Integration and Validation
 
