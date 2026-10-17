@@ -6,7 +6,7 @@
   "idea": "Bugfix: unify migration 009 lineage and deterministic source-inventory tests",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
+    "design": "complete",
     "tasks": "pending"
   }
 }
