@@ -2,116 +2,170 @@
 
 ## Summary
 
-Two published Alembic revisions share `008_speaker_review_aggregate` as their parent, leaving two heads. A migration test helper independently selects the first migration file with that parent, so filesystem iteration can select the receipt-table migration while exercising source-inventory behavior. The approved bugfix requires one upgrade head without changing either migration identity or effect.
+Two independently approved migrations both descend from `008_speaker_review_aggregate`, so Alembic currently sees two heads. Separately, the source-inventory migration tests identify their target by selecting the first file with that parent, which can load the receipts migration instead. The fix must preserve both published migration identities and all persisted effects while making selection and upgrade planning deterministic.
 
-1. Add an additive, no-op Alembic merge revision whose parents are the two existing 009 revision IDs.
-2. Keep both existing 009 migration files and their operations unchanged.
-3. Make the source-inventory test helper select `009_recording_media_sources` by exact revision identity, not parent or directory order.
-4. Extend migration tests to assert graph ancestry/head uniqueness and upgrade compatibility from either recorded 009 revision.
-5. Validate the three isolated regression nodes, Alembic graph and offline SQL plan; record actual outcomes without claiming unrun checks.
+1. Keep both existing `009_*` revisions and their upgrade/downgrade bodies unchanged.
+2. Add an Alembic merge revision whose `down_revision` contains both 009 revision IDs and whose upgrade/downgrade are no-ops.
+3. Make source-inventory tests load the exact `009_recording_media_sources` revision (assert identity) rather than scanning by parent.
+4. Test both one-head graph resolution and compatibility when a database is recorded at either existing 009 revision.
+5. Preserve the existing isolated synthetic SQLite migration tests and use offline SQL generation for the PostgreSQL upgrade-plan check; never use a live/shared database.
 
-## Approved Inputs and Scope
+## Approved Inputs and Root Cause
 
-- Defect authority: `.spectra/specs/bugfix-migration-009-lineage/bugfix.md`, approved by Mira for exact upstream commit `153c3daf5be3d91b8c72ca40f9d329f484094311`; source artifact is the version in this worktree. Supporting QA evidence: `qa-reproduction.md` and its raw logs.
-- Existing behavior authority: approved playback tasks T-1/T-2 at `8537e154ab06680422d8bd42111ca64339bfb4bf` and speaker-review task T-2 at `576a6a992db4452a653a7112f394e73da5177792`.
-- No product baseline or new product behavior is introduced. Work is confined to Alembic revision metadata/graph, migration source-inventory tests, and this specification. No live/shared database operation, destructive data rewrite, historical ID rewrite, or feature-spec change is included.
+- Exact defect authority: `.spectra/specs/bugfix-migration-009-lineage/bugfix.md`, Mira-approved at upstream commit `153c3daf5be3d91b8c72ca40f9d329f484094311`.
+- Reproduction evidence: `qa-reproduction.md` and its five raw logs, which record the three isolated SQLite test-node failures, two Alembic heads, and offline `upgrade head --sql` ambiguity. This is evidence of the defect, not a fix result.
+- Unchanged source-inventory behavior: approved `.spectra/specs/meeting-review-playback/tasks.md` T-1/T-2 at `8537e154ab06680422d8bd42111ca64339bfb4bf`.
+- Unchanged idempotency receipt behavior: approved `.spectra/specs/recording-speaker-review/tasks.md` T-2 at `576a6a992db4452a653a7112f394e73da5177792`; `.spectra/specs/recording-speaker-review/requirements.md` Requirement 3 AC 5.
+- Scope is limited to Alembic graph reconciliation and deterministic migration-test selection. No feature behavior, baseline decision, published revision identity, or existing schema/data effect is changed.
 
-## Root Cause
-
-`backend/alembic/versions/009_recording_media_sources.py` and `009_speaker_review_idempotency_receipts.py` both declare `down_revision = "008_speaker_review_aggregate"`. Alembic therefore has sibling heads. Separately, `backend/tests/test_migration.py::_source_inventory_migration()` returns the first module yielded by `MIGRATIONS_DIR.glob("*.py")` whose parent equals 008. It selects by a non-unique property and enumeration order rather than the intended revision. The selected receipts migration creates `speaker_review_idempotency_receipts`, which the isolated test fixture already has, producing the observed duplicate-table failure. These are separate defects: a merge revision resolves graph ambiguity; exact-ID selection resolves test ambiguity.
+The root causes are independent. First, the two existing 009 scripts each identify 008 as their parent, so Alembic correctly exposes two branch heads and cannot resolve the unqualified `head` target. Second, `_source_inventory_migration()` in `backend/tests/test_migration.py` selects the first globbed script with the shared parent; the receipts migration may be returned and its `CREATE TABLE` collides with the test fixture's already-present table. A merge node fixes only the graph; exact revision selection fixes only the test helper. Both are necessary.
 
 ## Key Design Decisions
 
-**Add a new merge revision with both existing 009 revisions as `down_revision`.** The merge node is an additive reconciliation point and performs no schema/data operation. Alembic can traverse either sibling's missing branch before reaching the shared head; databases whose version table records either existing 009 retain that identity and need only the other branch's existing effect plus the merge marker. This preserves published revision identities and operations.
-*Rejected alternative:* Editing either published 009 revision to chain after the other changes its historical parent and can invalidate databases that already recorded it. Rewriting version-table rows, deleting a migration, or squashing effects risks falsifying history or losing schema/data and violates the approved constraint.
+**Add a no-op Alembic merge revision after the two existing 009 revisions.** The merge changes graph topology without editing immutable published revision IDs or re-running their operations. An environment at either 009 head can traverse the other sibling's effect and then the merge; an environment at common revision 008 traverses both branches before reaching the merge head. This satisfies the requirement that a single target include both effects.
 
-**Use an explicit revision-ID selector for the inventory migration test helper.** Resolve/load the intended migration and assert its `revision == "009_recording_media_sources"`; reject a missing or mismatched revision explicitly. The tests no longer rely on glob order or a shared parent value.
-*Rejected alternative:* Sorting the glob or adding a filename-prefix preference only makes an ambiguous selector depend on a different incidental convention. Renaming the published migration also risks changing stable artifact identity.
+*Rejected alternatives:* Renaming or rewriting a published 009 revision risks making databases with its existing version row appear to have an unknown revision. Choosing one 009 as the other's parent would change historical identity/ancestry and can cause the dependent migration to rerun when upgrading from an installation that recorded it differently. Dropping either migration or its data violates the approved compatibility requirements. A conditional migration that inspects and silently skips schema operations would obscure migration state and is unnecessary when Alembic's merge semantics express the intended graph directly.
 
-**Keep the merge revision behavior-free.** Its sole role is graph convergence; the sibling migrations remain responsible for their own independent schema effects.
-*Rejected alternative:* Moving either operation into the merge or making migration operations conditional would blur ownership and could silently omit/double-apply a published effect.
+**Keep the merge revision schema-neutral.** Its only responsibility is to join graph ancestry; it must not duplicate operations already owned by either branch.
 
-## Architecture and Flow
+*Rejected alternatives:* Copying either branch's DDL into the merge would apply effects twice on paths that already ran that branch, risking duplicate-object errors or data loss. Replacing one branch's effects with merge operations would rewrite ownership of persisted state.
+
+**Identify the source-inventory migration by its revision ID, not its parent or file order.** The helper will load the module for the exact filename/revision and assert `revision == "009_recording_media_sources"`. The three regression nodes will exercise the same explicit target.
+
+*Rejected alternatives:* Sorting files or selecting the first matching parent only makes filesystem selection appear stable; it still identifies the wrong migration conceptually and breaks as soon as another sibling is added. Altering the production migration's parent solely to satisfy the test would corrupt the intended lineage.
+
+**Use multiple complementary graph validations rather than a live database.** Unit tests assert revision identities, merge parents, one resolved head, and the expected ancestry. Existing isolated migration tests validate the effects with synthetic rows; Alembic's offline SQL generation from the common predecessor demonstrates that the single-head path includes both effects without connecting to a database.
+
+*Rejected alternatives:* Running the whole historical PostgreSQL migration chain on SQLite is incompatible with existing PostgreSQL-specific migrations; running against shared/local persistent PostgreSQL is outside the authorized scope and would add data risk. Static-only source checks cannot establish Alembic's graph behavior or migration effect order.
+
+## Architecture
+
+The Alembic script graph has a common 008 parent, two unchanged 009 branch revisions, and one new merge head. The merge revision is a metadata-only convergence point; it performs no DDL or data writes.
 
 ```mermaid
 graph TD
-    A["008_speaker_review_aggregate"] --> B["009_recording_media_sources"]
-    A --> C["009_speaker_review_idempotency_receipts"]
-    B --> D["010_merge_recording_and_receipt_009"]
-    C --> D
-    T["test helper: exact revision ID"] --> B
+    P["008_speaker_review_aggregate"]
+    A["009_recording_media_sources<br/>existing, unchanged"]
+    B["009_speaker_review_idempotency_receipts<br/>existing, unchanged"]
+    M["new merge revision<br/>no-op"]
+    P --> A
+    P --> B
+    A --> M
+    B --> M
 ```
 
-The merge revision's numeric/name convention must follow the repository's next sequential migration placement, but the immutable revision identity strings remain the two existing 009 IDs. Its `revision` is a new unique Alembic identifier; its `down_revision` is the tuple of both existing IDs; `upgrade()` and `downgrade()` are no-ops. The exact filename/revision naming is implementation detail constrained to be unique and consistent with repository conventions.
+Migration test selection is independent of directory enumeration. Existing test assertions remain responsible for their previously approved schema/backfill behavior; graph tests check the Alembic script directory and compatibility paths.
 
 ```mermaid
 sequenceDiagram
-    participant Alembic
-    participant R as "recorded DB revision"
-    participant S as "missing sibling 009"
-    participant M as "merge revision"
-    R->>Alembic: existing one of the 009 IDs
-    Alembic->>S: apply only missing sibling migration
-    S-->>Alembic: its approved schema/data effect exists
-    Alembic->>M: record no-op merge revision
-    M-->>Alembic: single head reached
+    participant T as source-inventory test
+    participant H as explicit revision loader
+    participant S as Alembic ScriptDirectory
+    participant DB as synthetic migration fixture / offline context
+    T->>H: load revision 009_recording_media_sources
+    H->>S: resolve by revision identity
+    S-->>H: exact module and revision
+    H-->>T: assert revision ID, run existing contract checks
+    T->>DB: apply synthetic migration contract / inspect planned path
 ```
 
-From the common 008 parent, Alembic traverses both sibling migrations before the merge node. From a database already at either sibling, it applies the other sibling and then reaches the merge node. The upgrade planner and tests must verify these paths rather than infer them solely from diagram structure.
+## Components and Interfaces
 
-## Components, Interfaces, and Placement
+### 1. Existing migration revisions
 
-| Component | Placement | Design/interface | Tests |
-|---|---|---|---|
-| Merge migration | `backend/alembic/versions/` | New Alembic revision with `revision` unique, `down_revision` containing both 009 IDs, `branch_labels = None`, `depends_on = None`; empty upgrade/downgrade. | Alembic graph/upgrade-plan checks in `backend/tests/test_migration.py`. |
-| Source-inventory selector | `backend/tests/test_migration.py` | Helper selects the exact revision ID `009_recording_media_sources`, asserting identity and failing clearly if absent. | Existing three named tests remain focused on backfill, downgrade/re-upgrade, uniqueness. |
-| Existing 009 migrations | `backend/alembic/versions/009_*.py` | Retain IDs and operation bodies unchanged. | Regression checks verify effects and that both IDs are in merge ancestry. |
+- `backend/alembic/versions/009_recording_media_sources.py`: preserve `revision`, `down_revision`, schema operations, backfill, and downgrade semantics exactly.
+- `backend/alembic/versions/009_speaker_review_idempotency_receipts.py`: preserve `revision`, `down_revision`, receipt table fields, keys, FKs, and downgrade exactly.
 
-No application module, API, frontend, extension, `packages/shared-types`, or `docker-compose.yml` change is required. No new runtime dependency or external service is introduced. The migration graph is the only production schema/deployment surface affected.
+No edits to either file are part of the design. Their existing migration effects remain independently owned by those revisions.
 
-## Data and Migration Compatibility
+### 2. New Alembic merge revision
 
-The merge revision must not create/drop tables, alter columns, copy rows, or modify the existing version records. The existing recording source migration retains its approved backfill, nullable metadata, video-presence default, uniqueness constraint, and downgrade behavior. The receipt migration retains its fields, uniqueness, and foreign keys.
+Add one sequentially named file in `backend/alembic/versions/` using the repository's Alembic revision conventions. It declares a unique new revision ID, with:
 
-The implementation tests must exercise upgrade plans from (a) the common 008 predecessor, (b) a database marked at `009_recording_media_sources`, and (c) a database marked at `009_speaker_review_idempotency_receipts`, using disposable synthetic fixtures/SQLite where supported and offline SQL generation where dialect-specific planning is needed. Confirm that both effects appear once and that final graph inspection yields exactly one head with both revision IDs in ancestry. Do not run migrations against a shared/live database. Downgrade of the merge marker is a no-op; testing the legacy source-inventory downgrade/re-upgrade remains isolated from the new graph test and preserves its approved behavior.
+```python
+revision = "<new unique revision id>"
+down_revision = (
+    "009_recording_media_sources",
+    "009_speaker_review_idempotency_receipts",
+)
+```
+
+`upgrade()` and `downgrade()` contain no schema or data operations (explicit no-op bodies). It does not set branch labels or dependencies. The unique revision identifier and filename must follow the existing repository convention and be verified against the checked-in revisions before implementation; no numeric identity is prescribed by this design.
+
+When upgrading from 008, Alembic applies both branch revisions once before the merge. When starting from either existing 009 version row, Alembic applies only the missing sibling branch and then records the merge. The merge itself never inspects or mutates application tables. Downgrade across the merge is likewise schema-neutral; downgrading beyond the merge may invoke existing branch downgrade operations according to Alembic's selected target and remains subject to their established semantics. Do not infer a new product rollback guarantee beyond this graph behavior.
+
+### 3. Deterministic source-inventory test loader
+
+In `backend/tests/test_migration.py`, replace the helper's glob-and-first-parent search with selection of the exact source-inventory migration file/revision. Retain module-loading behavior only after confirming loader/spec availability, and assert the loaded module's `revision` is exactly `009_recording_media_sources`. Preserve the three independently named test nodes and their existing assertions for backfill, downgrade/re-upgrade, and duplicate tuple rejection. Do not change fixtures to accidentally mask the lineage defect.
+
+### 4. Alembic graph and compatibility tests
+
+Extend the migration test coverage with focused checks that:
+
+- both existing 009 revision IDs remain present and retain `008_speaker_review_aggregate` as their immediate parent;
+- the new revision has both exact 009 IDs as parents and is the single head;
+- walking ancestry from that head includes both 009 IDs and the common 008 parent;
+- offline SQL upgrade planning from the common 008 base resolves one head and contains each branch's schema effect once;
+- starting revision-state simulations at each existing 009 ID produces a path that applies the missing sibling before merge, without rewriting or deleting the existing version identity.
+
+Compatibility-path checks must distinguish graph planning evidence from actual database execution. Use Alembic's script/revision APIs and a disposable synthetic migration context where the repository's existing SQLite compatibility permits; otherwise assert the planned upgrade steps structurally and document the exact boundary. Do not claim live PostgreSQL compatibility based on static graph assertions alone.
+
+## Data Models
+
+No application model or persisted schema changes are introduced by the merge revision itself. Existing schema/data remain owned by the two original revisions:
+
+- `recording_media_sources` and `session_recordings.video_presence` remain the source-inventory revision's responsibility.
+- `speaker_review_idempotency_receipts` remains the speaker-review revision's responsibility.
+- Alembic's version table retains original 009 IDs; the merge adds its new revision state only after both branches are represented.
+
+All test rows and database contexts are synthetic and disposable.
 
 ## Correctness Properties
 
-1. **Single-head convergence:** Alembic reports one head, and the head ancestry contains both `009_recording_media_sources` and `009_speaker_review_idempotency_receipts`. Validates bugfix AC 2.
-2. **Both effects from common ancestor:** An upgrade from 008 traverses each 009 identity once and yields both source-inventory and receipt schema effects. Offline SQL includes both operations once. Validates AC 3 and the preservation clauses.
-3. **Existing-version compatibility:** Starting with either 009 identity recorded, upgrade applies the other branch's effect and reaches the merge head without changing the recorded historical identity or losing existing schema/data. Validates AC 4.
-4. **Deterministic test selection:** The helper selects revision `009_recording_media_sources` regardless of migration-file enumeration order, and fails explicitly if that identity is missing. Validates AC 1's selector condition.
-5. **Source inventory preservation:** For legacy recordings, one audio row exists per `audio_ref`; video row exists only for non-null `video_ref`; unavailable MIME/video offset remain null; legacy video presence is `unknown`; references survive downgrade/re-upgrade. Duplicate `(recording_id, kind, object_ref)` remains rejected. Validates every playback item in Unchanged Behavior and AC 5.
-6. **Receipt preservation:** The receipts table retains approved columns, key uniqueness, foreign-key relationships, and retry persistence behavior; reconciliation does not alter its existing migration operation. Validates speaker-review Unchanged Behavior and AC 5.
-7. **No unrelated migration drift:** Existing revisions outside the reconciled path retain their current upgrade/downgrade behavior. Validate the graph path and relevant migration suite without changing preceding revisions.
+**Property 1 — Single, complete migration head.** For the Alembic script directory, exactly one head is resolved; its ancestor set contains `009_recording_media_sources`, `009_speaker_review_idempotency_receipts`, and `008_speaker_review_aggregate`.
 
-## Error Handling and Recovery
+**Property 2 — Stable published revision identities.** The two 009 modules retain their current revision strings and immediate common parent. The reconciliation revision does not replace either identity. Validates `bugfix.md` Expected Behavior, Fix Constraints, and AC 2/4.
 
-| Condition | Expected response |
+**Property 3 — Deterministic inventory target.** For every directory enumeration order, the inventory-test loader resolves revision `009_recording_media_sources`; no parent-only first-match lookup can select the receipts migration. Validates AC 1.
+
+**Property 4 — Effects exactly once on the common-base path.** An offline `upgrade head --sql` path from 008 contains the media-source schema/backfill operations and receipt schema operation once each and has no multiple-head failure. Validates AC 3 and the “both approved migration effects” expected behavior.
+
+**Property 5 — Either-009 forward compatibility.** For a database version recorded at either existing 009 ID, upgrading to the merge head preserves that ID as historical state, applies the other sibling effect, and records convergence without repeating the already-applied branch. Validate using migration-path planning plus a disposable, synthetic integration path if available; never extrapolate from the empty no-op merge alone.
+
+**Property 6 — Source inventory behavior unchanged.** For legacy recordings, preserve exactly one audio source per `audio_ref`, add video only for non-null `video_ref`, leave unavailable MIME and offset null, initialize legacy presence to `unknown`, and preserve original references through downgrade/re-upgrade. Duplicate `(recording_id, kind, object_ref)` remains rejected. Validates `bugfix.md` Unchanged Behavior 1–2 and the approved playback plan T-1/T-2.
+
+**Property 7 — Receipt behavior unchanged.** The receipts schema retains its approved fields, `(review_id, idempotency_key)` uniqueness, and cascading foreign keys; same-key retry persistence behavior is unaffected by the lineage reconciliation. Validates `bugfix.md` Unchanged Behavior 3 and approved speaker-review plan T-2 / requirements Requirement 3 AC 5.
+
+**Property 8 — Unrelated revisions unchanged.** Traversal before 008 and after the reconciliation point preserves existing migration behavior; the fix changes only graph convergence and deterministic test selection. Validates `bugfix.md` Unchanged Behavior 5.
+
+## Error Handling
+
+| Scenario | Expected handling |
 |---|---|
-| Merge migration references a missing/incorrect parent or duplicates an existing revision ID | Alembic graph validation fails; correct migration metadata before publishing. |
-| Exact inventory revision cannot be loaded or its declared ID differs | Test helper fails with a clear assertion/error; it must not fall back to a sibling migration. |
-| Upgrade planning from either recorded 009 fails or would re-run an already-applied table creation | Regression test fails; do not add conditional destructive SQL or alter `alembic_version` to mask it. Reassess graph traversal before release. |
-| Offline SQL generation still reports multiple heads or omits one migration effect | Treat design implementation as incomplete; retain both effects and repair graph metadata. |
-| Migration application fails on a disposable test database | Capture exception and leave live/shared databases untouched; use rollback of the disposable test transaction/environment only. |
+| Exact source-inventory revision cannot be loaded | Test fails immediately with an explicit missing-revision assertion; it must not fall back to another revision with the same parent. |
+| Revision ID resolves to an unexpected module | Assert `module.revision == "009_recording_media_sources"` and fail with the actual ID. |
+| New merge revision has missing/incorrect parent | Graph test fails before SQL generation; do not compensate by editing existing 009 parents. |
+| Alembic reports more than one head or an unresolved target | Fail graph/offline-upgrade validation; do not use `heads`-specific operator instructions as a substitute for a unique `head`. |
+| Schema operation appears more than once in generated plan | Fail SQL-path assertion and investigate graph selection; no `IF NOT EXISTS` masking or operation skipping is introduced. |
+| Compatibility path cannot be exercised in the test database | Keep the structural path assertion, record the precise unsupported runtime constraint, and avoid reporting end-to-end database compatibility as proven. |
 
-## Security and Privacy
+## Testing Strategy
 
-This is schema-version metadata and synthetic migration testing only. Tests use synthetic recording IDs/references and synthetic receipt rows; no meeting media, transcript, customer data, credentials, or tokens are needed. No auth, access-control, retention policy, or external integration changes are permitted by this bugfix.
+Use deterministic unit/graph checks, the three independently runnable source-inventory contract nodes, and Alembic offline SQL generation. Preserve exact reproduction commands from `qa-reproduction.md` (run from `backend/` with the recorded interpreter):
 
-## Testing and Validation Strategy
+```bash
+/path/to/configured/python -m pytest -q tests/test_migration.py::test_source_inventory_migration_backfills_only_explicit_legacy_sources
+/path/to/configured/python -m pytest -q tests/test_migration.py::test_source_inventory_downgrade_preserves_refs_and_reupgrade_backfills
+/path/to/configured/python -m pytest -q tests/test_migration.py::test_source_inventory_rejects_duplicate_recording_kind_and_reference
+/path/to/configured/python -m alembic heads
+/path/to/configured/python -m alembic upgrade head --sql
+```
 
-Run checks from the task worktree, following `AGENTS.md` and the approved reproduction environment. Validation is required; this design does not claim any tests have passed.
+Replace `/path/to/configured/python` with the exact configured interpreter recorded in `qa-reproduction.md`; do not substitute unqualified `python` in an environment where it is unavailable. Also run the complete `tests/test_migration.py` module. The acceptance evidence must include:
 
-- Run each approved regression node independently:
-  - `python -m pytest -q tests/test_migration.py::test_source_inventory_migration_backfills_only_explicit_legacy_sources`
-  - `python -m pytest -q tests/test_migration.py::test_source_inventory_downgrade_preserves_refs_and_reupgrade_backfills`
-  - `python -m pytest -q tests/test_migration.py::test_source_inventory_rejects_duplicate_recording_kind_and_reference`
-- From `backend/`, inspect heads (`python -m alembic heads`) and generate offline SQL from the common predecessor (`python -m alembic upgrade head --sql` with the configured PostgreSQL dialect); assert one head and both migration effects exactly once.
-- Add/run disposable migration graph compatibility tests for both pre-existing 009 version states and the common 008 state, checking preserved tables/rows and target head. Do not claim SQLite alone proves PostgreSQL semantics; use offline PostgreSQL SQL generation for dialect-specific evidence.
-- Run the broader `backend/tests/test_migration.py` suite and `git diff --check`. Use the exact configured project interpreter if bare `python` is unavailable, as recorded in `qa-reproduction.md`.
-- Report command, interpreter/environment, and result for each check; unrun or blocked checks remain explicitly unverified.
+1. all three named nodes passing independently and selecting the source-inventory ID;
+2. `alembic heads` listing exactly one head with both 009 ancestors;
+3. offline SQL generation from the common predecessor completing without ambiguity and containing both migration effects exactly once;
+4. explicit graph/path compatibility checks from each historical 009 starting state, with clear separation between structurally proven behavior and database-executed evidence.
 
-## Spectra Status
-
-Phase: `design` — `complete` means this design has been authored, not audited, implemented, validated, or approved for release.
+No live/shared database, destructive migration, real recording, or non-synthetic test data is used. This design does not claim tests have been run or that the defect is fixed; those are implementation/QA outcomes.
