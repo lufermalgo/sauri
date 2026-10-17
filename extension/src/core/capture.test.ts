@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
-import { applyCaptureEvent, newNoteButtonEnabled } from "./capture";
+import { applyCaptureEvent, newNoteButtonEnabled, videoPresenceFromStream } from "./capture";
 import type { CaptureState, CaptureEvent } from "./types";
 
 const STATES: CaptureState[] = ["idle", "recording", "stopping"];
@@ -33,6 +33,22 @@ describe("applyCaptureEvent", () => {
       ),
       { numRuns: 100 }
     );
+  });
+});
+
+describe("videoPresenceFromStream", () => {
+  it("reports muxed video only when a video track was actually observed", () => {
+    const withVideo = { getVideoTracks: () => [{ kind: "video" }] } as unknown as MediaStream;
+    const withoutVideo = { getVideoTracks: () => [] } as unknown as MediaStream;
+
+    expect(videoPresenceFromStream(withVideo)).toBe("muxed");
+    expect(videoPresenceFromStream(withoutVideo)).toBe("absent");
+  });
+
+  it("does not infer video presence from MIME type or capture mode", () => {
+    const audioOnlyStream = { getVideoTracks: () => [] } as unknown as MediaStream;
+
+    expect(videoPresenceFromStream(audioOnlyStream)).toBe("absent");
   });
 });
 

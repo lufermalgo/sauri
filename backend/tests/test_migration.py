@@ -28,7 +28,11 @@ import inspect
 from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
@@ -164,3 +168,131 @@ async def test_orm_schema_users_has_english_columns(async_engine: AsyncEngine) -
     assert "nombre" not in columns
     assert "es_comercial" not in columns
     assert "creado_en" not in columns
+
+
+# Playback source-inventory migration contract (T-1, issue #299)
+PREVIOUS_REVISION = "008_speaker_review_aggregate"
+
+
+def _source_inventory_migration():
+    for path in MIGRATIONS_DIR.glob("*.py"):
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        if getattr(module, "down_revision", None) == PREVIOUS_REVISION:
+            return module
+    pytest.fail(f"no source-inventory migration follows {PREVIOUS_REVISION}")
+
+
+async def _seed_legacy_recordings(engine: AsyncEngine) -> None:
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                "CREATE TABLE session_recordings ("
+                "id VARCHAR(36) PRIMARY KEY, audio_ref VARCHAR(1024) NOT NULL, "
+                "video_ref VARCHAR(1024) NULL)"
+            )
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO session_recordings (id, audio_ref, video_ref) VALUES "
+                "('audio-only', 'objects/audio-only.webm', NULL), "
+                "('audio-video', 'objects/audio-video.webm', 'objects/video.webm')"
+            )
+        )
+
+
+async def _run_migration(engine: AsyncEngine, migration, direction: str) -> None:
+    async with engine.begin() as connection:
+        def run(sync_connection) -> None:
+            context = MigrationContext.configure(sync_connection)
+            with Operations.context(context):
+                getattr(migration, direction)()
+
+        await connection.run_sync(run)
+
+
+@pytest.mark.asyncio
+async def test_source_inventory_migration_backfills_only_explicit_legacy_sources(
+    async_engine: AsyncEngine,
+) -> None:
+    migration = _source_inventory_migration()
+    assert migration.down_revision == PREVIOUS_REVISION
+    await _seed_legacy_recordings(async_engine)
+    await _run_migration(async_engine, migration, "upgrade")
+
+    async with async_engine.connect() as connection:
+        presence = (
+            await connection.execute(
+                text("SELECT id, video_presence FROM session_recordings ORDER BY id")
+            )
+        ).all()
+        sources = (
+            await connection.execute(
+                text(
+                    "SELECT recording_id, kind, object_ref, mime_type, video_offset_ms, "
+                    "quality_label FROM recording_media_sources ORDER BY recording_id, kind"
+                )
+            )
+        ).all()
+
+    assert presence == [("audio-only", "unknown"), ("audio-video", "unknown")]
+    assert {(row.recording_id, row.kind, row.object_ref) for row in sources} == {
+        ("audio-only", "audio", "objects/audio-only.webm"),
+        ("audio-video", "audio", "objects/audio-video.webm"),
+        ("audio-video", "video", "objects/video.webm"),
+    }
+    assert all(row.mime_type is None and row.video_offset_ms is None for row in sources)
+    assert all(row.quality_label == "Original" for row in sources)
+
+
+@pytest.mark.asyncio
+async def test_source_inventory_downgrade_preserves_refs_and_reupgrade_backfills(
+    async_engine: AsyncEngine,
+) -> None:
+    migration = _source_inventory_migration()
+    await _seed_legacy_recordings(async_engine)
+    await _run_migration(async_engine, migration, "upgrade")
+    await _run_migration(async_engine, migration, "downgrade")
+
+    async with async_engine.connect() as connection:
+        refs = (
+            await connection.execute(
+                text("SELECT id, audio_ref, video_ref FROM session_recordings ORDER BY id")
+            )
+        ).all()
+        tables = await connection.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table'")
+        )
+    assert refs == [
+        ("audio-only", "objects/audio-only.webm", None),
+        ("audio-video", "objects/audio-video.webm", "objects/video.webm"),
+    ]
+    assert "recording_media_sources" not in {row.name for row in tables}
+
+    await _run_migration(async_engine, migration, "upgrade")
+    async with async_engine.connect() as connection:
+        count = await connection.scalar(text("SELECT COUNT(*) FROM recording_media_sources"))
+    assert count == 3
+
+
+@pytest.mark.asyncio
+async def test_source_inventory_rejects_duplicate_recording_kind_and_reference(
+    async_engine: AsyncEngine,
+) -> None:
+    migration = _source_inventory_migration()
+    await _seed_legacy_recordings(async_engine)
+    await _run_migration(async_engine, migration, "upgrade")
+
+    with pytest.raises(IntegrityError):
+        async with async_engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO recording_media_sources "
+                    "(id, recording_id, kind, object_ref, quality_label) "
+                    "VALUES ('duplicate', 'audio-only', 'audio', "
+                    "'objects/audio-only.webm', 'Original')"
+                )
+            )
