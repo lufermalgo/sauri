@@ -116,7 +116,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-8: Implement playback controller and passage matching
 
-**Tracking:** Issue #306 · Card `task_0b950661c7f2410f`
+**Tracking:** Issue #306 · Card `task_0b950661c7f2410f` · PR #313 · Status: done
 
 **Files:** `frontend/src/components/PlaybackController.ts` and its unit tests.
 
