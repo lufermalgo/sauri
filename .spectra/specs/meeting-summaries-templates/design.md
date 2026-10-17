@@ -666,8 +666,9 @@ erDiagram
     USERS ||--o{ TEMPLATE_CATEGORIES : owns
     TEMPLATE_CATEGORIES ||--o{ SUMMARY_TEMPLATES : groups
     SUMMARY_TEMPLATES ||--o{ MEETING_SUMMARIES : "lineage (template_id, template_version)"
-    MEETINGS ||--o| MEETING_SUMMARIES : "1:1 (uq_meeting_summary_meeting_id)"
+    MEETINGS ||--o{ MEETING_SUMMARIES : "associated summaries (meeting_id is non-unique)"
     MEETINGS ||--o| TRANSCRIPTS : "input to generation"
+    TRANSCRIPTS ||--o| MEETING_SUMMARIES : "source transcript_id (ON DELETE CASCADE)"
 ```
 
 Key data contracts:
@@ -680,10 +681,14 @@ Key data contracts:
 - `meeting_summaries` has no `state`/`failure_cause` columns: a row exists only after a
   successful generation (failed attempts leave no row; queue redelivery governs retries,
   D9) — the artifact's existence is its state.
-- Foreign keys: `meeting_summaries.meeting_id` cascades with the meeting (consistent with
-  `transcripts`/`diarizations`); `meeting_summaries.template_id` has no cascade and no
-  deletion endpoint exists, so lineage rows remain resolvable (D5);
-  `users.default_summary_template_id` uses `SET NULL` (D3).
+- Foreign keys: `meeting_summaries.transcript_id` is non-null, unique, and uses
+  `ON DELETE CASCADE`; deletion of a transcript (including expiry by the retention worker)
+  therefore deletes its associated persisted summary as required by R6. `meeting_summaries.meeting_id`
+  is a non-unique FK that also cascades with the meeting; this association does not replace the
+  transcript-coupled deletion path. No independent summary retention period or broader deletion
+  guarantee is specified. `meeting_summaries.template_id` has no cascade and no deletion endpoint
+  exists, so lineage rows remain resolvable (D5); `users.default_summary_template_id` uses
+  `SET NULL` (D3).
 
 ## Propiedades de Correctitud
 
@@ -914,17 +919,16 @@ These amendments are normative for implementation and supersede any conflicting 
    is not recoverable and does not satisfy this design. No outbox implementation was found in
    the current repository; this is a new component, not an existing capability.
 
-5. **Migration distinction.** The initial release's single defined template is the
-   application-provided template, not a personal selection. Migration seeds exactly one
-   system-defined/available template without setting `users.default_summary_template_id`.
-   Each user's personal default is nullable and changes only through an explicit personal
-   selection; the system template may be selected if and only if requirements/owner policy
-   permit it as a selectable personal template. Do not describe the initial template as
-   automatically selected for a user or substitute it for an explicit default. Since personal
-   ownership and the availability of one defined template do not specify a shared/system
-   ownership model, the table's ownership/selection mechanics for that initial defined template
-   remain an explicit implementation decision for Ansel to reconcile upstream before task
-   planning; do not seed per-user defaults by assumption.
+5. **No implied template seed or personal default (R3/R5).** The approved requirements do
+   not specify a seed template, a system-provided template, or onboarding behavior. Migration
+   `008_summaries_and_templates.py` therefore creates the template tables and nullable
+   `users.default_summary_template_id` column but seeds neither a template nor a personal
+   default. Do not infer a shared/system template or model one as selectable by personal users;
+   any such template or onboarding behavior would require an approved requirements decision
+   before it is added. Each personal default is set only when its owner explicitly configures a
+   template they own; absent a configured default, resolver returns `None` and this design
+   specifies no fallback (D9). This preserves the required distinction between available
+   templates and a user's personal choice without inventing a first-release template.
 
 6. **Transcript-coupled summary deletion (R6).** The approved requirement is narrowly scoped:
    when a transcript expires or is deleted, delete its associated persisted structured summary
