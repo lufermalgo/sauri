@@ -2,11 +2,10 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infra.database import Base
-
 
 # ---------------------------------------------------------------------------
 # Meeting
@@ -354,6 +353,26 @@ class SpeakerReviewItem(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     review: Mapped["SpeakerReview"] = relationship("SpeakerReview", back_populates="items")
+
+
+class SpeakerReviewIdempotencyReceipt(Base):
+    """Persist the original response for one idempotent review write."""
+
+    __tablename__ = "speaker_review_idempotency_receipts"
+    __table_args__ = (
+        UniqueConstraint("review_id", "idempotency_key", name="uq_review_idempotency_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    review_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("speaker_reviews.id", ondelete="CASCADE"), nullable=False
+    )
+    item_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("speaker_review_items.id", ondelete="CASCADE"), nullable=False
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
 
 
 # ---------------------------------------------------------------------------
