@@ -136,6 +136,45 @@ Result: **11 passed in 1.92s**. The added malformed-JWT node was also rerun alon
 
 ### Remaining decision in this batch
 
-The behavior-preserving test asserts 401 and the existing detail but intentionally does not choose between `raise ... from err` and `raise ... from None`; both alter the observable exception context relative to the current `except JWTError` behavior. As on the diar-engine endpoint B904 path, Ansel must direct whether either cause behavior is authorized before Imre changes it. The other four paths now have focused current-base evidence and recorded static/behavior classifications; any implementation diff still needs to stay within the described equivalent transformation, with post-edit checker GREEN and tests rerun.
+The behavior-preserving test asserts 401 and the existing detail but intentionally does not choose between `raise ... from err` and `raise ... from None`; both alter the observable exception context relative to the current `except JWTError` behavior. Ansel ruled on 2026-10-17 14:49 that the approved bugfix forbids runtime behavior changes and that the diar-engine B904 correction must remain blocked rather than add explicit chaining. The same constraint means the auth-dependencies B904 correction must remain blocked unless a semantics-preserving disposition is approved. The other four paths now have focused current-base evidence and recorded static/behavior classifications; any implementation diff still needs to stay within the described equivalent transformation, with post-edit checker GREEN and tests rerun.
 
-Current test-only HEAD is `2818a91fb101dbbe0c3f2f1df171323be879e1b3`; evidence ledger updates for this bounded batch remain to be committed and pushed in a separate docs commit.
+Test-only commit is `2818a91fb101dbbe0c3f2f1df171323be879e1b3`; current branch HEAD before the next ledger update was `5239adfeaf3f375d367a852b3e2d761475730965`.
+
+## Second bounded independent batch: five current-base paths
+
+Following Ansel's ruling to leave behavior-changing exception-chain work blocked and continue independent T1.2 paths, I verified `app/diarization/state.py`, `app/diarization/worker.py`, `app/infra/models.py`, `app/meetings/schemas.py`, and `app/meetings/state_machine.py` on the unchanged production base `576a6a992db4452a653a7112f394e73da5177792`. No production edits or new tests were needed.
+
+### Current-base checker evidence
+
+From `backend/`, ran `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/ruff check <path>` individually:
+
+| Production path | Current Ruff | Classification and evidence |
+|---|---|---|
+| `app/diarization/state.py` | exit 1, I001 ×1 | Pure import ordering: dataclass import only; no executable body change. |
+| `app/diarization/worker.py` | exit 1, I001 ×1, UP017 ×1, SIM117 ×1 | Static-only if kept exact: import order only; `timezone.utc`→`UTC` uses the same UTC singleton; nested `async with session_factory() as session` / `async with session.begin()` to a multi-context `async with` preserves left-to-right enter and reverse exit ordering. Worker tests cover state, timestamps, persistence, and error propagation. |
+| `app/infra/models.py` | exit 0, All checks passed | T1.2 recorded I001 on its older base, but current `576a6a9` path is clean; no correction is needed. Referential integrity tests exercise the current model contract. |
+| `app/meetings/schemas.py` | exit 1, UP007 ×1 | Behavior-bearing type-alias modernization: changing `typing.Union[...]` to PEP 604 changes the runtime alias representation; existing register-input tests cover all three accepted forms and invalid links. |
+| `app/meetings/state_machine.py` | exit 1, I001 ×1 | Pure import ordering only; transition implementation unchanged. |
+
+`/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m mypy app/diarization/state.py app/diarization/worker.py app/infra/models.py app/meetings/schemas.py app/meetings/state_machine.py` — **Success: no issues found in 5 source files**. These five production paths have no mypy diagnostic in the T1.2 inventory.
+
+Exact focused command from `backend/`:
+
+```bash
+/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m pytest -q \
+ tests/diarization/test_state_property.py \
+ tests/diarization/test_worker.py \
+ tests/infra/test_referential_integrity_property.py \
+ tests/meetings/test_register_meeting_property.py \
+ tests/meetings/test_state_machine_property.py
+```
+
+Result: **24 passed in 1.12s**. Exact node IDs collected and run:
+
+- `tests/diarization/test_state_property.py`: `test_property_16_valid_transitions_produce_correct_state`; `test_property_16_terminal_states_are_immutable`; `test_property_16_unrecognized_events_reject_transition`.
+- `tests/diarization/test_worker.py`: `test_property_19_invalid_message_does_not_persist`; `test_property_19_nonexistent_meeting_does_not_persist`; `test_property_19_without_transcript_does_not_persist`; `test_property_11_empty_result_completed_diarization`; `test_property_11_without_turns_zero_assignments`; `test_property_20_engine_failure_propagates_without_completed`; `test_property_18_preserves_meeting_process_state`; `test_property_17_utc_timestamp_on_final_state`; `test_example_nonexistent_meeting_acks_without_persisting`; `test_example_without_transcript_acks_without_persisting`.
+- `tests/infra/test_referential_integrity_property.py`: `test_property_6_a_meeting_has_at_most_one_recording`; `test_property_6_a_meeting_has_at_most_one_transcript`; `test_example_recording_references_its_meeting`.
+- `tests/meetings/test_register_meeting_property.py`: `test_property_1_registration_starts_queued`; `test_property_2_accepts_link_input`; `test_property_2_accepts_calendar_input`; `test_property_2_accepts_manual_input`; `test_property_2_rejects_invalid_links`.
+- `tests/meetings/test_state_machine_property.py`: `test_property_3_only_valid_transitions_produce_a_new_state`; `test_property_3_terminal_states_are_immutable`; `test_property_4_transition_to_failed_has_a_valid_cause`.
+
+T-2.1 remains **incomplete / BLOCKED**: this batch advances five paths only. Remaining in-scope paths still need equivalent evidence or a documented blocker; the behavior-changing B904 paths and 009 migration failures remain blocked/unmodified. No full PASS is claimed.
