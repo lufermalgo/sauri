@@ -122,6 +122,61 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.60 | `tests/transcription/test_repository.py` | Ruff F401×1, I001×1, SIM117×1, UP017×2; mypy no-untyped-def×2, type-arg×2 | `task, test` |
 | T-3.1.61 | `tests/transcription/test_worker.py` | Ruff I001×2, SIM117×14, UP017×1; mypy arg-type×2, no-untyped-def×13, type-arg×11, var-annotated×2 | `task, test` |
 
+### Issue/card tracking for T-3.1.01–T-3.1.50
+
+| Task | Tracking |
+|---|---|
+| T-3.1.01 | Issue #326 · Card task_2c3b6bebf14f4348 |
+| T-3.1.02 | Issue #327 · Card task_bf7ecf6142d346e6 |
+| T-3.1.03 | Issue #328 · Card task_061bddef35f246a1 |
+| T-3.1.04 | Issue #329 · Card task_85e5ee9e158c4f30 |
+| T-3.1.05 | Issue #330 · Card task_c3dfb08400df4fb9 |
+| T-3.1.06 | Issue #331 · Card task_812a55eb29494c5b |
+| T-3.1.07 | Issue #332 · Card task_221e3b81934844ce |
+| T-3.1.08 | Issue #333 · Card task_9118c3aeba7f458d |
+| T-3.1.09 | Issue #334 · Card task_fc0a88aa3262413e |
+| T-3.1.10 | Issue #335 · Card task_16d1a54118dd4590 |
+| T-3.1.11 | Issue #336 · Card task_e31207d8cfb042c3 |
+| T-3.1.12 | Issue #337 · Card task_4fe91b55210f4902 |
+| T-3.1.13 | Issue #338 · Card task_b2894a1b41664ef5 |
+| T-3.1.14 | Issue #339 · Card task_d9060c9f79b346ce |
+| T-3.1.15 | Issue #340 · Card task_bc422932256d4afd |
+| T-3.1.16 | Issue #341 · Card task_b18c2cd83e214a3b |
+| T-3.1.17 | Issue #342 · Card task_153535d2f483425e |
+| T-3.1.18 | Issue #343 · Card task_b7d536f17b744d05 |
+| T-3.1.19 | Issue #344 · Card task_80bb9d30b55d4460 |
+| T-3.1.20 | Issue #345 · Card task_debf2ac069c54a40 |
+| T-3.1.21 | Issue #346 · Card task_7741f6f73f4744b9 |
+| T-3.1.22 | Issue #347 · Card task_a51038580a414fcd |
+| T-3.1.23 | Issue #348 · Card task_7547e887bf434b12 |
+| T-3.1.24 | Issue #349 · Card task_1663610cd4ed4cff |
+| T-3.1.25 | Issue #350 · Card task_d02b6e8c4d814984 |
+| T-3.1.26 | Issue #351 · Card task_59aac81ea8054377 |
+| T-3.1.27 | Issue #352 · Card task_9f1282d6970a445d |
+| T-3.1.28 | Issue #353 · Card task_33bf40d2ec6146e4 |
+| T-3.1.29 | Issue #354 · Card task_e34f1f55e38e483b |
+| T-3.1.30 | Issue #355 · Card task_a0a08418e19f4cc2 |
+| T-3.1.31 | Issue #356 · Card task_432b6ebacc584e3e |
+| T-3.1.32 | Issue #357 · Card task_b2193d5a036c4013 |
+| T-3.1.33 | Issue #358 · Card task_0f9b0e5cff7441f0 |
+| T-3.1.34 | Issue #359 · Card task_4d85d49373ed4e3e |
+| T-3.1.35 | Issue #360 · Card task_a0215908954e429b |
+| T-3.1.36 | Issue #361 · Card task_679c84ddba6544df |
+| T-3.1.37 | Issue #362 · Card task_76c632e57e91477e |
+| T-3.1.38 | Issue #363 · Card task_10a2fd0ed4d4439d |
+| T-3.1.39 | Issue #364 · Card task_b3822206a07f4e0f |
+| T-3.1.40 | Issue #365 · Card task_1897141c7c474c37 |
+| T-3.1.41 | Issue #366 · Card task_bafdfcb3bc714299 |
+| T-3.1.42 | Issue #367 · Card task_fe35ad6c1d00426a |
+| T-3.1.43 | Issue #368 · Card task_e60ecb4fab1b46b0 |
+| T-3.1.44 | Issue #369 · Card task_facdc3e0b0154885 |
+| T-3.1.45 | Issue #370 · Card task_ef8575211880453f |
+| T-3.1.46 | Issue #371 · Card task_69a6cc84820f493d |
+| T-3.1.47 | Issue #372 · Card task_53211a4d325048ca |
+| T-3.1.48 | Issue #373 · Card task_260190e5c6b34b1d |
+| T-3.1.49 | Issue #374 · Card task_ef4387d699c94a33 |
+| T-3.1.50 | Issue #375 · Card task_e5accf1b07694b51 |
+
 ### Focused RED/test seams for every file task
 
 The exact node/fixture seam is specified per task below; execute its node with `python -m pytest -q <node>` from `backend/` as applicable. These are seam references, not claims that all listed tests were already run: only results explicitly documented in the T-2.1 evidence map are completed evidence. Each writer still captures that task's exact checker RED on the immediate pre-edit base and the matching test result before any production edit. `tests/library/conftest.py` is a fixture-only module with no discovered test consumer; its seam is the `async_engine` fixture lifecycle, and its UP017/W292 corrections are static-only (no behavior test is added). The added `app/ingestion/schemas.py` and `app/meetings/speaker_review_service.py` paths have candidate seams below, but remain production-edit blocked until the T-2.1 per-path classification, test mapping, and handoff are completed on the authorized base.
