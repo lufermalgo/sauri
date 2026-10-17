@@ -59,24 +59,36 @@ async def _meeting_with_recording(api_db_url: str, *, owner_id: str = OWNER_ID) 
 
 
 @pytest.mark.asyncio
-async def test_playback_manifest_requires_authentication(api_client: AsyncClient):
+async def test_playback_manifest_requires_authentication(
+    api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    from app.meetings import router
+
+    store = _SyntheticObjectStore()
+    monkeypatch.setattr(router, "_get_object_store", lambda: store)
     response = await api_client.get(f"/api/v1/meetings/{uuid.uuid4()}/playback")
     assert response.status_code == 401
     assert "audio_source" not in response.text
     assert "private/" not in response.text
+    assert store.signed == []
 
 
 @pytest.mark.asyncio
 async def test_non_owner_cannot_receive_manifest_or_private_references(
-    api_client: AsyncClient, api_db_url: str
+    api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
 ):
+    from app.meetings import router
+
     meeting_id = await _meeting_with_recording(api_db_url)
+    store = _SyntheticObjectStore()
+    monkeypatch.setattr(router, "_get_object_store", lambda: store)
     response = await api_client.get(
         f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header(OTHER_USER_ID)
     )
     assert response.status_code == 404
     assert "private/test/audio.webm" not in response.text
     assert "audio_source" not in response.text
+    assert store.signed == []
 
 
 @pytest.mark.asyncio
@@ -117,13 +129,20 @@ async def test_owner_manifest_contains_only_signed_playback_contract(
 
 
 @pytest.mark.asyncio
-async def test_invalid_token_cannot_receive_manifest(api_client: AsyncClient):
+async def test_invalid_token_cannot_receive_manifest(
+    api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    from app.meetings import router
+
+    store = _SyntheticObjectStore()
+    monkeypatch.setattr(router, "_get_object_store", lambda: store)
     response = await api_client.get(
         f"/api/v1/meetings/{uuid.uuid4()}/playback",
         headers={"Authorization": "Bearer invalid-token"},
     )
     assert response.status_code == 401
     assert "private/" not in response.text
+    assert store.signed == []
 
 
 async def _meeting_and_recording(api_db_url: str) -> tuple[str, str]:
