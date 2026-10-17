@@ -16,7 +16,7 @@ from app.infra.models import User
 
 
 @pytest.mark.asyncio
-async def test_user_can_be_created_and_read(db_session: AsyncSession):
+async def test_user_can_be_created_and_read(db_session: AsyncSession) -> None:
     user = User(
         id=str(uuid.uuid4()),
         email="comercial@summan.com",
@@ -35,7 +35,7 @@ async def test_user_can_be_created_and_read(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_user_email_is_unique(db_session: AsyncSession):
+async def test_user_email_is_unique(db_session: AsyncSession) -> None:
     email = "duplicado@summan.com"
     db_session.add(
         User(
