@@ -235,3 +235,69 @@ class TestContratoDiarEngine:
 
         data = response.json()
         assert data == {"status": "ok"}
+
+
+def test_failed_s3_download_removes_partial_file_and_chains_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed synthetic object-store download cleans its temp file and keeps cause."""
+    downloaded_paths: list[Path] = []
+
+    class FailingS3Client:
+        def download_file(self, bucket: str, key: str, filename: str) -> None:
+            path = Path(filename)
+            path.write_bytes(b"synthetic audio bytes")
+            downloaded_paths.append(path)
+            raise OSError("synthetic download failure")
+
+    monkeypatch.setattr(main, "s3_client", FailingS3Client())
+
+    with pytest.raises(RuntimeError, match="Failed to download audio_ref") as exc_info:
+        main._download_audio_from_s3("synthetic/recording.wav")
+
+    assert isinstance(exc_info.value.__cause__, OSError)
+    assert len(downloaded_paths) == 1
+    assert not downloaded_paths[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_diarization_failure_removes_downloaded_temp_file(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A pipeline failure returns HTTP 500 and removes the synthetic audio file."""
+    audio_path = tmp_path / "synthetic-recording.wav"
+    audio_path.write_bytes(b"synthetic audio bytes")
+    monkeypatch.setattr(main, "_download_audio_from_s3", lambda _audio_ref: str(audio_path))
+
+    def fail_pipeline(_audio_path: str) -> _FakeAnnotation:
+        raise RuntimeError("synthetic diarization failure")
+
+    monkeypatch.setattr(main, "diarization_pipeline", fail_pipeline)
+
+    async with async_client as client:
+        response = await client.post("/diarize", json={"audio_ref": "synthetic.wav"})
+
+    assert response.status_code == 500
+    assert not audio_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_http_error_preserves_status_and_detail(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed synthetic download retains the endpoint's existing HTTP error contract."""
+    from fastapi import HTTPException
+
+    def fail_download(_audio_ref: str) -> str:
+        raise RuntimeError("synthetic download failure")
+
+    monkeypatch.setattr(main, "_download_audio_from_s3", fail_download)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await main.diarize(main.DiarizeRequest(audio_ref="synthetic/recording.wav"))
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Audio download failed: synthetic download failure"
