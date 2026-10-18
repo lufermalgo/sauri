@@ -67,7 +67,7 @@ The phase labels group work only. T-1, T-3, and T-5 are independent and may run 
 
 ### T-5: Preserve speaker-review receipt migration contract (regression)
 
-**Tracking:** Issue #406 · Card `task_38233e6f849d4033`
+**Tracking:** Task done · Issue #406 · Card `task_38233e6f849d4033` · PR #419
 
 **Files:** `backend/tests/test_migration.py`; use the approved receipt migration at `backend/alembic/versions/009_speaker_review_idempotency_receipts.py` as the test seam.
 
