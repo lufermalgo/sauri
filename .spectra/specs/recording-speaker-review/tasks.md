@@ -59,7 +59,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-3: RED — pending-review persistence and resume
 
-**Tracking:** Issue #236 · Card task_08a5bfffd13e4fd9
+**Tracking:** Issue #236 · Card task_08a5bfffd13e4fd9 · PR #397
 
 **Files:** `backend/tests/speaker_review/test_review_resume.py` (create)
 
