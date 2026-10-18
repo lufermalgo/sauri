@@ -101,7 +101,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-6: RED — processing readiness, stage replay and finalizer recovery
 
-**Tracking:** Issue #239 · Card task_c6ef43a295bb41a1
+**Tracking:** Issue #239 · Card task_c6ef43a295bb41a1 · PR #398
 
 **Files:** `backend/tests/speaker_review/test_processing_readiness.py` (create)
 
