@@ -31,7 +31,7 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 
 ### T-2: Resolve the source-inventory migration by exact revision (GREEN)
 
-**Tracking:** Issue #403 · Card `task_c34ba91bb1e34ede`
+**Tracking:** Issue #403 · Card `task_c34ba91bb1e34ede` · PR #416
 
 **Files:** `backend/tests/test_migration.py`
 
