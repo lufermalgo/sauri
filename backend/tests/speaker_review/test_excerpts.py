@@ -10,12 +10,13 @@ references to one recording, revision, and speaker.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from app.meetings.speaker_excerpt_service import SpeakerExcerptService
 
 from app.infra.models import SpeakerReview, SpeakerReviewItem
+from app.meetings.speaker_excerpt_service import SpeakerExcerptService
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ def _derive(
 ) -> Any:
     return service.derive(
         recording_id="recording-a",
-        revision_id="revision-7",
+        revision_id=7,
         speaker_id="speaker-a",
         object_key=object_key,
         audio_duration_ms=audio_duration_ms,
@@ -150,13 +151,13 @@ def test_excerpt_reference_is_opaque_and_bound_to_recording_revision_and_speaker
     assert service.resolve(
         excerpt.reference,
         recording_id="recording-a",
-        revision_id="revision-7",
+        revision_id=7,
         speaker_id="speaker-a",
     ) == (private_key, excerpt.start_ms, excerpt.end_ms)
     for scope in (
-        {"recording_id": "recording-b", "revision_id": "revision-7", "speaker_id": "speaker-a"},
-        {"recording_id": "recording-a", "revision_id": "revision-8", "speaker_id": "speaker-a"},
-        {"recording_id": "recording-a", "revision_id": "revision-7", "speaker_id": "speaker-b"},
+        {"recording_id": "recording-b", "revision_id": 7, "speaker_id": "speaker-a"},
+        {"recording_id": "recording-a", "revision_id": 8, "speaker_id": "speaker-a"},
+        {"recording_id": "recording-a", "revision_id": 7, "speaker_id": "speaker-b"},
     ):
         with pytest.raises(LookupError):
             service.resolve(excerpt.reference, **scope)
@@ -191,12 +192,12 @@ def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
     )
     review.items.append(item)
 
+    service.persist(excerpt, review_item=item)
+
     with pytest.raises(OSError, match="synthetic playback failure"):
         service.play(
-            excerpt.reference,
             recording_id="recording-a",
-            revision_id="revision-7",
-            speaker_id="speaker-a",
+            revision_id=7,
             review_item=item,
         )
 
@@ -206,3 +207,74 @@ def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
     assert item.disposition is None
     assert review.status == "pending"
     assert review_status({item.speaker_key: item.disposition}) == "pending"
+
+
+def test_excerpt_reference_is_persisted_and_playback_uses_only_the_item_reference() -> None:
+    """Playback must select the persisted opaque ref on its authorized review item."""
+    media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
+    service = _service(media)
+    excerpt = _derive(service)
+    review = SpeakerReview(
+        id="review-a",
+        meeting_id="recording-a",
+        processing_revision=7,
+        status="pending",
+        created_at=datetime.now(UTC),
+    )
+    item = SpeakerReviewItem(
+        id="item-a",
+        review_id=review.id,
+        speaker_key="speaker-a",
+        current_label="Speaker 1",
+        excerpt_ref=None,
+        disposition=None,
+        chosen_label=None,
+        attribution_state="uncertain",
+        version=1,
+    )
+    review.items.append(item)
+
+    assert callable(getattr(service, "persist", None)), "persist must be available for review items"
+    service.persist(excerpt, review_item=item)
+
+    assert item.excerpt_ref == excerpt.reference
+    assert "private-bucket/private-recording.wav" not in item.excerpt_ref
+    assert service.play(
+        recording_id="recording-a",
+        revision_id=7,
+        review_item=item,
+    ) == b"synthetic-audio"
+    assert media.read_calls == [
+        ("private-bucket/private-recording.wav", 4_000, 5_500),
+    ]
+
+
+def test_playback_rejects_a_review_item_from_a_different_recording_or_revision() -> None:
+    """An item's persisted reference cannot be replayed under caller-selected scope."""
+    media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
+    service = _service(media)
+    excerpt = _derive(service)
+    review = SpeakerReview(
+        id="review-a",
+        meeting_id="recording-a",
+        processing_revision=7,
+        status="pending",
+        created_at=datetime.now(UTC),
+    )
+    item = SpeakerReviewItem(
+        id="item-a",
+        review_id=review.id,
+        speaker_key="speaker-a",
+        current_label="Speaker 1",
+        excerpt_ref=excerpt.reference,
+        disposition=None,
+        chosen_label=None,
+        attribution_state="uncertain",
+        version=1,
+    )
+    review.items.append(item)
+
+    with pytest.raises(LookupError, match="outside the requested scope"):
+        service.play(recording_id="recording-b", revision_id=7, review_item=item)
+
+    assert media.read_calls == []
