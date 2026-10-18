@@ -9,6 +9,7 @@ references to one recording, revision, and speaker.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -59,7 +60,7 @@ def _encoded_test_key(byte: int) -> str:
 def _service(media: FakeMedia) -> SpeakerExcerptService:
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "test-v1")
-        monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", f"test-v1={_encoded_test_key(1)}")
+        monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", f"test-v1:{_encoded_test_key(1)}")
         return SpeakerExcerptService(decode_interval=media.decode, read_interval=media.read)
 
 
@@ -302,14 +303,14 @@ def test_versioned_excerpt_keyring_can_rotate_while_resolving_existing_refs(
 ) -> None:
     """Retaining a prior key ID permits old references after the active key rotates."""
     media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
-    monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", f"key-v1={_encoded_test_key(1)}")
+    monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", f"key-v1:{_encoded_test_key(1)}")
     monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "key-v1")
     before_rotation = SpeakerExcerptService(decode_interval=media.decode, read_interval=media.read)
     excerpt = _derive(before_rotation)
 
     monkeypatch.setenv(
         "SPEAKER_EXCERPT_KEYRING",
-        f"key-v1={_encoded_test_key(1)},key-v2={_encoded_test_key(2)}",
+        f"key-v1:{_encoded_test_key(1)},key-v2:{_encoded_test_key(2)}",
     )
     monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "key-v2")
     after_rotation = SpeakerExcerptService(decode_interval=media.decode, read_interval=media.read)
@@ -327,17 +328,11 @@ def test_application_startup_validates_excerpt_keyring(monkeypatch: pytest.Monke
     """The API refuses to start with missing excerpt-encryption configuration."""
     from app.main import app
 
-    startup = next(
-        (
-            handler
-            for handler in app.router.on_startup
-            if getattr(handler, "__name__", "") == "validate_speaker_excerpt_keyring"
-        ),
-        None,
-    )
-    assert callable(startup), "application startup must validate excerpt key configuration"
+    async def start_app() -> None:
+        async with app.router.lifespan_context(app):
+            pass
 
     monkeypatch.delenv("SPEAKER_EXCERPT_KEYRING", raising=False)
     monkeypatch.delenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", raising=False)
     with pytest.raises(RuntimeError, match="SPEAKER_EXCERPT_KEYRING"):
-        startup()
+        asyncio.run(start_app())

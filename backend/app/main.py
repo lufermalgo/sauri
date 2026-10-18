@@ -1,17 +1,36 @@
 """sauri backend – FastAPI application entry point."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
 from app.ingestion.router import router as ingestion_router
 from app.meetings.router import router as meetings_router
+from app.meetings.speaker_excerpt_service import ExcerptKeyring
+
+
+def validate_speaker_excerpt_keyring() -> None:
+    """Fail closed before serving requests if excerpt keys are not configured."""
+    ExcerptKeyring.from_environment()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Validate encryption key material before serving requests."""
+    validate_speaker_excerpt_keyring()
+    yield
+
 
 app = FastAPI(
     title="sauri",
     description="Summan's internal commercial-meeting intelligence platform",
     version="0.1.0",
+    lifespan=lifespan,
 )
+
 
 # CORS for local development (extension → backend)
 app.add_middleware(

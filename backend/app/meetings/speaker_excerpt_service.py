@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import base64
-import hashlib
+import binascii
 import json
+import os
+import re
 import secrets
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Protocol
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-from app.auth.token import JWT_SECRET
 
 
 class ExcerptCandidate(Protocol):
@@ -23,6 +25,58 @@ class ExcerptCandidate(Protocol):
     vad_positive_windows: int
     vad_window_count: int
     assigned_speaker_id: str
+
+
+@dataclass(frozen=True)
+class ExcerptKeyring:
+    """Versioned AES-256 keys for opaque excerpt references."""
+
+    active_key_id: str
+    keys: Mapping[str, bytes]
+
+    def __post_init__(self) -> None:
+        if not self.active_key_id or self.active_key_id not in self.keys:
+            raise ValueError("active excerpt encryption key ID must exist in the keyring")
+        copied = dict(self.keys)
+        if any(
+            not re.fullmatch(r"[A-Za-z0-9_-]{1,32}", key_id)
+            or not isinstance(key, bytes)
+            or len(key) != 32
+            for key_id, key in copied.items()
+        ):
+            raise ValueError("excerpt keyring entries must use safe IDs and 32-byte AES keys")
+        object.__setattr__(self, "keys", MappingProxyType(copied))
+
+    @classmethod
+    def from_environment(cls) -> ExcerptKeyring:
+        """Load keys injected by a deployment secret manager; never use a fallback."""
+        encoded_keys = os.getenv("SPEAKER_EXCERPT_KEYRING")
+        active_key_id = os.getenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID")
+        if not encoded_keys or not active_key_id:
+            raise RuntimeError(
+                "SPEAKER_EXCERPT_KEYRING and SPEAKER_EXCERPT_ACTIVE_KEY_ID must be configured"
+            )
+
+        keys: dict[str, bytes] = {}
+        try:
+            for entry in encoded_keys.split(","):
+                key_id, separator, encoded_key = entry.partition(":")
+                if not separator or not encoded_key:
+                    raise ValueError("invalid keyring entry")
+                key = base64.b64decode(
+                    encoded_key + "=" * (-len(encoded_key) % 4),
+                    altchars=b"-_",
+                    validate=True,
+                )
+                if key_id in keys:
+                    raise ValueError("duplicate key ID")
+                keys[key_id] = key
+        except (binascii.Error, ValueError) as error:
+            raise RuntimeError("SPEAKER_EXCERPT_KEYRING is malformed") from error
+        try:
+            return cls(active_key_id=active_key_id, keys=keys)
+        except ValueError as error:
+            raise RuntimeError("SPEAKER_EXCERPT_KEYRING is invalid") from error
 
 
 @dataclass(frozen=True)
@@ -46,10 +100,10 @@ class SpeakerExcerptService:
     callers must still authorize recording access before invoking ``play``.
     """
 
-    def __init__(self, *, decode_interval, read_interval) -> None:
+    def __init__(self, *, decode_interval, read_interval, keyring: ExcerptKeyring | None = None) -> None:
         self._decode_interval = decode_interval
         self._read_interval = read_interval
-        self._cipher = AESGCM(hashlib.sha256(JWT_SECRET.encode("utf-8")).digest())
+        self._keyring = keyring or ExcerptKeyring.from_environment()
 
     def derive(
         self,
@@ -105,8 +159,11 @@ class SpeakerExcerptService:
                 sort_keys=True,
             ).encode("utf-8")
             nonce = secrets.token_bytes(12)
-            ciphertext = self._cipher.encrypt(nonce, payload, b"sauri-speaker-excerpt-v1")
-            reference = base64.urlsafe_b64encode(nonce + ciphertext).decode("ascii").rstrip("=")
+            key_id = self._keyring.active_key_id
+            associated_data = f"sauri-speaker-excerpt:v1:{key_id}".encode("ascii")
+            ciphertext = AESGCM(self._keyring.keys[key_id]).encrypt(nonce, payload, associated_data)
+            token = base64.urlsafe_b64encode(nonce + ciphertext).decode("ascii").rstrip("=")
+            reference = f"v1.{key_id}.{token}"
             return SpeakerExcerpt(candidate.start_ms, candidate.end_ms, reference)
 
         raise ValueError("no validated speaker excerpt")
@@ -121,16 +178,29 @@ class SpeakerExcerptService:
     ) -> tuple[str, int, int]:
         """Resolve only a well-formed reference for its exact source scope."""
         try:
-            encoded = reference.encode("ascii")
-            padded = encoded + b"=" * (-len(encoded) % 4)
-            token = base64.urlsafe_b64decode(padded)
+            if not isinstance(reference, str):
+                raise ValueError("invalid excerpt reference")
+            version, key_id, encoded_token = reference.split(".", 2)
+            if version != "v1" or key_id not in self._keyring.keys:
+                raise ValueError("unknown excerpt key version")
+            encoded = encoded_token.encode("ascii")
+            token = base64.b64decode(
+                encoded + b"=" * (-len(encoded) % 4),
+                altchars=b"-_",
+                validate=True,
+            )
             if len(token) <= 12:
                 raise ValueError("invalid excerpt reference")
-            payload = self._cipher.decrypt(token[:12], token[12:], b"sauri-speaker-excerpt-v1")
+            associated_data = f"sauri-speaker-excerpt:v1:{key_id}".encode("ascii")
+            payload = AESGCM(self._keyring.keys[key_id]).decrypt(
+                token[:12], token[12:], associated_data
+            )
             data = json.loads(payload)
-        except (ValueError, UnicodeError, json.JSONDecodeError, InvalidTag) as error:
+        except (binascii.Error, ValueError, UnicodeError, json.JSONDecodeError, InvalidTag) as error:
             raise LookupError("unknown excerpt reference") from error
 
+        if not isinstance(data, dict):
+            raise LookupError("invalid excerpt reference")
         if (
             data.get("recording_id") != recording_id
             or data.get("revision_id") != revision_id
