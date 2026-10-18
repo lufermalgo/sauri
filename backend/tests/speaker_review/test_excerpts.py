@@ -15,6 +15,8 @@ from typing import Any
 import pytest
 from app.meetings.speaker_excerpt_service import SpeakerExcerptService
 
+from app.infra.models import SpeakerReview, SpeakerReviewItem
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -25,31 +27,13 @@ class Candidate:
     assigned_speaker_id: str = "speaker-a"
 
 
-@dataclass
-class ReviewItem:
-    """Minimal test model: playback reads the excerpt; only disposition marks completion."""
-
-    recording_id: str = "recording-a"
-    revision_id: str = "revision-7"
-    speaker_id: str = "speaker-a"
-    disposition: str | None = None
-
-    def play(self, service: SpeakerExcerptService, reference: str) -> bytes:
-        return service.play(
-            reference,
-            recording_id=self.recording_id,
-            revision_id=self.revision_id,
-            speaker_id=self.speaker_id,
-        )
-
-
 class FakeMedia:
     """Synthetic adapter: no actual recording or object store is accessed."""
 
     def __init__(self, decoded: dict[tuple[int, int], bytes] | None = None) -> None:
         self.decoded = decoded or {}
         self.decode_calls: list[tuple[str, int, int]] = []
-        self.read_calls: list[str] = []
+        self.read_calls: list[tuple[str, int, int]] = []
         self.fail_read = False
 
     def decode(self, object_key: str, start_ms: int, end_ms: int) -> bytes:
@@ -60,7 +44,7 @@ class FakeMedia:
         return result
 
     def read(self, object_key: str, start_ms: int, end_ms: int) -> bytes:
-        self.read_calls.append(object_key)
+        self.read_calls.append((object_key, start_ms, end_ms))
         if self.fail_read:
             raise OSError("synthetic playback failure")
         return b"synthetic-audio"
@@ -179,15 +163,46 @@ def test_excerpt_reference_is_opaque_and_bound_to_recording_revision_and_speaker
 
 
 def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
-    """A failed read propagates, makes no fallback read, and leaves disposition unset."""
+    """The actual playback call leaves its pending review model unchanged on read failure."""
+    from datetime import UTC, datetime
+
+    from app.meetings.speaker_review_state import review_status
+
     media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
     media.fail_read = True
     service = _service(media)
     excerpt = _derive(service)
-    item = ReviewItem()
+    review = SpeakerReview(
+        id="review-a",
+        meeting_id="recording-a",
+        processing_revision=7,
+        status="pending",
+        created_at=datetime.now(UTC),
+    )
+    item = SpeakerReviewItem(
+        id="item-a",
+        review_id=review.id,
+        speaker_key="speaker-a",
+        current_label="Speaker 1",
+        disposition=None,
+        chosen_label=None,
+        attribution_state="uncertain",
+        version=1,
+    )
+    review.items.append(item)
 
     with pytest.raises(OSError, match="synthetic playback failure"):
-        item.play(service, excerpt.reference)
+        service.play(
+            excerpt.reference,
+            recording_id="recording-a",
+            revision_id="revision-7",
+            speaker_id="speaker-a",
+            review_item=item,
+        )
 
-    assert media.read_calls == ["private-bucket/private-recording.wav"]
+    assert media.read_calls == [
+        ("private-bucket/private-recording.wav", 4_000, 5_500),
+    ]
     assert item.disposition is None
+    assert review.status == "pending"
+    assert review_status({item.speaker_key: item.disposition}) == "pending"
