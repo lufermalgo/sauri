@@ -49,6 +49,10 @@ async def test_review_is_hidden_until_all_revision_outputs_are_validated(
     await coordinator.process_stage(REVISION_ID, "transcription")
     assert await coordinator.get_review(RECORDING_ID) is None
 
+    # An early/replayed finalizer must not publish a review without diarization.
+    await coordinator.finalize(REVISION_ID)
+    assert await coordinator.get_review(RECORDING_ID) is None
+
     await coordinator.process_stage(REVISION_ID, "diarization")
     assert await coordinator.get_review(RECORDING_ID) is None
 
