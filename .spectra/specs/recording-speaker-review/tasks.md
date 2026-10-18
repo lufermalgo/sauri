@@ -143,7 +143,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-9: RED — transcript review UI states and actions
 
-**Tracking:** Issue #242 · Card task_b1830561654c41e5
+**Tracking:** Issue #242 · Card task_b1830561654c41e5 · PR #413
+
+**Status:** Done — PR #413 open for review.
 
 **Files:** `frontend/src/components/TranscriptView.test.tsx`
 
