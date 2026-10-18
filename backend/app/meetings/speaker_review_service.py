@@ -15,14 +15,59 @@ from app.infra.models import (
     SpeakerReviewItem,
 )
 from app.meetings.disposition_idempotency import canonical_request_hash
-from app.meetings.speaker_review_state import VALID_DISPOSITIONS, is_complete
+from app.meetings.speaker_review_state import VALID_DISPOSITIONS, is_complete, review_status
 
 
 class SpeakerReviewService:
-    """Apply one disposition and its replay receipt atomically."""
+    """Read persisted review state and apply atomic speaker dispositions."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def get_active_review(
+        self, owner_id: str, meeting_id: str
+    ) -> dict[str, Any] | None:
+        """Return the owner's current review and only its undisposed items."""
+        meeting = await self._session.scalar(
+            select(Meeting).where(Meeting.id == meeting_id, Meeting.created_by == owner_id)
+        )
+        if meeting is None:
+            return None
+
+        review = await self._session.scalar(
+            select(SpeakerReview)
+            .where(SpeakerReview.meeting_id == meeting_id)
+            .order_by(SpeakerReview.processing_revision.desc())
+            .limit(1)
+        )
+        if review is None:
+            return None
+
+        items = list(
+            (
+                await self._session.scalars(
+                    select(SpeakerReviewItem)
+                    .where(SpeakerReviewItem.review_id == review.id)
+                    .order_by(SpeakerReviewItem.speaker_key)
+                )
+            ).all()
+        )
+        state = {item.speaker_key: item.disposition for item in items}
+        outstanding = [item for item in items if item.disposition is None]
+        return {
+            "review_id": review.id,
+            "revision_id": review.processing_revision,
+            "status": review_status(state),
+            "remaining_speaker_ids": [item.speaker_key for item in outstanding],
+            "items": [
+                {
+                    "speaker_id": item.speaker_key,
+                    "current_label": item.current_label,
+                    "disposition": item.disposition,
+                }
+                for item in outstanding
+            ],
+        }
 
     async def record_disposition(
         self,
@@ -89,14 +134,15 @@ class SpeakerReviewService:
                 return {"outcome": "conflict_stale_version", "result": None}
 
             label = request.get("label")
-            if disposition in {"named", "corrected"} and (
-                not isinstance(label, str) or not label.strip()
-            ):
-                return {"outcome": "invalid_request", "result": None}
+            normalized_label: str | None = None
+            if disposition in {"named", "corrected"}:
+                if not isinstance(label, str) or not label.strip():
+                    return {"outcome": "invalid_request", "result": None}
+                normalized_label = label.strip()
 
             item.disposition = disposition
-            if disposition in {"named", "corrected"}:
-                item.chosen_label = label.strip()
+            if normalized_label is not None:
+                item.chosen_label = normalized_label
             item.version += 1
             items = list(
                 (await self._session.scalars(

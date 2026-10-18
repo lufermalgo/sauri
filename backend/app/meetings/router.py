@@ -14,13 +14,12 @@ Requirements: 4.5, 7.1, 7.2, 8.3, 8.4
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-
-from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
@@ -29,12 +28,13 @@ from app.infra.models import Diarization, Meeting, SpeechTurn, Transcript
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.meetings.service import (
-    get_meeting,
     delete_meeting,
+    get_meeting,
     register_meeting,
     rename_meeting,
     request_join,
 )
+from app.meetings.speaker_review_service import SpeakerReviewService
 
 router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"])
 
@@ -234,6 +234,29 @@ async def request_join_endpoint(
                 }
     finally:
         await queue.disconnect()
+        await engine.dispose()
+
+
+@router.get("/{meeting_id}/speaker-review")
+async def get_speaker_review(
+    meeting_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Reload the authenticated owner's persisted speaker-review state."""
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            result = await SpeakerReviewService(session).get_active_review(
+                user.id, meeting_id
+            )
+            if result is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Speaker review not found: {meeting_id}",
+                )
+            return result
+    finally:
         await engine.dispose()
 
 
