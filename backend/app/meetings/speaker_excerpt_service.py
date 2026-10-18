@@ -55,7 +55,7 @@ class SpeakerExcerptService:
         self,
         *,
         recording_id: str,
-        revision_id: str,
+        revision_id: int,
         speaker_id: str,
         object_key: str,
         audio_duration_ms: int,
@@ -116,7 +116,7 @@ class SpeakerExcerptService:
         reference: str,
         *,
         recording_id: str,
-        revision_id: str,
+        revision_id: int,
         speaker_id: str,
     ) -> tuple[str, int, int]:
         """Resolve only a well-formed reference for its exact source scope."""
@@ -144,20 +144,36 @@ class SpeakerExcerptService:
             raise LookupError("invalid excerpt reference")
         return object_key, start_ms, end_ms
 
+    def persist(self, excerpt: SpeakerExcerpt, *, review_item) -> None:
+        """Store a validated reference only on the matching speaker review item."""
+        review = review_item.review
+        self.resolve(
+            excerpt.reference,
+            recording_id=review.meeting_id,
+            revision_id=review.processing_revision,
+            speaker_id=review_item.speaker_key,
+        )
+        review_item.excerpt_ref = excerpt.reference
+
     def play(
         self,
-        reference: str,
         *,
         recording_id: str,
-        revision_id: str,
-        speaker_id: str,
+        revision_id: int,
         review_item,
     ) -> bytes:
-        """Read the bound interval; read failures propagate without item mutation."""
+        """Read only the excerpt reference persisted on the authorized review item."""
+        review = review_item.review
+        if (
+            review.meeting_id != recording_id
+            or review.processing_revision != revision_id
+            or not review_item.excerpt_ref
+        ):
+            raise LookupError("excerpt reference is outside the requested scope")
         object_key, start_ms, end_ms = self.resolve(
-            reference,
+            review_item.excerpt_ref,
             recording_id=recording_id,
             revision_id=revision_id,
-            speaker_id=speaker_id,
+            speaker_id=review_item.speaker_key,
         )
         return self._read_interval(object_key, start_ms, end_ms)
