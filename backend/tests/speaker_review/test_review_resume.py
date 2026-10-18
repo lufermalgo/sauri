@@ -2,14 +2,47 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
-from httpx import AsyncClient
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
+from app.infra.database import Base
 from app.infra.models import Meeting, SpeakerReview, SpeakerReviewItem
+
+
+@pytest.fixture
+async def api_db_url(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[str, None]:
+    """Create an isolated SQLite database for the authenticated API contract."""
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    url = f"sqlite+aiosqlite:///{path}"
+    engine = create_async_engine(url, echo=False)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    await engine.dispose()
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("APP_ENV", "test")
+    yield url
+    os.remove(path)
+
+
+@pytest.fixture
+async def api_client(api_db_url: str) -> AsyncGenerator[AsyncClient, None]:
+    """Create an in-process client using the isolated database fixture."""
+    from app.main import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        yield client
 
 OWNER_ID = "speaker-review-owner"
 OTHER_OWNER_ID = "speaker-review-other-owner"
@@ -104,6 +137,22 @@ async def test_pending_review_reload_returns_only_undisposed_items(
         }
     ]
 
+    engine = create_async_engine(api_db_url, echo=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with session_factory() as session:
+        saved_item = await session.scalar(
+            select(SpeakerReviewItem).where(
+                SpeakerReviewItem.review_id == review_id,
+                SpeakerReviewItem.speaker_key == "speaker-one",
+            )
+        )
+    await engine.dispose()
+    assert saved_item is not None
+    assert saved_item.disposition == "named"
+    assert saved_item.chosen_label == "Synthetic Alice"
+
 
 async def test_completed_review_reload_does_not_request_review_again(
     api_client: AsyncClient, api_db_url: str
@@ -151,9 +200,15 @@ async def test_review_reload_is_scoped_to_meeting_owner(
     """A different authenticated owner cannot retrieve persisted review data."""
     meeting_id, _ = await _persist_pending_review(api_db_url)
 
-    response = await api_client.get(
+    owner_response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/speaker-review",
+        headers=_auth_header(),
+    )
+    assert owner_response.status_code == 200
+
+    other_owner_response = await api_client.get(
         f"/api/v1/meetings/{meeting_id}/speaker-review",
         headers=_auth_header(OTHER_OWNER_ID),
     )
 
-    assert response.status_code == 404
+    assert other_owner_response.status_code == 404
