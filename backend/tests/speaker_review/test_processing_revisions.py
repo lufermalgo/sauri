@@ -166,12 +166,17 @@ def test_revision_qualified_review_routes_are_registered() -> None:
     from app.main import app
 
     routes = {route.path: route.methods for route in app.routes if hasattr(route, "methods")}
-    assert "/api/v1/meetings/{meeting_id}/speaker-review" in routes
-    assert (
+    review_path = "/api/v1/meetings/{meeting_id}/speaker-review"
+    disposition_path = (
         "/api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}"
-        in routes
     )
-    assert (
-        "/api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}/excerpt"
-        in routes
-    )
+    excerpt_path = f"{disposition_path}/excerpt"
+
+    assert routes.get(review_path) == {"GET"}
+    assert routes.get(disposition_path) == {"PUT"}
+    assert routes.get(excerpt_path) == {"GET"}
+
+    # State-changing/read operations must name their revision; an unqualified
+    # route could mutate or return whichever revision happened to be current.
+    assert "/api/v1/meetings/{meeting_id}/speaker-review/speakers/{speaker_id}" not in routes
+    assert "/api/v1/meetings/{meeting_id}/speaker-review/speakers/{speaker_id}/excerpt" not in routes
