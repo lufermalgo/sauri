@@ -208,6 +208,8 @@
 
 ### T17a: Establish shared-types test infrastructure
 
+**Tracking:** Issue #420 · Card task_8a6485325e484cd8
+
 **Archivo:** `packages/shared-types/package.json` and the test-runner configuration/location confirmed for this package
 **Acción:** Resolve the missing shared-types test harness using an existing repository-supported test runner and location. Add only the minimum configuration and package script needed to execute package tests; record the verified test-file location and command. Do not choose or configure a runner by assumption: confirm the repository-supported option before implementation, and return any unresolved runner-choice gap to Ansel.
 
