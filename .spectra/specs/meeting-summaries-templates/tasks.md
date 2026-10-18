@@ -47,7 +47,8 @@
 
 ### T3: RED — Specify personal default resolver invariants (P3)
 
-**Tracking:** Issue #271 · Card task_7b7ebdd955cd446a
+**Tracking:** Issue #271 · Card task_7b7ebdd955cd446a · PR #409
+**Status:** Done
 
 **Archivo:** `backend/tests/templates/test_default_resolver_property.py` (create)
 **Acción:** Add Hypothesis properties for nullable default resolution, exact `(template_id, version)` selection, and the resolver's category-blind input/output contract; use at least 100 examples per property and synthetic template records. Do not assert any no-default fallback.
