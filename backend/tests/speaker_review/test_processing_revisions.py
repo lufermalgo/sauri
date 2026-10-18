@@ -180,3 +180,49 @@ def test_revision_qualified_review_routes_are_registered() -> None:
     # route could mutate or return whichever revision happened to be current.
     assert "/api/v1/meetings/{meeting_id}/speaker-review/speakers/{speaker_id}" not in routes
     assert "/api/v1/meetings/{meeting_id}/speaker-review/speakers/{speaker_id}/excerpt" not in routes
+
+
+@pytest.mark.asyncio
+async def test_exact_admission_retry_resumes_the_same_revision(
+    db_session, meeting_recording
+) -> None:
+    """A retry carries the stable candidate ID and cannot allocate a second revision."""
+    from app.meetings.processing_revision_service import ProcessingRevisionService
+
+    db_session.add(meeting_recording)
+    await db_session.flush()
+    service = ProcessingRevisionService(db_session)
+
+    first = await service.admit_candidate(
+        meeting_recording.created_by, meeting_recording.id, 2
+    )
+    retry = await service.admit_candidate(
+        meeting_recording.created_by, meeting_recording.id, 2
+    )
+
+    assert retry == first
+
+
+@pytest.mark.asyncio
+async def test_distinct_admission_conflicts_without_displacing_in_flight_revision(
+    db_session, meeting_recording
+) -> None:
+    """A second ID conflicts; an exact retry still resolves to the first candidate."""
+    from app.meetings.processing_revision_service import ProcessingRevisionService
+
+    db_session.add(meeting_recording)
+    await db_session.flush()
+    service = ProcessingRevisionService(db_session)
+    admitted = await service.admit_candidate(
+        meeting_recording.created_by, meeting_recording.id, 2
+    )
+
+    with pytest.raises(Exception, match="(?i)conflict"):
+        await service.admit_candidate(
+            meeting_recording.created_by, meeting_recording.id, 3
+        )
+
+    exact_retry = await service.admit_candidate(
+        meeting_recording.created_by, meeting_recording.id, 2
+    )
+    assert exact_retry == admitted
