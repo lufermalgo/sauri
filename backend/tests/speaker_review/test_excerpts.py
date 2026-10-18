@@ -25,6 +25,24 @@ class Candidate:
     assigned_speaker_id: str = "speaker-a"
 
 
+@dataclass
+class ReviewItem:
+    """Minimal test model: playback reads the excerpt; only disposition marks completion."""
+
+    recording_id: str = "recording-a"
+    revision_id: str = "revision-7"
+    speaker_id: str = "speaker-a"
+    disposition: str | None = None
+
+    def play(self, service: SpeakerExcerptService, reference: str) -> bytes:
+        return service.play(
+            reference,
+            recording_id=self.recording_id,
+            revision_id=self.revision_id,
+            speaker_id=self.speaker_id,
+        )
+
+
 class FakeMedia:
     """Synthetic adapter: no actual recording or object store is accessed."""
 
@@ -160,19 +178,16 @@ def test_excerpt_reference_is_opaque_and_bound_to_recording_revision_and_speaker
             service.resolve(excerpt.reference, **scope)
 
 
-def test_playback_failure_does_not_substitute_another_excerpt() -> None:
-    """A failed read propagates for the exact ref rather than silently falling back."""
+def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
+    """A failed read propagates, makes no fallback read, and leaves disposition unset."""
     media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
     media.fail_read = True
     service = _service(media)
     excerpt = _derive(service)
+    item = ReviewItem()
 
     with pytest.raises(OSError, match="synthetic playback failure"):
-        service.play(
-            excerpt.reference,
-            recording_id="recording-a",
-            revision_id="revision-7",
-            speaker_id="speaker-a",
-        )
+        item.play(service, excerpt.reference)
 
     assert media.read_calls == ["private-bucket/private-recording.wav"]
+    assert item.disposition is None
