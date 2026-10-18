@@ -1,0 +1,159 @@
+"""Persistence and owner-scoped retrieval for pending speaker reviews (T-3 RED)."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.auth.token import create_token
+from app.infra.models import Meeting, SpeakerReview, SpeakerReviewItem
+
+OWNER_ID = "speaker-review-owner"
+OTHER_OWNER_ID = "speaker-review-other-owner"
+
+
+def _auth_header(owner_id: str = OWNER_ID) -> dict[str, str]:
+    token = create_token(owner_id, f"{owner_id}@sauri.local", "Synthetic Reviewer", True)
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _persist_pending_review(api_db_url: str) -> tuple[str, str]:
+    """Persist synthetic meeting and review rows before the API read."""
+    engine = create_async_engine(api_db_url, echo=False)
+    meeting_id = str(uuid.uuid4())
+    review_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as session, session.begin():
+        session.add(
+            Meeting(
+                id=meeting_id,
+                meet_link="https://meet.google.com/abc-defg-hij",
+                origin="link",
+                calendar_invite_id=None,
+                scheduled_start_time=None,
+                process_state="completed",
+                failure_cause=None,
+                created_by=OWNER_ID,
+                created_at=now,
+            )
+        )
+        session.add(
+            SpeakerReview(
+                id=review_id,
+                meeting_id=meeting_id,
+                processing_revision=1,
+                status="pending",
+                created_at=now,
+            )
+        )
+        session.add_all(
+            [
+                SpeakerReviewItem(
+                    id=str(uuid.uuid4()),
+                    review_id=review_id,
+                    speaker_key="speaker-one",
+                    current_label="Speaker 1",
+                    disposition="named",
+                    chosen_label="Synthetic Alice",
+                    attribution_state="uncertain",
+                    version=2,
+                ),
+                SpeakerReviewItem(
+                    id=str(uuid.uuid4()),
+                    review_id=review_id,
+                    speaker_key="speaker-two",
+                    current_label="Speaker 2",
+                    disposition=None,
+                    chosen_label=None,
+                    attribution_state="uncertain",
+                    version=1,
+                ),
+            ]
+        )
+    await engine.dispose()
+    return meeting_id, review_id
+
+
+async def test_pending_review_reload_returns_only_undisposed_items(
+    api_client: AsyncClient, api_db_url: str
+) -> None:
+    """Leaving and reloading preserves the saved item and resumes the outstanding one."""
+    meeting_id, review_id = await _persist_pending_review(api_db_url)
+
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/speaker-review",
+        headers=_auth_header(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["review_id"] == review_id
+    assert body["revision_id"] == 1
+    assert body["status"] == "pending"
+    assert body["remaining_speaker_ids"] == ["speaker-two"]
+    assert body["items"] == [
+        {
+            "speaker_id": "speaker-two",
+            "current_label": "Speaker 2",
+            "disposition": None,
+        }
+    ]
+
+
+async def test_completed_review_reload_does_not_request_review_again(
+    api_client: AsyncClient, api_db_url: str
+) -> None:
+    """Once every item is disposed, reload returns completion and no remaining items."""
+    meeting_id, review_id = await _persist_pending_review(api_db_url)
+    engine = create_async_engine(api_db_url, echo=False)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as session, session.begin():
+        from app.meetings.speaker_review_service import SpeakerReviewService
+
+        result = await SpeakerReviewService(session).record_disposition(
+            OWNER_ID,
+            meeting_id,
+            "1",
+            "speaker-two",
+            {
+                "disposition": "confirmed",
+                "expected_version": 1,
+                "idempotency_key": "resume-completion-key",
+            },
+            1,
+        )
+        assert result["outcome"] == "apply"
+        assert result["result"]["status"] == "complete"
+    await engine.dispose()
+
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/speaker-review",
+        headers=_auth_header(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["review_id"] == review_id
+    assert body["status"] == "complete"
+    assert body["remaining_speaker_ids"] == []
+    assert body["items"] == []
+
+
+async def test_review_reload_is_scoped_to_meeting_owner(
+    api_client: AsyncClient, api_db_url: str
+) -> None:
+    """A different authenticated owner cannot retrieve persisted review data."""
+    meeting_id, _ = await _persist_pending_review(api_db_url)
+
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/speaker-review",
+        headers=_auth_header(OTHER_OWNER_ID),
+    )
+
+    assert response.status_code == 404
