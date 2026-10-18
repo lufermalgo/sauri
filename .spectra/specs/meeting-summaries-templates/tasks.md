@@ -18,7 +18,7 @@
 | 1 | Persistence foundations and default resolution | T1–T4 | RED→GREEN within each branch |
 | 2 | Personal templates and privacy boundaries | T5–T8 | T2/T4 where noted; otherwise independent |
 | 3 | Summary request, outbox, worker and API | T9–T16 | Explicit DAG below; generation tasks additionally gated by D14 |
-| 4 | Shared contracts and web experiences | T17–T24 | Backend/API contracts where noted |
+| 4 | Shared contracts and web experiences | T17a–T24 | T17a → T17 → T18; other edges noted below |
 | 5 | End-to-end integration and validation | T25–T27 | Required predecessor tasks |
 
 ## Fase 1: Persistence Foundations and Default Resolution
@@ -206,16 +206,25 @@
 
 ## Fase 4: Shared Contracts and Web Experiences
 
+### T17a: Establish shared-types test infrastructure
+
+**Archivo:** `packages/shared-types/package.json` and the test-runner configuration/location confirmed for this package
+**Acción:** Resolve the missing shared-types test harness using an existing repository-supported test runner and location. Add only the minimum configuration and package script needed to execute package tests; record the verified test-file location and command. Do not choose or configure a runner by assumption: confirm the repository-supported option before implementation, and return any unresolved runner-choice gap to Ansel.
+
+**Criterio de Completado:** A synthetic smoke test in the confirmed shared-types test location is actually executed by the package's non-placeholder test script; record the exact command and passing output. The script must no longer be the current `echo "no tests yet" && exit 0` placeholder.
+
+**Dependencias:** Ninguna
+
 ### T17: RED — Specify shared summary/template/status API contracts
 
 **Tracking:** Issue #285 · Card task_5419615ead9a41b7
 
-**Archivo:** `packages/shared-types/src/index.test.ts` (or the package's existing test location, confirmed before editing)
-**Acción:** Add contract tests for the approved `MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, and `TemplateCategory` field names, including camel-case UI contracts and status union values. If the package has no test runner/location, stop and report the exact infrastructure gap to Ansel rather than inventing a runner.
+**Archivo:** `packages/shared-types/<test-location-confirmed-by-T17a>`; import seam: `packages/shared-types/src/index.ts` exports
+**Acción:** Add contract tests for the approved `MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, and `TemplateCategory` field names, including camel-case UI contracts and status union values. Use only the test location and command confirmed by T17a.
 
-**Criterio de Completado:** Before type implementation, the configured shared-types test command fails specifically on absent contract types; record the actual command from `packages/shared-types/package.json` and RED evidence.
+**Criterio de Completado:** Before type implementation, the confirmed shared-types test command fails specifically on absent contract types; record the candidate SHA, exact command and expected failing output.
 
-**Dependencias:** Ninguna
+**Dependencias:** T17a (test infrastructure prerequisite)
 
 ### T18: GREEN — Add shared summary and template TypeScript contracts
 
@@ -224,9 +233,9 @@
 **Archivo:** `packages/shared-types/src/index.ts`
 **Acción:** Add the four interfaces exactly as designed, including `SummaryRequestStatus` lifecycle union and optional category id; preserve existing exports and do not add fields/semantics not specified.
 
-**Criterio de Completado:** T17's RED contract check passes and `npm run typecheck` from `packages/shared-types`' configured package context succeeds; if that package has no independent script, use the verified root `npm run typecheck`.
+**Criterio de Completado:** T17's RED contract check passes with the exact test command established by T17a, and `npm run typecheck` from `packages/shared-types` succeeds.
 
-**Dependencias:** T17 (mandatory RED→GREEN)
+**Dependencias:** T17 (mandatory RED→GREEN), T17a (test infrastructure prerequisite)
 
 ### T19: RED — Specify summary presentation, content preservation, empty/polling states (P2/P5)
 
@@ -341,7 +350,7 @@
 - T16 + T18 → T19 → T20 → T21 → T22: frontend summary UI tests precede implementation, then copy/download tests precede controls; T6 → T20 because the summary selector consumes the implemented own-template list API.
 - T8 + T18 → T23 → T24: settings UI tests precede implementation and use the approved template/default API. T20 → T24 serializes their edits to shared `frontend/src/api.ts`; T20 owns summary/status calls and `listTemplates`, while T24 adds only settings-specific template/category calls.
 - T25 → T26 → T27: integration RED precedes final wiring; final validation depends on all implementation branches.
-- T17 → T18: shared types contract tests precede type additions; T17 must verify the package's real test runner before task execution and report a missing test harness rather than inventing one.
+- T17a → T17 → T18: first establish and verify a real package test harness (the current shared-types `test` script is a no-test placeholder); then commit the contract tests with RED evidence before adding the types. T17a must confirm an existing repository-supported runner/location before configuring anything; it does not authorize assuming or inventing a runner.
 - No other edges are implied by phase order. Independent ready tasks remain parallelizable in separate worktrees. Cross-task RED/GREEN branches must preserve the exact RED commit in the eventual implementation candidate as required by design correction 8.
 
 ## Validation prerequisites and assumptions
@@ -349,5 +358,5 @@
 - Run backend commands from repository root as `cd backend && ...`; use the installed project test/runtime environment, synthetic fixtures, and test database setup already configured in the repository. Design confirms `hypothesis` in backend dev dependencies and gives the backend suite commands above.
 - Run frontend commands from repository root as `cd frontend && ...`; use the existing Vitest/Testing Library configuration cited by the design.
 - Design specifies `cd backend && ruff check . && mypy .`, `cd frontend && npm run typecheck && npm run test`, and the focused suite commands used above. Do not use `make clean` or real meeting data.
-- A direct standalone test command/location for `packages/shared-types` is not established in the approved design. T17 is explicitly conditional on verifying the actual package test configuration; if absent, return the exact technical gap to Ansel before implementation instead of fabricating a command or test harness.
+- `packages/shared-types/package.json` currently defines `test` as `echo "no tests yet" && exit 0`; the package contains only `src/index.ts`, `package.json`, and `tsconfig.json`, with no test runner or test location. T17a is the required enablement task; its runner and location must be confirmed against existing repository-supported conventions before configuration, and its recorded actual command is the prerequisite for T17/T18. Do not treat the current placeholder script as validation.
 - The `PRODUCT_BASELINE.md` checked into the task branch is not the assigned approved snapshot; authority for this plan is the exact baseline commit/blob listed above, plus the approved requirements/design and Fer's documented 2026-10-16 template decision. No assumption beyond those sources is introduced.
