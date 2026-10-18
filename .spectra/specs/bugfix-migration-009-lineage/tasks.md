@@ -51,7 +51,7 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 
 ### T-3: Specify graph identity, single-head ancestry, and either-009 forward paths (RED)
 
-**Tracking:** Issue #404 · Card `task_4199b13216924823`
+**Tracking:** Task done · Issue #404 · Card `task_4199b13216924823` · PR #414
 
 **Files/test seam:** `backend/tests/test_migration.py`; instantiate Alembic `ScriptDirectory` for the configured script location and use `ScriptDirectory.get_revision()`, `ScriptDirectory.get_heads()`, and `ScriptDirectory.iterate_revisions()` for revision identity, heads, ancestry, and upgrade-path planning.
 
