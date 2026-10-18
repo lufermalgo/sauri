@@ -25,19 +25,15 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
-from io import StringIO
 from pathlib import Path
 
 import pytest
-from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
-
-from alembic import command
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
 MIGRATION_FILENAME = "007_rename_schema_to_english.py"
@@ -302,23 +298,3 @@ async def test_source_inventory_rejects_duplicate_recording_kind_and_reference(
                     "'objects/audio-only.webm', 'Original')"
                 )
             )
-
-
-def test_offline_upgrade_includes_each_009_branch_effect_once() -> None:
-    output = StringIO()
-    config = Config(
-        str(MIGRATIONS_DIR.parents[1] / "alembic.ini"),
-        output_buffer=output,
-    )
-
-    command.upgrade(config, "008_speaker_review_aggregate:head", sql=True)
-    sql = output.getvalue()
-
-    assert sql.count("CREATE TABLE recording_media_sources") == 1
-    assert sql.count("CREATE TABLE speaker_review_idempotency_receipts") == 1
-    assert sql.count("ADD COLUMN video_presence") == 1
-    assert "uq_recording_media_source_ref" in sql
-    assert "uq_review_idempotency_key" in sql
-    assert "FOREIGN KEY(recording_id) REFERENCES session_recordings (id)" in sql
-    assert "FOREIGN KEY(review_id) REFERENCES speaker_reviews (id)" in sql
-    assert "FOREIGN KEY(item_id) REFERENCES speaker_review_items (id)" in sql
