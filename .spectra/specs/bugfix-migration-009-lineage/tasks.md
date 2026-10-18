@@ -15,7 +15,7 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 
 ### T-1: Assert exact source-inventory revision selection and preserved migration contracts (RED)
 
-**Tracking:** Issue #402 · Card `task_686872373b8b442a`
+**Tracking:** Issue #402 · Card `task_686872373b8b442a` · PR #415
 
 **Files:** `backend/tests/test_migration.py`
 

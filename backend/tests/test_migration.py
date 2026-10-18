@@ -188,6 +188,26 @@ def _source_inventory_migration():
     pytest.fail(f"no source-inventory migration follows {PREVIOUS_REVISION}")
 
 
+def test_source_inventory_migration_selects_exact_revision_independent_of_enumeration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_glob = Path.glob
+
+    def sibling_first_migration_glob(path: Path, pattern: str):
+        paths = list(original_glob(path, pattern))
+        if path == MIGRATIONS_DIR and pattern == "*.py":
+            return sorted(
+                paths,
+                key=lambda candidate: candidate.name
+                != "009_speaker_review_idempotency_receipts.py",
+            )
+        return paths
+
+    monkeypatch.setattr(Path, "glob", sibling_first_migration_glob)
+
+    assert _source_inventory_migration().revision == "009_recording_media_sources"
+
+
 async def _seed_legacy_recordings(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
         await connection.execute(text("DROP TABLE IF EXISTS recording_media_sources"))
