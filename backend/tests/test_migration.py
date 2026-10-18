@@ -177,15 +177,13 @@ PREVIOUS_REVISION = "008_speaker_review_aggregate"
 
 
 def _source_inventory_migration():
-    for path in MIGRATIONS_DIR.glob("*.py"):
-        spec = importlib.util.spec_from_file_location(path.stem, path)
-        if spec is None or spec.loader is None:
-            continue
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        if getattr(module, "down_revision", None) == PREVIOUS_REVISION:
-            return module
-    pytest.fail(f"no source-inventory migration follows {PREVIOUS_REVISION}")
+    path = MIGRATIONS_DIR / "009_recording_media_sources.py"
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "009_recording_media_sources"
+    return module
 
 
 def test_source_inventory_migration_selects_exact_revision_independent_of_enumeration(
