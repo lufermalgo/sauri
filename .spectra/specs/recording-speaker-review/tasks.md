@@ -235,7 +235,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-14: GREEN — derive and validate speaker-specific excerpts
 
-**Tracking:** Issue #247 · Card task_486562bbb0d7425b
+**Tracking:** Issue #247 · Card task_486562bbb0d7425b · PR #401 · Status: done (QA and security passed; PR open for review)
 
 **Files:** `backend/app/` excerpt derivation/service modules; `backend/app/infra/` media boundary as needed.
 
