@@ -87,7 +87,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-5: RED — speaker excerpt correspondence and validation
 
-**Tracking:** Issue #238 · Card task_8e1ed7b3a5f54922
+**Tracking:** Issue #238 · Card task_8e1ed7b3a5f54922 · PR #400
+
+**Status:** Done.
 
 **Files:** `backend/tests/speaker_review/test_excerpts.py` (create)
 
