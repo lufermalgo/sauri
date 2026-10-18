@@ -28,8 +28,10 @@ import inspect
 from pathlib import Path
 
 import pytest
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -298,3 +300,103 @@ async def test_source_inventory_rejects_duplicate_recording_kind_and_reference(
                     "'objects/audio-only.webm', 'Original')"
                 )
             )
+
+
+# Alembic graph contract for the two published 009 branches (T-3, issue #404).
+RECORDING_MEDIA_REVISION = "009_recording_media_sources"
+SPEAKER_REVIEW_RECEIPTS_REVISION = "009_speaker_review_idempotency_receipts"
+AGGREGATE_REVISION = "008_speaker_review_aggregate"
+LEGACY_PREDECESSOR_REVISION = "007_rename_schema_to_english"
+LEGACY_PREDECESSOR_PARENT = "006_add_titulo_reunion"
+
+
+def _migration_script() -> ScriptDirectory:
+    config = Config(str(MIGRATIONS_DIR.parents[1] / "alembic.ini"))
+    return ScriptDirectory.from_config(config)
+
+
+def test_published_009_revision_ids_and_immediate_parent_are_preserved() -> None:
+    script = _migration_script()
+
+    assert script.get_revision(RECORDING_MEDIA_REVISION).revision == RECORDING_MEDIA_REVISION
+    assert script.get_revision(RECORDING_MEDIA_REVISION).down_revision == AGGREGATE_REVISION
+    assert (
+        script.get_revision(SPEAKER_REVIEW_RECEIPTS_REVISION).revision
+        == SPEAKER_REVIEW_RECEIPTS_REVISION
+    )
+    assert (
+        script.get_revision(SPEAKER_REVIEW_RECEIPTS_REVISION).down_revision
+        == AGGREGATE_REVISION
+    )
+
+
+def test_reconciliation_revision_is_the_only_head_with_both_exact_009_parents() -> None:
+    script = _migration_script()
+    heads = script.get_heads()
+
+    assert len(heads) == 1, (
+        "Alembic graph must have one reconciliation head; "
+        f"found {heads!r} instead of converged 009 branches"
+    )
+    reconciliation = script.get_revision(heads[0])
+    assert set(reconciliation.down_revision) == {
+        RECORDING_MEDIA_REVISION,
+        SPEAKER_REVIEW_RECEIPTS_REVISION,
+    }, "the sole head must directly reconcile both existing 009 revisions"
+
+
+def test_head_ancestry_contains_both_009_branches_and_008() -> None:
+    script = _migration_script()
+    heads = script.get_heads()
+    assert len(heads) == 1, f"expected one converged Alembic head, found {heads!r}"
+
+    ancestry = {
+        revision.revision
+        for revision in script.iterate_revisions(heads[0], AGGREGATE_REVISION)
+    }
+    assert {
+        RECORDING_MEDIA_REVISION,
+        SPEAKER_REVIEW_RECEIPTS_REVISION,
+        AGGREGATE_REVISION,
+    } <= ancestry, f"head ancestry must include both 009 branches and 008; found {ancestry!r}"
+
+
+def test_each_009_state_has_a_structural_forward_path_through_sibling_to_head() -> None:
+    script = _migration_script()
+    heads = script.get_heads()
+    assert len(heads) == 1, f"expected one converged Alembic head, found {heads!r}"
+    head = heads[0]
+
+    for current_revision, sibling_revision in (
+        (RECORDING_MEDIA_REVISION, SPEAKER_REVIEW_RECEIPTS_REVISION),
+        (SPEAKER_REVIEW_RECEIPTS_REVISION, RECORDING_MEDIA_REVISION),
+    ):
+        planned = {
+            revision.revision
+            for revision in script.iterate_revisions(head, current_revision)
+        }
+        assert head in planned, f"upgrade from {current_revision} must reach reconciliation head"
+        assert sibling_revision in planned, (
+            f"upgrade from {current_revision} must include missing sibling "
+            f"{sibling_revision}; planned {planned!r}"
+        )
+
+
+def test_revision_traversal_remains_continuous_before_008_and_through_head() -> None:
+    script = _migration_script()
+    before_008 = {
+        revision.revision
+        for revision in script.iterate_revisions(AGGREGATE_REVISION, LEGACY_PREDECESSOR_PARENT)
+    }
+    assert {AGGREGATE_REVISION, LEGACY_PREDECESSOR_REVISION} <= before_008
+
+    heads = script.get_heads()
+    assert len(heads) == 1, f"expected one converged Alembic head, found {heads!r}"
+    through_head = {revision.revision for revision in script.iterate_revisions(heads[0], "base")}
+    assert {
+        LEGACY_PREDECESSOR_PARENT,
+        LEGACY_PREDECESSOR_REVISION,
+        AGGREGATE_REVISION,
+        RECORDING_MEDIA_REVISION,
+        SPEAKER_REVIEW_RECEIPTS_REVISION,
+    } <= through_head, f"expected uninterrupted history through reconciliation; found {through_head!r}"
