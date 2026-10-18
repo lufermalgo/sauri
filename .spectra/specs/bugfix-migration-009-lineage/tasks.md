@@ -15,6 +15,8 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 
 ### T-1: Assert exact source-inventory revision selection and preserved migration contracts (RED)
 
+**Tracking:** Issue #402 · Card `task_686872373b8b442a`
+
 **Files:** `backend/tests/test_migration.py`
 
 **Action:** Add or adapt tests at the `_source_inventory_migration()` seam so the loader must resolve revision `009_recording_media_sources` explicitly and fail rather than selecting by shared `down_revision` or enumeration order. Preserve and exercise the three existing regression nodes for explicit legacy backfill, downgrade/re-upgrade reference preservation, and duplicate `(recording_id, kind, object_ref)` rejection. Do not change migration code or fixtures to hide the defect.
@@ -28,6 +30,8 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 ## Phase 2: GREEN Deterministic Source-Inventory Selection
 
 ### T-2: Resolve the source-inventory migration by exact revision (GREEN)
+
+**Tracking:** Issue #403 · Card `task_c34ba91bb1e34ede`
 
 **Files:** `backend/tests/test_migration.py`
 
@@ -47,6 +51,8 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 
 ### T-3: Specify graph identity, single-head ancestry, and either-009 forward paths (RED)
 
+**Tracking:** Issue #404 · Card `task_4199b13216924823`
+
 **Files/test seam:** `backend/tests/test_migration.py`; instantiate Alembic `ScriptDirectory` for the configured script location and use `ScriptDirectory.get_revision()`, `ScriptDirectory.get_heads()`, and `ScriptDirectory.iterate_revisions()` for revision identity, heads, ancestry, and upgrade-path planning.
 
 **Action:** Add focused graph tests that assert both existing 009 revisions retain their IDs and immediate 008 parent; a new reconciliation revision has both exact 009 parents and is the only head; head ancestry includes both 009 IDs and 008; and upgrade-step planning from each existing 009 state reaches convergence via the missing sibling without replacing the existing revision identity. Assert paths structurally; do not claim database-executed PostgreSQL compatibility. Include traversal continuity for revisions before 008 and after the convergence point without changing their definitions.
@@ -58,6 +64,8 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 **Dependencies:** None
 
 ### T-4: Specify one-time branch effects in offline upgrade SQL (RED)
+
+**Tracking:** Issue #405 · Card `task_5ad97bbfec3147f6`
 
 **Files/test seam:** `backend/tests/test_migration.py`; invoke `alembic.command.upgrade(config, "008_speaker_review_aggregate:head", sql=True)` using the configured Alembic `Config` with an in-memory output buffer, as the offline SQL-generation API.
 
@@ -73,6 +81,8 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 
 ### T-5: Preserve speaker-review receipt migration contract (regression)
 
+**Tracking:** Issue #406 · Card `task_38233e6f849d4033`
+
 **Files:** `backend/tests/test_migration.py`; use the approved receipt migration at `backend/alembic/versions/009_speaker_review_idempotency_receipts.py` as the test seam.
 
 **Action:** Add a synthetic migration-contract regression test for the existing receipt migration, checking that its approved receipt fields, `(review_id, idempotency_key)` uniqueness, and foreign-key relationships remain represented without changing its approved persisted schema contract. The test must not modify the published migration or claim product behavior beyond that contract.
@@ -86,6 +96,8 @@ The phase labels group work only. T-1, T-3, T-4, and T-5 are independent and may
 ## Phase 4: GREEN Additive Lineage Reconciliation
 
 ### T-6: Add a schema-neutral merge revision for both published 009 branches (GREEN)
+
+**Tracking:** Issue #407 · Card `task_73be9ff83e2242e4`
 
 **Files:** `backend/alembic/versions/<new sequential merge revision>.py`
 
