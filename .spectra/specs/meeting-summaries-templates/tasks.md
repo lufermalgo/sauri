@@ -58,7 +58,7 @@
 
 ### T4: GREEN — Implement personal default resolver
 
-**Tracking:** Issue #272 · Card task_c395d0ef59904831
+**Tracking:** DONE · Issue #272 · Card task_c395d0ef59904831 · PR #410
 
 **Archivo:** `backend/app/templates/default_resolver.py`
 **Acción:** Implement the pure `ResolvedDefault`/`resolve_default(template_row)` contract in the approved design, returning `None` for no row and the exact id/version otherwise; do not inspect category or infer fallback behavior.
