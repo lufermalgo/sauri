@@ -17,13 +17,7 @@ from hypothesis import strategies as st
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.meetings.schemas import (
-    CalendarMeetingInput,
-    LinkMeetingInput,
-    ManualMeetingInput,
-    MeetingInput,
-)
-
+from app.meetings.schemas import MeetingInput
 from app.meetings.service import register_meeting
 
 meet_link_strategy = st.from_regex(r"[a-z]{3,4}-[a-z]{4}-[a-z]{3}", fullmatch=True).map(
