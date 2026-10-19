@@ -1,7 +1,7 @@
 """Utility for creating JWT tokens (development and testing)."""
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from jose import jwt
 
@@ -28,7 +28,7 @@ def create_token(
     Returns:
         JWT token encoded as a string.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": user_id,
         "email": email,
