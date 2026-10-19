@@ -6,12 +6,11 @@ Tasks: 11.2, 12.2
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.transcription.worker import start_worker
-
 
 # ---------------------------------------------------------------------------
 # asr-engine contract integration test (Task 11.2)
@@ -23,7 +22,7 @@ class TestASREngineContract:
     """Verifies that the POST /transcribe and GET /health contract is correct."""
 
     @pytest.mark.asyncio
-    async def test_post_transcribe_response_shape(self):
+    async def test_post_transcribe_response_shape(self) -> None:
         """POST /transcribe returns {segments: [{text, start_ms, end_ms}], language}."""
         from pydantic import BaseModel
 
@@ -53,7 +52,7 @@ class TestASREngineContract:
         assert parsed.language == "es"
 
     @pytest.mark.asyncio
-    async def test_post_transcribe_valid_empty_response(self):
+    async def test_post_transcribe_valid_empty_response(self) -> None:
         """POST /transcribe with empty audio returns segments: [], language."""
         from pydantic import BaseModel
 
@@ -71,7 +70,7 @@ class TestASREngineContract:
         assert parsed.segments == []
         assert parsed.language == "es"
 
-    def test_health_endpoint_schema(self):
+    def test_health_endpoint_schema(self) -> None:
         """GET /health returns {status: 'ok'}."""
         health_response = {"status": "ok"}
         assert "status" in health_response
@@ -88,7 +87,7 @@ class TestWorkerSubscription:
     """Verifies that the worker subscribes to the 'transcribe' topic on startup."""
 
     @pytest.mark.asyncio
-    async def test_worker_subscribes_to_transcribe_topic(self):
+    async def test_worker_subscribes_to_transcribe_topic(self) -> None:
         """On startup, the worker subscribes to the 'transcribe' topic."""
         mock_queue = AsyncMock()
         mock_queue.subscribe = AsyncMock()

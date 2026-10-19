@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
 from app.infra.models import (
@@ -32,7 +32,9 @@ def _auth_header(user_id: str = USER_ID) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _session_factory(api_db_url: str):
+async def _session_factory(
+    api_db_url: str,
+) -> tuple[async_sessionmaker[AsyncSession], AsyncEngine]:
     engine = create_async_engine(api_db_url, echo=False)
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False), engine
 
@@ -63,7 +65,7 @@ async def _create_meeting(api_db_url: str, meeting_id: str, created_by: str = US
 
 
 @pytest.mark.asyncio
-async def test_rename_200_updates_title(api_client: AsyncClient, api_db_url: str):
+async def test_rename_200_updates_title(api_client: AsyncClient, api_db_url: str) -> None:
     meeting_id = str(uuid.uuid4())
     await _create_meeting(api_db_url, meeting_id)
 
@@ -80,7 +82,7 @@ async def test_rename_200_updates_title(api_client: AsyncClient, api_db_url: str
 
 
 @pytest.mark.asyncio
-async def test_rename_404_nonexistent_meeting(api_client: AsyncClient):
+async def test_rename_404_nonexistent_meeting(api_client: AsyncClient) -> None:
     resp = await api_client.patch(
         f"/api/v1/meetings/{uuid.uuid4()}",
         json={"title": "X"},
@@ -90,7 +92,7 @@ async def test_rename_404_nonexistent_meeting(api_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_rename_404_meeting_of_another_user(api_client: AsyncClient, api_db_url: str):
+async def test_rename_404_meeting_of_another_user(api_client: AsyncClient, api_db_url: str) -> None:
     meeting_id = str(uuid.uuid4())
     await _create_meeting(api_db_url, meeting_id, created_by=OTHER_USER_ID)
 
@@ -103,7 +105,7 @@ async def test_rename_404_meeting_of_another_user(api_client: AsyncClient, api_d
 
 
 @pytest.mark.asyncio
-async def test_rename_422_empty_title(api_client: AsyncClient, api_db_url: str):
+async def test_rename_422_empty_title(api_client: AsyncClient, api_db_url: str) -> None:
     meeting_id = str(uuid.uuid4())
     await _create_meeting(api_db_url, meeting_id)
 
@@ -116,7 +118,7 @@ async def test_rename_422_empty_title(api_client: AsyncClient, api_db_url: str):
 
 
 @pytest.mark.asyncio
-async def test_rename_requires_authentication(api_client: AsyncClient):
+async def test_rename_requires_authentication(api_client: AsyncClient) -> None:
     resp = await api_client.patch(
         f"/api/v1/meetings/{uuid.uuid4()}", json={"title": "X"}
     )
@@ -131,7 +133,7 @@ async def test_rename_requires_authentication(api_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_delete_204_removes_the_meeting(
     api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
-):
+) -> None:
     monkeypatch.setenv("OBJECT_STORE_ENDPOINT", "http://localhost:1")
     monkeypatch.setenv("OBJECT_STORE_BUCKET", "test-bucket")
     monkeypatch.setenv("MINIO_ROOT_USER", "test")
@@ -148,13 +150,13 @@ async def test_delete_204_removes_the_meeting(
 
 
 @pytest.mark.asyncio
-async def test_delete_404_nonexistent_meeting(api_client: AsyncClient):
+async def test_delete_404_nonexistent_meeting(api_client: AsyncClient) -> None:
     resp = await api_client.delete(f"/api/v1/meetings/{uuid.uuid4()}", headers=_auth_header())
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_delete_404_meeting_of_another_user(api_client: AsyncClient, api_db_url: str):
+async def test_delete_404_meeting_of_another_user(api_client: AsyncClient, api_db_url: str) -> None:
     meeting_id = str(uuid.uuid4())
     await _create_meeting(api_db_url, meeting_id, created_by=OTHER_USER_ID)
 
@@ -163,7 +165,7 @@ async def test_delete_404_meeting_of_another_user(api_client: AsyncClient, api_d
 
 
 @pytest.mark.asyncio
-async def test_delete_requires_authentication(api_client: AsyncClient):
+async def test_delete_requires_authentication(api_client: AsyncClient) -> None:
     resp = await api_client.delete(f"/api/v1/meetings/{uuid.uuid4()}")
     assert resp.status_code == 401
 
@@ -171,7 +173,7 @@ async def test_delete_requires_authentication(api_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_delete_with_full_diarization_does_not_violate_fk(
     api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
-):
+) -> None:
     """A Meeting with Transcript + Diarization + Speaker + SpeakerAssignment +
     SessionRecording must be deletable without violating the FKs that lack
     ondelete=CASCADE (diarizations.meeting_id, diarizations.transcript_id,
