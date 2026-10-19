@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
 from app.infra.models import (
@@ -30,13 +30,13 @@ def _auth_header() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _session_factory(api_db_url: str):
+async def _session_factory(api_db_url: str) -> tuple[async_sessionmaker[AsyncSession], AsyncEngine]:
     engine = create_async_engine(api_db_url, echo=False)
     return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False), engine
 
 
 @pytest.mark.asyncio
-async def test_diarization_200_with_speakers_and_assignments(api_client: AsyncClient, api_db_url: str):
+async def test_diarization_200_with_speakers_and_assignments(api_client: AsyncClient, api_db_url: str) -> None:
     session_factory, engine = await _session_factory(api_db_url)
     meeting_id = str(uuid.uuid4())
     transcript_id = str(uuid.uuid4())
@@ -130,7 +130,7 @@ async def test_diarization_200_with_speakers_and_assignments(api_client: AsyncCl
 
 
 @pytest.mark.asyncio
-async def test_diarization_404_nonexistent_meeting(api_client: AsyncClient):
+async def test_diarization_404_nonexistent_meeting(api_client: AsyncClient) -> None:
     resp = await api_client.get(
         f"/api/v1/meetings/{uuid.uuid4()}/diarization", headers=_auth_header()
     )
@@ -138,7 +138,7 @@ async def test_diarization_404_nonexistent_meeting(api_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_diarization_404_without_diarization(api_client: AsyncClient, api_db_url: str):
+async def test_diarization_404_without_diarization(api_client: AsyncClient, api_db_url: str) -> None:
     session_factory, engine = await _session_factory(api_db_url)
     meeting_id = str(uuid.uuid4())
     now = datetime.now(UTC)
@@ -165,6 +165,6 @@ async def test_diarization_404_without_diarization(api_client: AsyncClient, api_
 
 
 @pytest.mark.asyncio
-async def test_diarization_requires_authentication(api_client: AsyncClient):
+async def test_diarization_requires_authentication(api_client: AsyncClient) -> None:
     resp = await api_client.get(f"/api/v1/meetings/{uuid.uuid4()}/diarization")
     assert resp.status_code == 401

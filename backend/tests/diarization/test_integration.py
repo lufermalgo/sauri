@@ -12,16 +12,16 @@ from __future__ import annotations
 
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import Meeting
 from app.diarization.worker import start_worker
-
+from app.infra.models import Meeting
 
 # ---------------------------------------------------------------------------
 # Task 15.1 — Subscription to the "diarize" topic (Req 1.1)
@@ -32,7 +32,7 @@ class TestDiarizationWorkerSubscription:
     """The diarization worker subscribes to the 'diarize' topic on startup."""
 
     @pytest.mark.asyncio
-    async def test_worker_subscribes_to_diarize_topic(self):
+    async def test_worker_subscribes_to_diarize_topic(self) -> None:
         """On startup, the worker subscribes to the 'diarize' topic (Req 1.1)."""
         mock_queue = AsyncMock()
         mock_queue.subscribe = AsyncMock()
@@ -56,8 +56,8 @@ class TestDiarizationMessagePublication:
 
     @pytest.mark.asyncio
     async def test_publishes_diarize_on_transcript_completion(
-        self, session_factory: async_sessionmaker
-    ):
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
         """After persisting the Transcript, {meeting_id} is published to the 'diarize' topic (Req 1.2)."""
         from app.transcription.asr_engine import (
             ASRCapabilities,
@@ -67,21 +67,20 @@ class TestDiarizationMessagePublication:
         from app.transcription.worker import _process_transcription
 
         meeting_id = str(uuid.uuid4())
-        async with session_factory() as session:
-            async with session.begin():
-                session.add(
-                    Meeting(
-                        id=meeting_id,
-                        meet_link="https://meet.google.com/abc-defg-hij",
-                        origin="link",
-                        calendar_invite_id=None,
-                        scheduled_start_time=None,
-                        process_state="recording",
-                        failure_cause=None,
-                        created_by="test-user",
-                        created_at=datetime.now(timezone.utc),
-                    )
+        async with session_factory() as session, session.begin():
+            session.add(
+                Meeting(
+                    id=meeting_id,
+                    meet_link="https://meet.google.com/abc-defg-hij",
+                    origin="link",
+                    calendar_invite_id=None,
+                    scheduled_start_time=None,
+                    process_state="recording",
+                    failure_cause=None,
+                    created_by="test-user",
+                    created_at=datetime.now(UTC),
                 )
+            )
 
         segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
         result = TranscriptionResult(segments=segments, language="es-CO", supports_turns=True)
@@ -105,8 +104,8 @@ class TestDiarizationMessagePublication:
 
     @pytest.mark.asyncio
     async def test_does_not_publish_if_there_is_no_transcript(
-        self, session_factory: async_sessionmaker
-    ):
+        self, session_factory: async_sessionmaker[AsyncSession]
+    ) -> None:
         """If transcription fails (no segments), nothing is published to 'diarize'."""
         from app.transcription.asr_engine import (
             ASRCapabilities,
@@ -115,21 +114,20 @@ class TestDiarizationMessagePublication:
         from app.transcription.worker import _process_transcription
 
         meeting_id = str(uuid.uuid4())
-        async with session_factory() as session:
-            async with session.begin():
-                session.add(
-                    Meeting(
-                        id=meeting_id,
-                        meet_link="https://meet.google.com/abc-defg-hij",
-                        origin="link",
-                        calendar_invite_id=None,
-                        scheduled_start_time=None,
-                        process_state="recording",
-                        failure_cause=None,
-                        created_by="test-user",
-                        created_at=datetime.now(timezone.utc),
-                    )
+        async with session_factory() as session, session.begin():
+            session.add(
+                Meeting(
+                    id=meeting_id,
+                    meet_link="https://meet.google.com/abc-defg-hij",
+                    origin="link",
+                    calendar_invite_id=None,
+                    scheduled_start_time=None,
+                    process_state="recording",
+                    failure_cause=None,
+                    created_by="test-user",
+                    created_at=datetime.now(UTC),
                 )
+            )
 
         result = TranscriptionResult(segments=[], language="es-CO", supports_turns=True)
         engine = AsyncMock()
@@ -159,15 +157,16 @@ class TestDiarizeAckNackRetries:
     """Integration with RabbitMQJobQueue: ack on success, nack on failure, retries."""
 
     @pytest.mark.asyncio
-    async def test_ack_after_success(self):
+    async def test_ack_after_success(self) -> None:
         """Successful handler -> ack (Req 1.7)."""
         import json
+
         from app.infra.queue_rabbitmq import RabbitMQJobQueue
 
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
         queue._dlx_exchange = None
 
-        async def ok_handler(_msg):
+        async def ok_handler(_msg: Any) -> None:
             return None
 
         mock_message = AsyncMock()
@@ -180,9 +179,9 @@ class TestDiarizeAckNackRetries:
         mock_queue_obj = AsyncMock()
         queue._channel.declare_queue.return_value = mock_queue_obj
 
-        captured = {}
+        captured: dict[str, Any] = {}
 
-        async def capture_consume(cb):
+        async def capture_consume(cb: Any) -> None:
             captured["cb"] = cb
 
         mock_queue_obj.consume = capture_consume
@@ -194,8 +193,9 @@ class TestDiarizeAckNackRetries:
         mock_message.nack.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_nack_after_exception_with_diarization_retries(self):
-        """Handler raising an exception -> republishes with the counter +1 and acks while retries remain (Req 1.8, 10.2).
+    async def test_nack_after_exception_with_diarization_retries(self) -> None:
+        """Handler raising an exception -> republishes with the counter +1 and acks while retries remain
+        (Req 1.8, 10.2).
 
         Doesn't use nack(requeue=True): with no DLX configured that requeues
         the same message with no trace of retries, causing an infinite loop
@@ -203,13 +203,14 @@ class TestDiarizeAckNackRetries:
         x-sauri-retries incremented and the original message is acked.
         """
         import json
+
         from app.infra.queue_rabbitmq import RabbitMQJobQueue
 
         with patch.dict(os.environ, {"DIARIZATION_MAX_RETRIES": "3"}, clear=False):
             queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
             queue._dlx_exchange = None
 
-            async def failing_handler(_msg):
+            async def failing_handler(_msg: Any) -> None:
                 raise RuntimeError("engine failure")
 
             mock_message = AsyncMock()
@@ -224,9 +225,9 @@ class TestDiarizeAckNackRetries:
             queue._channel.declare_queue.return_value = mock_queue_obj
             queue._channel.default_exchange.publish = AsyncMock()
 
-            captured = {}
+            captured: dict[str, Any] = {}
 
-            async def capture_consume(cb):
+            async def capture_consume(cb: Any) -> None:
                 captured["cb"] = cb
 
             mock_queue_obj.consume = capture_consume
@@ -253,11 +254,11 @@ class TestCloudProviderHTTPSEgress:
     """CloudProvider transmits over HTTPS with an Authorization: Bearer header."""
 
     @pytest.mark.asyncio
-    async def test_transmits_https_with_bearer(self):
+    async def test_transmits_https_with_bearer(self) -> None:
         """The request goes out over HTTPS with 'Authorization: Bearer {api_key}' (Req 4.1, 4.3)."""
         from app.diarization.diarization_engine import DiarizationOptions
 
-        captured: dict = {}
+        captured: dict[str, Any] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured["url"] = str(request.url)
@@ -285,7 +286,7 @@ class TestCloudProviderHTTPSEgress:
             # Inject the simulated transport ONLY in the test
             original_client = httpx.AsyncClient
 
-            def client_factory(*args, **kwargs):
+            def client_factory(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
                 kwargs["transport"] = transport
                 return original_client(*args, **kwargs)
 
