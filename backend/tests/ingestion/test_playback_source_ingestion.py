@@ -119,7 +119,9 @@ async def test_invalid_json_returns_same_422_detail_and_chains_parse_error() -> 
 
     assert type(error.value) is HTTPException
     assert error.value.status_code == 422
-    assert error.value.detail.startswith("Invalid ingestion data: Expecting value:")
+    assert error.value.detail == (
+        "Invalid ingestion data: Expecting value: line 1 column 1 (char 0)"
+    )
     assert isinstance(error.value.__cause__, json.JSONDecodeError)
 
 

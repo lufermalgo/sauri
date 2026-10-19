@@ -70,7 +70,7 @@ async def upload_recording(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid ingestion data: {exc}",
-        )
+        ) from exc
 
     # b. Authentication already validated by the dependency
     has_separate_video = video is not None
