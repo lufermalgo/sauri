@@ -160,7 +160,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-11: Verify signed-source range and CORS delivery contract
 
-**Tracking:** Issue #309 · Card `task_0cfb4d4d978e4d7e`
+**Tracking:** Task done · Issue #309 · Card `task_0cfb4d4d978e4d7e` · PR #485
 
 **Files:** `backend/tests/meetings/test_playback_storage_integration.py`.
 
