@@ -19,8 +19,10 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.auth.audit import record_access
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
@@ -47,6 +49,30 @@ def _get_queue() -> JobQueue:
 def _get_object_store() -> ObjectStore:
     """Object store factory (simplified DI)."""
     return create_object_store()
+
+
+async def _get_authorized_meeting(
+    session: AsyncSession,
+    meeting_id: str,
+    user: AuthenticatedUser,
+    resource: str,
+) -> Meeting:
+    """Require an authorized sales user who owns the requested meeting."""
+    if not user.is_sales:
+        await record_access(session, user.id, resource, "denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted to authorized sales users",
+        )
+
+    meeting = await session.get(Meeting, meeting_id)
+    if meeting is None or meeting.created_by != user.id:
+        await record_access(session, user.id, resource, "denied")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Meeting not found: {meeting_id}",
+        )
+    return meeting
 
 
 class RenameInput(BaseModel):
@@ -273,13 +299,12 @@ async def get_transcript(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
-            # Verify the meeting exists
-            meeting = await session.get(Meeting, meeting_id)
-            if meeting is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Meeting not found: {meeting_id}",
-                )
+            await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"GET /api/v1/meetings/{meeting_id}/transcript",
+            )
 
             # Get the transcript
             stmt = select(Transcript).where(Transcript.meeting_id == meeting_id)
@@ -339,12 +364,12 @@ async def get_diarization(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
-            meeting = await session.get(Meeting, meeting_id)
-            if meeting is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Meeting not found: {meeting_id}",
-                )
+            await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"GET /api/v1/meetings/{meeting_id}/diarization",
+            )
 
             stmt = (
                 select(Diarization)
