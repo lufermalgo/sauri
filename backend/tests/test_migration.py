@@ -26,6 +26,8 @@ from __future__ import annotations
 import importlib.util
 import inspect
 from pathlib import Path
+from types import ModuleType
+from typing import cast
 
 import pytest
 from alembic.config import Config
@@ -34,6 +36,7 @@ from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -55,11 +58,12 @@ OLD_TO_NEW_TABLES = {
 }
 
 
-def _load_migration_module():
+def _load_migration_module() -> ModuleType:
     path = MIGRATIONS_DIR / MIGRATION_FILENAME
     spec = importlib.util.spec_from_file_location(
         MIGRATION_FILENAME.replace(".py", ""), path
     )
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -120,7 +124,7 @@ def test_downgrade_reverses_every_rename() -> None:
 
 @pytest.mark.asyncio
 async def test_orm_schema_uses_english_table_names(async_engine: AsyncEngine) -> None:
-    def _table_names(sync_conn):
+    def _table_names(sync_conn: Connection) -> set[str]:
         return set(sa_inspect(sync_conn).get_table_names())
 
     async with async_engine.connect() as conn:
@@ -133,7 +137,7 @@ async def test_orm_schema_uses_english_table_names(async_engine: AsyncEngine) ->
 
 @pytest.mark.asyncio
 async def test_orm_schema_meetings_has_english_columns(async_engine: AsyncEngine) -> None:
-    def _columns(sync_conn):
+    def _columns(sync_conn: Connection) -> set[str]:
         return {c["name"] for c in sa_inspect(sync_conn).get_columns("meetings")}
 
     async with async_engine.connect() as conn:
@@ -158,7 +162,7 @@ async def test_orm_schema_meetings_has_english_columns(async_engine: AsyncEngine
 
 @pytest.mark.asyncio
 async def test_orm_schema_users_has_english_columns(async_engine: AsyncEngine) -> None:
-    def _columns(sync_conn):
+    def _columns(sync_conn: Connection) -> set[str]:
         return {c["name"] for c in sa_inspect(sync_conn).get_columns("users")}
 
     async with async_engine.connect() as conn:
@@ -176,7 +180,7 @@ async def test_orm_schema_users_has_english_columns(async_engine: AsyncEngine) -
 PREVIOUS_REVISION = "008_speaker_review_aggregate"
 
 
-def _source_inventory_migration():
+def _source_inventory_migration() -> ModuleType:
     path = MIGRATIONS_DIR / "009_recording_media_sources.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
@@ -191,7 +195,7 @@ def test_source_inventory_migration_selects_exact_revision_independent_of_enumer
 ) -> None:
     original_glob = Path.glob
 
-    def sibling_first_migration_glob(path: Path, pattern: str):
+    def sibling_first_migration_glob(path: Path, pattern: str) -> list[Path]:
         paths = list(original_glob(path, pattern))
         if path == MIGRATIONS_DIR and pattern == "*.py":
             return sorted(
@@ -226,9 +230,11 @@ async def _seed_legacy_recordings(engine: AsyncEngine) -> None:
         )
 
 
-async def _run_migration(engine: AsyncEngine, migration, direction: str) -> None:
+async def _run_migration(
+    engine: AsyncEngine, migration: ModuleType, direction: str
+) -> None:
     async with engine.begin() as connection:
-        def run(sync_connection) -> None:
+        def run(sync_connection: Connection) -> None:
             context = MigrationContext.configure(sync_connection)
             with Operations.context(context):
                 getattr(migration, direction)()
@@ -357,7 +363,7 @@ def test_reconciliation_revision_is_the_only_head_with_both_exact_009_parents() 
         f"found {heads!r} instead of converged 009 branches"
     )
     reconciliation = script.get_revision(heads[0])
-    assert set(reconciliation.down_revision) == {
+    assert set(cast(tuple[str, ...], reconciliation.down_revision)) == {
         RECORDING_MEDIA_REVISION,
         SPEAKER_REVIEW_RECEIPTS_REVISION,
     }, "the sole head must directly reconcile both existing 009 revisions"
@@ -437,14 +443,26 @@ async def test_speaker_review_receipt_migration_preserves_persisted_contract(
         await connection.execute(text("DROP TABLE IF EXISTS speaker_review_idempotency_receipts"))
     await _run_migration(async_engine, migration, "upgrade")
 
-    def inspect_receipt_contract(sync_connection):
+    def inspect_receipt_contract(
+        sync_connection: Connection,
+    ) -> tuple[
+        dict[str, tuple[str, bool]],
+        set[str],
+        set[tuple[str | None, tuple[str, ...]]],
+        set[tuple[tuple[str, ...], str, tuple[str, ...], str | None]],
+    ]:
         inspector = sa_inspect(sync_connection)
         columns = {
             column["name"]: (str(column["type"]), column["nullable"])
             for column in inspector.get_columns("speaker_review_idempotency_receipts")
         }
         primary_key = set(
-            inspector.get_pk_constraint("speaker_review_idempotency_receipts")["constrained_columns"]
+            cast(
+                tuple[str, ...],
+                inspector.get_pk_constraint("speaker_review_idempotency_receipts")[
+                    "constrained_columns"
+                ],
+            )
         )
         unique_constraints = {
             (constraint["name"], tuple(constraint["column_names"]))
@@ -457,7 +475,7 @@ async def test_speaker_review_receipt_migration_preserves_persisted_contract(
                 tuple(foreign_key["constrained_columns"]),
                 foreign_key["referred_table"],
                 tuple(foreign_key["referred_columns"]),
-                foreign_key["options"].get("ondelete"),
+                cast(str | None, foreign_key["options"].get("ondelete")),
             )
             for foreign_key in inspector.get_foreign_keys(
                 "speaker_review_idempotency_receipts"
