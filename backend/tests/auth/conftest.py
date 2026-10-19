@@ -42,7 +42,9 @@ async def api_client(api_db_url: str) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
-async def api_session_factory(api_db_url: str):
+async def api_session_factory(
+    api_db_url: str,
+) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     engine = create_async_engine(api_db_url, echo=False)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     yield factory
