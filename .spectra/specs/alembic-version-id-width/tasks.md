@@ -27,7 +27,7 @@
 **Acceptance evidence:** Before T-6, the test fails because the required pre-table widening is absent; after T-6, the controlled failure leaves revision 008, width 32, and the collision fixture unchanged, with no partially-created receipt schema.
 **Validation:** From `backend/`, run `.venv/bin/python -m pytest tests/test_migration.py` with QA's recorded isolated PostgreSQL 16 setup.
 **Dependencies:** T-1 (both edit `backend/tests/test_migration.py`; serialize to avoid merge conflicts).
-**Tracking:** Issue #489 · Card task_768da269dd9d4c81
+**Tracking:** Issue #489 · Card task_768da269dd9d4c81 · PR #496
 
 ### T-3 (RED): Lock receipt schema and uniqueness behavior
 
