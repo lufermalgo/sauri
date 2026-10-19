@@ -6,13 +6,16 @@ Tasks: 10.3, 10.4
 
 from __future__ import annotations
 
+import json
 import os
-from unittest.mock import patch
+from collections.abc import Awaitable, Callable
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aio_pika.abc import AbstractIncomingMessage
 
-from app.infra.queue_rabbitmq import _read_max_retries, _count_retries
-
+from app.infra.queue_rabbitmq import RabbitMQJobQueue, _count_retries, _read_max_retries
 
 # ---------------------------------------------------------------------------
 # Example-based tests — ASR_MAX_RETRIES range validation (Task 10.3)
@@ -23,48 +26,48 @@ from app.infra.queue_rabbitmq import _read_max_retries, _count_retries
 class TestMaxRetries:
     """Tests for ASR_MAX_RETRIES range validation."""
 
-    def test_default_when_absent(self):
+    def test_default_when_absent(self) -> None:
         """ASR_MAX_RETRIES absent → default 3."""
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ASR_MAX_RETRIES", None)
             assert _read_max_retries() == 3
 
-    def test_default_when_empty(self):
+    def test_default_when_empty(self) -> None:
         """ASR_MAX_RETRIES empty → default 3."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": ""}, clear=False):
             assert _read_max_retries() == 3
 
-    def test_valid_value_0(self):
+    def test_valid_value_0(self) -> None:
         """ASR_MAX_RETRIES=0 → 0 (no retries)."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "0"}, clear=False):
             assert _read_max_retries() == 0
 
-    def test_valid_value_10(self):
+    def test_valid_value_10(self) -> None:
         """ASR_MAX_RETRIES=10 → 10 (max allowed)."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "10"}, clear=False):
             assert _read_max_retries() == 10
 
-    def test_valid_value_5(self):
+    def test_valid_value_5(self) -> None:
         """ASR_MAX_RETRIES=5 → 5."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "5"}, clear=False):
             assert _read_max_retries() == 5
 
-    def test_out_of_range_negative(self):
+    def test_out_of_range_negative(self) -> None:
         """ASR_MAX_RETRIES=-1 → default 3 (out of range)."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "-1"}, clear=False):
             assert _read_max_retries() == 3
 
-    def test_out_of_range_greater_than_10(self):
+    def test_out_of_range_greater_than_10(self) -> None:
         """ASR_MAX_RETRIES=11 → default 3 (out of range)."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "11"}, clear=False):
             assert _read_max_retries() == 3
 
-    def test_out_of_range_100(self):
+    def test_out_of_range_100(self) -> None:
         """ASR_MAX_RETRIES=100 → default 3."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "100"}, clear=False):
             assert _read_max_retries() == 3
 
-    def test_not_an_integer(self):
+    def test_not_an_integer(self) -> None:
         """ASR_MAX_RETRIES='abc' → default 3."""
         with patch.dict(os.environ, {"ASR_MAX_RETRIES": "abc"}, clear=False):
             assert _read_max_retries() == 3
@@ -87,42 +90,32 @@ class TestCountRetries:
     _count_retries always saw 0.
     """
 
-    def test_no_header_returns_0(self):
+    def test_no_header_returns_0(self) -> None:
         """Message without x-sauri-retries → 0 retries."""
-        from unittest.mock import MagicMock
-
         msg = MagicMock()
         msg.headers = {}
         assert _count_retries(msg) == 0
 
-    def test_no_headers_returns_0(self):
+    def test_no_headers_returns_0(self) -> None:
         """Message without headers → 0 retries."""
-        from unittest.mock import MagicMock
-
         msg = MagicMock()
         msg.headers = None
         assert _count_retries(msg) == 0
 
-    def test_header_with_value_1(self):
+    def test_header_with_value_1(self) -> None:
         """x-sauri-retries=1 → 1 retry."""
-        from unittest.mock import MagicMock
-
         msg = MagicMock()
         msg.headers = {"x-sauri-retries": 1}
         assert _count_retries(msg) == 1
 
-    def test_header_with_value_3(self):
+    def test_header_with_value_3(self) -> None:
         """x-sauri-retries=3 → 3 retries."""
-        from unittest.mock import MagicMock
-
         msg = MagicMock()
         msg.headers = {"x-sauri-retries": 3}
         assert _count_retries(msg) == 3
 
-    def test_header_non_integer_returns_0(self):
+    def test_header_non_integer_returns_0(self) -> None:
         """x-sauri-retries with a non-integer value → 0 retries."""
-        from unittest.mock import MagicMock
-
         msg = MagicMock()
         msg.headers = {"x-sauri-retries": "not-an-integer"}
         assert _count_retries(msg) == 0
@@ -135,19 +128,14 @@ class TestRabbitMQJobQueueBehavior:
     """
 
     @pytest.mark.asyncio
-    async def test_ack_on_success(self):
+    async def test_ack_on_success(self) -> None:
         """Req 1.5: Successful processing → ack."""
-        from unittest.mock import AsyncMock
-        from app.infra.queue_rabbitmq import RabbitMQJobQueue
-        import json
-
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
-        queue._max_retries = 3
         queue._dlx_exchange = None
 
         handler_called = False
 
-        async def mock_handler(msg):
+        async def mock_handler(msg: dict[str, Any]) -> None:
             nonlocal handler_called
             handler_called = True
 
@@ -161,9 +149,9 @@ class TestRabbitMQJobQueueBehavior:
         mock_queue = AsyncMock()
         queue._channel.declare_queue.return_value = mock_queue
 
-        captured_callback = None
+        captured_callback: Callable[[AbstractIncomingMessage], Awaitable[None]] | None = None
 
-        async def capture_consume(callback):
+        async def capture_consume(callback: Callable[[AbstractIncomingMessage], Awaitable[None]]) -> None:
             nonlocal captured_callback
             captured_callback = callback
 
@@ -171,7 +159,6 @@ class TestRabbitMQJobQueueBehavior:
 
         await queue.subscribe("transcribe", mock_handler)
         assert captured_callback is not None
-
         await captured_callback(mock_message)
 
         assert handler_called
@@ -179,17 +166,12 @@ class TestRabbitMQJobQueueBehavior:
         mock_message.nack.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_nack_without_requeue_on_exception_retries_exhausted(self):
+    async def test_nack_without_requeue_on_exception_retries_exhausted(self) -> None:
         """Req 1.6: Exception with retries exhausted → nack(requeue=False)."""
-        from unittest.mock import AsyncMock
-        from app.infra.queue_rabbitmq import RabbitMQJobQueue
-        import json
-
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
-        queue._max_retries = 3
         queue._dlx_exchange = "dlx-exchange"
 
-        async def failing_handler(msg):
+        async def failing_handler(msg: dict[str, Any]) -> None:
             raise RuntimeError("boom")
 
         mock_message = AsyncMock()
@@ -202,22 +184,23 @@ class TestRabbitMQJobQueueBehavior:
         mock_queue = AsyncMock()
         queue._channel.declare_queue.return_value = mock_queue
 
-        captured_callback = None
+        captured_callback: Callable[[AbstractIncomingMessage], Awaitable[None]] | None = None
 
-        async def capture_consume(callback):
+        async def capture_consume(callback: Callable[[AbstractIncomingMessage], Awaitable[None]]) -> None:
             nonlocal captured_callback
             captured_callback = callback
 
         mock_queue.consume = capture_consume
 
         await queue.subscribe("transcribe", failing_handler)
+        assert captured_callback is not None
         await captured_callback(mock_message)
 
         mock_message.nack.assert_called_once_with(requeue=False)
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_republishes_with_retries_incremented_on_exception_retries_available(self):
+    async def test_republishes_with_retries_incremented_on_exception_retries_available(self) -> None:
         """Req 9.2: Exception with retries available → republish with counter +1 and ack the original.
 
         Doesn't use nack(requeue=True): without a DLX configured that requeues
@@ -226,15 +209,10 @@ class TestRabbitMQJobQueueBehavior:
         production). Instead, a copy is published with x-sauri-retries
         incremented and the original message is acked.
         """
-        from unittest.mock import AsyncMock
-        from app.infra.queue_rabbitmq import RabbitMQJobQueue
-        import json
-
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
-        queue._max_retries = 3
         queue._dlx_exchange = None
 
-        async def failing_handler(msg):
+        async def failing_handler(msg: dict[str, Any]) -> None:
             raise RuntimeError("boom")
 
         mock_message = AsyncMock()
@@ -249,15 +227,16 @@ class TestRabbitMQJobQueueBehavior:
         queue._channel.declare_queue.return_value = mock_queue
         queue._channel.default_exchange.publish = AsyncMock()
 
-        captured_callback = None
+        captured_callback: Callable[[AbstractIncomingMessage], Awaitable[None]] | None = None
 
-        async def capture_consume(callback):
+        async def capture_consume(callback: Callable[[AbstractIncomingMessage], Awaitable[None]]) -> None:
             nonlocal captured_callback
             captured_callback = callback
 
         mock_queue.consume = capture_consume
 
         await queue.subscribe("transcribe", failing_handler)
+        assert captured_callback is not None
         await captured_callback(mock_message)
 
         mock_message.nack.assert_not_called()
@@ -268,16 +247,12 @@ class TestRabbitMQJobQueueBehavior:
         assert published_message[0].headers["x-sauri-retries"] == 2
 
     @pytest.mark.asyncio
-    async def test_dlx_configured_in_queue_arguments(self):
+    async def test_dlx_configured_in_queue_arguments(self) -> None:
         """Req 1.7, 9.3: DLX configured → x-dead-letter-exchange is passed."""
-        from unittest.mock import AsyncMock
-        from app.infra.queue_rabbitmq import RabbitMQJobQueue
-
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
-        queue._max_retries = 3
         queue._dlx_exchange = "my-dlx"
 
-        async def noop_handler(msg):
+        async def noop_handler(msg: dict[str, Any]) -> None:
             pass
 
         queue._channel = AsyncMock()
@@ -294,16 +269,12 @@ class TestRabbitMQJobQueueBehavior:
         assert arguments.get("x-dead-letter-exchange") == "my-dlx"
 
     @pytest.mark.asyncio
-    async def test_discard_without_dlx(self):
+    async def test_discard_without_dlx(self) -> None:
         """Req 9.4: No DLX + retries exhausted → discard (nack requeue=False)."""
-        from unittest.mock import AsyncMock, patch
-        from app.infra.queue_rabbitmq import RabbitMQJobQueue
-        import json
-
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
         queue._dlx_exchange = None
 
-        async def failing_handler(msg):
+        async def failing_handler(msg: dict[str, Any]) -> None:
             raise RuntimeError("boom")
 
         mock_message = AsyncMock()
@@ -316,9 +287,9 @@ class TestRabbitMQJobQueueBehavior:
         mock_queue = AsyncMock()
         queue._channel.declare_queue.return_value = mock_queue
 
-        captured_callback = None
+        captured_callback: Callable[[AbstractIncomingMessage], Awaitable[None]] | None = None
 
-        async def capture_consume(callback):
+        async def capture_consume(callback: Callable[[AbstractIncomingMessage], Awaitable[None]]) -> None:
             nonlocal captured_callback
             captured_callback = callback
 
@@ -326,6 +297,7 @@ class TestRabbitMQJobQueueBehavior:
 
         with patch("app.infra.queue_rabbitmq._read_max_retries", return_value=2):
             await queue.subscribe("transcribe", failing_handler)
+        assert captured_callback is not None
         await captured_callback(mock_message)
 
         mock_message.nack.assert_called_once_with(requeue=False)
