@@ -7,12 +7,22 @@ Tasks: 5.5, 5.6
 
 from __future__ import annotations
 
+import ast
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.meetings.schemas import (
+    CalendarMeetingInput,
+    LinkMeetingInput,
+    ManualMeetingInput,
+    MeetingInput,
+)
 
 from app.meetings.service import register_meeting
 
@@ -115,3 +125,67 @@ async def test_property_2_rejects_invalid_links(
         await register_meeting(
             db_session, {"meet_link": invalid_link}, created_by="test-user"
         )
+
+
+def test_meeting_input_alias_preserves_pydantic_schema() -> None:
+    """The PEP 604 alias keeps the same alternatives and Pydantic schema."""
+    schema_path = Path(__file__).resolve().parents[2] / "app/meetings/schemas.py"
+    module = ast.parse(schema_path.read_text())
+    alias = next(
+        node
+        for node in module.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "MeetingInput" for target in node.targets)
+    )
+    assert ast.unparse(alias.value) == (
+        "CalendarMeetingInput | LinkMeetingInput | ManualMeetingInput"
+    )
+    assert TypeAdapter(MeetingInput).json_schema() == {
+        "$defs": {
+            "CalendarMeetingInput": {
+                "description": "Meeting input via a calendar invite with a Meet link.",
+                "properties": {
+                    "meet_link": {"title": "Meet Link", "type": "string"},
+                    "calendar_invite_id": {
+                        "title": "Calendar Invite Id",
+                        "type": "string",
+                    },
+                    "scheduled_start_time": {
+                        "format": "date-time",
+                        "title": "Scheduled Start Time",
+                        "type": "string",
+                    },
+                },
+                "required": [
+                    "meet_link",
+                    "calendar_invite_id",
+                    "scheduled_start_time",
+                ],
+                "title": "CalendarMeetingInput",
+                "type": "object",
+            },
+            "LinkMeetingInput": {
+                "description": "Meeting input via a direct Google Meet link.",
+                "properties": {
+                    "meet_link": {"title": "Meet Link", "type": "string"}
+                },
+                "required": ["meet_link"],
+                "title": "LinkMeetingInput",
+                "type": "object",
+            },
+            "ManualMeetingInput": {
+                "description": "Meeting input via a manual request with a Google Meet link.",
+                "properties": {
+                    "meet_link": {"title": "Meet Link", "type": "string"}
+                },
+                "required": ["meet_link"],
+                "title": "ManualMeetingInput",
+                "type": "object",
+            },
+        },
+        "anyOf": [
+            {"$ref": "#/$defs/CalendarMeetingInput"},
+            {"$ref": "#/$defs/LinkMeetingInput"},
+            {"$ref": "#/$defs/ManualMeetingInput"},
+        ],
+    }
