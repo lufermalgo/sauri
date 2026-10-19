@@ -135,7 +135,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.07 | Issue #332 · Card task_221e3b81934844ce |
 | T-3.1.08 | Issue #333 · Card task_9118c3aeba7f458d |
 | T-3.1.09 | Issue #334 · Card task_fc0a88aa3262413e |
-| T-3.1.10 | Issue #335 · Card task_16d1a54118dd4590 |
+| T-3.1.10 | Done · Issue #335 · Card task_16d1a54118dd4590 · PR #468 |
 | T-3.1.11 | Issue #336 · Card task_e31207d8cfb042c3 |
 | T-3.1.12 | Issue #337 · Card task_4fe91b55210f4902 |
 | T-3.1.13 | Issue #338 · Card task_b2894a1b41664ef5 |
