@@ -140,7 +140,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.12 | Issue #337 · Card task_4fe91b55210f4902 |
 | T-3.1.13 | Issue #338 · Card task_b2894a1b41664ef5 |
 | T-3.1.14 | Issue #339 · Card task_d9060c9f79b346ce |
-| T-3.1.15 | Issue #340 · Card task_bc422932256d4afd |
+| T-3.1.15 | Done · Issue #340 · Card task_bc422932256d4afd · PR #469 |
 | T-3.1.16 | Issue #341 · Card task_b18c2cd83e214a3b |
 | T-3.1.17 | Issue #342 · Card task_153535d2f483425e |
 | T-3.1.18 | Issue #343 · Card task_b7d536f17b744d05 |
