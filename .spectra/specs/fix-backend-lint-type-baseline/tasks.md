@@ -186,7 +186,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.58 | Issue #383 · Card task_16175357fb414edf |
 | T-3.1.59 | Issue #384 · Card task_35ae8fb35e254041 |
 | T-3.1.60 | Issue #385 · Card task_9f1912235da941e0 |
-| T-3.1.61 | Issue #386 · Card task_be8f43444a0149fb |
+| T-3.1.61 | Done · Issue #386 · Card task_be8f43444a0149fb · PR #457 |
 
 ### Focused RED/test seams for every file task
 
