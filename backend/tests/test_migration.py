@@ -23,6 +23,7 @@ running a destructive migration against the shared development database.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import inspect
 import os
@@ -360,8 +361,8 @@ async def test_speaker_receipt_upgrade_records_full_revision_id(
         monkeypatch.setenv("DATABASE_URL", test_url)
         config = Config(str(MIGRATIONS_DIR.parents[1] / "alembic.ini"))
 
-        command.upgrade(config, AGGREGATE_REVISION)
-        command.upgrade(config, SPEAKER_REVIEW_RECEIPTS_REVISION)
+        await asyncio.to_thread(command.upgrade, config, AGGREGATE_REVISION)
+        await asyncio.to_thread(command.upgrade, config, SPEAKER_REVIEW_RECEIPTS_REVISION)
 
         async with (
             asyncpg.create_pool(**(connect_args | {"database": database_name})) as pool,
