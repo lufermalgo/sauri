@@ -195,7 +195,7 @@ async def diarize(request: DiarizeRequest) -> DiarizeResponse:
         audio_path = _download_audio_from_s3(request.audio_ref)
     except Exception as e:
         logger.error("Failed to download audio: %s", e)
-        raise HTTPException(status_code=500, detail=f"Audio download failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Audio download failed: {e}") from e
 
     try:
         # 2. Run real diarization and collect ordered segments
@@ -208,7 +208,7 @@ async def diarize(request: DiarizeRequest) -> DiarizeResponse:
 
     except Exception as e:
         logger.error("Diarization failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Diarization failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Diarization failed: {e}") from e
 
     finally:
         # 4. Clean up temporary file

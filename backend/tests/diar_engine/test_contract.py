@@ -290,6 +290,33 @@ async def test_diarization_failure_removes_downloaded_temp_file(
 
 
 @pytest.mark.asyncio
+async def test_diarization_http_error_chains_pipeline_exception(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The HTTP error preserves the caught synthetic pipeline exception as cause."""
+    from fastapi import HTTPException
+
+    audio_path = tmp_path / "synthetic-recording.wav"
+    audio_path.write_bytes(b"synthetic audio bytes")
+    monkeypatch.setattr(main, "_download_audio_from_s3", lambda _audio_ref: str(audio_path))
+
+    def fail_pipeline(_audio_path: str) -> list[main.Segment]:
+        raise RuntimeError("synthetic diarization failure")
+
+    monkeypatch.setattr(main, "_run_diarization", fail_pipeline)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await main.diarize(main.DiarizeRequest(audio_ref="synthetic.wav"))
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Diarization failed: synthetic diarization failure"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert not audio_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_download_http_error_preserves_status_and_detail(
     async_client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -307,3 +334,4 @@ async def test_download_http_error_preserves_status_and_detail(
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.detail == "Audio download failed: synthetic download failure"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
