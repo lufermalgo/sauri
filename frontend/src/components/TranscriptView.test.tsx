@@ -7,8 +7,10 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
+import "@testing-library/jest-dom/vitest";
 import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
 import type { Transcript, SpeechTurn } from "@sauri/shared-types";
+import type { TimedPassage } from "../api";
 
 import { TranscriptView } from "./TranscriptView";
 import * as api from "../api";
@@ -27,7 +29,7 @@ afterEach(() => {
 
 function transcript(
   turns: SpeechTurn[]
-): Transcript & { turns: SpeechTurn[] } {
+): Transcript & { segments: TimedPassage[]; turns: SpeechTurn[] } {
   return {
     id: "t-1",
     meetingId: "r-1",
@@ -35,6 +37,7 @@ function transcript(
     provider: "local",
     supportsTurns: true,
     createdAt: new Date().toISOString(),
+    segments: [],
     turns,
   };
 }

@@ -121,6 +121,24 @@ describe("meeting playback API adapter", () => {
     expect(transcript.segments[2].startMs).toBeNull();
     expect(transcript.segments[3].text).toBe("Intervalo inválido"); // spanish-sample-data
     expect(transcript.segments[3].endMs).toBeNull();
+    expect(transcript.turns).toEqual([
+      {
+        id: "segment-2",
+        transcriptId: "transcript-1",
+        text: "Segunda frase",
+        startMs: 1200,
+        endMs: 2200,
+        sequence: 2,
+      },
+      {
+        id: "segment-1",
+        transcriptId: "transcript-1",
+        text: "Primera frase",
+        startMs: 0,
+        endMs: 1100,
+        sequence: 1,
+      },
+    ]);
   });
 
   it("does not surface raw object-store references from failed API responses", async () => {
