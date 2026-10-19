@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import HTTPException
-from starlette.datastructures import UploadFile
+from fastapi import HTTPException, UploadFile
 
 from app.ingestion import router
 from app.ingestion.schemas import IngestionData
 
 
-def _payload(**overrides: object) -> dict[str, object]:
-    payload: dict[str, object] = {
+def _payload(**overrides: object) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "meeting_id": "meeting-synthetic-1",
         "idempotency_key": "capture-synthetic-1",
         "capture_origin": "chrome_extension",
@@ -83,7 +83,7 @@ def test_inconsistent_or_incomplete_capture_metadata_is_rejected(
 async def test_invalid_capture_metadata_returns_422_before_object_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def storage_must_not_be_initialized():
+    def storage_must_not_be_initialized() -> None:
         raise AssertionError("invalid metadata must be rejected before storage")
 
     monkeypatch.setattr(router, "_get_object_store", storage_must_not_be_initialized)
