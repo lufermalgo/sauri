@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 import pytest
 from httpx import AsyncClient
 from jose import jwt
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.passwords import hash_password
 from app.auth.seed import seed_users
@@ -19,7 +20,10 @@ from app.infra.models import User
 
 
 @pytest.mark.asyncio
-async def test_login_valid_credentials_issues_jwt(api_client: AsyncClient, api_session_factory):
+async def test_login_valid_credentials_issues_jwt(
+    api_client: AsyncClient,
+    api_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     async with api_session_factory() as session, session.begin():
         session.add(
             User(
@@ -46,7 +50,10 @@ async def test_login_valid_credentials_issues_jwt(api_client: AsyncClient, api_s
 
 
 @pytest.mark.asyncio
-async def test_login_invalid_credentials_returns_401(api_client: AsyncClient, api_session_factory):
+async def test_login_invalid_credentials_returns_401(
+    api_client: AsyncClient,
+    api_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     async with api_session_factory() as session, session.begin():
         session.add(
             User(
@@ -67,7 +74,7 @@ async def test_login_invalid_credentials_returns_401(api_client: AsyncClient, ap
 
 
 @pytest.mark.asyncio
-async def test_login_nonexistent_user_returns_401(api_client: AsyncClient):
+async def test_login_nonexistent_user_returns_401(api_client: AsyncClient) -> None:
     resp = await api_client.post(
         "/api/v1/auth/login",
         json={"email": "no-existe@summan.com", "password": "cualquiera"},
@@ -76,7 +83,9 @@ async def test_login_nonexistent_user_returns_401(api_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_seed_users_is_idempotent(api_session_factory):
+async def test_seed_users_is_idempotent(
+    api_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     async with api_session_factory() as session:
         async with session.begin():
             created1 = await seed_users(session)
