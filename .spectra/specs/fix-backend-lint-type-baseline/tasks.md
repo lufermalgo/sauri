@@ -175,7 +175,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.47 | Issue #372 · Card task_53211a4d325048ca |
 | T-3.1.48 | Issue #373 · Card task_260190e5c6b34b1d |
 | T-3.1.49 | Issue #374 · Card task_ef4387d699c94a33 |
-| T-3.1.50 | Issue #375 · Card task_e5accf1b07694b51 |
+| T-3.1.50 | Issue #375 · Card task_e5accf1b07694b51 · PR #448 |
 | T-3.1.51 | Issue #376 · Card task_232217e2a98a41ac |
 | T-3.1.52 | Issue #377 · Card task_0859f7811a3349f8 |
 | T-3.1.53 | Issue #378 · Card task_4775e29d81b04838 |
@@ -263,6 +263,8 @@ For each task, scope remains only its listed source file. Its dependency is the 
 **Dependencies:** Current-base evidence snapshot and Task 1.2; for each production path, its matching Task 2.1 evidence/handoff before edits. Distinct paths have no invented pairwise dependency; each runs in its own issue worktree. Ansel sequences only real prerequisites and verified shared-resource conflicts. Changes integrate to the single candidate only through Ansel's authorized route. The excluded `009_recording_media_sources.py` I001 remains with separate card `task_6ccdc76cbc0f4fe9`, not among these 61 instances.
 
 **Task 3.1.36 tracking:** Done · Issue #361 · Card `task_679c84ddba6544df` · PR #389
+
+**Task 3.1.50 tracking:** Done (QA passed; implementation PR open) · Issue #375 · Card `task_e5accf1b07694b51` · PR #448
 
 ### Task 3.1.09: Clear UP017 in `backend/app/auth/audit.py`
 
