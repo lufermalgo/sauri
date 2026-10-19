@@ -273,9 +273,9 @@ async def get_transcript(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
-            # Verify the meeting exists
+            # Require ownership before reading any transcript data.
             meeting = await session.get(Meeting, meeting_id)
-            if meeting is None:
+            if meeting is None or meeting.created_by != user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Meeting not found: {meeting_id}",
@@ -340,7 +340,7 @@ async def get_diarization(
     try:
         async with session_factory() as session:
             meeting = await session.get(Meeting, meeting_id)
-            if meeting is None:
+            if meeting is None or meeting.created_by != user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Meeting not found: {meeting_id}",
