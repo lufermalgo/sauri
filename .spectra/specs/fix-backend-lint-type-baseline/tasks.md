@@ -177,7 +177,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.49 | Done · Issue #374 · Card task_ef4387d699c94a33 · PR #442 |
 | T-3.1.50 | Issue #375 · Card task_e5accf1b07694b51 |
 | T-3.1.51 | Issue #376 · Card task_232217e2a98a41ac |
-| T-3.1.52 | Issue #377 · Card task_0859f7811a3349f8 |
+| T-3.1.52 | Done · Issue #377 · Card task_0859f7811a3349f8 · PR #446 |
 | T-3.1.53 | Issue #378 · Card task_4775e29d81b04838 |
 | T-3.1.54 | Issue #379 · Card task_f501a3dd376f40a0 |
 | T-3.1.55 | Issue #380 · Card task_fd6af56086e14309 |
