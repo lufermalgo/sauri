@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import boto3
 import torch
@@ -212,10 +212,8 @@ async def diarize(request: DiarizeRequest) -> DiarizeResponse:
 
     finally:
         # 4. Clean up temporary file
-        try:
+        with suppress(OSError):
             os.unlink(audio_path)
-        except OSError:
-            pass
 
 
 @app.get("/health")
