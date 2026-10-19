@@ -126,7 +126,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 
 | Task | Tracking |
 |---|---|
-| T-3.1.01 | Issue #326 · Card task_2c3b6bebf14f4348 |
+| T-3.1.01 | Issue #326 · Card task_2c3b6bebf14f4348 · PR #458 · Done |
 | T-3.1.02 | Issue #327 · Card task_bf7ecf6142d346e6 |
 | T-3.1.03 | Issue #328 · Card task_061bddef35f246a1 |
 | T-3.1.04 | Issue #329 · Card task_85e5ee9e158c4f30 |
