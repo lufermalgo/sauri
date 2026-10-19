@@ -1,0 +1,34 @@
+name: Open pull request limit
+
+on:
+  pull_request:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  enforce-open-pr-limit:
+    name: Enforce three open pull requests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Count open pull requests
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { getOpenPullRequestLimitError } = require(
+              `${process.env.GITHUB_WORKSPACE}/.github/scripts/check-open-pr-limit.cjs`
+            );
+            const openPullRequests = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const error = getOpenPullRequestLimitError(openPullRequests);
+
+            if (error) {
+              core.setFailed(error);
+            } else {
+              core.info(`Open pull request limit respected (${openPullRequests.length}/3).`);
+            }
