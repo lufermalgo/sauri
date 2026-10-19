@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -95,7 +95,7 @@ def seed_meeting_recording(
         failure_cause=None,
         title=title,
         created_by=created_by,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     recording = SessionRecording(
         id=str(uuid.uuid4()),
@@ -107,7 +107,7 @@ def seed_meeting_recording(
         duration_seconds=600,
         interrupted=False,
         expires_at=None,
-        finished_at=finished_at or datetime.now(timezone.utc),
+        finished_at=finished_at or datetime.now(UTC),
     )
     session.add_all([meeting, recording])
 
@@ -119,7 +119,7 @@ def seed_meeting_recording(
             provider="local",
             supports_turns=True,
             expires_at=None,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         session.add(transcript)
         turns = transcript_turns or [

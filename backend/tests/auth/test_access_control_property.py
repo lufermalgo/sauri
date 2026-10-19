@@ -7,6 +7,7 @@ Task: 8.2 — Validates: Requirements 7.3, 7.4, 9.1, 9.2, 9.3
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 
 import pytest
 from fastapi import Depends, FastAPI
@@ -25,14 +26,16 @@ from app.infra.models import AccessLog
 def _build_app(session_factory: async_sessionmaker[AsyncSession], user: AuthenticatedUser) -> FastAPI:
     app = FastAPI()
 
-    async def get_session():
+    async def get_session() -> AsyncIterator[AsyncSession]:
         async with session_factory() as session:
             yield session
 
-    dependency = require_sales(get_session)
+    dependency = Depends(require_sales(get_session))
 
     @app.get("/protected-resource")
-    async def endpoint(authorized_user: AuthenticatedUser = Depends(dependency)):
+    async def endpoint(
+        authorized_user: AuthenticatedUser = dependency,
+    ) -> dict[str, str]:
         return {"id": authorized_user.id}
 
     app.dependency_overrides[get_current_user] = lambda: user

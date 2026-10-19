@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -85,7 +85,7 @@ def meeting_recording() -> Meeting:
         process_state="recording",
         failure_cause=None,
         created_by="test-user",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 
