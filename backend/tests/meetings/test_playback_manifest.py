@@ -110,9 +110,13 @@ async def test_missing_and_non_owned_meetings_are_indistinguishable(
 
 @pytest.mark.asyncio
 async def test_owner_manifest_contains_only_signed_playback_contract(
-    api_client: AsyncClient, api_db_url: str
+    api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
 ):
+    from app.meetings import router
+
     meeting_id = await _meeting_with_recording(api_db_url)
+    store = _SyntheticObjectStore()
+    monkeypatch.setattr(router, "_get_object_store", lambda: store)
     response = await api_client.get(
         f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header()
     )
@@ -123,6 +127,7 @@ async def test_owner_manifest_contains_only_signed_playback_contract(
     assert body["audio_source"]["url"].startswith(("http://", "https://"))
     assert body["audio_source"]["source_id"]
     assert body["video_sources"] == []
+    assert store.signed == [("private/test/audio.webm", 3600)]
     assert "private/test/audio.webm" not in response.text
     assert "audio_ref" not in body
     assert "object_ref" not in body
@@ -197,6 +202,7 @@ def _synthetic_inventory(*, video_presence: str, audio_source=None, video_source
 
     return SimpleNamespace(
         video_presence=video_presence,
+        duration_seconds=45,
         audio_source=audio_source,
         video_sources=list(video_sources),
     )
