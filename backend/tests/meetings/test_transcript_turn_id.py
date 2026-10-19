@@ -17,8 +17,8 @@ from app.infra.models import Meeting, SpeechTurn, Transcript
 USER_ID = "user-turno-test"
 
 
-def _auth_header() -> dict[str, str]:
-    token = create_token(USER_ID, "turno@sauri.local", "Turno Test", True)
+def _auth_header(user_id: str = USER_ID) -> dict[str, str]:
+    token = create_token(user_id, f"{user_id}@sauri.local", "Turno Test", True)
     return {"Authorization": f"Bearer {token}"}
 
 
