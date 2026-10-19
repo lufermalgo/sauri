@@ -17,7 +17,7 @@
 **Acceptance evidence:** The test fails before T-6 because PostgreSQL rejects the revision ID as too long, and passes after T-6; the isolated database contains the exact target revision and receipts table after success.
 **Validation:** From `backend/`, run `.venv/bin/python -m pytest tests/test_migration.py -k speaker_receipt_upgrade_records_full_revision_id` with QA's recorded isolated PostgreSQL 16 setup; then run `.venv/bin/python -m pytest tests/test_migration.py`.
 **Dependencies:** None
-**Tracking:** Issue #488 · Card task_c6e986eef9e744aa
+**Tracking:** Issue #488 · Card task_c6e986eef9e744aa · PR #495
 
 ### T-2 (RED): Specify rollback atomicity after widening
 
