@@ -137,17 +137,17 @@ def _download_audio_from_s3(audio_ref: str) -> str:
     if "." in audio_ref:
         ext = "." + audio_ref.rsplit(".", 1)[-1]
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-    try:
-        s3_client.download_file(MINIO_BUCKET, audio_ref, tmp.name)
-    except Exception as e:
-        # Clean up temp file on download failure
-        os.unlink(tmp.name)
-        raise RuntimeError(
-            f"Failed to download audio_ref={audio_ref!r} from bucket={MINIO_BUCKET!r}: {e}"
-        ) from e
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        try:
+            s3_client.download_file(MINIO_BUCKET, audio_ref, tmp.name)
+        except Exception as e:
+            # Clean up temp file on download failure
+            os.unlink(tmp.name)
+            raise RuntimeError(
+                f"Failed to download audio_ref={audio_ref!r} from bucket={MINIO_BUCKET!r}: {e}"
+            ) from e
 
-    return tmp.name
+        return tmp.name
 
 
 def _run_diarization(audio_path: str) -> list[Segment]:
