@@ -26,9 +26,16 @@ from app.auth.audit import record_access
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
-from app.infra.models import Diarization, Meeting, SpeechTurn, Transcript
+from app.infra.models import (
+    Diarization,
+    Meeting,
+    SessionRecording,
+    SpeechTurn,
+    Transcript,
+)
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
+from app.meetings import service as meeting_service
 from app.meetings.service import (
     delete_meeting,
     get_meeting,
@@ -70,7 +77,7 @@ async def _get_authorized_meeting(
         await record_access(session, user.id, resource, "denied")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Meeting not found: {meeting_id}",
+            detail="Meeting not found",
         )
     return meeting
 
@@ -282,6 +289,88 @@ async def get_speaker_review(
                     detail=f"Speaker review not found: {meeting_id}",
                 )
             return result
+    finally:
+        await engine.dispose()
+
+
+@router.get("/{meeting_id}/playback")
+async def get_playback_manifest(
+    meeting_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Return short-lived media URLs after verifying meeting ownership."""
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"GET /api/v1/meetings/{meeting_id}/playback",
+            )
+
+            recording_result = await session.execute(
+                select(SessionRecording).where(
+                    SessionRecording.meeting_id == meeting_id
+                )
+            )
+            recording = recording_result.scalar_one_or_none()
+            if recording is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Playback not available for meeting: {meeting_id}",
+                )
+
+            inventory = await meeting_service.load_playback_source_inventory(
+                session, recording.id
+            )
+            if inventory is None or inventory.audio_source is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Playback not available for meeting: {meeting_id}",
+                )
+
+            object_store = _get_object_store()
+            audio_url = await object_store.temporary_read_url(
+                inventory.audio_source.object_ref, ttl_seconds=3600
+            )
+            audio_source = {
+                "source_id": inventory.audio_source.id,
+                "url": audio_url,
+                "mime_type": inventory.audio_source.mime_type,
+            }
+
+            muxed_video_source = None
+            video_sources: list[dict[str, Any]] = []
+            if inventory.video_presence == "muxed":
+                muxed_video_source = dict(audio_source)
+            elif inventory.video_presence == "separate":
+                for source in inventory.video_sources:
+                    if source.video_offset_ms is None:
+                        continue
+                    video_sources.append(
+                        {
+                            "source_id": source.id,
+                            "url": await object_store.temporary_read_url(
+                                source.object_ref, ttl_seconds=3600
+                            ),
+                            "mime_type": source.mime_type,
+                            "quality_label": source.quality_label,
+                            "width": source.width,
+                            "height": source.height,
+                            "video_offset_ms": source.video_offset_ms,
+                        }
+                    )
+
+            return {
+                "meeting_id": meeting_id,
+                "duration_seconds": inventory.duration_seconds,
+                "video_presence": inventory.video_presence,
+                "audio_source": audio_source,
+                "muxed_video_source": muxed_video_source,
+                "video_sources": video_sources,
+            }
     finally:
         await engine.dispose()
 

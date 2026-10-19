@@ -60,7 +60,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-4: Implement authorized playback manifest and transcript ownership check
 
-**Tracking:** Issue #302 · Card `task_202c6580874741e6`
+**Tracking:** Task done · Issue #302 · Card `task_202c6580874741e6` · PR #481
 
 **Files:** `backend/app/meetings/` route/service/repository/schema modules; existing transcript route/service modules.
 
