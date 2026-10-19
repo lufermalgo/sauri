@@ -207,7 +207,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-12: GREEN — persist and return review state for resume
 
-**Tracking:** Issue #245 · Card task_5aaf06a24a074090
+**Tracking:** Issue #245 · Card task_5aaf06a24a074090 · PR #418
+
+**Status:** Done — PR #418 open for review.
 
 **Files:** `backend/app/meetings/` review service/repository modules.
 
