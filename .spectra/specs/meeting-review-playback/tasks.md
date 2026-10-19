@@ -46,7 +46,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-3: Add failing manifest and transcript ownership route tests
 
-**Tracking:** Issue #301 · Card `task_43a6ab934e754109`
+**Tracking:** Issue #301 · Card `task_43a6ab934e754109` · PR #476
 
 **Files:** `backend/tests/meetings/test_playback_manifest.py`; `backend/tests/meetings/test_transcript_turn_id.py`
 
