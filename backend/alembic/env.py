@@ -4,10 +4,11 @@ import asyncio
 import os
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from alembic import context
 
 config = context.config
 
@@ -19,8 +20,8 @@ database_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:pos
 config.set_main_option("sqlalchemy.url", database_url)
 
 # Import models to register them with Base.metadata for autogenerate support
-from app.infra.database import Base  # noqa: E402
 import app.infra.models  # noqa: E402, F401
+from app.infra.database import Base  # noqa: E402
 
 target_metadata = Base.metadata
 

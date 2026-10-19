@@ -6,6 +6,8 @@ Validates: Requirements 9.1, 9.2, 9.3
 
 from __future__ import annotations
 
+from typing import Literal
+
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -18,6 +20,7 @@ from app.diarization.state import apply_diarization_event
 STATES = ["pending", "in_progress", "completed", "failed"]
 TERMINAL_STATES = {"completed", "failed"}
 EVENTS = ["start_process", "diarization_completed", "engine_failed"]
+SURROGATE_CATEGORY: Literal["Cs"] = "Cs"
 
 # Valid transitions: (current_state, event) -> (new_state, failure_cause)
 VALID_TRANSITIONS: dict[tuple[str, str], tuple[str, str | None]] = {
@@ -92,7 +95,10 @@ def test_property_16_terminal_states_are_immutable(
 @given(
     current_state=st.sampled_from(STATES),
     invalid_event=st.text(
-        alphabet=st.characters(blacklist_characters="\x00", blacklist_categories=("Cs",)),
+        alphabet=st.characters(
+            blacklist_characters="\x00",
+            blacklist_categories=(SURROGATE_CATEGORY,),
+        ),
         min_size=1,
         max_size=30,
     ).filter(lambda e: e not in EVENTS),
