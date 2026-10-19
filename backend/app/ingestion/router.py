@@ -105,40 +105,39 @@ async def upload_recording(
     # e. Process ingestion (create SessionRecording, idempotency, notice)
     engine = create_engine()
     session_factory = create_session_factory(engine)
-    async with session_factory() as session:
-        async with session.begin():
-            recording, is_new = await process_ingestion(
-                session=session,
-                data=ingestion_data,
-                audio_ref=audio_ref,
-                video_ref=video_ref,
-                created_by=user.id,
+    async with session_factory() as session, session.begin():
+        recording, is_new = await process_ingestion(
+            session=session,
+            data=ingestion_data,
+            audio_ref=audio_ref,
+            video_ref=video_ref,
+            created_by=user.id,
+        )
+
+        # If this is an idempotent retry (duplicate key), return without
+        # transitioning or enqueuing again (Req. 2.3, 4.1, 4.2).
+        if not is_new:
+            await engine.dispose()
+            return {
+                "recording_id": recording.id,
+                "state": "idempotent_duplicate",
+            }
+
+        # f. Transition Meeting to "transcribing"
+        from app.infra.models import Meeting
+
+        meeting = await session.get(Meeting, ingestion_data.meeting_id)
+        if meeting is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Meeting not found: {ingestion_data.meeting_id}",
             )
 
-            # If this is an idempotent retry (duplicate key), return without
-            # transitioning or enqueuing again (Req. 2.3, 4.1, 4.2).
-            if not is_new:
-                await engine.dispose()
-                return {
-                    "recording_id": recording.id,
-                    "state": "idempotent_duplicate",
-                }
-
-            # f. Transition Meeting to "transcribing"
-            from app.infra.models import Meeting
-
-            meeting = await session.get(Meeting, ingestion_data.meeting_id)
-            if meeting is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Meeting not found: {ingestion_data.meeting_id}",
-                )
-
-            transition_result = await record_transition(
-                session=session,
-                meeting=meeting,
-                event="recording_uploaded",
-            )
+        transition_result = await record_transition(
+            session=session,
+            meeting=meeting,
+            event="recording_uploaded",
+        )
 
     # g. Enqueue the transcription job (only if the recording is new)
     await queue.connect()
