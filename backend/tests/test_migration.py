@@ -418,3 +418,71 @@ def test_revision_traversal_remains_continuous_before_008_and_through_head() -> 
         RECORDING_MEDIA_REVISION,
         SPEAKER_REVIEW_RECEIPTS_REVISION,
     } <= through_head, f"expected uninterrupted history through reconciliation; found {through_head!r}"
+
+
+@pytest.mark.asyncio
+async def test_speaker_review_receipt_migration_preserves_persisted_contract(
+    async_engine: AsyncEngine,
+) -> None:
+    path = MIGRATIONS_DIR / "009_speaker_review_idempotency_receipts.py"
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    assert migration.revision == SPEAKER_REVIEW_RECEIPTS_REVISION
+    assert migration.down_revision == AGGREGATE_REVISION
+
+    async with async_engine.begin() as connection:
+        await connection.execute(text("DROP TABLE IF EXISTS speaker_review_idempotency_receipts"))
+    await _run_migration(async_engine, migration, "upgrade")
+
+    def inspect_receipt_contract(sync_connection):
+        inspector = sa_inspect(sync_connection)
+        columns = {
+            column["name"]: (str(column["type"]), column["nullable"])
+            for column in inspector.get_columns("speaker_review_idempotency_receipts")
+        }
+        primary_key = set(
+            inspector.get_pk_constraint("speaker_review_idempotency_receipts")["constrained_columns"]
+        )
+        unique_constraints = {
+            (constraint["name"], tuple(constraint["column_names"]))
+            for constraint in inspector.get_unique_constraints(
+                "speaker_review_idempotency_receipts"
+            )
+        }
+        foreign_keys = {
+            (
+                tuple(foreign_key["constrained_columns"]),
+                foreign_key["referred_table"],
+                tuple(foreign_key["referred_columns"]),
+                foreign_key["options"].get("ondelete"),
+            )
+            for foreign_key in inspector.get_foreign_keys(
+                "speaker_review_idempotency_receipts"
+            )
+        }
+        return columns, primary_key, unique_constraints, foreign_keys
+
+    async with async_engine.connect() as connection:
+        columns, primary_key, unique_constraints, foreign_keys = await connection.run_sync(
+            inspect_receipt_contract
+        )
+
+    assert columns == {
+        "id": ("VARCHAR(36)", False),
+        "review_id": ("VARCHAR(36)", False),
+        "item_id": ("VARCHAR(36)", False),
+        "idempotency_key": ("VARCHAR(256)", False),
+        "request_hash": ("VARCHAR(64)", False),
+        "response": ("JSON", False),
+    }
+    assert primary_key == {"id"}
+    assert unique_constraints == {
+        ("uq_review_idempotency_key", ("review_id", "idempotency_key"))
+    }
+    assert foreign_keys == {
+        (("review_id",), "speaker_reviews", ("id",), "CASCADE"),
+        (("item_id",), "speaker_review_items", ("id",), "CASCADE"),
+    }
