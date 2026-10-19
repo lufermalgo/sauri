@@ -74,7 +74,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-5: Add failing API mapping and timed-passage contract tests
 
-**Tracking:** Issue #303 · Card `task_b51714b10bb6489e`
+**Tracking:** Task done · Issue #303 · Card `task_b51714b10bb6489e` · PR #484
 
 **Files:** Frontend API adapter tests for `frontend/src/api.ts`; transcript mapping tests in the existing frontend test structure.
 
