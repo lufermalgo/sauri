@@ -50,7 +50,7 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 
 **Dependencies:** Task 1.2
 
-**Tracking:** Issue #264 · Card task_e93f0a97ce6f4e12
+**Tracking:** Done · Issue #264 · Card task_9d781cb49f7f4fac · PR #459
 
 ## Phase 3: File-Scoped Diagnostic Corrections
 
