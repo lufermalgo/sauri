@@ -296,7 +296,7 @@ async def get_speaker_review(
 @router.get("/{meeting_id}/playback")
 async def get_playback_manifest(
     meeting_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Return short-lived media URLs after verifying meeting ownership."""
     engine = create_engine()
