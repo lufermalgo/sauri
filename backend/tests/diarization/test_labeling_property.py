@@ -11,7 +11,6 @@ from hypothesis import strategies as st
 from app.diarization.diarization_engine import SpeakerSegment
 from app.diarization.labeling import label_speakers
 
-
 # ---------------------------------------------------------------------------
 # Strategy: generate lists of SpeakerSegment with varied raw labels
 # ---------------------------------------------------------------------------
