@@ -2,7 +2,7 @@
 
 ## Descripción del Bug
 
-On the unmodified `origin/main` snapshot `a753dee72703f3aeaf97c3b163de6b4954ab80e9`, the backend Ruff and mypy checks exit non-zero due to pre-existing lint/type findings. This blocks the existing default quality gate; this bugfix documents restoring the checks without relaxing lint/type configuration. One narrowly authorized exception permits explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`, which changes internal exception context/traceback; HTTP status and response body must remain unchanged, and no other runtime behavior change is authorized.
+On the unmodified `origin/main` snapshot `a753dee72703f3aeaf97c3b163de6b4954ab80e9`, the backend Ruff and mypy checks exit non-zero due to pre-existing lint/type findings. This blocks the existing default quality gate; this bugfix documents restoring the checks without relaxing lint/type configuration. A narrow team technical disposition permits explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`; this changes internal exception context/traceback, while HTTP status and response body must remain unchanged and no other runtime behavior change is permitted.
 
 ## Pasos para Reproducir
 
@@ -27,8 +27,8 @@ THEN the command exits 1 and reports 290 errors across 29 files of 114 checked.
 WHEN the default `pytest -q` suite is run on that same snapshot and environment,
 THEN it exits 0 with 203 passed and 2 skipped; this is the recorded pre-change behavior, not a claim about a later candidate.
 
-WHEN the two `HTTPException` raises inside `except Exception as e` in `backend/diar-engine/main.py` are checked with Ruff rule B904,
-THEN the T-3.1.26 / Issue #351 handoff reports that the current candidate still has two B904 findings because those raises do not explicitly chain the caught exception.
+WHEN Ruff 0.17.1 checks the exact `backend/diar-engine/main.py` source from candidate `6288107180c93abf4b72236f5b2887a8b283057c`,
+THEN the command exits 1 with B904 at lines 198 and 211 because the two `HTTPException` raises inside `except Exception as e` do not explicitly chain the caught exception; the exact reproduction and output are recorded under Scope and Evidence Notes.
 
 ## Comportamiento Esperado (Correcto)
 
@@ -53,7 +53,7 @@ WHEN the default backend pytest suite is run,
 THEN it SHALL CONTINUE TO execute its default tests without weakening markers or skipping tests merely to obtain a passing result.
 
 WHEN application code is changed to address a lint or typing finding,
-THEN existing runtime behavior SHALL CONTINUE unchanged, supported by focused regression tests for each affected behavior or documented semantic-equivalence evidence for changes that are purely static/formatting and do not alter executable behavior; the sole authorized runtime-semantic exception is the explicit exception-context change specified above, and any other finding whose correction would alter runtime behavior must be stopped and reported for a separate decision.
+THEN existing runtime behavior SHALL CONTINUE unchanged, supported by focused regression tests for each affected behavior or documented semantic-equivalence evidence for changes that are purely static/formatting and do not alter executable behavior; the sole team-approved runtime-semantic exception is the explicit exception-context change specified above, and any other finding whose correction would alter runtime behavior must be stopped and reported for a separate decision.
 
 WHEN either caught exception in `backend/diar-engine/main.py` is translated to an HTTP error after explicit chaining is added,
 THEN the service SHALL CONTINUE TO return HTTP 500 with the same `detail` text (`Audio download failed: {e}` or `Diarization failed: {e}` respectively); only the internal explicit cause/traceback context may differ.
@@ -65,7 +65,7 @@ THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effec
 
 - Scope is limited to existing backend lint/type findings in application code and tests, plus verification of the default backend test suite.
 - Do not change `backend/pyproject.toml` lint or mypy configuration, add ignores, or relax rules.
-- Do not make runtime behavior changes except the authorized explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`; that change may alter only internal exception cause/traceback context and must preserve HTTP 500 status and response `detail`. Do not add features or make unrelated edits. Stop and report any other finding that cannot be corrected without runtime behavior change.
+- Do not make runtime behavior changes except the team-approved explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`; that change may alter only internal exception cause/traceback context and must preserve HTTP 500 status and response `detail`. Do not add features or make unrelated edits. Stop and report any other finding that cannot be corrected without runtime behavior change.
 - Validate against a fresh environment provisioned with `pip install -e ".[dev]"` and the currently specified toolchain constraints; issue #228 names Ruff 0.17.x and mypy 2.4.x as its target. Do not treat the scratch-run versions or error counts as acceptance thresholds.
 - Use synthetic data only. No real recordings, transcripts, identities, credentials, or customer data.
 
@@ -74,8 +74,8 @@ THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effec
 1. From `backend/` in a freshly provisioned project environment, `ruff check .` exits 0 with the repository's existing configuration unchanged.
 2. From `backend/` in that environment, `mypy .` exits 0 with the repository's existing configuration unchanged.
 3. The default `pytest -q` suite exits 0 for an unblocked acceptance result; tests and markers are not weakened or skipped to obtain a pass. If integration-marked tests fail solely because required external services are unavailable, record the exact command/output and unavailable service as a blocked result, preserve the tests/markers, and do not claim green acceptance until the tests pass in an environment with those services.
-4. For every changed production-code path, focused regression tests for affected behavior pass, or the change is documented with semantic-equivalence evidence showing that it is purely static/formatting and leaves executable behavior unchanged. For the authorized exception-context change in `backend/diar-engine/main.py`, focused evidence verifies both exceptions are explicitly chained while the corresponding HTTP 500 statuses and response `detail` values remain unchanged. A full-suite pass alone does not establish this criterion.
-5. No runtime behavior changes are included except the explicitly authorized exception-context change for the two `HTTPException` raises in `backend/diar-engine/main.py`; no new features, unrelated edits, lint/type ignores, or lint/mypy configuration relaxation are included.
+4. For every changed production-code path, focused regression tests for affected behavior pass, or the change is documented with semantic-equivalence evidence showing that it is purely static/formatting and leaves executable behavior unchanged. For the team-approved exception-context change in `backend/diar-engine/main.py`, focused evidence verifies both exceptions are explicitly chained while the corresponding HTTP 500 statuses and response `detail` values remain unchanged. A full-suite pass alone does not establish this criterion.
+5. No runtime behavior changes are included except the team-approved exception-context change for the two `HTTPException` raises in `backend/diar-engine/main.py`; no new features, unrelated edits, lint/type ignores, or lint/mypy configuration relaxation are included.
 6. The candidate report records exact Python/Ruff/mypy versions, each command and exit/output, and distinguishes toolchain-dependent findings from source findings.
 
 ## Root-Cause Hypothesis and Confidence
@@ -85,6 +85,35 @@ THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effec
 ## Scope and Evidence Notes
 
 - Authorized expected behavior: owner-authored GitHub issue #228, `https://github.com/lufermalgo/sauri/issues/228` (open; retrieved 2026-10-16). Its scope and completion criteria are represented above; this bugfix does not reopen product discovery.
-- Reproduction evidence: Nia's pre-change run and saved outputs referenced by Ansel: Ruff `stp_cfa0f075e26242da`; mypy `stp_2910f8592d9743e5`. These are evidence references, not candidate code SHAs.
-- Excluded: unrelated product features and all runtime behavior changes except the narrow exception-context adjustment explicitly authorized by Fer for the two `HTTPException` raises in `backend/diar-engine/main.py`. That authorization does not permit changing their HTTP status or response body, or any other runtime behavior; stop and route any additional behavior change or policy/configuration exception to Ansel.
-- The saved project baseline claim does not assert that a future candidate passes. No implementation or candidate code has been validated in this authoring phase.
+- Reproduction evidence for the historical baseline: Nia's pre-change run and saved outputs referenced by Ansel: Ruff `stp_cfa0f075e26242da`; mypy `stp_2910f8592d9743e5`. These are evidence references, not candidate code SHAs.
+- B904 reproduction on exact source candidate `6288107180c93abf4b72236f5b2887a8b283057c`: Ruff version `0.17.1`; from `backend/`, ran `git show 6288107180c93abf4b72236f5b2887a8b283057c:backend/diar-engine/main.py | /Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/ruff check --stdin-filename diar-engine/main.py -`; exit code `1`. Output:
+
+  ```text
+  B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+     --> diar-engine/main.py:198:9
+      |
+  196 |     except Exception as e:
+  197 |         logger.error("Failed to download audio: %s", e)
+  198 |         raise HTTPException(status_code=500, detail=f"Audio download failed: {e}")
+      |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  199 |
+  200 |     try:
+      |
+
+  B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+     --> diar-engine/main.py:211:9
+      |
+  209 |     except Exception as e:
+  210 |         logger.error("Diarization failed: %s", e)
+  211 |         raise HTTPException(status_code=500, detail=f"Diarization failed: {e}")
+      |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  212 |
+  213 |     finally:
+      |
+
+  Found 2 errors.
+  ```
+
+  This reproduction was run by Zoya from the exact candidate source blob. Nia independently confirmed the candidate SHA and Ruff version but reported being unable to capture diagnostics. The full output above is the result of the exact command recorded here.
+- Decision provenance: Fer's recorded «autorizar 1 y 2 como excepciones acotadas» refers to previously listed B904 cases and is not claimed here as endpoint-specific approval. Ansel recorded the endpoint-specific technical disposition on 2026-10-19: allow `from e` for these two B904 cases while preserving the HTTP response. This narrowly scoped technical decision does not authorize any other runtime behavior or policy/configuration exception; stop and route any further scope change to Ansel.
+- The saved project baseline claim does not assert that a future candidate passes. No implementation or corrected candidate has been validated in this authoring phase; the exact pre-fix B904 reproduction above is diagnostic evidence only.
