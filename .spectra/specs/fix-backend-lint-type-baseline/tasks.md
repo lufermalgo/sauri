@@ -272,6 +272,8 @@ For each task, scope remains only its listed source file. Its dependency is the 
 
 **Instantiated instance T-3.1.33:** `backend/tests/diar_engine/test_contract.py` — Ruff I001 and recorded mypy findings resolved; file-scoped Ruff, mypy and pytest passed; QA PASS. **Tracking:** Issue #358 · Card `task_0f9b0e5cff7441f0` · PR #391 · Done.
 
+**Instantiated instance T-3.1.58:** `backend/tests/transcription/test_local_provider.py` — Ruff and mypy findings resolved; file-scoped Ruff, mypy and pytest passed; QA PASS. **Tracking:** Issue #383 · Card `task_16175357fb414edf` · PR #456 · Done.
+
 ## Phase 4: Integrated Candidate Validation and Handoff
 
 ### Task 4.1: Run complete backend validation after all file-scoped corrections are integrated
