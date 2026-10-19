@@ -6,10 +6,10 @@
 |---|---|---|---|
 | 1 | Establish an isolated candidate environment and capture the exact pre-correction baseline | 1.1–1.2 | None; 1.2 requires 1.1 |
 | 2 | Map and preserve existing behavior before production edits | 2.1 | 1.2 |
-| 3 | Correct findings in atomic, file-scoped units with RED evidence transferred before each edit | T-3.1.01–T-3.1.61 (one per current diagnostic-bearing in-scope path) | Historical Task 1.2 evidence plus current-base checker snapshot; matching 2.1 handoff before production-file edits |
-| 4 | Validate and hand off the integrated candidate | 4.1–4.2 | Every T-3.1.01–T-3.1.61 instance; Task 4.1 also requires authorized resolution/integration of separate 009 defect card `task_6ccdc76cbc0f4fe9` because current default migration tests fail there |
+| 3 | Correct findings in atomic, file-scoped units with RED evidence transferred before each edit | T-3.1.01–T-3.1.61 (60 correction tasks plus the explicitly owner-excepted T-3.1.20 disposition) | Historical Task 1.2 evidence plus current-base checker snapshot; matching 2.1 handoff before production-file edits |
+| 4 | Validate and hand off the integrated candidate | 4.1–4.2 | The 60 correction tasks and T-3.1.20's documented exception disposition; Task 4.1 also requires authorized resolution/integration of separate 009 defect card `task_6ccdc76cbc0f4fe9` because current default migration tests fail there |
 
-The frozen Task 1.2 evidence remains historically based on `a6c74bb92b286e7819602a07e47785ee7ba1f78c`; it is not treated as a current-base inventory. Current-base checker output/version and per-path diagnostic inventory are preserved in `evidence-current-base/` for exact base `0d6f2713abcf08d960e98451b04bbdd31b4c8843`. It records 190 Ruff findings across 47 paths and 303 mypy errors across 31 files. Relative to Task 1.2: Ruff added `alembic/versions/009_recording_media_sources.py` and `app/ingestion/schemas.py`, and removed `app/infra/models.py`; mypy added `app/meetings/speaker_review_service.py` and `tests/ingestion/test_playback_source_ingestion.py`, and removed `tests/speaker_review/test_disposition_idempotency.py`. The two new application paths are in the approved bugfix scope, but production edits remain gated by their exact Task 2.1 handoffs. The 009 recording-media migration's I001 is recorded as excluded: the separate migration-lineage defect is tracked by `task_6ccdc76cbc0f4fe9`; do not fold that migration or its behavior repair into this plan. Thus the current materialized correction set is 61 paths after removing that separate 009 file. One file's Ruff and mypy findings are combined into one atomic correction task; test-only paths remain separate. Findings removed from current base receive no correction task.
+The frozen Task 1.2 evidence remains historically based on `a6c74bb92b286e7819602a07e47785ee7ba1f78c`; it is not treated as a current-base inventory. Current-base checker output/version and per-path diagnostic inventory are preserved in `evidence-current-base/` for exact base `0d6f2713abcf08d960e98451b04bbdd31b4c8843`. It records 190 Ruff findings across 47 paths and 303 mypy errors across 31 files. Relative to Task 1.2: Ruff added `alembic/versions/009_recording_media_sources.py` and `app/ingestion/schemas.py`, and removed `app/infra/models.py`; mypy added `app/meetings/speaker_review_service.py` and `tests/ingestion/test_playback_source_ingestion.py`, and removed `tests/speaker_review/test_disposition_idempotency.py`. The two new application paths are in the approved bugfix scope, but production edits remain gated by their exact Task 2.1 handoffs. The 009 recording-media migration's I001 is recorded as excluded: the separate migration-lineage defect is tracked by `task_6ccdc76cbc0f4fe9`; do not fold that migration or its behavior repair into this plan. Thus the current materialized correction set is 60 paths after removing the separate 009 file and the owner-excepted `app/meetings/schemas.py` UP007 finding. One file's Ruff and mypy findings are combined into one atomic correction task; test-only paths remain separate. Findings removed from current base receive no correction task. T-3.1.20 remains in the task/issue inventory solely to document and reconcile the approved exception; it authorizes no production edit and must not be counted as a cleared Ruff finding. Fer authorized this exception on 2026-10-19 to preserve the approved no-runtime-change boundary because Pydantic consumes the `MeetingInput` alias representation, and the existing focused registration tests do not verify introspection. Because the UP007 finding is deliberately left in place and checker policy/ignores cannot be changed under the approved bugfix, the overall `ruff check .`-exit-0 acceptance criterion remains unmet unless an independently authorized correction later clears it. This plan amendment does not claim a clean Ruff baseline or acceptance; Task 4.1 and bugfix acceptance remain blocked pending Ansel's disposition of this upstream criterion conflict.
 
 ## Phase 1: Isolated Candidate Environment and Baseline
 
@@ -54,9 +54,9 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 
 ## Phase 3: File-Scoped Diagnostic Corrections
 
-### T-3.1.01–T-3.1.61: One correction task per current diagnostic-bearing file
+### T-3.1.01–T-3.1.61: File-scoped diagnostic tasks and exception disposition
 
-Each row is one separate atomic task, issue, and board card after this exact plan amendment is approved. It authorizes only the exact listed file and the current Ruff/mypy findings shown below. Multiple checker findings for one file stay in one task. Labels are `task` for all; test-only paths also get `test`, and files explicitly named `*_property.py` also get `pbt`. The task's issue/card descriptions must cite this plan version, exact branch/worktree, and dependency IDs. No issue/card exists before Mira approves this amended plan.
+Each row is one separate task, issue, and board card after this exact plan amendment is approved. Correction tasks authorize only the exact listed file and current Ruff/mypy findings shown below; T-3.1.20 is the explicit exception disposition and authorizes no production edit. Multiple checker findings for one file stay in one correction task. Labels are `task` for all; test-only paths also get `test`, and files explicitly named `*_property.py` also get `pbt`. The task's issue/card descriptions must cite this plan version, exact branch/worktree, and dependency IDs. No issue/card exists before Mira approves this amended plan.
 
 | Task | Exact file | Current findings (Ruff / mypy) | Issue labels |
 |---|---|---|---|
@@ -79,7 +79,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.17 | `app/ingestion/router.py` | Ruff B008×3, B904×1, SIM117×1 | `task` |
 | T-3.1.18 | `app/ingestion/schemas.py` | Ruff UP037×1 | `task` |
 | T-3.1.19 | `app/meetings/router.py` | Ruff A002×2, B008×8, B904×2, I001×1, SIM117×4 | `task` |
-| T-3.1.20 | `app/meetings/schemas.py` | Ruff UP007×1 | `task` |
+| T-3.1.20 | `app/meetings/schemas.py` | Ruff UP007×1 — EXCEPTED (owner-authorized 2026-10-19; no production edit) | `task` |
 | T-3.1.21 | `app/meetings/service.py` | Ruff A002×1 | `task` |
 | T-3.1.22 | `app/meetings/speaker_review_service.py` | mypy union-attr×1 | `task` |
 | T-3.1.23 | `app/meetings/state_machine.py` | Ruff I001×1 | `task` |
@@ -145,7 +145,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.17 | Issue #342 · Card task_153535d2f483425e |
 | T-3.1.18 | Issue #343 · Card task_b7d536f17b744d05 |
 | T-3.1.19 | Issue #344 · Card task_80bb9d30b55d4460 |
-| T-3.1.20 | Issue #345 · Card task_debf2ac069c54a40 |
+| T-3.1.20 | Issue #345 · Card task_debf2ac069c54a40 — owner-excepted; UP007 remains uncleared and issue open pending approved plan publication/reconciliation |
 | T-3.1.21 | Issue #346 · Card task_7741f6f73f4744b9 |
 | T-3.1.22 | Issue #347 · Card task_a51038580a414fcd |
 | T-3.1.23 | Issue #348 · Card task_7547e887bf434b12 |
