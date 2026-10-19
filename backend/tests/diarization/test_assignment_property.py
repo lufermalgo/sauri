@@ -8,13 +8,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from hypothesis import given, settings, assume, HealthCheck
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from app.diarization.assignment import assign_turns
-from app.diarization.labeling import Speaker
 from app.diarization.diarization_engine import SpeakerSegment
-
+from app.diarization.labeling import Speaker
 
 # ---------------------------------------------------------------------------
 # Helper types for turns (simplified stand-in for the ORM SpeechTurn)
@@ -144,7 +143,7 @@ def test_property_9_assignment_to_speaker_with_maximum_overlap(
 
     result = assign_turns(turns, segments, speakers)
 
-    for turn, (turn_id, assigned_speaker) in zip(turns, result):
+    for turn, (turn_id, assigned_speaker) in zip(turns, result, strict=False):
         assert turn_id == turn.id
 
         # Compute accumulated overlap per speaker
@@ -182,7 +181,7 @@ def test_property_9_tie_break_by_lower_sequence(
 
     result = assign_turns(turns, segments, speakers)
 
-    for turn, (turn_id, assigned_speaker) in zip(turns, result):
+    for turn, (_turn_id, assigned_speaker) in zip(turns, result, strict=False):
         # Compute accumulated overlap per speaker
         overlaps: dict[str, int] = {}
         for sp in speakers:
