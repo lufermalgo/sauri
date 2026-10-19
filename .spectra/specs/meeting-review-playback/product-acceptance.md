@@ -4,7 +4,7 @@
 
 - **Outcome:** `INSUFFICIENT_USER_EVIDENCE`
 - **Exact candidate:** `6a9c838b1bab204d35ec046a4b9fad7e786ccbdb`
-- **Candidate identity:** verified as an ancestor of `main` at worktree HEAD `c5b9c2f93a70806a2415e4d79f6924cbf905730a`.
+- **Candidate identity:** verified as an ancestor of `origin/main` at `c5b9c2f93a70806a2415e4d79f6924cbf905730a`; `git merge-base --is-ancestor 6a9c838b1bab204d35ec046a4b9fad7e786ccbdb origin/main` exited 0. An earlier `T8_CANDIDATE_ANCESTRY=0` result was inconsistent and could not be reproduced with this direct ancestry check.
 - **Approved requirements:** `.spectra/specs/meeting-review-playback/requirements.md`, blob `5d0ba0ca01eba1a82c2bb41d432ccacfa7dbb175`.
 - **Approved design reference:** `.spectra/specs/meeting-review-playback/design.md`, blob `add1950a1c6d28bdc51a022089fd26f2e37b99aa`.
 - **Approved task-plan reference:** `.spectra/specs/meeting-review-playback/tasks.md` at commit `b88a07b64d3a7f0e04ff9e6139d8645bcf9cf10b` (the file blob at that commit is `264fc6d7c2f0ebddd241bd7b5da7ef2865fa435d`). The current file blob is `a089fe5a92dbe1be3abbbae04f93180a10e6b085`; the difference adds only GitHub issue/card/PR tracking lines and does not change task actions or acceptance evidence.
