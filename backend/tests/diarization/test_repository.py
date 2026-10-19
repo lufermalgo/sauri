@@ -8,24 +8,24 @@ Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 10.5, 10.6
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.diarization.repository import DiarizationRepository
 from app.infra.models import (
     Diarization,
     Meeting,
     Speaker,
     SpeakerAssignment,
-    Transcript,
     SpeechTurn,
+    Transcript,
 )
-from app.diarization.repository import DiarizationRepository
-
 
 # ---------------------------------------------------------------------------
 # Helpers — build the real entity graph (no mocks)
@@ -42,7 +42,7 @@ def _create_meeting(meeting_id: str) -> Meeting:
         process_state="completed",
         failure_cause=None,
         created_by="test-user",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -54,7 +54,7 @@ def _create_transcript(meeting_id: str) -> Transcript:
         provider="local",
         supports_turns=True,
         expires_at=None,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -83,8 +83,8 @@ def _create_diarization(
         speaker_count=speaker_count,
         diarization_state="completed",
         failure_cause=None,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
 
 
@@ -129,34 +129,31 @@ def _create_assignments(
 @given(attempts=st.integers(min_value=2, max_value=5))
 @pytest.mark.asyncio
 async def test_property_12_diarization_uniqueness_per_meeting(
-    session_factory: async_sessionmaker, attempts: int
-):
+    session_factory: async_sessionmaker[AsyncSession], attempts: int
+) -> None:
     """Multiple attempts to persist a Diarization for the same meeting_id don't
     produce more than one Diarization (UniqueConstraint uq_diarization_meeting_id)."""
     meeting_id = str(uuid.uuid4())
     repo = DiarizationRepository(session_factory)
 
     # Create the base meeting and transcript
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(_create_meeting(meeting_id))
-            transcript = _create_transcript(meeting_id)
-            session.add(transcript)
-            transcript_id = transcript.id
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id))
+        transcript = _create_transcript(meeting_id)
+        session.add(transcript)
+        transcript_id = transcript.id
 
     # First processing: succeeds
-    async with session_factory() as session:
-        async with session.begin():
-            diar = _create_diarization(meeting_id, transcript_id, speaker_count=2)
-            await repo.create(session, diar, [], [])
+    async with session_factory() as session, session.begin():
+        diar = _create_diarization(meeting_id, transcript_id, speaker_count=2)
+        await repo.create(session, diar, [], [])
 
     # Additional attempts for the same meeting_id must fail due to the constraint
     for _ in range(attempts - 1):
-        with pytest.raises(Exception):
-            async with session_factory() as session:
-                async with session.begin():
-                    dup_diar = _create_diarization(meeting_id, transcript_id, speaker_count=3)
-                    await repo.create(session, dup_diar, [], [])
+        with pytest.raises(IntegrityError):
+            async with session_factory() as session, session.begin():
+                dup_diar = _create_diarization(meeting_id, transcript_id, speaker_count=3)
+                await repo.create(session, dup_diar, [], [])
 
     # There should only be one Diarization for the meeting_id
     async with session_factory() as session:
@@ -178,36 +175,34 @@ async def test_property_12_diarization_uniqueness_per_meeting(
 @given(speaker_count=st.integers(min_value=1, max_value=5))
 @pytest.mark.asyncio
 async def test_property_13_persistence_atomicity(
-    session_factory: async_sessionmaker, speaker_count: int
-):
+    session_factory: async_sessionmaker[AsyncSession], speaker_count: int
+) -> None:
     """A failure midway through a write rolls back the whole transaction: no
     partial records remain (Diarization, Speakers, or Assignments)."""
     meeting_id = str(uuid.uuid4())
     repo = DiarizationRepository(session_factory)
 
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(_create_meeting(meeting_id))
-            transcript = _create_transcript(meeting_id)
-            session.add(transcript)
-            transcript_id = transcript.id
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id))
+        transcript = _create_transcript(meeting_id)
+        session.add(transcript)
+        transcript_id = transcript.id
 
     # Inject a failure: two Speakers with the same PK violates uniqueness (PK),
     # a constraint SQLite and PostgreSQL both enforce -> forces a rollback.
-    with pytest.raises(Exception):
-        async with session_factory() as session:
-            async with session.begin():
-                diar = _create_diarization(meeting_id, transcript_id, speaker_count)
-                speakers = _create_speakers(diar.id, speaker_count)
-                duplicate_pk = speakers[0].id
-                colliding_speaker = Speaker(
-                    id=duplicate_pk,  # Duplicate PK -> IntegrityError on flush
-                    diarization_id=diar.id,
-                    raw_label="SPEAKER_DUP",
-                    label="Speaker dup",
-                    sequence=999,
-                )
-                await repo.create(session, diar, speakers + [colliding_speaker], [])
+    with pytest.raises(IntegrityError):
+        async with session_factory() as session, session.begin():
+            diar = _create_diarization(meeting_id, transcript_id, speaker_count)
+            speakers = _create_speakers(diar.id, speaker_count)
+            duplicate_pk = speakers[0].id
+            colliding_speaker = Speaker(
+                id=duplicate_pk,  # Duplicate PK -> IntegrityError on flush
+                diarization_id=diar.id,
+                raw_label="SPEAKER_DUP",
+                label="Speaker dup",
+                sequence=999,
+            )
+            await repo.create(session, diar, speakers + [colliding_speaker], [])
 
     # Full rollback: there should be no Diarization, Speakers, or Assignments
     async with session_factory() as session:
@@ -240,24 +235,22 @@ async def test_property_13_persistence_atomicity(
 )
 @pytest.mark.asyncio
 async def test_property_14_provider_metadata_recording(
-    session_factory: async_sessionmaker, speaker_count: int, provider: str
-):
+    session_factory: async_sessionmaker[AsyncSession], speaker_count: int, provider: str
+) -> None:
     """The Diarization persists consistent provider and speaker_count."""
     meeting_id = str(uuid.uuid4())
     repo = DiarizationRepository(session_factory)
 
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(_create_meeting(meeting_id))
-            transcript = _create_transcript(meeting_id)
-            session.add(transcript)
-            transcript_id = transcript.id
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id))
+        transcript = _create_transcript(meeting_id)
+        session.add(transcript)
+        transcript_id = transcript.id
 
-    async with session_factory() as session:
-        async with session.begin():
-            diar = _create_diarization(meeting_id, transcript_id, speaker_count, provider)
-            speakers = _create_speakers(diar.id, speaker_count)
-            await repo.create(session, diar, speakers, [])
+    async with session_factory() as session, session.begin():
+        diar = _create_diarization(meeting_id, transcript_id, speaker_count, provider)
+        speakers = _create_speakers(diar.id, speaker_count)
+        await repo.create(session, diar, speakers, [])
 
     retrieved = await repo.get_by_meeting(meeting_id)
     assert retrieved is not None
@@ -280,29 +273,27 @@ async def test_property_14_provider_metadata_recording(
 )
 @pytest.mark.asyncio
 async def test_property_15_persistence_retrieval_roundtrip(
-    session_factory: async_sessionmaker, speaker_count: int, num_turns: int
-):
+    session_factory: async_sessionmaker[AsyncSession], speaker_count: int, num_turns: int
+) -> None:
     """Persisting Diarization + Speakers + Assignments and retrieving with
     get_by_meeting returns everything equivalent (selectinload)."""
     meeting_id = str(uuid.uuid4())
     repo = DiarizationRepository(session_factory)
 
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(_create_meeting(meeting_id))
-            transcript = _create_transcript(meeting_id)
-            session.add(transcript)
-            transcript_id = transcript.id
-            turns = _create_turns(transcript_id, num_turns)
-            for turn in turns:
-                session.add(turn)
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id))
+        transcript = _create_transcript(meeting_id)
+        session.add(transcript)
+        transcript_id = transcript.id
+        turns = _create_turns(transcript_id, num_turns)
+        for turn in turns:
+            session.add(turn)
 
-    async with session_factory() as session:
-        async with session.begin():
-            diar = _create_diarization(meeting_id, transcript_id, speaker_count)
-            speakers = _create_speakers(diar.id, speaker_count)
-            assignments = _create_assignments(diar.id, turns, speakers)
-            await repo.create(session, diar, speakers, assignments)
+    async with session_factory() as session, session.begin():
+        diar = _create_diarization(meeting_id, transcript_id, speaker_count)
+        speakers = _create_speakers(diar.id, speaker_count)
+        assignments = _create_assignments(diar.id, turns, speakers)
+        await repo.create(session, diar, speakers, assignments)
 
     retrieved = await repo.get_by_meeting(meeting_id)
     assert retrieved is not None
@@ -324,8 +315,8 @@ async def test_property_15_persistence_retrieval_roundtrip(
 
 @pytest.mark.asyncio
 async def test_example_get_by_meeting_without_diarization(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """get_by_meeting returns None if no Diarization exists (no error)."""
     repo = DiarizationRepository(session_factory)
     result = await repo.get_by_meeting("inexistente-id")
