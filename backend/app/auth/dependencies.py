@@ -10,6 +10,7 @@ from app.auth.schemas import AuthenticatedUser
 from app.auth.token import JWT_ALGORITHM, JWT_SECRET
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+_bearer_dependency = Depends(_bearer_scheme)
 
 _DEV_USER = AuthenticatedUser(
     id="dev-user-00000000",
@@ -35,7 +36,7 @@ def _bypass_active() -> bool:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = _bearer_dependency,
 ) -> AuthenticatedUser:
     """Extracts and validates the JWT token from the Authorization header.
 
