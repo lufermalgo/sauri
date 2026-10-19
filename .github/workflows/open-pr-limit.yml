@@ -16,19 +16,17 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const { getOpenPullRequestLimitError } = require(
-              `${process.env.GITHUB_WORKSPACE}/.github/scripts/check-open-pr-limit.cjs`
-            );
             const openPullRequests = await github.paginate(github.rest.pulls.list, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
               per_page: 100,
             });
-            const error = getOpenPullRequestLimitError(openPullRequests);
 
-            if (error) {
-              core.setFailed(error);
+            if (openPullRequests.length > 3) {
+              core.setFailed(
+                `This repository has ${openPullRequests.length} open pull requests; the maximum is 3.`,
+              );
             } else {
               core.info(`Open pull request limit respected (${openPullRequests.length}/3).`);
             }
