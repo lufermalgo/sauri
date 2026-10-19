@@ -11,6 +11,9 @@ MinIO/RabbitMQ, covered by integration test 17.3). Any real implementation
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from typing import Any
+
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -77,15 +80,19 @@ class _InMemoryQueue(JobQueue):
     """Conforming JobQueue implementation: immediate in-memory delivery."""
 
     def __init__(self) -> None:
-        self._subscribers: dict[str, list] = {}
-        self.delivered: list[tuple[str, dict]] = []
+        self._subscribers: dict[str, list[Callable[[dict[str, Any]], Awaitable[None]]]] = {}
+        self.delivered: list[tuple[str, dict[str, Any]]] = []
 
-    async def publish(self, topic: str, message: dict) -> None:
+    async def publish(self, topic: str, message: dict[str, Any]) -> None:
         for handler in self._subscribers.get(topic, []):
             await handler(message)
             self.delivered.append((topic, message))
 
-    async def subscribe(self, topic: str, handler) -> None:
+    async def subscribe(
+        self,
+        topic: str,
+        handler: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
         self._subscribers.setdefault(topic, []).append(handler)
 
     async def connect(self) -> None:
@@ -101,11 +108,11 @@ class _BufferedQueue(JobQueue):
     delivery to active subscribers."""
 
     def __init__(self) -> None:
-        self._subscribers: dict[str, list] = {}
-        self._buffer: dict[str, list[dict]] = {}
-        self.delivered: list[tuple[str, dict]] = []
+        self._subscribers: dict[str, list[Callable[[dict[str, Any]], Awaitable[None]]]] = {}
+        self._buffer: dict[str, list[dict[str, Any]]] = {}
+        self.delivered: list[tuple[str, dict[str, Any]]] = []
 
-    async def publish(self, topic: str, message: dict) -> None:
+    async def publish(self, topic: str, message: dict[str, Any]) -> None:
         handlers = self._subscribers.get(topic)
         if handlers:
             for handler in handlers:
@@ -114,7 +121,11 @@ class _BufferedQueue(JobQueue):
         else:
             self._buffer.setdefault(topic, []).append(message)
 
-    async def subscribe(self, topic: str, handler) -> None:
+    async def subscribe(
+        self,
+        topic: str,
+        handler: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> None:
         self._subscribers.setdefault(topic, []).append(handler)
         for message in self._buffer.get(topic, []):
             await handler(message)
@@ -145,7 +156,9 @@ QUEUE_IMPLEMENTATIONS = [_InMemoryQueue, _BufferedQueue]
     content=st.binary(min_size=0, max_size=200),
 )
 @pytest.mark.asyncio
-async def test_property_13_store_roundtrip_save_get(impl_cls, key: str, content: bytes) -> None:
+async def test_property_13_store_roundtrip_save_get(
+    impl_cls: type[ObjectStore], key: str, content: bytes
+) -> None:
     """Round-trip save→get returns the same content, for any conforming implementation."""
     store: ObjectStore = impl_cls()
     reference = await store.save(key, content)
@@ -160,7 +173,9 @@ async def test_property_13_store_roundtrip_save_get(impl_cls, key: str, content:
     content=st.binary(min_size=0, max_size=200),
 )
 @pytest.mark.asyncio
-async def test_property_13_store_delete_leaves_unavailable(impl_cls, key: str, content: bytes) -> None:
+async def test_property_13_store_delete_leaves_unavailable(
+    impl_cls: type[ObjectStore], key: str, content: bytes
+) -> None:
     """delete leaves the object unavailable, for any conforming implementation."""
     store: ObjectStore = impl_cls()
     reference = await store.save(key, content)
@@ -178,13 +193,13 @@ async def test_property_13_store_delete_leaves_unavailable(impl_cls, key: str, c
 )
 @pytest.mark.asyncio
 async def test_property_13_queue_published_message_is_delivered_to_subscriber(
-    impl_cls, topic: str, message: dict
+    impl_cls: type[JobQueue], topic: str, message: dict[str, Any]
 ) -> None:
     """A message published on a topic is delivered to that topic's subscriber, for any conforming implementation."""
     queue: JobQueue = impl_cls()
-    received: list[dict] = []
+    received: list[dict[str, Any]] = []
 
-    async def handler(msg: dict) -> None:
+    async def handler(msg: dict[str, Any]) -> None:
         received.append(msg)
 
     await queue.subscribe(topic, handler)
