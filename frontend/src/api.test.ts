@@ -1,0 +1,133 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as api from "./api";
+
+const manifestMethod = api as typeof api & {
+  getPlaybackManifest?: (meetingId: string) => Promise<PlaybackManifest>;
+};
+
+interface PlaybackSource {
+  source_id: string;
+  url: string;
+  mime_type: string | null;
+  quality_label?: string;
+  width?: number | null;
+  height?: number | null;
+  video_offset_ms?: number;
+}
+
+interface PlaybackManifest {
+  meeting_id: string;
+  duration_seconds: number;
+  video_presence: "muxed" | "separate" | "absent" | "unknown";
+  audio_source: PlaybackSource;
+  muxed_video_source: PlaybackSource | null;
+  video_sources: PlaybackSource[];
+}
+
+function response(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  } as Response;
+}
+
+function mockFetch(body: unknown, status = 200) {
+  const fetchMock = vi.fn().mockResolvedValue(response(body, status));
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("localStorage", {
+    getItem: vi.fn().mockReturnValue("synthetic-token"),
+    setItem: vi.fn(),
+    clear: vi.fn(),
+  });
+  return fetchMock;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("meeting playback API adapter", () => {
+  it("returns the typed manifest modes and authoritative source metadata without inference", async () => {
+    expect(typeof manifestMethod.getPlaybackManifest).toBe("function");
+
+    const signedAudio: PlaybackSource = {
+      source_id: "audio-source",
+      url: "https://storage.invalid/signed/audio?token=synthetic",
+      mime_type: "audio/webm",
+    };
+    const signedVideo: PlaybackSource = {
+      source_id: "video-source",
+      url: "https://storage.invalid/signed/video?token=synthetic",
+      mime_type: "video/webm",
+      quality_label: "Original",
+      width: 1280,
+      height: 720,
+      video_offset_ms: -250,
+    };
+    const fixtures: PlaybackManifest[] = [
+      { meeting_id: "meeting-1", duration_seconds: 12, video_presence: "muxed", audio_source: signedAudio, muxed_video_source: signedAudio, video_sources: [] },
+      { meeting_id: "meeting-1", duration_seconds: 12, video_presence: "separate", audio_source: signedAudio, muxed_video_source: null, video_sources: [signedVideo] },
+      { meeting_id: "meeting-1", duration_seconds: 12, video_presence: "absent", audio_source: signedAudio, muxed_video_source: null, video_sources: [] },
+      { meeting_id: "meeting-1", duration_seconds: 12, video_presence: "unknown", audio_source: { ...signedAudio, mime_type: null }, muxed_video_source: null, video_sources: [] },
+    ];
+
+    for (const fixture of fixtures) {
+      const fetchMock = mockFetch(fixture);
+      const result = await manifestMethod.getPlaybackManifest!("meeting-1");
+
+      expect(result).toEqual(fixture);
+      expect(result.video_presence).toBe(fixture.video_presence);
+      expect(result.muxed_video_source).toEqual(fixture.muxed_video_source);
+      expect(result.video_sources).toEqual(fixture.video_sources);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/meetings/meeting-1/playback"),
+        expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }),
+      );
+    }
+  });
+
+  it("maps ordered transcript segments to timed passages and retains untimed text without a playback interval", async () => {
+    const fetchMock = mockFetch({
+      transcript_id: "transcript-1",
+      meeting_id: "meeting-1",
+      language: "es-CO",
+      provider: "local",
+      supports_turns: true,
+      created_at: "2026-10-19T12:00:00Z",
+      segments: [
+        { id: "segment-2", text: "Segunda frase", start_ms: 1200, end_ms: 2200, sequence: 2 }, // spanish-sample-data
+        { id: "segment-1", text: "Primera frase", start_ms: 0, end_ms: 1100, sequence: 1 }, // spanish-sample-data
+        { id: "segment-untimed", text: "Texto sin tiempo", start_ms: null, end_ms: null, sequence: 3 }, // spanish-sample-data
+        { id: "segment-invalid", text: "Intervalo inválido", start_ms: 2400, end_ms: 2300, sequence: 4 }, // spanish-sample-data
+      ],
+    });
+
+    const transcript = await api.getTranscript("meeting-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/meetings/meeting-1/transcript"),
+      expect.any(Object),
+    );
+    expect(transcript.segments).toEqual([
+      { id: "segment-2", text: "Segunda frase", startMs: 1200, endMs: 2200, sequence: 2 }, // spanish-sample-data
+      { id: "segment-1", text: "Primera frase", startMs: 0, endMs: 1100, sequence: 1 }, // spanish-sample-data
+      { id: "segment-untimed", text: "Texto sin tiempo", startMs: null, endMs: null, sequence: 3 }, // spanish-sample-data
+      { id: "segment-invalid", text: "Intervalo inválido", startMs: null, endMs: null, sequence: 4 }, // spanish-sample-data
+    ]);
+    expect(transcript.segments[2].text).toBe("Texto sin tiempo"); // spanish-sample-data
+    expect(transcript.segments[2].startMs).toBeNull();
+    expect(transcript.segments[3].text).toBe("Intervalo inválido"); // spanish-sample-data
+    expect(transcript.segments[3].endMs).toBeNull();
+  });
+
+  it("does not surface raw object-store references from failed API responses", async () => {
+    const privateReference = "private-recordings/customer-42/raw-audio.webm";
+    mockFetch({ detail: `Playback failed for ${privateReference}` }, 500);
+
+    await expect(api.getTranscript("meeting-1")).rejects.toThrow();
+    await expect(api.getTranscript("meeting-1")).rejects.not.toThrow(privateReference);
+  });
+});
