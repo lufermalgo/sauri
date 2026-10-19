@@ -129,7 +129,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.01 | Issue #326 · Card task_2c3b6bebf14f4348 · PR #458 · Done |
 | T-3.1.02 | Issue #327 · Card task_bf7ecf6142d346e6 |
 | T-3.1.03 | Issue #328 · Card task_061bddef35f246a1 |
-| T-3.1.04 | Issue #329 · Card task_85e5ee9e158c4f30 |
+| T-3.1.04 | Done · Issue #329 · Card task_85e5ee9e158c4f30 · PR #463 |
 | T-3.1.05 | Issue #330 · Card task_c3dfb08400df4fb9 |
 | T-3.1.06 | Issue #331 · Card task_812a55eb29494c5b |
 | T-3.1.07 | Issue #332 · Card task_221e3b81934844ce |
