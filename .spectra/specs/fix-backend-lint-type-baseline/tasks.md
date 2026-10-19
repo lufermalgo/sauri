@@ -264,6 +264,8 @@ For each task, scope remains only its listed source file. Its dependency is the 
 
 **Task 3.1.36 tracking:** Done · Issue #361 · Card `task_679c84ddba6544df` · PR #389
 
+**Instantiated instance T-3.1.56:** `backend/tests/transcription/test_factory.py` — Ruff and mypy findings resolved; focused and full target tests passed; QA PASS. **Tracking:** Issue #381 · Card `task_bcbba7081c3b4c0f` · PR #452 · Done.
+
 ### Task 3.1.09: Clear UP017 in `backend/app/auth/audit.py`
 
 **Status:** Done (QA passed; implementation PR open)
