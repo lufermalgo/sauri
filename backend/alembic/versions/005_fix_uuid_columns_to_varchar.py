@@ -19,29 +19,57 @@ Create Date: 2026-07-21 00:00:00.000000
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "005_fix_uuid_columns"
-down_revision: Union[str, None] = "004_usuarios_schema"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "004_usuarios_schema"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _FOREIGN_KEYS = [
     # (constraint_name, table, column, referenced_table, referenced_column, ondelete)
     ("estado_historial_reunion_id_fkey", "estado_historial", "reunion_id", "reuniones", "id", "CASCADE"),
     ("grabaciones_de_sesion_reunion_id_fkey", "grabaciones_de_sesion", "reunion_id", "reuniones", "id", "CASCADE"),
     ("transcripciones_reunion_id_fkey", "transcripciones", "reunion_id", "reuniones", "id", "CASCADE"),
-    ("turnos_de_habla_transcripcion_id_fkey", "turnos_de_habla", "transcripcion_id", "transcripciones", "id", "CASCADE"),
-    ("notificaciones_de_grabacion_reunion_id_fkey", "notificaciones_de_grabacion", "reunion_id", "reuniones", "id", "CASCADE"),
+    (
+        "turnos_de_habla_transcripcion_id_fkey",
+        "turnos_de_habla",
+        "transcripcion_id",
+        "transcripciones",
+        "id",
+        "CASCADE",
+    ),
+    (
+        "notificaciones_de_grabacion_reunion_id_fkey",
+        "notificaciones_de_grabacion",
+        "reunion_id",
+        "reuniones",
+        "id",
+        "CASCADE",
+    ),
     ("diarizaciones_reunion_id_fkey", "diarizaciones", "reunion_id", "reuniones", "id", None),
     ("diarizaciones_transcripcion_id_fkey", "diarizaciones", "transcripcion_id", "transcripciones", "id", None),
     ("hablantes_diarizacion_id_fkey", "hablantes", "diarizacion_id", "diarizaciones", "id", "CASCADE"),
-    ("asignaciones_de_hablante_diarizacion_id_fkey", "asignaciones_de_hablante", "diarizacion_id", "diarizaciones", "id", "CASCADE"),
+    (
+        "asignaciones_de_hablante_diarizacion_id_fkey",
+        "asignaciones_de_hablante",
+        "diarizacion_id",
+        "diarizaciones",
+        "id",
+        "CASCADE",
+    ),
     ("asignaciones_de_hablante_turno_id_fkey", "asignaciones_de_hablante", "turno_id", "turnos_de_habla", "id", None),
-    ("asignaciones_de_hablante_hablante_id_fkey", "asignaciones_de_hablante", "hablante_id", "hablantes", "id", "CASCADE"),
+    (
+        "asignaciones_de_hablante_hablante_id_fkey",
+        "asignaciones_de_hablante",
+        "hablante_id",
+        "hablantes",
+        "id",
+        "CASCADE",
+    ),
 ]
 
 _COLUMNAS_UUID = [
