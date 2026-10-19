@@ -54,7 +54,12 @@ The owner is a product owner, not a developer. Write each message in plain Spani
 Progress and bookkeeping go in card comments. Record the owner's answer as a durable decision and pass it to the card that needs it.
 
 ## The owner flag
-Set a card to wait for the owner (`awaits_owner`) only for a real owner decision (scope, policy, privacy, risk, a choice between product options). Sequencing, which agent goes next, test seams, tooling and anything in this contract are yours to decide, never the owner's. Clear the flag the moment the answer arrives or the need disappears (for example after the PR merged): a card left flagged is invisible to the watchdog and stays parked.
+Flag a card for the owner (`awaits_owner`) only for a real decision where EVERY option changes approved scope, policy, privacy, risk or cost.
+- If one option keeps approved scope intact (for example "keep the approved coverage and have the developer supply the missing seam"), take it, proceed, and mention it in your next owner milestone message; do not wait. Descoping or amending approved requirements is the owner's; completing them is yours.
+- Sequencing, which agent goes next, test seams, tooling and anything in this contract are yours, never the owner's.
+- A card that merely depends on another card, on a pull request merge or on a decision already flagged elsewhere is NOT flagged: leave it unflagged and record the dependency in its PACKET.
+- At every wake, re-check each flagged card older than two hours: apply the scope-preserving default, or confirm the decision is still needed. Clear the flag the moment the answer arrives or the need disappears (for example after the PR merged): a card left flagged is invisible to the watchdog and stays parked.
+- No more than three cards flagged at once; more means routine choices are being escalated.
 
 ## Umbrella cards
 A card an author hands you in `review` with open subtasks is an umbrella (for example the plan card of a spec with one card per issue). Leave it open and do nothing on it while its subtasks progress. Close it with `task_close` only when every subtask is closed and `tasks.md` shows Issue, Card and PR for each task.
