@@ -50,7 +50,7 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 
 **Dependencies:** Task 1.2
 
-**Tracking:** Issue #264 · Card task_e93f0a97ce6f4e12
+**Tracking:** Done · Issue #264 · Card task_9d781cb49f7f4fac · PR #459
 
 ## Phase 3: File-Scoped Diagnostic Corrections
 
@@ -126,7 +126,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 
 | Task | Tracking |
 |---|---|
-| T-3.1.01 | Issue #326 · Card task_2c3b6bebf14f4348 |
+| T-3.1.01 | Issue #326 · Card task_2c3b6bebf14f4348 · PR #458 · Done |
 | T-3.1.02 | Issue #327 · Card task_bf7ecf6142d346e6 |
 | T-3.1.03 | Issue #328 · Card task_061bddef35f246a1 |
 | T-3.1.04 | Issue #329 · Card task_85e5ee9e158c4f30 |
@@ -153,40 +153,40 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.25 | Issue #350 · Card task_d02b6e8c4d814984 |
 | T-3.1.26 | Issue #351 · Card task_59aac81ea8054377 |
 | T-3.1.27 | Issue #352 · Card task_9f1282d6970a445d |
-| T-3.1.28 | Issue #353 · Card task_33bf40d2ec6146e4 |
+| T-3.1.28 | Done · Issue #353 · Card task_33bf40d2ec6146e4 · PR #426 |
 | T-3.1.29 | Issue #354 · Card task_e34f1f55e38e483b |
-| T-3.1.30 | Issue #355 · Card task_a0a08418e19f4cc2 |
+| T-3.1.30 | Done · Issue #355 · Card task_a0a08418e19f4cc2 · PR #432 |
 | T-3.1.31 | Done · Issue #356 · Card task_432b6ebacc584e3e · PR #388 |
-| T-3.1.32 | Issue #357 · Card task_b2193d5a036c4013 |
+| T-3.1.32 | Done · Issue #357 · Card task_b2193d5a036c4013 · PR #430 |
 | T-3.1.33 | Issue #358 · Card task_0f9b0e5cff7441f0 |
-| T-3.1.34 | Issue #359 · Card task_4d85d49373ed4e3e |
+| T-3.1.34 | Done · Issue #359 · Card task_4d85d49373ed4e3e · PR #431 |
 | T-3.1.35 | Issue #360 · Card task_a0215908954e429b |
 | T-3.1.36 | Issue #361 · Card task_679c84ddba6544df |
 | T-3.1.37 | Issue #362 · Card task_76c632e57e91477e |
-| T-3.1.38 | Issue #363 · Card task_10a2fd0ed4d4439d |
+| T-3.1.38 | Done · Issue #363 · Card task_10a2fd0ed4d4439d · PR #435 |
 | T-3.1.39 | Issue #364 · Card task_b3822206a07f4e0f |
-| T-3.1.40 | Issue #365 · Card task_1897141c7c474c37 |
-| T-3.1.41 | Issue #366 · Card task_bafdfcb3bc714299 |
+| T-3.1.40 | Done · Issue #365 · Card task_1897141c7c474c37 · PR #436 |
+| T-3.1.41 | Done · Issue #366 · Card task_bafdfcb3bc714299 · PR #437 |
 | T-3.1.42 | Issue #367 · Card task_fe35ad6c1d00426a · PR #440 |
-| T-3.1.43 | Issue #368 · Card task_e60ecb4fab1b46b0 |
-| T-3.1.44 | Issue #369 · Card task_facdc3e0b0154885 |
-| T-3.1.45 | Issue #370 · Card task_ef8575211880453f |
+| T-3.1.43 | Done · Issue #368 · Card task_e60ecb4fab1b46b0 · PR #438 |
+| T-3.1.44 | Done · Issue #369 · Card task_facdc3e0b0154885 · PR #439 |
+| T-3.1.45 | Done · Issue #370 · Card task_ef8575211880453f · PR #441 |
 | T-3.1.46 | Issue #371 · Card task_69a6cc84820f493d |
-| T-3.1.47 | Issue #372 · Card task_53211a4d325048ca |
+| T-3.1.47 | Issue #372 · Card task_53211a4d325048ca · PR #445 · Done |
 | T-3.1.48 | Issue #373 · Card task_260190e5c6b34b1d |
-| T-3.1.49 | Issue #374 · Card task_ef4387d699c94a33 |
+| T-3.1.49 | Done · Issue #374 · Card task_ef4387d699c94a33 · PR #442 |
 | T-3.1.50 | Issue #375 · Card task_e5accf1b07694b51 |
 | T-3.1.51 | Issue #376 · Card task_232217e2a98a41ac |
-| T-3.1.52 | Issue #377 · Card task_0859f7811a3349f8 |
+| T-3.1.52 | Done · Issue #377 · Card task_0859f7811a3349f8 · PR #446 |
 | T-3.1.53 | Issue #378 · Card task_4775e29d81b04838 |
-| T-3.1.54 | Issue #379 · Card task_f501a3dd376f40a0 |
+| T-3.1.54 | Done · Issue #379 · Card task_f501a3dd376f40a0 · PR #451 |
 | T-3.1.55 | Issue #380 · Card task_fd6af56086e14309 |
 | T-3.1.56 | Issue #381 · Card task_bcbba7081c3b4c0f |
-| T-3.1.57 | Issue #382 · Card task_394594b0b6674985 |
+| T-3.1.57 | Issue #382 · Card task_394594b0b6674985 · PR #450 |
 | T-3.1.58 | Issue #383 · Card task_16175357fb414edf |
-| T-3.1.59 | Issue #384 · Card task_35ae8fb35e254041 |
+| T-3.1.59 | Done · Issue #384 · Card task_35ae8fb35e254041 · PR #455 |
 | T-3.1.60 | Issue #385 · Card task_9f1912235da941e0 |
-| T-3.1.61 | Issue #386 · Card task_be8f43444a0149fb |
+| T-3.1.61 | Done · Issue #386 · Card task_be8f43444a0149fb · PR #457 |
 
 ### Focused RED/test seams for every file task
 
@@ -264,6 +264,8 @@ For each task, scope remains only its listed source file. Its dependency is the 
 
 **Task 3.1.36 tracking:** Done · Issue #361 · Card `task_679c84ddba6544df` · PR #389
 
+**Instantiated instance T-3.1.56:** `backend/tests/transcription/test_factory.py` — Ruff and mypy findings resolved; focused and full target tests passed; QA PASS. **Tracking:** Issue #381 · Card `task_bcbba7081c3b4c0f` · PR #452 · Done.
+
 ### Task 3.1.09: Clear UP017 in `backend/app/auth/audit.py`
 
 **Status:** Done (QA passed; implementation PR open)
@@ -271,6 +273,8 @@ For each task, scope remains only its listed source file. Its dependency is the 
 **Tracking:** Issue #334 · Card task_fc0a88aa3262413e · PR #392
 
 **Instantiated instance T-3.1.33:** `backend/tests/diar_engine/test_contract.py` — Ruff I001 and recorded mypy findings resolved; file-scoped Ruff, mypy and pytest passed; QA PASS. **Tracking:** Issue #358 · Card `task_0f9b0e5cff7441f0` · PR #391 · Done.
+
+**Instantiated instance T-3.1.58:** `backend/tests/transcription/test_local_provider.py` — Ruff and mypy findings resolved; file-scoped Ruff, mypy and pytest passed; QA PASS. **Tracking:** Issue #383 · Card `task_16175357fb414edf` · PR #456 · Done.
 
 ## Phase 4: Integrated Candidate Validation and Handoff
 
