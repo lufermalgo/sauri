@@ -24,10 +24,16 @@ tests/test_migration.py for why).
 
 from __future__ import annotations
 
+import importlib.util
+from collections.abc import Sequence
+from pathlib import Path
+from types import ModuleType
+from typing import Any
+
 import pytest
 from sqlalchemy import inspect
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
-
 
 # ---------------------------------------------------------------------------
 # The three diarization tables exist once the schema is created
@@ -35,10 +41,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 @pytest.mark.asyncio
-async def test_migration_003_creates_three_tables(async_engine: AsyncEngine):
+async def test_migration_003_creates_three_tables(async_engine: AsyncEngine) -> None:
     """upgrade creates diarizations, speakers, and speaker_assignments."""
 
-    def _tables(sync_conn):
+    def _tables(sync_conn: Connection) -> set[str]:
         return set(inspect(sync_conn).get_table_names())
 
     async with async_engine.connect() as conn:
@@ -55,10 +61,12 @@ async def test_migration_003_creates_three_tables(async_engine: AsyncEngine):
 
 
 @pytest.mark.asyncio
-async def test_migration_003_unique_constraints(async_engine: AsyncEngine):
+async def test_migration_003_unique_constraints(async_engine: AsyncEngine) -> None:
     """uq_diarization_meeting_id and uq_speaker_assignment_turn_id are defined."""
 
-    def _unique_constraints(sync_conn):
+    def _unique_constraints(
+        sync_conn: Connection,
+    ) -> tuple[set[str | None], set[str | None]]:
         insp = inspect(sync_conn)
         diar_uqs = {uc["name"] for uc in insp.get_unique_constraints("diarizations")}
         assignment_uqs = {
@@ -79,10 +87,10 @@ async def test_migration_003_unique_constraints(async_engine: AsyncEngine):
 
 
 @pytest.mark.asyncio
-async def test_migration_003_foreign_keys_cascade(async_engine: AsyncEngine):
+async def test_migration_003_foreign_keys_cascade(async_engine: AsyncEngine) -> None:
     """Speaker and assignment FKs reference diarizations with cascade."""
 
-    def _fks(sync_conn):
+    def _fks(sync_conn: Connection) -> dict[str, Sequence[Any]]:
         insp = inspect(sync_conn)
         return {
             "speakers": insp.get_foreign_keys("speakers"),
@@ -109,16 +117,15 @@ async def test_migration_003_foreign_keys_cascade(async_engine: AsyncEngine):
 # ---------------------------------------------------------------------------
 
 
-def test_alembic_revision_chain():
+def test_alembic_revision_chain() -> None:
     """Migration 003 chains correctly after 002 and defines upgrade/downgrade."""
-    import importlib.util
-    from pathlib import Path
-
     base = Path(__file__).resolve().parents[2] / "alembic" / "versions"
 
-    def _load(name):
+    def _load(name: str) -> ModuleType:
         path = base / name
         spec = importlib.util.spec_from_file_location(name.replace(".py", ""), path)
+        assert spec is not None
+        assert spec.loader is not None
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod
