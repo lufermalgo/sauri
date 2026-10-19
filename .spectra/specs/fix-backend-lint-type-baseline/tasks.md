@@ -56,7 +56,7 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 
 ### T-3.1.01–T-3.1.61: File-scoped diagnostic tasks and exception disposition
 
-Each row is one separate task, issue, and board card after this exact plan amendment is approved. Correction tasks authorize only the exact listed file and current Ruff/mypy findings shown below; T-3.1.20 is the explicit exception disposition and authorizes no production edit. Multiple checker findings for one file stay in one correction task. Labels are `task` for all; test-only paths also get `test`, and files explicitly named `*_property.py` also get `pbt`. The task's issue/card descriptions must cite this plan version, exact branch/worktree, and dependency IDs. No issue/card exists before Mira approves this amended plan.
+These rows map the pre-existing task/issue/card records instantiated under the previously approved plan; this amendment creates no new task, issue, or board card. Correction tasks authorize only the exact listed file and current Ruff/mypy findings shown below; T-3.1.20 is the explicit exception disposition and authorizes no production edit. Multiple checker findings for one file stay in one correction task. Existing task/issue labels are `task` for all; test-only paths also have `test`, and files explicitly named `*_property.py` also have `pbt`. Any future task/issue/card creation or dispatch based on this amended plan requires Mira approval of this exact snapshot. Existing records remain traceable to their original approved plan version unless individually reconciled.
 
 | Task | Exact file | Current findings (Ruff / mypy) | Issue labels |
 |---|---|---|---|
