@@ -374,3 +374,14 @@ The assigned worktree was rebased onto `origin/main` at `d8955687f42627b57e7ca3b
 - The 19 exact focused node IDs listed in the migration/auth/diarization/meeting block above were rerun from `backend/` with `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m pytest -q <those 19 nodes>`: **exit 0, 19 passed in 2.30s**.
 - The merged synthetic protective files were rerun with `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python -m pytest -q tests/auth/test_auth_disabled_scope.py tests/diar_engine/test_contract.py tests/transcription/test_asr_engine_service.py`: **exit 0, 12 passed in 0.30s**.
 - No fresh Ruff/mypy RED was generated in this evidence-refresh turn; the exact prior per-path RED records remain the pre-correction evidence. The above pytest checks are current-main compatibility verification, not a claim that all 25 path packets were freshly regenerated.
+
+## Latest-base full checker rerun (2026-10-19)
+
+Exact checked base: `origin/main` `d8955687f42627b57e7ca3bc5a85143fd71b4b82`; worktree HEAD before evidence edits was `6f3cd0a8ce6041526ca1306260a6bcdd94ae7ab9`, and `git diff --quiet origin/main..HEAD -- backend` exited 0. Thus the backend source checked is byte-identical to latest `origin/main`. Environment: Python 3.14.7, Ruff 0.17.1, mypy 2.4.0, interpreter `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/python`.
+
+From the worktree `backend/`, with full output preserved unfiltered:
+
+- `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/ruff check .` — exit 1; **187 errors**, 130 fixable and 6 unsafe. Raw complete output: `evidence-task-2.1/ruff-current-main.txt`.
+- `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/mypy .` — exit 1; **302 errors in 31 files**, 134 source files checked. Raw complete output: `evidence-task-2.1/mypy-current-main.txt`.
+
+These are fresh full-target checker RED runs on the current production source, not a claim that the mismatching historical T1.2/current-base aggregate counts are unchanged. T1.2 recorded 189 Ruff diagnostics/292 mypy errors; the older current-base snapshot recorded 190/303. The latest raw outputs above are authoritative for this exact base. Task 2.1 classifications/test mappings remain scoped to the T1.2 inventory; newer-path diagnostics are not silently added to its correction scope.
