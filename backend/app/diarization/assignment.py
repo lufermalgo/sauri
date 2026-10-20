@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.diarization.labeling import Speaker
 from app.diarization.diarization_engine import SpeakerSegment
+from app.diarization.labeling import Speaker
 
 
 def assign_turns(
