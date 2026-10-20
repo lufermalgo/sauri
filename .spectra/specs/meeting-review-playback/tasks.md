@@ -214,8 +214,8 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Action:** Add a checked-in synthetic WAV with a matching three-passage timed transcript whose intervals cover the media timeline. In the existing app, mount `MeetingPlaybackView` at `/_trial/meeting-review-playback` only in Vite development mode and provide a development-only root link. Load fixture data directly for this trial path; do not change the normal authenticated API-backed route, add the path to meeting navigation, or expose route/link in production builds. Make the T-13 browser assertions pass through user-operated controls and real browser media events.
 
-**Acceptance evidence:** T-13 passes against the actual checked-in WAV and all three passages, exercising play progress and second-passage seek/play timing; a production build does not expose the trial route/link. Report this technical E2E result separately; it does not alter frozen product acceptance or participant criteria.
+**Acceptance evidence:** T-13 passes against the actual checked-in WAV and all three passages, exercising play progress and second-passage seek/play timing. After a production build, an automated bundle assertion confirms the development-only route target `/_trial/meeting-review-playback` is absent from `frontend/dist`, demonstrating that neither the route nor its linked entry point is shipped. Report this technical E2E result separately; it does not alter frozen product acceptance or participant criteria.
 
-**Validation:** `npm run test:e2e --workspace frontend`; `npm run build --workspace frontend`.
+**Validation:** `npm run test:e2e --workspace frontend`; `npm run build --workspace frontend && ! grep -R -Fq '/_trial/meeting-review-playback' frontend/dist`.
 
 **Dependencies:** T-13
