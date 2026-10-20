@@ -11,8 +11,10 @@
 | 5 | RED: playback view, controls, and error behavior | T-9 | T-6, T-8 |
 | 6 | GREEN: meeting playback view | T-10 | T-9 |
 | 7 | Storage delivery integration contract | T-11 | T-4 |
+| 8 | Browser E2E test infrastructure and RED trial test | T-12, T-13 | T-12; T-10 → T-13 |
+| 9 | GREEN development-only trial fixture route | T-14 | T-13 |
 
-The dependency graph contains only mandatory RED-before-GREEN edges and real data/API prerequisites. T-1 and T-3 are independent. T-2 waits for T-1; T-4 waits for both T-2 (persisted source inventory) and T-3 (route contract tests). T-5 waits for T-4, while controller test task T-7 is independent of API mapping; T-6 and T-8 each wait only for their corresponding RED task. T-9 waits for T-6 and T-8. T-11 waits for T-4 and is otherwise independent of frontend work.
+The dependency graph contains only mandatory RED-before-GREEN edges and real data/API prerequisites. T-1 and T-3 are independent. T-2 waits for T-1; T-4 waits for both T-2 (persisted source inventory) and T-3 (route contract tests). T-5 waits for T-4, while controller test task T-7 is independent of API mapping; T-6 and T-8 each wait only for their corresponding RED task. T-9 waits for T-6 and T-8. T-11 waits for T-4 and is otherwise independent of frontend work. T-12 enables a frontend real-browser test runner; T-13 requires that runner and the view from T-10, then remains RED until T-14 adds the development-only trial route/link and fixture.
 
 ## Phase 1: RED — Persistence and API Contracts
 
@@ -130,7 +132,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-9: Add failing meeting playback view tests
 
-**Tracking:** Issue #307 · Card `task_2eadd0c5aca84eda`
+**Tracking:** Issue #307 · Card `task_91e0bb5a24b14959`
 
 **Files:** `frontend/src/**/__tests__/MeetingPlaybackView.test.tsx` (place in the established frontend test location).
 
@@ -146,7 +148,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-10: Implement accessible meeting playback view
 
-**Tracking:** Issue #308 · Card `task_3af577f121a04340`
+**Tracking:** Issue #308 · Card `task_6a271652b2c34130`
 
 **Files:** `frontend/src/components/MeetingPlaybackView.tsx` (new); existing meeting review route/view integration point.
 
@@ -171,3 +173,49 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 **Validation:** `cd backend && pytest tests/meetings/test_playback_storage_integration.py` with disposable S3-compatible storage configured.
 
 **Dependencies:** T-4
+
+## Phase 8: RED — Real-Browser Trial Readiness
+
+### T-12: Establish frontend Playwright E2E runner
+
+**Tracking:** No issue/card yet; create only after Mira approves this exact plan.
+
+**Files:** `frontend/package.json`; frontend Playwright configuration under `frontend/`; root dependency lockfile.
+
+**Action:** Add a frontend-local Playwright runner configuration using the repository's existing `@playwright/test` convention, including a Vite development server `webServer` configuration. Configure `frontend/tests/e2e/` as the frontend E2E directory and expose the script used below. Keep this runner isolated to frontend browser tests; do not alter extension E2E configuration.
+
+**Acceptance evidence:** A temporary runner smoke test launches the Vite app and observes its root page; remove the smoke test when T-13 adds the feature-specific browser test.
+
+**Validation:** `npm run test:e2e --workspace frontend`.
+
+**Dependencies:** None
+
+### T-13: Add failing real-browser trial playback E2E test
+
+**Tracking:** No issue/card yet; create only after Mira approves this exact plan.
+
+**Files:** `frontend/tests/e2e/meeting-review-playback-trial.spec.ts`; `frontend/src/App.tsx`; `frontend/src/components/MeetingPlaybackView.tsx`.
+
+**Action:** Write a real-browser test that starts at `/`, follows the development-only trial link, and expects the trial view, actual fixture WAV with finite non-zero duration, and all three synthetic transcript passages. Use `data-testid="playback-media"` and visible Play/passage controls only; do not call `HTMLMediaElement.play()` or set `currentTime` in test code. Register listeners before clicks; assert Play unpauses and advances media time by at least 500 ms within 5 seconds, then assert the second passage action (`startMs=4000`) emits `seeked` within 250 ms of 4.000 s and subsequently `playing` while unpaused. This task must demonstrate RED before T-14 adds the fixture route/link.
+
+**Acceptance evidence:** The browser test runs and fails specifically because the development-only fixture route/link and WAV are not yet present; runner, browser, and app startup must succeed.
+
+**Validation:** `npm run test:e2e --workspace frontend`.
+
+**Dependencies:** T-10 (requires the rendered playback view and its visible media/passage controls); T-12 (requires the configured browser runner).
+
+## Phase 9: GREEN — Development-Only Trial Fixture
+
+### T-14: Add synthetic WAV, timed transcript, and Vite-only trial route
+
+**Tracking:** No issue/card yet; create only after Mira approves this exact plan.
+
+**Files:** `frontend/src/App.tsx`; `frontend/tests/e2e/meeting-review-playback-trial.spec.ts`; synthetic fixture asset and transcript module under `frontend/`.
+
+**Action:** Add a checked-in synthetic WAV with a matching three-passage timed transcript whose intervals cover the media timeline. In the existing app, mount `MeetingPlaybackView` at `/_trial/meeting-review-playback` only in Vite development mode and provide a development-only root link. Load fixture data directly for this trial path; do not change the normal authenticated API-backed route, add the path to meeting navigation, or expose route/link in production builds. Make the T-13 browser assertions pass through user-operated controls and real browser media events.
+
+**Acceptance evidence:** T-13 passes against the actual checked-in WAV and all three passages, exercising play progress and second-passage seek/play timing; a production build does not expose the trial route/link. Report this technical E2E result separately; it does not alter frozen product acceptance or participant criteria.
+
+**Validation:** `npm run test:e2e --workspace frontend`; `npm run build --workspace frontend`.
+
+**Dependencies:** T-13
