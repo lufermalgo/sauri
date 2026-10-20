@@ -178,7 +178,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-12: Establish frontend Playwright E2E runner
 
-**Tracking:** No issue/card yet; create only after Mira approves this exact plan.
+**Tracking:** Issue #500 · Card `task_ec09f84fb1ec4f00`.
 
 **Files:** `frontend/package.json`; frontend Playwright configuration under `frontend/`; root dependency lockfile.
 
@@ -192,7 +192,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-13: Add failing real-browser trial playback E2E test
 
-**Tracking:** No issue/card yet; create only after Mira approves this exact plan.
+**Tracking:** Issue #501 · Card `task_c7bca3a1ade84745`.
 
 **Files:** `frontend/tests/e2e/meeting-review-playback-trial.spec.ts`; `frontend/src/App.tsx`; `frontend/src/components/MeetingPlaybackView.tsx`.
 
@@ -208,7 +208,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-14: Add synthetic WAV, timed transcript, and Vite-only trial route
 
-**Tracking:** No issue/card yet; create only after Mira approves this exact plan.
+**Tracking:** Issue #502 · Card `task_d6be0be2de424f71`.
 
 **Files:** `frontend/src/App.tsx`; `frontend/tests/e2e/meeting-review-playback-trial.spec.ts`; synthetic fixture asset and transcript module under `frontend/`.
 
