@@ -1,6 +1,7 @@
 """Authorization and denial auditing."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,8 +41,8 @@ def require_sales(
 
     async def _dependency(
         request: Request,
-        user: AuthenticatedUser = Depends(get_current_user),
-        session: AsyncSession = Depends(get_session),
+        user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+        session: Annotated[AsyncSession, Depends(get_session)],
     ) -> AuthenticatedUser:
         resource = f"{request.method} {request.url.path}"
 

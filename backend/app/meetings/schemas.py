@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Union
 
 from pydantic import BaseModel, field_validator
 
@@ -65,4 +64,4 @@ class ManualMeetingInput(BaseModel):
 
 
 # Union type — accepts any of the three input types
-MeetingInput = Union[CalendarMeetingInput, LinkMeetingInput, ManualMeetingInput]
+MeetingInput = CalendarMeetingInput | LinkMeetingInput | ManualMeetingInput
