@@ -104,7 +104,7 @@ async def create_meeting(
         async with session_factory() as session, session.begin():
             meeting = await register_meeting(
                 session=session,
-                meeting_data=meeting_data,
+                input=meeting_data,
                 created_by=user.id,
             )
             return {
