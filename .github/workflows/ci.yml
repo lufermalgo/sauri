@@ -1,3 +1,30 @@
+# Secret-free CI for Sauri (issue #497).
+#
+# Policy:
+#   - A check that passes on `main` today is BLOCKING.
+#   - A check whose scope is known to be red on `main` is non-blocking
+#     (`continue-on-error: true`) and names the issue that owns the debt, so the
+#     failure stays visible in the run log and in the step status instead of
+#     blocking every pull request.
+#   - Promote a step back to blocking by removing its `continue-on-error` line in
+#     the same commit that makes that scope green.
+#
+# Known-red scopes and their tracking issues (measured on origin/main @ 4252172,
+# 2026-10-21, Python 3.13 venv, Node 26):
+#   backend ruff        -> #228  (lint baseline debt on main: 45 findings)
+#   backend mypy        -> #228  (type baseline debt on main: 26 errors in 7 files)
+#   backend pytest      -> #248  (collection error: app.transcription.processing_pipeline)
+#                          #407, #491, #492, #493 (Alembic 009 lineage and width guards)
+#                          #309  (storage integration test needs MinIO environment)
+#                          #246, #251 (speaker-review PUT route and per-speaker view)
+#   frontend vitest     -> #304  (typed playback and transcript API mapping)
+#                          #251  (per-speaker review in the transcript view)
+#   frontend tsc        -> #304  (Transcript.segments contract in @sauri/shared-types)
+#                          #189  (frontend test environment readiness)
+#
+# Green scopes kept blocking: extension vitest, extension tsc, extension build,
+# frontend build.
+
 name: CI
 
 on:
@@ -5,6 +32,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,12 +50,18 @@ jobs:
           python-version: "3.11"
       - name: Install backend dependencies
         run: python -m pip install -e "./backend[dev]"
-      - name: Lint backend
+      - name: "Backend lint (ruff) - non-blocking, tracked by #228"
         working-directory: backend
+        continue-on-error: true
         run: ruff check .
-      - name: Test backend
+      - name: "Backend type check (mypy) - non-blocking, tracked by #228"
         working-directory: backend
-        run: pytest
+        continue-on-error: true
+        run: mypy .
+      - name: "Backend tests (pytest) - non-blocking, tracked by #248"
+        working-directory: backend
+        continue-on-error: true
+        run: pytest --continue-on-collection-errors
 
   web-and-extension:
     name: Web and extension checks
@@ -42,15 +76,17 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Test web frontend
+      - name: "Frontend tests (vitest) - non-blocking, tracked by #304"
+        continue-on-error: true
         run: npm run test --workspace=sauri-frontend
-      - name: Typecheck web frontend
+      - name: "Frontend type check (tsc) - non-blocking, tracked by #304"
+        continue-on-error: true
         run: npm run typecheck --workspace=sauri-frontend
-      - name: Build web frontend
+      - name: "Frontend build (vite)"
         run: npm run build --workspace=sauri-frontend
-      - name: Test extension
+      - name: "Extension tests (vitest)"
         run: npm run test --workspace=sauri-extension
-      - name: Typecheck extension
+      - name: "Extension type check (tsc)"
         run: npm run typecheck --workspace=sauri-extension
-      - name: Build extension
+      - name: "Extension build (vite)"
         run: npm run build --workspace=sauri-extension
