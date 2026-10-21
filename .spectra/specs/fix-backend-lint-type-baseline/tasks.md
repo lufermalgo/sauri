@@ -144,7 +144,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.16 | Done · Issue #341 · Card task_b18c2cd83e214a3b · PR #470 |
 | T-3.1.17 | Done · Issue #342 · Card task_153535d2f483425e · PR #471 |
 | T-3.1.18 | Issue #343 · Card task_b7d536f17b744d05 |
-| T-3.1.19 | Issue #344 · Card task_80bb9d30b55d4460 |
+| T-3.1.19 | Done · Issue #344 · Card task_80bb9d30b55d4460 · PR #477 |
 | T-3.1.20 | Done · Issue #345 · Card task_debf2ac069c54a40 · PR #472 |
 | T-3.1.21 | Issue #346 · Card task_7741f6f73f4744b9 |
 | T-3.1.22 | Issue #347 · Card task_a51038580a414fcd |
