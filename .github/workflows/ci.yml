@@ -29,10 +29,11 @@
 #
 # Totals measured in that runtime: ruff 26 findings; mypy 24 errors in 7 files;
 # pytest 4 failed, 283 passed, 4 skipped, 1 collection error; frontend vitest
-# 10 failed, 21 passed; frontend tsc 6 errors. The Hypothesis deadline flakes
-# seen on a slower local 3.13 virtualenv do not reproduce in the CI runtime, so
-# they are not listed as a known-red scope. The counts move as the tool versions
-# and `main` move; the issue references are the contract, not the counts.
+# 10 failed, 21 passed; frontend tsc 6 errors. #522 records Hypothesis's default
+# 200 ms deadline flaking in the diarization suite (2/6 runs in the affected
+# Python 3.14.7 environment); its test profile fix preserves 100 examples while
+# disabling this timing-based limit. The counts move as tools and `main` move;
+# issue references are the contract, not the counts.
 #
 # `npm audit --omit=dev` reports 0 vulnerabilities; the advisories `npm ci`
 # prints are all in development dependencies.
