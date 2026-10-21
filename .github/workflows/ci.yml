@@ -10,20 +10,32 @@
 #     the same commit that makes that scope green.
 #
 # Known-red scopes and their tracking issues (measured on origin/main @ 4252172,
-# 2026-10-21, Python 3.13 venv, Node 26):
+# 2026-10-21, in the exact CI runtime: Python 3.11.12, ruff 0.17.1, mypy 2.4.0,
+# pytest 9.1.1, Node 20.20.2, npm 11.19.1):
 #   backend ruff        -> #228  (lint baseline debt on main: 45 findings)
-#   backend mypy        -> #228  (type baseline debt on main: 26 errors in 7 files)
-#   backend pytest      -> #248  (collection error: app.transcription.processing_pipeline)
+#   backend mypy        -> #228  (type baseline debt on main: 24 errors in 7 files)
+#   backend pytest      -> #248  (collection error: app.transcription.processing_pipeline
+#                          is the module T-6/T-15 still has to create; the RED test
+#                          that imports it is already on main)
 #                          #407, #491, #492, #493 (Alembic 009 lineage and width guards)
 #                          #249, #250, #241 (speaker-review PUT schema and routes)
 #                          live MinIO playback integration test (needs a disposable
-#                          object-store environment; test implemented by closed #309)
-#                          Hypothesis deadline flakes in property tests (e.g. the
-#                          auth access-control property; no open tracking issue yet)
+#                          object-store environment; test implemented by closed #309;
+#                          no open tracking issue yet)
 #   frontend vitest     -> #304  (typed playback and transcript API mapping)
 #                          #251  (per-speaker review in the transcript view)
 #   frontend tsc        -> #304  (Transcript.segments contract in @sauri/shared-types)
 #                          #189  (frontend test environment readiness)
+#
+# Totals measured in that runtime: ruff 45 findings; mypy 24 errors in 7 files;
+# pytest 4 failed, 281 passed, 3 skipped, 1 collection error; frontend vitest
+# 10 failed, 21 passed; frontend tsc 6 errors. Hypothesis deadline flakes were
+# observed on a slower local 3.13 virtualenv and did not reproduce in the CI
+# runtime, so they are not listed as a known-red scope. The counts move as the
+# tool versions move; the issue references are the contract, not the counts.
+#
+# `npm ci` reports 10 advisories, all in development dependencies
+# (`npm audit --omit=dev` reports 0); production dependencies are unaffected.
 #
 # Green scopes kept blocking: extension vitest, extension tsc, extension build,
 # frontend build.
