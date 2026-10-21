@@ -133,7 +133,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.05 | Issue #330 · Card task_c3dfb08400df4fb9 · PR #461 · Done |
 | T-3.1.06 | Done · Issue #331 · Card task_812a55eb29494c5b · PR #465 |
 | T-3.1.07 | Issue #332 · Card task_221e3b81934844ce · PR #464 · Done |
-| T-3.1.08 | Issue #333 · Card task_9118c3aeba7f458d |
+| T-3.1.08 | Done · Issue #333 · Card task_9118c3aeba7f458d · PR #507 |
 | T-3.1.09 | Issue #334 · Card task_fc0a88aa3262413e |
 | T-3.1.10 | Done · Issue #335 · Card task_16d1a54118dd4590 · PR #468 |
 | T-3.1.11 | Done · Issue #336 · Card task_e31207d8cfb042c3 · PR #474 |
@@ -147,7 +147,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.19 | Done · Issue #344 · Card task_80bb9d30b55d4460 · PR #477 |
 | T-3.1.20 | Done · Issue #345 · Card task_debf2ac069c54a40 · PR #472 |
 | T-3.1.21 | Issue #346 · Card task_7741f6f73f4744b9 |
-| T-3.1.22 | Issue #347 · Card task_a51038580a414fcd |
+| T-3.1.22 | Not applicable — Issue #347 closed as not planned; the mypy finding was removed by merged PR #418 · Card task_a51038580a414fcd · PR #508 |
 | T-3.1.23 | Issue #348 · Card task_7547e887bf434b12 |
 | T-3.1.24 | Issue #349 · Card task_1663610cd4ed4cff |
 | T-3.1.25 | Issue #350 · Card task_d02b6e8c4d814984 |
