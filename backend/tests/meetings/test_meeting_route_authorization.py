@@ -144,10 +144,38 @@ async def test_request_join_denials_do_not_change_state_publish_or_skip_audit(
     assert response.status_code == status_code
     assert await _meeting_state(api_db_url, meeting_id) == "queued"
     queue.publish.assert_not_awaited()
+    queue.connect.assert_not_awaited()
     rows = await _audit_rows(api_db_url, user_id)
     assert len(rows) == 1
     assert rows[0].result == "denied"
     assert rows[0].resource == f"POST /api/v1/meetings/{meeting_id}/request-join"
+
+
+@pytest.mark.asyncio
+async def test_request_join_with_unknown_meeting_id_is_non_disclosing_404(
+    api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing meeting id must be indistinguishable from one owned by someone else.
+
+    Before B-2 the route answered 409 for a missing id, which let a non-owner probe
+    for the existence of a meeting id by comparing the status code with the 404
+    returned for a meeting owned by somebody else.
+    """
+    queue = type("Queue", (), {"connect": AsyncMock(), "disconnect": AsyncMock(), "publish": AsyncMock()})()
+    monkeypatch.setattr(router, "_get_queue", lambda: queue)
+    unknown_id = str(uuid.uuid4())
+
+    response = await api_client.post(f"{BASE_PATH}/{unknown_id}/request-join", headers=_headers(OWNER_ID))
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Meeting not found"
+    assert unknown_id not in response.text
+    queue.publish.assert_not_awaited()
+    queue.connect.assert_not_awaited()
+    rows = await _audit_rows(api_db_url, OWNER_ID)
+    assert len(rows) == 1
+    assert rows[0].result == "denied"
+    assert rows[0].resource == f"POST /api/v1/meetings/{unknown_id}/request-join"
 
 
 @pytest.mark.asyncio
