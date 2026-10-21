@@ -9,11 +9,12 @@
 #   - Promote a step back to blocking by removing its `continue-on-error` line in
 #     the same commit that makes that scope green.
 #
-# Known-red scopes and their tracking issues (measured on origin/main @ 81a0932,
-# 2026-10-21, in the exact CI runtime: Python 3.11.17, ruff 0.17.1, mypy 2.4.0,
-# pytest 9.1.1, Node 20.20.2, npm 10.8.2):
-#   backend ruff        -> #228  (lint baseline debt on main: 26 findings)
-#   backend mypy        -> #228  (type baseline debt on main: 24 errors in 7 files)
+# Known-red scopes and their tracking issues (measured on origin/main @ 34648ab,
+# 2026-10-21, with the CI-matching runtime: Python 3.11.12, ruff 0.17.1,
+# mypy 2.4.0, pytest 9.1.1, Node 20.20.2, npm 10.8.2):
+#   backend ruff        -> #228  (lint baseline debt on main: 16 findings, 7 fixable)
+#   backend mypy        -> #228  (type baseline debt on main: 24 errors in 7 files;
+#                          137 source files checked)
 #   backend pytest      -> #248  (collection error: app.transcription.processing_pipeline
 #                          is the module T-6/T-15 still has to create; the RED test
 #                          that imports it is already on main)
@@ -27,12 +28,14 @@
 #   frontend tsc        -> #304  (Transcript.segments contract in @sauri/shared-types)
 #                          #189  (frontend test environment readiness)
 #
-# Totals measured in that runtime: ruff 26 findings; mypy 24 errors in 7 files;
-# pytest 4 failed, 283 passed, 4 skipped, 1 collection error; frontend vitest
-# 10 failed, 21 passed; frontend tsc 6 errors. The Hypothesis deadline flakes
-# seen on a slower local 3.13 virtualenv do not reproduce in the CI runtime, so
-# they are not listed as a known-red scope. The counts move as the tool versions
-# and `main` move; the issue references are the contract, not the counts.
+# Current measurements: ruff 16 findings; mypy 24 errors in 7 files; frontend
+# vitest 10 failed, 21 passed; frontend tsc 6 errors. The frontend files and
+# package configuration are unchanged since 81a0932; hosted run 39681493984
+# confirms the frontend results. No backend pytest total is recorded: a local run
+# on current main reported 9 failed, 278 passed, 4 skipped, and 1 error, but
+# Hypothesis deadline flakes make that local count unsuitable as a CI baseline.
+# The counts move as the tool versions and `main` move; issue references are the
+# contract, not the counts.
 #
 # `npm audit --omit=dev` reports 0 vulnerabilities; the advisories `npm ci`
 # prints are all in development dependencies.
