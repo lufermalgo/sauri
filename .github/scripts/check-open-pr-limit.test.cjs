@@ -69,14 +69,24 @@ test('reports an already-over-cap repository without blocking unrelated PR updat
   assert.deepEqual(result.failures, ['This repository has 11 open pull requests; the maximum is 3.']);
 });
 
-test('runs only on pull_request opened and reopened', () => {
+test('runs trusted base-branch workflow only on pull_request_target opened and reopened', () => {
   const trigger = workflow.match(/^on:\n([\s\S]*?)^permissions:/m);
   assert.ok(trigger, 'workflow must declare an on: block before permissions:');
   const triggerBlock = trigger[1];
 
-  assert.match(triggerBlock, /pull_request:/, 'workflow must trigger on pull_request');
+  assert.match(
+    triggerBlock,
+    /^\s*pull_request_target:/m,
+    'workflow must use pull_request_target so GitHub loads it from the base branch',
+  );
+  assert.doesNotMatch(
+    triggerBlock,
+    /^\s*pull_request:/m,
+    'workflow must not run from PR-head pull_request context',
+  );
   assert.match(triggerBlock, /types:\s*\[opened,\s*reopened\]/, 'trigger types must be exactly opened and reopened');
   assert.doesNotMatch(triggerBlock, /synchronize/, 'synchronize must not trigger the guard');
+  assert.doesNotMatch(workflow, /uses:\s*actions\/checkout/, 'the trusted workflow must not check out PR-head code');
 });
 
 test('requests only read access to pull requests', () => {
