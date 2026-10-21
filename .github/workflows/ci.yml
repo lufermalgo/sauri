@@ -56,6 +56,12 @@ jobs:
   backend:
     name: Backend lint and tests
     runs-on: ubuntu-latest
+    env:
+      OBJECT_STORE_ENDPOINT: http://127.0.0.1:9000
+      OBJECT_STORE_BUCKET: sauri-playback-${{ github.run_id }}
+      MINIO_ROOT_USER: sauri-ci-${{ github.run_id }}
+      MINIO_ROOT_PASSWORD: ${{ format('sauri-ci-{0}-{1}', github.run_id, github.run_attempt) }}
+      PLAYBACK_TEST_FRONTEND_ORIGIN: http://localhost:5173
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -65,6 +71,54 @@ jobs:
           python-version: "3.11"
       - name: Install backend dependencies
         run: python -m pip install -e "./backend[dev]"
+      - name: Start disposable MinIO
+        run: >-
+          docker run --detach --name sauri-ci-minio --publish 9000:9000
+          --env MINIO_ROOT_USER="$MINIO_ROOT_USER"
+          --env MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD"
+          minio/minio:latest server /data --console-address ":9001"
+      - name: Wait for MinIO and configure the disposable bucket
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$OBJECT_STORE_ENDPOINT/minio/health/ready"; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "MinIO did not become ready" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          python - <<'PY'
+          import os
+
+          import boto3
+          from botocore.config import Config
+
+          client = boto3.client(
+              "s3",
+              endpoint_url=os.environ["OBJECT_STORE_ENDPOINT"],
+              aws_access_key_id=os.environ["MINIO_ROOT_USER"],
+              aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
+              config=Config(signature_version="s3v4"),
+          )
+          bucket = os.environ["OBJECT_STORE_BUCKET"]
+          client.create_bucket(Bucket=bucket)
+          client.put_bucket_cors(
+              Bucket=bucket,
+              CORSConfiguration={
+                  "CORSRules": [
+                      {
+                          "AllowedOrigins": [os.environ["PLAYBACK_TEST_FRONTEND_ORIGIN"]],
+                          "AllowedMethods": ["GET"],
+                          "AllowedHeaders": ["range"],
+                          "ExposeHeaders": ["Content-Range", "Accept-Ranges"],
+                          "MaxAgeSeconds": 300,
+                      }
+                  ]
+              },
+          )
+          PY
       - name: "Backend lint (ruff) - non-blocking, tracked by #228"
         working-directory: backend
         continue-on-error: true
@@ -73,6 +127,12 @@ jobs:
         working-directory: backend
         continue-on-error: true
         run: mypy .
+      - name: "Live MinIO playback test (pytest) - issue #505"
+        working-directory: backend
+        run: >-
+          pytest
+          tests/meetings/test_playback_storage_integration.py::test_signed_playback_source_supports_range_and_frontend_cors
+          -q
       - name: "Backend tests (pytest) - non-blocking, tracked by #248"
         working-directory: backend
         continue-on-error: true
