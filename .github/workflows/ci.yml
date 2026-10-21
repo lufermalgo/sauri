@@ -76,6 +76,7 @@ jobs:
           docker run --detach --name sauri-ci-minio --publish 9000:9000
           --env MINIO_ROOT_USER="$MINIO_ROOT_USER"
           --env MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD"
+          --env MINIO_API_CORS_ALLOW_ORIGIN="$PLAYBACK_TEST_FRONTEND_ORIGIN"
           minio/minio:latest server /data --console-address ":9001"
       - name: Wait for MinIO and configure the disposable bucket
         run: |
@@ -104,20 +105,6 @@ jobs:
           )
           bucket = os.environ["OBJECT_STORE_BUCKET"]
           client.create_bucket(Bucket=bucket)
-          client.put_bucket_cors(
-              Bucket=bucket,
-              CORSConfiguration={
-                  "CORSRules": [
-                      {
-                          "AllowedOrigins": [os.environ["PLAYBACK_TEST_FRONTEND_ORIGIN"]],
-                          "AllowedMethods": ["GET"],
-                          "AllowedHeaders": ["range"],
-                          "ExposeHeaders": ["Content-Range", "Accept-Ranges"],
-                          "MaxAgeSeconds": 300,
-                      }
-                  ]
-              },
-          )
           PY
       - name: "Backend lint (ruff) - non-blocking, tracked by #228"
         working-directory: backend
