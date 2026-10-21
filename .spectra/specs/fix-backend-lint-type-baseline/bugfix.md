@@ -39,9 +39,6 @@ THEN it reports B904 because the `TimeoutException` branch raises `ExternalServi
 WHEN Ruff 0.17.1 checks the pre-fix `backend/asr-engine/main.py` source at `81a093299ea9bc1555f73f6d520e024368ee5fa3` from T-3.1.25 / issue #350,
 THEN it exits 1 and reports B904 at lines 172 and 204 because the two `HTTPException` raises inside `except Exception as e` do not explicitly chain the caught exception; the deterministic reproduction and diagnostics are recorded under Scope and Evidence Notes.
 
-WHEN Ruff 0.17.1 checks `app/meetings/service.py` from base `origin/main` snapshot `34648abf50a79e3bdbf1dcbd50b229b072ca7ca2`,
-THEN `ruff check app/meetings/service.py` exits 1 with A002 because `register_meeting` names a parameter `input`, shadowing the Python builtin; the exact reproduction and output are recorded under Scope and Evidence Notes.
-
 ## Comportamiento Esperado (Correcto)
 
 WHEN the backend development dependencies are freshly provisioned from the existing `pyproject.toml` and the supported project toolchain is used,
@@ -67,9 +64,6 @@ THEN the system SHALL raise `HTTPException(status_code=500, detail=f"Audio downl
 
 WHEN the caught exception at `backend/asr-engine/main.py:204` is translated into `HTTPException`,
 THEN the system SHALL raise `HTTPException(status_code=500, detail=f"Transcription failed: {e}") from e`; the explicit cause SHALL preserve the caught exception and the HTTP 500 status and `detail` string SHALL remain unchanged.
-
-WHEN `register_meeting` in `backend/app/meetings/service.py` is corrected for Ruff A002,
-THEN the implementation SHALL rename its `input` parameter to a non-builtin name and update the sole in-repository keyword callsite in `backend/app/meetings/router.py` in the same change. Only the internal Python callable keyword name changes; the HTTP request/response contract and meeting origin semantics SHALL remain unchanged.
 
 ## Comportamiento Sin Cambios (Prevención de Regresiones)
 
@@ -155,4 +149,23 @@ THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effec
 - Decision provenance for the cloud-provider timeout branches: Ansel's task handoff authorizes chaining only for T-3.1.14 / issue #339 (`backend/app/diarization/cloud_provider.py`) and T-3.1.24 / issue #349 (`backend/app/transcription/cloud_provider.py`). Evidence recorded in that handoff: in each module the `HTTPStatusError` and `(ConnectError, RequestError)` sibling branches already chain; the timeout branch is the only unchained sibling. `ExternalServiceError` is defined and raised only in its respective module and is caught nowhere in `backend/app`; no customer-facing `failure_cause` is derived from `str(e)`, `repr(e)`, or `type(e)`. Ansel also reports the explicit chaining effect was executed on Python 3.11.12 and 3.13.4. This exception authorizes only internal cause/traceback context changes; it does not authorize other runtime behavior or any policy/configuration exception. Stop and route any further scope change to Ansel.
 - Decision provenance for the ASR HTTP errors: Ansel's explicit 2026-10-21 amendment instruction is recorded in APX card `task_802908d6ac9446da` and authorizes only appending `from e` to the two `HTTPException` raises in T-3.1.25 / issue #350 (`backend/asr-engine/main.py`: `Audio download failed: {e}` and `Transcription failed: {e}`). It requires HTTP 500, the exact `detail` strings, and all other runtime behavior to remain unchanged, with no lint ignores or configuration changes. QA evidence is recorded in card `task_d02b6e8c4d814984`: Nia PASS for candidate `2b2fa4e06738ebe6a5f02d504aada0716c78f455` (PR head `47ec0c33ae6f13aa5efce3442f52f80301e4175f`), including Ruff and two focused tests. The present amendment changes only this specification artifact; it does not alter that reviewed code candidate.
 - Reproduction evidence for ASR B904: From `backend/`, using Ruff `0.17.1`, ran `git show 2b2fa4e06738ebe6a5f02d504aada0716c78f455^:backend/asr-engine/main.py | /Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/ruff check --stdin-filename asr-engine/main.py -`; exit code `1`. The pre-fix source is exact base `81a093299ea9bc1555f73f6d520e024368ee5fa3`. Output includes B904 at `asr-engine/main.py:172` for `Audio download failed: {e}` and at `:204` for `Transcription failed: {e}`; it reports four findings total, the other two being the separately tracked SIM115 and SIM105 findings. This run reproduces the exact lint defects authorized by this amendment.
-- The saved project baseline claim does not assert that a future candidate passes. No implementation or corrected candidate has been validated in this authoring phase; the exact pre-fix B904 reproduction above is diagnostic evidence only.
+- A002 reproduction on base `origin/main` `34648abf50a79e3bdbf1dcbd50b229b072ca7ca2`: Ruff version `0.17.1`; from `backend/`, ran `ruff check app/meetings/service.py` using `/Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/ruff`; exit code `1`. Literal output:
+
+  ```text
+  A002 Function argument `input` is shadowing a Python builtin
+     --> app/meetings/service.py:156:5
+      |
+  154 | async def register_meeting(
+  155 |     session: AsyncSession,
+  156 |     input: dict[str, Any],
+      |     ^^^^^
+  157 |     created_by: str,
+  158 | ) -> Meeting:
+      |
+
+  Found 1 error.
+  ```
+
+  This reproduction was run against the clean worktree at the specified base commit; the command reports the literal output above.
+- A002 decision provenance: Ansel's instruction on APX card `task_802908d6ac9446da` authorizes the narrow team technical disposition stated above for T-3.1.21 / #346. The reviewed plan source is approved `tasks.md` snapshot `a498c14b079052fc5c62891d5d6d42d9c6c6a181`; its design source is `design.md` snapshot `0baa3d2a9ee54f5f6e9d9f64bd91ea8f17bc465d`. This authorization is limited to the internal Python callable keyword rename and the in-repository callsite update, with no lint ignore/configuration or other behavior change.
+- The saved project baseline claim does not assert that a future candidate passes. No implementation or corrected candidate has been validated in this authoring phase; the exact pre-fix A002 and B904 reproductions above are diagnostic evidence only.
