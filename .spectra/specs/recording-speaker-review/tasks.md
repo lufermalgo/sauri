@@ -273,6 +273,16 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Acceptance evidence:** Targeted tests passed (12); Nia recorded QA `PASS` and Zev recorded `NO_ACTIONABLE_FINDINGS` on the exact candidate. Full backend pytest remains blocked during collection by the missing `app.transcription.processing_pipeline`; Ruff was unavailable in the implementation environment.
 
+### B-2: Security remediation — authorize meeting detail, join, rename, and delete routes
+
+**Tracking:** Issue #504 · Card task_138287b156e54fa0 · Status: in progress
+
+**Files:** `backend/app/meetings/router.py`; `backend/tests/meetings/test_meeting_route_authorization.py`.
+
+**Action:** Apply the shared commercial-role and meeting-owner authorization helper to GET `/{meeting_id}`, POST `/{meeting_id}/request-join`, PATCH `/{meeting_id}`, and DELETE `/{meeting_id}`. Audit denials and preserve successful owner responses and the request-join 409 for non-queued meetings.
+
+**Acceptance evidence:** Route tests verify owner access, non-sales 403, cross-owner/missing 404, denial audit records, no unauthorized join transition/publication, and unauthenticated 401 responses. Deliberate privacy change: request-join for a nonexistent meeting now returns 404 instead of 409 to prevent existence probing; the owner's 409 for a non-queued meeting is unchanged.
+
 ### T-16: GREEN — enforce resource-owner checks on existing and new routes
 
 **Tracking:** Issue #249 · Card task_2c4350aa34a94025
