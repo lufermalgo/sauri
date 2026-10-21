@@ -17,18 +17,18 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.diarization.assignment import assign_turns
-from app.diarization.state import apply_diarization_event
-from app.diarization.labeling import label_speakers
-from app.diarization.factory import create_diarization_engine
 from app.diarization.diarization_engine import DiarizationOptions
+from app.diarization.factory import create_diarization_engine
+from app.diarization.labeling import label_speakers
 from app.diarization.repository import DiarizationRepository
+from app.diarization.state import apply_diarization_event
 from app.infra.models import (
     Diarization,
     Meeting,
@@ -120,7 +120,7 @@ async def _process_diarization(
 
     # --- State: in_progress -> completed (Req. 9.2, 9.4) ---
     final_transition = apply_diarization_event(current_state, "diarization_completed")
-    utc_now = datetime.now(timezone.utc)
+    utc_now = datetime.now(UTC)
 
     capabilities = engine.capabilities()
 
@@ -168,9 +168,8 @@ async def _process_diarization(
 
     # --- Persist in a single transaction (Req. 8.2) ---
     repo = DiarizationRepository(session_factory)
-    async with session_factory() as session:
-        async with session.begin():
-            await repo.create(session, diarization, orm_speakers, orm_assignments)
+    async with session_factory() as session, session.begin():
+        await repo.create(session, diarization, orm_speakers, orm_assignments)
 
     logger.info(
         "Diarization completed for meeting_id=%s (%d speakers, %d assignments)",

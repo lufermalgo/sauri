@@ -127,27 +127,27 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | Task | Tracking |
 |---|---|
 | T-3.1.01 | Issue #326 · Card task_2c3b6bebf14f4348 · PR #458 · Done |
-| T-3.1.02 | Issue #327 · Card task_bf7ecf6142d346e6 |
+| T-3.1.02 | Issue #327 · Card task_bf7ecf6142d346e6 · PR #462 · Done |
 | T-3.1.03 | Issue #328 · Card task_061bddef35f246a1 · PR #460 · Done |
-| T-3.1.04 | Issue #329 · Card task_85e5ee9e158c4f30 |
+| T-3.1.04 | Done · Issue #329 · Card task_85e5ee9e158c4f30 · PR #463 |
 | T-3.1.05 | Issue #330 · Card task_c3dfb08400df4fb9 · PR #461 · Done |
-| T-3.1.06 | Issue #331 · Card task_812a55eb29494c5b |
+| T-3.1.06 | Done · Issue #331 · Card task_812a55eb29494c5b · PR #465 |
 | T-3.1.07 | Issue #332 · Card task_221e3b81934844ce · PR #464 · Done |
-| T-3.1.08 | Issue #333 · Card task_9118c3aeba7f458d |
+| T-3.1.08 | Done · Issue #333 · Card task_9118c3aeba7f458d · PR #507 |
 | T-3.1.09 | Issue #334 · Card task_fc0a88aa3262413e |
 | T-3.1.10 | Done · Issue #335 · Card task_16d1a54118dd4590 · PR #468 |
-| T-3.1.11 | Issue #336 · Card task_e31207d8cfb042c3 |
+| T-3.1.11 | Done · Issue #336 · Card task_e31207d8cfb042c3 · PR #474 |
 | T-3.1.12 | Issue #337 · Card task_4fe91b55210f4902 |
 | T-3.1.13 | Done · Issue #338 · Card task_b2894a1b41664ef5 · PR #466 |
 | T-3.1.14 | Issue #339 · Card task_d9060c9f79b346ce |
 | T-3.1.15 | Done · Issue #340 · Card task_bc422932256d4afd · PR #469 |
-| T-3.1.16 | Issue #341 · Card task_b18c2cd83e214a3b |
+| T-3.1.16 | Done · Issue #341 · Card task_b18c2cd83e214a3b · PR #470 |
 | T-3.1.17 | Done · Issue #342 · Card task_153535d2f483425e · PR #471 |
 | T-3.1.18 | Issue #343 · Card task_b7d536f17b744d05 |
-| T-3.1.19 | Issue #344 · Card task_80bb9d30b55d4460 |
+| T-3.1.19 | Done · Issue #344 · Card task_80bb9d30b55d4460 · PR #477 |
 | T-3.1.20 | Done · Issue #345 · Card task_debf2ac069c54a40 · PR #472 |
 | T-3.1.21 | Issue #346 · Card task_7741f6f73f4744b9 |
-| T-3.1.22 | Issue #347 · Card task_a51038580a414fcd |
+| T-3.1.22 | Not applicable — Issue #347 closed as not planned; the mypy finding was removed by merged PR #418 · Card task_a51038580a414fcd · PR #508 |
 | T-3.1.23 | Issue #348 · Card task_7547e887bf434b12 |
 | T-3.1.24 | Issue #349 · Card task_1663610cd4ed4cff |
 | T-3.1.25 | Issue #350 · Card task_d02b6e8c4d814984 |

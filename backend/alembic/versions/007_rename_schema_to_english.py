@@ -10,15 +10,15 @@ Create Date: 2026-07-21 00:00:00.000000
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "007_rename_schema_to_english"
-down_revision: Union[str, None] = "006_add_titulo_reunion"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "006_add_titulo_reunion"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -172,22 +172,52 @@ def upgrade() -> None:
     op.alter_column("users", "creado_en", new_column_name="created_at")
 
     # --- Named unique constraints (design.md > "Constraints/índices") ---
-    op.execute("ALTER TABLE session_recordings RENAME CONSTRAINT uq_grabacion_reunion_id TO uq_session_recording_meeting_id")
-    op.execute("ALTER TABLE session_recordings RENAME CONSTRAINT uq_grabacion_clave_idempotencia TO uq_session_recording_idempotency_key")
-    op.execute("ALTER TABLE transcripts RENAME CONSTRAINT uq_transcripcion_reunion_id TO uq_transcript_meeting_id")
-    op.execute("ALTER TABLE diarizations RENAME CONSTRAINT uq_diarizacion_reunion_id TO uq_diarization_meeting_id")
-    op.execute("ALTER TABLE speaker_assignments RENAME CONSTRAINT uq_asignacion_turno_id TO uq_speaker_assignment_turn_id")
+    op.execute(
+        "ALTER TABLE session_recordings RENAME CONSTRAINT "
+        "uq_grabacion_reunion_id TO uq_session_recording_meeting_id"
+    )
+    op.execute(
+        "ALTER TABLE session_recordings RENAME CONSTRAINT "
+        "uq_grabacion_clave_idempotencia TO uq_session_recording_idempotency_key"
+    )
+    op.execute(
+        "ALTER TABLE transcripts RENAME CONSTRAINT "
+        "uq_transcripcion_reunion_id TO uq_transcript_meeting_id"
+    )
+    op.execute(
+        "ALTER TABLE diarizations RENAME CONSTRAINT "
+        "uq_diarizacion_reunion_id TO uq_diarization_meeting_id"
+    )
+    op.execute(
+        "ALTER TABLE speaker_assignments RENAME CONSTRAINT "
+        "uq_asignacion_turno_id TO uq_speaker_assignment_turn_id"
+    )
     op.execute("ALTER TABLE users RENAME CONSTRAINT uq_usuario_email TO uq_user_email")
 
 
 def downgrade() -> None:
     # --- Named unique constraints (reverse) ---
     op.execute("ALTER TABLE users RENAME CONSTRAINT uq_user_email TO uq_usuario_email")
-    op.execute("ALTER TABLE speaker_assignments RENAME CONSTRAINT uq_speaker_assignment_turn_id TO uq_asignacion_turno_id")
-    op.execute("ALTER TABLE diarizations RENAME CONSTRAINT uq_diarization_meeting_id TO uq_diarizacion_reunion_id")
-    op.execute("ALTER TABLE transcripts RENAME CONSTRAINT uq_transcript_meeting_id TO uq_transcripcion_reunion_id")
-    op.execute("ALTER TABLE session_recordings RENAME CONSTRAINT uq_session_recording_idempotency_key TO uq_grabacion_clave_idempotencia")
-    op.execute("ALTER TABLE session_recordings RENAME CONSTRAINT uq_session_recording_meeting_id TO uq_grabacion_reunion_id")
+    op.execute(
+        "ALTER TABLE speaker_assignments RENAME CONSTRAINT "
+        "uq_speaker_assignment_turn_id TO uq_asignacion_turno_id"
+    )
+    op.execute(
+        "ALTER TABLE diarizations RENAME CONSTRAINT "
+        "uq_diarization_meeting_id TO uq_diarizacion_reunion_id"
+    )
+    op.execute(
+        "ALTER TABLE transcripts RENAME CONSTRAINT "
+        "uq_transcript_meeting_id TO uq_transcripcion_reunion_id"
+    )
+    op.execute(
+        "ALTER TABLE session_recordings RENAME CONSTRAINT "
+        "uq_session_recording_idempotency_key TO uq_grabacion_clave_idempotencia"
+    )
+    op.execute(
+        "ALTER TABLE session_recordings RENAME CONSTRAINT "
+        "uq_session_recording_meeting_id TO uq_grabacion_reunion_id"
+    )
 
     # --- users (was usuarios) ---
     op.alter_column("users", "created_at", new_column_name="creado_en")
