@@ -368,7 +368,7 @@ worktrees so they don't need a full reinstall each time).
 ### Git rules
 
 * Stage specific files — never `git add .` blindly.
-* Rebase before push — never merge.
+* Rebase before the first push — never merge. Once a branch is pushed or has an open PR, never rewrite it (no rebase, no force-push): if `main` moved and the PR conflicts, `git merge origin/main` into the branch, resolve, and push a normal commit. Conflicts only in progress rows of a shared `tasks.md` resolve by keeping every `Done` row from both sides. A PR conflict is never a reason to stop or hand the card back.
 * Do not work directly on `main` — use a worktree (see above), not a branch in the
   shared checkout.
 * If `main` is broken, stop and fix it first.
