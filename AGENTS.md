@@ -365,6 +365,12 @@ the same underlying mechanism and is configured in `.claude/settings.json`
 (`worktree.symlinkDirectories` symlinks `node_modules`/`backend/.venv` into new
 worktrees so they don't need a full reinstall each time).
 
+### Containers (Docker, CLI only)
+
+* Compose project `sauri` is the one shared dev stack (`make up`, `docker compose -p sauri`). `sauri-fer-test` is the owner's test stack: never start, stop, change or remove it. Do not create any other long-lived Compose project.
+* A container an agent needs for a check (for example PostgreSQL 16 for migration tests) is throwaway: name `sauri-qa-<pr-or-issue>-<service>`, host port 55000 or higher, created and removed (`docker rm -f` / `docker compose -p sauri-qa-<n> down -v`) by that agent before it hands the card on. Check leftovers with `docker ps -a --filter name=sauri-qa-`.
+* Only touch containers, volumes and projects you created. Never `docker system prune`, `make clean` or kill a host process: the PostgreSQL on port 5432 belongs to the machine. If Docker does not answer, report it on the card; do not work around it.
+
 ### Git rules
 
 * Stage specific files — never `git add .` blindly.
