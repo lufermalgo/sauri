@@ -74,7 +74,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-5: Add failing API mapping and timed-passage contract tests
 
-**Tracking:** Issue #303 · Card `task_b51714b10bb6489e`
+**Tracking:** Task done · Issue #303 · Card `task_b51714b10bb6489e` · PR #484
 
 **Files:** Frontend API adapter tests for `frontend/src/api.ts`; transcript mapping tests in the existing frontend test structure.
 
@@ -160,7 +160,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-11: Verify signed-source range and CORS delivery contract
 
-**Tracking:** Issue #309 · Card `task_0cfb4d4d978e4d7e`
+**Tracking:** Task done · Issue #309 · Card `task_0cfb4d4d978e4d7e` · PR #485
 
 **Files:** `backend/tests/meetings/test_playback_storage_integration.py`.
 
