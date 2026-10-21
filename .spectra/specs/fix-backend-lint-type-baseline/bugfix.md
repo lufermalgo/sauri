@@ -80,7 +80,7 @@ WHEN the default backend pytest suite is run,
 THEN it SHALL CONTINUE TO execute its default tests without weakening markers or skipping tests merely to obtain a passing result.
 
 WHEN application code is changed to address a lint or typing finding,
-THEN existing runtime behavior SHALL CONTINUE unchanged, supported by focused regression tests for each affected behavior or documented semantic-equivalence evidence for changes that are purely static/formatting and do not alter executable behavior; the sole team-approved runtime-semantic exception is the explicit exception-context change specified above, and any other finding whose correction would alter runtime behavior must be stopped and reported for a separate decision.
+THEN existing runtime behavior SHALL CONTINUE unchanged, supported by focused regression tests for each affected behavior or documented semantic-equivalence evidence for changes that are purely static/formatting and do not alter executable behavior; the only team-approved runtime-semantic exceptions are the explicit exception-context changes and the internal Python keyword rename specified above, and any other finding whose correction would alter runtime behavior must be stopped and reported for a separate decision.
 
 WHEN either caught exception in `backend/diar-engine/main.py` is translated to an HTTP error after explicit chaining is added,
 THEN the service SHALL CONTINUE TO return HTTP 500 with the same `detail` text (`Audio download failed: {e}` or `Diarization failed: {e}` respectively); only the internal explicit cause/traceback context may differ.
@@ -91,6 +91,9 @@ THEN the system SHALL CONTINUE TO raise the same `ExternalServiceError` with the
 WHEN either named `backend/asr-engine/main.py` exception is translated after explicit chaining is added,
 THEN the service SHALL CONTINUE TO return HTTP 500 with the same `detail` text (`Audio download failed: {e}` or `Transcription failed: {e}` respectively) and preserve existing log lines; only the internal explicit cause/traceback context may differ.
 
+WHEN the `register_meeting` parameter rename and its router callsite update are applied,
+THEN the system SHALL CONTINUE TO use the same HTTP request/response contract and meeting origin semantics; only the internal Python callable keyword name SHALL change.
+
 WHEN dependency provisioning is the only apparent explanation for a tool failure,
 THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effects from pre-existing source findings; no dependency/configuration change is authorized by this spec.
 
@@ -98,7 +101,7 @@ THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effec
 
 - Scope is limited to existing backend lint/type findings in application code and tests, plus verification of the default backend test suite.
 - Do not change `backend/pyproject.toml` lint or mypy configuration, add ignores, or relax rules.
-- Do not make runtime behavior changes except the team-approved explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`, the two timeout branches in `backend/app/diarization/cloud_provider.py` and `backend/app/transcription/cloud_provider.py`, and the two `HTTPException` raises in `backend/asr-engine/main.py` at lines 172 and 204. These changes may alter only internal exception cause/traceback context; the `diar-engine` and `asr-engine` changes must preserve HTTP 500 status, response `detail`, and existing log lines, and the cloud-provider changes must preserve the `ExternalServiceError` type, message, and handling. Do not add features or make unrelated edits. Stop and report any other finding that cannot be corrected without runtime behavior change.
+- Do not make runtime behavior changes except the team-approved explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`, the two timeout branches in `backend/app/diarization/cloud_provider.py` and `backend/app/transcription/cloud_provider.py`, and the two `HTTPException` raises in `backend/asr-engine/main.py` at lines 172 and 204; plus the team-approved rename of the `register_meeting` `input` parameter in `backend/app/meetings/service.py` to a non-builtin name, with its sole in-repository keyword callsite in `backend/app/meetings/router.py` updated in the same change. Exception chaining may alter only internal exception cause/traceback context; the `diar-engine` and `asr-engine` changes must preserve HTTP 500 status, response `detail`, and existing log lines, and the cloud-provider changes must preserve the `ExternalServiceError` type, message, and handling. For the rename, only the internal Python callable keyword name may change; the HTTP request/response contract and meeting origin semantics must remain unchanged. Do not add features or make unrelated edits. Stop and report any other finding that cannot be corrected without runtime behavior change.
 - Validate against a fresh environment provisioned with `pip install -e ".[dev]"` and the currently specified toolchain constraints; issue #228 names Ruff 0.17.x and mypy 2.4.x as its target. Do not treat the scratch-run versions or error counts as acceptance thresholds.
 - Use synthetic data only. No real recordings, transcripts, identities, credentials, or customer data.
 
