@@ -2,7 +2,7 @@
 
 ## Descripción del Bug
 
-On the unmodified `origin/main` snapshot `a753dee72703f3aeaf97c3b163de6b4954ab80e9`, the backend Ruff and mypy checks exit non-zero due to pre-existing lint/type findings. This blocks the existing default quality gate; this bugfix documents restoring the checks without relaxing lint/type configuration. A narrow team technical disposition permits explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`; this changes internal exception context/traceback, while HTTP status and response body must remain unchanged and no other runtime behavior change is permitted.
+On the unmodified `origin/main` snapshot `a753dee72703f3aeaf97c3b163de6b4954ab80e9`, the backend Ruff and mypy checks exit non-zero due to pre-existing lint/type findings. This blocks the existing default quality gate; this bugfix documents restoring the checks without relaxing lint/type configuration. A narrow team technical disposition permits explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`; this changes internal exception context/traceback, while HTTP status and response body must remain unchanged. A further narrowly scoped team technical disposition permits explicit exception chaining for the two cloud-provider timeout branches in `backend/app/diarization/cloud_provider.py` and `backend/app/transcription/cloud_provider.py`. These approved exceptions change only internal exception-cause/traceback context; no other runtime behavior change is permitted.
 
 ## Pasos para Reproducir
 
@@ -30,6 +30,9 @@ THEN it exits 0 with 203 passed and 2 skipped; this is the recorded pre-change b
 WHEN Ruff 0.17.1 checks the exact `backend/diar-engine/main.py` source from candidate `6288107180c93abf4b72236f5b2887a8b283057c`,
 THEN the command exits 1 with B904 at lines 198 and 211 because the two `HTTPException` raises inside `except Exception as e` do not explicitly chain the caught exception; the exact reproduction and output are recorded under Scope and Evidence Notes.
 
+WHEN Ruff checks `backend/app/diarization/cloud_provider.py` at the timeout branch in T-3.1.14 / issue #339, or `backend/app/transcription/cloud_provider.py` at the timeout branch in T-3.1.24 / issue #349,
+THEN it reports B904 because the `TimeoutException` branch raises `ExternalServiceError` without explicit exception chaining; the corresponding `HTTPStatusError` and connect/request-error sibling branches already chain their caught exceptions.
+
 ## Comportamiento Esperado (Correcto)
 
 WHEN the backend development dependencies are freshly provisioned from the existing `pyproject.toml` and the supported project toolchain is used,
@@ -43,6 +46,9 @@ THEN `pytest -q` SHALL exit 0; this criterion does not authorize weakening/skipp
 
 WHEN either of the two caught exceptions in `backend/diar-engine/main.py` is translated into an `HTTPException`,
 THEN the system SHALL explicitly chain that exception using `raise ... from e`, thereby preserving it as the explicit cause; the resulting HTTP status and response body SHALL remain unchanged.
+
+WHEN a timeout exception is translated into `ExternalServiceError` by either `backend/app/diarization/cloud_provider.py` or `backend/app/transcription/cloud_provider.py`,
+THEN the system SHALL explicitly chain the caught timeout using `raise ... from exc`, matching the already-chained sibling error branches in each module; the resulting `ExternalServiceError` message and handling SHALL remain unchanged.
 
 ## Comportamiento Sin Cambios (Prevención de Regresiones)
 
@@ -58,6 +64,9 @@ THEN existing runtime behavior SHALL CONTINUE unchanged, supported by focused re
 WHEN either caught exception in `backend/diar-engine/main.py` is translated to an HTTP error after explicit chaining is added,
 THEN the service SHALL CONTINUE TO return HTTP 500 with the same `detail` text (`Audio download failed: {e}` or `Diarization failed: {e}` respectively); only the internal explicit cause/traceback context may differ.
 
+WHEN a timeout is caught by either named cloud-provider timeout branch after explicit chaining is added,
+THEN the system SHALL CONTINUE TO raise the same `ExternalServiceError` with the same message, and no HTTP response or customer-visible failure cause SHALL be added; only the internal explicit cause/traceback context may differ.
+
 WHEN dependency provisioning is the only apparent explanation for a tool failure,
 THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effects from pre-existing source findings; no dependency/configuration change is authorized by this spec.
 
@@ -65,7 +74,7 @@ THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effec
 
 - Scope is limited to existing backend lint/type findings in application code and tests, plus verification of the default backend test suite.
 - Do not change `backend/pyproject.toml` lint or mypy configuration, add ignores, or relax rules.
-- Do not make runtime behavior changes except the team-approved explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py`; that change may alter only internal exception cause/traceback context and must preserve HTTP 500 status and response `detail`. Do not add features or make unrelated edits. Stop and report any other finding that cannot be corrected without runtime behavior change.
+- Do not make runtime behavior changes except the team-approved explicit exception chaining for the two `HTTPException` raises in `backend/diar-engine/main.py` and the two timeout branches in `backend/app/diarization/cloud_provider.py` and `backend/app/transcription/cloud_provider.py`. These changes may alter only internal exception cause/traceback context; the diar-engine changes must preserve HTTP 500 status and response `detail`, and the cloud-provider changes must preserve the `ExternalServiceError` type, message, and handling. Do not add features or make unrelated edits. Stop and report any other finding that cannot be corrected without runtime behavior change.
 - Validate against a fresh environment provisioned with `pip install -e ".[dev]"` and the currently specified toolchain constraints; issue #228 names Ruff 0.17.x and mypy 2.4.x as its target. Do not treat the scratch-run versions or error counts as acceptance thresholds.
 - Use synthetic data only. No real recordings, transcripts, identities, credentials, or customer data.
 
@@ -74,8 +83,8 @@ THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effec
 1. From `backend/` in a freshly provisioned project environment, `ruff check .` exits 0 with the repository's existing configuration unchanged.
 2. From `backend/` in that environment, `mypy .` exits 0 with the repository's existing configuration unchanged.
 3. The default `pytest -q` suite exits 0 for an unblocked acceptance result; tests and markers are not weakened or skipped to obtain a pass. If integration-marked tests fail solely because required external services are unavailable, record the exact command/output and unavailable service as a blocked result, preserve the tests/markers, and do not claim green acceptance until the tests pass in an environment with those services.
-4. For every changed production-code path, focused regression tests for affected behavior pass, or the change is documented with semantic-equivalence evidence showing that it is purely static/formatting and leaves executable behavior unchanged. For the team-approved exception-context change in `backend/diar-engine/main.py`, focused evidence verifies both exceptions are explicitly chained while the corresponding HTTP 500 statuses and response `detail` values remain unchanged. A full-suite pass alone does not establish this criterion.
-5. No runtime behavior changes are included except the team-approved exception-context change for the two `HTTPException` raises in `backend/diar-engine/main.py`; no new features, unrelated edits, lint/type ignores, or lint/mypy configuration relaxation are included.
+4. For every changed production-code path, focused regression tests for affected behavior pass, or the change is documented with semantic-equivalence evidence showing that it is purely static/formatting and leaves executable behavior unchanged. For the team-approved exception-context changes, focused evidence verifies the two `diar-engine/main.py` exceptions are explicitly chained while their HTTP 500 statuses and response `detail` values remain unchanged; for the two cloud-provider timeout branches, it verifies explicit chaining while the `ExternalServiceError` type, message, and handling remain unchanged. A full-suite pass alone does not establish this criterion.
+5. No runtime behavior changes are included except the team-approved exception-context changes for the two `HTTPException` raises in `backend/diar-engine/main.py` and the two cloud-provider timeout branches named above; no new features, unrelated edits, lint/type ignores, or lint/mypy configuration relaxation are included.
 6. The candidate report records exact Python/Ruff/mypy versions, each command and exit/output, and distinguishes toolchain-dependent findings from source findings.
 
 ## Root-Cause Hypothesis and Confidence
@@ -115,5 +124,6 @@ THEN the investigation SHALL CONTINUE to distinguish environment/toolchain effec
   ```
 
   This reproduction was run by Zoya from the exact candidate source blob. Nia independently confirmed the candidate SHA and Ruff version but reported being unable to capture diagnostics. The full output above is the result of the exact command recorded here.
-- Decision provenance: Fer's recorded «autorizar 1 y 2 como excepciones acotadas» refers to previously listed B904 cases and is not claimed here as endpoint-specific approval. Ansel recorded the endpoint-specific technical disposition on 2026-10-19: allow `from e` for these two B904 cases while preserving the HTTP response. This narrowly scoped technical decision does not authorize any other runtime behavior or policy/configuration exception; stop and route any further scope change to Ansel.
+- Decision provenance for `backend/diar-engine/main.py`: Fer's recorded «autorizar 1 y 2 como excepciones acotadas» refers to previously listed B904 cases and is not claimed here as endpoint-specific approval. Ansel recorded the endpoint-specific technical disposition on 2026-10-19: allow `from e` for these two B904 cases while preserving the HTTP response.
+- Decision provenance for the cloud-provider timeout branches: Ansel's task handoff authorizes chaining only for T-3.1.14 / issue #339 (`backend/app/diarization/cloud_provider.py`) and T-3.1.24 / issue #349 (`backend/app/transcription/cloud_provider.py`). Evidence recorded in that handoff: in each module the `HTTPStatusError` and `(ConnectError, RequestError)` sibling branches already chain; the timeout branch is the only unchained sibling. `ExternalServiceError` is defined and raised only in its respective module and is caught nowhere in `backend/app`; no customer-facing `failure_cause` is derived from `str(e)`, `repr(e)`, or `type(e)`. Ansel also reports the explicit chaining effect was executed on Python 3.11.12 and 3.13.4. This exception authorizes only internal cause/traceback context changes; it does not authorize other runtime behavior or any policy/configuration exception. Stop and route any further scope change to Ansel.
 - The saved project baseline claim does not assert that a future candidate passes. No implementation or corrected candidate has been validated in this authoring phase; the exact pre-fix B904 reproduction above is diagnostic evidence only.
