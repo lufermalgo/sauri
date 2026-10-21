@@ -23,12 +23,16 @@ running a destructive migration against the shared development database.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import inspect
+import os
 from pathlib import Path
 from types import ModuleType
 from typing import cast
+from uuid import uuid4
 
+import asyncpg
 import pytest
 from alembic.config import Config
 from alembic.migration import MigrationContext
@@ -36,9 +40,11 @@ from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
+
+from alembic import command
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
 MIGRATION_FILENAME = "007_rename_schema_to_english.py"
@@ -324,6 +330,66 @@ async def test_source_inventory_rejects_duplicate_recording_kind_and_reference(
                     "'objects/audio-only.webm', 'Original')"
                 )
             )
+
+
+@pytest.mark.asyncio
+async def test_speaker_receipt_upgrade_records_full_revision_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Upgrade to the receipts revision in a database created for this test only."""
+    admin_url = os.environ.get("SAURI_MIGRATION_TEST_ADMIN_URL")
+    if not admin_url:
+        pytest.skip("requires an isolated PostgreSQL admin URL in SAURI_MIGRATION_TEST_ADMIN_URL")
+
+    parsed_url = make_url(admin_url)
+    database_name = f"sauri_migration_qa_{uuid4().hex}"
+    connect_args: dict[str, str | int] = {
+        "user": parsed_url.username or "",
+        "database": parsed_url.database or "postgres",
+    }
+    if parsed_url.password is not None:
+        connect_args["password"] = parsed_url.password
+    if parsed_url.host is not None:
+        connect_args["host"] = parsed_url.host
+    if parsed_url.port is not None:
+        connect_args["port"] = parsed_url.port
+
+    admin_connection = await asyncpg.connect(**connect_args)
+    try:
+        await admin_connection.execute(f'CREATE DATABASE "{database_name}"')
+        test_url = parsed_url.set(database=database_name).render_as_string(hide_password=False)
+        monkeypatch.setenv("DATABASE_URL", test_url)
+        config = Config(str(MIGRATIONS_DIR.parents[1] / "alembic.ini"))
+
+        await asyncio.to_thread(command.upgrade, config, AGGREGATE_REVISION)
+        await asyncio.to_thread(command.upgrade, config, SPEAKER_REVIEW_RECEIPTS_REVISION)
+
+        async with (
+            asyncpg.create_pool(**(connect_args | {"database": database_name})) as pool,
+            pool.acquire() as connection,
+        ):
+            recorded_revision = await connection.fetchval(
+                "SELECT version_num FROM alembic_version"
+            )
+            version_width = await connection.fetchval(
+                "SELECT character_maximum_length FROM information_schema.columns "
+                "WHERE table_name = 'alembic_version' AND column_name = 'version_num'"
+            )
+            receipts_table_exists = await connection.fetchval(
+                "SELECT to_regclass('public.speaker_review_idempotency_receipts') IS NOT NULL"
+            )
+
+        assert recorded_revision == SPEAKER_REVIEW_RECEIPTS_REVISION
+        assert len(recorded_revision) == 39
+        assert version_width == 39
+        assert receipts_table_exists
+    finally:
+        await admin_connection.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1",
+            database_name,
+        )
+        await admin_connection.execute(f'DROP DATABASE IF EXISTS "{database_name}"')
+        await admin_connection.close()
 
 
 # Alembic graph contract for the two published 009 branches (T-3, issue #404).

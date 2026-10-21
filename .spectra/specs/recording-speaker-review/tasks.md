@@ -263,6 +263,16 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Dependencies:** T-6, T-10, T-13, T-14, T-17.
 
+### B-1: Security remediation — enforce commercial authorization and ownership on transcript/diarization reads
+
+**Tracking:** Issue #478 · Card task_60e40e6776b74228 · PR #480 · Status: done (QA and security passed)
+
+**Files:** `backend/app/meetings/router.py`; transcript and diarization route tests.
+
+**Action:** Enforce commercial-role authorization and meeting ownership on the existing transcript and diarization GET routes before protected reads. Return 403 for non-commercial users; return 404 for missing or non-owned meetings; audit both denial paths. Preserve the API response contract.
+
+**Acceptance evidence:** Targeted tests passed (12); Nia recorded QA `PASS` and Zev recorded `NO_ACTIONABLE_FINDINGS` on the exact candidate. Full backend pytest remains blocked during collection by the missing `app.transcription.processing_pipeline`; Ruff was unavailable in the implementation environment.
+
 ### T-16: GREEN — enforce resource-owner checks on existing and new routes
 
 **Tracking:** Issue #249 · Card task_2c4350aa34a94025

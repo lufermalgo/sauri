@@ -105,6 +105,26 @@ async def test_invalid_capture_metadata_returns_422_before_object_storage(
     assert error.value.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_invalid_json_returns_same_422_detail_and_chains_parse_error() -> None:
+    audio = UploadFile(filename="synthetic.webm", file=BytesIO(b"audio"))
+
+    with pytest.raises(HTTPException) as error:
+        await router.upload_recording(
+            audio=audio,
+            video=None,
+            data="not-json",
+            user=type("User", (), {"id": "synthetic-user"})(),
+        )
+
+    assert type(error.value) is HTTPException
+    assert error.value.status_code == 422
+    assert error.value.detail == (
+        "Invalid ingestion data: Expecting value: line 1 column 1 (char 0)"
+    )
+    assert isinstance(error.value.__cause__, json.JSONDecodeError)
+
+
 @pytest.mark.parametrize(
     ("video_presence", "include_video", "video_offset_ms"),
     [

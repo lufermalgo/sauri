@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import boto3
 import torch
@@ -137,17 +137,17 @@ def _download_audio_from_s3(audio_ref: str) -> str:
     if "." in audio_ref:
         ext = "." + audio_ref.rsplit(".", 1)[-1]
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-    try:
-        s3_client.download_file(MINIO_BUCKET, audio_ref, tmp.name)
-    except Exception as e:
-        # Clean up temp file on download failure
-        os.unlink(tmp.name)
-        raise RuntimeError(
-            f"Failed to download audio_ref={audio_ref!r} from bucket={MINIO_BUCKET!r}: {e}"
-        ) from e
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        try:
+            s3_client.download_file(MINIO_BUCKET, audio_ref, tmp.name)
+        except Exception as e:
+            # Clean up temp file on download failure
+            os.unlink(tmp.name)
+            raise RuntimeError(
+                f"Failed to download audio_ref={audio_ref!r} from bucket={MINIO_BUCKET!r}: {e}"
+            ) from e
 
-    return tmp.name
+        return tmp.name
 
 
 def _run_diarization(audio_path: str) -> list[Segment]:
@@ -195,7 +195,7 @@ async def diarize(request: DiarizeRequest) -> DiarizeResponse:
         audio_path = _download_audio_from_s3(request.audio_ref)
     except Exception as e:
         logger.error("Failed to download audio: %s", e)
-        raise HTTPException(status_code=500, detail=f"Audio download failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Audio download failed: {e}") from e
 
     try:
         # 2. Run real diarization and collect ordered segments
@@ -208,14 +208,12 @@ async def diarize(request: DiarizeRequest) -> DiarizeResponse:
 
     except Exception as e:
         logger.error("Diarization failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Diarization failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Diarization failed: {e}") from e
 
     finally:
         # 4. Clean up temporary file
-        try:
+        with suppress(OSError):
             os.unlink(audio_path)
-        except OSError:
-            pass
 
 
 @app.get("/health")
