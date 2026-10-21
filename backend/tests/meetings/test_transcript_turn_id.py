@@ -9,21 +9,22 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
-from app.infra.models import Meeting, SpeechTurn, Transcript
+from app.infra.models import AccessLog, Meeting, SpeechTurn, Transcript
 
 USER_ID = "user-turno-test"
 
 
-def _auth_header() -> dict[str, str]:
-    token = create_token(USER_ID, "turno@sauri.local", "Turno Test", True)
+def _auth_header(user_id: str = USER_ID, is_sales: bool = True) -> dict[str, str]:
+    token = create_token(user_id, f"{user_id}@sauri.local", "Turno Test", is_sales)
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.mark.asyncio
-async def test_segments_include_the_turn_id(api_client: AsyncClient, api_db_url: str):
+async def test_segments_include_the_turn_id(api_client: AsyncClient, api_db_url: str) -> None:
     engine = create_async_engine(api_db_url, echo=False)
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -82,3 +83,98 @@ async def test_segments_include_the_turn_id(api_client: AsyncClient, api_db_url:
     assert segment["start_ms"] == 0
     assert segment["end_ms"] == 1500
     assert segment["sequence"] == 0
+
+
+@pytest.mark.asyncio
+async def test_non_owner_cannot_read_transcript(api_client: AsyncClient, api_db_url: str):
+    engine = create_async_engine(api_db_url, echo=False)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    meeting_id = str(uuid.uuid4())
+    transcript_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    async with session_factory() as session, session.begin():
+        session.add(
+            Meeting(
+                id=meeting_id,
+                meet_link="https://meet.google.com/abc-defg-hij",
+                origin="link",
+                calendar_invite_id=None,
+                scheduled_start_time=None,
+                process_state="completed",
+                failure_cause=None,
+                created_by=USER_ID,
+                created_at=now,
+            )
+        )
+        session.add(
+            Transcript(
+                id=transcript_id,
+                meeting_id=meeting_id,
+                language="es-CO",
+                provider="local",
+                supports_turns=True,
+                expires_at=None,
+                created_at=now,
+            )
+        )
+        session.add(
+            SpeechTurn(
+                id=str(uuid.uuid4()),
+                transcript_id=transcript_id,
+                text="SYNTHETIC PRIVATE TRANSCRIPT TEXT",
+                start_ms=0,
+                end_ms=1500,
+                sequence=0,
+            )
+        )
+    await engine.dispose()
+
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/transcript",
+        headers={"Authorization": f"Bearer {create_token('different-user', 'other@sauri.local', 'Other', True)}"},
+    )
+    assert response.status_code == 404
+    assert "SYNTHETIC PRIVATE TRANSCRIPT TEXT" not in response.text
+    assert transcript_id not in response.text
+
+    engine = create_async_engine(api_db_url, echo=False)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_factory() as session:
+        result = await session.execute(
+            select(AccessLog).where(AccessLog.user_id == "different-user")
+        )
+        records = result.scalars().all()
+    await engine.dispose()
+    assert len(records) == 1
+    assert records[0].result == "denied"
+    assert records[0].resource == f"GET /api/v1/meetings/{meeting_id}/transcript"
+
+
+@pytest.mark.asyncio
+async def test_transcript_requires_authentication(api_client: AsyncClient):
+    response = await api_client.get(f"/api/v1/meetings/{uuid.uuid4()}/transcript")
+    assert response.status_code == 401
+    assert "segments" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_transcript_requires_sales_authorization_and_audits_denial(
+    api_client: AsyncClient, api_db_url: str
+) -> None:
+    user_id = "unauthorized-transcript-user"
+    response = await api_client.get(
+        f"/api/v1/meetings/{uuid.uuid4()}/transcript",
+        headers=_auth_header(user_id, is_sales=False),
+    )
+
+    assert response.status_code == 403
+    engine = create_async_engine(api_db_url, echo=False)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_factory() as session:
+        result = await session.execute(
+            select(AccessLog).where(AccessLog.user_id == user_id)
+        )
+        records = result.scalars().all()
+    await engine.dispose()
+    assert len(records) == 1
+    assert records[0].result == "denied"

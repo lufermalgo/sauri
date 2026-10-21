@@ -330,8 +330,8 @@ class SpeakerReviewItem(Base):
     ``speaker_key`` is the immutable identifier of the initial diarization
     speaker within the review. ``disposition`` stays NULL until an explicit
     named/corrected/confirmed decision is recorded; ``version`` supports
-    concurrent-write detection (T-11/T-12). Excerpt validation and identity
-    linkage are later tasks and are not stored here yet.
+    concurrent-write detection (T-11/T-12). The encrypted excerpt reference
+    binds playback to this item's recording revision and speaker.
     """
 
     __tablename__ = "speaker_review_items"
@@ -345,6 +345,7 @@ class SpeakerReviewItem(Base):
     )
     speaker_key: Mapped[str] = mapped_column(String(128), nullable=False)
     current_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    excerpt_ref: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     # NULL while undisposed; otherwise one of named | corrected | confirmed.
     disposition: Mapped[str | None] = mapped_column(String(16), nullable=True)
     chosen_label: Mapped[str | None] = mapped_column(String(64), nullable=True)

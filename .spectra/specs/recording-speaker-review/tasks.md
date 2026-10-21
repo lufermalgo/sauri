@@ -5,7 +5,7 @@
 | Phase | Description | Tasks | Dependencies |
 |---|---|---|---|
 | 0 | Required independent pre-implementation security gate for voice-derived sample handling | T-20 | Must complete before T-13 starts; no voice-sample storage implementation before evidence |
-| 1 | Required RED tests for backend invariants and web review | T-1–T-9 | None; independent test suites may run in parallel |
+| 1 | Required RED tests for backend invariants and web review | T-1–T-9, T-7b | T-7b waits for T-10, T-12, T-13, T-14 and T-17 to establish persisted contracts |
 | 2 | Backend GREEN implementation | T-10–T-17 | Each implementation task depends on its matching RED test and any additional prerequisites below |
 | 3 | Web GREEN implementation and cross-surface verification | T-18–T-19 | T-18 depends on T-9; T-19 depends on T-10–T-18 |
 
@@ -33,13 +33,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Tracking:** Issue #234 · Card task_61bf056b1aec4081 · PR #255
 
-**Files:** `backend/tests/speaker_review/test_review_state.py` (create)
+**Files:** `backend/tests/meetings/test_speaker_review_state.py` (create)
 
-**Action:** Add deterministic tests and Hypothesis property tests for correctness properties 1 and 2: recording one valid disposition changes only its target speaker item; review status is pending while any item lacks a valid disposition and complete iff all items have one. Generate varied review sizes and disposition combinations with at least 100 examples per property. Keep the domain tests distinct and name them with `domain_disposition_isolation` and `domain_derived_completion` so T-10 can target only those tests. Also keep the request-level OpenAPI PUT schema assertion as a distinct test named `test_review_put_schema_excludes_completion`; it must reject client-supplied completion state.
+**Action:** In `backend/tests/meetings/test_speaker_review_state.py`, add deterministic and Hypothesis tests for correctness properties 1 and 2 through the design-defined `SpeakerReviewService.record_disposition(...)` service boundary and the public PUT route/OpenAPI contract: one accepted disposition changes only its target item; review status is pending while any item lacks a disposition and complete iff all items have one. Generate varied review sizes and disposition combinations with at least 100 examples per property. Name the persisted service tests `domain_disposition_isolation` and `domain_derived_completion` so T-10 can target them. Keep the request-level schema assertion distinct as `test_review_put_schema_excludes_completion`; reject client-supplied completion state.
 
-**Acceptance evidence:** From `backend/`, `pytest tests/speaker_review/test_review_state.py` fails on the missing/incorrect domain behavior and the unavailable/incorrect request schema before implementation; preserve the failing output in the issue/PR evidence. Hypothesis reports at least 100 examples for each property.
+**Acceptance evidence:** From `backend/`, `pytest tests/meetings/test_speaker_review_state.py` fails on missing/incorrect service behavior and the unavailable/incorrect PUT schema before implementation; preserve the failing output in issue/PR evidence. Hypothesis reports at least 100 examples per property.
 
-**Validation command:** `pytest tests/speaker_review/test_review_state.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_state.py` (from `backend/`).
 
 **Dependencies:** None.
 
@@ -47,13 +47,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Tracking:** Issue #235 · Card task_6b82254160eb4a98 · PR #258
 
-**Files:** `backend/tests/speaker_review/test_disposition_idempotency.py` (create)
+**Files:** `backend/tests/meetings/test_speaker_review_disposition_idempotency.py` (create)
 
-**Action:** Add deterministic tests and Hypothesis property tests for correctness property 9: same idempotency key and canonical request replays the saved result without a second sample/disposition mutation; reuse of a key with a different request hash conflicts; a different key with stale expected version conflicts without mutation; transaction failure rolls back disposition and identity-sample changes together. Generate varied retry sequences and request hashes with at least 100 examples per property. The synthetic mapping simulator seam is `backend/tests/speaker_review/test_disposition_idempotency.py` importing `canonical_request_hash(request)` and `execute_disposition_write(aggregate, request, *, fail_at=None)` from `app.meetings.disposition_idempotency`; exercise its `fail_at` steps only to verify the simulator's modeled contract, not database persistence. Do not introduce production test-only fault injection.
+**Action:** In `backend/tests/meetings/test_speaker_review_disposition_idempotency.py`, add database-backed tests through the design-defined `SpeakerReviewService.record_disposition(...)` transaction boundary for correctness property 9: replaying the same idempotency key and canonical request returns its saved result without a second disposition/receipt mutation; reusing a key with a different request hash conflicts; a different key with stale `expected_version` conflicts without mutation; a failed transaction rolls back disposition and idempotency receipt together. Use Hypothesis to generate varied retry sequences and request hashes with at least 100 examples per property. Do not add synthetic mapping simulators, unapproved service functions, or production-only fault-injection hooks. Voice-sample rollback is verified by T-13 after its security gate; this task does not claim sample-persistence coverage.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_disposition_idempotency.py` fails against the unimplemented contract; retain the failure output before GREEN work. Hypothesis reports at least 100 examples for each property. Record simulator `fail_at` evidence as simulator-only; it does not establish production persistence rollback or sample atomicity.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_disposition_idempotency.py` fails against the missing persisted service contract; retain the actual failing output before GREEN work. Hypothesis reports at least 100 examples per property.
 
-**Validation command:** `pytest tests/speaker_review/test_disposition_idempotency.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_disposition_idempotency.py` (from `backend/`).
 
 **Dependencies:** None.
 
@@ -61,13 +61,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Tracking:** Issue #236 · Card task_08a5bfffd13e4fd9 · PR #397
 
-**Files:** `backend/tests/speaker_review/test_review_resume.py` (create)
+**Files:** `backend/tests/meetings/test_speaker_review_resume.py` (create)
 
-**Action:** Add tests for correctness property 3: a pending review retains completed speaker dispositions after leaving/reloading, returns only undisposed items as remaining, and does not request review again after the last disposition.
+**Action:** In `backend/tests/meetings/test_speaker_review_resume.py`, test correctness property 3 through `SpeakerReviewService.get_active_review(owner_id, meeting_id)` and `SpeakerReviewService.record_disposition(...)`: a persisted pending review retains completed dispositions after a fresh service/database read, returns only undisposed items as remaining, and a completed review no longer requests review.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_review_resume.py` fails for the missing behavior before implementation; record the output.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_resume.py` fails for the missing persisted retrieval/resume behavior before implementation; record the output.
 
-**Validation command:** `pytest tests/speaker_review/test_review_resume.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_resume.py` (from `backend/`).
 
 **Dependencies:** None.
 
@@ -75,79 +75,97 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Tracking:** Issue #237 · Card task_3d9851b90af54464
 
-**Files:** `backend/tests/speaker_review/test_identity_matching.py` (create)
+**Files:** `backend/tests/diarization/test_speaker_identity_matching.py` and `backend/tests/retention/test_speaker_identity_sample_cleanup.py` (create).
 
-**Action:** Add deterministic fake-matcher tests for correctness properties 5 and 6: only the current owner's active samples can be read/used; calibrated threshold and runner-up margin must both pass or result is uncertain; named/corrected samples inform later same-owner matches; a correction changes only the current item's association and preserves the wrongly suggested identity's samples; no global model is trained or modified. Include two distinct speaker items in one recording assigned to one identity and replay of either item's idempotency key without duplicate samples. Verify source-recording expiry/deletion removes its linked voice samples in the same cleanup transaction, while samples linked to other recordings remain.
+**Action:** In the diarization test module, exercise the design-defined `SpeakerIdentityMatcher.match(owner_id, speaker_embedding)`, `resolve_target(owner_id, target_identity_id, label)`, and `apply_disposition(owner_id, current_identity_id, target_identity, speaker_embedding, disposition)` seams with deterministic synthetic embeddings: only the current owner's active samples are read; both calibrated threshold and runner-up margin must pass or the result is uncertain; named/corrected samples inform later same-owner matches; correction changes only the current item's association and preserves the wrong identity's samples; no global model is trained or modified. For persisted sample idempotency, call the design-defined `SpeakerReviewService.record_disposition(...)` service boundary: assign two speaker items in one recording to one identity, replay each item's disposition using that item's idempotency key, and assert each source-review-item-keyed sample is persisted once. Do not test replay through matcher methods, which do not own the disposition receipt/replay contract. In the retention test module, verify expiry/deletion through the existing `backend/app/retention/` cleanup worker boundary removes samples linked to that recording while preserving samples linked to other recordings; do not invent a cleanup API or private repository seam.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_identity_matching.py` fails on the missing identity boundary/behavior before implementation; record the output.
+**Acceptance evidence:** `pytest tests/diarization/test_speaker_identity_matching.py tests/retention/test_speaker_identity_sample_cleanup.py` fails before implementation on missing identity isolation/matching, persisted `SpeakerReviewService.record_disposition(...)` replay without duplicate source-item samples, and source-recording cleanup behavior; record the output.
 
-**Validation command:** `pytest tests/speaker_review/test_identity_matching.py` (from `backend/`).
+**Validation command:** `pytest tests/diarization/test_speaker_identity_matching.py tests/retention/test_speaker_identity_sample_cleanup.py` (from `backend/`).
 
 **Dependencies:** None.
 
 ### T-5: RED — speaker excerpt correspondence and validation
 
-**Tracking:** Issue #238 · Card task_8e1ed7b3a5f54922
+**Tracking:** Issue #238 · Card task_8e1ed7b3a5f54922 · PR #400
 
-**Files:** `backend/tests/speaker_review/test_excerpts.py` (create)
+**Status:** Done.
 
-**Action:** Add tests for correctness property 7: each item resolves only to its target speaker's own recording excerpt; candidate selection follows the approved duration/VAD/tie-break ordering; reject out-of-bounds, undecodable, non-speech or other-speaker candidates; no review item is ready without a validated excerpt; playback failure does not substitute another excerpt or complete the item.
+**Files:** `backend/tests/meetings/test_speaker_review_excerpts.py` (create)
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_excerpts.py` fails on the missing excerpt contract before implementation; record the output.
+**Action:** In `backend/tests/meetings/test_speaker_review_excerpts.py`, exercise the public `GET /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}/excerpt` route and its existing authorized media/decoder boundary with synthetic audio. Assert each item resolves only its own recording/speaker excerpt; candidate selection follows the approved duration/VAD/tie-break order; out-of-bounds, undecodable, non-speech and other-speaker candidates are rejected; no review item becomes ready without a validated excerpt; playback failure does not substitute another excerpt or complete the item. Do not add a private repository seam or a QA API.
 
-**Validation command:** `pytest tests/speaker_review/test_excerpts.py` (from `backend/`).
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_excerpts.py` fails on missing excerpt route/validation behavior before implementation; record the output.
+
+**Validation command:** `pytest tests/meetings/test_speaker_review_excerpts.py` (from `backend/`).
 
 **Dependencies:** None.
 
 ### T-6: RED — processing readiness, stage replay and finalizer recovery
 
-**Tracking:** Issue #239 · Card task_c6ef43a295bb41a1
+**Tracking:** Issue #239 · Card task_c6ef43a295bb41a1 · PR #398
 
-**Files:** `backend/tests/speaker_review/test_processing_readiness.py` (create)
+**Files:** `backend/tests/integration/test_speaker_review_processing.py` (create)
 
-**Action:** Add tests for correctness property 8: review becomes visible only after transcript, diarization, speaker set and validated excerpts for one revision commit ready together; duplicate stage/finalizer delivery creates no duplicate output or review and does not rerun a completed provider stage; an unexpired `(processing_revision_id, stage)` lease blocks duplicate provider execution, while an expired lease permits recovery; stage output, completion and outbox event commit atomically (failure rolls all three back); a finalizer failure after committed stages retries from persisted results.
+**Action:** In `backend/tests/integration/test_speaker_review_processing.py`, exercise the design's existing async processing boundary across `backend/app/transcription/worker.py`, `backend/app/diarization/worker.py` and `backend/app/infra/` queue/outbox persistence. Assert correctness property 8: review becomes visible only after transcript, diarization, speaker set and validated excerpts for one revision commit ready together; duplicate stage/finalizer delivery creates no duplicate output/review or reruns a completed provider stage; an unexpired `(processing_revision_id, stage)` lease blocks duplicate execution while an expired lease permits recovery; stage output, completion and outbox event commit atomically; after finalization failure the existing outbox path retries from persisted results. Use synthetic provider/audio fixtures and the design-defined stage/revision transaction boundaries; do not invent worker function names or private test-only seams.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_processing_readiness.py` fails on the missing processing/readiness behavior before implementation; record the output.
+**Acceptance evidence:** `pytest tests/integration/test_speaker_review_processing.py` fails on missing processing/readiness behavior before implementation; retain the failure output.
 
-**Validation command:** `pytest tests/speaker_review/test_processing_readiness.py` (from `backend/`).
+**Validation command:** `pytest tests/integration/test_speaker_review_processing.py` (from `backend/`).
 
 **Dependencies:** None.
 
-### T-7: RED — owner checks on legacy and review routes
+### T-7: RED — legacy ownership and review route/schema contracts
 
 **Tracking:** Issue #240 · Card task_0ac855a6ef27411e
 
-**Files:** `backend/tests/meetings/test_speaker_review_ownership.py` (create)
+**Files:** `backend/tests/meetings/test_speaker_review_ownership.py`
 
-**Action:** Add route integration tests for correctness property 10: transcript, diarization, review, disposition and excerpt reads/writes return not-found for another owner's meeting; owner ID is sourced from the authenticated principal; identity repository access and excerpt lookup are owner-scoped. Assert the review GET/PUT schemas and authenticated owner propagation match the approved cross-surface contract. Cover legacy routes so they cannot remain an existence-only bypass.
+**Action:** Keep this RED task limited to the existing tested contracts: legacy `GET /api/v1/meetings/{meeting_id}/transcript` and `GET /api/v1/meetings/{meeting_id}/diarization` hide another owner's meeting, and the public review `GET /api/v1/meetings/{meeting_id}/speaker-review`, `PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}`, and matching `GET .../excerpt` routes are declared with authenticated security and no caller-supplied `owner_id`. Assert the PUT request schema excludes `owner_id` and requires its idempotency header. Do not claim this task covers persisted ready reviews, foreign identity targets or validated excerpt ownership; those belong to T-7b. The test seam is this module's `test_legacy_read_routes_hide_another_owners_meeting`, `test_openapi_declares_authenticated_owner_scoped_review_contract`, `test_review_read_write_and_excerpt_hide_another_owners_meeting`, and `test_review_put_schema_excludes_caller_supplied_owner`, exercising the public routes and `app.openapi()` only.
 
-**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_ownership.py` fails against the current ownership behavior before implementation; record the output.
+**Acceptance evidence:** The recorded RED run produced seven failures: the two foreign-owner legacy reads returned 200 and the review route/schema assertions failed because the required routes/contracts were absent. Preserve that failure output as evidence; `git diff --check` passed. No production files were changed.
 
 **Validation command:** `pytest tests/meetings/test_speaker_review_ownership.py` (from `backend/`).
 
 **Dependencies:** None.
 
+### T-7b: RED — persisted review identity and validated-excerpt owner isolation
+
+**Tracking:** Issue #411 · Card task_eae564bc3a164d97
+
+**Files:** `backend/tests/meetings/test_speaker_review_persisted_ownership.py` (create)
+
+**Action:** Extend correctness property 10 with public-HTTP integration tests backed by persisted synthetic fixtures for a ready processing revision, review, speaker item, foreign owner's identity, and validated excerpt. Through authenticated requests to the review GET, revision-qualified disposition PUT, and revision-qualified excerpt GET routes listed in T-7, assert that a different principal cannot read the meeting owner's ready review or retrieve its excerpt, and that the meeting owner cannot assign an identity belonging to another principal; compare foreign-resource read responses with equivalent absent-resource responses and assert no mutation. Build the fixture using the persisted contracts established by T-10 (review/item), T-12 (review retrieval/resume), T-13 (owner-scoped identity/disposition), T-14 (validated excerpt), and T-17 (revision/active-ready state). Use synthetic media only and exercise excerpt validation/playback through the existing decoder boundary; do not add a private repository seam or a new public QA API. The test seam is this module's public HTTP requests to `GET /api/v1/meetings/{meeting_id}/speaker-review`, `PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}`, and `GET .../excerpt`, with persisted synthetic fixtures and the decoder boundary.
+
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_persisted_ownership.py` fails before T-16 on cross-owner access to a persisted ready review/excerpt and use of a foreign identity target; retain the concrete failing assertions and confirm the fixtures are synthetic. It passes after T-16 implements the corresponding owner checks.
+
+**Validation command:** `pytest tests/meetings/test_speaker_review_persisted_ownership.py` (from `backend/`).
+
+**Dependencies:** T-10, T-12, T-13, T-14, T-17. These implementation contracts are prerequisites for constructing a persisted ready revision/review/item, foreign identity, and validated excerpt without fabricating an API or repository seam.
+
 ### T-8: RED — revision consistency, admission races and migration
 
 **Tracking:** Issue #241 · Card task_903b5c3055754303
 
-**Files:** `backend/tests/speaker_review/test_processing_revisions.py` (create)
+**Files:** `backend/tests/meetings/test_speaker_review_revisions.py` (create)
 
-**Action:** Add tests for correctness property 11 and the revision-state boundary: migration backfills existing transcript/diarization rows to compatibility revision 1 and scopes uniqueness by meeting plus revision; legacy reads pin one revision; GET/admission locking is covered in both lock orders; only one concurrent initial candidate is admitted when active pointer is null; exact retries resume the in-flight revision; a pending active review rejects distinct reprocessing without mutation; a pre-marked ready current candidate can atomically activate and clear the in-flight pointer; non-current candidate activation and revision-qualified PUT/excerpt requests cannot displace/read/write another revision; no response combines revisions. Do not test stage-lease, outbox delivery or finalizer recovery here; T-6/T-15 cover those after the revision boundary exists. Cover complete and partial legacy records.
+**Action:** In `backend/tests/meetings/test_speaker_review_revisions.py`, verify correctness property 11 through the design-defined `RecordingProcessingState` and `ProcessingRevision` persistence/lock boundary, `SpeakerReviewService.get_active_review(owner_id, meeting_id)`, legacy `GET .../transcript` and `GET .../diarization`, review `GET`, revision-qualified disposition `PUT`, and revision-qualified excerpt `GET` routes. Cover migration backfill to compatibility revision 1 and meeting+revision uniqueness; pin each read to one revision; test both GET/admission lock orders and single in-flight candidate admission, exact retries, pending-review admission rejection, exact-current-candidate activation/clear, and rejection of non-current activation or stale revision-qualified reads/writes. Include complete and partial legacy records and assert no response combines revisions. The design does not define a separate candidate-admission route or named coordinator function: exercise the existing processing admission boundary without adding a route, test helper, or function name. Do not test stage-lease, outbox delivery or finalizer recovery here; T-6/T-15 own those behaviors.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_processing_revisions.py` fails on missing migration/revision behavior before implementation; record the output.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_revisions.py` fails on missing migration/revision behavior before implementation; retain the failure output.
 
-**Validation command:** `pytest tests/speaker_review/test_processing_revisions.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_revisions.py` (from `backend/`).
 
 **Dependencies:** None.
 
 ### T-9: RED — transcript review UI states and actions
 
-**Tracking:** Issue #242 · Card task_b1830561654c41e5
+**Tracking:** Issue #242 · Card task_b1830561654c41e5 · PR #413
+
+**Status:** Done — PR #413 open for review.
 
 **Files:** `frontend/src/components/TranscriptView.test.tsx`
 
-**Action:** Extend the existing component tests for the web requirements and correctness properties 1–4: pending/complete states; `Speaker N` for uncertain speakers; excerpt play request; explicit Confirm, Name and Correct actions; updating one item only; resume after remount; keyboard-operable controls; request failures leave the item pending and expose an error. Mock the authenticated meeting API at the typed API boundary.
+**Action:** In `frontend/src/components/TranscriptView.test.tsx`, exercise the design-defined `TranscriptView` behavior and its typed API module boundary: pending/complete states; `Speaker N` for uncertain speakers; the revision-qualified excerpt GET request; explicit Confirm, Name and Correct actions through the revision-qualified disposition PUT; updating one item only; reload via the review GET after remount; keyboard-operable controls; and request failures that leave the item pending and expose an error. Mock only the authenticated meeting API at its typed API boundary.
 
 **Acceptance evidence:** From `frontend/`, `npm run test -- --run src/components/TranscriptView.test.tsx` fails on the absent review UI before implementation; record the output.
 
@@ -165,9 +183,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Action:** Implement the recording/revision-scoped review aggregate and per-speaker immutable key/disposition state, with `named`, `corrected`, and `confirmed` validation. Derive pending/complete exclusively from item dispositions; persist one item's change without changing other items. Map the logical design fields onto existing SQLAlchemy/Alembic conventions.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_review_state.py -k "domain_disposition_isolation or domain_derived_completion"` passes the domain isolation and derived-status tests, including at least 100 Hypothesis examples per property. This task does not claim the request-level OpenAPI assertion passes; T-16 must make that assertion pass.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_state.py -k "domain_disposition_isolation or domain_derived_completion"` passes the domain isolation and derived-status tests, including at least 100 Hypothesis examples per property. This task does not claim the request-level OpenAPI assertion passes; T-16 must make that assertion pass.
 
-**Validation command:** `pytest tests/speaker_review/test_review_state.py -k "domain_disposition_isolation or domain_derived_completion"` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_state.py -k "domain_disposition_isolation or domain_derived_completion"` (from `backend/`).
 
 **Dependencies:** T-1.
 
@@ -179,25 +197,27 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/app/meetings/` review service/repository modules; `backend/app/infra/models.py`; migration under `backend/alembic/versions/` as needed.
 
-**Action:** Implement persistent idempotent disposition and receipt writes, with same-key/same-request replay, key/hash conflict, stale-version conflict and atomic rollback of the disposition and receipt in one database transaction. T-11 does not implement or persist voice samples: the only test-stage `fail_at` evidence from T-2 is a synthetic mapping simulator, not proof of database behavior. Do not add production-only fault-injection hooks to force rollback tests. Preserve the transaction seam and idempotency contract that T-13 will extend after its security gate to include the actual voice-sample write atomically.
+**Action:** Implement persistent idempotent disposition and receipt writes through `SpeakerReviewService.record_disposition(...)`, with same-key/same-request replay, key/hash conflict, stale-version conflict and atomic rollback of the disposition and receipt in one database transaction. Do not persist voice samples here; preserve the transaction boundary and idempotency contract that T-13 extends after its security gate to include voice-sample writes atomically. Do not add test-only production fault-injection hooks.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_disposition_idempotency.py` passes for persistent disposition/receipt replay, conflict and rollback behavior. Simulator-only `fail_at` evidence is not counted as production persistence proof. Sample-write atomicity, including rollback across disposition, receipt and sample, is implemented and validated by T-13 after T-20 clears; T-11 does not claim it.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_disposition_idempotency.py` passes for persisted disposition/receipt replay, conflict and rollback behavior. Sample-write atomicity, including rollback across disposition, receipt and sample, is implemented and validated by T-13 after T-20 clears; T-11 does not claim it.
 
-**Validation command:** `pytest tests/speaker_review/test_disposition_idempotency.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_disposition_idempotency.py` (from `backend/`).
 
 **Dependencies:** T-2, T-10. T-11 may proceed before T-20 only for disposition/receipt persistence; it must not add voice-sample storage. T-13 depends on T-11 and T-20, and extends the transaction with voice-sample persistence only after the security gate is resolved.
 
 ### T-12: GREEN — persist and return review state for resume
 
-**Tracking:** Issue #245 · Card task_5aaf06a24a074090
+**Tracking:** Issue #245 · Card task_5aaf06a24a074090 · PR #418
+
+**Status:** Done — PR #418 open for review.
 
 **Files:** `backend/app/meetings/` review service/repository modules.
 
 **Action:** Implement active-review retrieval from persisted dispositions so reopening a pending review returns its saved decisions and only outstanding speaker items; completed review no longer requests a review. Do not add a revision-history UI.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_review_resume.py` passes for partial and completed review reloads.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_resume.py` passes for partial and completed review reloads.
 
-**Validation command:** `pytest tests/speaker_review/test_review_resume.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_resume.py` (from `backend/`).
 
 **Dependencies:** T-3, T-10.
 
@@ -209,23 +229,23 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Action:** Before implementation begins, require independent security-review evidence resolving applicable handling for voice-derived identity samples; attach the review outcome to this task/issue, and do not proceed while a security blocker remains. Then implement the versioned embedding adapter and owner-scoped immutable samples, calibrated model-version threshold and runner-up margin checks, fail-closed uncertainty when uncalibrated, and target resolution that rejects cross-owner IDs. Named/corrected dispositions append source-review-item-keyed samples; correction changes only the current item's association and leaves source samples unchanged; confirmed writes no sample. Extend the existing recording expiry/deletion cleanup transaction to delete only samples linked to that source recording. No global training/model modification or new retention policy.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_identity_matching.py` passes for ownership, uncertainty, correction lineage, same-recording multiple samples/replay, and source-linked sample deletion in the same cleanup transaction. It also includes a database-backed rollback test that invokes `SpeakerReviewService.record_disposition` through the service/repository transaction boundary, injects failure at the sample insert using test-only database/session instrumentation (not a production fault-injection API), then rereads in a fresh session and asserts disposition, idempotency receipt, and voice-sample state are all unchanged. Matching behavior without calibration remains `uncertain`. The independent security review record is attached and contains no unresolved blocker before implementation starts.
+**Acceptance evidence:** `pytest tests/diarization/test_speaker_identity_matching.py tests/retention/test_speaker_identity_sample_cleanup.py` passes for ownership, uncertainty, correction lineage, same-recording multiple samples/replay, and source-linked sample deletion in the same cleanup transaction. The diarization suite also exercises `SpeakerReviewService.record_disposition(...)` through its transaction boundary, using test-only database/session instrumentation to force rollback at sample insertion (not a production fault-injection API), then rereads in a fresh session and asserts disposition, idempotency receipt, and voice-sample state are unchanged. Matching without calibration remains `uncertain`. The independent security review record is attached and contains no unresolved blocker before implementation starts.
 
-**Validation command:** `pytest tests/speaker_review/test_identity_matching.py` (from `backend/`).
+**Validation command:** `pytest tests/diarization/test_speaker_identity_matching.py tests/retention/test_speaker_identity_sample_cleanup.py` (from `backend/`).
 
 **Dependencies:** T-4, T-10, T-11, T-20. The independent security review evidence is a blocking prerequisite; no voice-sample storage work starts before it.
 
 ### T-14: GREEN — derive and validate speaker-specific excerpts
 
-**Tracking:** Issue #247 · Card task_486562bbb0d7425b
+**Tracking:** Issue #247 · Card task_486562bbb0d7425b · PR #401 · Status: done (QA and security passed; PR open for review)
 
 **Files:** `backend/app/` excerpt derivation/service modules; `backend/app/infra/` media boundary as needed.
 
 **Action:** Derive candidates solely from target-speaker assigned segments, apply the approved duration/VAD/earliest-start ordering, validate bounds/decoding/speech activity/assignment, and persist an opaque recording- and speaker-bound excerpt reference. Do not expose object-store keys or substitute an excerpt. A missing valid excerpt keeps the revision not-ready and retryable.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_excerpts.py` passes all candidate ranking, rejection, binding and playback-failure cases.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_excerpts.py` passes all candidate ranking, rejection, binding and playback-failure cases.
 
-**Validation command:** `pytest tests/speaker_review/test_excerpts.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_excerpts.py` (from `backend/`).
 
 **Dependencies:** T-5.
 
@@ -237,11 +257,21 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Action:** After revision, review, identity-matching and excerpt boundaries exist, extend the async pipeline with conditional lease-based stage claims keyed by `(processing_revision_id, stage)`: an unexpired claim blocks duplicate provider execution, a completed stage replays its persisted result, and an expired claim permits recovery. Persist each stage output, completion state and outbox event in one transaction with uniqueness by revision/stage. Finalize only after both exact-revision stage outputs are complete; create review/excerpts once and activate only the current ready candidate atomically. Retry finalization from committed outputs without rerunning successful provider stages; do not expose partial reviews.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_processing_readiness.py` passes for readiness barrier, unexpired/expired leases, atomic output/completion/outbox rollback, duplicate deliveries and finalizer recovery.
+**Acceptance evidence:** `pytest tests/integration/test_speaker_review_processing.py` passes for readiness barrier, unexpired/expired leases, atomic output/completion/outbox rollback, duplicate deliveries and finalizer recovery.
 
-**Validation command:** `pytest tests/speaker_review/test_processing_readiness.py` (from `backend/`).
+**Validation command:** `pytest tests/integration/test_speaker_review_processing.py` (from `backend/`).
 
 **Dependencies:** T-6, T-10, T-13, T-14, T-17.
+
+### B-1: Security remediation — enforce commercial authorization and ownership on transcript/diarization reads
+
+**Tracking:** Issue #478 · Card task_60e40e6776b74228 · PR #480 · Status: done (QA and security passed)
+
+**Files:** `backend/app/meetings/router.py`; transcript and diarization route tests.
+
+**Action:** Enforce commercial-role authorization and meeting ownership on the existing transcript and diarization GET routes before protected reads. Return 403 for non-commercial users; return 404 for missing or non-owned meetings; audit both denial paths. Preserve the API response contract.
+
+**Acceptance evidence:** Targeted tests passed (12); Nia recorded QA `PASS` and Zev recorded `NO_ACTIONABLE_FINDINGS` on the exact candidate. Full backend pytest remains blocked during collection by the missing `app.transcription.processing_pipeline`; Ruff was unavailable in the implementation environment.
 
 ### T-16: GREEN — enforce resource-owner checks on existing and new routes
 
@@ -249,13 +279,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Files:** `backend/app/meetings/router.py`; `backend/app/meetings/service.py`; meeting review/excerpt route modules.
 
-**Action:** Require meeting ID and authenticated principal owner in transcript/diarization legacy handlers and every new review/disposition/excerpt operation. Derive owner only from the authenticated principal, scope all recording/identity/excerpt lookups, and return not-found for absent or non-owned meetings without leaking data.
+**Action:** Require meeting ID and authenticated principal owner in transcript/diarization legacy handlers and every new review/disposition/excerpt operation. Derive owner only from the authenticated principal, scope all recording/identity/excerpt lookups, and return not-found for absent or non-owned meetings without leaking data. Keep the OpenAPI route/schema and legacy-owner assertions in T-7 distinct from persisted ready-state identity/excerpt ownership integration coverage in T-7b.
 
-**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_ownership.py tests/speaker_review/test_review_state.py` passes for legacy and new routes, including cross-owner identity/excerpt attempts. The request-level OpenAPI PUT schema assertion `test_review_put_schema_excludes_completion` passes and proves completion state cannot be supplied by a caller; this closes the RED assertion retained by T-1.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_ownership.py tests/meetings/test_speaker_review_persisted_ownership.py` passes the T-7 legacy ownership and route/schema assertions plus T-7b persisted ready-review, foreign-identity and validated-excerpt owner-isolation assertions. The request-level OpenAPI PUT schema assertion `test_review_put_schema_excludes_completion` in `backend/tests/meetings/test_speaker_review_state.py` also passes and proves completion state cannot be supplied by a caller; this closes the RED assertion retained by T-1.
 
-**Validation command:** `pytest tests/meetings/test_speaker_review_ownership.py tests/speaker_review/test_review_state.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_ownership.py tests/meetings/test_speaker_review_persisted_ownership.py tests/meetings/test_speaker_review_state.py` (from `backend/`).
 
-**Dependencies:** T-7, T-10, T-11, T-12, T-13, T-14, T-17.
+**Dependencies:** T-7, T-7b, T-10, T-11, T-12, T-13, T-14, T-17.
 
 ### T-17: GREEN — migrate and enforce exact processing revisions
 
@@ -265,9 +295,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Action:** Add per-recording processing state and revision rows, backfill existing stage rows to compatibility revision 1, scope transcript/diarization uniqueness to `(meeting_id, processing_revision_id)`, and establish exact revision IDs on candidate admission, queue envelopes, repositories, legacy reads, review GET/PUT and excerpt operations. Serialize candidate admission and activation with the shared state-row lock. Maintain separate active and in-flight pointers, atomically activate only the current ready candidate, preserve a pending review against distinct reprocessing, and retain the in-flight slot through retryable failures. Provide the revision-aware stage/finalizer boundary; T-15 adds lease/outbox/recovery mechanics on that boundary.
 
-**Acceptance evidence:** `pytest tests/speaker_review/test_processing_revisions.py` passes migration, legacy compatibility, admission/activation locking, concurrency, pending-review preservation, stale revision and no-mixed-read cases.
+**Acceptance evidence:** `pytest tests/meetings/test_speaker_review_revisions.py` passes migration, legacy compatibility, admission/activation locking, concurrency, pending-review preservation, stale revision and no-mixed-read cases.
 
-**Validation command:** `pytest tests/speaker_review/test_processing_revisions.py` (from `backend/`).
+**Validation command:** `pytest tests/meetings/test_speaker_review_revisions.py` (from `backend/`).
 
 **Dependencies:** T-8, T-10, T-12, T-14.
 
@@ -303,10 +333,10 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ## Dependency DAG and Rationale
 
-- RED suites T-1 through T-9 have no prerequisite edges and can be prepared independently.
-- GREEN pairs: T-1 → T-10; T-2 → T-11; T-3 → T-12; T-4 → T-13; T-5 → T-14; T-6 → T-15; T-7 → T-16; T-8 → T-17; T-9 → T-18. These are mandatory RED-before-GREEN edges.
+- RED suites T-1 through T-9 have no prerequisite edges and can be prepared independently. T-7b is a separate RED suite that requires persisted fixture contracts from T-10, T-12, T-13, T-14 and T-17; it must not be scheduled before those prerequisites.
+- GREEN pairs: T-1 → T-10; T-2 → T-11; T-3 → T-12; T-4 → T-13; T-5 → T-14; T-6 → T-15; T-7 → T-16; T-8 → T-17; T-9 → T-18. T-7b → T-16 is an additional mandatory RED-before-GREEN edge for persisted ready-review, identity-target and validated-excerpt owner isolation.
 - T-20 → T-13 is the explicit pre-implementation security gate required by the design; voice-sample storage cannot start until the independent review evidence is recorded and blockers are resolved.
-- T-10 → T-11/T-12/T-13/T-15/T-16/T-17 because those components require the persisted review model/service; T-11 → T-13/T-16 because T-13 extends T-11's persistent disposition/receipt transaction to include voice-sample writes only after T-20 clears, and the route contract includes disposition writes; T-12 → T-16/T-17 because revision-aware review retrieval depends on persisted resume state; T-13 → T-15/T-16 because finalization creates attributed review items and route ownership covers identity repositories; T-14 → T-15/T-16/T-17 because readiness/finalization/revision activation and excerpt routes require validated excerpts. T-17 establishes revision state, exact-ID boundaries and atomic activation of an already-ready candidate before T-15 adds stage claims/outbox/recovery mechanics keyed to that revision, avoiding a schema/pipeline dependency cycle. T-16 waits for the review, identity, excerpt and revision contracts used by its full route tests. T-19 waits for all implementation tasks because it is whole-feature validation.
+- T-10 → T-7b/T-11/T-12/T-13/T-15/T-16/T-17 because T-7b requires persisted review/item fixtures and those components require the persisted review model/service; T-11 → T-13/T-16 because T-13 extends T-11's persistent disposition/receipt transaction to include voice-sample writes only after T-20 clears, and the route contract includes disposition writes; T-12 → T-7b/T-16/T-17 because persisted review retrieval/resume state is needed for T-7b fixtures and revision-aware retrieval; T-13 → T-7b/T-15/T-16 because owner-scoped identity/disposition persistence is needed by T-7b and finalization; T-14 → T-7b/T-15/T-16/T-17 because validated excerpt persistence is needed by T-7b and readiness/finalization/revision activation; T-17 → T-7b because a persisted active ready revision is needed by its fixtures. T-17 establishes revision state, exact-ID boundaries and atomic activation of an already-ready candidate before T-15 adds stage claims/outbox/recovery mechanics keyed to that revision, avoiding a schema/pipeline dependency cycle. T-16 waits for T-7 and T-7b plus the review, identity, excerpt and revision contracts used by its full route tests. T-19 waits for all implementation tasks because it is whole-feature validation.
 - No other edges are implied. In particular, unrelated RED suites and their implementation units remain parallel where the listed prerequisites permit.
 
 ## Traceability, Assumptions, and Open Implementation Dependencies

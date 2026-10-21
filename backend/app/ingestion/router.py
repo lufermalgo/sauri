@@ -27,6 +27,11 @@ from app.meetings.service import record_transition
 
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
 
+_AUDIO_FILE = File(...)
+_VIDEO_FILE = File(None)
+_INGESTION_DATA_FORM = Form(...)
+_AUTHENTICATED_USER = Depends(get_current_user)
+
 
 def _get_object_store() -> ObjectStore:
     """Creates the object store instance (simplified DI, final wiring in task 17.1)."""
@@ -40,10 +45,10 @@ def _get_queue() -> JobQueue:
 
 @router.post("/upload", status_code=status.HTTP_200_OK)
 async def upload_recording(
-    audio: UploadFile = File(...),
-    video: UploadFile | None = File(None),
-    data: str = Form(...),
-    user: AuthenticatedUser = Depends(get_current_user),
+    audio: UploadFile = _AUDIO_FILE,
+    video: UploadFile | None = _VIDEO_FILE,
+    data: str = _INGESTION_DATA_FORM,
+    user: AuthenticatedUser = _AUTHENTICATED_USER,
 ) -> dict[str, Any]:
     """Authenticated multipart upload endpoint for SessionRecording.
 
@@ -65,7 +70,7 @@ async def upload_recording(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid ingestion data: {exc}",
-        )
+        ) from exc
 
     # b. Authentication already validated by the dependency
     has_separate_video = video is not None
@@ -105,40 +110,39 @@ async def upload_recording(
     # e. Process ingestion (create SessionRecording, idempotency, notice)
     engine = create_engine()
     session_factory = create_session_factory(engine)
-    async with session_factory() as session:
-        async with session.begin():
-            recording, is_new = await process_ingestion(
-                session=session,
-                data=ingestion_data,
-                audio_ref=audio_ref,
-                video_ref=video_ref,
-                created_by=user.id,
+    async with session_factory() as session, session.begin():
+        recording, is_new = await process_ingestion(
+            session=session,
+            data=ingestion_data,
+            audio_ref=audio_ref,
+            video_ref=video_ref,
+            created_by=user.id,
+        )
+
+        # If this is an idempotent retry (duplicate key), return without
+        # transitioning or enqueuing again (Req. 2.3, 4.1, 4.2).
+        if not is_new:
+            await engine.dispose()
+            return {
+                "recording_id": recording.id,
+                "state": "idempotent_duplicate",
+            }
+
+        # f. Transition Meeting to "transcribing"
+        from app.infra.models import Meeting
+
+        meeting = await session.get(Meeting, ingestion_data.meeting_id)
+        if meeting is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Meeting not found: {ingestion_data.meeting_id}",
             )
 
-            # If this is an idempotent retry (duplicate key), return without
-            # transitioning or enqueuing again (Req. 2.3, 4.1, 4.2).
-            if not is_new:
-                await engine.dispose()
-                return {
-                    "recording_id": recording.id,
-                    "state": "idempotent_duplicate",
-                }
-
-            # f. Transition Meeting to "transcribing"
-            from app.infra.models import Meeting
-
-            meeting = await session.get(Meeting, ingestion_data.meeting_id)
-            if meeting is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Meeting not found: {ingestion_data.meeting_id}",
-                )
-
-            transition_result = await record_transition(
-                session=session,
-                meeting=meeting,
-                event="recording_uploaded",
-            )
+        transition_result = await record_transition(
+            session=session,
+            meeting=meeting,
+            event="recording_uploaded",
+        )
 
     # g. Enqueue the transcription job (only if the recording is new)
     await queue.connect()

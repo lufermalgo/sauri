@@ -9,6 +9,7 @@ import importlib.abc
 import importlib.machinery
 import os
 import socket
+from typing import Any
 from unittest.mock import patch
 
 import httpx
@@ -39,7 +40,7 @@ _padding = st.text(alphabet=" \t", min_size=0, max_size=5)
 )
 def test_property_1_local_with_capitalization_and_spaces(
     word: str, padding_left: str, padding_right: str
-):
+) -> None:
     """DIARIZATION_PROVIDER='local' (arbitrary capitalization/spaces) -> LocalProvider."""
     provider_value = padding_left + word + padding_right
     env = {
@@ -59,7 +60,7 @@ def test_property_1_local_with_capitalization_and_spaces(
 )
 def test_property_1_cloud_with_capitalization_and_spaces(
     word: str, padding_left: str, padding_right: str
-):
+) -> None:
     """Cloud is rejected regardless of capitalization or surrounding spaces."""
     provider_value = padding_left + word + padding_right
     env = {
@@ -78,7 +79,7 @@ def test_property_1_cloud_with_capitalization_and_spaces(
 @given(
     value=st.sampled_from(["", "   ", "\t", "\t  "]),
 )
-def test_property_1_empty_is_local(value: str):
+def test_property_1_empty_is_local(value: str) -> None:
     """DIARIZATION_PROVIDER empty or whitespace-only -> LocalProvider (default)."""
     env = {
         "DIARIZATION_PROVIDER": value,
@@ -89,7 +90,7 @@ def test_property_1_empty_is_local(value: str):
         assert isinstance(engine, LocalProvider)
 
 
-def test_property_1_absent_without_variable():
+def test_property_1_absent_without_variable() -> None:
     """DIARIZATION_PROVIDER not defined -> LocalProvider (default)."""
     env = {"DIARIZATION_LOCAL_URL": "http://diar-engine:8000"}
     with patch.dict(os.environ, env, clear=False):
@@ -109,7 +110,7 @@ def test_property_1_absent_without_variable():
 _invalid_provider = st.text(
     alphabet=st.characters(
         blacklist_characters="\x00",
-        blacklist_categories=("Cs",),  # Exclude surrogates (invalid in env vars)
+        blacklist_categories=["Cs"],  # Exclude surrogates (invalid in env vars)
     ),
     min_size=1,
     max_size=50,
@@ -118,7 +119,7 @@ _invalid_provider = st.text(
 
 @settings(max_examples=100)
 @given(provider_value=_invalid_provider)
-def test_property_2_invalid_value_flags_error(provider_value: str):
+def test_property_2_invalid_value_flags_error(provider_value: str) -> None:
     """An invalid DIARIZATION_PROVIDER (normalized != local/cloud/empty) raises ValueError with the received value."""
     import re
 
@@ -138,7 +139,7 @@ def test_property_2_invalid_value_flags_error(provider_value: str):
 # ---------------------------------------------------------------------------
 
 
-def test_example_local_with_url_defined():
+def test_example_local_with_url_defined() -> None:
     """Req 2.2: DIARIZATION_PROVIDER='local' with DIARIZATION_LOCAL_URL defined -> LocalProvider."""
     env = {
         "DIARIZATION_PROVIDER": "local",
@@ -149,7 +150,7 @@ def test_example_local_with_url_defined():
         assert isinstance(engine, LocalProvider)
 
 
-def test_example_cloud_with_endpoint_and_key():
+def test_example_cloud_with_endpoint_and_key() -> None:
     """A cloud provider selection is rejected even when cloud settings exist."""
     env = {
         "DIARIZATION_PROVIDER": "cloud",
@@ -163,7 +164,7 @@ def test_example_cloud_with_endpoint_and_key():
         create_diarization_engine()
 
 
-def test_example_local_url_missing_raises_valueerror():
+def test_example_local_url_missing_raises_valueerror() -> None:
     """Req 2.6: Local provider selected but DIARIZATION_LOCAL_URL missing -> ValueError."""
     env = {"DIARIZATION_PROVIDER": "local"}
     with patch.dict(os.environ, env, clear=False):
@@ -172,7 +173,7 @@ def test_example_local_url_missing_raises_valueerror():
             create_diarization_engine()
 
 
-def test_example_local_url_empty_raises_valueerror():
+def test_example_local_url_empty_raises_valueerror() -> None:
     """Req 2.6: Local provider selected but DIARIZATION_LOCAL_URL empty -> ValueError."""
     env = {
         "DIARIZATION_PROVIDER": "local",
@@ -194,7 +195,7 @@ def test_example_local_url_empty_raises_valueerror():
     "provider_value",
     [None, "", " \t", "local", " LOCAL ", "LoCaL"],
 )
-def test_fail_closed_factory_defaults_only_to_local(provider_value: str | None):
+def test_fail_closed_factory_defaults_only_to_local(provider_value: str | None) -> None:
     """Missing/empty/local provider values select local after normalization."""
     env = {"DIARIZATION_LOCAL_URL": " http://diar-engine:8000/ "}
     if provider_value is not None:
@@ -212,13 +213,13 @@ def test_fail_closed_factory_defaults_only_to_local(provider_value: str | None):
 @pytest.mark.parametrize("provider_value", ["cloud", "unrecognized-provider"])
 def test_fail_closed_factory_rejects_non_local_before_cloud_import_or_side_effects(
     provider_value: str,
-):
+) -> None:
     """Non-local providers fail before cloud import, provider construction, or I/O."""
     import sys
 
     cloud_module_name = "app.diarization.cloud_provider"
     previously_loaded_cloud_module = sys.modules.pop(cloud_module_name, None)
-    observations = {
+    observations: dict[str, list[Any]] = {
         "cloud_imports": [],
         "cloud_constructions": [],
         "local_constructions": [],
@@ -229,27 +230,31 @@ def test_fail_closed_factory_rejects_non_local_before_cloud_import_or_side_effec
 
     original_local_init = LocalProvider.__init__
 
-    def track_local_construction(instance, *args, **kwargs):
+    def track_local_construction(
+        instance: Any, *args: Any, **kwargs: Any
+    ) -> None:
         observations["local_constructions"].append(instance)
         original_local_init(instance, *args, **kwargs)
 
-    class ObservingLoader:
+    class ObservingLoader(importlib.abc.Loader):
         """Record imports and constructor calls before factory code can use them."""
 
-        def __init__(self, loader):
+        def __init__(self, loader: Any) -> None:
             self.loader = loader
 
-        def create_module(self, spec):
+        def create_module(self, spec: Any) -> Any:
             if hasattr(self.loader, "create_module"):
                 return self.loader.create_module(spec)
             return None
 
-        def exec_module(self, module):
+        def exec_module(self, module: Any) -> None:
             self.loader.exec_module(module)
             provider_class = module.CloudProvider
             original_init = provider_class.__init__
 
-            def track_construction(instance, *args, **kwargs):
+            def track_construction(
+                instance: Any, *args: Any, **kwargs: Any
+            ) -> None:
                 observations["cloud_constructions"].append(instance)
                 original_init(instance, *args, **kwargs)
 
@@ -258,7 +263,9 @@ def test_fail_closed_factory_rejects_non_local_before_cloud_import_or_side_effec
     class CloudImportObserver(importlib.abc.MetaPathFinder):
         """Observe the import machinery, regardless of import statement spelling."""
 
-        def find_spec(self, fullname, path=None, target=None):
+        def find_spec(
+            self, fullname: str, path: Any = None, target: Any = None
+        ) -> Any:
             if fullname != cloud_module_name:
                 return None
             observations["cloud_imports"].append(fullname)
@@ -267,18 +274,20 @@ def test_fail_closed_factory_rejects_non_local_before_cloud_import_or_side_effec
                 spec.loader = ObservingLoader(spec.loader)
             return spec
 
-    def track_client_init(original_init, client_name):
-        def tracked_init(instance, *args, **kwargs):
+    def track_client_init(
+        original_init: Any, client_name: str
+    ) -> Any:
+        def tracked_init(instance: Any, *args: Any, **kwargs: Any) -> None:
             observations["clients"].append(client_name)
             original_init(instance, *args, **kwargs)
 
         return tracked_init
 
-    def block_request(*args, **kwargs):
+    def block_request(*args: Any, **kwargs: Any) -> None:
         observations["requests"].append((args, kwargs))
         raise RuntimeError("outbound request blocked by factory test")
 
-    def block_connection(*args, **kwargs):
+    def block_connection(*args: Any, **kwargs: Any) -> None:
         observations["connections"].append((args, kwargs))
         raise OSError("outbound connection blocked by factory test")
 
@@ -345,7 +354,7 @@ def test_fail_closed_factory_rejects_non_local_before_cloud_import_or_side_effec
 @pytest.mark.parametrize("local_url", [None, "", " \t "])
 def test_fail_closed_factory_rejects_missing_local_url_before_side_effects(
     local_url: str | None,
-):
+) -> None:
     """Local selection without a usable URL fails before construction or I/O."""
     from app.diarization.local_provider import LocalProvider as LocalProviderClass
 
@@ -361,23 +370,27 @@ def test_fail_closed_factory_rejects_missing_local_url_before_side_effects(
     original_http_client_init = httpx.Client.__init__
     original_async_http_client_init = httpx.AsyncClient.__init__
 
-    def track_provider_construction(instance, *args, **kwargs):
+    def track_provider_construction(
+        instance: Any, *args: Any, **kwargs: Any
+    ) -> None:
         provider_constructions.append(instance)
         original_init(instance, *args, **kwargs)
 
-    def track_http_client(instance, *args, **kwargs):
+    def track_http_client(instance: Any, *args: Any, **kwargs: Any) -> None:
         client_constructions.append(instance)
         original_http_client_init(instance, *args, **kwargs)
 
-    def track_async_http_client(instance, *args, **kwargs):
+    def track_async_http_client(
+        instance: Any, *args: Any, **kwargs: Any
+    ) -> None:
         client_constructions.append(instance)
         original_async_http_client_init(instance, *args, **kwargs)
 
-    def block_request(*args, **kwargs):
+    def block_request(*args: Any, **kwargs: Any) -> None:
         requests.append((args, kwargs))
         raise RuntimeError("outbound request blocked by factory test")
 
-    def block_connection(*args, **kwargs):
+    def block_connection(*args: Any, **kwargs: Any) -> None:
         connections.append((args, kwargs))
         raise OSError("outbound connection blocked by factory test")
 

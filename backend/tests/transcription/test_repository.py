@@ -7,16 +7,15 @@ Tasks: 7.3, 7.4
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-from hypothesis import given, HealthCheck, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import Meeting, SpeechTurn, Transcript
 from app.transcription.repository import TranscriptRepository
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -33,7 +32,7 @@ def _create_meeting(meeting_id: str) -> Meeting:
         process_state="transcribing",
         failure_cause=None,
         created_by="test-user",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 
@@ -46,7 +45,7 @@ def _create_transcript(meeting_id: str) -> tuple[Transcript, str]:
         provider="local",
         supports_turns=True,
         expires_at=None,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     ), t_id
 
 
@@ -77,21 +76,20 @@ def _create_turns(transcript_id: str, n: int) -> list[SpeechTurn]:
 @given(num_turns=st.integers(min_value=1, max_value=10))
 @pytest.mark.asyncio
 async def test_property_13_persistence_roundtrip(
-    session_factory: async_sessionmaker, num_turns: int
-):
+    session_factory: async_sessionmaker[AsyncSession], num_turns: int
+) -> None:
     """Creating and retrieving a Transcript with N turns preserves all data."""
     meeting_id = str(uuid.uuid4())
     repo = TranscriptRepository(session_factory)
 
     # Persist
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting(meeting_id)
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting(meeting_id)
+        session.add(meeting)
 
-            transcript, t_id = _create_transcript(meeting_id)
-            turns = _create_turns(t_id, num_turns)
-            await repo.create(session, transcript, turns)
+        transcript, t_id = _create_transcript(meeting_id)
+        turns = _create_turns(t_id, num_turns)
+        await repo.create(session, transcript, turns)
 
     # Retrieve
     result = await repo.get_by_meeting(meeting_id)
@@ -117,8 +115,8 @@ async def test_property_13_persistence_roundtrip(
 
 @pytest.mark.asyncio
 async def test_example_get_by_meeting_without_transcript(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """get_by_meeting returns None if no transcript exists (no error)."""
     repo = TranscriptRepository(session_factory)
     result = await repo.get_by_meeting("inexistente-id")

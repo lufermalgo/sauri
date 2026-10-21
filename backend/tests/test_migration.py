@@ -23,17 +23,28 @@ running a destructive migration against the shared development database.
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import inspect
+import os
 from pathlib import Path
+from types import ModuleType
+from typing import cast
+from uuid import uuid4
 
+import asyncpg
 import pytest
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
+
+from alembic import command
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
 MIGRATION_FILENAME = "007_rename_schema_to_english.py"
@@ -53,11 +64,12 @@ OLD_TO_NEW_TABLES = {
 }
 
 
-def _load_migration_module():
+def _load_migration_module() -> ModuleType:
     path = MIGRATIONS_DIR / MIGRATION_FILENAME
     spec = importlib.util.spec_from_file_location(
         MIGRATION_FILENAME.replace(".py", ""), path
     )
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -118,7 +130,7 @@ def test_downgrade_reverses_every_rename() -> None:
 
 @pytest.mark.asyncio
 async def test_orm_schema_uses_english_table_names(async_engine: AsyncEngine) -> None:
-    def _table_names(sync_conn):
+    def _table_names(sync_conn: Connection) -> set[str]:
         return set(sa_inspect(sync_conn).get_table_names())
 
     async with async_engine.connect() as conn:
@@ -131,7 +143,7 @@ async def test_orm_schema_uses_english_table_names(async_engine: AsyncEngine) ->
 
 @pytest.mark.asyncio
 async def test_orm_schema_meetings_has_english_columns(async_engine: AsyncEngine) -> None:
-    def _columns(sync_conn):
+    def _columns(sync_conn: Connection) -> set[str]:
         return {c["name"] for c in sa_inspect(sync_conn).get_columns("meetings")}
 
     async with async_engine.connect() as conn:
@@ -156,7 +168,7 @@ async def test_orm_schema_meetings_has_english_columns(async_engine: AsyncEngine
 
 @pytest.mark.asyncio
 async def test_orm_schema_users_has_english_columns(async_engine: AsyncEngine) -> None:
-    def _columns(sync_conn):
+    def _columns(sync_conn: Connection) -> set[str]:
         return {c["name"] for c in sa_inspect(sync_conn).get_columns("users")}
 
     async with async_engine.connect() as conn:
@@ -174,16 +186,34 @@ async def test_orm_schema_users_has_english_columns(async_engine: AsyncEngine) -
 PREVIOUS_REVISION = "008_speaker_review_aggregate"
 
 
-def _source_inventory_migration():
-    for path in MIGRATIONS_DIR.glob("*.py"):
-        spec = importlib.util.spec_from_file_location(path.stem, path)
-        if spec is None or spec.loader is None:
-            continue
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        if getattr(module, "down_revision", None) == PREVIOUS_REVISION:
-            return module
-    pytest.fail(f"no source-inventory migration follows {PREVIOUS_REVISION}")
+def _source_inventory_migration() -> ModuleType:
+    path = MIGRATIONS_DIR / "009_recording_media_sources.py"
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "009_recording_media_sources"
+    return module
+
+
+def test_source_inventory_migration_selects_exact_revision_independent_of_enumeration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_glob = Path.glob
+
+    def sibling_first_migration_glob(path: Path, pattern: str) -> list[Path]:
+        paths = list(original_glob(path, pattern))
+        if path == MIGRATIONS_DIR and pattern == "*.py":
+            return sorted(
+                paths,
+                key=lambda candidate: candidate.name
+                != "009_speaker_review_idempotency_receipts.py",
+            )
+        return paths
+
+    monkeypatch.setattr(Path, "glob", sibling_first_migration_glob)
+
+    assert _source_inventory_migration().revision == "009_recording_media_sources"
 
 
 async def _seed_legacy_recordings(engine: AsyncEngine) -> None:
@@ -206,9 +236,11 @@ async def _seed_legacy_recordings(engine: AsyncEngine) -> None:
         )
 
 
-async def _run_migration(engine: AsyncEngine, migration, direction: str) -> None:
+async def _run_migration(
+    engine: AsyncEngine, migration: ModuleType, direction: str
+) -> None:
     async with engine.begin() as connection:
-        def run(sync_connection) -> None:
+        def run(sync_connection: Connection) -> None:
             context = MigrationContext.configure(sync_connection)
             with Operations.context(context):
                 getattr(migration, direction)()
@@ -298,3 +330,243 @@ async def test_source_inventory_rejects_duplicate_recording_kind_and_reference(
                     "'objects/audio-only.webm', 'Original')"
                 )
             )
+
+
+@pytest.mark.asyncio
+async def test_speaker_receipt_upgrade_records_full_revision_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Upgrade to the receipts revision in a database created for this test only."""
+    admin_url = os.environ.get("SAURI_MIGRATION_TEST_ADMIN_URL")
+    if not admin_url:
+        pytest.skip("requires an isolated PostgreSQL admin URL in SAURI_MIGRATION_TEST_ADMIN_URL")
+
+    parsed_url = make_url(admin_url)
+    database_name = f"sauri_migration_qa_{uuid4().hex}"
+    connect_args: dict[str, str | int] = {
+        "user": parsed_url.username or "",
+        "database": parsed_url.database or "postgres",
+    }
+    if parsed_url.password is not None:
+        connect_args["password"] = parsed_url.password
+    if parsed_url.host is not None:
+        connect_args["host"] = parsed_url.host
+    if parsed_url.port is not None:
+        connect_args["port"] = parsed_url.port
+
+    admin_connection = await asyncpg.connect(**connect_args)
+    try:
+        await admin_connection.execute(f'CREATE DATABASE "{database_name}"')
+        test_url = parsed_url.set(database=database_name).render_as_string(hide_password=False)
+        monkeypatch.setenv("DATABASE_URL", test_url)
+        config = Config(str(MIGRATIONS_DIR.parents[1] / "alembic.ini"))
+
+        await asyncio.to_thread(command.upgrade, config, AGGREGATE_REVISION)
+        await asyncio.to_thread(command.upgrade, config, SPEAKER_REVIEW_RECEIPTS_REVISION)
+
+        async with (
+            asyncpg.create_pool(**(connect_args | {"database": database_name})) as pool,
+            pool.acquire() as connection,
+        ):
+            recorded_revision = await connection.fetchval(
+                "SELECT version_num FROM alembic_version"
+            )
+            version_width = await connection.fetchval(
+                "SELECT character_maximum_length FROM information_schema.columns "
+                "WHERE table_name = 'alembic_version' AND column_name = 'version_num'"
+            )
+            receipts_table_exists = await connection.fetchval(
+                "SELECT to_regclass('public.speaker_review_idempotency_receipts') IS NOT NULL"
+            )
+
+        assert recorded_revision == SPEAKER_REVIEW_RECEIPTS_REVISION
+        assert len(recorded_revision) == 39
+        assert version_width == 39
+        assert receipts_table_exists
+    finally:
+        await admin_connection.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1",
+            database_name,
+        )
+        await admin_connection.execute(f'DROP DATABASE IF EXISTS "{database_name}"')
+        await admin_connection.close()
+
+
+# Alembic graph contract for the two published 009 branches (T-3, issue #404).
+RECORDING_MEDIA_REVISION = "009_recording_media_sources"
+SPEAKER_REVIEW_RECEIPTS_REVISION = "009_speaker_review_idempotency_receipts"
+AGGREGATE_REVISION = "008_speaker_review_aggregate"
+LEGACY_PREDECESSOR_REVISION = "007_rename_schema_to_english"
+LEGACY_PREDECESSOR_PARENT = "006_add_titulo_reunion"
+
+
+def _migration_script() -> ScriptDirectory:
+    config = Config(str(MIGRATIONS_DIR.parents[1] / "alembic.ini"))
+    return ScriptDirectory.from_config(config)
+
+
+def test_published_009_revision_ids_and_immediate_parent_are_preserved() -> None:
+    script = _migration_script()
+
+    assert script.get_revision(RECORDING_MEDIA_REVISION).revision == RECORDING_MEDIA_REVISION
+    assert script.get_revision(RECORDING_MEDIA_REVISION).down_revision == AGGREGATE_REVISION
+    assert (
+        script.get_revision(SPEAKER_REVIEW_RECEIPTS_REVISION).revision
+        == SPEAKER_REVIEW_RECEIPTS_REVISION
+    )
+    assert (
+        script.get_revision(SPEAKER_REVIEW_RECEIPTS_REVISION).down_revision
+        == AGGREGATE_REVISION
+    )
+
+
+def test_reconciliation_revision_is_the_only_head_with_both_exact_009_parents() -> None:
+    script = _migration_script()
+    heads = script.get_heads()
+
+    assert len(heads) == 1, (
+        "Alembic graph must have one reconciliation head; "
+        f"found {heads!r} instead of converged 009 branches"
+    )
+    reconciliation = script.get_revision(heads[0])
+    assert set(cast(tuple[str, ...], reconciliation.down_revision)) == {
+        RECORDING_MEDIA_REVISION,
+        SPEAKER_REVIEW_RECEIPTS_REVISION,
+    }, "the sole head must directly reconcile both existing 009 revisions"
+
+
+def test_head_ancestry_contains_both_009_branches_and_008() -> None:
+    script = _migration_script()
+    heads = script.get_heads()
+    assert len(heads) == 1, f"expected one converged Alembic head, found {heads!r}"
+
+    ancestry = {
+        revision.revision
+        for revision in script.iterate_revisions(heads[0], AGGREGATE_REVISION)
+    }
+    assert {
+        RECORDING_MEDIA_REVISION,
+        SPEAKER_REVIEW_RECEIPTS_REVISION,
+        AGGREGATE_REVISION,
+    } <= ancestry, f"head ancestry must include both 009 branches and 008; found {ancestry!r}"
+
+
+def test_each_009_state_has_a_structural_forward_path_through_sibling_to_head() -> None:
+    script = _migration_script()
+    heads = script.get_heads()
+    assert len(heads) == 1, f"expected one converged Alembic head, found {heads!r}"
+    head = heads[0]
+
+    for current_revision, sibling_revision in (
+        (RECORDING_MEDIA_REVISION, SPEAKER_REVIEW_RECEIPTS_REVISION),
+        (SPEAKER_REVIEW_RECEIPTS_REVISION, RECORDING_MEDIA_REVISION),
+    ):
+        planned = {
+            revision.revision
+            for revision in script.iterate_revisions(head, current_revision)
+        }
+        assert head in planned, f"upgrade from {current_revision} must reach reconciliation head"
+        assert sibling_revision in planned, (
+            f"upgrade from {current_revision} must include missing sibling "
+            f"{sibling_revision}; planned {planned!r}"
+        )
+
+
+def test_revision_traversal_remains_continuous_before_008_and_through_head() -> None:
+    script = _migration_script()
+    before_008 = {
+        revision.revision
+        for revision in script.iterate_revisions(AGGREGATE_REVISION, LEGACY_PREDECESSOR_PARENT)
+    }
+    assert {AGGREGATE_REVISION, LEGACY_PREDECESSOR_REVISION} <= before_008
+
+    heads = script.get_heads()
+    assert len(heads) == 1, f"expected one converged Alembic head, found {heads!r}"
+    through_head = {revision.revision for revision in script.iterate_revisions(heads[0], "base")}
+    assert {
+        LEGACY_PREDECESSOR_PARENT,
+        LEGACY_PREDECESSOR_REVISION,
+        AGGREGATE_REVISION,
+        RECORDING_MEDIA_REVISION,
+        SPEAKER_REVIEW_RECEIPTS_REVISION,
+    } <= through_head, f"expected uninterrupted history through reconciliation; found {through_head!r}"
+
+
+@pytest.mark.asyncio
+async def test_speaker_review_receipt_migration_preserves_persisted_contract(
+    async_engine: AsyncEngine,
+) -> None:
+    path = MIGRATIONS_DIR / "009_speaker_review_idempotency_receipts.py"
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    assert migration.revision == SPEAKER_REVIEW_RECEIPTS_REVISION
+    assert migration.down_revision == AGGREGATE_REVISION
+
+    async with async_engine.begin() as connection:
+        await connection.execute(text("DROP TABLE IF EXISTS speaker_review_idempotency_receipts"))
+    await _run_migration(async_engine, migration, "upgrade")
+
+    def inspect_receipt_contract(
+        sync_connection: Connection,
+    ) -> tuple[
+        dict[str, tuple[str, bool]],
+        set[str],
+        set[tuple[str | None, tuple[str, ...]]],
+        set[tuple[tuple[str, ...], str, tuple[str, ...], str | None]],
+    ]:
+        inspector = sa_inspect(sync_connection)
+        columns = {
+            column["name"]: (str(column["type"]), column["nullable"])
+            for column in inspector.get_columns("speaker_review_idempotency_receipts")
+        }
+        primary_key = set(
+            cast(
+                tuple[str, ...],
+                inspector.get_pk_constraint("speaker_review_idempotency_receipts")[
+                    "constrained_columns"
+                ],
+            )
+        )
+        unique_constraints = {
+            (constraint["name"], tuple(constraint["column_names"]))
+            for constraint in inspector.get_unique_constraints(
+                "speaker_review_idempotency_receipts"
+            )
+        }
+        foreign_keys = {
+            (
+                tuple(foreign_key["constrained_columns"]),
+                foreign_key["referred_table"],
+                tuple(foreign_key["referred_columns"]),
+                cast(str | None, foreign_key["options"].get("ondelete")),
+            )
+            for foreign_key in inspector.get_foreign_keys(
+                "speaker_review_idempotency_receipts"
+            )
+        }
+        return columns, primary_key, unique_constraints, foreign_keys
+
+    async with async_engine.connect() as connection:
+        columns, primary_key, unique_constraints, foreign_keys = await connection.run_sync(
+            inspect_receipt_contract
+        )
+
+    assert columns == {
+        "id": ("VARCHAR(36)", False),
+        "review_id": ("VARCHAR(36)", False),
+        "item_id": ("VARCHAR(36)", False),
+        "idempotency_key": ("VARCHAR(256)", False),
+        "request_hash": ("VARCHAR(64)", False),
+        "response": ("JSON", False),
+    }
+    assert primary_key == {"id"}
+    assert unique_constraints == {
+        ("uq_review_idempotency_key", ("review_id", "idempotency_key"))
+    }
+    assert foreign_keys == {
+        (("review_id",), "speaker_reviews", ("id",), "CASCADE"),
+        (("item_id",), "speaker_review_items", ("id",), "CASCADE"),
+    }

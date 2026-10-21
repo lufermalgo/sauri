@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import json
 from io import BytesIO
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import HTTPException
-from starlette.datastructures import UploadFile
+from fastapi import HTTPException, UploadFile
 
 from app.ingestion import router
 from app.ingestion.schemas import IngestionData
 
 
-def _payload(**overrides: object) -> dict[str, object]:
-    payload: dict[str, object] = {
+def _payload(**overrides: object) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "meeting_id": "meeting-synthetic-1",
         "idempotency_key": "capture-synthetic-1",
         "capture_origin": "chrome_extension",
@@ -83,7 +83,7 @@ def test_inconsistent_or_incomplete_capture_metadata_is_rejected(
 async def test_invalid_capture_metadata_returns_422_before_object_storage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def storage_must_not_be_initialized():
+    def storage_must_not_be_initialized() -> None:
         raise AssertionError("invalid metadata must be rejected before storage")
 
     monkeypatch.setattr(router, "_get_object_store", storage_must_not_be_initialized)
@@ -103,6 +103,26 @@ async def test_invalid_capture_metadata_returns_422_before_object_storage(
         )
 
     assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_invalid_json_returns_same_422_detail_and_chains_parse_error() -> None:
+    audio = UploadFile(filename="synthetic.webm", file=BytesIO(b"audio"))
+
+    with pytest.raises(HTTPException) as error:
+        await router.upload_recording(
+            audio=audio,
+            video=None,
+            data="not-json",
+            user=type("User", (), {"id": "synthetic-user"})(),
+        )
+
+    assert type(error.value) is HTTPException
+    assert error.value.status_code == 422
+    assert error.value.detail == (
+        "Invalid ingestion data: Expecting value: line 1 column 1 (char 0)"
+    )
+    assert isinstance(error.value.__cause__, json.JSONDecodeError)
 
 
 @pytest.mark.parametrize(

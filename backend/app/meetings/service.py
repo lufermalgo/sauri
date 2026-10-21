@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,7 +25,13 @@ from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import Diarization, Meeting, SessionRecording, StateHistory
+from app.infra.models import (
+    Diarization,
+    Meeting,
+    RecordingMediaSource,
+    SessionRecording,
+    StateHistory,
+)
 from app.infra.object_store import ObjectStore
 from app.infra.queue import JobQueue
 from app.meetings.schemas import (
@@ -34,6 +41,67 @@ from app.meetings.schemas import (
     MeetingInput,
 )
 from app.meetings.state_machine import TransitionResult, apply_event
+
+
+@dataclass(frozen=True)
+class PlaybackSource:
+    """A stored object eligible for an owner-authorized playback manifest."""
+
+    id: str
+    object_ref: str
+    mime_type: str | None
+    quality_label: str
+    width: int | None
+    height: int | None
+    video_offset_ms: int | None
+
+
+@dataclass(frozen=True)
+class PlaybackSourceInventory:
+    """Persisted source choices and recording metadata for playback."""
+
+    video_presence: str
+    duration_seconds: int
+    audio_source: PlaybackSource | RecordingMediaSource | None
+    video_sources: list[PlaybackSource | RecordingMediaSource]
+
+
+async def load_playback_source_inventory(
+    session: AsyncSession, recording_id: str
+) -> PlaybackSourceInventory | None:
+    """Load a recording's source inventory without inferring legacy video."""
+    recording = await session.get(SessionRecording, recording_id)
+    if recording is None:
+        return None
+
+    result = await session.execute(
+        select(RecordingMediaSource)
+        .where(RecordingMediaSource.recording_id == recording_id)
+        .order_by(RecordingMediaSource.id)
+    )
+    sources = result.scalars().all()
+    audio_source: PlaybackSource | RecordingMediaSource | None = next(
+        (source for source in sources if source.kind == "audio"), None
+    )
+    if audio_source is None:
+        # Legacy recordings retain a canonical audio_ref. This fallback never
+        # treats MIME or a video_ref as evidence that the audio is muxed.
+        audio_source = PlaybackSource(
+            id=f"legacy-audio-{recording.id}",
+            object_ref=recording.audio_ref,
+            mime_type=None,
+            quality_label="Original",
+            width=None,
+            height=None,
+            video_offset_ms=None,
+        )
+
+    return PlaybackSourceInventory(
+        video_presence=recording.video_presence,
+        duration_seconds=recording.duration_seconds,
+        audio_source=audio_source,
+        video_sources=[source for source in sources if source.kind == "video"],
+    )
 
 
 async def record_transition(
