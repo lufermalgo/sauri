@@ -275,13 +275,13 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### B-2: Security remediation — authorize meeting detail, join, rename, and delete routes
 
-**Tracking:** Issue #504 · Card task_138287b156e54fa0 · Status: in progress
+**Tracking:** Issue #504 · Card task_138287b156e54fa0 · PR #<PENDING> · Status: QA and security passed, PR pending (open-PR cap)
 
-**Files:** `backend/app/meetings/router.py`; `backend/tests/meetings/test_meeting_route_authorization.py`.
+**Files:** `backend/app/meetings/router.py`; `backend/tests/meetings/test_meeting_route_authorization.py`; `backend/tests/meetings/test_router_exception_chaining.py`; `.spectra/specs/recording-speaker-review/tasks.md`.
 
 **Action:** Apply the shared commercial-role and meeting-owner authorization helper to GET `/{meeting_id}`, POST `/{meeting_id}/request-join`, PATCH `/{meeting_id}`, and DELETE `/{meeting_id}`. Audit denials and preserve successful owner responses and the request-join 409 for non-queued meetings.
 
-**Acceptance evidence:** Route tests verify owner access, non-sales 403, cross-owner/missing 404, denial audit records, no unauthorized join transition/publication, and unauthenticated 401 responses. Deliberate privacy change: request-join for a nonexistent meeting now returns 404 instead of 409 to prevent existence probing; the owner's 409 for a non-queued meeting is unchanged.
+**Acceptance evidence:** RED: against the pre-B-2 router, unauthorized GET and request-join returned 200, while PATCH/DELETE applied neither commercial-role checks nor denial audit (9 failing tests; 8 before the two added assertions). GREEN: 73 passed in `tests/meetings`, with one pre-existing environmental failure, `test_signed_playback_source_supports_range_and_frontend_cors`, requiring `OBJECT_STORE_ENDPOINT`; Ruff and mypy were clean. Nia recorded QA `PASS` and Zev `NO_ACTIONABLE_FINDINGS` on exact candidate `02981230c59c95f391335c1eeb78aa960f474b2e`. Coverage confirms denial paths never connect the broker, and unknown-ID request-join returns a non-disclosing 404 without echoing the ID and writes exactly one `denied` audit row. Deliberate privacy change: an unknown ID now returns 404 instead of 409 to prevent existence probing; the owner's 409 for a non-queued meeting is unchanged. The full backend suite remains blocked during collection by missing `app.transcription.processing_pipeline`.
 
 ### T-16: GREEN — enforce resource-owner checks on existing and new routes
 
