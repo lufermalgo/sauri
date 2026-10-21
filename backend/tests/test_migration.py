@@ -38,10 +38,10 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
+from sqlalchemy import event, text
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import text
-from sqlalchemy.engine import Connection, make_url
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.engine import Connection, Engine, make_url
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from alembic import command
@@ -383,6 +383,134 @@ async def test_speaker_receipt_upgrade_records_full_revision_id(
         assert len(recorded_revision) == 39
         assert version_width == 39
         assert receipts_table_exists
+    finally:
+        await admin_connection.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1",
+            database_name,
+        )
+        await admin_connection.execute(f'DROP DATABASE IF EXISTS "{database_name}"')
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_speaker_receipt_upgrade_failure_rolls_back_width(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A receipt-table collision rolls back the preceding version-column widening."""
+    admin_url = os.environ.get("SAURI_MIGRATION_TEST_ADMIN_URL")
+    if not admin_url:
+        pytest.skip("requires an isolated PostgreSQL admin URL in SAURI_MIGRATION_TEST_ADMIN_URL")
+
+    parsed_url = make_url(admin_url)
+    database_name = f"sauri_migration_qa_{uuid4().hex}"
+    connect_args: dict[str, str | int] = {
+        "user": parsed_url.username or "",
+        "database": parsed_url.database or "postgres",
+    }
+    if parsed_url.password is not None:
+        connect_args["password"] = parsed_url.password
+    if parsed_url.host is not None:
+        connect_args["host"] = parsed_url.host
+    if parsed_url.port is not None:
+        connect_args["port"] = parsed_url.port
+
+    admin_connection = await asyncpg.connect(**connect_args)
+    statements: list[str] = []
+
+    def record_migration_statement(
+        connection: Connection,
+        cursor: object,
+        statement: str,
+        parameters: object,
+        context: object,
+        executemany: bool,
+    ) -> None:
+        if connection.engine.url.database == database_name:
+            statements.append(" ".join(statement.split()).upper())
+
+    try:
+        await admin_connection.execute(f'CREATE DATABASE "{database_name}"')
+        test_url = parsed_url.set(database=database_name).render_as_string(hide_password=False)
+        monkeypatch.setenv("DATABASE_URL", test_url)
+        config = Config(str(MIGRATIONS_DIR.parents[1] / "alembic.ini"))
+        await asyncio.to_thread(command.upgrade, config, AGGREGATE_REVISION)
+
+        async with (
+            asyncpg.create_pool(**(connect_args | {"database": database_name})) as pool,
+            pool.acquire() as connection,
+        ):
+            await connection.execute(
+                "CREATE TABLE speaker_review_idempotency_receipts "
+                "(fixture_marker TEXT NOT NULL)"
+            )
+            await connection.execute(
+                "INSERT INTO speaker_review_idempotency_receipts (fixture_marker) "
+                "VALUES ('synthetic-collision-preserved')"
+            )
+
+        event.listen(Engine, "before_cursor_execute", record_migration_statement)
+        try:
+            with pytest.raises(DBAPIError) as migration_error:
+                await asyncio.to_thread(
+                    command.upgrade, config, SPEAKER_REVIEW_RECEIPTS_REVISION
+                )
+        finally:
+            event.remove(Engine, "before_cursor_execute", record_migration_statement)
+
+        assert "speaker_review_idempotency_receipts" in str(migration_error.value)
+        async with (
+            asyncpg.create_pool(**(connect_args | {"database": database_name})) as pool,
+            pool.acquire() as connection,
+        ):
+            recorded_revision = await connection.fetchval(
+                "SELECT version_num FROM alembic_version"
+            )
+            version_width = await connection.fetchval(
+                "SELECT character_maximum_length FROM information_schema.columns "
+                "WHERE table_name = 'alembic_version' AND column_name = 'version_num'"
+            )
+            collision_columns = await connection.fetch(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'speaker_review_idempotency_receipts' "
+                "ORDER BY ordinal_position"
+            )
+            collision_rows = await connection.fetch(
+                "SELECT fixture_marker FROM speaker_review_idempotency_receipts"
+            )
+
+        alteration_index = next(
+            (
+                index
+                for index, statement in enumerate(statements)
+                if "ALTER TABLE ALEMBIC_VERSION" in statement
+                and "ALTER COLUMN VERSION_NUM TYPE VARCHAR(39)" in statement
+            ),
+            None,
+        )
+        collision_index = next(
+            (
+                index
+                for index, statement in enumerate(statements)
+                if "CREATE TABLE SPEAKER_REVIEW_IDEMPOTENCY_RECEIPTS" in statement
+            ),
+            None,
+        )
+
+        assert recorded_revision == AGGREGATE_REVISION
+        assert version_width == 32
+        assert [row["column_name"] for row in collision_columns] == ["fixture_marker"]
+        assert [row["fixture_marker"] for row in collision_rows] == [
+            "synthetic-collision-preserved"
+        ]
+        assert alteration_index is not None, (
+            "expected the migration's alembic_version widening DDL; observed: "
+            f"{statements!r}"
+        )
+        assert collision_index is not None, (
+            "expected the migration's receipt-table CREATE DDL; observed: "
+            f"{statements!r}"
+        )
+        assert alteration_index < collision_index
     finally:
         await admin_connection.execute(
             "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1",
