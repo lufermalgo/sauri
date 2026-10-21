@@ -6,7 +6,7 @@
   "idea": "Synthetic PostgreSQL 16 upgrade from Alembic revision 008 to 009_speaker_review_idempotency_receipts fails because the 39-character revision ID exceeds alembic_version.version_num VARCHAR(32).",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
-    "tasks": "pending"
+    "design": "complete",
+    "tasks": "complete"
   }
 }
