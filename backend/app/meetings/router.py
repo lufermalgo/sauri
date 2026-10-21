@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,8 +90,8 @@ class RenameInput(BaseModel):
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_meeting(
-    input: dict[str, Any],
-    user: AuthenticatedUser = Depends(get_current_user),
+    meeting_data: Annotated[dict[str, Any], Body(title="Input")],
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Registers a new meeting in state 'queued'.
 
@@ -101,31 +101,30 @@ async def create_meeting(
     engine = create_engine()
     session_factory = create_session_factory(engine)
     try:
-        async with session_factory() as session:
-            async with session.begin():
-                meeting = await register_meeting(
-                    session=session,
-                    input=input,
-                    created_by=user.id,
-                )
-                return {
-                    "meeting_id": meeting.id,
-                    "process_state": meeting.process_state,
-                    "meet_link": meeting.meet_link,
-                    "origin": meeting.origin,
-                }
+        async with session_factory() as session, session.begin():
+            meeting = await register_meeting(
+                session=session,
+                input=meeting_data,
+                created_by=user.id,
+            )
+            return {
+                "meeting_id": meeting.id,
+                "process_state": meeting.process_state,
+                "meet_link": meeting.meet_link,
+                "origin": meeting.origin,
+            }
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
-        )
+        ) from exc
     finally:
         await engine.dispose()
 
 
 @router.get("/")
 async def list_meetings(
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> list[dict[str, Any]]:
     """Lists the authenticated user's meetings.
 
@@ -161,8 +160,8 @@ async def list_meetings(
 @router.patch("/{meeting_id}")
 async def rename_meeting_endpoint(
     meeting_id: str,
-    input: RenameInput,
-    user: AuthenticatedUser = Depends(get_current_user),
+    rename_input: RenameInput,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Renames a note (My_Notes -> rename).
 
@@ -171,17 +170,16 @@ async def rename_meeting_endpoint(
     engine = create_engine()
     session_factory = create_session_factory(engine)
     try:
-        async with session_factory() as session:
-            async with session.begin():
-                meeting = await session.get(Meeting, meeting_id)
-                if meeting is None or meeting.created_by != user.id:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Meeting not found: {meeting_id}",
-                    )
-                updated = await rename_meeting(session, meeting_id, input.title)
-                assert updated is not None
-                return {"meeting_id": updated.id, "title": updated.title}
+        async with session_factory() as session, session.begin():
+            meeting = await session.get(Meeting, meeting_id)
+            if meeting is None or meeting.created_by != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Meeting not found: {meeting_id}",
+                )
+            updated = await rename_meeting(session, meeting_id, rename_input.title)
+            assert updated is not None
+            return {"meeting_id": updated.id, "title": updated.title}
     finally:
         await engine.dispose()
 
@@ -189,7 +187,7 @@ async def rename_meeting_endpoint(
 @router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_meeting_endpoint(
     meeting_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> None:
     """Deletes a note and everything associated with it (My_Notes -> delete).
 
@@ -198,16 +196,15 @@ async def delete_meeting_endpoint(
     engine = create_engine()
     session_factory = create_session_factory(engine)
     try:
-        async with session_factory() as session:
-            async with session.begin():
-                meeting = await session.get(Meeting, meeting_id)
-                if meeting is None or meeting.created_by != user.id:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Meeting not found: {meeting_id}",
-                    )
-                object_store = _get_object_store()
-                await delete_meeting(session, object_store, meeting_id)
+        async with session_factory() as session, session.begin():
+            meeting = await session.get(Meeting, meeting_id)
+            if meeting is None or meeting.created_by != user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Meeting not found: {meeting_id}",
+                )
+            object_store = _get_object_store()
+            await delete_meeting(session, object_store, meeting_id)
     finally:
         await engine.dispose()
 
@@ -215,7 +212,7 @@ async def delete_meeting_endpoint(
 @router.get("/{meeting_id}")
 async def get_meeting_endpoint(
     meeting_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Looks up the current state of a meeting.
 
@@ -231,7 +228,7 @@ async def get_meeting_endpoint(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
-        )
+        ) from exc
     finally:
         await engine.dispose()
 
@@ -239,7 +236,7 @@ async def get_meeting_endpoint(
 @router.post("/{meeting_id}/request-join")
 async def request_join_endpoint(
     meeting_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Requests a manual join of the assistant to a queued meeting.
 
@@ -250,21 +247,20 @@ async def request_join_endpoint(
     session_factory = create_session_factory(engine)
     try:
         await queue.connect()
-        async with session_factory() as session:
-            async with session.begin():
-                result = await request_join(session, meeting_id, queue)
-                if not result.successful:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            f"Cannot request join: the meeting is in state "
-                            f"'{result.new_state}'"
-                        ),
-                    )
-                return {
-                    "meeting_id": meeting_id,
-                    "process_state": result.new_state,
-                }
+        async with session_factory() as session, session.begin():
+            result = await request_join(session, meeting_id, queue)
+            if not result.successful:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cannot request join: the meeting is in state "
+                        f"'{result.new_state}'"
+                    ),
+                )
+            return {
+                "meeting_id": meeting_id,
+                "process_state": result.new_state,
+            }
     finally:
         await queue.disconnect()
         await engine.dispose()
@@ -378,7 +374,7 @@ async def get_playback_manifest(
 @router.get("/{meeting_id}/transcript")
 async def get_transcript(
     meeting_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Gets the full transcript of a meeting.
 
@@ -442,7 +438,7 @@ async def get_transcript(
 @router.get("/{meeting_id}/diarization")
 async def get_diarization(
     meeting_id: str,
-    user: AuthenticatedUser = Depends(get_current_user),
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Gets the Diarization (speakers + assignments) of a meeting.
 
