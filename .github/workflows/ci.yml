@@ -15,7 +15,7 @@
 #   backend mypy        -> #228  (type baseline debt on main: 26 errors in 7 files)
 #   backend pytest      -> #248  (collection error: app.transcription.processing_pipeline)
 #                          #407, #491, #492, #493 (Alembic 009 lineage and width guards)
-#                          #250, #241 (revision-scoped speaker-review routes)
+#                          #249, #250, #241 (speaker-review PUT schema and routes)
 #                          live MinIO playback integration test (needs a disposable
 #                          object-store environment; test implemented by closed #309)
 #                          Hypothesis deadline flakes in property tests (e.g. the
