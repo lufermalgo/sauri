@@ -10,6 +10,7 @@ from app.auth.schemas import AuthenticatedUser
 from app.auth.token import JWT_ALGORITHM, JWT_SECRET
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+_bearer_dependency = Depends(_bearer_scheme)
 
 _DEV_USER = AuthenticatedUser(
     id="dev-user-00000000",
@@ -35,7 +36,7 @@ def _bypass_active() -> bool:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = _bearer_dependency,
 ) -> AuthenticatedUser:
     """Extracts and validates the JWT token from the Authorization header.
 
@@ -59,12 +60,12 @@ async def get_current_user(
     token = credentials.credentials
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except JWTError:
+    except JWTError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
 
     sub: str | None = payload.get("sub")
     email: str | None = payload.get("email")

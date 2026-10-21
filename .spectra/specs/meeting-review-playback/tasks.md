@@ -46,7 +46,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-3: Add failing manifest and transcript ownership route tests
 
-**Tracking:** Issue #301 · Card `task_43a6ab934e754109`
+**Tracking:** Issue #301 · Card `task_43a6ab934e754109` · PR #476
 
 **Files:** `backend/tests/meetings/test_playback_manifest.py`; `backend/tests/meetings/test_transcript_turn_id.py`
 
@@ -60,7 +60,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-4: Implement authorized playback manifest and transcript ownership check
 
-**Tracking:** Issue #302 · Card `task_202c6580874741e6`
+**Tracking:** Task done · Issue #302 · Card `task_202c6580874741e6` · PR #481
 
 **Files:** `backend/app/meetings/` route/service/repository/schema modules; existing transcript route/service modules.
 
@@ -74,7 +74,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-5: Add failing API mapping and timed-passage contract tests
 
-**Tracking:** Issue #303 · Card `task_b51714b10bb6489e`
+**Tracking:** Task done · Issue #303 · Card `task_b51714b10bb6489e` · PR #484
 
 **Files:** Frontend API adapter tests for `frontend/src/api.ts`; transcript mapping tests in the existing frontend test structure.
 
@@ -160,7 +160,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-11: Verify signed-source range and CORS delivery contract
 
-**Tracking:** Issue #309 · Card `task_0cfb4d4d978e4d7e`
+**Tracking:** Task done · Issue #309 · Card `task_0cfb4d4d978e4d7e` · PR #485
 
 **Files:** `backend/tests/meetings/test_playback_storage_integration.py`.
 
