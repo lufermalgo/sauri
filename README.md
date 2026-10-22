@@ -27,7 +27,7 @@ It's an in-house solution built incrementally, module by module.
 - **Chrome extension**: TypeScript / MV3 / React (Vite + CRXJS)
 - **Frontend web**: TypeScript / React (Vite)
 - **Local ASR engine**: faster-whisper (own container)
-- **Infrastructure**: Docker Compose (PostgreSQL, MinIO, RabbitMQ, ASR engine)
+- **Infrastructure**: Docker Compose (PostgreSQL, MinIO, RabbitMQ, ASR and diarization engines)
 
 ## Local development
 
@@ -38,6 +38,17 @@ It's an in-house solution built incrementally, module by module.
 - Python >= 3.11
 
 ### Start the backend
+
+The diarization engine needs a Hugging Face token. Store it outside the repository at
+`~/.config/sauri/hf_token`, then load it into the host environment before starting Compose:
+
+```bash
+chmod 600 "$HOME/.config/sauri/hf_token"
+export HF_TOKEN="$(cat "$HOME/.config/sauri/hf_token")"
+```
+
+Then use `make up` below. The token is read into the environment without printing it; do not put its value in `.env`,
+`.env.example`, shell commands committed to the repository, or version control.
 
 ```bash
 make up        # Start the full Docker stack
