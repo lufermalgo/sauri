@@ -15,6 +15,12 @@ def test_makefile_exposes_native_engine_lifecycle_targets() -> None:
         assert f"{target}:" in makefile
 
 
+def test_native_diarization_install_pins_compatible_torch_pair() -> None:
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "'torch==2.8.0'" in makefile
+    assert "'torchaudio==2.8.0'" in makefile
+
+
 def test_manager_starts_reports_and_stops_exact_server_pids(tmp_path: Path) -> None:
     fake_python = tmp_path / "fake-python"
     fake_python.write_text(
