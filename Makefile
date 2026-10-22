@@ -29,7 +29,7 @@ engines-install:
 	mkdir -p "$(dir $(SAURI_NATIVE_VENV))"
 	$(NATIVE_PYTHON311) -m venv "$(SAURI_NATIVE_VENV)"
 	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install --upgrade pip
-	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install 'fastapi>=0.115' 'uvicorn[standard]>=0.30' 'pydantic>=2' 'boto3>=1.34' 'mlx-whisper' 'pyannote.audio==3.3.2'
+	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install 'fastapi>=0.115' 'uvicorn[standard]>=0.30' 'pydantic>=2' 'boto3>=1.34' 'mlx-whisper' 'torch==2.8.0' 'torchaudio==2.8.0' 'pyannote.audio==3.3.2'
 
 ## Iniciar/detener/consultar los servidores nativos; cada uno usa su PID exacto.
 engines-up:
