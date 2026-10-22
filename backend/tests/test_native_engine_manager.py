@@ -13,12 +13,27 @@ def test_makefile_exposes_native_engine_lifecycle_targets() -> None:
     makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     for target in ("engines-up", "engines-down", "engines-status", "engines-install"):
         assert f"{target}:" in makefile
+    assert "$(HOME)/.config/sauri/engine_token" in makefile
+    assert "secrets.token_urlsafe(32)" in makefile
 
 
 def test_native_diarization_install_pins_compatible_torch_pair() -> None:
     makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    assert "'torch==2.8.0'" in makefile
-    assert "'torchaudio==2.8.0'" in makefile
+    assert "'torch==2.5.1'" in makefile
+    assert "'torchaudio==2.5.1'" in makefile
+
+
+def test_native_engine_manager_binds_loopback_only() -> None:
+    manager = MANAGER.read_text(encoding="utf-8")
+    assert "--host 127.0.0.1" in manager
+    assert "--host 0.0.0.0" not in manager
+
+
+def test_worker_mounts_the_native_engine_token_read_only() -> None:
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    worker_config = compose.split("  worker:", maxsplit=1)[1].split("  # --- PostgreSQL ---", maxsplit=1)[0]
+    assert "SAURI_ENGINE_TOKEN_FILE=/run/secrets/sauri_engine_token" in worker_config
+    assert "/run/secrets/sauri_engine_token:ro" in worker_config
 
 
 def test_manager_starts_reports_and_stops_exact_server_pids(tmp_path: Path) -> None:
@@ -33,6 +48,9 @@ def test_manager_starts_reports_and_stops_exact_server_pids(tmp_path: Path) -> N
         encoding="utf-8",
     )
     fake_python.chmod(0o755)
+    token_file = tmp_path / ".config" / "sauri" / "engine_token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("synthetic-token", encoding="utf-8")
     env = {
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
         "HOME": str(tmp_path),

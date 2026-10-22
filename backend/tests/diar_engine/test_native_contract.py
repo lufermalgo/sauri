@@ -38,7 +38,7 @@ class FakeAnnotation:
 
 @pytest.mark.asyncio
 async def test_diarize_preserves_contract_and_cleans_temp_file(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     seen_paths: list[str] = []
 
@@ -46,13 +46,21 @@ async def test_diarize_preserves_contract_and_cleans_temp_file(
         seen_paths.append(path)
         return FakeAnnotation()
 
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "s3_client", FakeS3())
     monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
     monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
 
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/diarize", json={"audio_ref": "synthetic/recording.wav"})
+        response = await client.post(
+            "/diarize",
+            json={"audio_ref": "synthetic/recording.wav"},
+            headers={"Authorization": "Bearer synthetic-token"},
+        )
 
     assert response.status_code == 200
     assert response.json() == {
@@ -60,6 +68,47 @@ async def test_diarize_preserves_contract_and_cleans_temp_file(
         "num_speakers": 1,
     }
     assert seen_paths and not Path(seen_paths[0]).exists()
+
+
+@pytest.mark.asyncio
+async def test_diarize_requires_engine_bearer_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        missing = await client.post("/diarize", json={"audio_ref": "recordings/a.wav"})
+        invalid = await client.post(
+            "/diarize",
+            json={"audio_ref": "recordings/a.wav"},
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+    assert missing.status_code == 401
+    assert invalid.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "audio_ref",
+    ["other/private.wav", "recordings/../private.wav", "recordings//private.wav", "recordings\\\\private.wav"],
+)
+@pytest.mark.asyncio
+async def test_diarize_rejects_audio_refs_outside_configured_prefix(
+    audio_ref: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/diarize",
+            json={"audio_ref": audio_ref},
+            headers={"Authorization": "Bearer synthetic-token"},
+        )
+    assert response.status_code == 400
 
 
 def test_native_defaults_configure_mps_and_private_token_path() -> None:

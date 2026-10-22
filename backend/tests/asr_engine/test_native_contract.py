@@ -27,7 +27,7 @@ class FakeS3:
 
 @pytest.mark.asyncio
 async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     observed_path: list[str] = []
 
@@ -43,6 +43,10 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
             ],
         }
 
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "s3_client", FakeS3())
     monkeypatch.setattr(native, "transcribe_audio", transcribe)
     monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
@@ -50,7 +54,9 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/transcribe", json={"audio_ref": "synthetic/recording.wav", "language": "es-CO"}
+            "/transcribe",
+            json={"audio_ref": "synthetic/recording.wav", "language": "es-CO"},
+            headers={"Authorization": "Bearer synthetic-token"},
         )
 
     assert response.status_code == 200
@@ -62,11 +68,60 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
 
 
 @pytest.mark.asyncio
-async def test_transcribe_returns_503_until_model_is_initialized(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_transcribe_requires_engine_bearer_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        missing = await client.post("/transcribe", json={"audio_ref": "recordings/a.wav"})
+        invalid = await client.post(
+            "/transcribe",
+            json={"audio_ref": "recordings/a.wav"},
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+    assert missing.status_code == 401
+    assert invalid.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "audio_ref",
+    ["other/private.wav", "recordings/../private.wav", "recordings//private.wav", "recordings\\\\private.wav"],
+)
+@pytest.mark.asyncio
+async def test_transcribe_rejects_audio_refs_outside_configured_prefix(
+    audio_ref: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/transcribe",
+            json={"audio_ref": audio_ref},
+            headers={"Authorization": "Bearer synthetic-token"},
+        )
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_transcribe_returns_503_until_model_is_initialized(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "transcribe_audio", None)
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/transcribe", json={"audio_ref": "synthetic.wav"})
+        response = await client.post(
+            "/transcribe",
+            json={"audio_ref": "synthetic/file.wav"},
+            headers={"Authorization": "Bearer synthetic-token"},
+        )
     assert response.status_code == 503
 
 
