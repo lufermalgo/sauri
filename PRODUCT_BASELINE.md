@@ -1,6 +1,6 @@
 # Sauri Product Baseline
 
-> **Status: APPROVED — Fer approved the product content of this exact snapshot on 2026-10-16: commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`).** The earlier content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
+> **Status: DRAFT — this amendment preserves the product content approved by Fer on 2026-10-16 at commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`) and incorporates the separately approved scope change described in §9. Fer must approve this exact amended snapshot before it becomes APPROVED.** The earlier content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
 
 ## 1. Product purpose
 
@@ -29,7 +29,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 - **Honest attribution:** show a known speaker's name when recognized; use `Speaker N` when the voice is unknown or attribution is uncertain. Do not imply an uncertain match is confirmed.
 - **Human correction matters:** incomplete speaker review remains pending and is requested again when the user returns. A user's speaker-name/identity associations are that user's own preferences/data; corrections may inform later recognition for that same user, not other users. Do not infer cross-user sharing of labels, names, or voice data.
 - **Keep related content distinct:** notes are associated with a recording but kept in a section separate from the transcript. Summaries are also presented as a distinct meeting artifact.
-- **Do not let visual references invent scope:** screenshots are inspiration only. Their values, labels, layout, and controls are not product commitments unless separately confirmed below.
+- **Do not let visual references invent scope:** screenshots are inspiration only. Their values, labels, layout, and controls are not product commitments unless separately confirmed below. The meeting-portal composition and behaviors explicitly stated in §4.C are confirmed product scope, not merely visual inspiration.
 
 ## 4. Product journeys
 
@@ -52,11 +52,11 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 
 ### C. Find and revisit a recording in the web portal
 
-1. The user finds a prior recording in a web-based Sauri library. The list is ordered newest first and supports search, filtering, and sorting. Filter fields are derived from available metadata; no arbitrary filter catalogue is prescribed.
-2. The user selects a session, can rename or delete it, and can download its video and transcript.
+1. The user finds a prior recording in a web-based Sauri library. The list is ordered newest first and supports search, filtering, and sorting. Filter fields are derived from available metadata; no arbitrary filter catalogue is prescribed. Full-text search across meetings is not in scope.
+2. The user selects a session, can rename or delete it, and can download its video and transcript. When capture stops or the Google Meet session ends, Sauri opens that meeting's portal view automatically.
 3. The user can edit company, project, and participant metadata, and use predefined tags (examples given: GenAI, Digital Twin, Automatización) or create tags.
-4. The meeting view provides a media player with ordinary playback controls, including seek, speed, quality/resolution, pause, volume, and mute. During playback, the corresponding transcript text is highlighted. Selecting a transcript paragraph/fragment and activating its associated control starts playback from the linked time. The exact control, time format, and video-specific behavior are for design.
-5. The meeting view provides a summary that the user can copy or download. Its intended content identifies the main topic, key arguments/points, and organizes them clearly. Notes remain separate from the transcript.
+4. The meeting portal places the media player above the transcript. The player has ordinary playback controls, including seek, speed, quality/resolution, pause, volume, and mute. The transcript presents each turn with a timestamp, colored speaker label, and text. During playback, the corresponding transcript passage is highlighted and the transcript follows playback by scrolling to it; selecting a passage starts playback at its linked time. Speaker names can be edited from the transcript, subject to the existing per-user identity boundary. This changes speaker attribution only; manual transcript-text editing is excluded. The precise control, timestamp format, colors, and video-specific behavior are for design.
+5. A side panel separates meeting content into tabs, including Chat and Notes/Summary. Notes and summaries remain distinct artifacts and separate from the transcript; the summary can be copied or downloaded and identifies the main topic and key arguments/points in a clear structure. Chat with the recording and speaker talk-time insights are Phase 2, not part of the initial portal capability. Other tab names or content are not specified by this baseline.
 
 ## 5. Capability catalogue and scope state
 
@@ -71,14 +71,17 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 | Recording-associated notes, separate from transcript | Recorder adds context for later review | Confirmed intent | Note format/editing and access when indicator is hidden remain open/design work |
 | Recording storage, transcription, and automatic speaker identification | Recorder can review the captured meeting and who spoke | Confirmed intent | Transcription/diarization technology and quality thresholds are not chosen here |
 | Speaker review, `Speaker N` for unknown/uncertain voices, and same-user future effect of corrections | Recorder resolves attribution and improves future recognition for that same user | Confirmed intent | Cross-user sharing of speaker labels, names, and voice data is not implied; future multi-user implementation must preserve per-user isolation. Permissions and technical recognition mechanism remain unresolved |
-| Web recording library with search, newest-first ordering, metadata-derived filters, session selection | User finds recordings later | Confirmed intent | Search semantics and filter catalogue are for design; do not infer full-text transcript search |
+| Web recording library with search, newest-first ordering, metadata-derived filters, session selection | User finds recordings later | Confirmed intent | Search semantics and filter catalogue are for design; full-text search across meetings is excluded |
 | Rename/delete/download recording video and transcript | User manages and takes away a session's artifacts | Confirmed intent | Retention, deletion guarantees, and export formats are not specified |
 | Editable company, project, participant metadata; predefined and user-created tags | User organizes recordings | Confirmed intent | Tag governance and extra fields are not specified |
-| Meeting playback with transcript time synchronization and jump-from-fragment | User reviews media and transcript together | Confirmed intent | Control, time representation, and video-specific behavior are for design |
+| Meeting portal with player above a timestamped, speaker-colored transcript; passage seeking, playback-following scroll, and editable speaker names | User reviews media and transcript together and corrects speaker attribution | Confirmed intent | Speaker identity remains per-user. Editing speaker names does not authorize editing transcript text; control, timestamp representation, colors, and video-specific behavior are for design |
 | Structured meeting summary with copy/download | User retrieves key content quickly | Confirmed intent | No accuracy threshold, generation method, or fixed layout selected |
 | User-defined, editable summary templates and a selectable default; templates may be grouped by category with multiple templates per category | User shapes summary output | Confirmed intent | Sharing/default-selection rules remain open. “General > Resumen básico” is only a proposal, not an approved default/template |
-| Manual transcript correction with saved changes | User repairs errors caused by audio/noise issues | Deferred / not yet approved | User described this as ideal; editing rules and history are unresolved |
-| Exact portal layout and processing-progress states | User understands and navigates the product | Open for design | Described layout and progress screenshots are inspiration, not approved UI or states |
+| Manual transcript-text correction with saved changes | User repairs errors caused by audio/noise issues | Explicitly excluded from current scope | Editing speaker names is in scope; editing transcript wording is not |
+| Automatic opening of the meeting portal when recording stops or the Google Meet session ends | User arrives at the recording for review without manually navigating to it | Confirmed intent | Exact trigger handling when both events occur and browser behavior remain for design |
+| Chat with the recording | User interacts with chat in the context of a meeting recording | Phase 2 | Not part of the initial portal capability; interaction boundaries remain to be specified |
+| Speaker talk-time insights | User reviews how speaking time is distributed among speakers | Phase 2 | Presentation and calculation details remain to be specified |
+| Other side-panel tab names/content and processing-progress states | User understands and navigates the product | Open for design | The portal composition and Chat / Notes-Summary tabs are confirmed; unspecified additional tabs and progress states are not commitments |
 | CRM integration / CRM AI | Future commercial intelligence flow | Explicitly deferred; out of current scope | Revisit only after capture, transcription, and diarization stabilize. CRM AI is not part of Sauri; no fields, integration, or mechanism are agreed |
 
 ## 6. Product constraints and non-goals
@@ -100,6 +103,8 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 - Treating the six-person example as a maximum or assuming all automatic speaker matches will be correct.
 - Treating existing source code, old roadmaps, or tests as product approval or evidence of deployment.
 - Sharing speaker labels, names, or voice data between users, or using them for global voice modeling, is not authorized by this baseline clarification.
+- Full-text search across meetings, manual transcript-text editing, and sentiment analysis are outside the approved scope.
+- Chat with a recording and speaker talk-time insights are Phase 2; they are not part of the initial portal capability.
 
 ## 7. Open and deferred decisions
 
@@ -111,9 +116,9 @@ These are not questions already answered by the user; they are the remaining bou
 4. **Capture design:** exact selector composition and options, and the result of clicking record/note again after closing the selector without a selection.
 5. **Notes interaction:** how to access notes from the floating control when that indicator is hidden; note format and editing are also unspecified.
 6. **Processing experience:** user-visible states, feedback, timing, and results before the recording/transcript are ready.
-7. **Transcript editing:** whether to promote the desired manual edits to approved scope, and what edit/history behavior should be.
+7. **Transcript editing:** manual transcript-text editing is explicitly outside the approved scope. Any reconsideration requires a new product decision; speaker-name corrections remain distinct and are in scope.
 8. **Playback details:** exact transcript-to-time control and representation, including video-specific behavior.
-9. **Portal details:** exact layout and controls. The user's imagined left recording list / central video and summary / right transcript is future UI inspiration, not a fixed layout requirement.
+9. **Portal details:** the approved composition is a player above the transcript, with side-panel tabs including Chat and Notes/Summary. Exact control details, timestamp format, colors, and the names/content of any additional tabs remain for design; no unlisted tabs or capabilities are implied.
 10. **Privacy and data governance:** consent workflow, retention, deletion guarantees, and access policy require explicit definition before their behavior is specified. Meeting media, transcripts, speaker identity data, and participant details are sensitive.
 11. **CRM:** whether and how a future transfer/integration should work remains deferred until the product is stable; there are no agreed fields or mechanisms.
 
@@ -123,7 +128,8 @@ These are outcome signals for later measurement, not committed targets or accept
 
 - Users can locate a saved meeting and reopen its video and transcript.
 - Users can identify and correct speaker labels, and later recordings for that same user can reuse those corrections.
-- Users can navigate between transcript passages and corresponding media time.
+- Users can navigate between transcript passages and corresponding media time, and follow the active passage during playback.
+- Users reach the meeting portal automatically when recording stops or the Google Meet session ends.
 - Users can add and later distinguish meeting notes, transcript, and summary.
 - Users can retrieve a meeting summary and download the relevant recording artifacts.
 
@@ -133,4 +139,4 @@ Numerical targets, measurement windows, and representative-user acceptance evide
 
 This baseline was prepared from `PRODUCT_DISCOVERY.md`, especially §§1–6 and the chronological clarifications in §7. The 2026-10-16 owner clarification, relayed by Teo in `th_24d098a54e5c4187`, narrows the earlier speaker-correction wording: Speaker N can be reviewed/named per recording; saved name/identity associations are that user's data/preferences and may assist recognition in later recordings for that same user only; there is no implied sharing of labels, names, or voice data with other users. Future per-user isolation is intended; multi-user rollout and Google authentication are separate work. This does not authorize global voice modeling. Other clarifications remain: `Speaker N` for unknown/uncertain voices; hiding the indicator means no in-recording controls are required and capture ends by stopping Chrome tab sharing; notes are separate from the transcript and attached to the recording; CRM and its AI agent remain outside current scope.
 
-Fer approved the product content of this exact snapshot on 2026-10-16: commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`). This approval covers the product content only and is not implementation authorization. The previous product content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. The discovery record preserves examples, references, and distinctions in greater detail. Other open and deferred decisions remain unresolved and outside approved scope. Product acceptance and runtime delivery are separate gates.
+Fer approved the product content of the prior snapshot on 2026-10-16: commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`). On 2026-10-22, Fer authorized the portal and Phase 2 scope amendment recorded in this draft in task `task_a08baf81140a4073`; this does not mean this exact amended document has been approved. Fer must approve this exact snapshot before its status changes to APPROVED. The earlier product content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. The discovery record preserves examples, references, and distinctions in greater detail. Other open and deferred decisions remain unresolved and outside approved scope. Product acceptance and runtime delivery are separate gates.
