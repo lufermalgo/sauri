@@ -20,7 +20,8 @@ services:
       - MINIO_ROOT_PASSWORD=minioadmin
       - QUEUE_BROKER_URL=amqp://guest:guest@rabbitmq:5672/
       - ASR_PROVIDER=${ASR_PROVIDER:-local}
-      - ASR_LOCAL_URL=http://asr-engine:8001
+      - ASR_LOCAL_URL=${ASR_LOCAL_URL:-http://host.docker.internal:8001}
+      - DIARIZATION_LOCAL_URL=${DIARIZATION_LOCAL_URL:-http://host.docker.internal:8002}
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
@@ -49,7 +50,8 @@ services:
       - MINIO_ROOT_PASSWORD=minioadmin
       - QUEUE_BROKER_URL=amqp://guest:guest@rabbitmq:5672/
       - ASR_PROVIDER=${ASR_PROVIDER:-local}
-      - ASR_LOCAL_URL=http://asr-engine:8001
+      - ASR_LOCAL_URL=${ASR_LOCAL_URL:-http://host.docker.internal:8001}
+      - DIARIZATION_LOCAL_URL=${DIARIZATION_LOCAL_URL:-http://host.docker.internal:8002}
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
       - SPEAKER_EXCERPT_ACTIVE_KEY_ID=${SPEAKER_EXCERPT_ACTIVE_KEY_ID:?Set a managed excerpt encryption key ID}
@@ -93,33 +95,6 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
-    networks:
-      - sauri-net
-
-  # --- ASR Engine (faster-whisper, contenedor propio) ---
-  asr-engine:
-    build:
-      context: ./backend/asr-engine
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8001"
-    depends_on:
-      - minio
-    environment:
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-      - MINIO_BUCKET=sauri-recordings
-      - ASR_MODEL=${ASR_MODEL:-base}
-      - ASR_COMPUTE_TYPE=${ASR_COMPUTE_TYPE:-int8}
-    # En macOS no hay GPU nativa; descomentar en Linux con NVIDIA GPU:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
     networks:
       - sauri-net
 
