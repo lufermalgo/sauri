@@ -38,10 +38,14 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-m", "app.worker"]
     depends_on:
-      - postgres
-      - minio
-      - rabbitmq
-      - diar-engine
+      postgres:
+        condition: service_started
+      minio:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      diar-engine:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
       - OBJECT_STORE_ENDPOINT=http://minio:9000
@@ -95,6 +99,12 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - sauri-net
 
