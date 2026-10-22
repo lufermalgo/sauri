@@ -91,6 +91,10 @@ Processing idempotency is keyed by `(recording_id, processing_revision_id, stage
 
 ## Components and Interfaces
 
+### Engine deployment boundary
+
+The ASR and diarization provider interfaces remain the HTTP boundary used by the backend worker; this design does not require either engine to run in a Docker container. For Fer's owner-authorized Mac feasibility spike, only the API, worker, PostgreSQL, MinIO, and RabbitMQ run in Compose. Candidate MLX/Metal ASR and pyannote/PyTorch MPS engines run natively on the Mac host and are reached by the worker through `ASR_LOCAL_URL` and `DIARIZATION_LOCAL_URL` (using `host.docker.internal` from Compose). Keep the existing HTTP request/response contracts unchanged so a later NVIDIA/Linux host can provide the same providers. This is a local experiment boundary, not production deployment approval; no native engine HTTP adapter or Compose service is supplied by this design.
+
 ### Backend processing and domain service
 
 - Extend the existing transcription/diarization coordination boundary rather than coupling the review service directly to a particular ASR/diarization provider.

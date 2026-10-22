@@ -58,15 +58,19 @@ repository does not provide native MLX, whisper.cpp, or MPS HTTP adapters. Compo
 alone therefore does not make native inference runnable or demonstrate API/worker integration.
 
 Compare MLX `whisper-large-v3-turbo` with whisper.cpp `large-v3-turbo-q5_0` for ASR, and evaluate
-pyannote 3.1 with PyTorch MPS for diarization. Use only the same recording Fer explicitly authorized
-for this experiment and existing local model/token caches; do not copy or expose model files,
-tokens, or recording data. Record hardware, OS, runtime/library and model versions, clip duration,
-initialization/cold-start and processing times, processing time per audio hour, observed transcript
-and speaker-label quality, and whether inference actually ran on Metal/MPS without CPU fallback.
-Report installation footprint only if it can be measured without downloading or replacing cached
-artifacts. Feasibility success means a repeatable native accelerated run and complete evidence for
-both candidates; do not invent speed/quality thresholds or infer production readiness. No Compose
-services are started by documentation validation.
+pyannote 3.1 with PyTorch MPS for diarization. Reuse the existing shared caches: MLX and Hugging Face
+models (including pyannote) under `~/.cache/huggingface`, and the whisper.cpp GGML turbo model under
+`~/.apx/v2/models`. Download any genuinely missing model only once into its shared cache; never place
+model-sized files in this repository or copy existing model files. A repository-local `models/`
+directory is not a cache and must not be used for this experiment. Use only the same recording Fer
+explicitly authorized for this experiment; do not expose tokens, model files, or recording data.
+Record hardware, OS, runtime/library and model versions, clip duration, initialization/cold-start and
+processing times, processing time per audio hour, observed transcript and speaker-label quality, and
+whether inference actually ran on Metal/MPS without CPU fallback. Report installation footprint only
+if it can be measured without downloading or replacing cached artifacts. Feasibility success means a
+repeatable native accelerated run and complete evidence for both candidates; do not invent
+speed/quality thresholds or infer production readiness. No Compose services are started by
+documentation validation.
 
 ### Chrome extension
 
