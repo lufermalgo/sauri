@@ -31,7 +31,7 @@ engines-install:
 	chmod 600 "$(HOME)/.config/sauri/engine_token"
 	$(NATIVE_PYTHON311) -m venv "$(SAURI_NATIVE_VENV)"
 	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install --upgrade pip
-	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install 'fastapi>=0.115' 'uvicorn[standard]>=0.30' 'pydantic>=2' 'boto3>=1.34' 'mlx-whisper' 'torch==2.5.1' 'torchaudio==2.5.1' 'pyannote.audio==3.3.2' 'huggingface_hub==0.24.7'
+	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install 'fastapi>=0.115' 'uvicorn[standard]>=0.30' 'pydantic>=2' 'boto3>=1.34' 'mlx-whisper' 'torch==2.5.1' 'torchaudio==2.5.1' 'pyannote.audio==3.3.2' 'huggingface_hub==0.24.7' 'matplotlib==3.9.2'
 
 ## Iniciar/detener/consultar los servidores nativos; cada uno usa su PID exacto.
 engines-up:

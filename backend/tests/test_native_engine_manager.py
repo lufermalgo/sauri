@@ -32,6 +32,15 @@ def test_diarization_pins_huggingface_hub_compatible_with_pyannote() -> None:
     assert "huggingface_hub==0.24.7" in requirements
 
 
+def test_diarization_installs_matplotlib_runtime_dependency() -> None:
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    requirements = (REPO_ROOT / "backend" / "diar-engine" / "requirements.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "'matplotlib==3.9.2'" in makefile
+    assert "matplotlib==3.9.2" in requirements
+
+
 def test_native_engine_manager_binds_loopback_only() -> None:
     manager = MANAGER.read_text(encoding="utf-8")
     assert "--host 127.0.0.1" in manager
