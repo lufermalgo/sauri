@@ -570,7 +570,7 @@ def test_head_ancestry_contains_both_009_branches_and_008() -> None:
 
     ancestry = {
         revision.revision
-        for revision in script.iterate_revisions(heads[0], AGGREGATE_REVISION)
+        for revision in script.iterate_revisions(heads[0], "base")
     }
     assert {
         RECORDING_MEDIA_REVISION,
@@ -590,8 +590,8 @@ def test_each_009_state_has_a_structural_forward_path_through_sibling_to_head() 
         (SPEAKER_REVIEW_RECEIPTS_REVISION, RECORDING_MEDIA_REVISION),
     ):
         planned = {
-            revision.revision
-            for revision in script.iterate_revisions(head, current_revision)
+            step.revision.revision
+            for step in script._upgrade_revs(head, current_revision)
         }
         assert head in planned, f"upgrade from {current_revision} must reach reconciliation head"
         assert sibling_revision in planned, (
