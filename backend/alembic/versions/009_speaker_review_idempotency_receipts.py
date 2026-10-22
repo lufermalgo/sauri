@@ -17,12 +17,13 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.alter_column(
-        "alembic_version",
-        "version_num",
-        existing_type=sa.String(length=32),
-        type_=sa.String(length=39),
-    )
+    if op.get_context().dialect.name == "postgresql":
+        op.alter_column(
+            "alembic_version",
+            "version_num",
+            existing_type=sa.String(length=32),
+            type_=sa.String(length=39),
+        )
     op.create_table(
         "speaker_review_idempotency_receipts",
         sa.Column("id", sa.String(36), primary_key=True),
