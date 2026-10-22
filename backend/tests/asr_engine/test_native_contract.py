@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -14,6 +14,7 @@ MODULE_PATH = Path(__file__).resolve().parents[2] / "asr-engine" / "native_main.
 MODULE_SPEC = importlib.util.spec_from_file_location("native_asr_engine", MODULE_PATH)
 assert MODULE_SPEC is not None and MODULE_SPEC.loader is not None
 native = importlib.util.module_from_spec(MODULE_SPEC)
+sys.modules[MODULE_SPEC.name] = native
 MODULE_SPEC.loader.exec_module(native)
 
 
@@ -61,8 +62,8 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
 
 
 @pytest.mark.asyncio
-async def test_transcribe_returns_503_until_model_is_initialized() -> None:
-    native.transcribe_audio = None
+async def test_transcribe_returns_503_until_model_is_initialized(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native, "transcribe_audio", None)
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/transcribe", json={"audio_ref": "synthetic.wav"})
@@ -73,3 +74,12 @@ def test_native_defaults_use_host_minio_and_expected_model() -> None:
     assert native.MINIO_ENDPOINT == "http://localhost:9000"
     assert native.MODEL_ID == "mlx-community/whisper-large-v3-turbo"
     assert native.MODEL_DEVICE == "mlx"
+
+
+@pytest.mark.asyncio
+async def test_health_reports_ok() -> None:
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

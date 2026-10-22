@@ -2,7 +2,10 @@
 # sauri - Makefile para desarrollo local
 # =============================================================================
 
-.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english
+.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english engines-install engines-up engines-down engines-status
+
+SAURI_NATIVE_VENV ?= $(HOME)/.local/share/sauri/native-engines/venv
+NATIVE_PYTHON311 ?= python3.11
 
 ## Instalar los git hooks compartidos (bloquean commit/push directo a main).
 ## Se ejecuta automáticamente con `npm install` en la raíz (script "prepare"),
@@ -20,6 +23,23 @@ worktree:
 worktree-rm:
 	@test -n "$(BRANCH)" || (echo "Uso: make worktree-rm BRANCH=feature/issue-12-desc" && exit 1)
 	_tools/remove-worktree.sh $(BRANCH)
+
+## Instalar motores nativos en un venv fuera del repositorio (MLX + pyannote/MPS).
+engines-install:
+	mkdir -p "$(dir $(SAURI_NATIVE_VENV))"
+	$(NATIVE_PYTHON311) -m venv "$(SAURI_NATIVE_VENV)"
+	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install --upgrade pip
+	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install 'fastapi>=0.115' 'uvicorn[standard]>=0.30' 'pydantic>=2' 'boto3>=1.34' 'mlx-whisper' 'pyannote.audio==3.3.2'
+
+## Iniciar/detener/consultar los servidores nativos; cada uno usa su PID exacto.
+engines-up:
+	SAURI_NATIVE_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash _tools/native-engines.sh start all
+
+engines-down:
+	SAURI_NATIVE_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash _tools/native-engines.sh stop all
+
+engines-status:
+	SAURI_NATIVE_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash _tools/native-engines.sh status all
 
 ## Escanear todo el repo en busca de identificadores en español (Language_Regression_Check).
 ## Ver AGENTS.md para las reglas de idioma del código.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ MODULE_PATH = Path(__file__).resolve().parents[2] / "diar-engine" / "native_main
 MODULE_SPEC = importlib.util.spec_from_file_location("native_diar_engine", MODULE_PATH)
 assert MODULE_SPEC is not None and MODULE_SPEC.loader is not None
 native = importlib.util.module_from_spec(MODULE_SPEC)
+sys.modules[MODULE_SPEC.name] = native
 MODULE_SPEC.loader.exec_module(native)
 
 
@@ -64,4 +66,13 @@ def test_native_defaults_configure_mps_and_private_token_path() -> None:
     assert native.MINIO_ENDPOINT == "http://localhost:9000"
     assert native.MODEL_ID == "pyannote/speaker-diarization-3.1"
     assert native.MODEL_DEVICE == "mps"
-    assert native.HF_TOKEN_PATH == Path.home() / ".config" / "sauri" / "hf_token"
+    assert Path.home() / ".config" / "sauri" / "hf_token" == native.HF_TOKEN_PATH
+
+
+@pytest.mark.asyncio
+async def test_health_reports_ok() -> None:
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
