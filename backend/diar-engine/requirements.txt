@@ -5,5 +5,17 @@ uvicorn[standard]==0.30.6
 pydantic==2.9.2
 boto3==1.35.0
 
-# Real speaker diarization engine (pulls in torch/torchaudio transitively).
+# Keep torch and torchaudio on matching CPU wheels. pyannote.audio 3.3.2
+# requires torchaudio.AudioMetaData and legacy torch.load checkpoint behavior.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1
+torchaudio==2.5.1
+
+# pyannote.audio 3.3.2 still passes the legacy use_auth_token argument.
+huggingface_hub<1.0.0
+
+# pyannote.audio 3.3.2 imports matplotlib during pipeline startup.
+matplotlib>=3.7.0
+
+# Real speaker diarization engine.
 pyannote.audio==3.3.2
