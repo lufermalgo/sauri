@@ -206,6 +206,7 @@ Specs live in `.spectra/specs/[slug]/` with `.config.spectra` (`specType`: featu
 | Brisa | Architect | `design.md` |
 | Mira | Spec auditor | verdict `APPROVED` / `REVISE` / `NEEDS USER INPUT` per artifact snapshot |
 | Imre | Developer | one issue per worktree, RED → GREEN → REFACTOR, PR |
+| Ilan | Developer (second lane) | one issue per worktree, RED → GREEN → REFACTOR, PR |
 | Nia | QA | `PASS` / `FAIL` / `BLOCKED` on an exact commit |
 | Zev | Security | `NO_ACTIONABLE_FINDINGS` / `FINDINGS` / `BLOCKED` on an exact commit |
 
