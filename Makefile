@@ -26,7 +26,7 @@ worktree-rm:
 check-english:
 	python3 _tools/check_english_only.py $$(git ls-files 'backend/**' 'extension/src/**' 'frontend/src/**' 'packages/shared-types/**')
 
-## Levantar el stack completo (API, worker, PostgreSQL, MinIO, RabbitMQ, ASR engine)
+## Levantar API, worker, PostgreSQL, MinIO y RabbitMQ; motores locales corren fuera de Compose
 up:
 	docker compose up -d
 

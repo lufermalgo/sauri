@@ -4,6 +4,24 @@
 - **Checkout revisado:** `feature/agent-context-policy-cleanup` · commit `828494497d5b4e24821eee615df04b440e9e372f`
 - **Alcance:** código fuente, configuración y cableado de backend y frontend web. No se ejecutaron la aplicación ni las pruebas.
 
+## Actualización: spike de motores nativos en Mac (2026-10-22)
+
+En el checkout de este spike se verificó un host arm64 Apple M3 y que `whisper-cli 1.9.2 --version`
+inicializa backend Metal. Esto no demuestra inferencia. Existe una caché MLX de
+`mlx-community/whisper-large-v3-turbo` (snapshot `a4aaeec…`); no se inspeccionó su contenido. No se
+encontró un modelo whisper.cpp en las ubicaciones comunes revisadas. Los Python locales inspeccionados
+no tienen MLX, `mlx-whisper`, torch ni pyannote; tampoco se encontró caché pyannote en el Hub por
+defecto. No se instalaron paquetes, no se midió su tamaño, no se ejecutó MPS ni se inició Compose.
+
+El Compose de este spike mantiene API, worker, PostgreSQL, MinIO y RabbitMQ; sus URLs locales apuntan
+a procesos del host vía `host.docker.internal` (ASR 8001, diarización 8002). No se verificó que los
+motores nativos dispongan de servidores HTTP compatibles con `/transcribe` y `/diarize`, ni se probó
+la integración. En consecuencia, la configuración es un punto de conexión esperado, no evidencia de
+que el pipeline se ejecute. Para completar el spike hacen falta el clip autorizado disponible en el
+entorno del dueño, las dependencias/cachés ya instaladas, endpoints compatibles ejecutándose en el
+host y evidencia de MPS/Metal real. No copiar tokens, modelos ni datos de audio/transcripción al
+repositorio o logs.
+
 ## Evaluación ejecutiva
 
 El repositorio contiene un **prototipo técnico/MVP en desarrollo**, con una base de backend sustancial y una interfaz web mínima. Hay rutas, persistencia, colas y workers implementados en código; esto no demuestra que el flujo integrado funcione en un entorno desplegado. La web solo cubre registro/listado de reuniones y consulta de transcripciones. No hay evidencia aquí de aceptación del producto ni de preparación para producción.
