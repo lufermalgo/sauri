@@ -26,10 +26,12 @@ worktree-rm:
 
 ## Instalar motores nativos en un venv fuera del repositorio (MLX + pyannote/MPS).
 engines-install:
-	mkdir -p "$(dir $(SAURI_NATIVE_VENV))"
+	mkdir -p "$(dir $(SAURI_NATIVE_VENV))" "$(HOME)/.config/sauri"
+	@if [ ! -s "$(HOME)/.config/sauri/engine_token" ]; then umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$(HOME)/.config/sauri/engine_token"; fi
+	chmod 600 "$(HOME)/.config/sauri/engine_token"
 	$(NATIVE_PYTHON311) -m venv "$(SAURI_NATIVE_VENV)"
 	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install --upgrade pip
-	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install 'fastapi>=0.115' 'uvicorn[standard]>=0.30' 'pydantic>=2' 'boto3>=1.34' 'mlx-whisper' 'torch==2.8.0' 'torchaudio==2.8.0' 'pyannote.audio==3.3.2'
+	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install 'fastapi>=0.115' 'uvicorn[standard]>=0.30' 'pydantic>=2' 'boto3>=1.34' 'mlx-whisper' 'torch==2.5.1' 'torchaudio==2.5.1' 'pyannote.audio==3.3.2'
 
 ## Iniciar/detener/consultar los servidores nativos; cada uno usa su PID exacto.
 engines-up:

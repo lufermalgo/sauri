@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import tempfile
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -11,7 +12,8 @@ from typing import Any
 
 import boto3
 from botocore.config import Config
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 logger = logging.getLogger("asr-engine-native")
@@ -21,8 +23,14 @@ MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://localhost:9000")
 MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "minioadmin")
 MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "sauri-recordings")
+MINIO_AUDIO_PREFIX = os.environ.get("MINIO_AUDIO_PREFIX", "recordings/")
+ENGINE_TOKEN_PATH = Path(
+    os.environ.get("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config" / "sauri" / "engine_token")
+)
 MODEL_ID = os.environ.get("ASR_MODEL", "mlx-community/whisper-large-v3-turbo")
 MODEL_DEVICE = "mlx"
+_bearer_scheme = HTTPBearer(auto_error=False)
+_bearer_dependency = Depends(_bearer_scheme)
 
 transcribe_audio: Any = None
 s3_client: Any = None
@@ -70,6 +78,33 @@ class TranscribeResponse(BaseModel):
     language: str
 
 
+def _require_engine_token(
+    credentials: HTTPAuthorizationCredentials | None = _bearer_dependency,
+) -> None:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        expected = ENGINE_TOKEN_PATH.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Engine authentication unavailable") from exc
+    if not expected:
+        raise HTTPException(status_code=503, detail="Engine authentication unavailable")
+    if not secrets.compare_digest(credentials.credentials, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _validate_audio_ref(audio_ref: str) -> None:
+    parts = audio_ref.split("/")
+    if (
+        not MINIO_AUDIO_PREFIX.endswith("/")
+        or not audio_ref.startswith(MINIO_AUDIO_PREFIX)
+        or audio_ref.startswith("/")
+        or "\\" in audio_ref
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
+        raise HTTPException(status_code=400, detail="Invalid audio reference")
+
+
 def _download_audio(audio_ref: str) -> str:
     if s3_client is None:
         raise RuntimeError("Object store is not initialized")
@@ -91,7 +126,10 @@ def _language_code(language: str) -> str | None:
 
 
 @app.post("/transcribe", response_model=TranscribeResponse)
-async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
+async def transcribe(
+    request: TranscribeRequest, _authorized: None = Depends(_require_engine_token)
+) -> TranscribeResponse:
+    _validate_audio_ref(request.audio_ref)
     if transcribe_audio is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     try:

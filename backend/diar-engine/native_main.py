@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import tempfile
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -11,7 +12,8 @@ from typing import Any
 
 import boto3
 from botocore.config import Config
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 logger = logging.getLogger("diar-engine-native")
@@ -21,9 +23,15 @@ MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://localhost:9000")
 MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "minioadmin")
 MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "sauri-recordings")
+MINIO_AUDIO_PREFIX = os.environ.get("MINIO_AUDIO_PREFIX", "recordings/")
+ENGINE_TOKEN_PATH = Path(
+    os.environ.get("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config" / "sauri" / "engine_token")
+)
 MODEL_ID = os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
 MODEL_DEVICE = os.environ.get("DIARIZATION_DEVICE", "mps")
 HF_TOKEN_PATH = Path(os.environ.get("HF_TOKEN_PATH", Path.home() / ".config" / "sauri" / "hf_token"))
+_bearer_scheme = HTTPBearer(auto_error=False)
+_bearer_dependency = Depends(_bearer_scheme)
 
 diarization_pipeline: Any = None
 s3_client: Any = None
@@ -76,6 +84,33 @@ class DiarizeResponse(BaseModel):
     num_speakers: int
 
 
+def _require_engine_token(
+    credentials: HTTPAuthorizationCredentials | None = _bearer_dependency,
+) -> None:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        expected = ENGINE_TOKEN_PATH.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Engine authentication unavailable") from exc
+    if not expected:
+        raise HTTPException(status_code=503, detail="Engine authentication unavailable")
+    if not secrets.compare_digest(credentials.credentials, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _validate_audio_ref(audio_ref: str) -> None:
+    parts = audio_ref.split("/")
+    if (
+        not MINIO_AUDIO_PREFIX.endswith("/")
+        or not audio_ref.startswith(MINIO_AUDIO_PREFIX)
+        or audio_ref.startswith("/")
+        or "\\" in audio_ref
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
+        raise HTTPException(status_code=400, detail="Invalid audio reference")
+
+
 def _download_audio(audio_ref: str) -> str:
     if s3_client is None:
         raise RuntimeError("Object store is not initialized")
@@ -105,7 +140,10 @@ def _run_diarization(audio_path: str) -> list[Segment]:
 
 
 @app.post("/diarize", response_model=DiarizeResponse)
-async def diarize(request: DiarizeRequest) -> DiarizeResponse:
+async def diarize(
+    request: DiarizeRequest, _authorized: None = Depends(_require_engine_token)
+) -> DiarizeResponse:
+    _validate_audio_ref(request.audio_ref)
     if diarization_pipeline is None:
         raise HTTPException(status_code=503, detail="Diarization pipeline not loaded")
     try:

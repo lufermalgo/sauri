@@ -5,6 +5,7 @@ umask 077
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="${SAURI_NATIVE_ENGINE_STATE_DIR:-${HOME}/.local/state/sauri/native-engines}"
 ENGINE_PYTHON="${SAURI_NATIVE_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/venv/bin/python}"
+ENGINE_TOKEN_FILE="${HOME}/.config/sauri/engine_token"
 
 usage() {
   echo "Usage: $0 {start|stop|status} {asr|diar|all}" >&2
@@ -56,13 +57,17 @@ start_engine() {
     rm -f "$PID_FILE"
   fi
 
+  [[ -s "$ENGINE_TOKEN_FILE" ]] || {
+    echo "Native engine token missing: $ENGINE_TOKEN_FILE (run make engines-install)" >&2
+    return 1
+  }
   [[ -x "$ENGINE_PYTHON" ]] || {
     echo "Native engine Python not executable: $ENGINE_PYTHON (run make engines-install)" >&2
     return 1
   }
 
   nohup "$ENGINE_PYTHON" -m uvicorn native_main:app \
-    --app-dir "$ENGINE_APP_DIR" --host 0.0.0.0 --port "$ENGINE_PORT" \
+    --app-dir "$ENGINE_APP_DIR" --host 127.0.0.1 --port "$ENGINE_PORT" \
     >>"$LOG_FILE" 2>&1 </dev/null &
   local server_pid=$!
   printf '%s\n' "$server_pid" >"$PID_FILE"
