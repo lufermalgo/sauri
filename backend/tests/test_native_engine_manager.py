@@ -23,6 +23,15 @@ def test_native_diarization_install_pins_compatible_torch_pair() -> None:
     assert "'torchaudio==2.5.1'" in makefile
 
 
+def test_diarization_pins_huggingface_hub_compatible_with_pyannote() -> None:
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    requirements = (REPO_ROOT / "backend" / "diar-engine" / "requirements.txt").read_text(
+        encoding="utf-8"
+    )
+    assert "'huggingface_hub==0.24.7'" in makefile
+    assert "huggingface_hub==0.24.7" in requirements
+
+
 def test_native_engine_manager_binds_loopback_only() -> None:
     manager = MANAGER.read_text(encoding="utf-8")
     assert "--host 127.0.0.1" in manager

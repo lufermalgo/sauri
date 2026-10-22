@@ -7,3 +7,4 @@ boto3==1.35.0
 
 # Real speaker diarization engine (pulls in torch/torchaudio transitively).
 pyannote.audio==3.3.2
+huggingface_hub==0.24.7
