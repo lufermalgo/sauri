@@ -88,7 +88,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-6: Implement typed playback and transcript API mapping
 
-**Tracking:** Issue #304 · Card `task_8fb3bb8e18dc4583`
+**Tracking:** Task done · Issue #304 · Card `task_8fb3bb8e18dc4583` · PR #526
 
 **Files:** `frontend/src/api.ts` and its API type/test modules.
 
