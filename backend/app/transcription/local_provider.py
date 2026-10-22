@@ -7,6 +7,9 @@ Processes the audio recording without sending it to an external service
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import httpx
 
 from app.transcription.asr_engine import (
@@ -16,6 +19,17 @@ from app.transcription.asr_engine import (
     TranscriptionResult,
     TranscriptionSegment,
 )
+
+
+def _engine_auth_headers() -> dict[str, str]:
+    token_file = os.environ.get("SAURI_ENGINE_TOKEN_FILE")
+    if not token_file:
+        return {}
+    try:
+        token = Path(token_file).read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 class LocalProvider(ASREngine):
@@ -66,6 +80,7 @@ class LocalProvider(ASREngine):
             response = await client.post(
                 f"{self._url}/transcribe",
                 json=payload,
+                headers=_engine_auth_headers(),
                 timeout=300.0,  # Transcription can take several minutes
             )
             response.raise_for_status()

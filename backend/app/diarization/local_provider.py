@@ -9,6 +9,9 @@ Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import httpx
 
 from app.diarization.diarization_engine import (
@@ -18,6 +21,17 @@ from app.diarization.diarization_engine import (
     DiarizationResult,
     SpeakerSegment,
 )
+
+
+def _engine_auth_headers() -> dict[str, str]:
+    token_file = os.environ.get("SAURI_ENGINE_TOKEN_FILE")
+    if not token_file:
+        return {}
+    try:
+        token = Path(token_file).read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 class LocalProvider(DiarizationEngine):
@@ -68,6 +82,7 @@ class LocalProvider(DiarizationEngine):
             response = await client.post(
                 f"{self._url}/diarize",
                 json=payload,
+                headers=_engine_auth_headers(),
                 timeout=600.0,  # Diarization can take several minutes (Req. 3.1)
             )
             response.raise_for_status()
