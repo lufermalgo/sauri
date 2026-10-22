@@ -47,6 +47,27 @@ make logs      # View logs
 make migrate   # Run DB migrations
 ```
 
+### Native Mac GPU engine feasibility spike
+
+This is an owner-authorized, local feasibility experiment on an Apple M3 Mac, not a production
+configuration or rollout. Keep the API, worker, PostgreSQL, MinIO, and RabbitMQ in Docker; run
+candidate engines on the host and configure their URLs with `ASR_LOCAL_URL` and
+`DIARIZATION_LOCAL_URL` (the Compose defaults use `host.docker.internal`). The host processes must
+implement the existing Sauri HTTP contracts (`POST /transcribe` and `POST /diarize`); this
+repository does not provide native MLX, whisper.cpp, or MPS HTTP adapters. Compose configuration
+alone therefore does not make native inference runnable or demonstrate API/worker integration.
+
+Compare MLX `whisper-large-v3-turbo` with whisper.cpp `large-v3-turbo-q5_0` for ASR, and evaluate
+pyannote 3.1 with PyTorch MPS for diarization. Use only the same recording Fer explicitly authorized
+for this experiment and existing local model/token caches; do not copy or expose model files,
+tokens, or recording data. Record hardware, OS, runtime/library and model versions, clip duration,
+initialization/cold-start and processing times, processing time per audio hour, observed transcript
+and speaker-label quality, and whether inference actually ran on Metal/MPS without CPU fallback.
+Report installation footprint only if it can be measured without downloading or replacing cached
+artifacts. Feasibility success means a repeatable native accelerated run and complete evidence for
+both candidates; do not invent speed/quality thresholds or infer production readiness. No Compose
+services are started by documentation validation.
+
 ### Chrome extension
 
 ```bash
