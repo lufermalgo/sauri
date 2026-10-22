@@ -154,3 +154,33 @@ async def test_review_reload_does_not_expose_another_owners_review(
     )
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_non_sales_owner_cannot_read_speaker_review_and_denial_is_audited(
+    api_client: AsyncClient, api_db_url: str
+) -> None:
+    meeting_id, _ = await _persist_review(api_db_url)
+
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/speaker-review",
+        headers=_auth_header(OWNER_ID, is_sales=False),
+    )
+
+    assert response.status_code == 403
+    assert "items" not in response.json()
+
+    engine = create_async_engine(api_db_url, echo=False)
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with session_factory() as session:
+        result = await session.execute(
+            select(AccessLog).where(AccessLog.user_id == OWNER_ID)
+        )
+        records = result.scalars().all()
+    await engine.dispose()
+
+    assert len(records) == 1
+    assert records[0].result == "denied"
+    assert records[0].resource == (
+        f"GET /api/v1/meetings/{meeting_id}/speaker-review"
+    )
