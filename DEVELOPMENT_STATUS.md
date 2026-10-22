@@ -64,3 +64,78 @@ El repositorio contiene un **prototipo técnico/MVP en desarrollo**, con una bas
 5. Validar desde una configuración limpia: migraciones, pruebas backend y frontend, servicios Compose, integración completa y despliegue objetivo. Registrar comandos, versiones, resultados y limitaciones; no inferirlos de este inventario.
 
 **Implicación de seguridad y privacidad:** las reuniones incluyen medios y transcripciones sensibles; no usar este estado de fuente como autorización para desplegar o procesar datos reales sin verificar autenticación, propiedad, secretos, retención y configuración del entorno.
+
+---
+
+## Plan de entrega por fases y disposición del backlog — 2026-10-22 (v1)
+
+**Snapshot y autoridad.** Este plan ordena el trabajo según la instrucción de Fer del 2026-10-22 registrada en la tarjeta `task_57a01459db35401e`: P1, recorrido end-to-end en el Mac de Fer (captura desde Chrome; cierre de pestaña o Stop; motores nativos; portal web con transcripción y hablantes); P2, resúmenes y plantillas; P3, pulido del portal. No agrega criterios de producto, rendimiento ni calidad. Snapshot de repo: `origin/main` `e03c97cebb754bc3e6eb0b9bcdb1eafcf1e76bb6`; hechos de GitHub/APX consultados el 2026-10-22 alrededor de 15:03 UTC. Las recomendaciones “mantener”, “diferir” y “reconciliar” son propuestas de priorización, no cierres, cambios de alcance ni aceptación de producto.
+
+### Secuencia propuesta
+
+| Fase | Incluye / disposición | Compuerta de salida (sin umbral inventado) |
+|---|---|---|
+| P1 — recorrido end-to-end en Mac | Prioridad: cerrar primero los bloqueos de migración/Compose y autorización; completar captura/extensión, procesamiento, atribución/corrección y experiencia web de transcripción/reproducción. Mantener las pruebas de seguridad, QA y el ensayo Mac como gates, no como sustitutos de aceptación del producto. | En el Mac autorizado, recorrer la captura y el procesamiento, y revisar transcripción y hablantes en el portal; registrar evidencia reproducible y límites. No declarar aprobado hasta la revisión de Fer del resultado real. |
+| P2 — resumen y plantillas | Mantener el spec existente, sin adelantarlo por encima del recorrido P1. Preservar las tareas RED antes de GREEN y separar el trabajo habilitador de cualquier generación real bloqueada por decisiones de motor, datos o costo. | P1 probado; decisiones de propiedad/default/categoría de plantillas y proveedor/residencia/costo de generación resueltas por el dueño cuando afecten privacidad, costo o comportamiento. |
+| P3 — pulido del portal | No iniciar un rediseño amplio ni búsqueda/metadatos por inferencia. Continuar solo con elementos ya aprobados y especificados; cualquier alcance nuevo requiere baseline y spec aprobados. | Revisión del portal tras P1/P2 y priorización explícita del dueño para los detalles todavía abiertos. |
+
+### Inventario de specs en el checkout
+
+| Spec | Estado de artefactos en `origin/main` | Fase / recomendación |
+|---|---|---|
+| `extension-capture-preferences` | `requirements.md` existe; diseño y tareas pendientes. | P1, mantener como entrada de captura. Alinear el diseño con el cierre de pestaña **y** Stop pedido por Fer; no asumir que el cierre de la pestaña Meet equivale a detener el tab-sharing. |
+| `recording-speaker-review` | requirements/design/tasks; issues abiertos vinculados más abajo. | P1, mantener. Priorizar los gates de ownership, corrección e identidad per-user; ninguna política de voz o retención se amplía aquí. |
+| `meeting-review-playback` | requirements/design/tasks; issues abiertos vinculados más abajo. | P1, mantener para la revisión web/transcript/speaker playback y su prueba de navegador. |
+| `alembic-version-id-width` | bugfix/design/tasks completos en el repo; issues abiertos #490–#493. | P1, prerequisito técnico al flujo de persistencia; reconciliar la implementación con PR #531 antes de abrir trabajo redundante. |
+| `bugfix-migration-009-lineage` | bugfix/design/tasks y evidencia presentes; #407 sigue abierto. | Reconciliar contra PR #531; recomendar marcar el trabajo separado como obsoleto solo después de verificar el merge y que la cobertura del objetivo quedó absorbida. No cerrar issue/card aquí. |
+| `meeting-summaries-templates` | requirements/design/tasks; issues abiertos #269–#295 y #420. | P2, mantener en espera de P1 y de las decisiones pendientes identificadas en el spec (ownership/default/category y binding del proveedor donde corresponda). |
+| `recording-notes` | requirements/design, sin `tasks.md`. | Fuera de las tres fases tal como las fijó esta solicitud. Dejar aparcado, no borrarlo: el baseline vigente incluye notas, pero esta orden no las prioriza; Fer debe decidir si quedan dentro o fuera del plan. |
+| `recording-library-metadata` | requirements solamente; design/tasks pendientes. | Aparcar fuera del plan de producto inmediato. Mantener solo lo que sea prerequisite demostrado del portal; búsqueda, tags y metadata no se introducen por inferencia. Solicitar decisión antes de reactivarlo. |
+| `fix-backend-lint-type-baseline` | bugfix/design/tasks; varias issues/PRs abiertos. | Mantenimiento paralelo no bloqueante cuando no compita por archivos ni cupo de publicación. No adelantarlo sobre P1 ni confundirlo con valor de producto. |
+
+### PRs abiertos observados
+
+`gh pr list --state open --base main` devolvió **7 PRs**, todos no-draft y `CLEAN` en la consulta. El límite operativo pedido es 3; no hay capacidad de publicación nueva hasta que Fer resuelva el exceso. No cierro ni recomiendo cerrar un PR sin su aprobación. Orden sugerido para revisión humana según dependencia de P1, no instrucción de merge: #531 (migración que bloquea el arranque limpio), #530 (Compose/diarización), #527 (control de acceso de revisión), #526 (adaptador playback/transcript), #513 (imagen MinIO); #528 requiere aprobar su snapshot exacto antes de tratar su baseline como incorporado; #525 es lint de mantenimiento y puede esperar.
+
+| PR | Head (abreviado) | Alcance visto | Disposición propuesta |
+|---|---|---|---|
+| #531 | `34fb0d2` | Converge migración de recibos; `Closes #493`. | Mantener y revisar/mergear como prerequisito P1; no duplicar #407. |
+| #530 | `ca79103` | Cablea servicio diarización en Compose para prueba local. | Mantener y revisar/mergear para preparar P1; tratar #529 como issue rastreador, no duplicar configuración. |
+| #528 | `f31c143` | Enmienda de baseline portal; el card `task_a08baf81140a4073` reporta que espera aprobación de Fer del snapshot exacto. | Esperar esa decisión; no afirmar que el baseline de portal ya se incorporó ni cerrar el card. |
+| #527 | `29df0e7` | Autorización/auditoría de acceso al speaker review; #524. | Gate de seguridad P1; mantener para revisión humana. |
+| #526 | `db61f5d` | Frontend playback/transcript; #304. | Mantener en P1; validar contra los issues RED y E2E pendientes. |
+| #525 | `fbc280b` | Limpieza de lint para #349. | Mantenimiento; diferir publicación mientras excede el límite. |
+| #513 | `67cc231` | Corrige imagen Compose para #512. | Mantener como prerequisito operativo; revisar para merge cuando Fer libere capacidad. |
+
+### Disposición de todos los issues abiertos de GitHub
+
+La consulta de `gh issue list --state open --limit 200` devolvió **108** issues. Se listan todos por grupo de milestone; cada número es trazable a su issue en `lufermalgo/sauri`. Los issues de tareas Spectra conservan además su card en el `tasks.md` de la spec cuando allí aparece el enlace. “Reconciliar” significa comparar evidencia y solicitar a Fer la resolución del duplicado; no se cerró nada.
+
+| Grupo / issues abiertos (todos) | Disposición propuesta |
+|---|---|
+| P1 / captura, revisión y playback: #532, #529, #524, #504, #502, #501, #500, #493, #492, #491, #490, #411, #407, #308, #307, #304, #253, #252, #250, #249, #248, #246, #241, #240, #237 | Mantener y ordenar por dependencias P1; #532 es spike/config, no implementación de producto; #407 reconciliar después de #531; #411/#524/#504 y #253 son seguridad/aislamiento obligatorios antes de usar datos reales; #500–#502 son habilitadores de prueba. |
+| P2 / summaries-templates: #420, #295, #294, #293, #292, #291, #290, #289, #288, #287, #286, #285, #284, #283, #282, #281, #280, #279, #278, #277, #276, #275, #274, #273, #270, #269 | Mantener en el milestone P2, no adelantar a P1. Resolver gates de plantilla/proveedor antes de ejecutar tareas dependientes; mantener RED→GREEN. #420 se trata como habilitador P2 salvo que el diseño confirme prerequisito anterior. |
+| Portal/biblioteca fuera de fases aprobadas: #227, #226, #225, #224, #223, #222, #221, #220, #219, #218, #217, #216, #215, #214, #212, #211, #210, #209, #208, #207, #206, #205, #204, #203, #202, #201, #200, #199, #198, #197, #196, #195, #194, #193, #192, #191, #189, #188 | Aparcar; no ejecutar búsqueda, tags, filtros ni metadata como parte de P3 sin confirmar scope. No cerrar: mapear qué capacidades son prerequisites reales de reabrir una grabación y solicitar decisión del dueño sobre el resto. |
+| Mantenimiento/backend lint: #522, #360, #354, #350, #349, #348, #346, #343, #339, #337, #266, #265, #262, #228 | Mantener en carril de mantenimiento, tras no afectar seguridad/estabilidad P1 y sujeto al cupo. #522 es flakiness de test, no criterio de producto; evitar publicación concurrente sobre los mismos archivos. |
+| Políticas/documentación/infra no funcional: #518, #515, #512, #505, #498 | Mantener donde habiliten el trabajo (image/config, validación o control del límite); publicar de a uno y solo tras recuperar cupo. #505 aporta verificación, no reemplaza prueba Mac. |
+| Bugfix de linaje migration 009: #407 | Ya aparece en el grupo P1; reconciliar contra #531, no duplicar; mantener abierto hasta que Fer autorice el cierre de cualquier issue obsoleto. |
+
+**Control de cobertura:** conteos por milestone: speaker-review 10; biblioteca 38; sin milestone 9; alembic-version-id-width 4; migration-009-lineage 1; lint 14; playback 6; summaries-templates 26; total 108. #407 aparece deliberadamente citado también en la nota de reconciliación, pero solo cuenta una vez en el total y en el grupo P1.
+
+### Board APX, ejecución paralela y cuello de publicación
+
+La consulta de `task_list(state=open, limit=200)` mostró las 35 tarjetas recientes individualmente y agrupó otras 82 en un resumen (backlog 66, review 11, todo 5); la herramienta no expone paginación ni devolvió los 82 IDs/títulos/estados, por lo que no se puede certificar desde esta consulta una lista individual exhaustiva de todas las tarjetas. No inferí que un issue abierto equivalga a un card abierto. Tarjetas actuales verificadas individualmente incluyen `task_57a01459db35401e` (este plan), `task_0cf1633eb39f4813` (#532 spike, con Imre), `task_a08baf81140a4073` (baseline #528, espera confirmación de Fer), `task_8fb3bb8e18dc4583` (#304 playback), `task_16c458c020924ae0` (#493), `task_573e2dced5d642e8` (plan migration), `task_63a4b48b4fad4f1f` (#513) y `task_3783b01e7ee246a0` (cola de publicación). Los otros IDs de tareas aprobadas quedan trazados en los `tasks.md` bajo las specs arriba; Ansel debe resolver el inventario de tarjetas agregadas antes de archivar o cerrar cards. No se cerró ni se reasignó ningún otro card.
+
+**Capacidad recomendada:** dos developers en paralelo tras liberar slots, con worktrees aislados: (A) frontend playback/transcript/E2E (`frontend/`, sin compartir archivos con el backend); (B) backend pipeline/speaker-review y sus tests, serializando tareas que toquen el mismo módulo/tabla/migración. El trabajo de Compose/Mac (`docker-compose.yml`, `.env.example`, `README.md`, `Makefile`) forma un tercer carril solo cuando no colisione con #530 y la documentación actual. No asignar desarrolladores a editar un mismo archivo compartido simultáneamente. Mientras haya 7 PRs abiertos frente al máximo 3, el número de **nuevas publicaciones permitidas es 0**; pueden avanzar únicamente tareas ya autorizadas y sin interferir con firmas/PRs existentes. El throttle se revisa antes de cada PR.
+
+### Decisiones que requieren a Fer (no resueltas por este plan)
+
+1. Qué evento exacto es “tab close”: cierre de la pestaña Meet, fin del tab-sharing/captura, o cualquiera; definir precedencia frente a Stop y evitar dos procesamientos del mismo recording.
+2. Selección/criterio de los motores nativos de ASR y diarización, referencia válida para evaluar transcript/speaker quality, clip autorizado y cualquier límite de costo/tiempo. El issue #532 y su card son spike, no resultado ni threshold aprobado.
+3. Aprobación del snapshot exacto de #528 y su incorporación antes de tratar los cambios del portal como baseline vigente (el card seguía esperando respuesta en la consulta).
+4. Ownership/default/category de plantillas y proveedor/ubicación/costo de resumen antes de tareas que generen contenido real.
+5. Confirmar si notas y biblioteca/metadatos/search quedan en backlog futuro, se priorizan dentro de P3 o se retiran; no cerrar issues sin esa decisión.
+6. Condiciones de acceso a datos, consentimiento, retención/borrado y credenciales/token del motor en la prueba Mac. El plan no autoriza copiar audio/transcripts/tokens a Git/APX; usar solo el medio sintético o autorizado según el gate aprobado.
+7. La cuenta de PR abiertos está en 7, por encima del límite 3. Fer debe decidir qué PRs revisar/mergear y cuándo; no cerrar PR ni issue para “hacer espacio”.
+
+**Resumen de disposición:** mantener P1 como prioridad; reservar P2 y aparcar P3 adicional hasta cumplir sus gates; mantener mantenimiento en carril no bloqueante; reconciliar duplicados (sobre todo #407/#531); dejar biblioteca/notas sin decisión, no declararlas obsoletas; y pedir la aprobación del snapshot #528 donde ya está registrada. Este documento es un ordenamiento de trabajo, no un nuevo baseline, requisito, diseño, aceptación de producto ni autorización para iniciar comportamiento fuera de las specs aprobadas.
