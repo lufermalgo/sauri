@@ -153,9 +153,9 @@ describe("TranscriptView — speaker review", () => {
     loadReview().mockResolvedValue(review());
     const { unmount } = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
     expect(await screen.findByText("Speaker 1")).toBeDefined();
-    expect(screen.getByRole("button", { name: /confirm/i })).toBeDefined();
-    expect(screen.getByRole("button", { name: /name/i })).toBeDefined();
-    expect(screen.getByRole("button", { name: /correct/i })).toBeDefined();
+    expect((await screen.findAllByRole("button", { name: /confirm/i })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("button", { name: /name/i })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("button", { name: /correct/i })).length).toBeGreaterThan(0);
     unmount();
 
     loadTranscript();
@@ -183,7 +183,13 @@ describe("TranscriptView — speaker review", () => {
       review().items[1],
     ] }));
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: new RegExp(action, "i") }));
+    await screen.findByText("Speaker 1");
+    if (action !== "Confirm") {
+      fireEvent.change(screen.getByRole("textbox", { name: /name for speaker 1/i }), {
+        target: { value: "Ana" },
+      });
+    }
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${action} Speaker 1$`, "i") }));
     await waitFor(() => expect(update).toHaveBeenCalledWith("r-1", "revision-1", "speaker-1", request));
     expect(screen.getByText("Known Speaker")).toBeDefined();
   });
@@ -200,9 +206,9 @@ describe("TranscriptView — speaker review", () => {
     expect(load).toHaveBeenCalledTimes(2);
 
     submit().mockRejectedValue(new Error("Request failed"));
-    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Request failed");
-    expect(screen.getByRole("button", { name: /confirm/i })).toBeDefined();
+    fireEvent.click(screen.getAllByRole("button", { name: /confirm/i })[0]);
+    expect((await screen.findByRole("alert")).textContent).toContain("Request failed");
+    expect(screen.getAllByRole("button", { name: /confirm/i })[0]).toBeDefined();
   });
 
   it("exposes review actions as keyboard-operable native buttons", async () => {

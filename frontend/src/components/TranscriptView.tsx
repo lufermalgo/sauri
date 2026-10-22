@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from "react";
 import type { Transcript, SpeechTurn } from "@sauri/shared-types";
-import { getTranscript } from "../api";
+import {
+  getSpeakerReview,
+  getTranscript,
+  playSpeakerExcerpt,
+  submitSpeakerDisposition,
+} from "../api";
+import type { SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -16,11 +22,19 @@ function formatTimestamp(ms: number): string {
 
 export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [data, setData] = useState<(Transcript & { turns: SpeechTurn[] }) | null>(null);
+  const [review, setReview] = useState<SpeakerReview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [submittingSpeakerId, setSubmittingSpeakerId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setReviewError(null);
+    setReview(null);
 
     getTranscript(meetingId)
       .then((result) => {
@@ -33,8 +47,60 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         if (!cancelled) setLoading(false);
       });
 
+    Promise.resolve()
+      .then(() => getSpeakerReview(meetingId))
+      .then((result) => {
+        if (!cancelled) setReview(result);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setReviewError(err instanceof Error ? err.message : "Failed to load speaker review");
+        }
+      });
+
     return () => { cancelled = true; };
   }, [meetingId]);
+
+  async function recordDisposition(
+    speakerId: string,
+    disposition: SpeakerDisposition,
+    label?: string
+  ) {
+    if (!review) return;
+    const item = review.items.find((candidate) => candidate.speakerId === speakerId);
+    if (!item) return;
+    const request: SpeakerDispositionRequest = {
+      disposition,
+      expectedVersion: item.expectedVersion,
+      ...(label === undefined ? {} : { label }),
+    };
+
+    setSubmittingSpeakerId(speakerId);
+    setReviewError(null);
+    try {
+      const updatedReview = await submitSpeakerDisposition(
+        meetingId,
+        review.revisionId,
+        speakerId,
+        request
+      );
+      setReview(updatedReview);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Failed to save speaker review");
+    } finally {
+      setSubmittingSpeakerId(null);
+    }
+  }
+
+  async function playExcerpt(speakerId: string) {
+    if (!review) return;
+    setReviewError(null);
+    try {
+      await playSpeakerExcerpt(meetingId, review.revisionId, speakerId);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Failed to play speaker excerpt");
+    }
+  }
 
   if (loading) return <p>Loading transcript...</p>;
   if (error) return <p role="alert" style={{ color: "red" }}>{error}</p>;
@@ -61,6 +127,68 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
             </li>
           ))}
         </ol>
+      )}
+      {reviewError && <p role="alert" style={{ color: "red" }}>{reviewError}</p>}
+      {review && (
+        <section aria-labelledby="speaker-review-heading">
+          <h3 id="speaker-review-heading">Speaker review</h3>
+          <p role="status">Review {review.status}</p>
+          {review.items.map((item, index) => {
+            const label = item.attributionState === "uncertain"
+              ? item.currentLabel || `Speaker ${index + 1}`
+              : item.currentLabel;
+            const busy = submittingSpeakerId === item.speakerId;
+            return (
+              <article key={item.speakerId}>
+                <h4>{label}</h4>
+                <button
+                  type="button"
+                  onClick={() => void playExcerpt(item.speakerId)}
+                  disabled={busy}
+                >
+                  Play excerpt for {label}
+                </button>
+                {item.disposition === null && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => void recordDisposition(item.speakerId, "confirmed")}
+                      disabled={busy}
+                    >
+                      Confirm {label}
+                    </button>
+                    <label>
+                      Name for {label}
+                      <input
+                        type="text"
+                        value={names[item.speakerId] ?? ""}
+                        onChange={(event) => setNames((current) => ({
+                          ...current,
+                          [item.speakerId]: event.target.value,
+                        }))}
+                        disabled={busy}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void recordDisposition(item.speakerId, "named", names[item.speakerId]?.trim())}
+                      disabled={busy || !names[item.speakerId]?.trim()}
+                    >
+                      Name {label}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void recordDisposition(item.speakerId, "corrected", names[item.speakerId]?.trim())}
+                      disabled={busy || !names[item.speakerId]?.trim()}
+                    >
+                      Correct {label}
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </section>
       )}
     </section>
   );
