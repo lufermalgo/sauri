@@ -7,17 +7,20 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
-from app.infra.models import Meeting, SpeakerReview, SpeakerReviewItem
+from app.infra.models import AccessLog, Meeting, SpeakerReview, SpeakerReviewItem
 
 OWNER_ID = "resume-owner"
 OTHER_OWNER_ID = "resume-other-owner"
 
 
-def _auth_header(owner_id: str = OWNER_ID) -> dict[str, str]:
-    token = create_token(owner_id, f"{owner_id}@sauri.local", "Synthetic Reviewer", True)
+def _auth_header(owner_id: str = OWNER_ID, is_sales: bool = True) -> dict[str, str]:
+    token = create_token(
+        owner_id, f"{owner_id}@sauri.local", "Synthetic Reviewer", is_sales
+    )
     return {"Authorization": f"Bearer {token}"}
 
 
