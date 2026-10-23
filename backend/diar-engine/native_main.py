@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import shutil
+import subprocess
 import tempfile
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -24,6 +26,7 @@ MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "minioadmin")
 MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "sauri-recordings")
 MINIO_AUDIO_PREFIX = os.environ.get("MINIO_AUDIO_PREFIX", "recordings/")
+FFMPEG_TIMEOUT_SECONDS = 60
 ENGINE_TOKEN_PATH = Path(
     os.environ.get("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config" / "sauri" / "engine_token")
 )
@@ -125,6 +128,41 @@ def _download_audio(audio_ref: str) -> str:
     return audio_path
 
 
+def _convert_to_wav(audio_path: str) -> str:
+    """Decode downloaded audio into a temporary 16 kHz mono PCM WAV."""
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg is not installed; cannot decode audio to WAV")
+
+    wav_path = audio_path + ".wav"
+    try:
+        subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                audio_path,
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                wav_path,
+            ],
+            check=True,
+            capture_output=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        with suppress(OSError):
+            os.unlink(wav_path)
+        raise RuntimeError(f"Audio conversion failed ({type(exc).__name__})") from exc
+    return wav_path
+
+
 def _run_diarization(audio_path: str) -> list[Segment]:
     if diarization_pipeline is None:
         raise RuntimeError("Diarization pipeline not loaded")
@@ -152,17 +190,26 @@ async def diarize(
         logger.error("Audio download failed")
         raise HTTPException(status_code=500, detail="Audio download failed") from exc
     try:
-        segments = _run_diarization(audio_path)
+        wav_path = _convert_to_wav(audio_path)
+    except Exception as exc:
+        logger.error("Audio conversion failed (%s)", type(exc).__name__)
+        with suppress(OSError):
+            os.unlink(audio_path)
+        raise HTTPException(status_code=500, detail="Audio conversion failed") from exc
+    try:
+        segments = _run_diarization(wav_path)
         return DiarizeResponse(
             segments=segments,
             num_speakers=len({segment.speaker for segment in segments}),
         )
     except Exception as exc:
-        logger.error("Diarization failed")
+        logger.error("Diarization failed (%s)", type(exc).__name__)
         raise HTTPException(status_code=500, detail="Diarization failed") from exc
     finally:
         with suppress(OSError):
             os.unlink(audio_path)
+        with suppress(OSError):
+            os.unlink(wav_path)
 
 
 @app.get("/health")
