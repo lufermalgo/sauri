@@ -25,6 +25,8 @@ T-1 and T-3 are independent test-first tasks and may proceed concurrently in sep
 
 **Dependencies:** None.
 
+**Tracking:** Issue #577 · Card task_70925b412489433a
+
 ## Phase 2: API Login Operation (GREEN)
 
 ### T-2: Implement login through the existing frontend HTTP boundary
@@ -38,6 +40,8 @@ T-1 and T-3 are independent test-first tasks and may proceed concurrently in sep
 **Validation command:** `npm run test -- src/api.test.ts && npm run typecheck` from `frontend/`.
 
 **Dependencies:** T-1 (mandatory RED-before-GREEN).
+
+**Tracking:** Issue #578 · Card task_ae03ab50ef5848e4
 
 ## Phase 3: Speaker-Test Session UI Tests (RED)
 
@@ -53,6 +57,8 @@ T-1 and T-3 are independent test-first tasks and may proceed concurrently in sep
 
 **Dependencies:** None. This test-writing task is independent of T-1; its mocks may target the designed login API boundary.
 
+**Tracking:** Issue #579 · Card task_0aee40b04cd64702
+
 ## Phase 4: Speaker-Test Login and Gate (GREEN)
 
 ### T-4: Implement the local login flow only around the speaker-test view
@@ -66,6 +72,8 @@ T-1 and T-3 are independent test-first tasks and may proceed concurrently in sep
 **Validation command:** `npm run test && npm run typecheck && npm run build` from `frontend/`.
 
 **Dependencies:** T-2 (the API login operation must exist) and T-3 (mandatory RED-before-GREEN UI coverage).
+
+**Tracking:** Issue #580 · Card task_deca27537fae469a
 
 ## Dependency Graph and Gates
 
