@@ -19,7 +19,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-1: RED — Specify authenticated multipart upload and measured duration
 
-**Files / test seam:** `frontend/src/api.test.ts` (existing API test module); `frontend/src/api.ts` upload adapter; `frontend/src/components/SpeakerRecognitionTestScreen.tsx` media-metadata/upload behavior.
+**Files / test seam:** `frontend/src/api.test.ts` (existing API test module) for `POST /api/v1/ingestion/upload`; upload adapter in `frontend/src/api.ts`; media-metadata/upload behavior in `frontend/src/components/SpeakerRecognitionTestScreen.tsx`.
 
 **Action:** Add failing tests for the existing `audio` and JSON-serialized `data` multipart fields, authorization header, absence of a manually set `Content-Type`, browser-generated multipart boundary, stable `meeting_id` and `idempotency_key` on retry, truthful `web_upload` and `video_presence`, and omission of `meet_link`/`title`. Cover finite browser media duration rounded up with `Math.ceil`, object-URL revocation, and no request when duration is unavailable; do not use a fabricated fallback. Use synthetic media metadata only.
 
@@ -33,6 +33,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 **Action:** Implement the tested FormData request through the existing API boundary, using authorization without a JSON `Content-Type`; send the selected single audio/video file through `audio`, serialize `IngestionData` into `data`, and derive duration only from finite HTML media metadata. Reuse stable identifiers on retries, revoke the temporary object URL, and decline submission when duration is unavailable. Do not add media limits, title/link fabrication, or error UX beyond existing component behavior.
 
+**REFACTOR:** After T-1's tests pass on the minimum implementation, clean up naming/structure/duplication within the listed files without changing behavior; rerun `npm run test`, `npm run typecheck`, and `npm run build` from `frontend/` and confirm T-1 remains green.
+
 **Acceptance evidence / validation:** `npm run test`, `npm run typecheck`, and `npm run build` from `frontend/` pass; T-1's tests prove the multipart/body and duration contract.
 
 **Dependencies:** T-1.
@@ -41,7 +43,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-3: RED — Specify processing, transcript fidelity, honest labels, and bounded screen scope
 
-**Files / test seam:** `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`; component behavior in `frontend/src/components/SpeakerRecognitionTestScreen.tsx`; screen selection in `frontend/src/App.tsx`.
+**Files / test seam:** `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`; component behavior in `frontend/src/components/SpeakerRecognitionTestScreen.tsx`; screen selection in `frontend/src/App.tsx`; API read paths in `frontend/src/api.ts`: `GET /api/v1/meetings/{meeting_id}` for persisted processing state, `GET /api/v1/meetings/{meeting_id}/transcript` for completed segments, and `GET /api/v1/meetings/{meeting_id}/speaker-review` for persisted review status/items.
 
 **Action:** Add failing component tests showing that persisted in-progress state is shown before transcript/review data is fetched or rendered; completion loads both in the same flow; each transcript segment displays its timestamp, exact text, and backend speaker label including unresolved `Speaker N`; transcript text is not editable; and the view exposes only upload, progress, transcript inspection, and speaker review rather than a redesigned library or unrelated management controls. Stub API responses only in tests and use synthetic transcript content.
 
@@ -55,6 +57,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 **Action:** Add the focused screen to the existing SPA. Use the API module for upload and persisted meeting-state observation; only after processing completion load the transcript and review in the same view. Render the backend `segments` wire shape with timestamps, `speaker_label`, and unchanged text. Do not provide transcript editing, library redesign, unrelated meeting controls, invented progress percentages, or new error copy.
 
+**REFACTOR:** After T-3's tests pass on the minimum screen, clean up component naming/structure/duplication within the listed files without changing behavior; rerun `npm run test`, `npm run typecheck`, and `npm run build` from `frontend/` and confirm T-3 remains green.
+
 **Acceptance evidence / validation:** `npm run test`, `npm run typecheck`, and `npm run build` from `frontend/` pass, including T-3's tests.
 
 **Dependencies:** T-2, T-3.
@@ -63,7 +67,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-5: RED — Specify authenticated speaker-review writes and excerpt playback
 
-**Files / test seam:** `backend/tests/meetings/`; authenticated route handlers in `backend/app/meetings/router.py` for `PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}` and its `GET .../excerpt` route.
+**Files / test seam:** `backend/tests/speaker_review/` for authenticated route/authorization/shape tests; route handlers in `backend/app/meetings/router.py` for existing `GET /api/v1/meetings/{meeting_id}/speaker-review`, new `PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}`, and its `GET /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}/excerpt` route.
 
 **Action:** Add failing backend tests for the approved route contract: required `Idempotency-Key`, disposition payload and `expected_version`, owner-scoped identity/label changes, excerpt access, and persisted per-speaker disposition without changing another speaker's item or prematurely completing aggregate review. Follow the payload contract already approved by the referenced speaker-review design; do not invent payload fields or behavior beyond the current feature design.
 
@@ -73,9 +77,11 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-6: GREEN — Add the authenticated disposition and excerpt handlers
 
-**Files:** `backend/app/meetings/router.py`; related `backend/tests/meetings/` tests.
+**Files:** `backend/app/meetings/router.py`; related `backend/tests/speaker_review/` tests.
 
 **Action:** Implement the two specified authenticated handlers using the approved speaker-review contract and existing per-recording authorization, idempotency, version, and excerpt-access semantics. Persist only the targeted speaker disposition; preserve pending aggregate state until every displayed speaker has an explicit persisted disposition. Do not add a parallel review model or endpoint family.
+
+**REFACTOR:** After T-5's tests pass on the minimum route implementation, clean up handler structure/naming/duplication within the listed files without changing behavior; rerun `pytest`, `ruff check .`, and `mypy .` from `backend/` and confirm T-5 remains green.
 
 **Acceptance evidence / validation:** `pytest`, `ruff check .`, and `mypy .` from `backend/` pass; T-5's tests pass.
 
@@ -83,7 +89,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-7: RED — Specify persisted review isolation and resume behavior in the screen
 
-**Files / test seam:** `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`; speaker-review operations in `frontend/src/api.ts` and `SpeakerRecognitionTestScreen`.
+**Files / test seam:** `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`; `frontend/src/api.ts` operations `GET /api/v1/meetings/{meeting_id}/speaker-review`, `PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}`, and `GET /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}/excerpt`; `SpeakerRecognitionTestScreen` review interaction.
 
 **Action:** Add failing tests proving that naming/correcting one speaker changes only that item, an incomplete review stays pending, and unmounting/reopening the same recording reloads persisted pending items rather than locally marking review complete. Include excerpt playback and both naming an unresolved `Speaker N` and correcting an assigned name. Use synthetic API data.
 
@@ -96,6 +102,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Files:** `frontend/src/api.ts`, `frontend/src/components/SpeakerRecognitionTestScreen.tsx`, `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`.
 
 **Action:** Add API wrappers and snake_case response DTO normalization for the approved read/write/excerpt operations. Implement per-speaker review actions and reload server-persisted state when a recording is reopened. Keep completion derived from persisted aggregate status and keep transcript text read-only.
+
+**REFACTOR:** After T-7's tests pass on the minimum review flow, clean up adapter/component naming/structure/duplication within the listed files without changing behavior; rerun `npm run test`, `npm run typecheck`, and `npm run build` from `frontend/` and confirm T-7 remains green.
 
 **Acceptance evidence / validation:** `npm run test`, `npm run typecheck`, and `npm run build` from `frontend/` pass, including T-7's tests.
 
@@ -119,6 +127,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 **Action:** Make `Meeting.meet_link` nullable, add `web_upload` to the accepted capture-origin contract, and add the `PendingObjectDeletion` model specified in the design. Update shared TypeScript types. Create one sequential migration that both makes `meetings.meet_link` nullable and creates the pending-deletion table; its downgrade must refuse while null links or pending rows exist. Preserve existing fields and do not change Compose configuration.
 
+**REFACTOR:** After T-9 and T-13's RED assertions fail as expected and pass on the implementation, clean up model/schema/migration/type structure within the listed files without behavior change; rerun `pytest`, `ruff check .`, `mypy .` from `backend/`, plus `npm run typecheck` from `packages/shared-types/` and `extension/`.
+
 **Acceptance evidence / validation:** `pytest`, `ruff check .`, and `mypy .` from `backend/`; `npm run typecheck` from `packages/shared-types/`; and `npm run typecheck` from `extension/` all pass. T-9's assertions pass; T-13's model/migration assertions pass when run after its RED test task.
 
 **Dependencies:** T-9, T-13.
@@ -141,15 +151,17 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 **Action:** Verify an existing meeting belongs to the authenticated user and classify idempotency keys through their meeting owner before storing media; repeat checks inside `process_ingestion` to cover races. Return prior ID/state only for an exact same-owner/same-meeting retry, non-disclosing not-found for foreign resources and generic conflict for same-owner cross-meeting key reuse. Create upload-only meetings without a fabricated Meet link and enqueue processing through the existing path. Leave draining pending deletion tasks before duplicate success to T-14.
 
+**REFACTOR:** After T-11's tests pass on the minimum ingestion implementation, clean up the owner-check/idempotency code structure within the listed files without changing behavior; rerun `pytest`, `ruff check .`, and `mypy .` from `backend/` and confirm T-11 remains green.
+
 **Acceptance evidence / validation:** `pytest`, `ruff check .`, and `mypy .` from `backend/` pass, including T-11's tests.
 
-**Dependencies:** T-6, T-10, T-11.
+**Dependencies:** T-10, T-11.
 
 ## Phase 6 — Durable Cleanup RED Tests and Implementation
 
 ### T-13: RED — Specify durable staged-media cleanup and recovery
 
-**Files / test seam:** `backend/tests/retention/test_pending_object_cleanup.py`; `backend/tests/infra/test_adaptadores_conformidad_property.py`; migration coverage in `backend/tests/`; cleanup operation in `backend/app/retention/cleanup.py`, `ObjectStore.delete` in `backend/app/infra/object_store.py`, and scheduled worker in `backend/app/retention/worker.py`.
+**Files / test seam:** `backend/tests/retention/test_pending_object_cleanup.py` for `drain_pending_object_deletions(session, object_store, cleanup_scope_hash=None)` in `backend/app/retention/cleanup.py` and scheduled `start_retention_worker` in `backend/app/retention/worker.py`; `backend/tests/infra/test_adaptadores_conformidad_property.py` for `ObjectStore.delete` idempotency; migration coverage in `backend/tests/`.
 
 **Action:** Add failing tests for the pending-deletion table/model contract (unique scope/ref, no meeting/recording foreign key, and downgrade protection for outstanding tasks), per-ref durable tasks before deletion, idempotent repeated delete, partial failure retaining only failed refs, live-reference protection, exact-scope retry draining before duplicate success, scheduled recovery, and never queuing committed recording refs (including post-commit queue failure). Use synthetic refs and fake external I/O only in tests.
 
@@ -162,6 +174,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Files:** `backend/app/retention/cleanup.py`, `backend/app/retention/worker.py`, `backend/app/infra/object_store.py`, ingestion cleanup integration, and corresponding backend tests.
 
 **Action:** Use the `PendingObjectDeletion` model and table from T-10. Persist each uncommitted attempt's unique refs in a separate committed transaction before deletion; delete only unreferenced refs; remove each task only after successful idempotent deletion; preserve failures for exact-scope retry and the existing scheduled retention worker. Do not store raw idempotency keys, delete live refs, or queue committed recording media. Use only the existing worker; no Compose service.
+
+**REFACTOR:** After T-13's tests pass on the minimum cleanup implementation, clean up deletion/worker structure within the listed files without changing behavior; rerun `pytest`, `ruff check .`, and `mypy .` from `backend/` and confirm T-13 remains green.
 
 **Acceptance evidence / validation:** `pytest`, `ruff check .`, and `mypy .` from `backend/` pass, including T-13's tests.
 
@@ -184,6 +198,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Files:** `backend/app/meetings/router.py`, related meetings transcript/authorization code, and `backend/tests/meetings/`.
 
 **Action:** Enforce meeting ownership on the existing persisted-state GET before polling. Extend the existing transcript response with `speaker_label` using only the active revision and the approved turn-assignment-speaker/review key joins; return persisted `chosen_label` for named/corrected dispositions, otherwise the review current label, and retain the diarization label only when no review item exists. Do not alter transcript text or infer identity.
+
+**REFACTOR:** After T-15's tests pass on the minimum router implementation, clean up meeting authorization/label-join structure within the listed files without changing behavior; rerun `pytest`, `ruff check .`, and `mypy .` from `backend/` and confirm T-15 remains green.
 
 **Acceptance evidence / validation:** `pytest`, `ruff check .`, and `mypy .` from `backend/` pass, including T-15's tests.
 
