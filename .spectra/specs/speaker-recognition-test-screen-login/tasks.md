@@ -43,13 +43,13 @@ T-1 and T-3 are independent test-first tasks and may proceed concurrently in sep
 
 ### T-3: Add failing tests for the speaker-test gate, login, failure handling, and logout
 
-**Files:** Add focused tests under `frontend/src/components/` following the existing colocated `*.test.tsx` convention; test the `speaker-test` branch in `frontend/src/App.tsx` and the focused login component/API boundary.
+**Test seam:** `frontend/src/components/SpeakerTestLogin.test.tsx` exercises the exported `App` from `frontend/src/App.tsx` by entering its `speaker-test` branch, the focused `frontend/src/components/SpeakerTestLogin.tsx` component, and mocked `login(email, password)` from `frontend/src/api.ts`. Keep the UI tests colocated in this exact test file.
 
-**Action:** Using Vitest, Testing Library, synthetic credentials, mocked API responses and controlled `localStorage`, cover: (1) absent `sauri_token` renders email/password login and hides authenticated test controls; (2) successful login stores only returned `access_token` as `sauri_token`, clears the transient password state, then reveals the existing test screen; (3) rejected login and network failure retain the login view, show a generic visible error and do not persist an access token or password; (4) a pre-existing token permits the test screen; and (5) logout removes only `sauri_token`, immediately returns to login, and makes no server logout/revocation request. Keep coverage scoped to this view; do not require or encode app-wide authentication behavior.
+**Action:** Using Vitest, Testing Library, synthetic credentials, a deferred mocked login response and controlled `localStorage`, cover: (1) absent `sauri_token` renders email/password login and hides authenticated test controls; (2) while login is pending, authenticated test controls remain hidden and a second submit does not call `login` again; (3) successful login stores only returned `access_token` as `sauri_token`, clears the transient password state, then reveals the existing test screen; (4) rejected login and network failure retain the login view, show a generic visible error and do not persist an access token or password; (5) a pre-existing token permits the test screen; and (6) logout removes only `sauri_token`, immediately returns to login, and makes no server logout/revocation request. Keep coverage scoped to the `speaker-test` branch; do not require or encode app-wide authentication behavior.
 
-**Completion evidence:** The focused component test command fails before implementation because the login form/gate/logout behavior is absent. Failures identify the missing UI behavior; tests contain no real credentials or customer data.
+**Completion evidence:** `npm run test -- src/components/SpeakerTestLogin.test.tsx` fails before implementation because the login component/gate/logout behavior is absent, with assertions identifying each missing behavior. The pending-state test holds the mocked `login` promise unresolved, verifies the test controls remain hidden and the submit control prevents a duplicate call, then resolves it to prove the transition occurs only on success. Tests contain no real credentials or customer data.
 
-**Validation command:** `npm run test -- src/components/SpeakerTestLogin.test.tsx` from `frontend/` (use the selected colocated test filename consistently).
+**Validation command:** `npm run test -- src/components/SpeakerTestLogin.test.tsx` from `frontend/`.
 
 **Dependencies:** None. This test-writing task is independent of T-1; its mocks may target the designed login API boundary.
 
@@ -57,11 +57,11 @@ T-1 and T-3 are independent test-first tasks and may proceed concurrently in sep
 
 ### T-4: Implement the local login flow only around the speaker-test view
 
-**Files:** `frontend/src/App.tsx`; `frontend/src/api.ts`; add a focused component under `frontend/src/components/`.
+**Files:** `frontend/src/App.tsx` (existing `speaker-test` branch); `frontend/src/api.ts` (`login(email, password)`); add `frontend/src/components/SpeakerTestLogin.tsx`.
 
-**Action:** Add a test-screen-specific login form with transient email/password, pending and generic error state, prevent duplicate submission while pending, and clear password state after success. Restrict the token-presence gate and logout action to the existing `speaker-test` branch. On successful API response, store only `access_token` under the existing `sauri_token` key and switch to the existing screen; on logout, remove that key and return to login without a server request. Leave other SPA views, the backend contract, and global authentication behavior unchanged.
+**Action:** Implement the login component and its wiring only at the `speaker-test` branch. The component uses transient email/password plus pending and generic error state, prevents duplicate submission while pending, and clears password state after success. Gate authenticated test controls on token presence; on successful API response, store only `access_token` under `sauri_token` and switch to the existing screen; on logout, remove that key and return to login without a server request. Leave other SPA views, the backend contract, and global authentication behavior unchanged.
 
-**Completion evidence:** The focused component tests from T-3 pass; `npm run test`, `npm run typecheck`, and `npm run build` all pass from `frontend/`. The implementation changes no backend files, database schema, Compose configuration, Chrome extension or shared package. Review the focused diff to confirm the login gate is limited to `speaker-test` and no password or additional session data is persisted.
+**Completion evidence:** The focused component tests in `frontend/src/components/SpeakerTestLogin.test.tsx` pass; `npm run test`, `npm run typecheck`, and `npm run build` all pass from `frontend/`. The implementation changes no backend files, database schema, Compose configuration, Chrome extension or shared package. Review the focused diff to confirm the login gate is limited to `speaker-test` and no password or additional session data is persisted.
 
 **Validation command:** `npm run test && npm run typecheck && npm run build` from `frontend/`.
 
