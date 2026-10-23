@@ -1,6 +1,6 @@
 # Sauri Product Baseline
 
-> **Status: APPROVED — Fer approved the portal and Phase 2 amendment in this baseline at commit `f31c1437d002a49849fc577446290ab83d29a584`, as recorded in task `task_a08baf81140a4073`.** This amendment preserves the product content approved on 2026-10-16 at commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`). The earlier content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
+> **Status: DRAFT — Fer approved the portal and Phase 2 scope amendment at commit `f31c1437d002a49849fc577446290ab83d29a584`, as recorded in task `task_a08baf81140a4073`. This current snapshot contains subsequent edits and requires Fer's approval of this exact version before it becomes APPROVED.** This amendment preserves the product content approved on 2026-10-16 at commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`). The earlier content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
 
 ## 1. Product purpose
 
