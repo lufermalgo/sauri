@@ -4,12 +4,16 @@ import { RegisterForm } from "./components/RegisterForm";
 import { MeetingList } from "./components/MeetingList";
 import { TranscriptView } from "./components/TranscriptView";
 import { SpeakerRecognitionTestScreen } from "./components/SpeakerRecognitionTestScreen";
+import { SpeakerTestLogin } from "./components/SpeakerTestLogin";
 
 type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" };
 
 export function App() {
   const [view, setView] = useState<View>({ type: "list" });
   const [refreshKey, setRefreshKey] = useState(0);
+  const [speakerTestAuthenticated, setSpeakerTestAuthenticated] = useState(
+    () => Boolean(localStorage.getItem("sauri_token"))
+  );
 
   function handleRegistered() {
     setRefreshKey((k) => k + 1);
@@ -49,7 +53,22 @@ export function App() {
       {view.type === "speaker-test" && (
         <>
           <button type="button" onClick={handleBack}>Back to meetings</button>
-          <SpeakerRecognitionTestScreen />
+          {speakerTestAuthenticated ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem("sauri_token");
+                  setSpeakerTestAuthenticated(false);
+                }}
+              >
+                Log out
+              </button>
+              <SpeakerRecognitionTestScreen />
+            </>
+          ) : (
+            <SpeakerTestLogin onLogin={() => setSpeakerTestAuthenticated(true)} />
+          )}
         </>
       )}
     </main>
