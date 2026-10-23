@@ -3,8 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from app.ingestion.schemas import IngestionData
 from app.infra import models
+from app.ingestion.schemas import IngestionData
 
 
 def test_meeting_meet_link_is_nullable() -> None:
@@ -64,3 +64,58 @@ def test_contract_migration_is_the_only_successor_to_revision_010() -> None:
     assert "downgrade" in migration_source
     assert "cleanup_scope_hash" in migration_source
     assert "object_ref" in migration_source
+
+
+def test_migration_downgrade_guards_pending_tasks_and_null_links() -> None:
+    import importlib.util
+
+    import pytest
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import create_engine, inspect, text
+
+    migrations_dir = Path(__file__).resolve().parents[2] / "alembic" / "versions"
+    migration_path = next(
+        path
+        for path in migrations_dir.glob("*.py")
+        if "pending_object_deletions" in path.read_text(encoding="utf-8")
+    )
+    spec = importlib.util.spec_from_file_location(migration_path.stem, migration_path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    engine = create_engine("sqlite:///:memory:")
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE meetings (id VARCHAR(36) PRIMARY KEY, meet_link VARCHAR(512) NULL)")
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE pending_object_deletions ("
+                "id VARCHAR(36) PRIMARY KEY, cleanup_scope_hash VARCHAR(64) NOT NULL, "
+                "object_ref VARCHAR(2048) NOT NULL, UNIQUE (cleanup_scope_hash, object_ref))"
+            )
+        )
+        connection.execute(text("INSERT INTO meetings (id, meet_link) VALUES ('m1', NULL)"))
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            with pytest.raises(RuntimeError, match="null Meet links"):
+                migration.downgrade()
+
+            connection.execute(text("UPDATE meetings SET meet_link = 'https://meet.test'"))
+            connection.execute(
+                text(
+                    "INSERT INTO pending_object_deletions "
+                    "(id, cleanup_scope_hash, object_ref) VALUES ('d1', 'scope', 'ref')"
+                )
+            )
+            with pytest.raises(RuntimeError, match="pending object cleanup tasks"):
+                migration.downgrade()
+
+            connection.execute(text("DELETE FROM pending_object_deletions"))
+            migration.downgrade()
+
+        assert not inspect(connection).has_table("pending_object_deletions")
+
+    engine.dispose()
