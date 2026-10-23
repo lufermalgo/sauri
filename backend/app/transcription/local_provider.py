@@ -81,7 +81,7 @@ class LocalProvider(ASREngine):
                 f"{self._url}/transcribe",
                 json=payload,
                 headers=_engine_auth_headers(),
-                timeout=300.0,  # Transcription can take several minutes
+                timeout=float(os.environ.get("ASR_TIMEOUT_SECONDS", "3600")),
             )
             response.raise_for_status()
 

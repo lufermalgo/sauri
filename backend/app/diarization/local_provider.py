@@ -83,7 +83,7 @@ class LocalProvider(DiarizationEngine):
                 f"{self._url}/diarize",
                 json=payload,
                 headers=_engine_auth_headers(),
-                timeout=600.0,  # Diarization can take several minutes (Req. 3.1)
+                timeout=float(os.environ.get("DIARIZATION_TIMEOUT_SECONDS", "3600")),
             )
             response.raise_for_status()
 
