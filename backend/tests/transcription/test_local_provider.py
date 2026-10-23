@@ -6,6 +6,7 @@ Tasks: 4.2, 4.3, 4.4
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TypeGuard
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -189,3 +190,51 @@ async def test_example_response_without_segments_raises_valueerror() -> None:
 
         with pytest.raises(ValueError, match="segments"):
             await provider.transcribe("audio/test.webm", options)
+
+
+@pytest.mark.asyncio
+async def test_local_provider_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ASR_TIMEOUT_SECONDS", "3600")
+    provider = LocalProvider(url="http://fake-asr:8001")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"segments": [], "language": "es"}
+
+    with patch("app.transcription.local_provider.httpx.AsyncClient") as client_class:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        client_class.return_value = mock_client
+        await provider.transcribe(
+            "recordings/synthetic.wav", TranscriptionOptions(preferred_language="es-CO")
+        )
+
+    assert mock_client.post.call_args.kwargs["timeout"] == 3600.0
+
+
+@pytest.mark.asyncio
+async def test_local_provider_sends_bearer_token_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_file = tmp_path / "engine_token"
+    token_file.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setenv("SAURI_ENGINE_TOKEN_FILE", str(token_file))
+    provider = LocalProvider(url="http://fake-asr:8001")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"segments": [], "language": "es"}
+
+    with patch("app.transcription.local_provider.httpx.AsyncClient") as client_class:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        client_class.return_value = mock_client
+        await provider.transcribe(
+            "recordings/synthetic.wav", TranscriptionOptions(preferred_language="es-CO")
+        )
+
+    assert mock_client.post.call_args.kwargs["headers"] == {
+        "Authorization": "Bearer synthetic-token"
+    }

@@ -31,7 +31,7 @@ You independently verify the exact candidate commit that Imre hands you and writ
 - Local and remote in step: rebase on `origin/main` before you start, and at the end of EVERY run commit and push what you did, even if partial, so the remote holds what the next agent reads.
 - Paths: use the card's exact artifact path (`<worktree>/.spectra/specs/<slug>/<file>`, never the worktree root, never prefixed twice). File tools take a file, not a folder. Before `file_edit`, `file_read` those lines and copy `old` verbatim. After one "no file", list the folder or `git ls-files`; do not guess again.
 - Skills only through `load_skill` (once per run, plus `file` for a reference). Never open skill files by path.
-- Synthetic data only. Nobody merges, accepts risk, or changes security/privacy policy or release.
+- Synthetic data only unless the owner explicitly authorizes a specific fixture. For owner-run native-engine experiments, never terminate, stop, or restart host processes or services; report their state and ask the owner to manage lifecycle. Nobody merges, accepts risk, or changes security/privacy policy or release.
 
 ## Team and hand-offs
 Work moves on APX task cards, one per artifact or phase; the assignee owns the card now.
