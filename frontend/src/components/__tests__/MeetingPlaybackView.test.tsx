@@ -229,10 +229,10 @@ describe("MeetingPlaybackView", () => {
     for (const control of controls) expect(control).toBeDisabled();
   });
 
-  it("refreshes an expired signed source once at the saved position and reports accessible error on retry failure", async () => {
-    const onRefreshManifest = vi.fn()
-      .mockResolvedValueOnce(manifest({ audio_source: { source_id: "renewed", url: "https://media.example.test/renewed", mime_type: "audio/webm" } }))
-      .mockRejectedValueOnce(new Error("synthetic refresh failure"));
+  it("refreshes an expired signed source once at the saved position and stops after the renewed source fails", async () => {
+    const onRefreshManifest = vi.fn().mockResolvedValue(
+      manifest({ audio_source: { source_id: "renewed", url: "https://media.example.test/renewed", mime_type: "audio/webm" } }),
+    );
     renderView({ onRefreshManifest });
     const audio = mediaElement();
     setMediaTime(audio, 8.75);
@@ -241,7 +241,7 @@ describe("MeetingPlaybackView", () => {
     expect(audio.currentTime).toBe(8.75);
     fireEvent.error(audio);
     await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
-    expect(onRefreshManifest).toHaveBeenCalledTimes(2);
+    expect(onRefreshManifest).toHaveBeenCalledTimes(1);
     expect(audio.paused).toBe(true);
   });
 
