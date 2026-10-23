@@ -19,6 +19,12 @@ MAKEFILE_NAME = "Makefile"
 
 
 class ComposeBringupTests(unittest.TestCase):
+    def test_volume_repair_has_capabilities_for_fresh_volume_permissions(self):
+        compose = (ROOT / "docker-compose.yml").read_text()
+        repair_service = compose.split("  minio-volume-permissions:\n", 1)[1].split("\n  # --- MinIO", 1)[0]
+
+        self.assertIn('cap_add: ["CHOWN", "DAC_OVERRIDE"]', repair_service)
+
     def test_setup_runs_before_api_and_reports_failed_migration(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             tree = Path(temp_dir) / "tree"

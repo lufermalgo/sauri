@@ -99,7 +99,7 @@ services:
     user: "0:0"
     command: ["sh", "-c", "chown -R 10001:10001 /data"]
     cap_drop: ["ALL"]
-    cap_add: ["CHOWN"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE"]
     volumes:
       - minio-data:/data
     restart: "no"
