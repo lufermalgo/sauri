@@ -9,9 +9,12 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - minio
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
       - OBJECT_STORE_ENDPOINT=http://minio:9000
@@ -41,9 +44,12 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-m", "app.worker"]
     depends_on:
-      - postgres
-      - minio
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
       - OBJECT_STORE_ENDPOINT=http://minio:9000
@@ -79,8 +85,25 @@ services:
       - POSTGRES_PASSWORD=sauri_dev
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sauri -d sauri"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
     networks:
       - sauri-net
+
+  # Repair only the RustFS data volume, using the image's verified runtime UID/GID.
+  minio-volume-permissions:
+    image: alpine:3.22
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 10001:10001 /data"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE"]
+    network_mode: none
+    volumes:
+      - minio-data:/data
+    restart: "no"
 
   # --- MinIO (almacenamiento S3-local) ---
   minio:
@@ -89,6 +112,9 @@ services:
       - "9000:9000"
       - "9001:9001"
     command: server /data --console-address ":9001"
+    depends_on:
+      minio-volume-permissions:
+        condition: service_completed_successfully
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin

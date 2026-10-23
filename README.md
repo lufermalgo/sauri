@@ -40,12 +40,19 @@ It's an in-house solution built incrementally, module by module.
 ### Start the backend
 
 ```bash
-make up        # Start the full Docker stack
-make build     # Rebuild + start
+make up        # Start dependencies, verify bucket, migrate to head, then start API/worker
+make build     # Rebuild images, then run the same readiness sequence
 make down      # Stop everything
 make logs      # View logs
-make migrate   # Run DB migrations
+make migrate   # Run DB migrations manually
 ```
+
+`make up` and `make build` report failure and exit nonzero if the database is not healthy,
+the object-store bucket cannot be verified/created, or Alembic cannot reach `head`. The
+bring-up preserves named volumes and their objects. A one-shot, root-owned helper uses only
+`CAP_CHOWN` to repair ownership inside the `minio-data` volume to the pinned RustFS image's
+verified runtime identity (`10001:10001`); RustFS itself continues running as its image-defined
+non-root user. No production deployment behavior is implied.
 
 ### Native Mac GPU engine feasibility spike
 
