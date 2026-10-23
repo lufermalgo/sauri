@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any, TypeGuard, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -470,6 +471,31 @@ async def test_property_17_engine_failure_propagates(
     async with session_factory() as session:
         result = await session.execute(select(Transcript))
         assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_timeout_fails_meeting_without_rethrowing_for_retry(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    meeting_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="recording"))
+
+    mock_engine = AsyncMock()
+    mock_engine.transcribe.side_effect = httpx.ReadTimeout("ASR request timed out")
+
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
+        await _process_transcription(
+            {"meeting_id": meeting_id, "audio_ref": "audio/synthetic.wav"},
+            session_factory,
+        )
+
+    mock_engine.transcribe.assert_awaited_once()
+    async with session_factory() as session:
+        persisted_meeting = cast(Meeting, await session.get(Meeting, meeting_id))
+        assert persisted_meeting.process_state == "failed"
+        assert persisted_meeting.failure_cause == "engine_failure"
+        assert await session.get(Transcript, meeting_id) is None
 
 
 # ---------------------------------------------------------------------------

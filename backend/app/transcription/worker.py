@@ -12,13 +12,16 @@ Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import Meeting, SpeechTurn, Transcript
+from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
 from app.infra.queue import JobQueue
 from app.meetings.service import record_transition
 from app.transcription.asr_engine import TranscriptionOptions
@@ -84,10 +87,42 @@ async def _process_transcription(
     # 1. Create the ASR engine via the factory (selects provider by config)
     engine = create_asr_engine()
 
+    async with session_factory() as session:
+        recording = (
+            await session.execute(
+                select(SessionRecording).where(
+                    SessionRecording.meeting_id == meeting_id
+                )
+            )
+        ).scalar_one_or_none()
+    audio_duration_seconds = recording.duration_seconds if recording else None
+
     # 2. Transcribe with the preferred language es-CO (Req. 3.2)
-    # Engine exceptions propagate uncaught (Req. 9.1)
     options = TranscriptionOptions(preferred_language="es-CO")
-    result = await engine.transcribe(audio_ref, options)
+    started_at = time.monotonic()
+    try:
+        result = await engine.transcribe(audio_ref, options)
+    except httpx.TimeoutException:
+        elapsed_seconds = time.monotonic() - started_at
+        async with session_factory() as session, session.begin():
+            meeting = await session.get(Meeting, meeting_id)
+            if meeting is not None:
+                await record_transition(session, meeting, "engine_failed")
+        logger.error(
+            "Transcription timed out for meeting_id=%s; audio_duration_seconds=%s; "
+            "elapsed_seconds=%.2f; meeting failed and the full recording will not be retried",
+            meeting_id,
+            audio_duration_seconds,
+            elapsed_seconds,
+        )
+        return
+    elapsed_seconds = time.monotonic() - started_at
+    logger.info(
+        "ASR completed for meeting_id=%s; audio_duration_seconds=%s; elapsed_seconds=%.2f",
+        meeting_id,
+        audio_duration_seconds,
+        elapsed_seconds,
+    )
 
     # 3. Evaluate the result and persist
     transcript_created = False

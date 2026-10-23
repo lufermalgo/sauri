@@ -9,9 +9,12 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - minio
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
       - OBJECT_STORE_ENDPOINT=http://minio:9000
@@ -22,6 +25,8 @@ services:
       - ASR_PROVIDER=${ASR_PROVIDER:-local}
       - ASR_LOCAL_URL=${ASR_LOCAL_URL:-http://host.docker.internal:8001}
       - DIARIZATION_LOCAL_URL=${DIARIZATION_LOCAL_URL:-http://host.docker.internal:8002}
+      - ASR_TIMEOUT_SECONDS=${ASR_TIMEOUT_SECONDS:-3600}
+      - DIARIZATION_TIMEOUT_SECONDS=${DIARIZATION_TIMEOUT_SECONDS:-3600}
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
@@ -39,9 +44,12 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-m", "app.worker"]
     depends_on:
-      - postgres
-      - minio
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
       - OBJECT_STORE_ENDPOINT=http://minio:9000
@@ -52,11 +60,17 @@ services:
       - ASR_PROVIDER=${ASR_PROVIDER:-local}
       - ASR_LOCAL_URL=${ASR_LOCAL_URL:-http://host.docker.internal:8001}
       - DIARIZATION_LOCAL_URL=${DIARIZATION_LOCAL_URL:-http://host.docker.internal:8002}
+      - ASR_TIMEOUT_SECONDS=${ASR_TIMEOUT_SECONDS:-3600}
+      - DIARIZATION_TIMEOUT_SECONDS=${DIARIZATION_TIMEOUT_SECONDS:-3600}
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
       - SPEAKER_EXCERPT_ACTIVE_KEY_ID=${SPEAKER_EXCERPT_ACTIVE_KEY_ID:?Set a managed excerpt encryption key ID}
       - SPEAKER_EXCERPT_KEYRING=${SPEAKER_EXCERPT_KEYRING:?Set a managed versioned excerpt keyring}
       - RETENTION_DAYS=${RETENTION_DAYS:-90}
+      - SAURI_ENGINE_TOKEN_FILE=/run/secrets/sauri_engine_token
+      - MINIO_AUDIO_PREFIX=recordings/
+    volumes:
+      - "${HOME:?HOME must be set}/.config/sauri/engine_token:/run/secrets/sauri_engine_token:ro"
     networks:
       - sauri-net
 
@@ -71,8 +85,25 @@ services:
       - POSTGRES_PASSWORD=sauri_dev
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sauri -d sauri"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
     networks:
       - sauri-net
+
+  # Repair only the RustFS data volume, using the image's verified runtime UID/GID.
+  minio-volume-permissions:
+    image: alpine:3.22
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 10001:10001 /data"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE"]
+    network_mode: none
+    volumes:
+      - minio-data:/data
+    restart: "no"
 
   # --- MinIO (almacenamiento S3-local) ---
   minio:
@@ -81,6 +112,9 @@ services:
       - "9000:9000"
       - "9001:9001"
     command: server /data --console-address ":9001"
+    depends_on:
+      minio-volume-permissions:
+        condition: service_completed_successfully
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin

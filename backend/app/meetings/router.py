@@ -276,6 +276,12 @@ async def get_speaker_review(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
+            await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"GET /api/v1/meetings/{meeting_id}/speaker-review",
+            )
             result = await SpeakerReviewService(session).get_active_review(
                 user.id, meeting_id
             )
