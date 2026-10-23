@@ -49,6 +49,53 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const uploadMethod = api as typeof api & {
+  uploadRecording?: (audio: File, data: Record<string, unknown>) => Promise<unknown>;
+};
+
+describe("authenticated multipart upload API adapter", () => {
+  it("sends the audio file and serialized metadata with bearer auth and a browser multipart boundary", async () => {
+    expect(typeof uploadMethod.uploadRecording).toBe("function");
+    const fetchMock = mockFetch({ meeting_id: "meeting-1" });
+    const audio = new File(["synthetic audio"], "sample.webm", { type: "audio/webm" });
+    const data = {
+      duration_seconds: 13,
+      meeting_id: "meeting-1",
+      idempotency_key: "retry-key-1",
+      origin: "web_upload",
+      video_presence: "absent",
+    };
+
+    await uploadMethod.uploadRecording!(audio, data);
+
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(request.method).toBe("POST");
+    expect(request.headers).toEqual({ Authorization: "Bearer synthetic-token" });
+    expect(request.headers).not.toHaveProperty("Content-Type");
+    expect(request.body).toBeInstanceOf(FormData);
+    const formData = request.body as FormData;
+    expect(formData.get("audio")).toBe(audio);
+    expect(formData.get("data")).toBe(JSON.stringify(data));
+    expect(data).toMatchObject({ origin: "web_upload", video_presence: "absent" });
+    expect(data).not.toHaveProperty("meet_link");
+    expect(data).not.toHaveProperty("title");
+  });
+
+  it("preserves meeting and idempotency identifiers for a retry", async () => {
+    expect(typeof uploadMethod.uploadRecording).toBe("function");
+    const fetchMock = mockFetch({ meeting_id: "meeting-1" });
+    const audio = new File(["synthetic audio"], "sample.webm", { type: "audio/webm" });
+    const data = { duration_seconds: 13, meeting_id: "meeting-1", idempotency_key: "retry-key-1" };
+
+    await uploadMethod.uploadRecording!(audio, data);
+    await uploadMethod.uploadRecording!(audio, data);
+
+    const bodies = fetchMock.mock.calls.map(([, request]) => request.body as FormData);
+    expect(bodies).toHaveLength(2);
+    expect(bodies.map((body) => JSON.parse(String(body.get("data"))))).toEqual([data, data]);
+  });
+});
+
 describe("meeting playback API adapter", () => {
   it("returns the typed manifest modes and authoritative source metadata without inference", async () => {
     expect(typeof manifestMethod.getPlaybackManifest).toBe("function");
