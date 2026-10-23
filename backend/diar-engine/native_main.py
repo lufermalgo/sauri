@@ -141,7 +141,7 @@ def _require_recording_capability(audio_ref: str, capability: str | None) -> Non
     now = int(time.time())
     if expires_at <= now or expires_at > now + RECORDING_CAPABILITY_TTL_SECONDS:
         raise HTTPException(status_code=403, detail="Expired recording authorization")
-    message = f"{audio_ref}\n{expires_at}".encode("utf-8")
+    message = f"{audio_ref}\n{expires_at}".encode()
     expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
     if not secrets.compare_digest(signature, expected):
         raise HTTPException(status_code=403, detail="Invalid recording authorization")

@@ -14,7 +14,6 @@ from pathlib import Path
 
 import httpx
 
-from app.infra.recording_capability import create_recording_capability
 from app.diarization.diarization_engine import (
     DiarizationCapabilities,
     DiarizationEngine,
@@ -22,6 +21,7 @@ from app.diarization.diarization_engine import (
     DiarizationResult,
     SpeakerSegment,
 )
+from app.infra.recording_capability import create_recording_capability
 
 
 def _engine_auth_headers(audio_ref: str) -> dict[str, str]:

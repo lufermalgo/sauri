@@ -146,7 +146,11 @@ async def test_diarize_converts_webm_to_wav_before_pyannote(
 
     token_path = tmp_path / "engine_token"
     token_path.write_text("synthetic-token", encoding="utf-8")
+    secret = b"synthetic-capability-secret"
+    key_path = tmp_path / "recording_capability_key"
+    key_path.write_bytes(secret)
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "s3_client", WebMS3())
     monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
@@ -170,7 +174,12 @@ async def test_diarize_converts_webm_to_wav_before_pyannote(
         response = await client.post(
             "/diarize",
             json={"audio_ref": "synthetic/recording.webm"},
-            headers={"Authorization": "Bearer synthetic-token"},
+            headers={
+                "Authorization": "Bearer synthetic-token",
+                "X-Sauri-Recording-Capability": capability(
+                    "synthetic/recording.webm", secret, int(time.time()) + 60
+                ),
+            },
         )
 
     assert response.status_code == 200
