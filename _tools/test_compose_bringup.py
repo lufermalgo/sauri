@@ -81,6 +81,32 @@ class ComposeBringupTests(unittest.TestCase):
             calls.index("compose up -d api worker"),
         )
 
+    def test_make_up_invokes_bringup_script(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tree = Path(temp_dir) / "tree"
+            shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", ".worktrees", "__pycache__"))
+            os.chdir(tree)
+            try:
+                docker = tree / "docker"
+                log = tree / "calls"
+                docker.write_text("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n")
+                docker.chmod(0o755)
+                env = os.environ | {
+                    "PATH": f"{tree}:{os.environ['PATH']}",
+                    "HOME": str(tree),
+                    "CALL_LOG": str(log),
+                }
+                result = subprocess.run(["make", "up"], cwd=tree, env=env, text=True, capture_output=True)
+                calls = log.read_text().splitlines() if log.exists() else []
+            finally:
+                os.chdir(ROOT)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertLess(
+            calls.index("compose run --rm api alembic upgrade head"),
+            calls.index("compose up -d api worker"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
