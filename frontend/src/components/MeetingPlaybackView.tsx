@@ -55,11 +55,13 @@ export function MeetingPlaybackView({
   const passageRefs = useRef(new Map<string, HTMLLIElement>());
   const previousActivePassage = useRef<string | null>(null);
   const savedTimeMs = useRef(0);
+  const refreshAttempted = useRef(false);
 
   useEffect(() => {
     setCurrentManifest(manifest);
     setPlaybackError(null);
     setMediaReady(false);
+    refreshAttempted.current = false;
   }, [manifest]);
 
   const mediaMode = currentManifest?.video_presence;
@@ -150,6 +152,12 @@ export function MeetingPlaybackView({
   }, [state.activePassageId]);
 
   async function refreshSource() {
+    if (refreshAttempted.current) {
+      controllerRef.current?.pause();
+      setPlaybackError("Unable to reload meeting media. Playback has stopped.");
+      return;
+    }
+    refreshAttempted.current = true;
     if (!onRefreshManifest) {
       controllerRef.current?.pause();
       setPlaybackError("Unable to load meeting media.");
