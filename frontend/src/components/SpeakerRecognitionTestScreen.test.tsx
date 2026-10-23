@@ -18,18 +18,19 @@ function selectSyntheticAudio() {
   return file;
 }
 
-function mediaElement(): HTMLMediaElement {
+function fireLoadedMetadata(duration: number) {
   const media = document.querySelector("audio, video");
   if (!(media instanceof HTMLMediaElement)) {
     throw new Error("Expected the selected recording metadata element");
   }
-  return media;
+  Object.defineProperty(media, "duration", { configurable: true, value: duration });
+  fireEvent.loadedMetadata(media);
 }
 
 describe("SpeakerRecognitionTestScreen upload metadata", () => {
   it("does not submit until finite browser media duration is available, then rounds seconds up and revokes the object URL", async () => {
     const uploadRecording = vi.mocked(api.uploadRecording);
-    uploadRecording.mockResolvedValue({ meeting_id: "meeting-1" });
+    uploadRecording.mockResolvedValue({ recording_id: "recording-1", state: "transcribing" });
     const createObjectURL = vi.fn().mockReturnValue("blob:synthetic-recording");
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
@@ -39,13 +40,13 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
     expect(uploadRecording).not.toHaveBeenCalled();
 
-    fireEvent.loadedMetadata(mediaElement(), { target: { duration: 12.2 } });
+    fireLoadedMetadata(12.2);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
     await waitFor(() => expect(uploadRecording).toHaveBeenCalledTimes(1));
     expect(uploadRecording).toHaveBeenCalledWith(file, expect.objectContaining({
       duration_seconds: 13,
-      origin: "web_upload",
+      capture_origin: "web_upload",
       video_presence: "absent",
     }));
     const metadata = uploadRecording.mock.calls[0][1];
@@ -58,13 +59,13 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
   it("reuses meeting and idempotency identifiers when retrying the same upload", async () => {
     const uploadRecording = vi.mocked(api.uploadRecording);
     uploadRecording.mockRejectedValueOnce(new Error("synthetic network failure"));
-    uploadRecording.mockResolvedValueOnce({ meeting_id: "meeting-1" });
+    uploadRecording.mockResolvedValueOnce({ recording_id: "recording-1", state: "transcribing" });
     const createObjectURL = vi.fn().mockReturnValue("blob:synthetic-recording");
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
     const file = selectSyntheticAudio();
-    fireEvent.loadedMetadata(mediaElement(), { target: { duration: 12 } });
+    fireLoadedMetadata(12);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
     await waitFor(() => expect(uploadRecording).toHaveBeenCalledTimes(1));
     fireEvent.click(await screen.findByRole("button", { name: /retry/i }));
@@ -85,7 +86,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
 
     render(<SpeakerRecognitionTestScreen />);
     selectSyntheticAudio();
-    fireEvent.loadedMetadata(mediaElement(), { target: { duration: Number.NaN } });
+    fireLoadedMetadata(Number.NaN);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
     expect(uploadRecording).not.toHaveBeenCalled();

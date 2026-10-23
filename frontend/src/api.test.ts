@@ -56,13 +56,13 @@ const uploadMethod = api as typeof api & {
 describe("authenticated multipart upload API adapter", () => {
   it("sends the audio file and serialized metadata with bearer auth and a browser multipart boundary", async () => {
     expect(typeof uploadMethod.uploadRecording).toBe("function");
-    const fetchMock = mockFetch({ meeting_id: "meeting-1" });
+    const fetchMock = mockFetch({ recording_id: "recording-1", state: "transcribing" });
     const audio = new File(["synthetic audio"], "sample.webm", { type: "audio/webm" });
     const data = {
       duration_seconds: 13,
       meeting_id: "meeting-1",
       idempotency_key: "retry-key-1",
-      origin: "web_upload",
+      capture_origin: "web_upload",
       video_presence: "absent",
     };
 
@@ -77,14 +77,14 @@ describe("authenticated multipart upload API adapter", () => {
     const formData = request.body as FormData;
     expect(formData.get("audio")).toBe(audio);
     expect(formData.get("data")).toBe(JSON.stringify(data));
-    expect(data).toMatchObject({ origin: "web_upload", video_presence: "absent" });
+    expect(data).toMatchObject({ capture_origin: "web_upload", video_presence: "absent" });
     expect(data).not.toHaveProperty("meet_link");
     expect(data).not.toHaveProperty("title");
   });
 
   it("preserves meeting and idempotency identifiers for a retry", async () => {
     expect(typeof uploadMethod.uploadRecording).toBe("function");
-    const fetchMock = mockFetch({ meeting_id: "meeting-1" });
+    const fetchMock = mockFetch({ recording_id: "recording-1", state: "transcribing" });
     const audio = new File(["synthetic audio"], "sample.webm", { type: "audio/webm" });
     const data = { duration_seconds: 13, meeting_id: "meeting-1", idempotency_key: "retry-key-1" };
 
