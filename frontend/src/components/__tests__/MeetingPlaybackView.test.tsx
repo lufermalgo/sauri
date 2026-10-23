@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PlaybackManifest, TimedPassage } from "../../api";
@@ -49,7 +50,7 @@ function renderView(overrides: Partial<{
 }> = {}) {
   return render(
     <MeetingPlaybackView
-      manifest={overrides.manifest ?? manifest()}
+      manifest={"manifest" in overrides ? overrides.manifest ?? null : manifest()}
       passages={overrides.passages ?? passages}
       loading={overrides.loading ?? false}
       error={overrides.error ?? null}
@@ -71,6 +72,7 @@ const originalPlay = HTMLMediaElement.prototype.play;
 const originalPause = HTMLMediaElement.prototype.pause;
 
 afterEach(() => {
+  cleanup();
   HTMLMediaElement.prototype.play = originalPlay;
   HTMLMediaElement.prototype.pause = originalPause;
 });
@@ -93,7 +95,7 @@ describe("MeetingPlaybackView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /pause/i }));
     expect(pause).toHaveBeenCalledWith();
-    fireEvent.click(screen.getByRole("button", { name: /play|resume/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^play or resume playback$/i }));
     await waitFor(() => expect(play).toHaveBeenCalled());
 
     fireEvent.change(screen.getByRole("combobox", { name: /playback speed/i }), { target: { value: "1.5" } });
@@ -251,8 +253,11 @@ describe("MeetingPlaybackView", () => {
     HTMLMediaElement.prototype.play = play;
     HTMLMediaElement.prototype.pause = pause;
     renderView({ manifest: manifest({ video_presence: "separate", video_sources: [source("paired", VIDEO_LOW_URL, 0)] }) });
+    const audio = mediaElement();
+    Object.defineProperty(audio, "duration", { configurable: true, value: 30 });
+    fireEvent.loadedMetadata(audio);
 
-    fireEvent.click(screen.getByRole("button", { name: /play|resume/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^play or resume playback$/i }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
     expect(play).toHaveBeenCalledTimes(2);
     expect(pause).toHaveBeenCalledTimes(2);

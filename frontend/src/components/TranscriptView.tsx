@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
-import type { Transcript, SpeechTurn } from "@sauri/shared-types";
 import {
+  getPlaybackManifest,
   getSpeakerReview,
   getTranscript,
   playSpeakerExcerpt,
   submitSpeakerDisposition,
 } from "../api";
-import type { SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
+import type { MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
+import { MeetingPlaybackView } from "./MeetingPlaybackView";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -21,7 +22,10 @@ function formatTimestamp(ms: number): string {
 }
 
 export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
-  const [data, setData] = useState<(Transcript & { turns: SpeechTurn[] }) | null>(null);
+  const [data, setData] = useState<MeetingTranscript | null>(null);
+  const [playbackManifest, setPlaybackManifest] = useState<PlaybackManifest | null>(null);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [playbackLoading, setPlaybackLoading] = useState(true);
   const [review, setReview] = useState<SpeakerReview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -32,6 +36,9 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setPlaybackLoading(true);
+    setPlaybackManifest(null);
+    setPlaybackError(null);
     setError(null);
     setReviewError(null);
     setReview(null);
@@ -45,6 +52,17 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+
+    getPlaybackManifest(meetingId)
+      .then((result) => {
+        if (!cancelled) setPlaybackManifest(result);
+      })
+      .catch((err) => {
+        if (!cancelled) setPlaybackError(err instanceof Error ? err.message : "Failed to load playback manifest");
+      })
+      .finally(() => {
+        if (!cancelled) setPlaybackLoading(false);
       });
 
     Promise.resolve()
@@ -128,6 +146,13 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           ))}
         </ol>
       )}
+      <MeetingPlaybackView
+        manifest={playbackManifest}
+        passages={data.segments}
+        loading={playbackLoading}
+        error={playbackError}
+        onRefreshManifest={() => getPlaybackManifest(meetingId)}
+      />
       {reviewError && <p role="alert" style={{ color: "red" }}>{reviewError}</p>}
       {review && (
         <section aria-labelledby="speaker-review-heading">

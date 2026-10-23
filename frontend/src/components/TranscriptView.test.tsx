@@ -6,7 +6,7 @@
  * Task: 15.5 — Validates: Requirements 9.1, 9.2, 4.5
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
 import type { Transcript, SpeechTurn } from "@sauri/shared-types";
@@ -17,10 +17,17 @@ import * as api from "../api";
 
 vi.mock("../api", () => ({
   getTranscript: vi.fn(),
+  getPlaybackManifest: vi.fn(),
   getSpeakerReview: vi.fn(),
   playSpeakerExcerpt: vi.fn(),
   submitSpeakerDisposition: vi.fn(),
 }));
+
+beforeEach(() => {
+  vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(
+    null as unknown as Awaited<ReturnType<typeof api.getPlaybackManifest>>,
+  );
+});
 
 afterEach(() => {
   cleanup();
