@@ -17,7 +17,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import Meeting, SpeechTurn, Transcript
+from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
 from app.meetings.state_machine import (
     STATES,
     TERMINAL_STATES,
@@ -48,6 +48,23 @@ def _create_meeting_in_db(meeting_id: str, state: str = "recording") -> Meeting:
         failure_cause=None,
         created_by="test-user",
         created_at=datetime.now(UTC),
+    )
+
+
+def _create_recording_in_db(
+    meeting_id: str, audio_ref: str = "audio/test.webm"
+) -> SessionRecording:
+    return SessionRecording(
+        id=str(uuid.uuid4()),
+        meeting_id=meeting_id,
+        idempotency_key=str(uuid.uuid4()),
+        capture_origin="chrome_extension",
+        audio_ref=audio_ref,
+        video_ref=None,
+        duration_seconds=12,
+        interrupted=False,
+        expires_at=None,
+        finished_at=datetime.now(UTC),
     )
 
 
@@ -242,6 +259,7 @@ async def test_property_7_segment_to_turn_mapping(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     asr_result = TranscriptionResult(
         segments=segments, language="es-CO", supports_turns=True
@@ -308,6 +326,7 @@ async def test_property_9_language_selection(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -365,6 +384,7 @@ async def test_property_12_provider_metadata(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="test", start_ms=0, end_ms=500)]
     asr_result = TranscriptionResult(
@@ -412,6 +432,7 @@ async def test_property_8_no_segments_does_not_persist(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     asr_result = TranscriptionResult(
         segments=[], language="es-CO", supports_turns=True
@@ -455,6 +476,7 @@ async def test_property_17_engine_failure_propagates(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     mock_engine = AsyncMock()
     mock_engine.transcribe.side_effect = RuntimeError("ASR engine crashed")
@@ -480,6 +502,7 @@ async def test_timeout_fails_meeting_without_rethrowing_for_retry(
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(_create_meeting_in_db(meeting_id, state="recording"))
+        session.add(_create_recording_in_db(meeting_id))
 
     mock_engine = AsyncMock()
     mock_engine.transcribe.side_effect = httpx.ReadTimeout("ASR request timed out")
@@ -515,6 +538,7 @@ async def test_property_10_transcript_uniqueness(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -574,6 +598,7 @@ async def test_property_11_atomicity_rollback(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -621,6 +646,7 @@ async def test_example_preferred_language_es_co(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="test", start_ms=0, end_ms=500)]
     asr_result = TranscriptionResult(
@@ -643,3 +669,52 @@ async def test_example_preferred_language_es_co(
     options = call_args[0][1]
     assert isinstance(options, TranscriptionOptions)
     assert options.preferred_language == "es-CO"
+
+
+@pytest.mark.asyncio
+async def test_transcription_uses_audio_ref_from_recording_owned_by_meeting(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A queue message cannot substitute another recording's audio reference."""
+    meeting_id = str(uuid.uuid4())
+    foreign_meeting_id = str(uuid.uuid4())
+    persisted_audio_ref = "synthetic/owned-recording.wav"
+    foreign_audio_ref = "synthetic/foreign-recording.wav"
+
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="recording"))
+        session.add(_create_meeting_in_db(foreign_meeting_id, state="recording"))
+        session.add(
+            SessionRecording(
+                id=str(uuid.uuid4()),
+                meeting_id=meeting_id,
+                idempotency_key=str(uuid.uuid4()),
+                capture_origin="chrome_extension",
+                audio_ref=persisted_audio_ref,
+                video_ref=None,
+                duration_seconds=12,
+                interrupted=False,
+                expires_at=None,
+                finished_at=datetime.now(UTC),
+            )
+        )
+        session.add(_create_recording_in_db(foreign_meeting_id, foreign_audio_ref))
+
+    mock_engine = AsyncMock()
+    mock_engine.transcribe.return_value = TranscriptionResult(
+        segments=[TranscriptionSegment(text="synthetic", start_ms=0, end_ms=100)],
+        language="es-CO",
+        supports_turns=True,
+    )
+    mock_engine.capabilities = MagicMock(
+        return_value=ASRCapabilities(supports_turns=True, is_local=True)
+    )
+
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
+        await _process_transcription(
+            {"meeting_id": meeting_id, "audio_ref": foreign_audio_ref}, session_factory
+        )
+
+    mock_engine.transcribe.assert_awaited_once()
+    assert mock_engine.transcribe.await_args is not None
+    assert mock_engine.transcribe.await_args.args[0] == persisted_audio_ref
