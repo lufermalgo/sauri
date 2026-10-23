@@ -385,6 +385,80 @@ async def test_diarize_denies_missing_recording_capability_before_io(
     assert invocations == []
 
 
+@pytest.mark.parametrize(
+    ("bearer_kind", "capability_kind", "expected_status"),
+    [
+        ("valid", "malformed", 403),
+        ("valid", "bad_signature", 403),
+        ("invalid", "valid", 401),
+    ],
+)
+@pytest.mark.asyncio
+async def test_diarize_denies_invalid_authorization_before_io(
+    bearer_kind: str,
+    capability_kind: str,
+    expected_status: int,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    secret = b"synthetic-capability-secret"
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    key_path = tmp_path / "recording_capability_key"
+    key_path.write_bytes(secret)
+    downloads: list[str] = []
+    invocations: list[str] = []
+    audio_ref = "recordings/owner-a/recording.wav"
+    expires_at = int(time.time()) + 60
+    capability_value = (
+        "malformed"
+        if capability_kind == "malformed"
+        else f"{expires_at}.{'0' * 64}"
+        if capability_kind == "bad_signature"
+        else capability(audio_ref, secret, expires_at)
+    )
+
+    class RecordingS3:
+        def download_file(self, bucket: str, requested_ref: str, path: str) -> None:
+            downloads.append(requested_ref)
+            Path(path).write_bytes(_minimal_wav_bytes())
+
+    class EmptyAnnotation:
+        def itertracks(self, yield_label: bool = False) -> Any:
+            assert yield_label
+            return iter(())
+
+    def run_pipeline(path: str) -> EmptyAnnotation:
+        invocations.append(path)
+        return EmptyAnnotation()
+
+    def fake_ffmpeg(command: list[str], **_options: Any) -> None:
+        Path(command[-1]).write_bytes(_minimal_wav_bytes())
+
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(subprocess, "run", fake_ffmpeg)
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path, raising=False)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
+    monkeypatch.setattr(native, "s3_client", RecordingS3())
+    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    bearer = "synthetic-token" if bearer_kind == "valid" else "wrong-token"
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/diarize",
+            json={"audio_ref": audio_ref},
+            headers={
+                "Authorization": f"Bearer {bearer}",
+                "X-Sauri-Recording-Capability": capability_value,
+            },
+        )
+
+    assert response.status_code == expected_status
+    assert downloads == []
+    assert invocations == []
+
+
 def test_native_defaults_configure_mps_and_private_token_path() -> None:
     assert native.MINIO_ENDPOINT == "http://localhost:9000"
     assert native.MODEL_ID == "pyannote/speaker-diarization-3.1"
