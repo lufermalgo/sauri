@@ -9,7 +9,12 @@ interface EbmlElement {
 }
 
 const MAX_WEBM_TRACKS_BYTES = 64 * 1024;
+const MAX_WEBM_ELEMENT_READS = 256;
 const EBML_HEADER = [0x1a, 0x45, 0xdf, 0xa3];
+
+interface EbmlReadBudget {
+  remaining: number;
+}
 
 function readEbmlElement(bytes: Uint8Array, offset: number, parentEnd = bytes.length): EbmlElement | null {
   if (offset >= bytes.length) return null;
@@ -64,7 +69,9 @@ async function readFileRange(file: File, start: number, end: number): Promise<Ui
   return new Uint8Array(buffer);
 }
 
-async function readWebmElementAt(file: File, offset: number, parentEnd: number): Promise<EbmlElement | null> {
+async function readWebmElementAt(file: File, offset: number, parentEnd: number, budget: EbmlReadBudget): Promise<EbmlElement | null> {
+  if (budget.remaining <= 0) return null;
+  budget.remaining -= 1;
   const bytes = await readFileRange(file, offset, Math.min(offset + 12, parentEnd));
   const element = readEbmlElement(bytes, 0, parentEnd - offset);
   return element ? { id: element.id, dataStart: offset + element.dataStart, dataEnd: offset + element.dataEnd } : null;
@@ -73,12 +80,13 @@ async function readWebmElementAt(file: File, offset: number, parentEnd: number):
 async function inspectWebmTracks(file: File, signature: Uint8Array): Promise<{ hasAudio: boolean; hasVideo: boolean } | null> {
   if (!hasWebmSignature(signature)) return null;
 
-  const header = await readWebmElementAt(file, 0, file.size);
+  const budget = { remaining: MAX_WEBM_ELEMENT_READS };
+  const header = await readWebmElementAt(file, 0, file.size, budget);
   if (!header || header.id !== 0x1a45dfa3 || header.dataEnd <= EBML_HEADER.length) return null;
 
   let segment: EbmlElement | null = null;
   for (let offset = header.dataEnd; offset < file.size;) {
-    const element = await readWebmElementAt(file, offset, file.size);
+    const element = await readWebmElementAt(file, offset, file.size, budget);
     if (!element) return null;
     if (element.id === 0x18538067) {
       segment = element;
@@ -91,7 +99,7 @@ async function inspectWebmTracks(file: File, signature: Uint8Array): Promise<{ h
 
   let tracks: EbmlElement | null = null;
   for (let offset = segment.dataStart; offset < segment.dataEnd;) {
-    const child = await readWebmElementAt(file, offset, segment.dataEnd);
+    const child = await readWebmElementAt(file, offset, segment.dataEnd, budget);
     if (!child) return null;
     if (child.id === 0x1654ae6b) {
       tracks = child;

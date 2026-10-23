@@ -110,6 +110,33 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     expect(wholeFileReader.mock.calls.every(([blob]) => blob.size <= 64 * 1024)).toBe(true);
   });
 
+  it("rejects WebM with excessive pre-track elements after a bounded number of reads", async () => {
+    const uploadRecording = vi.mocked(api.uploadRecording);
+    const voidElementCount = 1_000;
+    const trackElement = createSyntheticWebm(2).slice(10);
+    const segmentContent = new Uint8Array(voidElementCount * 2 + trackElement.length);
+    for (let index = 0; index < voidElementCount; index += 1) {
+      segmentContent.set([0xec, 0x80], index * 2);
+    }
+    segmentContent.set(trackElement, voidElementCount * 2);
+    const webm = new Uint8Array(10 + segmentContent.length);
+    webm.set([0x1a, 0x45, 0xdf, 0xa3, 0x80, 0x18, 0x53, 0x80, 0x67, 0xff]);
+    webm.set(segmentContent, 10);
+    const file = new File([webm], "many-elements.webm", { type: "application/octet-stream" });
+    const readRange = vi.spyOn(FileReader.prototype, "readAsArrayBuffer");
+    const createObjectURL = vi.fn().mockReturnValue("blob:many-elements");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+
+    render(<SpeakerRecognitionTestScreen />);
+    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireLoadedMetadata(8);
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/verify|valid|webm/i);
+    expect(uploadRecording).not.toHaveBeenCalled();
+    expect(readRange.mock.calls.length).toBeLessThan(300);
+  });
+
   it("refuses WebM metadata beyond the bounded inspection budget", async () => {
     const uploadRecording = vi.mocked(api.uploadRecording);
     const largeHeaderSize = 4 * 1024 * 1024;
