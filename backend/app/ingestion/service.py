@@ -1,7 +1,7 @@
 """Ingestion service — processes the delivery of a SessionRecording from any origin.
 
 The pipeline is identical regardless of whether `capture_origin` is
-"chrome_extension" or "server_bot". The field is stored for traceability
+"chrome_extension", "server_bot", or "web_upload". The field is stored for traceability
 but doesn't alter the flow.
 """
 
@@ -48,7 +48,7 @@ async def process_ingestion(
     if meeting is None:
         meeting = Meeting(
             id=data.meeting_id,
-            meet_link=data.meet_link or "https://meet.google.com/unknown",
+            meet_link=data.meet_link,
             title=data.title,
             origin="manual",
             process_state="recording",

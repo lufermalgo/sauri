@@ -141,7 +141,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-10: GREEN — Add nullable meeting links and the web-upload contract
 
-**Tracking:** Issue #561 · Card task_094a330d32cd462b
+**Tracking:** Issue #561 · Card task_094a330d32cd462b · PR #590
 
 **Files:** `backend/app/infra/models.py`, the existing ingestion schema in `backend/app/ingestion/`, the single sequential Alembic migration after `010_speaker_excerpt_reference`, `packages/shared-types/src/index.ts`, and corresponding backend tests.
 
