@@ -1,4 +1,4 @@
-"""RED contracts for exact processing-revision isolation and admission.
+"""RED contracts for revision migration, route and stale-access behavior.
 
 Feature: recording-speaker-review, T-8 RED
 Validates: approved tasks.md T-8 and design.md revision-state boundary.
@@ -10,18 +10,55 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import os
+import uuid
+from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from httpx import AsyncClient
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+
+from app.auth.token import create_token
+from app.infra.models import Meeting, SpeakerReview, SpeakerReviewItem
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = BACKEND_ROOT / "alembic" / "versions"
 LEGACY_REVISION = 1
+OWNER_ID = "t8-synthetic-owner"
+
+
+@pytest.fixture
+async def postgres_engine() -> AsyncGenerator[AsyncEngine, None]:
+    """Use only the explicitly isolated, high-port T-8 PostgreSQL database."""
+    database_url = os.environ.get("SAURI_T8_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("set SAURI_T8_TEST_DATABASE_URL to the isolated T-8 PostgreSQL database")
+    url = make_url(database_url)
+    if (
+        url.drivername != "postgresql+asyncpg"
+        or url.host not in {"localhost", "127.0.0.1"}
+        or url.port is None
+        or url.port < 55000
+        or not (url.database or "").startswith("sauri_t8")
+    ):
+        pytest.fail("T-8 migration tests require a local high-port database named sauri_t8*")
+
+    engine = create_async_engine(database_url, echo=False)
+    async with engine.begin() as connection:
+        await connection.execute(text("DROP SCHEMA public CASCADE"))
+        await connection.execute(text("CREATE SCHEMA public"))
+    try:
+        yield engine
+    finally:
+        await engine.dispose()
 
 
 def _load_migration(path: Path):
@@ -88,18 +125,18 @@ async def _seed_legacy_stage_rows(engine: AsyncEngine) -> None:
 
 @pytest.mark.asyncio
 async def test_revision_migration_backfills_complete_and_partial_legacy_rows(
-    async_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
 ) -> None:
     migration = _revision_migration()
     assert migration.down_revision in {
         "009_recording_media_sources",
         "009_speaker_review_idempotency_receipts",
     }
-    await _seed_legacy_stage_rows(async_engine)
+    await _seed_legacy_stage_rows(postgres_engine)
 
-    await _run_migration(async_engine, migration, "upgrade")
+    await _run_migration(postgres_engine, migration, "upgrade")
 
-    async with async_engine.connect() as connection:
+    async with postgres_engine.connect() as connection:
         transcript_revisions = (
             await connection.execute(
                 text("SELECT meeting_id, processing_revision_id FROM transcripts ORDER BY meeting_id")
@@ -119,26 +156,41 @@ async def test_revision_migration_backfills_complete_and_partial_legacy_rows(
 
 @pytest.mark.asyncio
 async def test_revision_migration_replaces_meeting_only_uniqueness(
-    async_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
 ) -> None:
     migration = _revision_migration()
-    await _seed_legacy_stage_rows(async_engine)
-    await _run_migration(async_engine, migration, "upgrade")
+    await _seed_legacy_stage_rows(postgres_engine)
+    await _run_migration(postgres_engine, migration, "upgrade")
 
-    async with async_engine.begin() as connection:
+    async with postgres_engine.begin() as connection:
         await connection.execute(
             text(
                 "INSERT INTO transcripts (id, meeting_id, content, processing_revision_id) "
                 "VALUES ('transcript-revision-2', 'meeting-complete', 'new synthetic transcript', 2)"
             )
         )
-        with pytest.raises(Exception):
-            await connection.execute(
-                text(
-                    "INSERT INTO transcripts (id, meeting_id, content, processing_revision_id) "
-                    "VALUES ('transcript-duplicate-revision', 'meeting-complete', 'duplicate', 2)"
+        with pytest.raises(IntegrityError):
+            async with connection.begin_nested():
+                await connection.execute(
+                    text(
+                        "INSERT INTO transcripts (id, meeting_id, content, processing_revision_id) "
+                        "VALUES ('transcript-duplicate-revision', 'meeting-complete', 'duplicate', 2)"
+                    )
                 )
+        await connection.execute(
+            text(
+                "INSERT INTO diarizations (id, meeting_id, content, processing_revision_id) "
+                "VALUES ('diarization-revision-2', 'meeting-complete', 'new synthetic diarization', 2)"
             )
+        )
+        with pytest.raises(IntegrityError):
+            async with connection.begin_nested():
+                await connection.execute(
+                    text(
+                        "INSERT INTO diarizations (id, meeting_id, content, processing_revision_id) "
+                        "VALUES ('diarization-duplicate-revision', 'meeting-complete', 'duplicate', 2)"
+                    )
+                )
 
 
 @pytest.mark.asyncio
@@ -182,47 +234,91 @@ def test_revision_qualified_review_routes_are_registered() -> None:
     assert "/api/v1/meetings/{meeting_id}/speaker-review/speakers/{speaker_id}/excerpt" not in routes
 
 
-@pytest.mark.asyncio
-async def test_exact_admission_retry_resumes_the_same_revision(
-    db_session, meeting_recording
-) -> None:
-    """A retry carries the stable candidate ID and cannot allocate a second revision."""
-    from app.meetings.processing_revision_service import ProcessingRevisionService
-
-    db_session.add(meeting_recording)
-    await db_session.flush()
-    service = ProcessingRevisionService(db_session)
-
-    first = await service.admit_candidate(
-        meeting_recording.created_by, meeting_recording.id, 2
-    )
-    retry = await service.admit_candidate(
-        meeting_recording.created_by, meeting_recording.id, 2
-    )
-
-    assert retry == first
+def _auth_headers() -> dict[str, str]:
+    token = create_token(OWNER_ID, "t8-owner@sauri.local", "Synthetic Reviewer", True)
+    return {"Authorization": f"Bearer {token}"}
 
 
-@pytest.mark.asyncio
-async def test_distinct_admission_conflicts_without_displacing_in_flight_revision(
-    db_session, meeting_recording
-) -> None:
-    """A second ID conflicts; an exact retry still resolves to the first candidate."""
-    from app.meetings.processing_revision_service import ProcessingRevisionService
-
-    db_session.add(meeting_recording)
-    await db_session.flush()
-    service = ProcessingRevisionService(db_session)
-    admitted = await service.admit_candidate(
-        meeting_recording.created_by, meeting_recording.id, 2
-    )
-
-    with pytest.raises(Exception, match="(?i)conflict"):
-        await service.admit_candidate(
-            meeting_recording.created_by, meeting_recording.id, 3
+async def _persist_synthetic_review(database_url: str) -> tuple[str, str, str]:
+    """Persist one synthetic pending review for stale-revision HTTP requests."""
+    meeting_id = str(uuid.uuid4())
+    review_id = str(uuid.uuid4())
+    item_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    engine = create_async_engine(database_url, echo=False)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        session.add(
+            Meeting(
+                id=meeting_id,
+                meet_link="https://meet.google.com/synthetic-meeting",
+                origin="manual",
+                calendar_invite_id=None,
+                scheduled_start_time=None,
+                process_state="completed",
+                failure_cause=None,
+                created_by=OWNER_ID,
+                created_at=now,
+            )
         )
+        session.add(
+            SpeakerReview(
+                id=review_id,
+                meeting_id=meeting_id,
+                processing_revision=1,
+                status="pending",
+                created_at=now,
+            )
+        )
+        session.add(
+            SpeakerReviewItem(
+                id=item_id,
+                review_id=review_id,
+                speaker_key="speaker-synthetic-1",
+                current_label="Speaker 1",
+                disposition=None,
+                chosen_label=None,
+                attribution_state="uncertain",
+                version=1,
+            )
+        )
+    await engine.dispose()
+    return meeting_id, review_id, item_id
 
-    exact_retry = await service.admit_candidate(
-        meeting_recording.created_by, meeting_recording.id, 2
+
+@pytest.mark.asyncio
+async def test_stale_revision_disposition_is_rejected_without_mutation(
+    api_client: AsyncClient, api_db_url: str
+) -> None:
+    meeting_id, _, item_id = await _persist_synthetic_review(api_db_url)
+
+    response = await api_client.put(
+        f"/api/v1/meetings/{meeting_id}/speaker-review/revisions/2/speakers/speaker-synthetic-1",
+        headers=_auth_headers() | {"Idempotency-Key": "t8-stale-write"},
+        json={"disposition": "confirmed", "expected_version": 1},
     )
-    assert exact_retry == admitted
+
+    assert response.status_code == 409
+    engine = create_async_engine(api_db_url, echo=False)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        item = await session.get(SpeakerReviewItem, item_id)
+    await engine.dispose()
+    assert item is not None
+    assert item.disposition is None
+    assert item.version == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_revision_excerpt_is_rejected(
+    api_client: AsyncClient, api_db_url: str
+) -> None:
+    meeting_id, _, _ = await _persist_synthetic_review(api_db_url)
+
+    response = await api_client.get(
+        f"/api/v1/meetings/{meeting_id}/speaker-review/revisions/2/"
+        "speakers/speaker-synthetic-1/excerpt",
+        headers=_auth_headers(),
+    )
+
+    assert response.status_code == 409
