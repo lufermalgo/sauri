@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import importlib.util
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +64,12 @@ def _minimal_wav_bytes() -> bytes:
         len(data),
     )
     return header + data
+
+
+def capability(audio_ref: str, secret: bytes, expires_at: int) -> str:
+    message = f"{audio_ref}\n{expires_at}".encode()
+    signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    return f"{expires_at}.{signature}"
 
 
 class FakeTurn:
@@ -213,6 +222,53 @@ async def test_diarize_rejects_audio_refs_outside_configured_prefix(
             headers={"Authorization": "Bearer synthetic-token"},
         )
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_diarize_denies_capability_for_another_owners_recording_before_io(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = b"synthetic-capability-secret"
+    key_path = tmp_path / "capability_key"
+    key_path.write_bytes(secret)
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    downloads: list[str] = []
+    invocations: list[str] = []
+
+    class RecordingS3:
+        def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
+            downloads.append(audio_ref)
+
+    class EmptyAnnotation:
+        def itertracks(self, yield_label: bool = False) -> Any:
+            assert yield_label
+            return iter(())
+
+    def run_pipeline(path: str) -> EmptyAnnotation:
+        invocations.append(path)
+        return EmptyAnnotation()
+
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
+    monkeypatch.setattr(native, "s3_client", RecordingS3())
+    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    audio_ref = "recordings/owner-b/recording.wav"
+    owner_a_capability = capability("recordings/owner-a/recording.wav", secret, int(time.time()) + 60)
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/diarize",
+            json={"audio_ref": audio_ref},
+            headers={
+                "Authorization": "Bearer synthetic-token",
+                "X-Sauri-Recording-Capability": owner_a_capability,
+            },
+        )
+
+    assert response.status_code == 403
+    assert downloads == []
+    assert invocations == []
 
 
 def test_native_defaults_configure_mps_and_private_token_path() -> None:

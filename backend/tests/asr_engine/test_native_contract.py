@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import importlib.util
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +26,12 @@ class FakeS3:
         assert bucket == "synthetic-bucket"
         assert audio_ref == "synthetic/recording.wav"
         Path(path).write_bytes(b"synthetic audio")
+
+
+def capability(audio_ref: str, secret: bytes, expires_at: int) -> str:
+    message = f"{audio_ref}\n{expires_at}".encode()
+    signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    return f"{expires_at}.{signature}"
 
 
 @pytest.mark.asyncio
@@ -123,6 +132,48 @@ async def test_transcribe_returns_503_until_model_is_initialized(
             headers={"Authorization": "Bearer synthetic-token"},
         )
     assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_transcribe_denies_capability_for_another_owners_recording_before_io(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = b"synthetic-capability-secret"
+    key_path = tmp_path / "capability_key"
+    key_path.write_bytes(secret)
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    downloads: list[str] = []
+    invocations: list[str] = []
+
+    class RecordingS3:
+        def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
+            downloads.append(audio_ref)
+
+    def transcribe(path: str, **_kwargs: Any) -> dict[str, Any]:
+        invocations.append(path)
+        return {"language": "es", "segments": []}
+
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
+    monkeypatch.setattr(native, "s3_client", RecordingS3())
+    monkeypatch.setattr(native, "transcribe_audio", transcribe)
+    audio_ref = "recordings/owner-b/recording.wav"
+    owner_a_capability = capability("recordings/owner-a/recording.wav", secret, int(time.time()) + 60)
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/transcribe",
+            json={"audio_ref": audio_ref},
+            headers={
+                "Authorization": "Bearer synthetic-token",
+                "X-Sauri-Recording-Capability": owner_a_capability,
+            },
+        )
+
+    assert response.status_code == 403
+    assert downloads == []
+    assert invocations == []
 
 
 def test_native_defaults_use_host_minio_and_expected_model() -> None:
