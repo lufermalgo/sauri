@@ -18,6 +18,12 @@ function selectSyntheticAudio() {
   return file;
 }
 
+function selectSyntheticVideo() {
+  const file = new File(["synthetic video"], "sample.mp4", { type: "video/mp4" });
+  fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+  return file;
+}
+
 function fireLoadedMetadata(duration: number) {
   const media = document.querySelector("audio, video");
   if (!(media instanceof HTMLMediaElement)) {
@@ -54,6 +60,27 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     expect(metadata).not.toHaveProperty("title");
     expect(createObjectURL).toHaveBeenCalledWith(file);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:synthetic-recording");
+  });
+
+  it("accepts muxed video and declares its video presence truthfully", async () => {
+    const uploadRecording = vi.mocked(api.uploadRecording);
+    uploadRecording.mockResolvedValue({ recording_id: "recording-video", state: "transcribing" });
+    const createObjectURL = vi.fn().mockReturnValue("blob:synthetic-video");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+
+    render(<SpeakerRecognitionTestScreen />);
+    const input = screen.getByLabelText(/recording/i);
+    expect((input as HTMLInputElement).accept).toContain("video/*");
+    const file = selectSyntheticVideo();
+    expect(document.querySelector("video")).not.toBeNull();
+    fireLoadedMetadata(18.1);
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    await waitFor(() => expect(uploadRecording).toHaveBeenCalledTimes(1));
+    expect(uploadRecording).toHaveBeenCalledWith(file, expect.objectContaining({
+      duration_seconds: 19,
+      video_presence: "muxed",
+    }));
   });
 
   it("reuses meeting and idempotency identifiers when retrying the same upload", async () => {

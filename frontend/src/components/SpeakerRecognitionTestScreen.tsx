@@ -58,7 +58,7 @@ export function SpeakerRecognitionTestScreen() {
       meeting_id: recording.meetingId,
       idempotency_key: recording.idempotencyKey,
       capture_origin: "web_upload",
-      video_presence: "absent",
+      video_presence: recording.file.type.startsWith("video/") ? "muxed" : "absent",
     };
     setUploadState("uploading");
     try {
@@ -77,19 +77,27 @@ export function SpeakerRecognitionTestScreen() {
         Recording
         <input
           type="file"
-          accept="audio/*"
+          accept="audio/*,video/*"
           onChange={(event) => selectRecording(event.currentTarget.files?.[0])}
         />
       </label>
-      {recording && (
+      {recording && (recording.file.type.startsWith("video/") ? (
+        <video
+          src={recording.objectUrl}
+          preload="metadata"
+          onLoadedMetadata={handleMetadata}
+          onError={() => releaseObjectUrl(recording.objectUrl)}
+          aria-label="Selected recording metadata"
+        />
+      ) : (
         <audio
           src={recording.objectUrl}
           preload="metadata"
           onLoadedMetadata={handleMetadata}
-          onError={() => recording && releaseObjectUrl(recording.objectUrl)}
+          onError={() => releaseObjectUrl(recording.objectUrl)}
           aria-label="Selected recording metadata"
         />
-      )}
+      ))}
       {recording && uploadState !== "uploaded" && (
         <button type="button" onClick={submitUpload} disabled={uploadState === "uploading"}>
           {uploadState === "failed" ? "Retry upload" : uploadState === "uploading" ? "Uploading…" : "Upload"}

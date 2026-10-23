@@ -78,7 +78,7 @@ export interface RecordingUploadData {
   meeting_id: string;
   idempotency_key: string;
   capture_origin: "web_upload";
-  video_presence: "absent";
+  video_presence: "absent" | "muxed";
 }
 
 export interface RecordingUploadResult {
