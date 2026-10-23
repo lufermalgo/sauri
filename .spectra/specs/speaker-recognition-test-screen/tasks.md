@@ -19,7 +19,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-1: RED — Specify authenticated multipart upload and measured duration
 
-**Tracking:** Issue #552 · Card task_833c47d6ae754443
+**Tracking:** Issue #552 · Card task_833c47d6ae754443 · PR #570
 
 **Files / test seam:** `frontend/src/api.test.ts` (existing API test module) for `POST /api/v1/ingestion/upload`; upload adapter in `frontend/src/api.ts`; media-metadata/upload behavior in `frontend/src/components/SpeakerRecognitionTestScreen.tsx`.
 
