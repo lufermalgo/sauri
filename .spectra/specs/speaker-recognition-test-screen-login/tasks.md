@@ -41,7 +41,9 @@ T-1 and T-3 are independent test-first tasks and may proceed concurrently in sep
 
 **Dependencies:** T-1 (mandatory RED-before-GREEN).
 
-**Tracking:** Issue #578 · Card task_ae03ab50ef5848e4
+**Status:** Done.
+
+**Tracking:** Card task_ae03ab50ef5848e4 · Issue #578 · PR #582
 
 ## Phase 3: Speaker-Test Session UI Tests (RED)
 

@@ -97,6 +97,79 @@ describe("authenticated multipart upload API adapter", () => {
   });
 });
 
+interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+const loginMethod = api as typeof api & {
+  login?: (email: string, password: string) => Promise<LoginResponse>;
+};
+
+describe("login API adapter", () => {
+  it("posts JSON credentials and decodes the login response without persisting it", async () => {
+    const loginResponse: LoginResponse = {
+      access_token: "synthetic-access-token",
+      token_type: "bearer",
+      expires_in: 3600,
+    };
+    const fetchMock = mockFetch(loginResponse);
+    const storageSetItem = vi.mocked(localStorage.setItem);
+
+    expect(typeof loginMethod.login).toBe("function");
+    await expect(loginMethod.login!("synthetic@example.invalid", "synthetic-password"))
+      .resolves.toEqual(loginResponse);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [requestUrl, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(requestUrl).toContain("/api/v1/auth/login");
+    expect(request.method).toBe("POST");
+    expect(request.headers).toEqual({ "Content-Type": "application/json" });
+    expect(request.body).toBe(JSON.stringify({
+      email: "synthetic@example.invalid",
+      password: "synthetic-password",
+    }));
+    expect(storageSetItem).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-success responses without persisting credentials or response data", async () => {
+    const loginResponse = {
+      access_token: "synthetic-access-token",
+      token_type: "bearer",
+      expires_in: 3600,
+    };
+    mockFetch(loginResponse, 401);
+    const storageSetItem = vi.mocked(localStorage.setItem);
+
+    expect(typeof loginMethod.login).toBe("function");
+    await expect(loginMethod.login!("synthetic@example.invalid", "synthetic-password"))
+      .rejects.toThrow("Error 401");
+
+    expect(storageSetItem).not.toHaveBeenCalled();
+    expect(storageSetItem).not.toHaveBeenCalledWith("sauri_token", expect.anything());
+    expect(storageSetItem).not.toHaveBeenCalledWith(expect.anything(), "synthetic-password");
+  });
+
+  it("rejects network failures without persisting credentials", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Network unavailable"));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(),
+      setItem: vi.fn(),
+      clear: vi.fn(),
+    });
+    const storageSetItem = vi.mocked(localStorage.setItem);
+
+    expect(typeof loginMethod.login).toBe("function");
+    await expect(loginMethod.login!("synthetic@example.invalid", "synthetic-password"))
+      .rejects.toThrow("Network unavailable");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(storageSetItem).not.toHaveBeenCalled();
+  });
+});
+
 describe("meeting playback API adapter", () => {
   it("returns the typed manifest modes and authoritative source metadata without inference", async () => {
     expect(typeof manifestMethod.getPlaybackManifest).toBe("function");
