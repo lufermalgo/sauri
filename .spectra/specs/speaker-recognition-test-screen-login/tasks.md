@@ -75,7 +75,9 @@ T-1 and T-3 are independent test-first tasks and may proceed concurrently in sep
 
 **Dependencies:** T-2 (the API login operation must exist) and T-3 (mandatory RED-before-GREEN UI coverage).
 
-**Tracking:** Issue #580 · Card task_deca27537fae469a
+**Status:** Done.
+
+**Tracking:** Issue #580 · Card task_deca27537fae469a · PR #583
 
 ## Dependency Graph and Gates
 
