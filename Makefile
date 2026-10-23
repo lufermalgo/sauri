@@ -50,11 +50,12 @@ check-english:
 
 ## Levantar API, worker, PostgreSQL, MinIO y RabbitMQ; motores locales corren fuera de Compose
 up:
-	docker compose up -d
+	_tools/compose-bringup.sh
 
 ## Levantar con rebuild de imágenes
 build:
-	docker compose up -d --build
+	docker compose build
+	_tools/compose-bringup.sh
 
 ## Ver logs de todos los servicios
 logs:
