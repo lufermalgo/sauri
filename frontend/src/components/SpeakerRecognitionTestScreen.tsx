@@ -8,7 +8,10 @@ interface EbmlElement {
   dataEnd: number;
 }
 
-function readEbmlElement(bytes: Uint8Array, offset: number): EbmlElement | null {
+const MAX_WEBM_TRACKS_BYTES = 64 * 1024;
+const EBML_HEADER = [0x1a, 0x45, 0xdf, 0xa3];
+
+function readEbmlElement(bytes: Uint8Array, offset: number, parentEnd = bytes.length): EbmlElement | null {
   if (offset >= bytes.length) return null;
   let idLength = 1;
   let marker = 0x80;
@@ -36,8 +39,8 @@ function readEbmlElement(bytes: Uint8Array, offset: number): EbmlElement | null 
     unknownSize &&= bytes[sizeOffset + index] === 0xff;
   }
   const dataStart = sizeOffset + sizeLength;
-  const dataEnd = unknownSize ? bytes.length : dataStart + size;
-  if (!Number.isSafeInteger(dataEnd) || dataEnd > bytes.length) return null;
+  const dataEnd = unknownSize ? parentEnd : dataStart + size;
+  if (!Number.isSafeInteger(dataEnd) || dataEnd > parentEnd) return null;
   return { id, dataStart, dataEnd };
 }
 
@@ -51,33 +54,61 @@ function findEbmlChild(bytes: Uint8Array, parent: EbmlElement, childId: number):
   return null;
 }
 
-async function inspectWebmTracks(file: File): Promise<{ hasAudio: boolean; hasVideo: boolean } | null> {
+async function readFileRange(file: File, start: number, end: number): Promise<Uint8Array> {
   const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => reader.result instanceof ArrayBuffer ? resolve(reader.result) : reject(new Error("Unable to read recording data."));
     reader.onerror = () => reject(reader.error ?? new Error("Unable to read recording data."));
-    reader.readAsArrayBuffer(file);
+    reader.readAsArrayBuffer(file.slice(start, end));
   });
-  const bytes = new Uint8Array(buffer);
+  return new Uint8Array(buffer);
+}
+
+async function readWebmElementAt(file: File, offset: number, parentEnd: number): Promise<EbmlElement | null> {
+  const bytes = await readFileRange(file, offset, Math.min(offset + 12, parentEnd));
+  const element = readEbmlElement(bytes, 0, parentEnd - offset);
+  return element ? { id: element.id, dataStart: offset + element.dataStart, dataEnd: offset + element.dataEnd } : null;
+}
+
+async function inspectWebmTracks(file: File, signature: Uint8Array): Promise<{ hasAudio: boolean; hasVideo: boolean } | null> {
+  if (!hasWebmSignature(signature)) return null;
+
+  const header = await readWebmElementAt(file, 0, file.size);
+  if (!header || header.id !== 0x1a45dfa3 || header.dataEnd <= EBML_HEADER.length) return null;
+
   let segment: EbmlElement | null = null;
-  for (let offset = 0; offset < bytes.length;) {
-    const element = readEbmlElement(bytes, offset);
+  for (let offset = header.dataEnd; offset < file.size;) {
+    const element = await readWebmElementAt(file, offset, file.size);
     if (!element) return null;
     if (element.id === 0x18538067) {
       segment = element;
       break;
     }
+    if (element.dataEnd <= offset) return null;
     offset = element.dataEnd;
   }
   if (!segment) return null;
-  const tracks = findEbmlChild(bytes, segment, 0x1654ae6b);
-  if (!tracks) return null;
 
+  let tracks: EbmlElement | null = null;
+  for (let offset = segment.dataStart; offset < segment.dataEnd;) {
+    const child = await readWebmElementAt(file, offset, segment.dataEnd);
+    if (!child) return null;
+    if (child.id === 0x1654ae6b) {
+      tracks = child;
+      break;
+    }
+    if (child.dataEnd <= offset) return null;
+    offset = child.dataEnd;
+  }
+  if (!tracks || tracks.dataEnd - tracks.dataStart > MAX_WEBM_TRACKS_BYTES) return null;
+
+  const bytes = await readFileRange(file, tracks.dataStart, tracks.dataEnd);
+  const localTracks = { ...tracks, dataStart: 0, dataEnd: bytes.length };
   let hasAudio = false;
   let hasVideo = false;
-  for (let offset = tracks.dataStart; offset < tracks.dataEnd;) {
-    const entry = readEbmlElement(bytes, offset);
-    if (!entry || entry.dataEnd > tracks.dataEnd) return null;
+  for (let offset = localTracks.dataStart; offset < localTracks.dataEnd;) {
+    const entry = readEbmlElement(bytes, offset, localTracks.dataEnd);
+    if (!entry || entry.dataEnd <= offset) return null;
     if (entry.id === 0xae) {
       const type = findEbmlChild(bytes, entry, 0x83);
       if (type && type.dataEnd > type.dataStart) {
@@ -88,7 +119,11 @@ async function inspectWebmTracks(file: File): Promise<{ hasAudio: boolean; hasVi
     }
     offset = entry.dataEnd;
   }
-  return { hasAudio, hasVideo };
+  return hasAudio || hasVideo ? { hasAudio, hasVideo } : null;
+}
+
+function hasWebmSignature(signature: Uint8Array): boolean {
+  return EBML_HEADER.every((byte, index) => signature[index] === byte);
 }
 
 interface SelectedRecording {
@@ -148,11 +183,17 @@ export function SpeakerRecognitionTestScreen() {
     setUploadState("uploading");
     try {
       const declaredVideo = recording.file.type.startsWith("video/");
-      const tracks = recording.file.type.includes("webm") ? await inspectWebmTracks(recording.file) : null;
-      if (recording.file.type.includes("webm") && !tracks) {
+      const signature = await readFileRange(recording.file, 0, Math.min(EBML_HEADER.length, recording.file.size));
+      const isWebm = hasWebmSignature(signature);
+      const hasMediaMimeType = recording.file.type.startsWith("audio/") || recording.file.type.startsWith("video/");
+      if (!isWebm && (!hasMediaMimeType || recording.file.type.includes("webm"))) {
+        throw new Error("Could not verify the recording format. Choose a valid audio or video recording and try again.");
+      }
+      const tracks = isWebm ? await inspectWebmTracks(recording.file, signature) : null;
+      if (isWebm && !tracks) {
         throw new Error("Could not verify the WebM audio/video tracks. Choose a valid WebM recording and try again.");
       }
-      if (tracks && (declaredVideo !== tracks.hasVideo || (!declaredVideo && !tracks.hasAudio))) {
+      if (tracks && hasMediaMimeType && (declaredVideo !== tracks.hasVideo || (!declaredVideo && !tracks.hasAudio))) {
         throw new Error(`The recording contains ${tracks.hasVideo ? "a video" : "no video"} track but its file type is declared as ${declaredVideo ? "video" : "audio"}. Choose a file whose type matches its media tracks.`);
       }
       const data: RecordingUploadData = {

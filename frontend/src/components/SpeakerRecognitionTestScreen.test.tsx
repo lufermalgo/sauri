@@ -14,7 +14,7 @@ afterEach(() => {
 
 function createSyntheticWebm(trackType: 1 | 2) {
   // EBML Segment > Tracks > TrackEntry > TrackType (1 = video, 2 = audio).
-  return new Uint8Array([0x18, 0x53, 0x80, 0x67, 0x8a, 0x16, 0x54, 0xae, 0x6b, 0x85, 0xae, 0x83, 0x83, 0x81, trackType]);
+  return new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0x80, 0x18, 0x53, 0x80, 0x67, 0x8a, 0x16, 0x54, 0xae, 0x6b, 0x85, 0xae, 0x83, 0x83, 0x81, trackType]);
 }
 
 function selectSyntheticAudio() {
@@ -86,6 +86,64 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
       duration_seconds: 19,
       video_presence: "muxed",
     }));
+  });
+
+  it("inspects WebM by container signature when its MIME type is generic and reads bounded metadata slices", async () => {
+    const uploadRecording = vi.mocked(api.uploadRecording);
+    uploadRecording.mockResolvedValue({ recording_id: "recording-generic-webm", state: "transcribing" });
+    const file = new File([createSyntheticWebm(2)], "renamed.bin", { type: "application/octet-stream" });
+    Object.defineProperty(file, "size", { configurable: true, value: 400 * 1024 * 1024 });
+    const slice = vi.spyOn(file, "slice");
+    const wholeFileReader = vi.spyOn(FileReader.prototype, "readAsArrayBuffer");
+    const createObjectURL = vi.fn().mockReturnValue("blob:generic-webm");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+
+    render(<SpeakerRecognitionTestScreen />);
+    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireLoadedMetadata(8);
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    await waitFor(() => expect(uploadRecording).toHaveBeenCalledTimes(1));
+    expect(uploadRecording).toHaveBeenCalledWith(file, expect.objectContaining({ video_presence: "absent" }));
+    expect(slice).toHaveBeenCalled();
+    expect(wholeFileReader).toHaveBeenCalled();
+    expect(wholeFileReader.mock.calls.every(([blob]) => blob.size <= 64 * 1024)).toBe(true);
+  });
+
+  it("refuses WebM metadata beyond the bounded inspection budget", async () => {
+    const uploadRecording = vi.mocked(api.uploadRecording);
+    const largeHeaderSize = 4 * 1024 * 1024;
+    const tracks = createSyntheticWebm(2).slice(10);
+    const bytes = new Uint8Array(16 + largeHeaderSize + tracks.length);
+    bytes.set([0x1a, 0x45, 0xdf, 0xa3, 0x10, 0x40, 0x00, 0x00], 0);
+    bytes.set([0x18, 0x53, 0x80, 0x67, 0x10, 0x40, 0x00, 0x00], 8 + largeHeaderSize);
+    bytes.set(tracks, 16 + largeHeaderSize);
+    const file = new File([bytes], "large-metadata.webm", { type: "application/octet-stream" });
+    const createObjectURL = vi.fn().mockReturnValue("blob:large-metadata");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+
+    render(<SpeakerRecognitionTestScreen />);
+    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireLoadedMetadata(8);
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/verify|valid|webm/i);
+    expect(uploadRecording).not.toHaveBeenCalled();
+  });
+
+  it("rejects empty or unrecognized media instead of asserting video is absent", async () => {
+    const uploadRecording = vi.mocked(api.uploadRecording);
+    const file = new File([], "empty.bin", { type: "application/octet-stream" });
+    const createObjectURL = vi.fn().mockReturnValue("blob:empty-media");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+
+    render(<SpeakerRecognitionTestScreen />);
+    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireLoadedMetadata(1);
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/verify|valid|media/i);
+    expect(uploadRecording).not.toHaveBeenCalled();
   });
 
   it("rejects a video track mislabeled as audio before upload with an actionable error", async () => {
