@@ -19,6 +19,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-1: RED — Specify authenticated multipart upload and measured duration
 
+**Tracking:** Issue #552 · Card task_833c47d6ae754443
+
 **Files / test seam:** `frontend/src/api.test.ts` (existing API test module) for `POST /api/v1/ingestion/upload`; upload adapter in `frontend/src/api.ts`; media-metadata/upload behavior in `frontend/src/components/SpeakerRecognitionTestScreen.tsx`.
 
 **Action:** Add failing tests for the existing `audio` and JSON-serialized `data` multipart fields, authorization header, absence of a manually set `Content-Type`, browser-generated multipart boundary, stable `meeting_id` and `idempotency_key` on retry, truthful `web_upload` and `video_presence`, and omission of `meet_link`/`title`. Cover finite browser media duration rounded up with `Math.ceil`, object-URL revocation, and no request when duration is unavailable; do not use a fabricated fallback. Use synthetic media metadata only.
@@ -28,6 +30,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Dependencies:** None.
 
 ### T-2: GREEN — Implement the authenticated upload adapter and browser duration handling
+
+**Tracking:** Issue #553 · Card task_6dc1779dfd874fed
 
 **Files:** `frontend/src/api.ts`, `frontend/src/api.test.ts`, `frontend/src/components/SpeakerRecognitionTestScreen.tsx`.
 
@@ -43,6 +47,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-3: RED — Specify processing, transcript fidelity, honest labels, and bounded screen scope
 
+**Tracking:** Issue #554 · Card task_6a2457aa02d3464e
+
 **Files / test seam:** `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`; component behavior in `frontend/src/components/SpeakerRecognitionTestScreen.tsx`; screen selection in `frontend/src/App.tsx`; API read paths in `frontend/src/api.ts`: `GET /api/v1/meetings/{meeting_id}` for persisted processing state, `GET /api/v1/meetings/{meeting_id}/transcript` for completed segments, and `GET /api/v1/meetings/{meeting_id}/speaker-review` for persisted review status/items.
 
 **Action:** Add failing component tests showing that persisted in-progress state is shown before transcript/review data is fetched or rendered; completion loads both in the same flow; each transcript segment displays its timestamp, exact text, and backend speaker label including unresolved `Speaker N`; transcript text is not editable; and the view exposes only upload, progress, transcript inspection, and speaker review rather than a redesigned library or unrelated management controls. Stub API responses only in tests and use synthetic transcript content.
@@ -52,6 +58,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Dependencies:** None.
 
 ### T-4: GREEN — Mount the minimal upload-to-transcript screen
+
+**Tracking:** Issue #555 · Card task_e0ae0aa22694487d
 
 **Files:** `frontend/src/App.tsx`, `frontend/src/components/SpeakerRecognitionTestScreen.tsx`, `frontend/src/api.ts`, `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`.
 
@@ -67,6 +75,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-5: RED — Specify authenticated speaker-review writes and excerpt playback
 
+**Tracking:** Issue #556 · Card task_9fadb56a0a6744a6
+
 **Files / test seam:** `backend/tests/speaker_review/` for authenticated route/authorization/shape tests; route handlers in `backend/app/meetings/router.py` for existing `GET /api/v1/meetings/{meeting_id}/speaker-review`, new `PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}`, and its `GET /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}/excerpt` route.
 
 **Action:** Add failing backend tests for the approved route contract: required `Idempotency-Key`, disposition payload and `expected_version`, owner-scoped identity/label changes, excerpt access, and persisted per-speaker disposition without changing another speaker's item or prematurely completing aggregate review. Follow the payload contract already approved by the referenced speaker-review design; do not invent payload fields or behavior beyond the current feature design.
@@ -76,6 +86,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Dependencies:** None.
 
 ### T-6: GREEN — Add the authenticated disposition and excerpt handlers
+
+**Tracking:** Issue #557 · Card task_42ba386d7a1a4ea3
 
 **Files:** `backend/app/meetings/router.py`; related `backend/tests/speaker_review/` tests.
 
@@ -89,6 +101,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-7: RED — Specify persisted review isolation and resume behavior in the screen
 
+**Tracking:** Issue #558 · Card task_106080f9d51c4fe4
+
 **Files / test seam:** `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`; `frontend/src/api.ts` operations `GET /api/v1/meetings/{meeting_id}/speaker-review`, `PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}`, and `GET /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}/excerpt`; `SpeakerRecognitionTestScreen` review interaction.
 
 **Action:** Add failing tests proving that naming/correcting one speaker changes only that item, an incomplete review stays pending, and unmounting/reopening the same recording reloads persisted pending items rather than locally marking review complete. Include excerpt playback and both naming an unresolved `Speaker N` and correcting an assigned name. Use synthetic API data.
@@ -98,6 +112,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Dependencies:** None.
 
 ### T-8: GREEN — Implement speaker-review persistence and resume in the test screen
+
+**Tracking:** Issue #559 · Card task_01b0ed28162d4326
 
 **Files:** `frontend/src/api.ts`, `frontend/src/components/SpeakerRecognitionTestScreen.tsx`, `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`.
 
@@ -113,6 +129,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-9: RED — Specify linkless meetings and web-upload type/schema compatibility
 
+**Tracking:** Issue #560 · Card task_59e29b213486474d
+
 **Files / test seam:** `backend/tests/meetings/` for nullable meeting-link serialization; `backend/tests/` migration coverage for the nullable-link migration; `packages/shared-types/` typecheck seam for `Meeting.meetLink` and `CaptureOrigin`.
 
 **Action:** Add failing backend assertions for upload-created meetings having no Meet link and migration/schema support for nullable `meetings.meet_link`; verify the shared contract accepts `meetLink: string | null` and `CaptureOrigin.WebUpload`. Do not add a new endpoint or fabricate a Meet URL.
@@ -122,6 +140,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Dependencies:** None.
 
 ### T-10: GREEN — Add nullable meeting links and the web-upload contract
+
+**Tracking:** Issue #561 · Card task_094a330d32cd462b
 
 **Files:** `backend/app/infra/models.py`, the existing ingestion schema in `backend/app/ingestion/`, the single sequential Alembic migration after `010_speaker_excerpt_reference`, `packages/shared-types/src/index.ts`, and corresponding backend tests.
 
@@ -137,6 +157,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-11: RED — Specify owner-safe upload idempotency and collision handling
 
+**Tracking:** Issue #562 · Card task_c989fff93daf41bf
+
 **Files / test seam:** `backend/tests/ingestion/test_idempotency_property.py` and `backend/tests/ingestion/test_playback_source_ingestion.py`; ingestion preflight and `process_ingestion` in `backend/app/ingestion/router.py` and `service.py`.
 
 **Action:** Add failing tests for owner-scoped meeting checks before object writes, exact same-owner/same-meeting retry, non-disclosing not-found for foreign meeting/key, generic conflict for same-owner key reuse across meetings, and reclassification of a concurrent unique-key race after rollback and a fresh lookup. Assert no foreign recording ID/state or media refs are exposed/deleted.
@@ -146,6 +168,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Dependencies:** T-10.
 
 ### T-12: GREEN — Implement owner-safe ingestion retries and linkless creation
+
+**Tracking:** Issue #563 · Card task_7bde75fa77f34e37
 
 **Files:** `backend/app/ingestion/router.py`, `backend/app/ingestion/service.py`, existing ingestion schema and `backend/tests/ingestion/`.
 
@@ -161,6 +185,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-13: RED — Specify durable staged-media cleanup and recovery
 
+**Tracking:** Issue #564 · Card task_3f82fcec75ca4fc8
+
 **Files / test seam:** `backend/tests/retention/test_pending_object_cleanup.py` for `drain_pending_object_deletions(session, object_store, cleanup_scope_hash=None)` in `backend/app/retention/cleanup.py` and scheduled `start_retention_worker` in `backend/app/retention/worker.py`; `backend/tests/infra/test_adaptadores_conformidad_property.py` for `ObjectStore.delete` idempotency; migration coverage in `backend/tests/`.
 
 **Action:** Add failing tests for the pending-deletion table/model contract (unique scope/ref, no meeting/recording foreign key, and downgrade protection for outstanding tasks), per-ref durable tasks before deletion, idempotent repeated delete, partial failure retaining only failed refs, live-reference protection, exact-scope retry draining before duplicate success, scheduled recovery, and never queuing committed recording refs (including post-commit queue failure). Use synthetic refs and fake external I/O only in tests.
@@ -170,6 +196,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Dependencies:** None.
 
 ### T-14: GREEN — Implement durable pending-object cleanup
+
+**Tracking:** Issue #565 · Card task_525bee7872064383
 
 **Files:** `backend/app/retention/cleanup.py`, `backend/app/retention/worker.py`, `backend/app/infra/object_store.py`, ingestion cleanup integration, and corresponding backend tests.
 
@@ -185,6 +213,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-15: RED — Specify owner-protected polling and revision-correct speaker labels
 
+**Tracking:** Issue #566 · Card task_15b2006993284783
+
 **Files / test seam:** `backend/tests/meetings/`; `GET /api/v1/meetings/{meeting_id}` and `GET /api/v1/meetings/{meeting_id}/transcript` handlers in `backend/app/meetings/router.py`.
 
 **Action:** Add failing tests for foreign-owner denial before polling, transcript loading only from one active processing revision, exact `SpeechTurn.id` → `SpeakerAssignment.turn_id` → `Speaker.id` joins, same-revision `speaker_key == str(Speaker.id)`, named/corrected `chosen_label`, unresolved `Speaker N` fallback, multiple-speaker isolation, and unchanged transcript text.
@@ -194,6 +224,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 **Dependencies:** None.
 
 ### T-16: GREEN — Protect meeting polling and return effective transcript labels
+
+**Tracking:** Issue #567 · Card task_b30e036fa70d4984
 
 **Files:** `backend/app/meetings/router.py`, related meetings transcript/authorization code, and `backend/tests/meetings/`.
 
@@ -208,6 +240,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 ## Phase 8 — Cross-Surface Validation
 
 ### T-17: Run configured validation on the integrated candidate
+
+**Tracking:** Issue #568 · Card task_73360b13a3c14544
 
 **Files / evidence:** Exact candidate commit; test/build/typecheck outputs for every changed surface.
 
