@@ -22,3 +22,17 @@ Encryption at rest is enabled at the infrastructure layer:
 ## Data Classification
 
 Audio, video, and transcription data are treated as personal data subject to Colombian data protection law (Ley 1581 de 2012). Retention policies ensure automatic deletion after the configured period expires.
+
+## Native inference recording authorization
+
+Native ASR and diarization requests require both the existing engine bearer token and an
+`X-Sauri-Recording-Capability`. The backend worker signs the exact `audio_ref` and a 60-second
+expiry with the independent key at `~/.config/sauri/recording_capability_key` (override with
+`SAURI_RECORDING_CAPABILITY_KEY_FILE`). Engine handlers verify the signature and expiry before
+object download or inference; a broad engine bearer alone cannot authorize an object. The key is
+created by `make engines-install`, mode `0600`, mounted read-only into the Compose worker, and read
+by host-native engines. Keep it separate from `engine_token`, restrict it to trusted worker/engine
+processes, rotate it by replacing it on both sides and restarting them, and do not log capabilities.
+Capabilities scope access to one exact object reference; this boundary assumes only the trusted
+backend worker can mint them and does not replace application-level authorization at user-facing
+API routes.

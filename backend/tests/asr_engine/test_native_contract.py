@@ -54,7 +54,11 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
 
     token_path = tmp_path / "engine_token"
     token_path.write_text("synthetic-token", encoding="utf-8")
+    capability_key_path = tmp_path / "recording_capability_key"
+    secret = b"synthetic-capability-secret"
+    capability_key_path.write_bytes(secret)
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", capability_key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "s3_client", FakeS3())
     monkeypatch.setattr(native, "transcribe_audio", transcribe)
@@ -65,7 +69,12 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
         response = await client.post(
             "/transcribe",
             json={"audio_ref": "synthetic/recording.wav", "language": "es-CO"},
-            headers={"Authorization": "Bearer synthetic-token"},
+            headers={
+                "Authorization": "Bearer synthetic-token",
+                "X-Sauri-Recording-Capability": capability(
+                    "synthetic/recording.wav", secret, int(time.time()) + 60
+                ),
+            },
         )
 
     assert response.status_code == 200
@@ -121,7 +130,10 @@ async def test_transcribe_returns_503_until_model_is_initialized(
 ) -> None:
     token_path = tmp_path / "engine_token"
     token_path.write_text("synthetic-token", encoding="utf-8")
+    key_path = tmp_path / "recording_capability_key"
+    key_path.write_bytes(b"synthetic-capability-secret")
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "transcribe_audio", None)
     transport = httpx.ASGITransport(app=native.app)
@@ -129,9 +141,59 @@ async def test_transcribe_returns_503_until_model_is_initialized(
         response = await client.post(
             "/transcribe",
             json={"audio_ref": "synthetic/file.wav"},
-            headers={"Authorization": "Bearer synthetic-token"},
+            headers={
+                "Authorization": "Bearer synthetic-token",
+                "X-Sauri-Recording-Capability": capability(
+                    "synthetic/file.wav", b"synthetic-capability-secret", int(time.time()) + 60
+                ),
+            },
         )
     assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expiry_delta", [-1, 301])
+async def test_transcribe_denies_expired_or_overlong_capability_before_io(
+    expiry_delta: int, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = b"synthetic-capability-secret"
+    key_path = tmp_path / "capability_key"
+    key_path.write_bytes(secret)
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    downloads: list[str] = []
+    invocations: list[str] = []
+
+    class RecordingS3:
+        def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
+            downloads.append(audio_ref)
+
+    def transcribe(path: str, **_kwargs: Any) -> dict[str, Any]:
+        invocations.append(path)
+        return {"language": "es", "segments": []}
+
+    audio_ref = "recordings/owner-a/recording.wav"
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
+    monkeypatch.setattr(native, "s3_client", RecordingS3())
+    monkeypatch.setattr(native, "transcribe_audio", transcribe)
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/transcribe",
+            json={"audio_ref": audio_ref},
+            headers={
+                "Authorization": "Bearer synthetic-token",
+                "X-Sauri-Recording-Capability": capability(
+                    audio_ref, secret, int(time.time()) + expiry_delta
+                ),
+            },
+        )
+
+    assert response.status_code == 403
+    assert downloads == []
+    assert invocations == []
 
 
 @pytest.mark.asyncio
@@ -155,6 +217,7 @@ async def test_transcribe_denies_capability_for_another_owners_recording_before_
         return {"language": "es", "segments": []}
 
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
     monkeypatch.setattr(native, "transcribe_audio", transcribe)

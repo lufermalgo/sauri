@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
 import secrets
 import shutil
 import subprocess
 import tempfile
+import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
 import boto3
 from botocore.config import Config
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
@@ -30,6 +33,13 @@ FFMPEG_TIMEOUT_SECONDS = 60
 ENGINE_TOKEN_PATH = Path(
     os.environ.get("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config" / "sauri" / "engine_token")
 )
+RECORDING_CAPABILITY_KEY_PATH = Path(
+    os.environ.get(
+        "SAURI_RECORDING_CAPABILITY_KEY_FILE",
+        Path.home() / ".config" / "sauri" / "recording_capability_key",
+    )
+)
+RECORDING_CAPABILITY_TTL_SECONDS = 60
 MODEL_ID = os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
 MODEL_DEVICE = os.environ.get("DIARIZATION_DEVICE", "mps")
 HF_TOKEN_PATH = Path(os.environ.get("HF_TOKEN_PATH", Path.home() / ".config" / "sauri" / "hf_token"))
@@ -114,6 +124,29 @@ def _validate_audio_ref(audio_ref: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid audio reference")
 
 
+def _require_recording_capability(audio_ref: str, capability: str | None) -> None:
+    if capability is None:
+        raise HTTPException(status_code=403, detail="Recording authorization required")
+    try:
+        secret = RECORDING_CAPABILITY_KEY_PATH.read_bytes()
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Recording authorization unavailable") from exc
+    if not secret:
+        raise HTTPException(status_code=503, detail="Recording authorization unavailable")
+    try:
+        expiry_text, signature = capability.split(".", maxsplit=1)
+        expires_at = int(expiry_text)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=403, detail="Invalid recording authorization") from exc
+    now = int(time.time())
+    if expires_at <= now or expires_at > now + RECORDING_CAPABILITY_TTL_SECONDS:
+        raise HTTPException(status_code=403, detail="Expired recording authorization")
+    message = f"{audio_ref}\n{expires_at}".encode("utf-8")
+    expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    if not secrets.compare_digest(signature, expected):
+        raise HTTPException(status_code=403, detail="Invalid recording authorization")
+
+
 def _download_audio(audio_ref: str) -> str:
     if s3_client is None:
         raise RuntimeError("Object store is not initialized")
@@ -179,9 +212,12 @@ def _run_diarization(audio_path: str) -> list[Segment]:
 
 @app.post("/diarize", response_model=DiarizeResponse)
 async def diarize(
-    request: DiarizeRequest, _authorized: None = Depends(_require_engine_token)
+    request: DiarizeRequest,
+    _authorized: None = Depends(_require_engine_token),
+    recording_capability: str | None = Header(default=None, alias="X-Sauri-Recording-Capability"),
 ) -> DiarizeResponse:
     _validate_audio_ref(request.audio_ref)
+    _require_recording_capability(request.audio_ref, recording_capability)
     if diarization_pipeline is None:
         raise HTTPException(status_code=503, detail="Diarization pipeline not loaded")
     try:

@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
 import secrets
 import tempfile
+import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
 import boto3
 from botocore.config import Config
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
@@ -27,6 +30,13 @@ MINIO_AUDIO_PREFIX = os.environ.get("MINIO_AUDIO_PREFIX", "recordings/")
 ENGINE_TOKEN_PATH = Path(
     os.environ.get("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config" / "sauri" / "engine_token")
 )
+RECORDING_CAPABILITY_KEY_PATH = Path(
+    os.environ.get(
+        "SAURI_RECORDING_CAPABILITY_KEY_FILE",
+        Path.home() / ".config" / "sauri" / "recording_capability_key",
+    )
+)
+RECORDING_CAPABILITY_TTL_SECONDS = 60
 MODEL_ID = os.environ.get("ASR_MODEL", "mlx-community/whisper-large-v3-turbo")
 MODEL_DEVICE = "mlx"
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -105,6 +115,29 @@ def _validate_audio_ref(audio_ref: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid audio reference")
 
 
+def _require_recording_capability(audio_ref: str, capability: str | None) -> None:
+    if capability is None:
+        raise HTTPException(status_code=403, detail="Recording authorization required")
+    try:
+        secret = RECORDING_CAPABILITY_KEY_PATH.read_bytes()
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Recording authorization unavailable") from exc
+    if not secret:
+        raise HTTPException(status_code=503, detail="Recording authorization unavailable")
+    try:
+        expiry_text, signature = capability.split(".", maxsplit=1)
+        expires_at = int(expiry_text)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=403, detail="Invalid recording authorization") from exc
+    now = int(time.time())
+    if expires_at <= now or expires_at > now + RECORDING_CAPABILITY_TTL_SECONDS:
+        raise HTTPException(status_code=403, detail="Expired recording authorization")
+    message = f"{audio_ref}\n{expires_at}".encode("utf-8")
+    expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    if not secrets.compare_digest(signature, expected):
+        raise HTTPException(status_code=403, detail="Invalid recording authorization")
+
+
 def _download_audio(audio_ref: str) -> str:
     if s3_client is None:
         raise RuntimeError("Object store is not initialized")
@@ -127,9 +160,12 @@ def _language_code(language: str) -> str | None:
 
 @app.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe(
-    request: TranscribeRequest, _authorized: None = Depends(_require_engine_token)
+    request: TranscribeRequest,
+    _authorized: None = Depends(_require_engine_token),
+    recording_capability: str | None = Header(default=None, alias="X-Sauri-Recording-Capability"),
 ) -> TranscribeResponse:
     _validate_audio_ref(request.audio_ref)
+    _require_recording_capability(request.audio_ref, recording_capability)
     if transcribe_audio is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
     try:

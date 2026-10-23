@@ -28,7 +28,8 @@ worktree-rm:
 engines-install:
 	mkdir -p "$(dir $(SAURI_NATIVE_VENV))" "$(HOME)/.config/sauri"
 	@if [ ! -s "$(HOME)/.config/sauri/engine_token" ]; then umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$(HOME)/.config/sauri/engine_token"; fi
-	chmod 600 "$(HOME)/.config/sauri/engine_token"
+	@if [ ! -s "$(HOME)/.config/sauri/recording_capability_key" ]; then umask 077; python3 -c 'import secrets; print(secrets.token_hex(32))' > "$(HOME)/.config/sauri/recording_capability_key"; fi
+	chmod 600 "$(HOME)/.config/sauri/engine_token" "$(HOME)/.config/sauri/recording_capability_key"
 	$(NATIVE_PYTHON311) -m venv "$(SAURI_NATIVE_VENV)"
 	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install --upgrade pip
 	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install 'fastapi>=0.115' 'uvicorn[standard]>=0.30' 'pydantic>=2' 'boto3>=1.34' 'mlx-whisper' 'torch==2.5.1' 'torchaudio==2.5.1' 'pyannote.audio==3.3.2' 'huggingface_hub==0.24.7' 'matplotlib==3.9.2'
