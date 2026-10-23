@@ -12,6 +12,7 @@ from pathlib import Path
 
 import httpx
 
+from app.infra.recording_capability import create_recording_capability
 from app.transcription.asr_engine import (
     ASRCapabilities,
     ASREngine,
@@ -21,7 +22,7 @@ from app.transcription.asr_engine import (
 )
 
 
-def _engine_auth_headers() -> dict[str, str]:
+def _engine_auth_headers(audio_ref: str) -> dict[str, str]:
     token_file = os.environ.get("SAURI_ENGINE_TOKEN_FILE")
     if not token_file:
         return {}
@@ -29,7 +30,9 @@ def _engine_auth_headers() -> dict[str, str]:
         token = Path(token_file).read_text(encoding="utf-8").strip()
     except OSError:
         return {}
-    return {"Authorization": f"Bearer {token}"} if token else {}
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers["X-Sauri-Recording-Capability"] = create_recording_capability(audio_ref)
+    return headers
 
 
 class LocalProvider(ASREngine):
@@ -80,7 +83,7 @@ class LocalProvider(ASREngine):
             response = await client.post(
                 f"{self._url}/transcribe",
                 json=payload,
-                headers=_engine_auth_headers(),
+                headers=_engine_auth_headers(audio_ref),
                 timeout=float(os.environ.get("ASR_TIMEOUT_SECONDS", "3600")),
             )
             response.raise_for_status()
