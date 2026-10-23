@@ -68,7 +68,8 @@ describe("authenticated multipart upload API adapter", () => {
 
     await uploadMethod.uploadRecording!(audio, data);
 
-    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [requestUrl, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(requestUrl).toContain("/api/v1/ingestion/upload");
     expect(request.method).toBe("POST");
     expect(request.headers).toEqual({ Authorization: "Bearer synthetic-token" });
     expect(request.headers).not.toHaveProperty("Content-Type");
