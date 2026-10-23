@@ -12,8 +12,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function createSyntheticWebm(trackType: 1 | 2) {
+  // EBML Segment > Tracks > TrackEntry > TrackType (1 = video, 2 = audio).
+  return new Uint8Array([0x18, 0x53, 0x80, 0x67, 0x8a, 0x16, 0x54, 0xae, 0x6b, 0x85, 0xae, 0x83, 0x83, 0x81, trackType]);
+}
+
 function selectSyntheticAudio() {
-  const file = new File(["synthetic audio"], "sample.webm", { type: "audio/webm" });
+  const file = new File([createSyntheticWebm(2)], "sample.webm", { type: "audio/webm" });
   fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
   return file;
 }
@@ -81,6 +86,21 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
       duration_seconds: 19,
       video_presence: "muxed",
     }));
+  });
+
+  it("rejects a video track mislabeled as audio before upload with an actionable error", async () => {
+    const uploadRecording = vi.mocked(api.uploadRecording);
+    const file = new File([createSyntheticWebm(1)], "video-only.webm", { type: "audio/webm" });
+    const createObjectURL = vi.fn().mockReturnValue("blob:synthetic-video-mismatch");
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+
+    render(<SpeakerRecognitionTestScreen />);
+    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireLoadedMetadata(8);
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/video track.*file type.*audio/i);
+    expect(uploadRecording).not.toHaveBeenCalled();
   });
 
   it("reuses meeting and idempotency identifiers when retrying the same upload", async () => {
