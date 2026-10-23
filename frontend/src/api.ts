@@ -73,6 +73,40 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export interface RecordingUploadData {
+  duration_seconds: number;
+  meeting_id: string;
+  idempotency_key: string;
+  capture_origin: "web_upload";
+  video_presence: "absent" | "muxed";
+}
+
+export interface RecordingUploadResult {
+  recording_id: string;
+  state: string;
+}
+
+export async function uploadRecording(
+  audio: File,
+  data: RecordingUploadData
+): Promise<RecordingUploadResult> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) {
+    throw new Error("Not authenticated: token not found");
+  }
+
+  const formData = new FormData();
+  formData.append("audio", audio);
+  formData.append("data", JSON.stringify(data));
+
+  const response = await fetch(`${BASE_URL}/api/v1/ingestion/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  return handleResponse<RecordingUploadResult>(response);
+}
+
 export async function registerMeeting(meetLink: string): Promise<Meeting> {
   const response = await fetch(`${BASE_URL}/api/v1/meetings`, {
     method: "POST",
