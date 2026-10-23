@@ -7,6 +7,11 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import create_engine, inspect, text
+
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "alembic" / "versions"
 PENDING_TABLE = "pending_object_deletions"
 
@@ -61,12 +66,43 @@ def test_pending_deletion_migration_has_scope_ref_uniqueness_and_no_foreign_keys
     assert "ForeignKey" not in table_source
 
 
-def test_downgrade_refuses_while_pending_object_tasks_exist() -> None:
-    path, _ = _migration_for_pending_table()
-    source = path.read_text(encoding="utf-8")
-    downgrade = source.split("def downgrade()", maxsplit=1)[1]
+def test_downgrade_refuses_only_while_pending_object_tasks_exist() -> None:
+    _, migration = _migration_for_pending_table()
+    engine = create_engine("sqlite:///:memory:")
 
-    assert PENDING_TABLE in downgrade
-    assert "SELECT" in downgrade.upper() or "select(" in downgrade
-    assert "raise" in downgrade
-    assert downgrade.index("raise") < downgrade.index("drop_table")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE meetings ("
+                "id VARCHAR(36) PRIMARY KEY, meet_link VARCHAR(500) NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE pending_object_deletions ("
+                "id VARCHAR(36) PRIMARY KEY, "
+                "cleanup_scope_hash VARCHAR(64) NOT NULL, "
+                "object_ref VARCHAR(2048) NOT NULL, "
+                "CONSTRAINT uq_pending_object_deletion_scope_ref "
+                "UNIQUE (cleanup_scope_hash, object_ref))"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO pending_object_deletions "
+                "(id, cleanup_scope_hash, object_ref) VALUES "
+                "('task-synthetic', :scope, :reference)"
+            ),
+            {"scope": "a" * 64, "reference": "staged/synthetic-audio"},
+        )
+
+        context = MigrationContext.configure(connection)
+        with Operations.context(context), pytest.raises(Exception, match="(?i)pending|cleanup"):
+            migration.downgrade()
+        assert inspect(connection).has_table(PENDING_TABLE)
+
+        connection.execute(text("DELETE FROM pending_object_deletions"))
+        migration.downgrade()
+        assert not inspect(connection).has_table(PENDING_TABLE)
+
+    engine.dispose()

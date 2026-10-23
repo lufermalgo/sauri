@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
@@ -190,46 +191,126 @@ async def test_retry_is_limited_to_exact_cleanup_scope(db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
-async def test_scheduled_retention_cycle_recovers_pending_deletions(
+async def test_duplicate_retry_drains_only_its_pending_scope_before_success(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory,
+    meeting_recording: Meeting,
+) -> None:
+    user_id = "synthetic-owner"
+    idempotency_key = "synthetic-duplicate-key"
+    pending_ref = "staged/previous-raced-attempt"
+    unrelated_ref = "staged/unrelated-scope"
+    cleanup_scope_hash = hashlib.sha256(
+        json.dumps(
+            [user_id, meeting_recording.id, idempotency_key],
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    meeting_recording.created_by = user_id
+    async with session_factory() as setup_session:
+        setup_session.add(meeting_recording)
+        setup_session.add(
+            SessionRecording(
+                id="recording-synthetic",
+                meeting_id=meeting_recording.id,
+                idempotency_key=idempotency_key,
+                capture_origin="chrome_extension",
+                audio_ref="recordings/committed/synthetic-existing",
+                video_ref=None,
+                duration_seconds=1,
+                interrupted=False,
+                expires_at=None,
+                finished_at=datetime.now(UTC),
+            )
+        )
+        await setup_session.commit()
+        await _add_pending(setup_session, cleanup_scope_hash, pending_ref)
+        await _add_pending(setup_session, "9" * 64, unrelated_ref)
+
+    store = _RecordingObjectStore()
+    engine = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(ingestion_router, "_get_object_store", Mock(return_value=store))
+    monkeypatch.setattr(ingestion_router, "_get_queue", Mock())
+    monkeypatch.setattr(ingestion_router, "create_engine", Mock(return_value=engine))
+    monkeypatch.setattr(
+        ingestion_router,
+        "create_session_factory",
+        Mock(return_value=session_factory),
+    )
+
+    response = await ingestion_router.upload_recording(
+        audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic-audio")),
+        video=None,
+        data=json.dumps(
+            {
+                "meeting_id": meeting_recording.id,
+                "idempotency_key": idempotency_key,
+                "capture_origin": "chrome_extension",
+                "duration_seconds": 1,
+                "video_presence": "muxed",
+            }
+        ),
+        user=SimpleNamespace(id=user_id),
+    )
+
+    assert response == {
+        "recording_id": "recording-synthetic",
+        "state": "idempotent_duplicate",
+    }
+    assert store.deleted == [pending_ref]
+    async with session_factory() as observer:
+        assert await _pending_refs(observer) == {unrelated_ref}
+
+
+@pytest.mark.asyncio
+async def test_scheduled_retention_cycle_recovers_persisted_pending_deletions(
     monkeypatch: pytest.MonkeyPatch,
     session_factory,
 ) -> None:
-    calls: list[object] = []
-
-    async def drain(session, object_store, cleanup_scope_hash=None) -> None:
-        calls.append((session, object_store, cleanup_scope_hash))
+    reference = "staged/scheduled-recovery-audio"
+    async with session_factory() as setup_session:
+        await _add_pending(setup_session, "f" * 64, reference)
 
     async def stop_after_first_cycle(_seconds: float) -> None:
         raise RuntimeError("synthetic stop after scheduled cycle")
 
-    monkeypatch.setattr("app.retention.worker.drain_pending_object_deletions", drain)
     monkeypatch.setattr("app.retention.worker.asyncio.sleep", stop_after_first_cycle)
     store = _RecordingObjectStore()
 
     with pytest.raises(RuntimeError, match="synthetic stop"):
         await start_retention_worker(session_factory, store, interval_seconds=1)
 
-    assert len(calls) == 1
-    assert calls[0][1] is store  # type: ignore[index]
-    assert calls[0][2] is None  # type: ignore[index]
+    assert store.deleted == [reference]
+    async with session_factory() as observer:
+        assert await _pending_refs(observer) == set()
 
 
 @pytest.mark.asyncio
-async def test_precommit_failure_persists_ref_before_object_delete(
+async def test_precommit_failure_persists_all_unique_refs_before_any_delete(
     monkeypatch: pytest.MonkeyPatch,
     session_factory,
 ) -> None:
-    reference = "staged/precommit-synthetic-audio"
-    observed_tasks: list[list[PendingObjectDeletion]] = []
+    references = {
+        "staged/precommit-synthetic-audio",
+        "staged/precommit-synthetic-video",
+    }
+    observed_refs: list[set[str]] = []
+    observed_scopes: list[set[str]] = []
 
     class UploadStore(_RecordingObjectStore):
         async def save(self, key: str, content: bytes, content_type: str) -> str:
-            return reference
+            return (
+                "staged/precommit-synthetic-video"
+                if "/video" in key
+                else "staged/precommit-synthetic-audio"
+            )
 
         async def delete(self, object_ref: str) -> None:
             async with session_factory() as observer:
                 result = await observer.execute(select(PendingObjectDeletion))
-                observed_tasks.append(list(result.scalars().all()))
+                tasks = list(result.scalars().all())
+            observed_refs.append({task.object_ref for task in tasks})
+            observed_scopes.append({task.cleanup_scope_hash for task in tasks})
             await super().delete(object_ref)
 
     store = UploadStore()
@@ -261,12 +342,15 @@ async def test_precommit_failure_persists_ref_before_object_delete(
             user=SimpleNamespace(id="synthetic-owner"),
         )
 
-    assert store.deleted == [reference]
-    assert len(observed_tasks) == 1
-    assert len(observed_tasks[0]) == 1
-    assert observed_tasks[0][0].object_ref == reference
-    assert len(observed_tasks[0][0].cleanup_scope_hash) == 64
-    assert observed_tasks[0][0].cleanup_scope_hash != payload["idempotency_key"]
+    assert set(store.deleted) == references
+    assert len(store.deleted) == len(references)
+    assert observed_refs == [references, references]
+    assert len(observed_scopes) == 2
+    assert observed_scopes[0] == observed_scopes[1]
+    assert len(observed_scopes[0]) == 1
+    scope_hash = next(iter(observed_scopes[0]))
+    assert len(scope_hash) == 64
+    assert scope_hash != payload["idempotency_key"]
 
 
 @pytest.mark.asyncio
