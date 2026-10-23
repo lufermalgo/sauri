@@ -100,6 +100,7 @@ services:
     command: ["sh", "-c", "chown -R 10001:10001 /data"]
     cap_drop: ["ALL"]
     cap_add: ["CHOWN", "DAC_OVERRIDE"]
+    network_mode: none
     volumes:
       - minio-data:/data
     restart: "no"

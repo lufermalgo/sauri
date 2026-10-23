@@ -25,6 +25,12 @@ class ComposeBringupTests(unittest.TestCase):
 
         self.assertIn('cap_add: ["CHOWN", "DAC_OVERRIDE"]', repair_service)
 
+    def test_volume_repair_has_no_network_access(self):
+        compose = (ROOT / "docker-compose.yml").read_text()
+        repair_service = compose.split("  minio-volume-permissions:\n", 1)[1].split("\n  # --- MinIO", 1)[0]
+
+        self.assertIn("network_mode: none", repair_service)
+
     def test_setup_runs_before_api_and_reports_failed_migration(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             tree = Path(temp_dir) / "tree"
