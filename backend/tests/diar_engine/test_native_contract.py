@@ -340,6 +340,51 @@ async def test_diarize_denies_capability_for_another_owners_recording_before_io(
     assert invocations == []
 
 
+@pytest.mark.asyncio
+async def test_diarize_denies_missing_recording_capability_before_io(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    downloads: list[str] = []
+    invocations: list[str] = []
+
+    class RecordingS3:
+        def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
+            downloads.append(audio_ref)
+            Path(path).write_bytes(_minimal_wav_bytes())
+
+    class EmptyAnnotation:
+        def itertracks(self, yield_label: bool = False) -> Any:
+            assert yield_label
+            return iter(())
+
+    def run_pipeline(path: str) -> EmptyAnnotation:
+        invocations.append(path)
+        return EmptyAnnotation()
+
+    def fake_ffmpeg(command: list[str], **_options: Any) -> None:
+        Path(command[-1]).write_bytes(_minimal_wav_bytes())
+
+    monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(subprocess, "run", fake_ffmpeg)
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
+    monkeypatch.setattr(native, "s3_client", RecordingS3())
+    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/diarize",
+            json={"audio_ref": "recordings/owner-a/recording.wav"},
+            headers={"Authorization": "Bearer synthetic-token"},
+        )
+
+    assert response.status_code == 403
+    assert downloads == []
+    assert invocations == []
+
+
 def test_native_defaults_configure_mps_and_private_token_path() -> None:
     assert native.MINIO_ENDPOINT == "http://localhost:9000"
     assert native.MODEL_ID == "pyannote/speaker-diarization-3.1"

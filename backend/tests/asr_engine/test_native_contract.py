@@ -239,6 +239,40 @@ async def test_transcribe_denies_capability_for_another_owners_recording_before_
     assert invocations == []
 
 
+@pytest.mark.asyncio
+async def test_transcribe_denies_missing_recording_capability_before_io(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    downloads: list[str] = []
+    invocations: list[str] = []
+
+    class RecordingS3:
+        def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
+            downloads.append(audio_ref)
+
+    def transcribe(path: str, **_kwargs: Any) -> dict[str, Any]:
+        invocations.append(path)
+        return {"language": "es", "segments": []}
+
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
+    monkeypatch.setattr(native, "s3_client", RecordingS3())
+    monkeypatch.setattr(native, "transcribe_audio", transcribe)
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/transcribe",
+            json={"audio_ref": "recordings/owner-a/recording.wav"},
+            headers={"Authorization": "Bearer synthetic-token"},
+        )
+
+    assert response.status_code == 403
+    assert downloads == []
+    assert invocations == []
+
+
 def test_native_defaults_use_host_minio_and_expected_model() -> None:
     assert native.MINIO_ENDPOINT == "http://localhost:9000"
     assert native.MODEL_ID == "mlx-community/whisper-large-v3-turbo"
