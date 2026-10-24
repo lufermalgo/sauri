@@ -1,7 +1,7 @@
 """Ingestion contract — Pydantic schema any Meeting_Assistant must satisfy.
 
-The `capture_origin` field records the source (Chrome extension or server
-bot) but does NOT alter the downstream pipeline (store -> transcribe -> persist).
+The `capture_origin` field records the source (Chrome extension, web upload, or
+server bot) but does NOT alter the downstream pipeline (store -> transcribe -> persist).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class IngestionData(BaseModel):
     video_offset_ms: int | None = Field(default=None, strict=True)
 
     @model_validator(mode="after")
-    def validate_video_evidence(self) -> "IngestionData":
+    def validate_video_evidence(self) -> IngestionData:
         if self.video_presence == "separate" and self.video_offset_ms is None:
             raise ValueError("separate video requires a signed video_offset_ms")
         if self.video_presence != "separate" and self.video_offset_ms is not None:
@@ -46,7 +46,7 @@ class IngestionData(BaseModel):
             "retries without duplicating the SessionRecording."
         ),
     )
-    capture_origin: Literal["chrome_extension", "server_bot"] = Field(
+    capture_origin: Literal["chrome_extension", "server_bot", "web_upload"] = Field(
         ...,
         description=(
             "Source that produced the recording. Doesn't alter the "

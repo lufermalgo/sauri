@@ -35,6 +35,7 @@ export enum MeetingOrigin {
 export enum CaptureOrigin {
   ChromeExtension = "chrome_extension",
   ServerBot = "server_bot",
+  WebUpload = "web_upload",
 }
 
 // --- Interfaces ---
@@ -42,7 +43,7 @@ export enum CaptureOrigin {
 /** Record of a Google Meet meeting in sauri. */
 export interface Meeting {
   id: string;
-  meetLink: string;
+  meetLink: string | null;
   origin: MeetingOrigin;
   calendarInviteId?: string;
   scheduledStartTime?: string;
