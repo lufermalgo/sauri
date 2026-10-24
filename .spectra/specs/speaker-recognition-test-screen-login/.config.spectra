@@ -1,0 +1,12 @@
+{
+  "specId": "d9ebd84e-4cda-4483-b2c7-36d63f45f50c",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-10-23",
+  "idea": "Fer requested a minimal owner-run login/logout path for the speaker-recognition test screen: email and password to POST /api/v1/auth/login, persist the returned JWT using the frontend's existing token convention, and expose logout; no account creation, user management, or broader authentication redesign.",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "pending"
+  }
+}

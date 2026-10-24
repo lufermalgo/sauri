@@ -40,12 +40,44 @@ It's an in-house solution built incrementally, module by module.
 ### Start the backend
 
 ```bash
-make up        # Start the full Docker stack
-make build     # Rebuild + start
+make up        # Start dependencies, verify bucket, migrate to head, then start API/worker
+make build     # Rebuild images, then run the same readiness sequence
 make down      # Stop everything
 make logs      # View logs
-make migrate   # Run DB migrations
+make migrate   # Run DB migrations manually
 ```
+
+`make up` and `make build` report failure and exit nonzero if the database is not healthy,
+the object-store bucket cannot be verified/created, or Alembic cannot reach `head`. The
+bring-up preserves named volumes and their objects. A one-shot, root-owned helper uses only
+`CAP_CHOWN` to repair ownership inside the `minio-data` volume to the pinned RustFS image's
+verified runtime identity (`10001:10001`); RustFS itself continues running as its image-defined
+non-root user. No production deployment behavior is implied.
+
+### Native Mac GPU engine feasibility spike
+
+This is an owner-authorized, local feasibility experiment on an Apple M3 Mac, not a production
+configuration or rollout. Keep the API, worker, PostgreSQL, MinIO, and RabbitMQ in Docker; run
+candidate engines on the host and configure their URLs with `ASR_LOCAL_URL` and
+`DIARIZATION_LOCAL_URL` (the Compose defaults use `host.docker.internal`). The host processes must
+implement the existing Sauri HTTP contracts (`POST /transcribe` and `POST /diarize`); this
+repository does not provide native MLX, whisper.cpp, or MPS HTTP adapters. Compose configuration
+alone therefore does not make native inference runnable or demonstrate API/worker integration.
+
+Compare MLX `whisper-large-v3-turbo` with whisper.cpp `large-v3-turbo-q5_0` for ASR, and evaluate
+pyannote 3.1 with PyTorch MPS for diarization. Reuse the existing shared caches: MLX and Hugging Face
+models (including pyannote) under `~/.cache/huggingface`, and the whisper.cpp GGML turbo model under
+`~/.apx/v2/models`. Download any genuinely missing model only once into its shared cache; never place
+model-sized files in this repository or copy existing model files. A repository-local `models/`
+directory is not a cache and must not be used for this experiment. Use only the same recording Fer
+explicitly authorized for this experiment; do not expose tokens, model files, or recording data.
+Record hardware, OS, runtime/library and model versions, clip duration, initialization/cold-start and
+processing times, processing time per audio hour, observed transcript and speaker-label quality, and
+whether inference actually ran on Metal/MPS without CPU fallback. Report installation footprint only
+if it can be measured without downloading or replacing cached artifacts. Feasibility success means a
+repeatable native accelerated run and complete evidence for both candidates; do not invent
+speed/quality thresholds or infer production readiness. No Compose services are started by
+documentation validation.
 
 ### Chrome extension
 

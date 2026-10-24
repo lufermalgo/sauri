@@ -305,7 +305,9 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-18: GREEN — add per-speaker review to the transcript view
 
-**Tracking:** Issue #251 · Card task_45143a5c381f471a
+**Tracking:** Issue #251 · Card task_45143a5c381f471a · PR #521
+
+**Status:** Done — PR #521 open for review.
 
 **Files:** `frontend/src/components/TranscriptView.tsx`; `frontend/src/api.ts`; `frontend/src/components/TranscriptView.test.tsx`.
 
