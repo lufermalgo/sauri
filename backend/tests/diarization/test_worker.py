@@ -12,30 +12,30 @@ production code is 100% real (AGENTS.md §3).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import (
-    Diarization,
-    Meeting,
-    SessionRecording,
-    Speaker,
-    Transcript,
-    SpeechTurn,
-)
 from app.diarization.diarization_engine import (
     DiarizationCapabilities,
     DiarizationResult,
     SpeakerSegment,
 )
 from app.diarization.worker import _process_diarization
-
+from app.infra.models import (
+    Diarization,
+    Meeting,
+    SessionRecording,
+    Speaker,
+    SpeechTurn,
+    Transcript,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers — build real entities in the test DB
@@ -52,11 +52,13 @@ def _create_meeting(meeting_id: str, state: str = "completed") -> Meeting:
         process_state=state,
         failure_cause=None,
         created_by="test-user",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
 
 
-def _create_recording(meeting_id: str, audio_ref: str = "audio/test.webm", duration_seconds: int = 120) -> SessionRecording:
+def _create_recording(
+    meeting_id: str, audio_ref: str = "audio/test.webm", duration_seconds: int = 120
+) -> SessionRecording:
     return SessionRecording(
         id=str(uuid.uuid4()),
         meeting_id=meeting_id,
@@ -67,7 +69,7 @@ def _create_recording(meeting_id: str, audio_ref: str = "audio/test.webm", durat
         duration_seconds=duration_seconds,
         interrupted=False,
         expires_at=None,
-        finished_at=datetime.now(timezone.utc),
+        finished_at=datetime.now(UTC),
     )
 
 
@@ -80,7 +82,7 @@ def _create_transcript_with_turns(meeting_id: str, num_turns: int) -> tuple[Tran
         provider="local",
         supports_turns=True,
         expires_at=None,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     turns = [
         SpeechTurn(
@@ -97,20 +99,19 @@ def _create_transcript_with_turns(meeting_id: str, num_turns: int) -> tuple[Tran
 
 
 async def _seed_complete_meeting(
-    session_factory: async_sessionmaker,
+    session_factory: async_sessionmaker[AsyncSession],
     meeting_id: str,
     num_turns: int = 3,
     meeting_state: str = "completed",
 ) -> None:
     """Creates Meeting + SessionRecording + Transcript + SpeechTurns in the DB."""
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(_create_meeting(meeting_id, meeting_state))
-            session.add(_create_recording(meeting_id))
-            transcript, turns = _create_transcript_with_turns(meeting_id, num_turns)
-            session.add(transcript)
-            for turn in turns:
-                session.add(turn)
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id, meeting_state))
+        session.add(_create_recording(meeting_id))
+        transcript, turns = _create_transcript_with_turns(meeting_id, num_turns)
+        session.add(transcript)
+        for turn in turns:
+            session.add(turn)
 
 
 def _mock_engine(segments: list[SpeakerSegment], is_local: bool = True) -> AsyncMock:
@@ -133,7 +134,7 @@ def _mock_engine(segments: list[SpeakerSegment], is_local: bool = True) -> Async
 # Validates: Requirements 1.3, 1.4, 1.5, 1.6
 # ---------------------------------------------------------------------------
 
-_invalid_message = st.one_of(
+_invalid_message: st.SearchStrategy[dict[str, Any]] = st.one_of(
     st.just({}),
     st.just({"meeting_id": ""}),
     st.just({"meeting_id": "   "}),
@@ -146,8 +147,8 @@ _invalid_message = st.one_of(
 @given(message=_invalid_message)
 @pytest.mark.asyncio
 async def test_property_19_invalid_message_does_not_persist(
-    session_factory: async_sessionmaker, message: dict
-):
+    session_factory: async_sessionmaker[AsyncSession], message: dict[str, Any]
+) -> None:
     """Missing/empty/non-string meeting_id -> finishes with no exception and nothing persisted."""
     await _process_diarization(message, session_factory)
     async with session_factory() as session:
@@ -157,8 +158,8 @@ async def test_property_19_invalid_message_does_not_persist(
 
 @pytest.mark.asyncio
 async def test_property_19_nonexistent_meeting_does_not_persist(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Nonexistent meeting_id -> ack without persisting (Req 1.5)."""
     await _process_diarization({"meeting_id": str(uuid.uuid4())}, session_factory)
     async with session_factory() as session:
@@ -168,14 +169,13 @@ async def test_property_19_nonexistent_meeting_does_not_persist(
 
 @pytest.mark.asyncio
 async def test_property_19_without_transcript_does_not_persist(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Meeting without a Transcript -> ack without persisting (Req 1.6)."""
     meeting_id = str(uuid.uuid4())
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(_create_meeting(meeting_id))
-            session.add(_create_recording(meeting_id))
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id))
+        session.add(_create_recording(meeting_id))
 
     await _process_diarization({"meeting_id": meeting_id}, session_factory)
     async with session_factory() as session:
@@ -192,8 +192,8 @@ async def test_property_19_without_transcript_does_not_persist(
 
 @pytest.mark.asyncio
 async def test_property_11_empty_result_completed_diarization(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Empty segments -> completed Diarization with 0 speakers and 0 assignments."""
     meeting_id = str(uuid.uuid4())
     await _seed_complete_meeting(session_factory, meeting_id, num_turns=3)
@@ -218,8 +218,8 @@ async def test_property_11_empty_result_completed_diarization(
 
 @pytest.mark.asyncio
 async def test_property_11_without_turns_zero_assignments(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Transcript without turns -> zero assignments even if there are speakers."""
     meeting_id = str(uuid.uuid4())
     await _seed_complete_meeting(session_factory, meeting_id, num_turns=0)
@@ -257,8 +257,8 @@ async def test_property_11_without_turns_zero_assignments(
 
 @pytest.mark.asyncio
 async def test_property_20_engine_failure_propagates_without_completed(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Engine exception -> propagates, and no Diarization is left in 'completed'."""
     meeting_id = str(uuid.uuid4())
     await _seed_complete_meeting(session_factory, meeting_id, num_turns=2)
@@ -269,9 +269,11 @@ async def test_property_20_engine_failure_propagates_without_completed(
         return_value=DiarizationCapabilities(is_local=True, provider_name="diar-engine-local")
     )
 
-    with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
-        with pytest.raises(RuntimeError, match="diar-engine crashed"):
-            await _process_diarization({"meeting_id": meeting_id}, session_factory)
+    with (
+        patch("app.diarization.worker.create_diarization_engine", return_value=engine),
+        pytest.raises(RuntimeError, match="diar-engine crashed"),
+    ):
+        await _process_diarization({"meeting_id": meeting_id}, session_factory)
 
     async with session_factory() as session:
         completed = (
@@ -296,8 +298,8 @@ async def test_property_20_engine_failure_propagates_without_completed(
 @given(initial_state=st.sampled_from(["queued", "recording", "transcribing", "completed", "failed"]))
 @pytest.mark.asyncio
 async def test_property_18_preserves_meeting_process_state(
-    session_factory: async_sessionmaker, initial_state: str
-):
+    session_factory: async_sessionmaker[AsyncSession], initial_state: str
+) -> None:
     """The Meeting's ProcessState remains unchanged after diarization."""
     meeting_id = str(uuid.uuid4())
     await _seed_complete_meeting(
@@ -324,18 +326,18 @@ async def test_property_18_preserves_meeting_process_state(
 
 @pytest.mark.asyncio
 async def test_property_17_utc_timestamp_on_final_state(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """The persisted Diarization records updated_at in UTC."""
     meeting_id = str(uuid.uuid4())
     await _seed_complete_meeting(session_factory, meeting_id, num_turns=1)
 
     segments = [SpeakerSegment(raw_label="SPEAKER_00", start_ms=0, end_ms=1000)]
     engine = _mock_engine(segments=segments)
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
         await _process_diarization({"meeting_id": meeting_id}, session_factory)
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
 
     async with session_factory() as session:
         diar = (
@@ -348,7 +350,7 @@ async def test_property_17_utc_timestamp_on_final_state(
     assert diar.updated_at is not None
     updated = diar.updated_at
     if updated.tzinfo is None:
-        updated = updated.replace(tzinfo=timezone.utc)
+        updated = updated.replace(tzinfo=UTC)
     assert before <= updated <= after
 
 
@@ -360,8 +362,8 @@ async def test_property_17_utc_timestamp_on_final_state(
 
 @pytest.mark.asyncio
 async def test_example_nonexistent_meeting_acks_without_persisting(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Req 1.5: nonexistent meeting_id -> ack without persisting (no exception)."""
     await _process_diarization({"meeting_id": "no-existe"}, session_factory)
     async with session_factory() as session:
@@ -370,14 +372,44 @@ async def test_example_nonexistent_meeting_acks_without_persisting(
 
 @pytest.mark.asyncio
 async def test_example_without_transcript_acks_without_persisting(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Req 1.6: Meeting without a Transcript -> ack without persisting (no exception)."""
     meeting_id = str(uuid.uuid4())
-    async with session_factory() as session:
-        async with session.begin():
-            session.add(_create_meeting(meeting_id))
-            session.add(_create_recording(meeting_id))
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id))
+        session.add(_create_recording(meeting_id))
     await _process_diarization({"meeting_id": meeting_id}, session_factory)
     async with session_factory() as session:
         assert (await session.execute(select(Diarization))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_diarization_uses_recording_from_meeting_not_queue_audio_ref(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A queue-supplied reference cannot substitute another meeting's recording."""
+    meeting_id = str(uuid.uuid4())
+    foreign_meeting_id = str(uuid.uuid4())
+    persisted_audio_ref = "synthetic/owned-recording.webm"
+    foreign_audio_ref = "synthetic/foreign-recording.webm"
+
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id))
+        session.add(_create_meeting(foreign_meeting_id))
+        session.add(_create_recording(meeting_id, persisted_audio_ref))
+        session.add(_create_recording(foreign_meeting_id, foreign_audio_ref))
+        transcript, turns = _create_transcript_with_turns(meeting_id, num_turns=1)
+        session.add(transcript)
+        session.add_all(turns)
+
+    engine = _mock_engine(segments=[])
+    with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
+        await _process_diarization(
+            {"meeting_id": meeting_id, "audio_ref": foreign_audio_ref},
+            session_factory,
+        )
+
+    engine.diarize.assert_awaited_once()
+    assert engine.diarize.await_args is not None
+    assert engine.diarize.await_args.args[0] == persisted_audio_ref

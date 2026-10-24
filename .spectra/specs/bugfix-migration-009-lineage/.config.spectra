@@ -1,0 +1,12 @@
+{
+  "specId": "b7ad47a1-f8ec-4d46-8db9-74363004ad21",
+  "specType": "bugfix",
+  "workflowType": "requirements-first",
+  "created": "2026-10-17",
+  "idea": "Bugfix: unify migration 009 lineage and deterministic source-inventory tests",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "complete"
+  }
+}

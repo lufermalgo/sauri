@@ -16,6 +16,7 @@ from app.diarization.worker import start_worker as start_diarization_worker
 from app.infra.database import create_engine, create_session_factory
 from app.infra.object_store import create_object_store
 from app.infra.queue import create_job_queue
+from app.meetings.speaker_excerpt_service import ExcerptKeyring
 from app.retention.worker import start_retention_worker
 from app.transcription.worker import start_worker as start_transcription_worker
 
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 async def main() -> None:
     """Starts the queue, subscribes workers, and waits until shutdown."""
+    ExcerptKeyring.from_environment()
     logger.info("Starting sauri worker...")
 
     # Infrastructure

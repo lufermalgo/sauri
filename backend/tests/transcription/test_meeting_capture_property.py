@@ -10,15 +10,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import Meeting, SpeechTurn, Transcript
+from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
 from app.transcription.asr_engine import (
     ASRCapabilities,
     ASREngine,
@@ -43,11 +44,28 @@ def _create_recording_meeting(meeting_id: str) -> Meeting:
     )
 
 
-def _non_overlapping_segments_strategy(max_segments: int = 8):
+def _create_recording(meeting_id: str) -> SessionRecording:
+    return SessionRecording(
+        id=str(uuid.uuid4()),
+        meeting_id=meeting_id,
+        idempotency_key=str(uuid.uuid4()),
+        capture_origin="chrome_extension",
+        audio_ref="synthetic/recording.wav",
+        video_ref=None,
+        duration_seconds=12,
+        interrupted=False,
+        expires_at=None,
+        finished_at=datetime.now(UTC),
+    )
+
+
+def _non_overlapping_segments_strategy(
+    max_segments: int = 8,
+) -> st.SearchStrategy[list[TranscriptionSegment]]:
     """Generates lists of ordered, non-overlapping segments: end_ms[i] <= start_ms[i+1]."""
 
     def _build(gaps: list[int], durations: list[int]) -> list[TranscriptionSegment]:
-        segments = []
+        segments: list[TranscriptionSegment] = []
         cursor = 0
         for gap, duration in zip(gaps, durations, strict=True):
             start = cursor + gap
@@ -79,12 +97,13 @@ def _non_overlapping_segments_strategy(max_segments: int = 8):
 @given(segments=_non_overlapping_segments_strategy())
 @pytest.mark.asyncio
 async def test_property_7_temporal_invariant_of_persisted_turns(
-    session_factory: async_sessionmaker, segments: list[TranscriptionSegment]
+    session_factory: async_sessionmaker[AsyncSession], segments: list[TranscriptionSegment]
 ) -> None:
     """Persisted SpeechTurn rows satisfy 0<=start_ms<=end_ms, are ordered, and don't overlap."""
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(_create_recording_meeting(meeting_id))
+        session.add(_create_recording(meeting_id))
 
     mock_engine = AsyncMock()
     mock_engine.transcribe.return_value = TranscriptionResult(
@@ -141,17 +160,20 @@ async def test_property_7_temporal_invariant_of_persisted_turns(
 )
 @pytest.mark.asyncio
 async def test_property_8_options_fix_es_co_and_transcript_records_es_co(
-    session_factory: async_sessionmaker, language_returned_by_engine: str | None
+    session_factory: async_sessionmaker[AsyncSession], language_returned_by_engine: str | None
 ) -> None:
     """Transcription options always fix es-CO and the persisted Transcript records es-CO."""
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(_create_recording_meeting(meeting_id))
+        session.add(_create_recording(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=500)]
     mock_engine = AsyncMock()
     mock_engine.transcribe.return_value = TranscriptionResult(
-        segments=segments, language=language_returned_by_engine, supports_turns=True
+        segments=segments,
+        language=cast(str, language_returned_by_engine),
+        supports_turns=True,
     )
     mock_engine.capabilities = MagicMock(
         return_value=ASRCapabilities(supports_turns=True, is_local=True)
@@ -219,12 +241,13 @@ class _ConformantASREngineWithoutTurns(ASREngine):
 @given(engine_with_turns=st.booleans())
 @pytest.mark.asyncio
 async def test_property_9_asr_engine_interchangeability(
-    session_factory: async_sessionmaker, engine_with_turns: bool
+    session_factory: async_sessionmaker[AsyncSession], engine_with_turns: bool
 ) -> None:
     """Any conformant ASREngine produces a valid Transcript with no changes to the worker."""
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(_create_recording_meeting(meeting_id))
+        session.add(_create_recording(meeting_id))
 
     engine: ASREngine = (
         _ConformantASREngineWithTurns() if engine_with_turns else _ConformantASREngineWithoutTurns()

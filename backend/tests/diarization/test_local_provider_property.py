@@ -5,28 +5,58 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+from pathlib import Path
+from typing import TypedDict, TypeGuard, cast
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.diarization.local_provider import LocalProvider
 from app.diarization.diarization_engine import DiarizationOptions
-
+from app.diarization.local_provider import LocalProvider
 
 # ---------------------------------------------------------------------------
 # Strategies
 # ---------------------------------------------------------------------------
 
-segment_strategy = st.fixed_dictionaries(
-    {
-        "speaker": st.text(min_size=1, max_size=50),
-        "start_ms": st.integers(min_value=0, max_value=10_000_000),
-        "end_ms": st.integers(min_value=0, max_value=10_000_000),
-    }
-).filter(lambda s: s["end_ms"] >= s["start_ms"])
+class Segment(TypedDict):
+    speaker: str
+    start_ms: int
+    end_ms: int
 
-segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=20)
+
+def _is_valid_segment(segment: dict[str, object]) -> TypeGuard[Segment]:
+    start_ms = segment.get("start_ms")
+    end_ms = segment.get("end_ms")
+    return (
+        isinstance(segment.get("speaker"), str)
+        and isinstance(start_ms, int)
+        and isinstance(end_ms, int)
+        and end_ms >= start_ms
+    )
+
+
+_raw_segment_strategy: st.SearchStrategy[dict[str, object]] = cast(
+    st.SearchStrategy[dict[str, object]],
+    st.fixed_dictionaries(
+        {
+            "speaker": st.text(min_size=1, max_size=50),
+            "start_ms": st.integers(min_value=0, max_value=10_000_000),
+            "end_ms": st.integers(min_value=0, max_value=10_000_000),
+        }
+    ),
+)
+segment_strategy: st.SearchStrategy[Segment] = cast(
+    st.SearchStrategy[Segment], _raw_segment_strategy.filter(_is_valid_segment)
+)
+
+segments_list_strategy: st.SearchStrategy[list[Segment]] = st.lists(
+    segment_strategy, min_size=0, max_size=20
+)
 
 
 # ---------------------------------------------------------------------------
@@ -40,8 +70,8 @@ segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=20)
 @given(segments=segments_list_strategy)
 @pytest.mark.asyncio
 async def test_property_4_faithful_mapping_of_local_diarization_response(
-    segments: list[dict],
-):
+    segments: list[Segment],
+) -> None:
     """For any valid response with N elements {speaker, start_ms, end_ms},
     LocalProvider produces exactly N SpeakerSegment preserving
     raw_label=speaker, start_ms=start_ms, end_ms=end_ms in the same order.
@@ -92,11 +122,9 @@ async def test_property_4_faithful_mapping_of_local_diarization_response(
 # Validates: Requirements 3.5, 3.6, 3.7
 # ---------------------------------------------------------------------------
 
-import httpx
-
 
 @pytest.mark.asyncio
-async def test_example_http_500_error_produces_no_partial_segments():
+async def test_example_http_500_error_produces_no_partial_segments() -> None:
     """Req 3.5: HTTP error (status 500) -> the provider signals failure with no partial segments."""
     provider = LocalProvider(url="http://fake-diar-engine:8002")
     options = DiarizationOptions()
@@ -123,7 +151,7 @@ async def test_example_http_500_error_produces_no_partial_segments():
 
 
 @pytest.mark.asyncio
-async def test_example_timeout_signals_failure():
+async def test_example_timeout_signals_failure() -> None:
     """Req 3.6: Timeout (httpx.TimeoutException) -> the provider signals failure."""
     provider = LocalProvider(url="http://fake-diar-engine:8002")
     options = DiarizationOptions()
@@ -142,7 +170,7 @@ async def test_example_timeout_signals_failure():
 
 
 @pytest.mark.asyncio
-async def test_example_connect_error_signals_failure():
+async def test_example_connect_error_signals_failure() -> None:
     """Req 3.6: ConnectError (httpx.ConnectError) -> the provider signals failure."""
     provider = LocalProvider(url="http://fake-diar-engine:8002")
     options = DiarizationOptions()
@@ -161,7 +189,7 @@ async def test_example_connect_error_signals_failure():
 
 
 @pytest.mark.asyncio
-async def test_example_response_without_segments_raises_valueerror():
+async def test_example_response_without_segments_raises_valueerror() -> None:
     """Req 3.7: Response missing the 'segments' key -> ValueError (invalid structure)."""
     provider = LocalProvider(url="http://fake-diar-engine:8002")
     options = DiarizationOptions()
@@ -186,7 +214,7 @@ async def test_example_response_without_segments_raises_valueerror():
 
 
 @pytest.mark.asyncio
-async def test_example_empty_segments_is_a_valid_result():
+async def test_example_empty_segments_is_a_valid_result() -> None:
     """Req 3.7: `segments: []` (empty list) is a valid result — doesn't raise.
     This distinguishes a missing key (ValueError) from a result with no speakers.
     """
@@ -212,3 +240,53 @@ async def test_example_empty_segments_is_a_valid_result():
 
     # Doesn't raise and produces zero segments
     assert result.segments == []
+
+
+@pytest.mark.asyncio
+async def test_local_provider_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DIARIZATION_TIMEOUT_SECONDS", "2400")
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"segments": [], "num_speakers": 0}
+
+    with patch("app.diarization.local_provider.httpx.AsyncClient") as client_class:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        client_class.return_value = mock_client
+        await provider.diarize("recordings/synthetic.wav", DiarizationOptions())
+
+    assert mock_client.post.call_args.kwargs["timeout"] == 2400.0
+
+
+@pytest.mark.asyncio
+async def test_local_provider_sends_bearer_token_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_file = tmp_path / "engine_token"
+    token_file.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setenv("SAURI_ENGINE_TOKEN_FILE", str(token_file))
+    capability_key_file = tmp_path / "recording_capability_key"
+    capability_key_file.write_bytes(b"synthetic-capability-secret")
+    monkeypatch.setenv("SAURI_RECORDING_CAPABILITY_KEY_FILE", str(capability_key_file))
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"segments": [], "num_speakers": 0}
+
+    with patch("app.diarization.local_provider.httpx.AsyncClient") as client_class:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        client_class.return_value = mock_client
+        await provider.diarize("recordings/synthetic.wav", DiarizationOptions())
+
+    headers = mock_client.post.call_args.kwargs["headers"]
+    assert headers["Authorization"] == "Bearer synthetic-token"
+    expiry_text, signature = headers["X-Sauri-Recording-Capability"].split(".")
+    message = f"recordings/synthetic.wav\n{expiry_text}".encode()
+    expected = hmac.new(b"synthetic-capability-secret", message, hashlib.sha256).hexdigest()
+    assert signature == expected

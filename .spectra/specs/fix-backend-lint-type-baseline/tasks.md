@@ -6,10 +6,10 @@
 |---|---|---|---|
 | 1 | Establish an isolated candidate environment and capture the exact pre-correction baseline | 1.1–1.2 | None; 1.2 requires 1.1 |
 | 2 | Map and preserve existing behavior before production edits | 2.1 | 1.2 |
-| 3 | Correct findings in atomic, file-scoped units with RED evidence transferred before each edit | 3.1.N (one instance per diagnostic-bearing file) | 1.2; matching 2.1 evidence before production-file edits |
-| 4 | Validate and hand off the integrated candidate | 4.1–4.2 | Every 3.1.N instance |
+| 3 | Correct findings in atomic, file-scoped units with RED evidence transferred before each edit | T-3.1.01–T-3.1.61 (one per current diagnostic-bearing in-scope path) | Historical Task 1.2 evidence plus current-base checker snapshot; matching 2.1 handoff before production-file edits |
+| 4 | Validate and hand off the integrated candidate | 4.1–4.2 | Every T-3.1.01–T-3.1.61 instance; Task 4.1 also requires authorized resolution/integration of separate 009 defect card `task_6ccdc76cbc0f4fe9` because current default migration tests fail there |
 
-The diagnostic-bearing file list is intentionally determined by Task 1.2 on the exact approved implementation base and actual candidate tool versions; upstream artifacts do not enumerate it. Task 1.2 creates one numbered Task 3.1.N instance for each in-scope file with Ruff and/or mypy findings. A single file's Ruff and mypy findings belong to the same atomic correction task, not competing global Ruff and mypy workstreams. Each instance names exactly one path and is independently reviewable. Test-only files are separate instances from production files. No task instance is created for a path without a finding.
+The frozen Task 1.2 evidence remains historically based on `a6c74bb92b286e7819602a07e47785ee7ba1f78c`; it is not treated as a current-base inventory. Current-base checker output/version and per-path diagnostic inventory are preserved in `evidence-current-base/` for exact base `0d6f2713abcf08d960e98451b04bbdd31b4c8843`. It records 190 Ruff findings across 47 paths and 303 mypy errors across 31 files. Relative to Task 1.2: Ruff added `alembic/versions/009_recording_media_sources.py` and `app/ingestion/schemas.py`, and removed `app/infra/models.py`; mypy added `app/meetings/speaker_review_service.py` and `tests/ingestion/test_playback_source_ingestion.py`, and removed `tests/speaker_review/test_disposition_idempotency.py`. The two new application paths are in the approved bugfix scope, but production edits remain gated by their exact Task 2.1 handoffs. The 009 recording-media migration's I001 is recorded as excluded: the separate migration-lineage defect is tracked by `task_6ccdc76cbc0f4fe9`; do not fold that migration or its behavior repair into this plan. Thus the current materialized correction set is 61 paths after removing that separate 009 file. One file's Ruff and mypy findings are combined into one atomic correction task; test-only paths remain separate. Findings removed from current base receive no correction task.
 
 ## Phase 1: Isolated Candidate Environment and Baseline
 
@@ -50,18 +50,231 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 
 **Dependencies:** Task 1.2
 
-**Tracking:** Issue #264 · Card task_e93f0a97ce6f4e12
+**Tracking:** Done · Issue #264 · Card task_9d781cb49f7f4fac · PR #459
 
 ## Phase 3: File-Scoped Diagnostic Corrections
 
-### Task 3.1.N: Correct all in-scope findings in one diagnostic-bearing file
+### T-3.1.01–T-3.1.61: One correction task per current diagnostic-bearing file
 
-**File:** Exactly one path `P`, substituted from Task 1.2's inventory when this task instance is created; no other file is in scope for this instance.
-**Action:** For path `P`, fix only its recorded Ruff and/or mypy findings with the smallest semantics-preserving edits. Keep the exact pre-correction checker RED output for `P`, captured on the base immediately preceding this instance's first edit, with the task. Do not source edits, diffs, or RED evidence from the paused Imre worktree or its approximately 49 modified paths; any authorized transfer of that work is Ansel's decision and must be identified in writing before it is used. For a production path, first receive the complete Task 2.1 handoff for `P`; for a test-only path, use the same-path checker RED record and do not edit unrelated production files. Do not modify `backend/pyproject.toml`, dependency declarations, rules, exclusions, markers, or ignores. If `P` is a migration, preserve operations, order, and resulting schema/data semantics and record the equivalence evidence. Stop and report to Ansel if a fix changes runtime/migration behavior, spans another file beyond the approved diagnostic unit, or needs a policy/dependency change.
+Each row is one separate atomic task, issue, and board card after this exact plan amendment is approved. It authorizes only the exact listed file and the current Ruff/mypy findings shown below. Multiple checker findings for one file stay in one task. Labels are `task` for all; test-only paths also get `test`, and files explicitly named `*_property.py` also get `pbt`. The task's issue/card descriptions must cite this plan version, exact branch/worktree, and dependency IDs. No issue/card exists before Mira approves this amended plan.
 
-**Completion Criteria:** The targeted finding(s) for `P` are absent when the relevant configured checker is rerun; its exact diff is limited to `P`; production-path protective tests remain green, or static/format-only equivalence is documented where applicable. Every finding for `P` is either resolved with evidence or explicitly escalated; no finding is silently suppressed or called clean.
+| Task | Exact file | Current findings (Ruff / mypy) | Issue labels |
+|---|---|---|---|
+| T-3.1.01 | `alembic/env.py` | Ruff I001×2 | `task` |
+| T-3.1.02 | `alembic/versions/001_initial_schema.py` | Ruff I001×1, UP007×3, UP035×1 | `task` |
+| T-3.1.03 | `alembic/versions/002_unique_transcripcion_reunion_id.py` | Ruff UP007×3, UP035×1 | `task` |
+| T-3.1.04 | `alembic/versions/003_diarizacion_schema.py` | Ruff I001×1, UP007×3, UP035×1 | `task` |
+| T-3.1.05 | `alembic/versions/004_usuarios_schema.py` | Ruff I001×1, UP007×3, UP035×1 | `task` |
+| T-3.1.06 | `alembic/versions/005_fix_uuid_columns_to_varchar.py` | Ruff E501×4, UP007×3, UP035×1 | `task` |
+| T-3.1.07 | `alembic/versions/006_add_titulo_reunion.py` | Ruff I001×1, UP007×3, UP035×1 | `task` |
+| T-3.1.08 | `alembic/versions/007_rename_schema_to_english.py` | Ruff E501×6, UP007×3, UP035×1 | `task` |
+| T-3.1.09 | `app/auth/audit.py` | Ruff UP017×1 | `task` |
+| T-3.1.10 | `app/auth/authorization.py` | Ruff B008×2, UP035×1 | `task` |
+| T-3.1.11 | `app/auth/dependencies.py` | Ruff B008×1, B904×1 | `task` |
+| T-3.1.12 | `app/auth/token.py` | Ruff UP017×1 | `task` |
+| T-3.1.13 | `app/diarization/assignment.py` | Ruff I001×1 | `task` |
+| T-3.1.14 | `app/diarization/cloud_provider.py` | Ruff B904×1 | `task` |
+| T-3.1.15 | `app/diarization/state.py` | Ruff I001×1 | `task` |
+| T-3.1.16 | `app/diarization/worker.py` | Ruff I001×1, SIM117×1, UP017×1 | `task` |
+| T-3.1.17 | `app/ingestion/router.py` | Ruff B008×3, B904×1, SIM117×1 | `task` |
+| T-3.1.18 | `app/ingestion/schemas.py` | Ruff UP037×1 | `task` |
+| T-3.1.19 | `app/meetings/router.py` | Ruff A002×2, B008×8, B904×2, I001×1, SIM117×4 | `task` |
+| T-3.1.20 | `app/meetings/schemas.py` | Ruff UP007×1 | `task` |
+| T-3.1.21 | `app/meetings/service.py` | Ruff A002×1 | `task` |
+| T-3.1.22 | `app/meetings/speaker_review_service.py` | mypy union-attr×1 | `task` |
+| T-3.1.23 | `app/meetings/state_machine.py` | Ruff I001×1 | `task` |
+| T-3.1.24 | `app/transcription/cloud_provider.py` | Ruff B904×1 | `task` |
+| T-3.1.25 | `asr-engine/main.py` | Ruff B904×2, SIM105×1, SIM115×1 | `task` |
+| T-3.1.26 | `diar-engine/main.py` | Ruff B904×2, SIM105×1, SIM115×1 | `task` |
+| T-3.1.27 | `tests/auth/conftest.py` | mypy no-untyped-def×1 | `task, test` |
+| T-3.1.28 | `tests/auth/test_access_control_property.py` | Ruff B008×1; mypy no-untyped-def×2 | `task, test, pbt` |
+| T-3.1.29 | `tests/auth/test_auth_disabled_scope.py` | mypy no-untyped-def×3 | `task, test` |
+| T-3.1.30 | `tests/auth/test_login.py` | mypy no-untyped-def×6 | `task, test` |
+| T-3.1.31 | `tests/auth/test_user_model.py` | mypy no-untyped-def×2 | `task, test` |
+| T-3.1.32 | `tests/conftest.py` | Ruff UP017×1, UP035×1 | `task, test` |
+| T-3.1.33 | `tests/diar_engine/test_contract.py` | Ruff I001×1; mypy attr-defined×3, no-untyped-def×7, unused-ignore×1 | `task, test` |
+| T-3.1.34 | `tests/diarization/test_assignment_property.py` | Ruff B007×1, B905×2, I001×1 | `task, test, pbt` |
+| T-3.1.35 | `tests/diarization/test_cloud_provider_property.py` | Ruff E402×2, I001×2; mypy no-untyped-def×9 | `task, test, pbt` |
+| T-3.1.36 | `tests/diarization/test_diarization_engine_property.py` | Ruff I001×1 | `task, test, pbt` |
+| T-3.1.37 | `tests/diarization/test_factory_property.py` | mypy arg-type×1, assignment×1, no-untyped-call×3, no-untyped-def×27, var-annotated×1 | `task, test, pbt` |
+| T-3.1.38 | `tests/diarization/test_integration.py` | Ruff E501×1, I001×3, SIM117×2, UP017×2; mypy no-untyped-def×11, type-arg×3 | `task, test` |
+| T-3.1.39 | `tests/diarization/test_labeling_property.py` | Ruff I001×1 | `task, test, pbt` |
+| T-3.1.40 | `tests/diarization/test_local_provider_property.py` | Ruff E402×1, I001×1; mypy arg-type×1, no-untyped-def×6, type-arg×1, var-annotated×1 | `task, test, pbt` |
+| T-3.1.41 | `tests/diarization/test_migration.py` | Ruff I001×1; mypy arg-type×1, no-untyped-call×1, no-untyped-def×8, union-attr×2 | `task, test` |
+| T-3.1.42 | `tests/diarization/test_repository.py` | Ruff B017×2, I001×1, SIM117×9, UP017×4; mypy no-untyped-def×5, type-arg×5 | `task, test` |
+| T-3.1.43 | `tests/diarization/test_state_property.py` | mypy arg-type×1 | `task, test, pbt` |
+| T-3.1.44 | `tests/diarization/test_worker.py` | Ruff E501×1, I001×1, SIM117×4, UP017×6; mypy no-untyped-def×10, type-arg×12, var-annotated×1 | `task, test` |
+| T-3.1.45 | `tests/infra/test_adaptadores_conformidad_property.py` | mypy no-untyped-def×5, type-arg×10 | `task, test, pbt` |
+| T-3.1.46 | `tests/infra/test_queue_retries.py` | Ruff F401×1; mypy no-untyped-def×7 | `task, test` |
+| T-3.1.47 | `tests/ingestion/test_playback_source_ingestion.py` | mypy arg-type×5, no-untyped-def×1 | `task, test` |
+| T-3.1.48 | `tests/library/conftest.py` | Ruff UP017×3, W292×1 | `task, test` |
+| T-3.1.49 | `tests/meetings/test_diarization_endpoint.py` | mypy no-untyped-def×5 | `task, test` |
+| T-3.1.50 | `tests/meetings/test_note_management.py` | mypy no-untyped-def×11 | `task, test` |
+| T-3.1.51 | `tests/meetings/test_title_history.py` | mypy no-untyped-def×1 | `task, test` |
+| T-3.1.52 | `tests/meetings/test_transcript_turn_id.py` | mypy no-untyped-def×1 | `task, test` |
+| T-3.1.53 | `tests/test_migration.py` | mypy arg-type×1, no-untyped-call×6, no-untyped-def×7, union-attr×2 | `task, test` |
+| T-3.1.54 | `tests/test_queue.py` | Ruff I001×6; mypy attr-defined×4, misc×3, no-untyped-def×28 | `task, test` |
+| T-3.1.55 | `tests/transcription/test_cloud_provider.py` | Ruff I001×1, SIM117×2; mypy arg-type×1, no-untyped-def×5, type-arg×1, var-annotated×1 | `task, test` |
+| T-3.1.56 | `tests/transcription/test_factory.py` | Ruff I001×1, SIM117×3; mypy arg-type×1, no-untyped-def×9 | `task, test` |
+| T-3.1.57 | `tests/transcription/test_integration.py` | Ruff F401×1, I001×1; mypy no-untyped-def×4 | `task, test` |
+| T-3.1.58 | `tests/transcription/test_local_provider.py` | Ruff B905×1, I001×1; mypy arg-type×1, no-untyped-def×5, type-arg×2, var-annotated×1 | `task, test` |
+| T-3.1.59 | `tests/transcription/test_meeting_capture_property.py` | mypy arg-type×1, no-untyped-def×1, type-arg×3, var-annotated×1 | `task, test, pbt` |
+| T-3.1.60 | `tests/transcription/test_repository.py` | Ruff F401×1, I001×1, SIM117×1, UP017×2; mypy no-untyped-def×2, type-arg×2 | `task, test` |
+| T-3.1.61 | `tests/transcription/test_worker.py` | Ruff I001×2, SIM117×14, UP017×1; mypy arg-type×2, no-untyped-def×13, type-arg×11, var-annotated×2 | `task, test` |
 
-**Dependencies:** Task 1.2; for a production path, the matching Task 2.1 handoff must be complete before editing. Instances for distinct paths are dependency-ready in parallel; this plan asserts no numeric concurrency limit, because none was verified in the packet. Ansel schedules ready instances within effective runtime capacity and any real shared-resource conflict he has verified. Each instance works from the same recorded base and transfers its exact commit/diff to the one candidate worktree only through Ansel's authorized integration route; integration into that shared candidate is serialized. Instances targeting the same path are prohibited because Ruff and mypy findings for one path are combined into this single instance.
+### Issue/card tracking for T-3.1.01–T-3.1.61
+
+| Task | Tracking |
+|---|---|
+| T-3.1.01 | Issue #326 · Card task_2c3b6bebf14f4348 · PR #458 · Done |
+| T-3.1.02 | Issue #327 · Card task_bf7ecf6142d346e6 · PR #462 · Done |
+| T-3.1.03 | Issue #328 · Card task_061bddef35f246a1 · PR #460 · Done |
+| T-3.1.04 | Done · Issue #329 · Card task_85e5ee9e158c4f30 · PR #463 |
+| T-3.1.05 | Issue #330 · Card task_c3dfb08400df4fb9 · PR #461 · Done |
+| T-3.1.06 | Done · Issue #331 · Card task_812a55eb29494c5b · PR #465 |
+| T-3.1.07 | Issue #332 · Card task_221e3b81934844ce · PR #464 · Done |
+| T-3.1.08 | Done · Issue #333 · Card task_9118c3aeba7f458d · PR #507 |
+| T-3.1.09 | Issue #334 · Card task_fc0a88aa3262413e |
+| T-3.1.10 | Done · Issue #335 · Card task_16d1a54118dd4590 · PR #468 |
+| T-3.1.11 | Done · Issue #336 · Card task_e31207d8cfb042c3 · PR #474 |
+| T-3.1.12 | Issue #337 · Card task_4fe91b55210f4902 |
+| T-3.1.13 | Done · Issue #338 · Card task_b2894a1b41664ef5 · PR #466 |
+| T-3.1.14 | Issue #339 · Card task_d9060c9f79b346ce |
+| T-3.1.15 | Done · Issue #340 · Card task_bc422932256d4afd · PR #469 |
+| T-3.1.16 | Done · Issue #341 · Card task_b18c2cd83e214a3b · PR #470 |
+| T-3.1.17 | Done · Issue #342 · Card task_153535d2f483425e · PR #471 |
+| T-3.1.18 | Issue #343 · Card task_b7d536f17b744d05 |
+| T-3.1.19 | Done · Issue #344 · Card task_80bb9d30b55d4460 · PR #477 |
+| T-3.1.20 | Done · Issue #345 · Card task_debf2ac069c54a40 · PR #472 |
+| T-3.1.21 | Issue #346 · Card task_7741f6f73f4744b9 |
+| T-3.1.22 | Not applicable — Issue #347 closed as not planned; the mypy finding was removed by merged PR #418 · Card task_a51038580a414fcd · PR #508 |
+| T-3.1.23 | Issue #348 · Card task_7547e887bf434b12 |
+| T-3.1.24 | Done · Issue #349 · Card task_1663610cd4ed4cff · PR #525 |
+| T-3.1.25 | Issue #350 · Card task_d02b6e8c4d814984 |
+| T-3.1.26 | Done · Issue #351 · Card task_59aac81ea8054377 · PR #483 |
+| T-3.1.27 | Done · Issue #352 · Card task_9f1282d6970a445d · PR #427 |
+| T-3.1.28 | Done · Issue #353 · Card task_33bf40d2ec6146e4 · PR #426 |
+| T-3.1.29 | Issue #354 · Card task_e34f1f55e38e483b |
+| T-3.1.30 | Done · Issue #355 · Card task_a0a08418e19f4cc2 · PR #432 |
+| T-3.1.31 | Done · Issue #356 · Card task_432b6ebacc584e3e · PR #388 |
+| T-3.1.32 | Done · Issue #357 · Card task_b2193d5a036c4013 · PR #430 |
+| T-3.1.33 | Issue #358 · Card task_0f9b0e5cff7441f0 |
+| T-3.1.34 | Done · Issue #359 · Card task_4d85d49373ed4e3e · PR #431 |
+| T-3.1.35 | Issue #360 · Card task_a0215908954e429b |
+| T-3.1.36 | Issue #361 · Card task_679c84ddba6544df |
+| T-3.1.37 | Done · Issue #362 · Card task_76c632e57e91477e · PR #433 |
+| T-3.1.38 | Done · Issue #363 · Card task_10a2fd0ed4d4439d · PR #435 |
+| T-3.1.39 | Done · Issue #364 · Card task_b3822206a07f4e0f · PR #434 |
+| T-3.1.40 | Done · Issue #365 · Card task_1897141c7c474c37 · PR #436 |
+| T-3.1.41 | Done · Issue #366 · Card task_bafdfcb3bc714299 · PR #437 |
+| T-3.1.42 | Issue #367 · Card task_fe35ad6c1d00426a · PR #440 |
+| T-3.1.43 | Done · Issue #368 · Card task_e60ecb4fab1b46b0 · PR #438 |
+| T-3.1.44 | Done · Issue #369 · Card task_facdc3e0b0154885 · PR #439 |
+| T-3.1.45 | Done · Issue #370 · Card task_ef8575211880453f · PR #441 |
+| T-3.1.46 | Issue #371 · Card task_69a6cc84820f493d · PR #443 · Done |
+| T-3.1.47 | Issue #372 · Card task_53211a4d325048ca · PR #445 · Done |
+| T-3.1.48 | Issue #373 · Card task_260190e5c6b34b1d · PR #444 · Done |
+| T-3.1.49 | Done · Issue #374 · Card task_ef4387d699c94a33 · PR #442 |
+| T-3.1.50 | Issue #375 · Card task_e5accf1b07694b51 · PR #448 |
+| T-3.1.51 | Issue #376 · Card task_232217e2a98a41ac · PR #447 · Done |
+| T-3.1.52 | Done · Issue #377 · Card task_0859f7811a3349f8 · PR #446 |
+| T-3.1.53 | Issue #378 · Card task_4775e29d81b04838 · PR #449 · Done |
+| T-3.1.54 | Done · Issue #379 · Card task_f501a3dd376f40a0 · PR #451 |
+| T-3.1.55 | Issue #380 · Card task_fd6af56086e14309 · PR #453 |
+| T-3.1.56 | Issue #381 · Card task_bcbba7081c3b4c0f |
+| T-3.1.57 | Issue #382 · Card task_394594b0b6674985 · PR #450 |
+| T-3.1.58 | Issue #383 · Card task_16175357fb414edf |
+| T-3.1.59 | Done · Issue #384 · Card task_35ae8fb35e254041 · PR #455 |
+| T-3.1.60 | Done · Issue #385 · Card task_9f1912235da941e0 · PR #454 |
+| T-3.1.61 | Done · Issue #386 · Card task_be8f43444a0149fb · PR #457 |
+
+### Focused RED/test seams for every file task
+
+The exact node/fixture seam is specified per task below; execute its node with `python -m pytest -q <node>` from `backend/` as applicable. These are seam references, not claims that all listed tests were already run: only results explicitly documented in the T-2.1 evidence map are completed evidence. Each writer still captures that task's exact checker RED on the immediate pre-edit base and the matching test result before any production edit. `tests/library/conftest.py` is a fixture-only module with no discovered test consumer; its seam is the `async_engine` fixture lifecycle, and its UP017/W292 corrections are static-only (no behavior test is added). The added `app/ingestion/schemas.py` and `app/meetings/speaker_review_service.py` paths have candidate seams below, but remain production-edit blocked until the T-2.1 per-path classification, test mapping, and handoff are completed on the authorized base.
+
+| Task | Focused test seam (module path + function/route) |
+|---|---|
+| T-3.1.01 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.02 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_orm_schema_uses_english_table_names` |
+| T-3.1.03 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.04 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.05 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.06 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data`; `::test_downgrade_reverses_every_rename` |
+| T-3.1.07 | `tests/test_migration.py::test_revision_007_chains_after_006`; `::test_upgrade_renames_every_table_without_dropping_data` |
+| T-3.1.08 | `tests/test_migration.py::test_revision_007_chains_after_006`; `::test_upgrade_renames_every_table_without_dropping_data` |
+| T-3.1.09 | `tests/auth/test_access_control_property.py::test_property_10_every_denial_generates_exactly_one_record` |
+| T-3.1.10 | `tests/auth/test_access_control_property.py::test_property_10_access_granted_iff_authorized`; `::test_property_10_every_denial_generates_exactly_one_record` |
+| T-3.1.11 | `tests/auth/test_auth_disabled_scope.py::test_invalid_token_preserves_unauthorized_error_contract`; `::test_bypass_active_in_test_environment` |
+| T-3.1.12 | `tests/auth/test_login.py::test_login_valid_credentials_issues_jwt` |
+| T-3.1.13 | `tests/diarization/test_assignment_property.py::test_property_9_exactly_one_assignment_per_turn`; `::test_property_9_tie_break_by_lower_sequence` |
+| T-3.1.14 | `tests/diarization/test_cloud_provider_property.py::test_example_120s_timeout_raises_external_service_error` |
+| T-3.1.15 | `tests/diarization/test_state_property.py::test_property_16_valid_transitions_produce_correct_state` |
+| T-3.1.16 | `tests/diarization/test_worker.py::test_property_20_engine_failure_propagates_without_completed` |
+| T-3.1.17 | `tests/ingestion/test_playback_source_ingestion.py::test_invalid_capture_metadata_returns_422_before_object_storage` |
+| T-3.1.18 | `tests/ingestion/test_playback_source_ingestion.py::test_ingestion_contract_preserves_explicit_capture_evidence[overrides0-muxed-None]` |
+| T-3.1.19 | `tests/meetings/test_join_triggers.py::test_request_join_manual_transitions_and_enqueues`; `tests/meetings/test_note_management.py::test_rename_200_updates_title` |
+| T-3.1.20 | `tests/meetings/test_register_meeting_property.py::test_property_2_accepts_link_input`; `::test_property_2_rejects_invalid_links` |
+| T-3.1.21 | `tests/meetings/test_register_meeting_property.py::test_property_2_accepts_link_input`; `::test_property_2_accepts_manual_input` |
+| T-3.1.22 | `tests/speaker_review/test_disposition_idempotency.py::test_persistent_replay_returns_original_result_without_second_mutation` |
+| T-3.1.23 | `tests/meetings/test_state_machine_property.py::test_property_3_only_valid_transitions_produce_a_new_state` |
+| T-3.1.24 | `tests/transcription/test_cloud_provider.py::test_example_cloud_timeout_raises_service_error` |
+| T-3.1.25 | `tests/transcription/test_asr_engine_service.py::test_failed_s3_download_removes_partial_file_and_chains_cause`; `::test_transcription_failure_returns_500_and_removes_audio_file` |
+| T-3.1.26 | `tests/diar_engine/test_contract.py::test_diarization_failure_removes_downloaded_temp_file`; `::test_download_http_error_preserves_status_and_detail` |
+| T-3.1.27 | `tests/auth/conftest.py::api_client` → `tests/auth/test_login.py::test_login_valid_credentials_issues_jwt` |
+| T-3.1.28 | `tests/auth/test_access_control_property.py::test_property_10_access_granted_iff_authorized` |
+| T-3.1.29 | `tests/auth/test_auth_disabled_scope.py::test_bypass_active_in_test_environment` |
+| T-3.1.30 | `tests/auth/test_login.py::test_login_valid_credentials_issues_jwt` |
+| T-3.1.31 | `tests/auth/test_user_model.py::test_user_can_be_created_and_read` |
+| T-3.1.32 | `tests/conftest.py::async_engine` → `tests/meetings/test_join_triggers.py::test_request_join_manual_transitions_and_enqueues` |
+| T-3.1.33 | `tests/diar_engine/test_contract.py::TestContratoDiarEngine::test_health_endpoint` |
+| T-3.1.34 | `tests/diarization/test_assignment_property.py::test_property_9_exactly_one_assignment_per_turn` |
+| T-3.1.35 | `tests/diarization/test_cloud_provider_property.py::test_example_http_error_raises_external_service_error` |
+| T-3.1.36 | `tests/diarization/test_diarization_engine_property.py::test_property_6_diarization_result_ascending_order` |
+| T-3.1.37 | `tests/diarization/test_factory_property.py::test_property_1_local_with_capitalization_and_spaces` |
+| T-3.1.38 | `tests/diarization/test_integration.py::TestDiarizationWorkerSubscription::test_worker_subscribes_to_diarize_topic` |
+| T-3.1.39 | `tests/diarization/test_labeling_property.py::test_property_7_speaker_count_equals_distinct_raw_labels` |
+| T-3.1.40 | `tests/diarization/test_local_provider_property.py::test_property_4_faithful_mapping_of_local_diarization_response` |
+| T-3.1.41 | `tests/diarization/test_migration.py::test_migration_003_creates_three_tables` |
+| T-3.1.42 | `tests/diarization/test_repository.py::test_property_12_diarization_uniqueness_per_meeting` |
+| T-3.1.43 | `tests/diarization/test_state_property.py::test_property_16_valid_transitions_produce_correct_state` |
+| T-3.1.44 | `tests/diarization/test_worker.py::test_property_20_engine_failure_propagates_without_completed` |
+| T-3.1.45 | `tests/infra/test_adaptadores_conformidad_property.py::test_property_13_store_roundtrip_save_get` |
+| T-3.1.46 | `tests/infra/test_queue_retries.py::TestReadMaxRetriesDiarize::test_default_when_absent` |
+| T-3.1.47 | `tests/ingestion/test_playback_source_ingestion.py::test_ingestion_contract_preserves_explicit_capture_evidence[overrides0-muxed-None]` |
+| T-3.1.48 | `tests/library/conftest.py::async_engine` fixture lifecycle; no `tests/library/` consumer test is currently discovered |
+| T-3.1.49 | `tests/meetings/test_diarization_endpoint.py::test_diarization_200_with_speakers_and_assignments` |
+| T-3.1.50 | `tests/meetings/test_note_management.py::test_rename_200_updates_title` |
+| T-3.1.51 | `tests/meetings/test_title_history.py::test_listing_includes_null_title` |
+| T-3.1.52 | `tests/meetings/test_transcript_turn_id.py::test_segments_include_the_turn_id` |
+| T-3.1.53 | `tests/test_migration.py::test_upgrade_renames_every_table_without_dropping_data` (through migration 007; the separate 009 failing nodes remain outside this task) |
+| T-3.1.54 | `tests/test_queue.py::TestRabbitMQJobQueueBehavior::test_ack_on_success` |
+| T-3.1.55 | `tests/transcription/test_cloud_provider.py::test_example_integration_https_and_auth_header` |
+| T-3.1.56 | `tests/transcription/test_factory.py::test_property_1_absent_or_empty_is_local` |
+| T-3.1.57 | `tests/transcription/test_integration.py::TestASREngineContract::test_post_transcribe_response_shape` |
+| T-3.1.58 | `tests/transcription/test_local_provider.py::test_property_4_faithful_mapping_of_local_response` |
+| T-3.1.59 | `tests/transcription/test_meeting_capture_property.py::test_property_7_temporal_invariant_of_persisted_turns` |
+| T-3.1.60 | `tests/transcription/test_repository.py::test_property_13_persistence_roundtrip` |
+| T-3.1.61 | `tests/transcription/test_worker.py::test_property_16_invalid_input_does_not_persist` |
+
+For each task, scope remains only its listed source file. Its dependency is the frozen T1.2 evidence plus the exact current-base snapshot in `evidence-current-base/`; production-file edits additionally require the matching Task 2.1 per-path classification, exact focused-node result, and complete handoff before editing. Task 2.1 remains incomplete, so this table names executable candidate seams but does not assert all evidence or approval is complete. The targeted checker RED must be captured on the exact base immediately before the first edit using `ruff check <path>` and/or `mypy <path>` as applicable, and transferred to the writer with the listed test-node run result. Test-only files use the same-path checker RED and the named focused pytest node; do not modify production files from a test-path task. No source edit or behavior change is authorized by this plan amendment.
+
+**Completion Criteria (each instance):** Only the listed file changes; all listed checker findings are absent on the same targeted checker rerun; applicable focused pytest evidence passes; for production files, the matching Task 2.1 handoff is present and semantics-preserving equivalence is recorded. Migration edits preserve operations, order, resulting schema/data semantics; no exception context, FastAPI injection/body shape, cleanup, or runtime behavior changes without a separate authorized disposition. Findings that cannot be fixed within these bounds are escalated to Ansel, not suppressed.
+
+**Dependencies:** Current-base evidence snapshot and Task 1.2; for each production path, its matching Task 2.1 evidence/handoff before edits. Distinct paths have no invented pairwise dependency; each runs in its own issue worktree. Ansel sequences only real prerequisites and verified shared-resource conflicts. Changes integrate to the single candidate only through Ansel's authorized route. The excluded `009_recording_media_sources.py` I001 remains with separate card `task_6ccdc76cbc0f4fe9`, not among these 61 instances.
+
+**Task 3.1.36 tracking:** Done · Issue #361 · Card `task_679c84ddba6544df` · PR #389
+
+**Instantiated instance T-3.1.56:** `backend/tests/transcription/test_factory.py` — Ruff and mypy findings resolved; focused and full target tests passed; QA PASS. **Tracking:** Issue #381 · Card `task_bcbba7081c3b4c0f` · PR #452 · Done.
+
+### Task 3.1.09: Clear UP017 in `backend/app/auth/audit.py`
+
+**Status:** Done (QA passed; implementation PR open)
+
+**Tracking:** Issue #334 · Card task_fc0a88aa3262413e · PR #392
+
+**Instantiated instance T-3.1.33:** `backend/tests/diar_engine/test_contract.py` — Ruff I001 and recorded mypy findings resolved; file-scoped Ruff, mypy and pytest passed; QA PASS. **Tracking:** Issue #358 · Card `task_0f9b0e5cff7441f0` · PR #391 · Done.
+
+**Instantiated instance T-3.1.58:** `backend/tests/transcription/test_local_provider.py` — Ruff and mypy findings resolved; file-scoped Ruff, mypy and pytest passed; QA PASS. **Tracking:** Issue #383 · Card `task_16175357fb414edf` · PR #456 · Done.
 
 ## Phase 4: Integrated Candidate Validation and Handoff
 
@@ -72,7 +285,7 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 
 **Completion Criteria:** Every correction instance is integrated into the identified candidate; focused tests and all full checks have recorded results. An unblocked pass requires `pytest -q`, `ruff check .`, and `mypy .` to exit 0 under unchanged configuration. Any failure, timeout, or unavailable service is recorded as such and cannot be reported as acceptance pass.
 
-**Dependencies:** All Task 3.1.N instances and their authorized integration into the candidate worktree.
+**Dependencies:** All T-3.1.01–T-3.1.61 instances and their authorized integration into the candidate worktree, plus completion and authorized integration of the separate migration 009 lineage defect tracked by `task_6ccdc76cbc0f4fe9`. The current-base map records three default migration-test failures in that separate defect; this phase is not green until they are resolved or explicitly reported as blocked.
 
 **Tracking:** Issue #265 · Card task_f6e79b01ba8a4ea0
 

@@ -10,7 +10,6 @@ from hypothesis import strategies as st
 
 from app.diarization.diarization_engine import DiarizationResult, SpeakerSegment
 
-
 # ---------------------------------------------------------------------------
 # Strategy: generate lists of SpeakerSegment with valid constraints
 # ---------------------------------------------------------------------------

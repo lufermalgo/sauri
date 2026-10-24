@@ -7,6 +7,7 @@ Tasks: 5.2, 5.3, 5.4
 from __future__ import annotations
 
 import os
+from typing import TypedDict, TypeGuard
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -16,7 +17,6 @@ from hypothesis import strategies as st
 
 from app.transcription.asr_engine import TranscriptionOptions
 from app.transcription.cloud_provider import CloudProvider, ExternalServiceError
-
 
 # ---------------------------------------------------------------------------
 # Property 3: Rejects an unencrypted endpoint (Task 5.2)
@@ -29,16 +29,15 @@ from app.transcription.cloud_provider import CloudProvider, ExternalServiceError
     scheme=st.sampled_from(["http://", "ftp://", "ws://", ""]),
     host=st.from_regex(r"[a-z]{3,10}\.[a-z]{2,4}", fullmatch=True),
 )
-def test_property_3_rejects_unencrypted_endpoint(scheme: str, host: str):
+def test_property_3_rejects_unencrypted_endpoint(scheme: str, host: str) -> None:
     """Endpoint without HTTPS -> ValueError when constructing CloudProvider."""
     endpoint = scheme + host + "/transcribe"
     env = {
         "ASR_CLOUD_API_KEY": "valid-key",
         "ASR_CLOUD_ENDPOINT": endpoint,
     }
-    with patch.dict(os.environ, env, clear=False):
-        with pytest.raises(ValueError, match="HTTPS"):
-            CloudProvider()
+    with patch.dict(os.environ, env, clear=False), pytest.raises(ValueError, match="HTTPS"):
+        CloudProvider()
 
 
 # ---------------------------------------------------------------------------
@@ -47,15 +46,27 @@ def test_property_3_rejects_unencrypted_endpoint(scheme: str, host: str):
 # Validates: Requirements 4.5, 5.2, 5.3, 5.4
 # ---------------------------------------------------------------------------
 
-valid_segment_strategy = st.fixed_dictionaries(
+class SegmentData(TypedDict):
+    text: str
+    start_ms: int
+    end_ms: int
+
+
+def _has_valid_duration(segment: dict[str, object]) -> TypeGuard[SegmentData]:
+    start_ms = segment.get("start_ms")
+    end_ms = segment.get("end_ms")
+    return isinstance(start_ms, int) and isinstance(end_ms, int) and end_ms >= start_ms
+
+
+valid_segment_strategy: st.SearchStrategy[SegmentData] = st.fixed_dictionaries(
     {
         "text": st.text(min_size=1, max_size=50).filter(lambda s: s.strip()),
         "start_ms": st.integers(min_value=0, max_value=10_000_000),
         "end_ms": st.integers(min_value=0, max_value=10_000_000),
     }
-).filter(lambda s: s["end_ms"] >= s["start_ms"])
+).filter(_has_valid_duration)
 
-invalid_segment_strategy = st.one_of(
+invalid_segment_strategy: st.SearchStrategy[SegmentData] = st.one_of(
     # Empty text
     st.fixed_dictionaries(
         {"text": st.just(""), "start_ms": st.just(0), "end_ms": st.just(100)}
@@ -77,8 +88,8 @@ invalid_segment_strategy = st.one_of(
 )
 @pytest.mark.asyncio
 async def test_property_5_only_valid_segments_in_result(
-    valid_segs: list[dict], invalid_segs: list[dict]
-):
+    valid_segs: list[SegmentData], invalid_segs: list[SegmentData]
+) -> None:
     """Only segments with non-empty text, start>=0, end>=start are included."""
     all_segments = valid_segs + invalid_segs
     response_data = {"segments": all_segments}
@@ -122,19 +133,18 @@ async def test_property_5_only_valid_segments_in_result(
 # ---------------------------------------------------------------------------
 
 
-def test_example_missing_api_key_raises_valueerror():
+def test_example_missing_api_key_raises_valueerror() -> None:
     """Req 4.4: Missing ASR_CLOUD_API_KEY -> ValueError."""
     env = {
         "ASR_CLOUD_API_KEY": "",
         "ASR_CLOUD_ENDPOINT": "https://api.example.com/transcribe",
     }
-    with patch.dict(os.environ, env, clear=False):
-        with pytest.raises(ValueError, match="ASR_CLOUD_API_KEY"):
-            CloudProvider()
+    with patch.dict(os.environ, env, clear=False), pytest.raises(ValueError, match="ASR_CLOUD_API_KEY"):
+        CloudProvider()
 
 
 @pytest.mark.asyncio
-async def test_example_cloud_timeout_raises_service_error():
+async def test_example_cloud_timeout_raises_service_error() -> None:
     """Req 4.6: Cloud service timeout -> ExternalServiceError."""
     env = {
         "ASR_CLOUD_API_KEY": "valid-key",
@@ -157,7 +167,7 @@ async def test_example_cloud_timeout_raises_service_error():
 
 
 @pytest.mark.asyncio
-async def test_example_integration_https_and_auth_header():
+async def test_example_integration_https_and_auth_header() -> None:
     """Req 4.1, 4.3: Uses HTTPS and sends the Authorization Bearer header."""
     env = {
         "ASR_CLOUD_API_KEY": "sk-my-secret",

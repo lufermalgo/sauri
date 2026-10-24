@@ -18,7 +18,7 @@ class Meeting(Base):
     __tablename__ = "meetings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meet_link: Mapped[str] = mapped_column(String(512), nullable=False)
+    meet_link: Mapped[str | None] = mapped_column(String(512), nullable=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     origin: Mapped[str] = mapped_column(String(64), nullable=False)  # link | calendar_invite | manual
     calendar_invite_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -73,7 +73,7 @@ class SessionRecording(Base):
     idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
     capture_origin: Mapped[str] = mapped_column(
         String(64), nullable=False
-    )  # chrome_extension | server_bot
+    )  # chrome_extension | server_bot | web_upload
     audio_ref: Mapped[str] = mapped_column(String(1024), nullable=False)
     video_ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -112,6 +112,23 @@ class RecordingMediaSource(Base):
     quality_label: Mapped[str] = mapped_column(String(64), nullable=False)
 
     recording: Mapped[SessionRecording] = relationship(back_populates="media_sources")
+
+
+class PendingObjectDeletion(Base):
+    """Durable cleanup task for a staged object not referenced by a recording."""
+
+    __tablename__ = "pending_object_deletions"
+    __table_args__ = (
+        UniqueConstraint(
+            "cleanup_scope_hash",
+            "object_ref",
+            name="uq_pending_object_deletion_scope_ref",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cleanup_scope_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    object_ref: Mapped[str] = mapped_column(String(2048), nullable=False)
 
 
 # ---------------------------------------------------------------------------
@@ -330,8 +347,8 @@ class SpeakerReviewItem(Base):
     ``speaker_key`` is the immutable identifier of the initial diarization
     speaker within the review. ``disposition`` stays NULL until an explicit
     named/corrected/confirmed decision is recorded; ``version`` supports
-    concurrent-write detection (T-11/T-12). Excerpt validation and identity
-    linkage are later tasks and are not stored here yet.
+    concurrent-write detection (T-11/T-12). The encrypted excerpt reference
+    binds playback to this item's recording revision and speaker.
     """
 
     __tablename__ = "speaker_review_items"
@@ -345,6 +362,7 @@ class SpeakerReviewItem(Base):
     )
     speaker_key: Mapped[str] = mapped_column(String(128), nullable=False)
     current_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    excerpt_ref: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     # NULL while undisposed; otherwise one of named | corrected | confirmed.
     disposition: Mapped[str | None] = mapped_column(String(16), nullable=True)
     chosen_label: Mapped[str | None] = mapped_column(String(64), nullable=True)

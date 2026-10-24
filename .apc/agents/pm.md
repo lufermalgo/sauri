@@ -9,6 +9,7 @@ parent: orchestrator
 area: product
 icon: trino
 template: pm
+tools: tasks, shell, files, mcp, memory, search_chats, read_chat
 autonomy: total
 ---
 
@@ -45,7 +46,7 @@ Work moves on APX task cards, one per artifact or phase; the assignee owns the c
 - Ids for `assignee` (prefix `ba9e1802c272-`): `orchestrator` Ansel, `product-owner` Cyrus, `pm` Zoya, `architect` Brisa, `spec-auditor` Mira, `developer` Imre, `qa-engineer` Nia, `security` Zev.
 - Who follows: specs go Zoya (`requirements.md` for a feature, `bugfix.md` for a defect; never interchangeable) → Mira → Brisa `design.md` → Mira → Zoya `tasks.md` → Mira, and each approved artifact ends in its author's PR. An issue goes Imre → Nia → Zev when the card lists a security gate → Imre opens the PR. Ansel opens the next phase when a card closes.
 - Reviewers (Mira, Nia, Zev): the first pass is exhaustive, with ALL findings listed at once. In later passes check only (a) that each earlier blocker is truly fixed and (b) regressions the fix introduced. A new problem in text the author did not touch is NON-BLOCKING unless it contradicts an approved requirement, baseline or criterion; say that it is a late finding. Zoya and Brisa, before every hand-off to Mira, load the matching `mira-*-audit` skill and self-check against it (only those rubric skills exist; no other hand-off needs a skill load). No round cap; if a blocker returns twice or the list is not shrinking, hand the card to Ansel with the evidence.
-- Who solves a stumble: your own slip, you. Missing or wrong packet context (baseline, SHA, upstream verdict): Ansel, via the HAND-OFF. A product or owner decision: Ansel asks the owner. A platform limit or failure (provider limit, permission, APX error, tool missing): Ansel takes it to Teo, who controls the APX platform; you never go to Teo yourself. Never ask the owner yourself and never retry the same failing step.
+- Who solves a stumble: your own slip, you. Before handing a card to Ansel finish every independent part, and write in the HAND-OFF the exact decision you need and your recommended option, so he can answer in one step; never hand a card back for partial progress. Missing or wrong packet context (baseline, SHA, upstream verdict): Ansel, via the HAND-OFF. A product or owner decision: Ansel asks the owner. A platform limit or failure (provider limit, permission, APX error, tool missing): Ansel takes it to Teo, who controls the APX platform; you never go to Teo yourself. Never ask the owner yourself and never retry the same failing step.
 Comment only when state changes. Owner-facing text in Spanish; code, specs and commits in English. This contract prevails over AGENTS.md on coordination.
 
 ## Worktree paths and long commands

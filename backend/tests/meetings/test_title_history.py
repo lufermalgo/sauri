@@ -23,7 +23,7 @@ def _auth_header() -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_listing_includes_null_title(api_client: AsyncClient, api_db_url: str):
+async def test_listing_includes_null_title(api_client: AsyncClient, api_db_url: str) -> None:
     engine = create_async_engine(api_db_url, echo=False)
     session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

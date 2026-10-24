@@ -7,15 +7,17 @@ Tasks: 8.6, 8.7, 8.8, 8.9, 8.10, 8.11, 8.12, 8.13, 8.14, 8.15, 8.16
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch, MagicMock
+from datetime import UTC, datetime
+from typing import Any, TypeGuard, cast
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
-from hypothesis import given, HealthCheck, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import Meeting, SpeechTurn, Transcript
+from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
 from app.meetings.state_machine import (
     STATES,
     TERMINAL_STATES,
@@ -29,7 +31,6 @@ from app.transcription.asr_engine import (
     TranscriptionSegment,
 )
 from app.transcription.worker import _process_transcription
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,7 +47,24 @@ def _create_meeting_in_db(meeting_id: str, state: str = "recording") -> Meeting:
         process_state=state,
         failure_cause=None,
         created_by="test-user",
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+    )
+
+
+def _create_recording_in_db(
+    meeting_id: str, audio_ref: str = "audio/test.webm"
+) -> SessionRecording:
+    return SessionRecording(
+        id=str(uuid.uuid4()),
+        meeting_id=meeting_id,
+        idempotency_key=str(uuid.uuid4()),
+        capture_origin="chrome_extension",
+        audio_ref=audio_ref,
+        video_ref=None,
+        duration_seconds=12,
+        interrupted=False,
+        expires_at=None,
+        finished_at=datetime.now(UTC),
     )
 
 
@@ -77,13 +95,17 @@ invalid_message_strategy = st.one_of(
     st.just({}),
 )
 
-segment_strategy = st.fixed_dictionaries(
+def _is_valid_segment(segment: dict[str, Any]) -> TypeGuard[dict[str, Any]]:
+    return bool(segment["fin_ms"] >= segment["inicio_ms"])
+
+
+segment_strategy: st.SearchStrategy[dict[str, Any]] = st.fixed_dictionaries(
     {
         "texto": st.text(min_size=1, max_size=50),
         "inicio_ms": st.integers(min_value=0, max_value=10_000_000),
         "fin_ms": st.integers(min_value=0, max_value=10_000_000),
     }
-).filter(lambda s: s["fin_ms"] >= s["inicio_ms"])
+).filter(_is_valid_segment)
 
 
 # ---------------------------------------------------------------------------
@@ -97,8 +119,8 @@ segment_strategy = st.fixed_dictionaries(
 @given(message=invalid_message_strategy)
 @pytest.mark.asyncio
 async def test_property_16_invalid_input_does_not_persist(
-    session_factory: async_sessionmaker, message: dict
-):
+    session_factory: async_sessionmaker[AsyncSession], message: dict[str, Any]
+) -> None:
     """Invalid message -> finishes with no exception and nothing persisted."""
     # Should not raise
     await _process_transcription(message, session_factory)
@@ -124,7 +146,7 @@ for state, events in VALID_TRANSITIONS.items():
         valid_pairs.append((state, event))
 
 invalid_pairs = []
-all_events = set()
+all_events: set[str] = set()
 for events in VALID_TRANSITIONS.values():
     all_events.update(events.keys())
 for state in STATES:
@@ -135,7 +157,7 @@ for state in STATES:
 
 
 @given(pair=st.sampled_from(valid_pairs))
-def test_property_14_valid_transition(pair: tuple[str, str]):
+def test_property_14_valid_transition(pair: tuple[str, str]) -> None:
     """Valid (state, event) pairs produce successful transitions."""
     state, event = pair
     result = apply_event(state, event)
@@ -145,7 +167,7 @@ def test_property_14_valid_transition(pair: tuple[str, str]):
 
 
 @given(pair=st.sampled_from(invalid_pairs))
-def test_property_14_invalid_transition(pair: tuple[str, str]):
+def test_property_14_invalid_transition(pair: tuple[str, str]) -> None:
     """Invalid (state, event) pairs produce successful=False."""
     state, event = pair
     result = apply_event(state, event)
@@ -154,7 +176,7 @@ def test_property_14_invalid_transition(pair: tuple[str, str]):
 
 
 @given(state=st.sampled_from(list(TERMINAL_STATES)))
-def test_property_14_terminal_state_immutable(state: str):
+def test_property_14_terminal_state_immutable(state: str) -> None:
     """Terminal states are immutable against any event."""
     for event in all_events:
         result = apply_event(state, event)
@@ -173,25 +195,24 @@ def test_property_14_terminal_state_immutable(state: str):
 @given(pair=st.sampled_from(valid_pairs))
 @pytest.mark.asyncio
 async def test_property_15_history_recorded(
-    session_factory: async_sessionmaker, pair: tuple[str, str]
-):
+    session_factory: async_sessionmaker[AsyncSession], pair: tuple[str, str]
+) -> None:
     """Every valid transition creates a StateHistory record."""
+    from sqlalchemy import select
+
     from app.infra.models import StateHistory
     from app.meetings.service import record_transition
-    from sqlalchemy import select
 
     initial_state, event = pair
     meeting_id = str(uuid.uuid4())
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state=initial_state)
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state=initial_state)
+        session.add(meeting)
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = await session.get(Meeting, meeting_id)
-            result = await record_transition(session, meeting, event)
+    async with session_factory() as session, session.begin():
+        existing_meeting = cast(Meeting, await session.get(Meeting, meeting_id))
+        result = await record_transition(session, existing_meeting, event)
 
     assert result.successful is True
 
@@ -228,17 +249,17 @@ async def test_property_15_history_recorded(
 )
 @pytest.mark.asyncio
 async def test_property_7_segment_to_turn_mapping(
-    session_factory: async_sessionmaker,
+    session_factory: async_sessionmaker[AsyncSession],
     segments: list[TranscriptionSegment],
-):
+) -> None:
     """The worker maps segments to turns in ascending order by position."""
     meeting_id = str(uuid.uuid4())
 
     # Setup: create meeting in recording state
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state="recording")
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state="recording")
+        session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     asr_result = TranscriptionResult(
         segments=segments, language="es-CO", supports_turns=True
@@ -289,7 +310,7 @@ async def test_property_7_segment_to_turn_mapping(
         st.just(None),
         st.just(""),
         st.text(
-            alphabet=st.characters(whitelist_categories=("L",)),
+            alphabet=st.characters(whitelist_categories=("Lu", "Ll", "Lt", "Lm", "Lo")),
             min_size=2,
             max_size=5,
         ),
@@ -297,15 +318,15 @@ async def test_property_7_segment_to_turn_mapping(
 )
 @pytest.mark.asyncio
 async def test_property_9_language_selection(
-    session_factory: async_sessionmaker, engine_language: str | None
-):
+    session_factory: async_sessionmaker[AsyncSession], engine_language: str | None
+) -> None:
     """language = result.language if non-empty, otherwise 'es-CO'."""
     meeting_id = str(uuid.uuid4())
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state="recording")
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state="recording")
+        session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -353,17 +374,17 @@ async def test_property_9_language_selection(
 )
 @pytest.mark.asyncio
 async def test_property_12_provider_metadata(
-    session_factory: async_sessionmaker,
+    session_factory: async_sessionmaker[AsyncSession],
     is_local: bool,
     supports_turns: bool,
-):
+) -> None:
     """The Transcript records provider and supports_turns per the engine's capabilities."""
     meeting_id = str(uuid.uuid4())
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state="recording")
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state="recording")
+        session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="test", start_ms=0, end_ms=500)]
     asr_result = TranscriptionResult(
@@ -403,15 +424,15 @@ async def test_property_12_provider_metadata(
 
 @pytest.mark.asyncio
 async def test_property_8_no_segments_does_not_persist(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Empty segment list -> no Transcript persisted, state -> failed."""
     meeting_id = str(uuid.uuid4())
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state="recording")
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state="recording")
+        session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     asr_result = TranscriptionResult(
         segments=[], language="es-CO", supports_turns=True
@@ -434,8 +455,8 @@ async def test_property_8_no_segments_does_not_persist(
         assert result.scalar_one_or_none() is None
 
         # Meeting should be in failed
-        meeting = await session.get(Meeting, meeting_id)
-        assert meeting.process_state == "failed"
+        persisted_meeting = cast(Meeting, await session.get(Meeting, meeting_id))
+        assert persisted_meeting.process_state == "failed"
 
 
 # ---------------------------------------------------------------------------
@@ -447,30 +468,57 @@ async def test_property_8_no_segments_does_not_persist(
 
 @pytest.mark.asyncio
 async def test_property_17_engine_failure_propagates(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Engine exception propagates without persisting a Transcript."""
     meeting_id = str(uuid.uuid4())
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state="recording")
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state="recording")
+        session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     mock_engine = AsyncMock()
     mock_engine.transcribe.side_effect = RuntimeError("ASR engine crashed")
 
     message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
 
-    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        with pytest.raises(RuntimeError, match="ASR engine crashed"):
-            await _process_transcription(message, session_factory)
+    with patch(
+        "app.transcription.worker.create_asr_engine", return_value=mock_engine
+    ), pytest.raises(RuntimeError, match="ASR engine crashed"):
+        await _process_transcription(message, session_factory)
 
     from sqlalchemy import select
 
     async with session_factory() as session:
         result = await session.execute(select(Transcript))
         assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_timeout_fails_meeting_without_rethrowing_for_retry(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    meeting_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="recording"))
+        session.add(_create_recording_in_db(meeting_id))
+
+    mock_engine = AsyncMock()
+    mock_engine.transcribe.side_effect = httpx.ReadTimeout("ASR request timed out")
+
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
+        await _process_transcription(
+            {"meeting_id": meeting_id, "audio_ref": "audio/synthetic.wav"},
+            session_factory,
+        )
+
+    mock_engine.transcribe.assert_awaited_once()
+    async with session_factory() as session:
+        persisted_meeting = cast(Meeting, await session.get(Meeting, meeting_id))
+        assert persisted_meeting.process_state == "failed"
+        assert persisted_meeting.failure_cause == "engine_failure"
+        assert await session.get(Transcript, meeting_id) is None
 
 
 # ---------------------------------------------------------------------------
@@ -482,15 +530,15 @@ async def test_property_17_engine_failure_propagates(
 
 @pytest.mark.asyncio
 async def test_property_10_transcript_uniqueness(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Reprocessing the same message doesn't create duplicates (UniqueConstraint)."""
     meeting_id = str(uuid.uuid4())
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state="recording")
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state="recording")
+        session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -510,16 +558,16 @@ async def test_property_10_transcript_uniqueness(
 
     # Second processing — should fail with IntegrityError (unique constraint)
     # Reset meeting state for the second attempt
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = await session.get(Meeting, meeting_id)
-            meeting.process_state = "recording"
+    async with session_factory() as session, session.begin():
+        persisted_meeting = cast(Meeting, await session.get(Meeting, meeting_id))
+        persisted_meeting.process_state = "recording"
 
     from sqlalchemy.exc import IntegrityError
 
-    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        with pytest.raises(IntegrityError):
-            await _process_transcription(message, session_factory)
+    with patch(
+        "app.transcription.worker.create_asr_engine", return_value=mock_engine
+    ), pytest.raises(IntegrityError):
+        await _process_transcription(message, session_factory)
 
     # Still only one Transcript
     from sqlalchemy import select
@@ -542,15 +590,15 @@ async def test_property_10_transcript_uniqueness(
 
 @pytest.mark.asyncio
 async def test_property_11_atomicity_rollback(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """Failure during persistence -> full rollback, nothing partial."""
     meeting_id = str(uuid.uuid4())
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state="recording")
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state="recording")
+        session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -565,13 +613,11 @@ async def test_property_11_atomicity_rollback(
     message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
 
     # Patch record_transition to fail AFTER repo.create is called
-    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        with patch(
-            "app.transcription.worker.record_transition",
-            side_effect=RuntimeError("DB failure during transition"),
-        ):
-            with pytest.raises(RuntimeError, match="DB failure"):
-                await _process_transcription(message, session_factory)
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine), patch(
+        "app.transcription.worker.record_transition",
+        side_effect=RuntimeError("DB failure during transition"),
+    ), pytest.raises(RuntimeError, match="DB failure"):
+        await _process_transcription(message, session_factory)
 
     # Verify: no Transcript or SpeechTurn persisted
     from sqlalchemy import select
@@ -592,15 +638,15 @@ async def test_property_11_atomicity_rollback(
 
 @pytest.mark.asyncio
 async def test_example_preferred_language_es_co(
-    session_factory: async_sessionmaker,
-):
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """The worker invokes the engine with preferred_language='es-CO'."""
     meeting_id = str(uuid.uuid4())
 
-    async with session_factory() as session:
-        async with session.begin():
-            meeting = _create_meeting_in_db(meeting_id, state="recording")
-            session.add(meeting)
+    async with session_factory() as session, session.begin():
+        meeting = _create_meeting_in_db(meeting_id, state="recording")
+        session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="test", start_ms=0, end_ms=500)]
     asr_result = TranscriptionResult(
@@ -623,3 +669,52 @@ async def test_example_preferred_language_es_co(
     options = call_args[0][1]
     assert isinstance(options, TranscriptionOptions)
     assert options.preferred_language == "es-CO"
+
+
+@pytest.mark.asyncio
+async def test_transcription_uses_audio_ref_from_recording_owned_by_meeting(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A queue message cannot substitute another recording's audio reference."""
+    meeting_id = str(uuid.uuid4())
+    foreign_meeting_id = str(uuid.uuid4())
+    persisted_audio_ref = "synthetic/owned-recording.wav"
+    foreign_audio_ref = "synthetic/foreign-recording.wav"
+
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="recording"))
+        session.add(_create_meeting_in_db(foreign_meeting_id, state="recording"))
+        session.add(
+            SessionRecording(
+                id=str(uuid.uuid4()),
+                meeting_id=meeting_id,
+                idempotency_key=str(uuid.uuid4()),
+                capture_origin="chrome_extension",
+                audio_ref=persisted_audio_ref,
+                video_ref=None,
+                duration_seconds=12,
+                interrupted=False,
+                expires_at=None,
+                finished_at=datetime.now(UTC),
+            )
+        )
+        session.add(_create_recording_in_db(foreign_meeting_id, foreign_audio_ref))
+
+    mock_engine = AsyncMock()
+    mock_engine.transcribe.return_value = TranscriptionResult(
+        segments=[TranscriptionSegment(text="synthetic", start_ms=0, end_ms=100)],
+        language="es-CO",
+        supports_turns=True,
+    )
+    mock_engine.capabilities = MagicMock(
+        return_value=ASRCapabilities(supports_turns=True, is_local=True)
+    )
+
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
+        await _process_transcription(
+            {"meeting_id": meeting_id, "audio_ref": foreign_audio_ref}, session_factory
+        )
+
+    mock_engine.transcribe.assert_awaited_once()
+    assert mock_engine.transcribe.await_args is not None
+    assert mock_engine.transcribe.await_args.args[0] == persisted_audio_ref

@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import sys
 import types
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -52,7 +54,7 @@ sys.path.insert(0, str(_DIAR_ENGINE_DIR))
 # ---------------------------------------------------------------------------
 
 
-def _ensure_module(name: str, factory) -> None:
+def _ensure_module(name: str, factory: Callable[[], None]) -> None:
     """Register a stand-in module under ``name`` if it cannot be imported."""
     if name in sys.modules:
         return
@@ -63,18 +65,20 @@ def _ensure_module(name: str, factory) -> None:
 
 
 def _install_torch_stub() -> None:
-    torch_stub = types.ModuleType("torch")
+    torch_stub = cast(Any, types.ModuleType("torch"))
     torch_stub.device = lambda *args, **kwargs: ("torch.device", args, kwargs)
     sys.modules["torch"] = torch_stub
 
 
 def _install_pyannote_stub() -> None:
-    pyannote_pkg = sys.modules.get("pyannote") or types.ModuleType("pyannote")
-    pyannote_audio = types.ModuleType("pyannote.audio")
+    pyannote_pkg = cast(
+        Any, sys.modules.get("pyannote") or types.ModuleType("pyannote")
+    )
+    pyannote_audio = cast(Any, types.ModuleType("pyannote.audio"))
 
     class Pipeline:  # minimal stand-in for the symbol imported by main
         @staticmethod
-        def from_pretrained(*args, **kwargs):  # pragma: no cover - not used here
+        def from_pretrained(*args: Any, **kwargs: Any) -> None:  # pragma: no cover - not used here
             raise RuntimeError("stub pipeline; inject main.diarization_pipeline in tests")
 
     pyannote_audio.Pipeline = Pipeline
@@ -87,10 +91,8 @@ _ensure_module("torch", _install_torch_stub)
 _ensure_module("pyannote.audio", _install_pyannote_stub)
 
 import httpx  # noqa: E402
-
 import main  # type: ignore[import-not-found]  # noqa: E402
-from main import app  # type: ignore[import-not-found]  # noqa: E402
-
+from main import app  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fake diarization pipeline (test double for the pyannote model boundary).
@@ -111,7 +113,7 @@ class _FakeAnnotation:
     def __init__(self, tracks: list[tuple[float, float, str]]) -> None:
         self._tracks = tracks
 
-    def itertracks(self, yield_label: bool = False):
+    def itertracks(self, yield_label: bool = False) -> Any:
         for start, end, speaker in self._tracks:
             turn = _FakeTurn(start, end)
             if yield_label:
@@ -138,7 +140,7 @@ class _FakePipeline:
 
 
 @pytest.fixture
-def async_client(monkeypatch):
+def async_client(monkeypatch: pytest.MonkeyPatch) -> httpx.AsyncClient:
     """httpx AsyncClient bound to the diar-engine app with injected doubles."""
     # Inject the fake model in place of the real (unloaded) pyannote pipeline.
     monkeypatch.setattr(main, "diarization_pipeline", _FakePipeline())
@@ -158,7 +160,9 @@ class TestContratoDiarEngine:
     # -------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_post_diarize_respuesta_con_segmentos(self, async_client):
+    async def test_post_diarize_respuesta_con_segmentos(
+        self, async_client: httpx.AsyncClient
+    ) -> None:
         """POST /diarize with a valid audio_ref returns segments and num_speakers.
 
         Contract:
@@ -203,7 +207,9 @@ class TestContratoDiarEngine:
         assert data["num_speakers"] == len(distinct)
 
     @pytest.mark.asyncio
-    async def test_post_diarize_respuesta_vacia_valida(self, async_client):
+    async def test_post_diarize_respuesta_vacia_valida(
+        self, async_client: httpx.AsyncClient
+    ) -> None:
         """POST /diarize can return segments: [] with num_speakers: 0 (no speakers)."""
         async with async_client as client:
             response = await client.post(
@@ -226,7 +232,7 @@ class TestContratoDiarEngine:
     # -------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_health_endpoint(self, async_client):
+    async def test_health_endpoint(self, async_client: httpx.AsyncClient) -> None:
         """GET /health devuelve {"status": "ok"}."""
         async with async_client as client:
             response = await client.get("/health")
@@ -235,3 +241,97 @@ class TestContratoDiarEngine:
 
         data = response.json()
         assert data == {"status": "ok"}
+
+
+def test_failed_s3_download_removes_partial_file_and_chains_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed synthetic object-store download cleans its temp file and keeps cause."""
+    downloaded_paths: list[Path] = []
+
+    class FailingS3Client:
+        def download_file(self, bucket: str, key: str, filename: str) -> None:
+            path = Path(filename)
+            path.write_bytes(b"synthetic audio bytes")
+            downloaded_paths.append(path)
+            raise OSError("synthetic download failure")
+
+    monkeypatch.setattr(main, "s3_client", FailingS3Client())
+
+    with pytest.raises(RuntimeError, match="Failed to download audio_ref") as exc_info:
+        main._download_audio_from_s3("synthetic/recording.wav")
+
+    assert isinstance(exc_info.value.__cause__, OSError)
+    assert len(downloaded_paths) == 1
+    assert not downloaded_paths[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_diarization_failure_removes_downloaded_temp_file(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A pipeline failure returns HTTP 500 and removes the synthetic audio file."""
+    audio_path = tmp_path / "synthetic-recording.wav"
+    audio_path.write_bytes(b"synthetic audio bytes")
+    monkeypatch.setattr(main, "_download_audio_from_s3", lambda _audio_ref: str(audio_path))
+
+    def fail_pipeline(_audio_path: str) -> _FakeAnnotation:
+        raise RuntimeError("synthetic diarization failure")
+
+    monkeypatch.setattr(main, "diarization_pipeline", fail_pipeline)
+
+    async with async_client as client:
+        response = await client.post("/diarize", json={"audio_ref": "synthetic.wav"})
+
+    assert response.status_code == 500
+    assert not audio_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_diarization_http_error_chains_pipeline_exception(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The HTTP error preserves the caught synthetic pipeline exception as cause."""
+    from fastapi import HTTPException
+
+    audio_path = tmp_path / "synthetic-recording.wav"
+    audio_path.write_bytes(b"synthetic audio bytes")
+    monkeypatch.setattr(main, "_download_audio_from_s3", lambda _audio_ref: str(audio_path))
+
+    def fail_pipeline(_audio_path: str) -> list[main.Segment]:
+        raise RuntimeError("synthetic diarization failure")
+
+    monkeypatch.setattr(main, "_run_diarization", fail_pipeline)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await main.diarize(main.DiarizeRequest(audio_ref="synthetic.wav"))
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Diarization failed: synthetic diarization failure"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert not audio_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_download_http_error_preserves_status_and_detail(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed synthetic download retains the endpoint's existing HTTP error contract."""
+    from fastapi import HTTPException
+
+    def fail_download(_audio_ref: str) -> str:
+        raise RuntimeError("synthetic download failure")
+
+    monkeypatch.setattr(main, "_download_audio_from_s3", fail_download)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await main.diarize(main.DiarizeRequest(audio_ref="synthetic/recording.wav"))
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "Audio download failed: synthetic download failure"
+    assert isinstance(exc_info.value.__cause__, RuntimeError)

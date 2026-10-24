@@ -6,29 +6,50 @@ Tasks: 4.2, 4.3, 4.4
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+from pathlib import Path
+from typing import TypeGuard
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import httpx
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.transcription.asr_engine import TranscriptionOptions
 from app.transcription.local_provider import LocalProvider
-
 
 # ---------------------------------------------------------------------------
 # Strategies
 # ---------------------------------------------------------------------------
 
-segment_strategy = st.fixed_dictionaries(
+Segment = dict[str, str | int]
+
+
+def _is_valid_segment(segment: dict[str, object]) -> TypeGuard[Segment]:
+    text = segment["text"]
+    start_ms = segment["start_ms"]
+    end_ms = segment["end_ms"]
+    return (
+        isinstance(text, str)
+        and isinstance(start_ms, int)
+        and isinstance(end_ms, int)
+        and end_ms >= start_ms
+    )
+
+
+segment_strategy: st.SearchStrategy[Segment] = st.fixed_dictionaries(
     {
         "text": st.text(min_size=1, max_size=100),
         "start_ms": st.integers(min_value=0, max_value=10_000_000),
         "end_ms": st.integers(min_value=0, max_value=10_000_000),
     }
-).filter(lambda s: s["end_ms"] >= s["start_ms"])
+).filter(_is_valid_segment)
 
-segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=20)
+segments_list_strategy: st.SearchStrategy[list[Segment]] = st.lists(
+    segment_strategy, min_size=0, max_size=20
+)
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +61,7 @@ segments_list_strategy = st.lists(segment_strategy, min_size=0, max_size=20)
 
 @given(segments=segments_list_strategy)
 @pytest.mark.asyncio
-async def test_property_4_faithful_mapping_of_local_response(segments: list[dict]):
+async def test_property_4_faithful_mapping_of_local_response(segments: list[Segment]) -> None:
     """Each segment in the response is faithfully mapped to TranscriptionSegment."""
     provider = LocalProvider(url="http://fake-asr:8001")
     options = TranscriptionOptions(preferred_language="es-CO")
@@ -62,7 +83,7 @@ async def test_property_4_faithful_mapping_of_local_response(segments: list[dict
         result = await provider.transcribe("audio/test.webm", options)
 
     assert len(result.segments) == len(segments)
-    for seg_out, seg_in in zip(result.segments, segments):
+    for seg_out, seg_in in zip(result.segments, segments, strict=True):
         assert seg_out.text == seg_in["text"]
         assert seg_out.start_ms == seg_in["start_ms"]
         assert seg_out.end_ms == seg_in["end_ms"]
@@ -77,7 +98,7 @@ async def test_property_4_faithful_mapping_of_local_response(segments: list[dict
 
 @given(segments=st.lists(segment_strategy, min_size=2, max_size=20))
 @pytest.mark.asyncio
-async def test_property_6_ascending_order_preserved(segments: list[dict]):
+async def test_property_6_ascending_order_preserved(segments: list[Segment]) -> None:
     """Segments are returned in the order the service delivers them."""
     provider = LocalProvider(url="http://fake-asr:8001")
     options = TranscriptionOptions(preferred_language="es-CO")
@@ -110,7 +131,7 @@ async def test_property_6_ascending_order_preserved(segments: list[dict]):
 
 
 @pytest.mark.asyncio
-async def test_example_http_error_propagates_exception():
+async def test_example_http_error_propagates_exception() -> None:
     """Req 3.5: HTTP error from the service -> exception propagated with no partial segments."""
     provider = LocalProvider(url="http://fake-asr:8001")
     options = TranscriptionOptions(preferred_language="es-CO")
@@ -135,7 +156,7 @@ async def test_example_http_error_propagates_exception():
 
 
 @pytest.mark.asyncio
-async def test_example_timeout_propagates_exception():
+async def test_example_timeout_propagates_exception() -> None:
     """Req 3.6: Timeout/unreachable -> exception propagated."""
     provider = LocalProvider(url="http://fake-asr:8001")
     options = TranscriptionOptions(preferred_language="es-CO")
@@ -152,7 +173,7 @@ async def test_example_timeout_propagates_exception():
 
 
 @pytest.mark.asyncio
-async def test_example_response_without_segments_raises_valueerror():
+async def test_example_response_without_segments_raises_valueerror() -> None:
     """Req 3.7: Response missing the 'segments' key -> ValueError."""
     provider = LocalProvider(url="http://fake-asr:8001")
     options = TranscriptionOptions(preferred_language="es-CO")
@@ -171,3 +192,57 @@ async def test_example_response_without_segments_raises_valueerror():
 
         with pytest.raises(ValueError, match="segments"):
             await provider.transcribe("audio/test.webm", options)
+
+
+@pytest.mark.asyncio
+async def test_local_provider_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ASR_TIMEOUT_SECONDS", "3600")
+    provider = LocalProvider(url="http://fake-asr:8001")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"segments": [], "language": "es"}
+
+    with patch("app.transcription.local_provider.httpx.AsyncClient") as client_class:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        client_class.return_value = mock_client
+        await provider.transcribe(
+            "recordings/synthetic.wav", TranscriptionOptions(preferred_language="es-CO")
+        )
+
+    assert mock_client.post.call_args.kwargs["timeout"] == 3600.0
+
+
+@pytest.mark.asyncio
+async def test_local_provider_sends_bearer_token_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_file = tmp_path / "engine_token"
+    token_file.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setenv("SAURI_ENGINE_TOKEN_FILE", str(token_file))
+    capability_key_file = tmp_path / "recording_capability_key"
+    capability_key_file.write_bytes(b"synthetic-capability-secret")
+    monkeypatch.setenv("SAURI_RECORDING_CAPABILITY_KEY_FILE", str(capability_key_file))
+    provider = LocalProvider(url="http://fake-asr:8001")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"segments": [], "language": "es"}
+
+    with patch("app.transcription.local_provider.httpx.AsyncClient") as client_class:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        client_class.return_value = mock_client
+        await provider.transcribe(
+            "recordings/synthetic.wav", TranscriptionOptions(preferred_language="es-CO")
+        )
+
+    headers = mock_client.post.call_args.kwargs["headers"]
+    assert headers["Authorization"] == "Bearer synthetic-token"
+    expiry_text, signature = headers["X-Sauri-Recording-Capability"].split(".")
+    message = f"recordings/synthetic.wav\n{expiry_text}".encode()
+    expected = hmac.new(b"synthetic-capability-secret", message, hashlib.sha256).hexdigest()
+    assert signature == expected

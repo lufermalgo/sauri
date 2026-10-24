@@ -1,0 +1,11 @@
+Current-base checker evidence
+Base commit: 0d6f2713abcf08d960e98451b04bbdd31b4c8843
+Worktree: /Users/lufermalgo/Proyectos/sauri/.worktrees/docs-issue-228-file-scoped-tracking
+Branch: docs/issue-228-file-scoped-tracking
+Backend cwd: <worktree>/backend
+Python: 3.14.7
+Ruff: 0.17.1
+mypy: 2.4.0 (compiled: yes)
+Commands: /Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/ruff check . ; /Users/lufermalgo/.virtualenvs/sauri-issue-262-lint-baseline-a6c74bb/bin/mypy .
+Results: Ruff exit 1, 190 diagnostics across 47 paths; mypy exit 1, 303 errors across 31 files (125 source files checked).
+A supplementary Ruff JSON command was used to reliably group rule/path counts: ruff check --output-format json . (exit 1, 190 diagnostics).
