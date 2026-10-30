@@ -83,15 +83,20 @@ def _signing_key() -> bytes:
     return value.encode("utf-8")
 
 
-def _message_signature(topic: str, body: bytes) -> str:
-    signed_data = topic.encode("utf-8") + b"\0" + body
+def _message_signature(topic: str, body: bytes, retries: int = 0) -> str:
+    signed_data = topic.encode("utf-8") + b"\0" + str(retries).encode("ascii") + b"\0" + body
     return hmac.new(_signing_key(), signed_data, hashlib.sha256).hexdigest()
 
 
 def _has_valid_signature(topic: str, body: bytes, headers: dict[str, Any] | None) -> bool:
-    signature = (headers or {}).get(_HEADER_SIGNATURE)
-    return isinstance(signature, str) and hmac.compare_digest(
-        signature, _message_signature(topic, body)
+    message_headers = headers or {}
+    signature = message_headers.get(_HEADER_SIGNATURE)
+    retries = message_headers.get(_HEADER_RETRIES, 0)
+    return (
+        isinstance(signature, str)
+        and type(retries) is int
+        and retries >= 0
+        and hmac.compare_digest(signature, _message_signature(topic, body, retries))
     )
 
 
@@ -212,11 +217,18 @@ class RabbitMQJobQueue(JobQueue):
                         retries + 1,
                         max_retries,
                     )
+                    retry_headers = {
+                        **(message.headers or {}),
+                        _HEADER_RETRIES: retries + 1,
+                    }
+                    retry_headers[_HEADER_SIGNATURE] = _message_signature(
+                        topic, message.body, retries + 1
+                    )
                     retry_message = Message(
                         body=message.body,
                         delivery_mode=DeliveryMode.PERSISTENT,
                         content_type=message.content_type,
-                        headers={**(message.headers or {}), _HEADER_RETRIES: retries + 1},
+                        headers=retry_headers,
                     )
                     await channel.default_exchange.publish(retry_message, routing_key=topic)
                     await message.ack()
