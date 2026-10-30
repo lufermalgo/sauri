@@ -24,7 +24,7 @@ The approved requirements join two independently sufficient capture-ending event
 
 **Persist a single launch decision per recording and serialize concurrent launch attempts.** Mark launch as pending/started before invoking `chrome.tabs.create`, then record the created tab ID/result and reconcile an interrupted attempt at startup using the persisted recording/launch state. Use an idempotent recording-specific target, not repeated calls from event listeners. The guarantee is that repeated completion/retry/reload handling does not issue multiple launches; if a browser crash occurs in the narrow interval between tab creation and persisting its ID, reconciliation must inspect an already-open matching Sauri target before creating another. *Rejected alternative:* a process-local boolean fails after worker termination; tab URL query parameters alone do not prevent concurrent duplicate creation.
 
-**Do not redesign or broaden consent, retention, or provider behavior.** Stop and captured-tab-close are the only authorized completion triggers; meeting-ended alone is ignored. The requirement names Meet and Teams as target capture contexts but explicitly does not claim Teams capture exists; implement completion wiring only for capture contexts that provide the existing recording identity and finalized media, and treat Teams capture support as a prerequisite/capability boundary rather than inventing a new capture implementation. *Rejected alternative:* assuming Teams support from the requirement would misrepresent current capability and broaden scope; adding a consent or retention change is explicitly excluded.
+**Use one provider-neutral completion contract for Meet and Teams without claiming Teams capture already exists.** Stop from the extension's capture controls and closure of the persisted captured tab both call the same coordinator for either provider. The current Meet adapter supplies the existing recording handle; a Teams completion adapter is part of this design's implementation scope at the completion boundary and must supply the same `sessionId`/captured-tab binding and finalized media handle to the shared coordinator. This adapter accepts a Teams capture handle but does not create or claim an existing Teams media-capture pipeline, and does not add unrelated capture controls. Acceptance and tests must exercise both provider adapter paths with synthetic handles. Meeting-ended signals from either provider are not completion triggers. *Rejected alternative:* deferring Teams completion as a future prerequisite would contradict Requirement 5.1; duplicating the lifecycle per provider would create divergent idempotency and status behavior. Consent, retention, and capture-provider behavior beyond this adapter remain out of scope.
 
 ## Architecture
 
@@ -92,14 +92,14 @@ The flow above describes desired boundaries, not a claim that every endpoint or 
 ### 1. Capture lifecycle adapter — `extension/src/content.ts` and `extension/src/background.ts`
 
 - The content script reports capture-context lifecycle messages only; a meeting-ended page signal is not a completion message.
-- The service worker observes closure of the specific captured tab associated with the active recording, not arbitrary tab closure. It also receives the explicit Stop command.
-- Both signals resolve the persisted `sessionId` for the active captured tab; the closure listener must use durable active-capture association, not a transient global variable.
-- Both signals call one `completeRecording(sessionId, trigger)` coordinator. It performs an atomic state transition; `meetingId` is already persisted or generated once and the backend `recordingId` is filled from the ingestion response, so duplicate signals never create new identities.
+- Meet and Teams capture adapters supply the same provider-neutral `{ provider, capturedTabId, sessionId }` handle to the coordinator. The existing Meet content script reports discovery/meeting-ended only; a Teams adapter implements the same completion contract for its capture context. The extension Stop control sends an explicit stop for whichever provider owns the active handle.
+- At capture start, persist the handle and its `sessionId` in the durable completion record before capture can enter `recording`; `chrome.storage.session.sauriState` remains a UI projection, not the authoritative tab-to-session binding. `chrome.tabs.onRemoved` resolves the closed `tabId` against this durable active-record index, so it still finds the recording after worker restart or `handleMeetEnded` has run.
+- A meeting-ended message may clear only meeting-discovery/pending UI data. It MUST NOT clear, replace, or detach an active completion record or its tab binding. The tab-close handler claims the matching record transactionally and calls one `completeRecording(sessionId, trigger)` coordinator. Stop and tab-close races reuse this record and its preallocated `meetingId`; the backend `recordingId` is filled from ingestion response.
 - Keep captured media finalization in the existing offscreen/capture owner. Do not move capture data into page DOM, content-script storage, or tab URLs.
 
 ### 2. Durable completion coordinator — `extension/src/background.ts` plus `extension/src/recording-db.ts`
 
-The service worker coordinates, while the existing IndexedDB recording persistence is the candidate durable store for the per-recording record. This state is distinct from server processing truth and must not replace existing media records or upload-queue ownership.
+The service worker coordinates; `extension/src/recording-db.ts` owns durable completion records alongside the existing media chunks. This state is distinct from server processing truth and must not replace existing media records or upload-queue ownership. Bump `sauri-recordings` from DB version 1 to 2 and add a `completion_records` object store keyed by `sessionId`, with a non-unique index on `capturedTabId` for active-capture lookup. The upgrade is additive: preserve the existing `chunks` store, key path, and `by_session` index; create no synthetic completion records for legacy chunk rows. `onblocked`/`versionchange` handling must close live DB connections and leave v1 data readable; do not clear or rewrite chunk rows during upgrade. All claims and status changes use transactions across the completion store; a failed upgrade/write must keep capture data and must not report a successful state.
 
 ```typescript
 type CompletionStatus =
@@ -120,6 +120,8 @@ type CompletionStatus =
 interface RecordingCompletion {
   /** Extension-generated at capture start; stable local key and backend idempotency_key. */
   sessionId: string;
+  /** Capture source adapter; completion lifecycle is shared across both providers. */
+  provider: 'meet' | 'teams';
   /** Generated once before first upload and reused for every retry; Sauri meeting/review key. */
   meetingId: string;
   /** Server-returned SessionRecording.id; absent until first successful ingestion response. */
@@ -145,7 +147,13 @@ Persist only state and opaque identifiers needed to resume. Do not add audio/vid
 - If the authenticated status/assets cannot be read, preserve the last truthful known state and indicate unavailable/retryable status; never replace it with success. Do not invent retry limits or timing targets absent from requirements.
 - API/login contract work remains with `task_dfcb314806c04033`; review/playback route remains with `task_6a271652b2c34130`. The upload outcome contract is a blocking dependency on `task_11001b7f5b084e09`, not an implementation of its fix.
 
-### 4. Review launch — `extension/src/background.ts` and `frontend/src/`
+### 4. Completion status UI — `extension/src/panel/SidePanelApp.tsx` and `extension/src/panel/components/RecordingCompletionStatus.tsx`
+
+- The Side Panel owns the visible upload/processing result because it is the extension surface already used for capture controls and remains available after the meeting tab closes. It subscribes to durable completion-record updates by `sessionId`; it must not infer success from `sauriState` becoming idle or from queue dispatch.
+- `RecordingCompletionStatus` renders the recording title/identity and exactly one current outcome: finalizing, upload in progress, upload succeeded, upload failed, processing in progress, processing failed, processing status unavailable, review ready/opened. Ready/opened is shown only after the same-recording transcript and playable video checks pass. Errors have a retry/status-refresh action only where an existing retry API supports it; this UI does not implement the separately owned upload-repair behavior.
+- The status panel must recover after closing/reopening the Side Panel or service-worker restart by loading persisted completion records; it must not present another recording's stale status. This satisfies Requirements 2.3–2.5 and 3.1–3.4 without adding a new portal screen or redefining review playback.
+
+### 5. Review launch — `extension/src/background.ts` and `frontend/src/`
 
 - Trigger only from `processing_succeeded` for the persisted `sessionId → meetingId → recordingId` mapping, after checking completed status plus both assets.
 - Resolve the canonical review destination from the persisted `meetingId` (the current review/playback APIs are meeting-keyed); verify the server-returned `recordingId` still belongs to it. The route must provide both video and transcript as required; playback implementation stays with `task_6a271652b2c34130`.
@@ -168,7 +176,9 @@ The browser tab ID is transient routing metadata, not recording identity or auth
 5. **Success-gated review — Requirements 4.1, 4.4:** No review launch is claimed before server-confirmed completed state plus transcript and video readiness for the mapped meeting; processing failure, pending state, or missing/unavailable assets cannot open a ready review destination.
 6. **At-most-one launch — Requirements 4.5, 5.5:** Any set of duplicate completion events, retries, reloads, or concurrent worker handlers for one recording leads to at most one review tab creation/recognized matching destination.
 7. **Authorization boundary — Requirements 4.2–4.3, 5.3:** Without an authenticated session and server authorization for the recording, the review route returns no video/transcript data, regardless of extension launch state or identifier knowledge.
-8. **Surface scope — Requirements 5.1, 5.4:** Completion wiring does not imply Teams capture implementation and introduces no visual redesign, consent workflow, retention rule, or privacy-policy change.
+8. **Meet and Teams completion parity — Requirement 5.1:** The shared coordinator accepts the same Stop/tab-close contract for both provider adapters; test each adapter with synthetic active-capture bindings. This completion design does not claim that Teams capture already exists or add unrelated capture controls.
+9. **Durable tab binding and upgrade safety — Requirements 1.2, 1.5, 3.4:** For any active record, its `capturedTabId → sessionId` binding survives worker restarts and meeting-ended messages until the record is completed; upgrading IndexedDB v1→v2 preserves all chunk rows and leaves legacy rows usable.
+10. **Surface scope — Requirement 5.4:** No visual redesign, consent workflow, retention rule, or privacy-policy change.
 
 ## Error Handling
 
@@ -183,13 +193,13 @@ The browser tab ID is transient routing metadata, not recording identity or auth
 | Processing fails | Retain failure for that recording and do not open it as ready for review. |
 | Review authorization denied | Keep recording's processing success distinct from review access; show access failure/reauthentication via protected portal boundary and never expose media/transcript. |
 | Tab creation or worker interruption | Keep launch pending and reconcile against existing recording-specific Sauri tabs on restart before attempting creation. |
-| Teams context has no supported capture/finalization implementation | Do not claim completion support for that context; no new Teams capture capability is specified here. |
+| Teams adapter cannot resolve the active capture handle | Keep the recording non-successful, surface a completion error in the Side Panel, and do not finalize another session; the implementation must supply the provider-neutral handle for Teams as well as Meet. |
 
 ## Testing Strategy
 
 Use synthetic recordings and synthetic meeting IDs only. No real meeting audio/video, transcript, credentials, or customer data in fixtures.
 
-**Extension unit and property tests:** place pure transition/idempotency logic under `extension/src/core/` with colocated `*.test.ts`; add persistence/coordinator coverage beside the existing extension modules/tests. Exercise Stop then close, close then Stop, repeated events, event after worker restart, retry preserving the exact `sessionId`/`meetingId`/`recordingId` mapping, backend response mismatch, non-2xx/network/invalid-response queue result, each `process_state` mapping, `completed` without transcript, `completed` without video, and launch deduplication. Property-based tests should generate event sequences and assert trigger convergence, identity conservation, truthful queue outcomes, success requiring completed state plus both assets, and at-most-one launch claim.
+**Extension unit and property tests:** place pure transition/idempotency logic under `extension/src/core/` with colocated `*.test.ts`; add persistence/coordinator coverage beside the existing extension modules/tests. Exercise Stop then close, close then Stop, repeated events, event after worker restart, a meeting-ended event followed by captured-tab-close, and retry preserving the exact `sessionId`/`meetingId`/`recordingId` mapping. Verify both Meet and Teams adapters feed the shared coordinator contract with synthetic handles. Test backend response mismatch, non-2xx/network/invalid-response queue result, each `process_state` mapping, `completed` without transcript, `completed` without video, Side Panel status recovery/re-render for the same session, and launch deduplication. Upgrade a populated v1 IndexedDB fixture to v2 and assert original chunk rows and indexes remain readable while the new completion store exists. Property-based tests should generate event sequences and assert trigger convergence, identity conservation, truthful queue outcomes, success requiring completed state plus both assets, and at-most-one launch claim.
 
 **Extension integration/E2E:** `extension/tests/e2e/` should verify a synthetic capture's completion-to-upload/status path and that only confirmed success opens one Sauri target. Include reload/restart and duplicate-event scenarios. Mock external network only at test boundaries; use synthetic server responses, never production or live meeting content.
 
@@ -198,13 +208,13 @@ Use synthetic recordings and synthetic meeting IDs only. No real meeting audio/v
 - `frontend/src/` colocated component tests should verify protected review-route behavior: both media and transcript resolve for the requested recording only after authentication/authorization; pending/failed status is not presented as ready.
 - These backend/frontend checks are required only for their actual changed contracts; the design does not presuppose API/schema changes.
 
-**Validation commands:** `npm run test`, `npm run typecheck`, `npm run build`, and `npm run test:e2e` from `extension/` for extension changes; `npm run test`, `npm run typecheck`, `npm run build` from `frontend/` for frontend changes; `pytest` from `backend/` for backend changes. Run the project's configured commands only for changed surfaces. A migration is not expected unless investigation finds the existing durable processing status insufficient; if added, include migration/model tests and no Compose change absent a deployment requirement.
+**Validation commands:** `npm run test`, `npm run typecheck`, `npm run build`, and `npm run test:e2e` from `extension/` for extension changes; `npm run test`, `npm run typecheck`, `npm run build` from `frontend/` for frontend changes; `pytest` from `backend/` for backend changes. Run the project's configured commands only for changed surfaces. The extension requires an additive IndexedDB schema upgrade from DB_VERSION 1 to 2 with migration/compatibility tests; no SQL migration or Compose change is expected unless a separate authenticated-status contract gap requires it.
 
 ### Folder placement and deployment impact
 
 | Surface | Expected folders to add/modify | Tests | Migration? |
 | --- | --- | --- | --- |
-| Chrome extension | `extension/src/core/` (pure state transitions if needed); `extension/src/background.ts`, `extension/src/recording-db.ts`, `extension/src/upload-queue.ts`, and capture/offscreen boundary only as required | `extension/src/core/*.test.ts`, module-adjacent extension tests, `extension/tests/e2e/` | No |
+| Chrome extension | `extension/src/core/` (pure completion transitions/provider-neutral source contract); `extension/src/background.ts`, `extension/src/content.ts`, `extension/src/recording-db.ts` (DB v2 additive store), `extension/src/upload-queue.ts`, `extension/src/panel/SidePanelApp.tsx`, new `extension/src/panel/components/RecordingCompletionStatus.tsx`, and capture/offscreen boundary only as required | `extension/src/core/*.test.ts`, new colocated `extension/src/recording-db.test.ts`, panel component tests, coordinator tests, `extension/tests/e2e/` | Yes: IndexedDB v1→v2 additive client migration; preserve chunks; no server SQL migration expected |
 | Web frontend | `frontend/src/` protected review route/API integration only if existing playback task does not already provide the needed authenticated destination | `frontend/src/` component tests | No |
 | Backend API | `backend/app/meetings/` or current recording/ingestion owner only if authenticated status contract is missing | matching `backend/tests/meetings/` or `backend/tests/ingestion/` | Not presumed; only if an identified durable-status gap needs schema change |
 | Shared types | `packages/shared-types/` only if an existing frontend/backend contract needs a shared additive type; extension local types remain local unless a contract consumer justifies a change | shared package tests/typecheck if changed | No |
