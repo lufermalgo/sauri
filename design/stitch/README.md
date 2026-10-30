@@ -192,7 +192,7 @@ Esta pantalla no estaba en el primer mock. Se generó después en Stitch con el 
 - "Transcripción 100% limpia" y otras cifras de calidad.
 - La velocidad de carga en MB/s es opcional: solo si el sistema la puede medir de verdad.
 
-**Requisito funcional que el mock no muestra:** la subida debe sobrevivir a un cierre de pestaña o a un corte de red sin perder el archivo, y debe reintentarse.
+**Propuesta no aprobada:** que una carga manual sobreviva al cierre de pestaña o a un corte de red sin perder el archivo y se reintente no está autorizado por la línea base. No tratarlo como requisito ni implementarlo sin aprobación explícita del producto.
 
 ## 5. Reunión (`reunion`): video, transcripción y resumen
 
