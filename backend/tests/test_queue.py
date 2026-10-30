@@ -15,7 +15,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aio_pika.abc import AbstractIncomingMessage
 
-from app.infra.queue_rabbitmq import RabbitMQJobQueue, _count_retries, _read_max_retries
+from app.infra.queue_rabbitmq import (
+    RabbitMQJobQueue,
+    _count_retries,
+    _has_valid_signature,
+    _message_signature,
+    _read_max_retries,
+)
+
+
+@pytest.fixture(autouse=True)
+def queue_signing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "synthetic-test-key-0123456789abcdef")
+
+
+def _signed_headers(topic: str, body: bytes, retries: int | None = None) -> dict[str, Any]:
+    headers: dict[str, Any] = {"x-sauri-signature": _message_signature(topic, body)}
+    if retries is not None:
+        headers["x-sauri-retries"] = retries
+    return headers
 
 # ---------------------------------------------------------------------------
 # Example-based tests — ASR_MAX_RETRIES range validation (Task 10.3)
@@ -122,10 +140,85 @@ class TestCountRetries:
 
 
 class TestRabbitMQJobQueueBehavior:
+    @pytest.mark.asyncio
+    async def test_publish_signs_topic_and_exact_body(self) -> None:
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        queue._channel = AsyncMock()
+        queue._channel.declare_queue.return_value.name = "transcribe"
+        await queue.publish("transcribe", {"meeting_id": "synthetic-meeting"})
+
+        args, kwargs = queue._channel.default_exchange.publish.call_args
+        published = args[0]
+        assert kwargs["routing_key"] == "transcribe"
+        assert _has_valid_signature("transcribe", published.body, published.headers)
+        assert not _has_valid_signature(
+            "diarize", published.body, published.headers
+        )
+        assert not _has_valid_signature(
+            "transcribe", published.body + b"tampered", published.headers
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejects_signature_when_topic_differs(self) -> None:
+        """A message authenticated for one topic cannot be replayed on another."""
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        handler = AsyncMock()
+        body = json.dumps({"meeting_id": "synthetic-meeting"}).encode()
+        mock_message = AsyncMock()
+        mock_message.body = body
+        mock_message.headers = _signed_headers("transcribe", body)
+        mock_message.ack = AsyncMock()
+        mock_message.nack = AsyncMock()
+        queue._channel = AsyncMock()
+        mock_queue = AsyncMock()
+        queue._channel.declare_queue.return_value = mock_queue
+        captured_callback = None
+
+        async def capture_consume(callback: Any) -> None:
+            nonlocal captured_callback
+            captured_callback = callback
+
+        mock_queue.consume = capture_consume
+        await queue.subscribe("diarize", handler)
+        assert captured_callback is not None
+        await captured_callback(mock_message)
+
+        handler.assert_not_awaited()
+        mock_message.nack.assert_called_once_with(requeue=False)
+
     """Consumer behavior tests (aio-pika mocked).
 
     Verifies ack/nack/requeue logic without a real RabbitMQ connection.
     """
+
+    @pytest.mark.asyncio
+    async def test_rejects_unsigned_message_before_handler(self) -> None:
+        """Unsigned queue payloads must not reach processing handlers."""
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        queue._dlx_exchange = None
+        handler = AsyncMock()
+        mock_message = AsyncMock()
+        mock_message.body = json.dumps({"meeting_id": "victim"}).encode()
+        mock_message.headers = {}
+        mock_message.ack = AsyncMock()
+        mock_message.nack = AsyncMock()
+        queue._channel = AsyncMock()
+        mock_queue = AsyncMock()
+        queue._channel.declare_queue.return_value = mock_queue
+        captured_callback = None
+
+        async def capture_consume(callback: Any) -> None:
+            nonlocal captured_callback
+            captured_callback = callback
+
+        mock_queue.consume = capture_consume
+        with patch.dict(os.environ, {"QUEUE_MESSAGE_SIGNING_KEY": "synthetic-test-key-0123456789abcdef"}):
+            await queue.subscribe("transcribe", handler)
+            assert captured_callback is not None
+            await captured_callback(mock_message)
+
+        handler.assert_not_awaited()
+        mock_message.nack.assert_called_once_with(requeue=False)
 
     @pytest.mark.asyncio
     async def test_ack_on_success(self) -> None:
@@ -141,7 +234,7 @@ class TestRabbitMQJobQueueBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"meeting_id": "abc", "audio_ref": "x"}).encode()
-        mock_message.headers = {}
+        mock_message.headers = _signed_headers("transcribe", mock_message.body)
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
@@ -176,7 +269,7 @@ class TestRabbitMQJobQueueBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"meeting_id": "abc"}).encode()
-        mock_message.headers = {"x-sauri-retries": 3}
+        mock_message.headers = _signed_headers("transcribe", mock_message.body, retries=3)
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
@@ -217,7 +310,7 @@ class TestRabbitMQJobQueueBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"meeting_id": "abc"}).encode()
-        mock_message.headers = {"x-sauri-retries": 1}
+        mock_message.headers = _signed_headers("transcribe", mock_message.body, retries=1)
         mock_message.content_type = "application/json"
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
@@ -279,7 +372,7 @@ class TestRabbitMQJobQueueBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"meeting_id": "abc"}).encode()
-        mock_message.headers = {"x-sauri-retries": 2}
+        mock_message.headers = _signed_headers("transcribe", mock_message.body, retries=2)
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
