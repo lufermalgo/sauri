@@ -130,10 +130,11 @@ async function uploadRecording(
       // Clear chunks from IndexedDB after successful upload
       await clearSession(sessionId);
     } else {
-      console.error("[sauri] Upload failed:", response.status, response.statusText);
+      throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
     }
   } catch (error) {
     console.error("[sauri] Upload error:", error);
+    throw error;
   }
 }
 
