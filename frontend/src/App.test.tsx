@@ -21,6 +21,29 @@ afterEach(() => {
 });
 
 describe("global authentication gate", () => {
+  it("returns to login when a protected API request rejects the stored token", async () => {
+    const storage = createLocalStorage();
+    storage.setItem("sauri_token", "synthetic-expired-token");
+    vi.stubGlobal("localStorage", storage);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/meetings")) {
+        return new Response(JSON.stringify({ detail: "Unauthorized" }), { status: 401 });
+      }
+      return new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy());
+    expect(storage.getItem("sauri_token")).toBeNull();
+    expect(screen.queryByText("Error 401")).toBeNull();
+  });
+
   it("does not mount API-backed app screens until login succeeds", async () => {
     vi.stubGlobal("localStorage", createLocalStorage());
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
