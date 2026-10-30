@@ -148,7 +148,7 @@
 **Archivo:** `extension/tests/e2e/`
 **Acción:** Add E2E coverage of synthetic capture completion through upload/status reconciliation to one authenticated Sauri review target, including reload/restart and duplicate completion handling. Mock external network only at test boundaries; use no live capture or real meeting data.
 **Criterio de Completado:** `cd extension && npm run test:e2e` passes with a single matching target opened only after confirmed processing success; pending/failed/unavailable cases do not open a ready review tab.
-**Dependencias:** T2.1–T2.5, T2.8, `task_11001b7f5b084e09`, `task_dfcb314806c04033`, `task_6a271652b2c34130`.
+**Dependencias:** T2.1–T2.8, `task_11001b7f5b084e09`, `task_dfcb314806c04033`, `task_6a271652b2c34130`.
 
 ### Tarea 3.2: Run configured validation for the changed product surfaces
 
@@ -163,7 +163,7 @@
 - Actual implementation prerequisites: T2.1+T2.2→T2.3 (finalized media and persisted identity must exist before automatic enqueue); T2.2→T2.4 (status is bound to persisted mapping); T2.4→T2.5 (success gate precedes launch); T2.1→T2.7 (scope is applied to completion wiring); T2.2+T2.3+T2.4→T2.8 (status presentation needs persisted state and upload/processing outcomes).
 - External dependencies are the existing tracked work: `task_11001b7f5b084e09` upload result/failure contract; `task_dfcb314806c04033` portal authenticated API/login; `task_6a271652b2c34130` protected meeting review/playback. These tasks are not duplicated here.
 - Independent RED tasks T1.1–T1.5, T1.7–T1.9 can proceed concurrently; implementation tasks remain parallel except for the explicit mapping/status/launch dependencies. T1.6/T2.6 wait for existing portal/playback contracts; the test seam is fixed to `get_transcript`, `get_playback_manifest`, and `_get_authorized_meeting` in the meetings router.
-- T3.1 requires T2.8 and all feature-flow GREEN tasks; T3.2 follows T3.1 and every GREEN task (including T2.7 and T2.8) so final configured validation cannot omit scope-boundary or visible-status changes.
+- T3.1 depends on every feature-flow GREEN task, T2.1–T2.8, so its end-to-end flow cannot precede authenticated review integration (T2.6), supported-context event wiring (T2.7), or visible status presentation (T2.8). T3.2 follows T3.1 and every GREEN task so final configured validation cannot omit any implementation.
 
 ## Assumptions and unresolved implementation checks
 
