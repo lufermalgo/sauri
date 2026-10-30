@@ -2,89 +2,116 @@
 
 ## Resumen
 
-El defecto nace porque `worker.py` conserva cada segmento ASR como fila `SpeechTurn`; la API y el portal conservan esa granularidad. La diarización asigna hablantes por solapamiento temporal, pero `assign_turns` hoy elige también al speaker de menor secuencia si todos los solapamientos son cero, y las asignaciones históricas no guardan evidencia para distinguir ese caso. La instrucción directa de Fer del 2026-10-30 (chat `th_a9681ad91c2f4b5d`, mensaje `msg_ae70285a69464de2`) autoriza presentar segmentos consecutivos del mismo hablante como turnos completos. El requisito está trazado al `bugfix.md` aprobado en commit `b0766bced264473d500d81ca74477b104378d2e7` (blob `dd7895959fbbf43e4348d19f00b20426c22a07a3`), integrado en `origin/main` mediante merge `d6b5d44` (PR #607). El baseline aplicable es el snapshot `PRODUCT_BASELINE.md` en commit `4953b3b4b8a058fd4738342307cc50bfd66814f1` (blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446`), §4.C.4; la aprobación explícita de Fer para ese contenido está registrada en `task_a08baf81140a4073`. Aunque el archivo mantenga un rótulo DRAFT, el paquete confirma la aprobación de esta versión exacta; no se usa el snapshot histórico `f31c1437` como única autoridad.
+El defecto llega al portal porque cada segmento del resultado ASR se persiste y se presenta como un `SpeechTurn` independiente. La diarización ya calcula actividad de hablantes contra esos intervalos, pero asignaciones sin solapamiento positivo pueden ser arbitrarias, y las asignaciones históricas no guardan la evidencia necesaria para distinguirlas. El diseño conserva los segmentos transcript fuente y agrupa solo con asignaciones respaldadas por solapamiento positivo, también para grabaciones históricas mediante una nueva generación de diarización con identidades y revisión independientes. Fer autorizó expresamente esa opción el 2026-10-30 (respuesta `inp_918c917473da4aa7` en esta tarjeta): reprocesar también su grabación completa ya guardada, conservar las revisiones previas separadas y no trasladar nombres automáticamente. La trazabilidad funcional permanece en `bugfix.md` aprobado, commit `b0766bced264473d500d81ca74477b104378d2e7`, blob `dd7895959fbbf43e4348d19f00b20426c22a07a3`; AC1 aplica a salidas históricas y nuevas. El comportamiento portal relacionado también está en `PRODUCT_BASELINE.md` aprobado en commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`, blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446`, §4.C.4, según `task_a08baf81140a4073`. El rótulo DRAFT de la copia de baseline no invalida esa aprobación exacta.
 
-1. Conservar intactas las filas fuente `SpeechTurn`; agregar a cada `SpeakerAssignment` una medida nullable `overlap_ms` para validar fiabilidad sin alterar textos ni tiempos fuente.
-2. Para nuevas diarizaciones, almacenar únicamente asignaciones de solapamiento positivo; conservar asignaciones legacy sin evidencia como no resueltas, sin inferir identidad entre ejecuciones.
-3. Derivar en el frontend grupos desde `SpeechTurn` y asignaciones con `overlap_ms > 0`, comparando `speaker_id`, no las etiquetas visibles.
-4. Combinar solo filas consecutivas del mismo speaker con texto en orden, inicio de la primera y fin de la última; preservar los intervalos fuente y separar cualquier cambio de hablante.
-5. Mantener la transcripción visible ante fallos; `overlap_ms` nulo o cero se presenta como `Speaker N` y nunca se agrupa.
+1. Mantener `Transcript` y `SpeechTurn` fuente inmutables; registrar evidencia de solapamiento en las asignaciones y derivar turnos de presentación por corridas consecutivas del mismo `speaker_id`.
+2. Versionar diarizaciones por meeting. La migración conserva la generación histórica como revisión 1, la marca `is_legacy=true` y deja `overlap_ms=NULL`; nuevas ejecuciones quedan marcadas como actuales y usan claves de speaker nuevas, coexistiendo sin sobrescribir asignaciones previas.
+3. Reprocesar mediante un job idempotente los transcripts históricos cuyo audio siga disponible bajo la retención vigente; la nueva diarización y su revisión pendiente se publican juntas solo al completar.
+4. Mantener las revisiones anteriores bajo sus revisiones originales, sin asociarlas por `raw_label`, posición, similitud o identidad acústica a los speakers nuevos.
+5. En `TranscriptView`, agrupar solo asignaciones positivas de la generación activa; conservar `Speaker N`, texto visible y playback temporalmente fiel mientras una generación nueva procesa o falla.
 
 ## Decisiones de Diseño Clave
 
-**Agrupar en el portal después de una atribución validada.** `TranscriptView` carga transcript y diarización; la composición de turnos sigue siendo una derivación de presentación, pero el cliente solo usa asignaciones con `overlap_ms > 0`. El backend calcula y persiste esa evidencia porque es la única capa con acceso a los intervalos originales del motor. *Alternativas descartadas:* ASR no tiene speaker IDs y agrupar ahí sería prematuro; confiar solo en `speaker_id` reproduce el error histórico cuando todo overlap era cero; almacenar nuevos turnos derivados duplicaría datos y no está aprobado.
+**Agrupar en el portal después de una atribución validada.** `TranscriptView` combina filas transcript fuente solo cuando sus asignaciones de la generación activa tienen `overlap_ms > 0` y el mismo `speaker_id`. El backend calcula la intersección con los segmentos originales del motor, única capa que conoce esos intervalos, y la persiste. *Alternativas descartadas:* ASR no entrega speaker IDs en sus segmentos; asignar por `speaker_id` sin validar overlap perpetuaría el empate artificial a cero; persistir pasajes derivados duplicaría el texto fuente y los tiempos sin necesidad.
 
-**La continuidad se define por orden de secuencia y speaker ID.** Dos filas adyacentes en la transcripción se combinan si y solo si ambas tienen una asignación resuelta al mismo `speaker_id`. Una fila intermedia de otra persona siempre separa los grupos, aunque su última etiqueta vuelva a aparecer más adelante. No comparar etiquetas visibles: pueden cambiar por revisión humana o coincidir para personas distintas. *Alternativas descartadas:* agrupar cualquier aparición del mismo speaker borraría turnos no consecutivos; dividir por una duración de silencio inventaría un umbral no aprobado; exigir límites de turno de ASR contradice la instrucción funcional y no es respaldado por la evidencia del proveedor.
+**La continuidad depende de secuencia y de identidad dentro de una generación.** Se combinan únicamente elementos adyacentes en `sequence` con el mismo `speaker_id` no vacío y asignación positiva en esa generación. Una fila intermedia de otra persona o sin evidencia rompe la corrida. No se agrupan apariciones no consecutivas ni por etiqueta visible. *Alternativas descartadas:* agrupar cualquier aparición del mismo speaker borraría límites A-B-A; comparar etiquetas permitiría que nombres editables o `Speaker N` iguales mezclen IDs distintos; usar duración de silencio inventaría un umbral no aprobado.
 
-**Tiempos del pasaje derivado son el inicio y fin exteriores de sus filas fuente.** En cada grupo, el pasaje empieza en `start_ms` de la primera fila y termina en `end_ms` de la última. Las filas fuente y sus marcas originales permanecen intactas; no se desplazan ni modifican. Las relaciones temporales entre grupos distintos (incluidos huecos y solapamientos) se conservan usando esos extremos. Los huecos internos entre fragmentos agrupados quedan dentro del pasaje compuesto, como consecuencia de agrupar segmentos consecutivos del mismo speaker; no se rellenan ni se reescriben en los datos fuente. *Alternativas descartadas:* cambiar duraciones para hacer intervalos contiguos o introducir una lista de subintervalos de reproducción ampliaría el contrato sin aprobación.
+**Los tiempos del pasaje son los extremos de sus filas fuente.** El pasaje compuesto empieza en el `start_ms` de la primera fila y termina en el `end_ms` de la última; las relaciones de tiempo entre grupos, incluidas brechas y solapamientos, se conservan. Las filas fuente, sus textos y sus marcas temporales no se editan. Los huecos internos quedan dentro del intervalo compuesto, sin reescritura de datos fuente. *Alternativas descartadas:* ajustar segmentos para forzar continuidad o guardar subintervalos de playback ampliaría el contrato sin respaldo en los requisitos.
 
-**Exponer evidencia de atribución de forma aditiva.** Añadir `SpeakerAssignment.overlap_ms` nullable y serializarlo junto con `turn_id` y `speaker_id` en el endpoint autenticado de diarización existente. No cambia el endpoint de transcript ni los tipos compartidos: estas respuestas HTTP no consumen `packages/shared-types`. Se requiere una migración para la columna. *Alternativa descartada:* no agregar evidencia al contrato dejaría al frontend sin forma de distinguir IDs legacy potencialmente falsos de asignaciones confiables.
+**Versionar diarización, no regenerar el transcript.** Una re-ejecución histórica usa las filas `SpeechTurn` y su transcripción existentes como entrada de asignación, y solicita una diarización nueva del mismo `audio_ref`; no vuelve a ejecutar ASR. Cada generación tiene `processing_revision`, su propio `Diarization.id`, `Speaker.id` y `SpeakerAssignment` por fila fuente. La migración marca las diarizaciones existentes `is_legacy=true`; workers nuevos escriben `is_legacy=false`. Las filas de una revisión no se actualizan ni eliminan al crear otra. *Alternativas descartadas:* reemplazar la diarización en sitio destruiría trazabilidad y podría borrar las referencias de revisión; re-ejecutar ASR alteraría texto/tiempos fuera del defecto investigado; mutar IDs antiguos equivaldría a remapear identidades.
 
-**Solapamiento positivo como evidencia persistida, legacy como no confiable.** Modificar `assign_turns` para omitir turnos cuyo overlap máximo sea cero y retornar el overlap del speaker elegido cuando sea positivo; empates entre positivos conservan el menor `sequence`. Persistir esos milisegundos en `SpeakerAssignment.overlap_ms`. La migración agrega una columna nullable; todas las filas existentes quedan `NULL`, sin backfill ni recálculo histórico. El portal no usa asignaciones `NULL` o `0`: presenta esos fragmentos por separado con `Speaker N`, evitando cualquier fusión basada en una asignación posiblemente fabricada.
+**Una revisión nueva empieza sin nombres heredados.** Cuando una nueva generación se completa, se crea en la misma transacción un `SpeakerReview` para ese `processing_revision`, con items de clave nueva (ID opaco de `Speaker` creado en esa generación) y etiqueta inicial `Speaker N`. La revisión anterior, sus decisiones, excerpt references y receipts quedan preservadas en su revisión previa; ninguna etiqueta, speaker key, disposition o identidad se copia. La revisión nueva queda pendiente de decisión humana. No se introduce identificación acústica entre generaciones ni entre grabaciones. *Alternativas descartadas:* asignar `raw_label` anterior/nuevo, secuencia, orden de aparición o parecido acústico no ofrece evidencia de identidad estable y puede presentar un nombre a la voz equivocada.
 
-**No reconstruir identidades legacy mediante `raw_label`.** No se crea `rebuild_assignments.py` ni se reejecuta automáticamente la diarización de resultados existentes. `raw_label` es una etiqueta local del motor y el código no garantiza estabilidad entre ejecuciones; ni su igualdad ni el orden de primera aparición prueban que una voz nueva corresponda al `Speaker` previamente revisado. Por eso la migración deja `overlap_ms=NULL` para toda asignación anterior y el portal no las usa para agrupar ni para afirmar una identidad: conserva sus fragmentos separados con `Speaker N`. Las filas y revisiones históricas quedan intactas. Las diarizaciones nuevas sí guardan `overlap_ms` positivo junto con IDs de speaker creados en esa misma ejecución; esa asociación solo se usa dentro de su generación. *Alternativas descartadas:* mapear por igualdad/orden de `raw_label` podría mover silenciosamente un nombre revisado a otra voz; reejecutar el motor y transferir las revisiones sin una señal acústica de correspondencia estable sería la misma inferencia no demostrada. Dejar legacy sin resolver retrasa la agrupación para esos registros, pero evita atribución falsa; una futura reparación requeriría un mecanismo de identidad estable aprobado y probado aparte.
+**La generación activa cambia solo con éxito atómico.** La API selecciona la generación completada de mayor `processing_revision`. Un intento `pending`, `in_progress` o `failed` no desplaza una generación completada: la transcripción sigue visible y asignaciones antiguas sin evidencia continúan sin agrupar. Diarization, asignaciones nuevas y review nueva se confirman en una sola transacción; si falla, no hay datos parciales ni cambio de generación activa. *Alternativas descartadas:* exponer resultados incompletos podría mezclar speakers/review; borrar la versión previa al empezar dejaría el transcript sin su historial disponible durante fallas.
 
-**Etiqueta de presentación acorde al código actual.** `TranscriptView.speakerPresentation` usa el `currentLabel.trim()` del elemento de speaker review coincidente si está disponible; si no, usa `speaker.label` de diarización y, por último, `Speaker N`. La agrupación no depende de esa etiqueta editable: depende de la asignación positiva por `speaker_id`. No se agrega integración nueva de review.
+**Exponer solapamiento y revisión de forma aditiva.** `GET /api/v1/meetings/{meeting_id}/diarization` agrega `overlap_ms` y `processing_revision` al resultado autenticado; el frontend usa solo la generación activa. `GET .../speaker-review` por defecto resuelve la revisión alineada con la generación activa; añade un parámetro opcional `revision_id` para recuperar, con la misma autorización, una revisión histórica separada. No se modifica `packages/shared-types` porque estas respuestas HTTP no lo consumen. *Alternativa descartada:* omitir generación o evidencia deja al cliente incapaz de evitar que asignaciones legacy sin overlap se usen como identidad; no exponer revisión histórica dificultaría conservarla como registro recuperable sin activar sus nombres para la versión nueva.
+
+**Límite de reprocesamiento por disponibilidad y retención.** Un comando/worker de backfill encola generaciones nuevas para transcripts ya persistidos solo si existe un `SessionRecording` con `audio_ref` disponible y sujeto a las reglas de retención actuales. La migración nunca descarga audio ni invoca motores. No se elude expiración, permisos, autorización por recording capability ni política de retención, y no se crea una copia adicional del audio. Si el audio histórico ya expiró o fue eliminado, se conserva el texto y la revisión anterior, se marca el intento no reprocesable y se mantiene `Speaker N` sin fusionar. La decisión de Fer autoriza reprocesar la grabación completa existente bajo las salvaguardas vigentes; no autoriza cambiar privacidad, retención ni acceso.
+
+**Etiqueta de presentación acorde al código actual.** `TranscriptView.speakerPresentation` usa `currentLabel.trim()` del item de speaker review coincidente si existe; si no, usa `speaker.label` y después `Speaker N`. En una generación nueva las claves de review son nuevas, de modo que la asociación previa no coincide y no se muestra por error. La agrupación no depende de la etiqueta editable, solo del ID y overlap de la misma generación.
 
 ## Arquitectura
 
-Especializaciones: **backend-api**, **web-application** y **cross-surface-integration**. El backend proporciona las dos colecciones autenticadas existentes; la composición de presentación es una derivación cliente, no cambia el almacenamiento ni las reglas de autorización. La extensión no forma parte de esta corrección.
+Especializaciones: **backend-api**, **web-application** y **cross-surface-integration**. El backend versiona asignaciones y review; el portal deriva las filas completas desde APIs autenticadas; la transcripción fuente no cambia. No se modifica la extensión. Audio, transcript y datos de speaker siguen bajo las salvaguardas de `SECURITY.md`; el job de backfill usa la autorización de grabación existente y no cambia retención.
 
 ```mermaid
 graph LR
-    ASR[Proveedor ASR: segmentos temporizados] --> TW[Worker de transcripción]
-    TW --> ST[(SpeechTurn: filas fuente)]
-    Q[JobQueue topic diarize] --> D[Worker + motor de diarización]
-    D --> A[Asignar solo con solapamiento positivo]
-    A --> SA[(SpeakerAssignment + overlap_ms)]
+    ASR[ASR existente: segmentos temporizados] --> TW[Worker de transcripción]
+    TW --> ST[(Transcript y SpeechTurn fuente)]
+    BR[Backfill idempotente] --> Q[JobQueue: meeting + revision]
+    Q --> DW[Worker de diarización]
+    SR[SessionRecording.audio_ref vigente] --> DW
+    DW --> ENG[Motor de diarización autorizado]
+    ENG -->|segmentos con raw_label local| ASG[Asignación por overlap positivo]
+    ST --> ASG
+    ASG -->|Speaker IDs frescos| DG[(Diarization revision N)]
+    DG --> SA[(Assignments y overlap_ms)]
+    DG --> RV[(SpeakerReview revision N: Speaker N)]
     ST -->|GET transcript autenticado| API[API de reuniones]
-    SA -->|GET diarization autenticado| API2[API de reuniones]
-    API --> UI[TranscriptView]
-    API2 --> UI
-    UI --> G[Agrupación consecutiva por speaker_id]
-    G --> R[Una fila y pasaje de playback por grupo]
+    SA -->|GET diarization activo| API
+    RV -->|GET review activo| API
+    API --> TV[TranscriptView]
+    TV --> G[Agrupación consecutiva por speaker_id]
+    G --> P[Pasaje visible y playback]
 ```
 
 ```mermaid
 sequenceDiagram
+    participant M as Migración
+    participant B as Backfill
+    participant Q as JobQueue
+    participant W as Worker de diarización
+    participant DB as PostgreSQL
+    participant E as Motor autorizado
     participant API as APIs autenticadas
     participant TV as TranscriptView
-    participant G as Agrupador puro de presentación
-    participant Q as JobQueue diarize
-    participant W as Worker de diarización
-    participant P as MeetingPlaybackView
-    API-->>TV: SpeechTurns ordenados
-    API-->>TV: assignments con overlap_ms (legacy NULL)
-    TV->>G: usar solo overlap_ms > 0
-    G-->>TV: grupos; legacy NULL y sin ID quedan separados con Speaker N
-    Q->>W: meeting_id para nueva diarización
-    W->>W: asignar overlap positivo a Speakers de la misma ejecución
-    API-->>TV: asignaciones visibles tras commit
-    TV->>P: pasajes agrupados con label/color
-    P-->>TV: highlight/seek ligados a inicio/fin del grupo
+    M->>DB: Añadir revision y overlap; preservar generación 1
+    B->>DB: Buscar transcript + audio_ref vigente; crear/reusar revision N pending
+    B->>Q: Encolar meeting_id + revision N (idempotente)
+    Q->>W: Procesar revision N
+    W->>E: Diarizar audio_ref con capability para ese objeto
+    E-->>W: Segmentos etiquetados solo dentro de esta ejecución
+    W->>W: Asignar turnos con overlap positivo y crear IDs nuevos
+    W->>DB: Transacción: generación, assignments y SpeakerReview N pending
+    API-->>TV: SpeechTurns fuente + diarización/review de generación activa
+    TV->>TV: Agrupar corridas consecutivas con ID y overlap positivo
+    TV-->>API: Playback y highlight usan extremos de filas fuente
 ```
 
-La transcripción no espera a diarización para ser visible. Cada fila con `overlap_ms` nulo/cero o sin asignación queda independiente, usa `Speaker N` y no crea un vínculo de reproducción inválido; esto incluye resultados históricos, que permanecen sin agrupar en ausencia de correspondencia estable. En nuevas ejecuciones, el endpoint refleja asignaciones con overlap positivo solo tras el commit y el render agrupa esas asignaciones. Ninguna etapa modifica las filas fuente `SpeechTurn` ni el texto. Un fallo de diarización no borra ni bloquea la lectura del transcript.
+Mientras revision N está en proceso o falla, `GET transcript` sigue devolviendo las filas fuente y la generación activa anterior queda intacta. Una fila histórica con `overlap_ms=NULL` permanece separada y se representa con `Speaker N`. Cuando una nueva generación completa se confirma junto con su review, las lecturas posteriores seleccionan esa generación; las asignaciones antiguas siguen accesibles solo bajo su revisión previa y no se mezclan con la nueva.
 
 ## Componentes e Interfaces
 
-### 1. APIs autenticadas existentes
+### 1. APIs de transcript, diarización y review
 
-- `GET /api/v1/meetings/{meeting_id}/transcript` permanece sin cambio: devuelve `SpeechTurn` con `id`, `text`, `start_ms`, `end_ms`, `sequence`, en orden y después de `_get_authorized_meeting`.
-- `GET /api/v1/meetings/{meeting_id}/diarization` agrega `overlap_ms` por asignación, manteniendo `turn_id` y `speaker_id`. Positivo valida el vínculo; `NULL` identifica registros previos no recalculados, y cero no es válido para agrupar. El contrato cliente queda `assignments: Array<{ turn_id: string; speaker_id: string; overlap_ms: number | null }>`.
-- Se conservan autenticación y autorización por propietario. El payload solo agrega evidencia técnica; no expone nuevos datos de transcript/audio ni cambia `packages/shared-types`.
+- `GET /api/v1/meetings/{meeting_id}/transcript` conserva su autorización y devuelve el transcript fuente existente (`id`, `text`, `start_ms`, `end_ms`, `sequence`), ordenado por `sequence`. No genera ni persiste turnos compuestos.
+- `GET /api/v1/meetings/{meeting_id}/diarization` devuelve speakers y assignments de la generación completada activa, agregando `processing_revision` y `overlap_ms`. El tipo de assignment es `{ turn_id: string; speaker_id: string; overlap_ms: number | null }`; positivo habilita la asociación solo en esa generación, NULL es dato previo sin evidencia persistida. La respuesta informa también la revisión/estado del último intento para que el cliente no confunda un reproceso pendiente o fallido con resultado nuevo.
+- `GET /api/v1/meetings/{meeting_id}/speaker-review` sin parámetro devuelve la revisión alineada a la generación activa; añade `?revision_id=N` opcional para leer una revisión histórica bajo la misma autorización. Si no hay una generación nueva completada, conserva la revisión de la generación previamente activa. Las revisiones previas no se borran ni se convierten en la activa de una nueva generación.
+- Las rutas continúan llamando `_get_authorized_meeting`; accesos y errores de autorización conservan el comportamiento actual. No se envían datos de audio, texto adicional, contenido de reuniones ni `raw_label` histórico a los clientes.
 
-### 2. Atribución y persistencia (`backend/app/diarization/assignment.py`, `repository.py`, `backend/app/infra/models.py`)
+### 2. Persistencia y asignación (`backend/app/diarization/`, `backend/app/infra/models.py`)
 
-`assign_turns` retorna `(turn_id, speaker, overlap_ms)` solo para el máximo overlap estrictamente positivo; si todos dan cero no retorna esa fila. Los empates positivos mantienen menor `sequence`. Agregar columna `SpeakerAssignment.overlap_ms: int | None`, nullable: la migración deja filas existentes `NULL`; las nuevas guardan el total de intersección en milisegundos. `worker.py` persiste medida y asignación en la transacción atómica ya usada para crear el resultado de diarización. No se reemplazan asignaciones históricas ni se comparan speakers de ejecuciones distintas.
+`assign_turns` retorna `(turn_id, speaker, overlap_ms)` únicamente si el máximo solapamiento es estrictamente positivo; el empate positivo conserva el desempate por menor `sequence`; máximo cero no crea asignación. `worker.py` persiste la medida junto a la asignación y el speaker creado en la misma generación. `raw_label` solo indexa los objetos devueltos por una sola llamada al motor; jamás se consulta contra otra revisión.
 
-### 3. Compatibilidad de asignaciones legacy (sin reconstrucción de identidad)
+`DiarizationRepository` deja de asumir una sola fila por meeting y expone la generación activa/completada, el siguiente número de revisión y la persistencia atómica de una generación. Una nueva generación se crea como `pending` antes de encolar; el worker cambia el estado y solo escribe speakers, assignments y review tras respuesta válida del motor. La clave idempotente del job es `(meeting_id, processing_revision)`: un redelivery reusa el mismo intento pendiente; una revision completada es no-op; un fallo registra `failure_cause` (reintentable de motor/transporte o terminal de recording no disponible) sin reemplazar datos completados.
 
-No se ejecuta un job ni se reevalúa el audio histórico en esta corrección. La migración agrega la columna nullable sin backfill: toda asignación previa queda `overlap_ms=NULL`; por tanto, el portal la omite para agrupación y presenta cada fragmento por separado con `Speaker N`. Esto evita preservar etiquetas revisadas sobre una correspondencia nueva no demostrada. Las futuras ejecuciones del worker mantienen su flujo actual de crear `Diarization` y `Speaker` nuevos; las asignaciones y sus overlaps positivos se escriben en una transacción y `raw_label` solo enlaza segmentos con los speakers creados en esa misma ejecución. No se trasladan `SpeakerReview` ni nombres entre ejecuciones. La lectura de texto no depende del audio histórico ni de un backfill. *Alternativa descartada:* un job de rebuild basado en raw labels iguales u orden de aparición no da una garantía de identidad y puede atribuir un nombre humano a otra voz. El costo de esta decisión es que las grabaciones legacy no se agrupan hasta contar con una futura vía de correspondencia estable aprobada; su transcripción sigue visible y no se altera.
+### 3. Backfill histórico y re-procesamiento seguro
 
-### 4. Agrupador puro frontend (`frontend/src/transcript-turns.ts`)
+Agregar `backend/app/diarization/reprocess_legacy.py` como comando de backfill re-ejecutable. Enumera diarizaciones marcadas `is_legacy=true` con transcript asociado y `SessionRecording.audio_ref` disponible. Si ya existe una generación posterior completada, hace no-op; si la revisión objetivo está `pending` o `failed` por causa reintentable del motor/transporte, reutiliza y reencola esa misma revisión; si falló con causa no reintentable como recording expirado/eliminado, no-op. Si no hay intento previo, crea la siguiente `processing_revision`. No modifica turnos fuente. Crea la generación pendiente en base antes de publicar el job para que un redelivery o reinicio no duplique una revisión. El job contiene solo `meeting_id` y `processing_revision`, nunca texto ni nombres. La ejecución del motor recibe el audio por el mecanismo actual, incluido `X-Sauri-Recording-Capability` firmado para el `audio_ref` exacto. Se ejecuta una vez tras instalar el código y migración; el mismo comando puede reanudarse tras interrupción y no crea revisiones duplicadas al repetirse.
 
-Añadir función determinista y sin I/O, con prueba colocalizada `frontend/src/transcript-turns.test.ts`:
+El backfill no se ejecuta dentro de Alembic ni expone endpoint público de reprocesamiento. Para el transcript completo previamente guardado por Fer, se aplica la misma ruta general; el diseño no registra su identificador, texto ni otra información privada. Si el objeto ya no está disponible o la retención lo eliminó, no se intenta recuperarlo desde otra ubicación.
+
+### 4. Modelos, revisión y migración
+
+- Añadir `Diarization.processing_revision: int NOT NULL` (existentes a `1`) y `is_legacy: bool NOT NULL` (existentes `true`, default `false` para nuevas generaciones); cambiar la unicidad de `meeting_id` a `(meeting_id, processing_revision)`. La revisión 1 conserva IDs, speakers, assignments y estado originales; el flag permite al backfill identificar únicamente salidas anteriores al fix.
+- Añadir `SpeakerAssignment.overlap_ms: int NULL`; las filas existentes quedan NULL. Reemplazar `uq_speaker_assignment_turn_id` por unicidad `(diarization_id, turn_id)`, de modo que el mismo `SpeechTurn` pueda tener asignaciones en revisiones distintas sin borrar las previas.
+- `Speaker.id` sigue siendo UUID nuevo por generación. Cada `SpeakerReview` nuevo usa el mismo `processing_revision`; los items usan la nueva clave opaca del speaker y etiqueta inicial `Speaker N`. La tabla de review ya tiene unicidad por `(meeting_id, processing_revision)`; no se migra ni reescribe el contenido de revisiones previas, sus receipts o excerpt references.
+- `Transcript` y `SpeechTurn` siguen siendo una única fuente por meeting y no necesitan versionarse para esta corrección: solo se reprocesa diarización y se atribuyen sus intervalos fuente.
+- Una migración Alembic secuencial posterior a `011` (nombre exacto determinado por el autor de implementación tras sincronizar la rama) realiza cambios aditivos y conserva los datos existentes. La migración añade columnas/constraints, marca filas existentes como revisión 1 (`is_legacy=true`, `overlap_ms=NULL`) y deja `is_legacy=false` como default para nuevas generaciones; no llama servicios, descarga grabaciones ni publica jobs. La selección activa es la generación de mayor revisión con estado `completed`; `pending`, `in_progress` o `failed` nunca sustituyen una revisión completada.
+
+### 5. Agrupador puro frontend (`frontend/src/transcript-turns.ts`)
+
+Añadir función determinista sin I/O y prueba colocalizada `frontend/src/transcript-turns.test.ts`:
 
 ```typescript
 interface SourceTranscriptSegment {
@@ -98,11 +125,11 @@ interface SourceTranscriptSegment {
 interface PresentationTurn {
   id: string;                 // ID de la primera fila fuente del grupo
   sourceIds: string[];        // IDs de filas conservadas en backend
-  text: string;               // textos no vacíos en orden, separados por un espacio
-  startMs: number | null;     // inicio de primera fuente válida
-  endMs: number | null;       // fin de última fuente válida
+  text: string;               // texto no vacío en orden, separado por un espacio
+  startMs: number | null;     // inicio de primera fuente
+  endMs: number | null;       // fin de última fuente
   sequence: number;           // secuencia de primera fuente
-  speakerId?: string;         // presente solo para assignment con overlap_ms > 0
+  speakerId?: string;         // ID de la generación activa con overlap_ms > 0
 }
 
 function groupTranscriptTurns(
@@ -111,74 +138,69 @@ function groupTranscriptTurns(
 ): PresentationTurn[];
 ```
 
-Orden de entrada: usar `sequence` ascendente. Combinar solo dos elementos adyacentes en esa lista cuando ambos tienen tiempos válidos y el mismo `speakerId` no vacío. Si no hay asignación o tiempo válido para alguno, conservarlo como grupo independiente; además, esa fila interrumpe la adyacencia, por lo que el agrupador no salta sobre ella para unir vecinos. No asumir que dos ausencias representan a la misma persona. El `id` del grupo es el ID de su primera fuente, para que `speakerPresentation` encuentre la asignación; `sourceIds` retiene trazabilidad en memoria. Texto vacío no añade contenido; el texto no se reescribe en backend. El método de separación entre cadenas es un espacio sencillo, sin alterar puntuación ni inventar texto.
+El caller construye `speakerIdByTurnId` solo con assignments positivos de la generación activa. Ordenar por `sequence` ascendente con orden de entrada estable para empates; agrupar únicamente fuentes adyacentes con tiempos válidos y el mismo `speakerId` no vacío. Fila sin speaker validado interrumpe la corrida y queda separada como `Speaker N`; no saltar sobre ella. El ID del compuesto es el ID de su primera fuente y `sourceIds` conserva trazabilidad en memoria. Textos no vacíos se unen con un espacio sencillo, sin reescribir filas fuente. Filas no temporizadas siguen representables como texto, no se enlazan a playback y no se fusionan con otras.
 
-Las filas sin tiempo válido permanecen representables como texto pero nunca se pasan a playback como pasajes temporizados; no se sintetizan límites ni se incorporan a un grupo temporizado. Para un grupo de fuentes con tiempo válido, `startMs`/`endMs` son los extremos de primera/última fuente. El agrupador no clasifica por igualdad de etiqueta, no aplica una ventana de silencio y no reordena fuera del campo `sequence`.
+### 6. Vista y playback (`frontend/src/components/TranscriptView.tsx`)
 
-### 5. Vista y playback (`frontend/src/components/TranscriptView.tsx`)
-
-- Crear el mapa `turn_id → speaker_id` solo con `diarization.assignments` cuyo `overlap_ms > 0`; omitir las asignaciones legacy `NULL` y derivar grupos desde `data.segments`/`data.turns` ordenadas; no mutar `data`.
-- Para un grupo con `speakerId` validado, resolver etiqueta/color mediante `speakerPresentation` para preservar la revisión correspondiente. Si el grupo no tiene `speakerId` validado (legacy, cero, ausente), no consultar su asignación/revisión antigua y mostrar `Speaker N`; un ID legacy no puede recuperar una identidad revisada.
-- Renderizar una fila por grupo. Construir `playbackPassages` de los mismos grupos temporizados, no de los segmentos sin agrupar, para que avance/resaltado y selección reproduzcan el inicio del grupo.
-- Durante carga o error de diarización, conservar la transcripción visible con unidades no asignadas separadas; ningún fallo de esta lectura secundaria vuelve a fragmentar o esconder contenido ya cargado por error de estado. Las asignaciones legacy (`overlap_ms=NULL`) permanecen separadas sin esperar una reconstrucción automática.
-- Conservar highlight/seek existentes; no se añade edición textual ni interacción visual nueva.
+- Consumir transcript fuente, generación activa de diarización y review de la misma revisión; no usar etiquetas/reviews de otra `processing_revision`.
+- Construir el mapa de asignación solo para `overlap_ms > 0`; legacy NULL, cero, ausencia, error de carga o generación fallida quedan sin asignación válida y se presentan individualmente como `Speaker N`.
+- Resolver la etiqueta visible del mismo ID/revisión con la precedencia existente `currentLabel.trim()`, `speaker.label`, `Speaker N`; el ID de speaker, no la cadena de etiqueta, determina el agrupamiento.
+- Renderizar una fila por corrida máxima. Crear `playbackPassages` de los mismos grupos con tiempo válido; mantener highlight, scroll y seek existentes ligados a los extremos de ese grupo. Un fallo o estado pendiente de diarización no oculta el transcript.
 
 ### Ubicación y pruebas
 
-| Área | Archivos que se modifican | Pruebas | Migración | Shared types / Compose |
+| Área | Archivos que agrega/modifica | Tests sintéticos | Migración | Shared types / Compose |
 |---|---|---|---|---|
-| Portal, lógica de agrupación | `frontend/src/transcript-turns.ts` (nuevo), `frontend/src/components/TranscriptView.tsx`, `frontend/src/api.ts` (campo nullable nuevo) | `frontend/src/transcript-turns.test.ts` (nuevo), `frontend/src/components/TranscriptView.test.tsx` | No | Sin cambio |
-| Backend, atribución y persistencia | `backend/app/diarization/assignment.py`, `repository.py`, `worker.py`, `backend/app/infra/models.py` | `backend/tests/diarization/test_assignment_property.py`, `test_worker.py` (overlap positivo persistido en la misma ejecución) | Sí: siguiente versión secuencial en `backend/alembic/versions/`, agregar nullable `speaker_assignments.overlap_ms` | Sin cambio |
-| API de diarización | `backend/app/meetings/router.py` agrega `overlap_ms` a cada asignación autenticada; `frontend/src/api.ts` actualiza el tipo | `backend/tests/meetings/test_diarization_endpoint.py`, `frontend/src/api.test.ts`: positivo, NULL legacy, serialización y autorización sin cambio | Incluida arriba | Sin cambio |
-| Fuentes transcript/reviews | Sin cambio: `SpeechTurn`, audio, texto y reviews permanecen intactos; speakers/reviews legacy no se remapean | Verificar que migración no altera asignaciones legacy salvo dejarlas con overlap NULL y que el frontend no use esos IDs | Sin cambio adicional | Sin cambio |
-| Extensión | Sin cambios | No aplica | No | No aplica |
+| Backend diarización y backfill | `backend/app/diarization/assignment.py`, `repository.py`, `worker.py`, nuevo `reprocess_legacy.py`, `backend/app/infra/models.py` | `backend/tests/diarization/test_assignment_property.py`, `test_worker.py`, nuevo `test_reprocess_legacy.py` y actualización de `test_repository.py` | Sí: siguiente número Alembic disponible posterior a `011`; versionado y unicidad por generación, overlap nullable | `packages/shared-types`: sin cambio; `docker-compose.yml`: sin cambio |
+| Backend meetings API/review | `backend/app/meetings/router.py`, `speaker_review_service.py` y esquemas donde ya correspondan | `backend/tests/meetings/test_diarization_endpoint.py`, `backend/tests/speaker_review/` revisión activa por generation y conservación histórica | Misma migración | Sin cambio |
+| Web portal | `frontend/src/api.ts`, `frontend/src/components/TranscriptView.tsx`, nuevo `frontend/src/transcript-turns.ts` | `frontend/src/transcript-turns.test.ts`, `frontend/src/components/TranscriptView.test.tsx`, `frontend/src/api.test.ts` | No | `packages/shared-types`: sin cambio; `docker-compose.yml`: sin cambio |
+| Fuentes y datos existentes | No cambiar contenido/IDs de `Transcript`/`SpeechTurn`; mantener generaciones y reviews previas | migración prueba inmutabilidad; fixture sintética de generación 1/review previa + generación 2/review nueva prueba aislamiento | Incluida | Extension: sin cambios |
+
+**Despliegue y compatibilidad:** detener consumers antiguos de `diarize` durante la migración y despliegue del worker/API capaces de leer revisiones; aplicar migración, desplegar consumidores y API versionados, y solo entonces ejecutar el backfill. No ejecutar el backfill con código antiguo que asume unicidad por meeting. Reanudar/reintentar solo mediante la clave meeting/revisión. No abrir una ventana en que la generación incompleta reemplace la activa.
 
 ## Modelos de Datos
 
-`SpeechTurn` conserva filas fuente, texto, tiempos y secuencia. `SpeakerAssignment` agrega `overlap_ms: Integer | NULL`: nuevo valor >0 es evidencia de asignación; NULL identifica filas históricas no confiables, y el algoritmo nuevo no crea filas con 0. La migración no rellena overlap por suposición ni reejecuta la diarización; las asignaciones y reviews legacy no se remapean. Los `Speaker`/IDs nuevos se relacionan solo con segmentos y asignaciones de su propia ejecución. `PresentationTurn` sigue siendo derivado en memoria, no otra fuente de verdad; `sourceIds` conserva trazabilidad sin incluir contenido real en logs o fixtures. Todas las pruebas usan datos sintéticos.
+`Transcript`/`SpeechTurn` mantienen su shape y su contenido fuente. `Diarization` agrega `processing_revision` e `is_legacy`; cada generación posee speakers propios y estado independiente. `SpeakerAssignment` agrega `overlap_ms: Integer | NULL` y su unicidad pasa a `(diarization_id, turn_id)`; generación 1 conserva `is_legacy=true` y asignaciones históricas NULL, generaciones actuales tienen `is_legacy=false` y guardan medidas positivas únicamente. `SpeakerReview.processing_revision` alinea revisión humana con la diarización: cada generación nueva tiene agregado/items frescos con `Speaker N`, mientras el agregado anterior permanece separado. `PresentationTurn` es derivado en memoria, nunca otra fuente de verdad. El coste es una ejecución adicional de diarización por cada grabación histórica reprocesable y almacenamiento adicional por su generación; no se altera el coste ni la política de retención del audio fuente.
 
 ## Propiedades de Correctitud
 
-**Propiedad 1 — Agrupación consecutiva por identidad.** Para cualquier lista ordenada de segmentos sintéticos con speaker IDs resueltos, cada corrida máxima contigua de IDs iguales forma exactamente un turno; texto conserva el orden. Un ID distinto intermedio separa la corrida. Valida la instrucción directa de Fer y los criterios 1 y 2 del bugfix.
+**Propiedad 1 — Agrupación consecutiva por identidad de generación.** Para cualquier secuencia sintética ordenada con assignments positivos, cada corrida máxima contigua del mismo `speaker_id` dentro de una revisión produce exactamente un turno visible; una identidad distinta, una ausencia o un overlap no positivo la separa. Texto conserva orden. Valida AC1–AC2.
 
-**Propiedad 2 — Repetición no consecutiva.** Si una secuencia de IDs es `A, B, A`, la salida conserva tres turnos en ese orden, aunque la etiqueta visible de A coincida. Valida “Comportamiento Sin Cambios” 2.
+**Propiedad 2 — No agrupación por repetición no consecutiva.** Para secuencia `A, B, A`, la salida mantiene tres turnos incluso si las dos etiquetas visibles de A son iguales. Valida AC2 y “Comportamiento Sin Cambios” 2.
 
-**Propiedad 3 — Solo atribución con evidencia positiva.** Un turno recibe asignación solo si algún segmento de diarización tiene solapamiento positivo; `assign_turns` retorna y persiste el overlap medido, mientras que máximo cero produce ausencia de asignación. El frontend solo trata `overlap_ms > 0` como identidad utilizable. La falta de evidencia se muestra como `Speaker N` y jamás se agrupa entre sí. Empates entre overlaps positivos conservan el desempate por menor secuencia. Valida criterios 2–3 y “Comportamiento Sin Cambios” 1.
+**Propiedad 3 — Solapamiento positivo.** `assign_turns` solo asigna/persiste una fila si el máximo temporal es estrictamente positivo; retorna ese total y conserva desempate por menor `sequence` entre máximos positivos. Máximo cero produce ausencia de asignación y `Speaker N`, nunca el speaker de menor secuencia. Valida “Comportamiento Sin Cambios” 1 y AC3.
 
-**Propiedad 4 — Límites y relaciones de tiempo.** Para cada grupo con tiempo válido, inicio es el inicio de la primera fuente y fin el fin de la última. Los tiempos fuente permanecen iguales; intervalos y gaps entre grupos se conservan sin desplazamiento, ensanchamiento artificial ni cierre de huecos. Los huecos dentro del grupo compuesto no reescriben las fuentes. Valida criterio 4 y “Comportamiento Sin Cambios” 3.
+**Propiedad 4 — Identidad aislada por revisión.** Para toda migración, generación 1 conserva IDs, assignments y review anteriores, queda `is_legacy=true` y sus overlaps son NULL. Una nueva revisión tiene IDs no coincidentes, no copia nombre/disposition/review/excerpt y crea review pending separada; assignment de misma `turn_id` puede coexistir solo bajo `diarization_id` distinto. No puede aparecer el nombre revisado de revisión 1 en una fila de revisión 2 sin una acción humana nueva. Valida decisión de Fer 2026-10-30 y AC3.
 
-**Propiedad 5 — Playback asociado a la unidad visible.** El grupo usado como pasaje y como fila comparte el mismo ID inicial, inicio y fin. El highlight en avance y el seek de selección permanecen ligados a ese inicio/fin; grupos sin tiempo válido no se enlazan a reproducción. Valida criterio 5 y “Comportamiento Sin Cambios” 4–5.
+**Propiedad 5 — Idempotencia y publicación atómica.** Redelivery de `(meeting_id, processing_revision)` no crea dos generaciones/reviews ni altera una generación completa; falla antes de commit conserva la versión completada anterior y no persiste speakers/assignments/review parciales. Reintentar un fallo usa la misma revisión pendiente/reintentable y hace active solo al completar. Valida integridad y recuperación.
 
-**Propiedad 6 — Conservación de datos fuente.** Para cualquier entrada, el agrupamiento no muta, descarta ni reordena las filas originales; la concatenación de `sourceIds` cubre en orden las fuentes elegibles. Valida el enfoque de presentación sin pérdida.
+**Propiedad 6 — Reprocesamiento histórico seguro.** Backfill sintético selecciona solo diarizaciones `is_legacy=true`, respeta ausencia de `audio_ref`/retención, reusa la revisión pending o con fallo reintentable al reejecutarse, hace no-op tras completar o un fallo terminal, y dirige el job al `audio_ref` exacto bajo recording capability vigente. No consulta ni usa transcripciones reales en tests/logs. Valida decisión de Fer sobre salidas históricas, incluida la grabación completa guardada, sin saltar límites de seguridad/retención.
 
-**Propiedad 7 — Legacy sin identidad inferida.** Toda asignación previa a la migración queda `overlap_ms=NULL`; ni el speaker ID legacy ni su etiqueta revisada se usan para agrupar o presentar identidad, y la fila conserva `Speaker N`. Una prueba de migración confirma que asignaciones, IDs y reviews existentes no se alteran; una fixture sintética de vista incluye un ID/review legacy con `overlap_ms=NULL` y verifica que no se agrupa ni muestra el nombre revisado. Valida la representación honesta y la protección contra reasignación de nombres a otra voz.
+**Propiedad 7 — Fidelidad temporal y fuente intacta.** Cada pasaje compuesto usa inicio de su primera y fin de su última fuente; no se cambian filas originales, gaps, overlaps, textos ni sequence. Los pasajes visibles y los de playback comparten ID/límites. Valida AC4–AC5 y “Comportamiento Sin Cambios” 3–5.
 
 ## Manejo de Errores
 
 | Escenario | Comportamiento |
 |---|---|
-| Diarización sigue procesando, no está disponible o falla | No bloquear la lectura de texto. Renderizar fragmentos sin asignación con `Speaker N`, sin unirlos por presunción. |
-| Resultado de diarización legacy con asignaciones `overlap_ms=NULL` | Ignorar esos speaker IDs en la agrupación y mostrar fragmentos separados con `Speaker N`. No se encola rebuild ni se transfiere una revisión humana a identidades reejecutadas sin prueba de correspondencia. El texto permanece visible. |
-| Audio de una diarización legacy expirado/eliminado o no disponible | No eludir retención ni buscar otra copia; dejar overlap NULL y mantener `Speaker N` sin agrupación. La transcripción permanece visible. |
-| Motor devuelve `raw_label` sin speaker ya persistido | No asociar a un speaker distinto por similitud/orden; dejar los turnos correspondientes sin asignación y con `Speaker N`. |
-| Ningún segmento de diarización se solapa temporalmente con una fila transcript | `assign_turns` no devuelve asignación con overlap máximo cero; no persiste un speaker escogido por orden. El portal deja esa fila sin agrupar y presenta `Speaker N`. |
-| Asignación apunta a fila que no está en el transcript | Ignorar la asignación huérfana; mantener esa fila como fuente no asignada con `Speaker N`. |
-| Speaker ID presente pero etiqueta/revisión ausente | Mostrar `Speaker N`; agrupar solo si el mismo ID resuelto coincide, nunca por el texto de etiqueta. |
-| Texto vacío, tiempo ausente o inválido | No fabricar texto ni tiempo. Mantener texto válido como unidad no temporizada; excluirlo de playback según el comportamiento existente. |
-| Orden repetido o entrada de segmentos fuera de orden | Ordenar por `sequence` estable, manteniendo el orden recibido para empates; no tratar segmentos no adyacentes como contiguos. |
-| Error de transcript o falta de autorización | Preservar manejo de error HTTP actual; no mostrar contenido no autorizado. Error de diarización por sí solo no convierte una lectura de transcript autorizada en error fatal. |
-| Migración falla o se revierte el despliegue | No habilitar el worker nuevo antes de aplicar la columna nullable. En rollback, detener el worker nuevo antes de revertir esquema; el cliente trata campo ausente como legacy/no confiable y conserva texto sin fusionar. |
+| Nueva generación pendiente/en procesamiento | Mantener visible transcript y última generación completada. Filas antiguas con overlap NULL siguen separadas y `Speaker N`; no publicar parcialmente. |
+| Timeout/falla transitoria del motor o transporte, job se interrumpe o se repite | Usar los timeouts existentes del provider (`DIARIZATION_TIMEOUT_SECONDS` local; 120 s cloud) y reintentos acotados de la queue. Registrar `failure_cause` reintentable; al agotarse la queue, el comando puede reencolar la misma revisión. La transacción no deja assignments/review parciales; no borrar ni desactivar generación completada previa. |
+| Audio expirado/eliminado/no disponible | Registrar `failure_cause` terminal no reintentable; no recuperar de otra copia ni eludir retención; mantener los datos previos y `Speaker N` sin agrupación. |
+| Engine capability inválida o no autoriza el audio_ref exacto | Fallar cerrado antes de descargar/procesar; no usar token genérico como sustituto; mantener texto y generación anterior. |
+| Resultado de motor sin speaker/segmento o todo overlap es cero | No fabricar atribución; no persistir assignment sin overlap positivo; presentar esa fila separada como `Speaker N`. |
+| Revisión nueva completada pero aún sin decisión humana | Presentar la nueva etiqueta `Speaker N` y mostrar review pendiente según el flujo existente; no copiar nombres de revisiones previas. |
+| Fila sin asignación, ID de revisión inconsistente o asignación huérfana | Ignorarla para agrupación; conservar fila fuente y `Speaker N`; no hacer join entre revisiones. |
+| Transcripción/API no autorizada o error HTTP | Conservar autenticación/autorización y manejo HTTP actual; no devolver datos de otra reunión/usuario. Error secundario de diarización no bloquea texto ya autorizado. |
+| Migración/despliegue interrumpido | Consumers antiguos permanecen detenidos hasta API/worker versionados; no arrancar backfill parcialmente. Rollback operacional detiene backfill/consumers nuevos y conserva filas y columnas; no borrar revisiones nuevas después de procesarlas. Si es preciso deshacer, hacerlo con migración correctiva y análisis explícito de datos, no downgrade destructivo. |
 
 ## Estrategia de Testing
 
-Pruebas unitarias sintéticas para el agrupador puro y pruebas de vista para verificar wiring. La QA ejecutó pruebas previas del comportamiento actual (frontend: 2 archivos/24 tests; backend: 5 tests), no son validación de esta corrección.
+Usar exclusivamente reuniones, audio_refs, textos, nombres y segmentos sintéticos; no acceder ni copiar datos de reuniones reales. Nia ejecutó pruebas del comportamiento actual antes de esta corrección, pero ese resultado no valida el candidato futuro.
 
-1. **Atribución backend:** en `backend/tests/diarization/test_assignment_property.py`, fixtures sintéticos verifican que candidatos con cero overlap no generan asignación y que overlap positivo (incluidos máximos y empates) retorna la medida correcta y el speaker esperado.
-2. **Migración/API:** `backend/tests/diarization/test_migration.py` valida que asignaciones previas queden `overlap_ms=NULL`; ampliar `backend/tests/meetings/test_diarization_endpoint.py` y `frontend/src/api.test.ts` para validar serialización de NULL/positivo y autorización intacta.
-3. **Identidad legacy:** en `backend/tests/diarization/test_migration.py`, fixtures sintéticos verifican que asignaciones históricas migran con `overlap_ms=NULL` sin alterar sus IDs/referencias; en `frontend/src/components/TranscriptView.test.tsx`, un ID legacy que tiene review asociado pero `overlap_ms=NULL` no produce agrupación ni expone el nombre revisado, sino `Speaker N`. Las nuevas asignaciones enlazan únicamente speakers producidos por la misma ejecución.
-4. **Agrupador (Vitest):** casos y propiedades con segmentos `A,A,B,B,A`, IDs distintos con la misma etiqueta, ausencia de asignaciones, asignación legacy `overlap_ms=NULL`, cero, gaps/overlaps, texto vacío, tiempos inválidos y secuencias. Afirmar corridas máximas, orden, límites y fuente inmutable; legacy y cero no se agrupan.
-5. **Vista:** fixtures sintéticos verifican una fila por corrida de A, separación `A,B,A`, fallback `Speaker N` para ausencia/legacy, y precedencia real de etiqueta: `currentLabel.trim()` coincidente, luego `speaker.label`, luego `Speaker N`.
-6. **Carga degradada/playback:** transcript visible y sin agrupación durante 404/error; las asignaciones legacy NULL permanecen separadas; `MeetingPlaybackView` recibe límites del grupo, seek/highlight siguen el mismo intervalo y no hay pasaje para entradas no temporizadas.
-7. Desde `frontend/`, ejecutar `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/api.test.ts` y `npm run typecheck`; desde `backend/`, ejecutar `pytest tests/diarization/test_assignment_property.py tests/diarization/test_worker.py tests/diarization/test_repository.py tests/diarization/test_migration.py tests/meetings/test_diarization_endpoint.py`. Son datos sintéticos; estos comandos son validación futura, no resultados ya obtenidos.
-
-La corrección no depende de que ASR provea speaker IDs o límites explícitos: usa las asignaciones reales de diarización que ya se calculan sobre las filas persistidas. La lectura del transcript sigue disponible si diarización tarda/falla; esa degradación no autoriza a agrupar speakers desconocidos ni impide que el cliente presente el texto.
+1. **Assignment unit/property:** actualizar `backend/tests/diarization/test_assignment_property.py` para overlap positivo, máximos, empate, cero, intervalos sin intersección, y resultado vacío cuando no haya evidencia.
+2. **Migración/generaciones:** ampliar `backend/tests/diarization/test_migration.py`: filas existentes se vuelven revision 1/`is_legacy=true`/overlap NULL sin cambiar speaker/assignment/review IDs; nuevas filas tienen `is_legacy=false`; dos revisions pueden referir la misma `turn_id` bajo diferentes diarization IDs; constraints impiden duplicados dentro de una revision.
+3. **Backfill/retry:** nuevo `backend/tests/diarization/test_reprocess_legacy.py` con fixtures sintéticas para objeto disponible, audio ausente/expirado, repetición de comando, redelivery, job completado no-op, fallo y retry misma revisión. Verificar que command no descarga ni invoca engine y no publica texto/nombres.
+4. **Worker/review:** ampliar `backend/tests/diarization/test_worker.py` y tests bajo `backend/tests/speaker_review/`: la generación nueva tiene UUIDs frescos, overlap positivo y review nueva pending en la misma transacción; revisión previa, disposition, excerpt y receipts quedan iguales y nunca se copian; fallo no cambia generación activa.
+5. **API:** `backend/tests/meetings/test_diarization_endpoint.py` cubre selección de última generación completada, status del intento actual, `processing_revision`, overlap nullable/positivo y auth intacta. Tests de speaker-review verifican que review activa usa la misma revisión y la anterior se conserva recuperable por `revision_id`.
+6. **Agrupador (Vitest):** `frontend/src/transcript-turns.test.ts` cubre `A,A,B,B,A`, cambios/repeticiones, IDs distintos con igual etiqueta, nulos/ausentes/cero, gaps/overlaps, texto vacío, timing inválido, order y no mutación.
+7. **Vista y playback:** `frontend/src/components/TranscriptView.test.tsx` fixtures garantizan que no mezcla revisión 1 y 2, revisión nueva muestra `Speaker N` hasta decisión humana, la review antigua no se expone en el ID nuevo, transcript permanece visible durante carga/fallo y `MeetingPlaybackView` recibe los mismos límites usados por highlight/seek.
+8. Desde `frontend/`, ejecutar `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/api.test.ts` y `npm run typecheck`; desde `backend/`, ejecutar `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_assignment_property.py tests/diarization/test_worker.py tests/diarization/test_reprocess_legacy.py tests/diarization/test_migration.py tests/meetings/test_diarization_endpoint.py tests/speaker_review`. Son comandos de validación futura, no resultados ya obtenidos.
