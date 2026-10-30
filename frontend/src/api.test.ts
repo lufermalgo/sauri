@@ -270,3 +270,27 @@ describe("meeting playback API adapter", () => {
     await expect(api.getTranscript("meeting-1")).rejects.not.toThrow(privateReference);
   });
 });
+
+describe("meeting list API adapter", () => {
+  it("maps the backend snake_case meeting payload into the shared UI type", async () => {
+    mockFetch([{
+      meeting_id: "fb02f350-0000-4000-8000-000000000001",
+      meet_link: null,
+      origin: "manual",
+      process_state: "completed",
+      failure_cause: null,
+      created_at: "2026-10-28T17:45:00Z",
+      title: "Synthetic processed meeting",
+    }]);
+
+    await expect(api.listMeetings()).resolves.toEqual([{
+      id: "fb02f350-0000-4000-8000-000000000001",
+      meetLink: null,
+      origin: "manual",
+      processState: "completed",
+      failureCause: null,
+      createdAt: "2026-10-28T17:45:00Z",
+      title: "Synthetic processed meeting",
+    }]);
+  });
+});

@@ -1,4 +1,10 @@
-import type { Meeting, Transcript, SpeechTurn } from "@sauri/shared-types";
+import type {
+  Meeting,
+  MeetingListApiResponse,
+  MeetingListItem,
+  Transcript,
+  SpeechTurn,
+} from "@sauri/shared-types";
 
 export interface PlaybackSource {
   source_id: string;
@@ -134,12 +140,21 @@ export async function registerMeeting(meetLink: string): Promise<Meeting> {
   return handleResponse<Meeting>(response);
 }
 
-export async function listMeetings(): Promise<Meeting[]> {
+export async function listMeetings(): Promise<MeetingListItem[]> {
   const response = await fetch(`${BASE_URL}/api/v1/meetings`, {
     method: "GET",
     headers: getAuthHeaders(),
   });
-  return handleResponse<Meeting[]>(response);
+  const meetings = await handleResponse<MeetingListApiResponse[]>(response);
+  return meetings.map((meeting) => ({
+    id: meeting.meeting_id,
+    meetLink: meeting.meet_link,
+    origin: meeting.origin,
+    processState: meeting.process_state,
+    failureCause: meeting.failure_cause,
+    createdAt: meeting.created_at,
+    title: meeting.title,
+  }));
 }
 
 export async function getPlaybackManifest(
