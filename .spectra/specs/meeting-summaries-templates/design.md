@@ -3,8 +3,8 @@
 Spec: `.spectra/specs/meeting-summaries-templates/`
 Requirements source: `requirements.md` @ commit `cdce9c34c566b72f42bb6db5eecdd76bdacb4532`
 (blob `12025987ad4ac44ac52a9acb5373ddf0f5f4520b`), Mira-APPROVED; PR #231 merged to main.
-Baseline source: `PRODUCT_BASELINE.md` @ commit `26d44ca7b212097c82415d0ae038bd9d096873d4`
-(blob `3afefd5e3da230cc3e26d7b89e74f48dc01d82ae`), owner-approved snapshot assigned by Ansel.
+Baseline source: `PRODUCT_BASELINE.md` @ commit `d738e78d65940f17d209edf9a54af5d34e92e059`
+(blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`), the owner-approved baseline snapshot.
 Owner decision: Fer, 2026-10-16 — templates are personal; users create multiple templates with
 specific instructions in Sauri web and configure their personal default there. That default is
 automatically applied across categories when a transcript summary is requested without an
@@ -639,7 +639,8 @@ export interface SummaryTemplate {
   ownerId: string;
   categoryId?: string;
   version: number;
-  // Instruction payload shape is deferred by the approved requirements (D12).
+  /** Opaque instruction string, returned unchanged for editing (D12). */
+  instructions: string;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -658,7 +659,8 @@ export interface TemplateCategory {
 
 **`api.ts`** additions (same `getAuthHeaders`/`handleResponse` pattern, verified in the
 existing file; every new function maps its snake_case response explicitly into the camelCase
-shared types, D13):
+shared types, D13). The template response mapper preserves the opaque `instructions` string
+unchanged in `SummaryTemplate`, so list/get results populate the edit form (R3.3, D12):
 
 ```typescript
 export async function getSummary(meetingId: string): Promise<MeetingSummary>;
@@ -961,17 +963,17 @@ cd backend && ruff check . && mypy .
 
 ## Scope Boundaries (explicit non-decisions)
 
-Restated for the auditor: this design does not select a summarization method or accuracy
-threshold (D1); define a template grammar or summary visual layout (D2, D12); broaden access
-control beyond the existing sales-user policy (P7); add retention periods or deletion guarantees
-beyond deleting a persisted summary with its transcript (R6); or define template/category
-deletion endpoints (D9). It does not adopt the baseline's imagined portal layout (D7), nor define
-what a request does when neither explicit template nor configured default exists; that case is
-gated pending product decision (D9). It adds no automatic transcript-commit generation, and
-no standalone regeneration endpoint. A later user request is a subsequent summary and resolves
-the then-current selection; historical summaries retain their recorded lineage. Category names
-are free text owned by the user; no taxonomy is invented. The download filename is the one
-concrete user-visible string fixed by this design (D11, P6).
+Restated for the auditor: this design selects local Ollama as the summarization provider per
+Fer's owner decision (D1/D14), but does not define an accuracy threshold (D1), template grammar
+or summary visual layout (D2, D12), broaden access control beyond the existing sales-user policy
+(P7), add retention periods or deletion guarantees beyond deleting a persisted summary with its
+transcript (R6), or define template/category deletion endpoints (D9). It does not adopt the
+baseline's imagined portal layout (D7), nor define what a request does when neither explicit
+template nor configured default exists; that case is gated pending product decision (D9). It adds
+no automatic transcript-commit generation, and no standalone regeneration endpoint. A later user
+request is a subsequent summary and resolves the then-current selection; historical summaries
+retain their recorded lineage. Category names are free text owned by the user; no taxonomy is
+invented. Download filename and serialization remain unspecified (D8, D11).
 
 ## Correcciones de auditoría — ronda 1 (sustituyen reglas incompatibles anteriores)
 
