@@ -157,7 +157,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-11: RED — Specify owner-safe upload idempotency and collision handling
 
-**Tracking:** Issue #562 · Card task_c989fff93daf41bf
+**Tracking:** Issue #562 · Card task_c989fff93daf41bf · PR #600 (done)
 
 **Files / test seam:** `backend/tests/ingestion/test_idempotency_property.py` and `backend/tests/ingestion/test_playback_source_ingestion.py`; ingestion preflight and `process_ingestion` in `backend/app/ingestion/router.py` and `service.py`.
 
