@@ -76,6 +76,58 @@ async def test_property_14_retries_same_key_do_not_duplicate_recording(
     assert len(result.scalars().all()) == 1
 
 
+@pytest.mark.asyncio
+async def test_same_owner_retry_for_existing_meeting_returns_original_recording(
+    db_session: AsyncSession,
+) -> None:
+    """A same-owner retry for an already owned meeting keeps the original recording."""
+    from app.infra.models import Meeting
+
+    owner_id = "synthetic-meeting-owner"
+    meeting_id = str(uuid.uuid4())
+    key = str(uuid.uuid4())
+    db_session.add(
+        Meeting(
+            id=meeting_id,
+            meet_link=None,
+            title="Synthetic owned meeting",
+            origin="manual",
+            process_state="recording",
+            created_by=owner_id,
+            created_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    data = _ingestion_data(meeting_id, key)
+    original, is_new = await process_ingestion(
+        db_session,
+        data,
+        audio_ref="private/original-audio",
+        video_ref=None,
+        created_by=owner_id,
+    )
+    await db_session.commit()
+
+    retry, retry_is_new = await process_ingestion(
+        db_session,
+        data,
+        audio_ref="private/retry-audio",
+        video_ref=None,
+        created_by=owner_id,
+    )
+    await db_session.commit()
+
+    assert is_new is True
+    assert retry_is_new is False
+    assert retry.id == original.id
+    assert retry.meeting_id == meeting_id
+    assert retry.audio_ref == "private/original-audio"
+    assert (await db_session.get(Meeting, meeting_id)).created_by == owner_id
+    recordings = (await db_session.execute(select(SessionRecording))).scalars().all()
+    assert [recording.id for recording in recordings] == [original.id]
+
+
 # ---------------------------------------------------------------------------
 # Task 9.4: auditable RecordingNotice record
 # Validates: Requirements 6.5
