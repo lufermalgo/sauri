@@ -21,7 +21,22 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.diarization.worker import start_worker
-from app.infra.models import Meeting
+from app.infra.models import Meeting, SessionRecording
+
+
+def _create_recording_for_meeting(meeting_id: str) -> SessionRecording:
+    return SessionRecording(
+        id=str(uuid.uuid4()),
+        meeting_id=meeting_id,
+        idempotency_key=str(uuid.uuid4()),
+        capture_origin="chrome_extension",
+        audio_ref="synthetic/recording.wav",
+        video_ref=None,
+        duration_seconds=12,
+        interrupted=False,
+        expires_at=None,
+        finished_at=datetime.now(UTC),
+    )
 
 # ---------------------------------------------------------------------------
 # Task 15.1 — Subscription to the "diarize" topic (Req 1.1)
@@ -81,6 +96,9 @@ class TestDiarizationMessagePublication:
                     created_at=datetime.now(UTC),
                 )
             )
+        recording = _create_recording_for_meeting(meeting_id)
+        async with session_factory() as session, session.begin():
+            session.add(recording)
 
         segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
         result = TranscriptionResult(segments=segments, language="es-CO", supports_turns=True)
@@ -91,7 +109,12 @@ class TestDiarizationMessagePublication:
         mock_queue = AsyncMock()
         mock_queue.publish = AsyncMock()
 
-        message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
+        message = {
+            "meeting_id": meeting_id,
+            "owner_id": "test-user",
+            "recording_id": recording.id,
+            "audio_ref": "audio/test.webm",
+        }
         with patch("app.transcription.worker.create_asr_engine", return_value=engine):
             await _process_transcription(message, session_factory, mock_queue)
 
@@ -100,7 +123,11 @@ class TestDiarizationMessagePublication:
             c for c in mock_queue.publish.call_args_list if c[0][0] == "diarize"
         ]
         assert len(diarize_publications) == 1
-        assert diarize_publications[0][0][1] == {"meeting_id": meeting_id}
+        assert diarize_publications[0][0][1] == {
+            "meeting_id": meeting_id,
+            "owner_id": "test-user",
+            "recording_id": recording.id,
+        }
 
     @pytest.mark.asyncio
     async def test_does_not_publish_if_there_is_no_transcript(
@@ -128,6 +155,9 @@ class TestDiarizationMessagePublication:
                     created_at=datetime.now(UTC),
                 )
             )
+        recording = _create_recording_for_meeting(meeting_id)
+        async with session_factory() as session, session.begin():
+            session.add(recording)
 
         result = TranscriptionResult(segments=[], language="es-CO", supports_turns=True)
         engine = AsyncMock()
@@ -137,7 +167,12 @@ class TestDiarizationMessagePublication:
         mock_queue = AsyncMock()
         mock_queue.publish = AsyncMock()
 
-        message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
+        message = {
+            "meeting_id": meeting_id,
+            "owner_id": "test-user",
+            "recording_id": recording.id,
+            "audio_ref": "audio/test.webm",
+        }
         with patch("app.transcription.worker.create_asr_engine", return_value=engine):
             await _process_transcription(message, session_factory, mock_queue)
 

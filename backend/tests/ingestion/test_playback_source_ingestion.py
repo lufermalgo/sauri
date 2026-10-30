@@ -247,3 +247,85 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
     assert error.value.detail == "Meeting not found"
     store.save.assert_not_awaited()
     process_ingestion_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_binds_transcription_job_to_authenticated_owner_and_recording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from app.auth.schemas import AuthenticatedUser
+    from app.infra.models import Meeting
+
+    meeting_id = "meeting-owned-synthetic"
+    owner_id = "owner-synthetic"
+    recording_id = "recording-synthetic"
+    meeting = Meeting(
+        id=meeting_id,
+        meet_link=None,
+        title=None,
+        origin="manual",
+        process_state="recording",
+        created_by=owner_id,
+        created_at=datetime.now(UTC),
+    )
+
+    class _SessionContext:
+        async def __aenter__(self) -> _SessionContext:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        def begin(self) -> _SessionContext:
+            return self
+
+    session = _SessionContext()
+    session.get = AsyncMock(return_value=meeting)  # type: ignore[attr-defined]
+    engine = Mock()
+    engine.dispose = AsyncMock()
+    store = Mock()
+    store.save = AsyncMock(return_value="synthetic/audio-object")
+    queue = Mock()
+    queue.connect = AsyncMock()
+    queue.publish = AsyncMock()
+    queue.disconnect = AsyncMock()
+    monkeypatch.setattr(router, "_get_object_store", Mock(return_value=store))
+    monkeypatch.setattr(router, "_get_queue", Mock(return_value=queue))
+    monkeypatch.setattr(router, "create_engine", Mock(return_value=engine))
+    monkeypatch.setattr(
+        router, "create_session_factory", Mock(return_value=Mock(return_value=session))
+    )
+    monkeypatch.setattr(router, "preflight_ingestion", AsyncMock(return_value=None))
+    process_ingestion = AsyncMock(
+        return_value=(SimpleNamespace(id=recording_id, process_state="recording"), True)
+    )
+    monkeypatch.setattr(router, "process_ingestion", process_ingestion)
+    monkeypatch.setattr(
+        router, "record_transition", AsyncMock(return_value=SimpleNamespace(successful=True))
+    )
+
+    result = await router.upload_recording(
+        audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic audio")),
+        video=None,
+        data=json.dumps(_payload(meeting_id=meeting_id, video_presence="absent")),
+        user=AuthenticatedUser(
+            id=owner_id,
+            email="owner@example.test",
+            name="Synthetic Owner",
+            is_sales=True,
+        ),
+    )
+
+    assert result["recording_id"] == recording_id
+    queue.publish.assert_awaited_once_with(
+        topic="transcribe",
+        message={
+            "meeting_id": meeting_id,
+            "owner_id": owner_id,
+            "recording_id": recording_id,
+            "audio_ref": "synthetic/audio-object",
+        },
+    )

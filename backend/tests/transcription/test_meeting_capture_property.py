@@ -103,7 +103,8 @@ async def test_property_7_temporal_invariant_of_persisted_turns(
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(_create_recording_meeting(meeting_id))
-        session.add(_create_recording(meeting_id))
+        recording = _create_recording(meeting_id)
+        session.add(recording)
 
     mock_engine = AsyncMock()
     mock_engine.transcribe.return_value = TranscriptionResult(
@@ -113,7 +114,12 @@ async def test_property_7_temporal_invariant_of_persisted_turns(
         return_value=ASRCapabilities(supports_turns=True, is_local=True)
     )
 
-    message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
+    message = {
+        "meeting_id": meeting_id,
+        "owner_id": "test-user",
+        "recording_id": recording.id,
+        "audio_ref": "audio/test.webm",
+    }
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
         await _process_transcription(message, session_factory)
 
@@ -166,7 +172,8 @@ async def test_property_8_options_fix_es_co_and_transcript_records_es_co(
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(_create_recording_meeting(meeting_id))
-        session.add(_create_recording(meeting_id))
+        recording = _create_recording(meeting_id)
+        session.add(recording)
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=500)]
     mock_engine = AsyncMock()
@@ -179,7 +186,12 @@ async def test_property_8_options_fix_es_co_and_transcript_records_es_co(
         return_value=ASRCapabilities(supports_turns=True, is_local=True)
     )
 
-    message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
+    message = {
+        "meeting_id": meeting_id,
+        "owner_id": "test-user",
+        "recording_id": recording.id,
+        "audio_ref": "audio/test.webm",
+    }
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
         await _process_transcription(message, session_factory)
 
@@ -247,13 +259,19 @@ async def test_property_9_asr_engine_interchangeability(
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(_create_recording_meeting(meeting_id))
-        session.add(_create_recording(meeting_id))
+        recording = _create_recording(meeting_id)
+        session.add(recording)
 
     engine: ASREngine = (
         _ConformantASREngineWithTurns() if engine_with_turns else _ConformantASREngineWithoutTurns()
     )
 
-    message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
+    message = {
+        "meeting_id": meeting_id,
+        "owner_id": "test-user",
+        "recording_id": recording.id,
+        "audio_ref": "audio/test.webm",
+    }
     with patch("app.transcription.worker.create_asr_engine", return_value=engine):
         await _process_transcription(message, session_factory)
 
