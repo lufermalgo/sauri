@@ -272,6 +272,22 @@ describe("meeting playback API adapter", () => {
 });
 
 describe("meeting list API adapter", () => {
+  it("clears the stored token when a protected request returns 401", async () => {
+    const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);
+    const removeItem = vi.fn();
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn().mockReturnValue("synthetic-token"),
+      setItem: vi.fn(),
+      removeItem,
+    });
+
+    await expect(api.listMeetings()).rejects.toThrow("Error 401");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledWith("sauri_token");
+  });
+
   it("maps the backend snake_case meeting payload into the shared UI type", async () => {
     mockFetch([{
       meeting_id: "fb02f350-0000-4000-8000-000000000001",
