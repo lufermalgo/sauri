@@ -86,7 +86,7 @@ Material Symbols Outlined. Los nombres exactos están en los `.txt` (por ejemplo
 - Búsqueda global ("Buscar grabaciones…", atajo ⌘K).
 - Indicador "Sincronizado".
 - Botón **Subir grabación**.
-- Menú de usuario: nombre ("Fer (Summan)"), rol, **Diagnóstico**, **Cerrar sesión**.
+- El menú mock de usuario muestra nombre, rol, **Diagnóstico** y **Cerrar sesión**. Son elementos ilustrativos no vinculantes: diagnóstico está expresamente excluido mientras su gobernanza esté pendiente; la experiencia de autenticación/cierre de sesión sigue sin decisión.
 
 **Pie:** derechos de autor y enlaces Privacidad y Ética, Documentación y Soporte.
 
@@ -118,7 +118,7 @@ La autenticación, el inicio de sesión, la recuperación de credenciales, las s
 - Insignias "SSO Enterprise", "AUDIO AI ENGINE v2.4" y "Cluster Activo".
 - Textos de cifrado y "Zero-Trust".
 - Botón "Simular error" (es de maqueta).
-- Indicador "Diagnóstico de red / Conectando…" (opcional, ver sección 7).
+- Diagnóstico de red/estado de conexión y cualquier control de diagnóstico: excluidos; la captura es solo mock y cualquier instrumentación requiere una decisión de privacidad y gobernanza.
 
 ## 4. Biblioteca de grabaciones (`biblioteca`)
 
@@ -146,7 +146,7 @@ La autenticación, el inicio de sesión, la recuperación de credenciales, las s
 - **Insignia de estado:**
   - **Lista:** botón "Abrir reunión", descargar, copiar y menú "más".
   - **Identificando hablantes** (voces pendientes): aviso "2 voces pendientes" y botón "Revisar hablantes".
-  - **Transcribiendo:** barra de avance con porcentaje y botón "Ver diagnóstico en vivo".
+  - **Transcribiendo:** la maqueta muestra una barra de avance y un botón de diagnóstico en vivo. El control/diagnóstico está excluido hasta que se apruebe su manejo de privacidad y gobernanza; la maqueta no autoriza implementarlo.
   - **Con error:** motivo en lenguaje claro, nota de que no se perdió el archivo original y botón "Reintentar procesamiento".
 
 **Paginación:** "Mostrando 1 – 5 de 42 grabaciones registradas", con Anterior, números y Siguiente.
@@ -185,7 +185,7 @@ Esta pantalla no estaba en el primer mock. Se generó después en Stitch con el 
 - **Subiendo:** barra de progreso con porcentaje, "MB de MB", velocidad y tiempo restante, aviso de que puede mantener la pestaña abierta, y botón **Cancelar subida**.
 - **Línea de pasos:** Subida, Transcripción, Hablantes, Resumen, cada uno Pendiente, En curso, Listo o Con error, con una frase corta del paso actual.
 - **Terminado:** "Tu reunión está lista", resumen corto de qué se generó y botón primario **Abrir reunión**. Se abre sola la reunión al terminar.
-- **Error:** "No pudimos completar el procesamiento", motivo en lenguaje simple, "No se perdió tu archivo", botones **Reintentar** y **Copiar diagnóstico**. El código técnico va en el diagnóstico copiado y no se impone al usuario.
+- **Error:** el mock muestra un mensaje y acciones de reintento y copia de diagnóstico. La copia de diagnóstico, su contenido/códigos y cualquier garantía sobre ellos están excluidos mientras no haya una decisión aprobada de privacidad/gobernanza.
 
 **Fuera de la línea base (no construir):**
 - "Procesamiento seguro y privado" como insignia.
@@ -198,7 +198,7 @@ Esta pantalla no estaba en el primer mock. Se generó después en Stitch con el 
 
 **Cabecera:**
 - ID de la grabación, fecha, duración y plantilla usada.
-- Acciones: **Copiar diagnóstico**, **Descargar video**, **Descargar transcripción**, **Eliminar**.
+- Acciones que aparecen en el mock: descargar video, descargar transcripción y eliminar. **Copiar diagnóstico** también aparece en el mock, pero queda expresamente excluido hasta una decisión aprobada de privacidad/gobernanza.
 - Título editable en línea, con lápiz.
 - Metadatos editables: **Empresa**, **Proyecto**, **Participantes**, **Etiquetas** (con botón "+" para agregar).
 
@@ -236,7 +236,7 @@ Esta pantalla no estaba en el primer mock. Se generó después en Stitch con el 
 - **Chat con la grabación:** pestaña visible, marcada "Fase 2 – Próximamente". No funciona.
 
 **Ventanas emergentes:**
-- **Diagnóstico copiado:** confirma que el diagnóstico se copió al portapapeles. Botón "Entendido".
+- **Confirmación de diagnóstico copiado:** aparece solo en el mock y no se autoriza; no implementar controles, copia ni confirmaciones de diagnóstico sin decisión aprobada de privacidad/gobernanza.
 - **¿Eliminar grabación?:** "Esta acción eliminará permanentemente el video, la transcripción completa… No se puede deshacer." Botones "Cancelar" y "Sí, eliminar".
 
 **Estados que se deben implementar:**
@@ -246,7 +246,7 @@ Esta pantalla no estaba en el primer mock. Se generó después en Stitch con el 
 
 ## 6. Revisión de hablantes (`hablantes`)
 
-**Cabecera:** título "Revisión y Asignación de Hablantes", explicación, y botón "Copiar diagnóstico JSON".
+**Cabecera:** la captura incluye título y explicación; también muestra un botón "Copiar diagnóstico JSON" que es mock-only y queda excluido hasta una decisión aprobada de privacidad/gobernanza.
 
 **Banner "Revisión Obligatoria":** "Esta reunión contiene voces pendientes de asignación" y el contador de pendientes.
 
