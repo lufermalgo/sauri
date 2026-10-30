@@ -169,7 +169,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-12: GREEN — Implement owner-safe ingestion retries and linkless creation
 
-**Tracking:** Issue #563 · Card task_7bde75fa77f34e37
+**Tracking:** Issue #563 · Card task_7bde75fa77f34e37 · PR #601 (done)
 
 **Files:** `backend/app/ingestion/router.py`, `backend/app/ingestion/service.py`, existing ingestion schema and `backend/tests/ingestion/`.
 
