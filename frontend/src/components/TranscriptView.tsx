@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
-import type { Transcript, SpeechTurn } from "@sauri/shared-types";
 import {
+  getDiarization,
+  getPlaybackManifest,
   getSpeakerReview,
   getTranscript,
   playSpeakerExcerpt,
   submitSpeakerDisposition,
 } from "../api";
-import type { SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
+import type { MeetingDiarization, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
+import { MeetingPlaybackView } from "./MeetingPlaybackView";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -20,8 +22,21 @@ function formatTimestamp(ms: number): string {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
+const SPEAKER_COLORS = ["#1d4ed8", "#b45309", "#047857", "#7e22ce", "#be123c", "#0e7490"];
+const UNRESOLVED_SPEAKER_COLOR = "#6b7280";
+
+function speakerColor(diarization: MeetingDiarization | null, speakerId: string | undefined): string {
+  const sequence = diarization?.speakers.find((speaker) => speaker.id === speakerId)?.sequence;
+  if (sequence === undefined) return UNRESOLVED_SPEAKER_COLOR;
+  return SPEAKER_COLORS[(Math.max(1, sequence) - 1) % SPEAKER_COLORS.length];
+}
+
 export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
-  const [data, setData] = useState<(Transcript & { turns: SpeechTurn[] }) | null>(null);
+  const [data, setData] = useState<MeetingTranscript | null>(null);
+  const [playbackManifest, setPlaybackManifest] = useState<PlaybackManifest | null>(null);
+  const [diarization, setDiarization] = useState<MeetingDiarization | null>(null);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [playbackLoading, setPlaybackLoading] = useState(true);
   const [review, setReview] = useState<SpeakerReview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -32,6 +47,10 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setPlaybackLoading(true);
+    setPlaybackManifest(null);
+    setDiarization(null);
+    setPlaybackError(null);
     setError(null);
     setReviewError(null);
     setReview(null);
@@ -45,6 +64,25 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+
+    getDiarization(meetingId)
+      .then((result) => {
+        if (!cancelled) setDiarization(result);
+      })
+      .catch(() => {
+        if (!cancelled) setDiarization(null);
+      });
+
+    getPlaybackManifest(meetingId)
+      .then((result) => {
+        if (!cancelled) setPlaybackManifest(result);
+      })
+      .catch((err) => {
+        if (!cancelled) setPlaybackError(err instanceof Error ? err.message : "Failed to load playback manifest");
+      })
+      .finally(() => {
+        if (!cancelled) setPlaybackLoading(false);
       });
 
     Promise.resolve()
@@ -106,9 +144,31 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   if (error) return <p role="alert" style={{ color: "red" }}>{error}</p>;
   if (!data) return <p>Transcript not found.</p>;
 
+  function speakerPresentation(turnId: string) {
+    const speakerId = diarization?.assignments.find((assignment) => assignment.turn_id === turnId)?.speaker_id;
+    const speaker = diarization?.speakers.find((candidate) => candidate.id === speakerId);
+    const reviewedLabel = review?.items.find((item) => item.speakerId === speakerId)?.currentLabel.trim();
+    return {
+      label: reviewedLabel || speaker?.label || "Speaker N",
+      color: speakerColor(diarization, speakerId),
+    };
+  }
+
+  const playbackPassages = data.segments.map((passage) => {
+    const speaker = speakerPresentation(passage.id);
+    return { ...passage, speakerLabel: speaker.label, speakerColor: speaker.color };
+  });
+
   return (
     <section>
       <button onClick={onBack}>← Back to list</button>
+      <MeetingPlaybackView
+        manifest={playbackManifest}
+        passages={playbackPassages}
+        loading={playbackLoading}
+        error={playbackError}
+        onRefreshManifest={() => getPlaybackManifest(meetingId)}
+      />
       <h2>Transcript</h2>
       <p>
         Language: {data.language} | Provider: {data.provider} |
@@ -118,14 +178,23 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         <p>No transcript segments.</p>
       ) : (
         <ol>
-          {data.turns.map((turn) => (
-            <li key={turn.id}>
-              <span style={{ color: "#6b7280", marginRight: "0.5rem" }}>
-                [{formatTimestamp(turn.startMs)} – {formatTimestamp(turn.endMs)}]
-              </span>
-              {turn.text}
-            </li>
-          ))}
+          {data.turns.map((turn) => {
+            const speaker = speakerPresentation(turn.id);
+            return (
+              <li key={turn.id}>
+                <span style={{ color: "#6b7280", marginRight: "0.5rem" }}>
+                  [{formatTimestamp(turn.startMs)} – {formatTimestamp(turn.endMs)}]
+                </span>
+                <span
+                  data-testid="transcript-speaker-label"
+                  style={{ color: speaker.color, fontWeight: 600, marginRight: "0.5rem" }}
+                >
+                  {speaker.label}
+                </span>
+                {turn.text}
+              </li>
+            );
+          })}
         </ol>
       )}
       {reviewError && <p role="alert" style={{ color: "red" }}>{reviewError}</p>}

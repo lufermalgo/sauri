@@ -58,6 +58,11 @@ export type MeetingTranscript = Transcript & {
   turns: SpeechTurn[];
 };
 
+export interface MeetingDiarization {
+  speakers: Array<{ id: string; label: string; sequence: number }>;
+  assignments: Array<{ turn_id: string; speaker_id: string }>;
+}
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const TOKEN_KEY = "sauri_token";
 
@@ -222,6 +227,14 @@ export async function getTranscript(meetingId: string): Promise<MeetingTranscrip
     segments,
     turns,
   };
+}
+
+export async function getDiarization(meetingId: string): Promise<MeetingDiarization> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/diarization`,
+    { method: "GET", headers: getAuthHeaders() }
+  );
+  return handleResponse<MeetingDiarization>(response);
 }
 
 export interface SpeakerReviewItem {
