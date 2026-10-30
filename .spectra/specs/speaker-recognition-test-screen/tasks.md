@@ -31,7 +31,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-2: GREEN — Implement the authenticated upload adapter and browser duration handling
 
-**Tracking:** Issue #553 · Card task_6dc1779dfd874fed
+**Tracking:** Issue #553 · Card task_6dc1779dfd874fed · PR #570
 
 **Files:** `frontend/src/api.ts`, `frontend/src/api.test.ts`, `frontend/src/components/SpeakerRecognitionTestScreen.tsx`.
 
