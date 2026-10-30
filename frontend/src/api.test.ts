@@ -6,6 +6,13 @@ const manifestMethod = api as typeof api & {
   getPlaybackManifest?: (meetingId: string) => Promise<PlaybackManifest>;
 };
 
+const diarizationMethod = api as typeof api & {
+  getDiarization?: (meetingId: string) => Promise<{
+    speakers: Array<{ id: string; label: string; sequence: number }>;
+    assignments: Array<{ turn_id: string; speaker_id: string }>;
+  }>;
+};
+
 interface PlaybackSource {
   source_id: string;
   url: string;
@@ -40,6 +47,7 @@ function mockFetch(body: unknown, status = 200) {
   vi.stubGlobal("localStorage", {
     getItem: vi.fn().mockReturnValue("synthetic-token"),
     setItem: vi.fn(),
+    removeItem: vi.fn(),
     clear: vi.fn(),
   });
   return fetchMock;
@@ -170,6 +178,24 @@ describe("login API adapter", () => {
   });
 });
 
+describe("speaker diarization API adapter", () => {
+  it("returns persisted turn-to-speaker assignments for the authenticated meeting", async () => {
+    expect(typeof diarizationMethod.getDiarization).toBe("function");
+    const fixture = {
+      speakers: [{ id: "speaker-synthetic", label: "Speaker 1", sequence: 1 }],
+      assignments: [{ turn_id: "turn-synthetic", speaker_id: "speaker-synthetic" }],
+    };
+    const fetchMock = mockFetch(fixture);
+
+    await expect(diarizationMethod.getDiarization!("meeting / synthetic")).resolves.toEqual(fixture);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/meetings/meeting%20%2F%20synthetic/diarization"),
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }),
+    );
+  });
+});
+
 describe("meeting playback API adapter", () => {
   it("returns the typed manifest modes and authoritative source metadata without inference", async () => {
     expect(typeof manifestMethod.getPlaybackManifest).toBe("function");
@@ -268,5 +294,45 @@ describe("meeting playback API adapter", () => {
 
     await expect(api.getTranscript("meeting-1")).rejects.toThrow();
     await expect(api.getTranscript("meeting-1")).rejects.not.toThrow(privateReference);
+  });
+});
+
+describe("meeting list API adapter", () => {
+  it("clears the stored token when a protected request returns 401", async () => {
+    const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);
+    const removeItem = vi.fn();
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn().mockReturnValue("synthetic-token"),
+      setItem: vi.fn(),
+      removeItem,
+    });
+
+    await expect(api.listMeetings()).rejects.toThrow("Error 401");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledWith("sauri_token");
+  });
+
+  it("maps the backend snake_case meeting payload into the shared UI type", async () => {
+    mockFetch([{
+      meeting_id: "fb02f350-0000-4000-8000-000000000001",
+      meet_link: null,
+      origin: "manual",
+      process_state: "completed",
+      failure_cause: null,
+      created_at: "2026-10-28T17:45:00Z",
+      title: "Synthetic processed meeting",
+    }]);
+
+    await expect(api.listMeetings()).resolves.toEqual([{
+      id: "fb02f350-0000-4000-8000-000000000001",
+      meetLink: null,
+      origin: "manual",
+      processState: "completed",
+      failureCause: null,
+      createdAt: "2026-10-28T17:45:00Z",
+      title: "Synthetic processed meeting",
+    }]);
   });
 });

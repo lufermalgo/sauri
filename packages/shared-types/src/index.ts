@@ -40,6 +40,28 @@ export enum CaptureOrigin {
 
 // --- Interfaces ---
 
+/** Raw meeting-list record returned by GET /api/v1/meetings. */
+export interface MeetingListApiResponse {
+  meeting_id: string;
+  meet_link: string | null;
+  origin: MeetingOrigin;
+  process_state: ProcessState;
+  failure_cause: FailureCause | null;
+  created_at: string | null;
+  title: string;
+}
+
+/** Meeting-list record normalized for frontend presentation and selection. */
+export interface MeetingListItem {
+  id: string;
+  meetLink: string | null;
+  origin: MeetingOrigin;
+  processState: ProcessState;
+  failureCause: FailureCause | null;
+  createdAt: string | null;
+  title: string;
+}
+
 /** Record of a Google Meet meeting in sauri. */
 export interface Meeting {
   id: string;

@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import type { Meeting } from "@sauri/shared-types";
+import React, { useEffect, useState } from "react";
+import type { MeetingListItem } from "@sauri/shared-types";
 import { RegisterForm } from "./components/RegisterForm";
 import { MeetingList } from "./components/MeetingList";
 import { TranscriptView } from "./components/TranscriptView";
@@ -11,26 +11,50 @@ type View = { type: "list" } | { type: "transcript"; meetingId: string } | { typ
 export function App() {
   const [view, setView] = useState<View>({ type: "list" });
   const [refreshKey, setRefreshKey] = useState(0);
-  const [speakerTestAuthenticated, setSpeakerTestAuthenticated] = useState(
+  const [authenticated, setAuthenticated] = useState(
     () => Boolean(localStorage.getItem("sauri_token"))
   );
 
+  useEffect(() => {
+    function handleUnauthorized() {
+      setAuthenticated(false);
+      setView({ type: "list" });
+    }
+
+    window.addEventListener("sauri:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("sauri:unauthorized", handleUnauthorized);
+  }, []);
+
   function handleRegistered() {
-    setRefreshKey((k) => k + 1);
+    setRefreshKey((key) => key + 1);
   }
 
-  function handleSelectMeeting(meeting: Meeting) {
+  function handleSelectMeeting(meeting: MeetingListItem) {
     setView({ type: "transcript", meetingId: meeting.id });
   }
 
-  function handleBack() {
+  function handleLogout() {
+    localStorage.removeItem("sauri_token");
+    setAuthenticated(false);
     setView({ type: "list" });
+  }
+
+  if (!authenticated) {
+    return (
+      <main style={{ maxWidth: "800px", margin: "0 auto", padding: "1rem" }}>
+        <h1>sauri</h1>
+        <p>Commercial meeting intelligence platform</p>
+        <hr />
+        <SpeakerTestLogin onLogin={() => setAuthenticated(true)} />
+      </main>
+    );
   }
 
   return (
     <main style={{ maxWidth: "800px", margin: "0 auto", padding: "1rem" }}>
       <h1>sauri</h1>
       <p>Commercial meeting intelligence platform</p>
+      <button type="button" onClick={handleLogout}>Log out</button>
       <hr />
 
       {view.type === "list" && (
@@ -47,28 +71,18 @@ export function App() {
       )}
 
       {view.type === "transcript" && (
-        <TranscriptView meetingId={view.meetingId} onBack={handleBack} />
+        <TranscriptView
+          meetingId={view.meetingId}
+          onBack={() => setView({ type: "list" })}
+        />
       )}
 
       {view.type === "speaker-test" && (
         <>
-          <button type="button" onClick={handleBack}>Back to meetings</button>
-          {speakerTestAuthenticated ? (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  localStorage.removeItem("sauri_token");
-                  setSpeakerTestAuthenticated(false);
-                }}
-              >
-                Log out
-              </button>
-              <SpeakerRecognitionTestScreen />
-            </>
-          ) : (
-            <SpeakerTestLogin onLogin={() => setSpeakerTestAuthenticated(true)} />
-          )}
+          <button type="button" onClick={() => setView({ type: "list" })}>
+            Back to meetings
+          </button>
+          <SpeakerRecognitionTestScreen />
         </>
       )}
     </main>

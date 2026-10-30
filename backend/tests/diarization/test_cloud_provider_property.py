@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import os
 import string
-from unittest.mock import patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -104,8 +106,6 @@ def test_property_3_rejects_unencrypted_endpoint(endpoint: str, api_key: str) ->
 # end_ms <= D, and raw_label is non-empty.
 # ---------------------------------------------------------------------------
 
-from unittest.mock import AsyncMock, MagicMock
-
 # ---------------------------------------------------------------------------
 # Generation strategies for Property 5
 # ---------------------------------------------------------------------------
@@ -122,7 +122,9 @@ _raw_label_strategy = st.text(
 
 
 @st.composite
-def _valid_segment_for_duration(draw, duration_ms: int):
+def _valid_segment_for_duration(
+    draw: Any, duration_ms: int
+) -> dict[str, int | str]:
     """Generates a valid segment respecting the duration_ms constraints."""
     speaker = draw(_raw_label_strategy)
     start_ms = draw(st.integers(min_value=0, max_value=max(0, duration_ms - 1)))
@@ -131,7 +133,9 @@ def _valid_segment_for_duration(draw, duration_ms: int):
 
 
 @st.composite
-def _cloud_response_with_valid_segments(draw):
+def _cloud_response_with_valid_segments(
+    draw: Any,
+) -> tuple[int, list[dict[str, int | str]]]:
     """Generates a duration_ms and valid segments from the external service."""
     duration = draw(_duration_ms_strategy)
     num_segments = draw(st.integers(min_value=1, max_value=20))
@@ -146,7 +150,9 @@ def _cloud_response_with_valid_segments(draw):
 
 @settings(max_examples=100)
 @given(data=_cloud_response_with_valid_segments())
-async def test_property_5_speaker_segment_validity(data) -> None:
+async def test_property_5_speaker_segment_validity(
+    data: tuple[int, list[dict[str, int | str]]],
+) -> None:
     """Property 5: Validity of the result's SpeakerSegments.
 
     Validates: Requirements 4.5, 5.2, 5.3, 5.4
@@ -236,10 +242,8 @@ async def test_property_5_speaker_segment_validity(data) -> None:
 # Validates: Requirements 4.4, 4.6
 # ---------------------------------------------------------------------------
 
-import httpx
 
-
-def test_example_missing_api_key_raises_valueerror():
+def test_example_missing_api_key_raises_valueerror() -> None:
     """Req 4.4: Missing DIARIZATION_CLOUD_API_KEY -> ValueError."""
     env = {
         "DIARIZATION_CLOUD_ENDPOINT": "https://api.example.com/diarize",
@@ -252,7 +256,7 @@ def test_example_missing_api_key_raises_valueerror():
             CloudProvider()
 
 
-def test_example_empty_api_key_raises_valueerror():
+def test_example_empty_api_key_raises_valueerror() -> None:
     """Req 4.4: Empty DIARIZATION_CLOUD_API_KEY -> ValueError."""
     env = {
         "DIARIZATION_CLOUD_ENDPOINT": "https://api.example.com/diarize",
@@ -266,14 +270,14 @@ def test_example_empty_api_key_raises_valueerror():
 
 
 @pytest.mark.asyncio
-async def test_example_120s_timeout_raises_external_service_error():
+async def test_example_120s_timeout_raises_external_service_error() -> None:
     """Req 4.6: 120s timeout -> ExternalServiceError, preserving the audio."""
     env = {
         "DIARIZATION_CLOUD_ENDPOINT": "https://api.example.com/diarize",
         "DIARIZATION_CLOUD_API_KEY": "test-key-123",
     }
     with patch.dict(os.environ, env, clear=False):
-        from app.diarization.cloud_provider import ExternalServiceError, CloudProvider
+        from app.diarization.cloud_provider import CloudProvider, ExternalServiceError
         from app.diarization.diarization_engine import DiarizationOptions
 
         provider = CloudProvider()
@@ -292,14 +296,14 @@ async def test_example_120s_timeout_raises_external_service_error():
 
 
 @pytest.mark.asyncio
-async def test_example_http_error_raises_external_service_error():
+async def test_example_http_error_raises_external_service_error() -> None:
     """Req 4.6: HTTP error from the external service -> ExternalServiceError."""
     env = {
         "DIARIZATION_CLOUD_ENDPOINT": "https://api.example.com/diarize",
         "DIARIZATION_CLOUD_API_KEY": "test-key-123",
     }
     with patch.dict(os.environ, env, clear=False):
-        from app.diarization.cloud_provider import ExternalServiceError, CloudProvider
+        from app.diarization.cloud_provider import CloudProvider, ExternalServiceError
         from app.diarization.diarization_engine import DiarizationOptions
 
         provider = CloudProvider()
@@ -326,7 +330,7 @@ async def test_example_http_error_raises_external_service_error():
 
 
 @pytest.mark.asyncio
-async def test_example_response_without_valid_segments_returns_empty():
+async def test_example_response_without_valid_segments_returns_empty() -> None:
     """Req 4.6: Response with no valid segments -> DiarizationResult with zero segments."""
     env = {
         "DIARIZATION_CLOUD_ENDPOINT": "https://api.example.com/diarize",
