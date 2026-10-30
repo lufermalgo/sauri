@@ -30,7 +30,9 @@ def queue_signing_key(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _signed_headers(topic: str, body: bytes, retries: int | None = None) -> dict[str, Any]:
-    headers: dict[str, Any] = {"x-sauri-signature": _message_signature(topic, body)}
+    headers: dict[str, Any] = {
+        "x-sauri-signature": _message_signature(topic, body, retries or 0)
+    }
     if retries is not None:
         headers["x-sauri-retries"] = retries
     return headers
@@ -157,6 +159,14 @@ class TestRabbitMQJobQueueBehavior:
         assert not _has_valid_signature(
             "transcribe", published.body + b"tampered", published.headers
         )
+
+    def test_retry_counter_is_authenticated_by_signature(self) -> None:
+        body = json.dumps({"meeting_id": "synthetic-meeting"}).encode()
+        headers = _signed_headers("transcribe", body, retries=0)
+        assert _has_valid_signature("transcribe", body, headers)
+
+        headers["x-sauri-retries"] = 3
+        assert not _has_valid_signature("transcribe", body, headers)
 
     @pytest.mark.asyncio
     async def test_rejects_signature_when_topic_differs(self) -> None:
@@ -338,6 +348,9 @@ class TestRabbitMQJobQueueBehavior:
         published_message, kwargs = queue._channel.default_exchange.publish.call_args
         assert kwargs["routing_key"] == "transcribe"
         assert published_message[0].headers["x-sauri-retries"] == 2
+        assert _has_valid_signature(
+            "transcribe", published_message[0].body, published_message[0].headers
+        )
 
     @pytest.mark.asyncio
     async def test_dlx_configured_in_queue_arguments(self) -> None:
