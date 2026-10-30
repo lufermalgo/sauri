@@ -1,0 +1,12 @@
+{
+  "specId": "4d6b9a1e-5f7c-4e52-a113-8e370b29c604",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-10-30",
+  "idea": "Specify the authorized Chrome recording completion flow: stopping capture or closing the captured Meet/Teams tab finalizes audio and video, automatically uploads and processes the same recording, and opens one authenticated Sauri tab with its video and transcript.",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "pending"
+  }
+}
