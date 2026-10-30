@@ -205,7 +205,7 @@ Specs live in `.spectra/specs/[slug]/` with `.config.spectra` (`specType`: featu
 | Zoya | PM | requirements/bugfix, `tasks.md`, GitHub issues |
 | Brisa | Architect | `design.md` |
 | Mira | Spec auditor | verdict `APPROVED` / `REVISE` / `NEEDS USER INPUT` per artifact snapshot |
-| Imre | Developer | one issue per worktree, RED → GREEN → REFACTOR, PR |
+| Imre / Ilan | Developer | one issue per worktree, RED → GREEN → REFACTOR, PR |
 | Nia | QA | `PASS` / `FAIL` / `BLOCKED` on an exact commit |
 | Zev | Security | `NO_ACTIONABLE_FINDINGS` / `FINDINGS` / `BLOCKED` on an exact commit |
 
@@ -515,7 +515,7 @@ Each approved product module maps to a Spectra spec and a GitHub milestone:
 | Property test task | Issue, labels `task`, `test`, `pbt` |
 | Bug found during execution | Issue, label `bug` |
 
-* Only after Mira approves the exact `tasks.md`, Zoya creates, for every required task, one issue in the milestone and one board card (one task = one issue = one card) and records `Issue #n · Card task_x` in `tasks.md`; Imre adds the PR number when he opens the PR after QA (and security) pass and closes the card. Tests are never optional and never labeled `optional`.
+* Only after Mira approves the exact `tasks.md`, Zoya creates, for every required task, one issue in the milestone and one board card (one task = one issue = one card) and records `Issue #n · Card task_x` in `tasks.md`; the implementer adds the PR number when opening the PR after QA (and security) pass and closes the card. Tests are never optional and never labeled `optional`.
 * Every approved spec artifact and every implemented issue ends in its own PR by its author; a security finding that needs a spec change or separate code gets its own `security` issue, card and PR. Local and remote must stay in step: push before hand-offs, rebase on `origin/main`, and fast-forward `main` and remove the worktree after a human merge.
 * Each issue is implemented in its own worktree and PR (`Closes #id`); the milestone closes when all its issues are closed, no open `bug` blocks acceptance, property tests pass with ≥100 examples, and user-visible work has `PRODUCT_ACCEPTED`.
 * Test tasks are required, sequenced before their implementation (`test (red)` → `implementation (green)`). If test infrastructure is missing, the first task sets it up; tests blocked by external limits are documented as blocked, not skipped.

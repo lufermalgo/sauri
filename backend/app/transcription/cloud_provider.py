@@ -92,11 +92,11 @@ class CloudProvider(ASREngine):
                 )
                 response.raise_for_status()
                 data = response.json()
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
             raise ExternalServiceError(
                 "The external ASR service did not respond within the "
                 "30 second timeout"
-            )
+            ) from exc
         except httpx.HTTPStatusError as exc:
             raise ExternalServiceError(
                 f"The external ASR service responded with an error: "
