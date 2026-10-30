@@ -16,7 +16,7 @@ El defecto llega al portal porque cada segmento del resultado ASR se persiste y 
 
 **La continuidad depende de secuencia y de identidad dentro de una generación.** Se combinan únicamente elementos adyacentes en `sequence` con el mismo `speaker_id` no vacío y asignación positiva en esa generación. Una fila intermedia de otra persona o sin evidencia rompe la corrida. No se agrupan apariciones no consecutivas ni por etiqueta visible. *Alternativas descartadas:* agrupar cualquier aparición del mismo speaker borraría límites A-B-A; comparar etiquetas permitiría que nombres editables o `Speaker N` iguales mezclen IDs distintos; usar duración de silencio inventaría un umbral no aprobado.
 
-**Los tiempos del pasaje son los extremos de sus filas fuente.** El pasaje compuesto empieza en el `start_ms` de la primera fila y termina en el `end_ms` de la última; las relaciones de tiempo entre grupos, incluidas brechas y solapamientos, se conservan. Las filas fuente, sus textos y sus marcas temporales no se editan. Los huecos internos quedan dentro del intervalo compuesto, sin reescritura de datos fuente. *Alternativas descartadas:* ajustar segmentos para forzar continuidad o guardar subintervalos de playback ampliaría el contrato sin respaldo en los requisitos.
+**La presentación agrupada no crea un intervalo temporal compuesto.** Una fila visible puede reunir el texto de una corrida consecutiva del mismo speaker, pero conserva todos sus subintervalos fuente y no recibe un `end_ms` exterior. `MeetingPlaybackView` recibe intervalos de playback uno a uno, idénticos a cada `SpeechTurn` temporizado; la fila se resalta solo cuando el reloj cae dentro de uno de ellos, queda sin resaltar en una brecha y al activar la fila inicia en el `start_ms` del primer segmento. Así se conservan gaps y overlaps sin ensanchar, desplazar ni fabricar límites. *Alternativas descartadas:* representar la fila como `[primer start_ms, último end_ms]` cerraría brechas; cambiar las duraciones fuente o crear silencios artificiales alteraría la relación con el medio.
 
 **Versionar diarización, no regenerar el transcript.** Una re-ejecución histórica usa las filas `SpeechTurn` y su transcripción existentes como entrada de asignación, y solicita una diarización nueva del mismo `audio_ref`; no vuelve a ejecutar ASR. Cada generación tiene `processing_revision`, su propio `Diarization.id`, `Speaker.id` y `SpeakerAssignment` por fila fuente. La migración marca las diarizaciones existentes `is_legacy=true`; workers nuevos escriben `is_legacy=false`. Las filas de una revisión no se actualizan ni eliminan al crear otra. *Alternativas descartadas:* reemplazar la diarización en sitio destruiría trazabilidad y podría borrar las referencias de revisión; re-ejecutar ASR alteraría texto/tiempos fuera del defecto investigado; mutar IDs antiguos equivaldría a remapear identidades.
 
@@ -52,7 +52,7 @@ graph LR
     RV -->|GET review activo| API
     API --> TV[TranscriptView]
     TV --> G[Agrupación consecutiva por speaker_id]
-    G --> P[Pasaje visible y playback]
+    G --> P[Fila visible + PlaybackIntervals fuente separados]
 ```
 
 ```mermaid
@@ -75,7 +75,8 @@ sequenceDiagram
     W->>DB: Transacción: generación, assignments y SpeakerReview N pending
     API-->>TV: SpeechTurns fuente + diarización/review de generación activa
     TV->>TV: Agrupar corridas consecutivas con ID y overlap positivo
-    TV-->>API: Playback y highlight usan extremos de filas fuente
+    TV->>TV: Enviar intervals exactos de cada SpeechTurn al PlaybackController
+    TV->>TV: Resaltar su fila agrupada solo durante cada intervalo, no en gaps
 ```
 
 Mientras revision N está en proceso o falla, `GET transcript` sigue devolviendo las filas fuente y la generación activa anterior queda intacta. Una fila histórica con `overlap_ms=NULL` permanece separada y se representa con `Speaker N`. Cuando una nueva generación completa se confirma junto con su review, las lecturas posteriores seleccionan esa generación; las asignaciones antiguas siguen accesibles solo bajo su revisión previa y no se mezclan con la nueva.
@@ -123,13 +124,23 @@ interface SourceTranscriptSegment {
 }
 
 interface PresentationTurn {
-  id: string;                 // ID de la primera fila fuente del grupo
-  sourceIds: string[];        // IDs de filas conservadas en backend
-  text: string;               // texto no vacío en orden, separado por un espacio
-  startMs: number | null;     // inicio de primera fuente
-  endMs: number | null;       // fin de última fuente
-  sequence: number;           // secuencia de primera fuente
-  speakerId?: string;         // ID de la generación activa con overlap_ms > 0
+  id: string;                    // ID de la primera fila fuente del grupo
+  sourceIds: string[];           // IDs fuente conservados
+  text: string;                  // textos no vacíos en orden, separados por un espacio
+  timestampMs: number | null;   // startMs de la primera fuente, solo para mostrar/iniciar
+  sequence: number;
+  speakerId?: string;            // ID de la generación activa con overlap_ms > 0
+  speakerLabel: string;          // label de la misma revisión o Speaker N
+  speakerColor?: string;
+}
+
+interface PlaybackInterval {
+  id: string;                    // ID exacto del SpeechTurn fuente
+  presentationTurnId: string;   // fila visible que se resalta durante este intervalo
+  startMs: number;               // límites exactos de la fuente
+  endMs: number;
+  text: string;                  // requerido por TimedPassage; no se renderiza como fila aparte
+  sequence: number;
 }
 
 function groupTranscriptTurns(
@@ -138,14 +149,17 @@ function groupTranscriptTurns(
 ): PresentationTurn[];
 ```
 
-El caller construye `speakerIdByTurnId` solo con assignments positivos de la generación activa. Ordenar por `sequence` ascendente con orden de entrada estable para empates; agrupar únicamente fuentes adyacentes con tiempos válidos y el mismo `speakerId` no vacío. Fila sin speaker validado interrumpe la corrida y queda separada como `Speaker N`; no saltar sobre ella. El ID del compuesto es el ID de su primera fuente y `sourceIds` conserva trazabilidad en memoria. Textos no vacíos se unen con un espacio sencillo, sin reescribir filas fuente. Filas no temporizadas siguen representables como texto, no se enlazan a playback y no se fusionan con otras.
+El caller construye `speakerIdByTurnId` solo con assignments positivos de la generación activa. Ordena por `sequence` ascendente con orden estable para empates; agrupa solo fuentes adyacentes con tiempos válidos y el mismo `speakerId` no vacío. Una fila sin speaker validado interrumpe la corrida, queda separada con `Speaker N` y no permite saltar a sus vecinos. El ID del grupo es el ID de su primera fuente; `sourceIds` mantiene la trazabilidad. `timestampMs` muestra y permite iniciar el turno desde el primer segmento, pero no es el inicio de un intervalo compuesto. Textos no vacíos se unen con un espacio, sin reescribir filas fuente. Filas sin tiempo válido permanecen independientes y no generan playback.
+
+La lista `PlaybackInterval[]` se deriva por separado de cada fila fuente temporizada: sus `id`, `startMs`, `endMs` y `sequence` son exactamente los de `SpeechTurn`, y `presentationTurnId` se resuelve desde `sourceIds`. Ningún intervalo abarca dos segmentos; por tanto una brecha interna produce `findPassageAt(time)` nulo, y un overlap se conserva exactamente como estaba en la fuente.
 
 ### 6. Vista y playback (`frontend/src/components/TranscriptView.tsx`)
 
 - Consumir transcript fuente, generación activa de diarización y review de la misma revisión; no usar etiquetas/reviews de otra `processing_revision`.
 - Construir el mapa de asignación solo para `overlap_ms > 0`; legacy NULL, cero, ausencia, error de carga o generación fallida quedan sin asignación válida y se presentan individualmente como `Speaker N`.
 - Resolver la etiqueta visible del mismo ID/revisión con la precedencia existente `currentLabel.trim()`, `speaker.label`, `Speaker N`; el ID de speaker, no la cadena de etiqueta, determina el agrupamiento.
-- Renderizar una fila por corrida máxima. Crear `playbackPassages` de los mismos grupos con tiempo válido; mantener highlight, scroll y seek existentes ligados a los extremos de ese grupo. Un fallo o estado pendiente de diarización no oculta el transcript.
+- Renderizar una fila visible por corrida máxima con texto combinado y timestamp del primer segmento, conservando referencias a sus fuentes. Pasar a `MeetingPlaybackView` esa lista de filas para render y, por separado, `PlaybackInterval[]` uno a uno desde los `SpeechTurn` temporizados para el `PlaybackController`.
+- Mapear `activePassageId` (ID fuente) a `presentationTurnId` para resaltar/desplazar la fila agrupada solo cuando el reloj cae dentro de un intervalo fuente. En gaps no hay passage activo; al activar el botón de una fila se inicia en el primer `startMs` de esa fila, sin inventar un `endMs` compuesto. Un fallo o estado pendiente de diarización no oculta el transcript.
 
 ### Ubicación y pruebas
 
@@ -153,7 +167,7 @@ El caller construye `speakerIdByTurnId` solo con assignments positivos de la gen
 |---|---|---|---|---|
 | Backend diarización y backfill | `backend/app/diarization/assignment.py`, `repository.py`, `worker.py`, nuevo `reprocess_legacy.py`, `backend/app/infra/models.py` | `backend/tests/diarization/test_assignment_property.py`, `test_worker.py`, nuevo `test_reprocess_legacy.py` y actualización de `test_repository.py` | Sí: siguiente número Alembic disponible posterior a `011`; versionado y unicidad por generación, overlap nullable | `packages/shared-types`: sin cambio; `docker-compose.yml`: sin cambio |
 | Backend meetings API/review | `backend/app/meetings/router.py`, `speaker_review_service.py` y esquemas donde ya correspondan | `backend/tests/meetings/test_diarization_endpoint.py`, `backend/tests/speaker_review/` revisión activa por generation y conservación histórica | Misma migración | Sin cambio |
-| Web portal | `frontend/src/api.ts`, `frontend/src/components/TranscriptView.tsx`, nuevo `frontend/src/transcript-turns.ts` | `frontend/src/transcript-turns.test.ts`, `frontend/src/components/TranscriptView.test.tsx`, `frontend/src/api.test.ts` | No | `packages/shared-types`: sin cambio; `docker-compose.yml`: sin cambio |
+| Web portal | `frontend/src/api.ts`, `frontend/src/components/TranscriptView.tsx`, `frontend/src/components/MeetingPlaybackView.tsx`, nuevo `frontend/src/transcript-turns.ts` | `frontend/src/transcript-turns.test.ts`, `frontend/src/components/TranscriptView.test.tsx`, `frontend/src/components/__tests__/MeetingPlaybackView.test.tsx`, `frontend/src/components/__tests__/PlaybackController.test.ts`, `frontend/src/api.test.ts` | No | `packages/shared-types`: sin cambio; `docker-compose.yml`: sin cambio |
 | Fuentes y datos existentes | No cambiar contenido/IDs de `Transcript`/`SpeechTurn`; mantener generaciones y reviews previas | migración prueba inmutabilidad; fixture sintética de generación 1/review previa + generación 2/review nueva prueba aislamiento | Incluida | Extension: sin cambios |
 
 **Despliegue y compatibilidad:** detener consumers antiguos de `diarize` durante la migración y despliegue del worker/API capaces de leer revisiones; aplicar migración, desplegar consumidores y API versionados, y solo entonces ejecutar el backfill. No ejecutar el backfill con código antiguo que asume unicidad por meeting. Reanudar/reintentar solo mediante la clave meeting/revisión. No abrir una ventana en que la generación incompleta reemplace la activa.
@@ -176,7 +190,7 @@ El caller construye `speakerIdByTurnId` solo con assignments positivos de la gen
 
 **Propiedad 6 — Reprocesamiento histórico seguro.** Backfill sintético selecciona solo diarizaciones `is_legacy=true`, respeta ausencia de `audio_ref`/retención, reusa la revisión pending o con fallo reintentable al reejecutarse, hace no-op tras completar o un fallo terminal, y dirige el job al `audio_ref` exacto bajo recording capability vigente. No consulta ni usa transcripciones reales en tests/logs. Valida decisión de Fer sobre salidas históricas, incluida la grabación completa guardada, sin saltar límites de seguridad/retención.
 
-**Propiedad 7 — Fidelidad temporal y fuente intacta.** Cada pasaje compuesto usa inicio de su primera y fin de su última fuente; no se cambian filas originales, gaps, overlaps, textos ni sequence. Los pasajes visibles y los de playback comparten ID/límites. Valida AC4–AC5 y “Comportamiento Sin Cambios” 3–5.
+**Propiedad 7 — Fidelidad exacta de intervalos.** Para cada intervalo fuente temporizado, la lista de `PlaybackInterval` contiene exactamente el mismo `id`, `startMs`, `endMs` y orden; ningún intervalo derivado abarca la brecha entre dos `SpeechTurn`. Ejemplo sintético: dos fragmentos A con `[0,100]` y `[200,300]` producen una fila visual A con ambos textos y dos intervalos separados, `findPassageAt(150) === null`, y la acción Play busca el tiempo 0. Gaps y overlaps originales permanecen intactos. Valida AC4–AC5 y “Comportamiento Sin Cambios” 3–5.
 
 ## Manejo de Errores
 
@@ -202,5 +216,5 @@ Usar exclusivamente reuniones, audio_refs, textos, nombres y segmentos sintétic
 4. **Worker/review:** ampliar `backend/tests/diarization/test_worker.py` y tests bajo `backend/tests/speaker_review/`: la generación nueva tiene UUIDs frescos, overlap positivo y review nueva pending en la misma transacción; revisión previa, disposition, excerpt y receipts quedan iguales y nunca se copian; fallo no cambia generación activa.
 5. **API:** `backend/tests/meetings/test_diarization_endpoint.py` cubre selección de última generación completada, status del intento actual, `processing_revision`, overlap nullable/positivo y auth intacta. Tests de speaker-review verifican que review activa usa la misma revisión y la anterior se conserva recuperable por `revision_id`.
 6. **Agrupador (Vitest):** `frontend/src/transcript-turns.test.ts` cubre `A,A,B,B,A`, cambios/repeticiones, IDs distintos con igual etiqueta, nulos/ausentes/cero, gaps/overlaps, texto vacío, timing inválido, order y no mutación.
-7. **Vista y playback:** `frontend/src/components/TranscriptView.test.tsx` fixtures garantizan que no mezcla revisión 1 y 2, revisión nueva muestra `Speaker N` hasta decisión humana, la review antigua no se expone en el ID nuevo, transcript permanece visible durante carga/fallo y `MeetingPlaybackView` recibe los mismos límites usados por highlight/seek.
-8. Desde `frontend/`, ejecutar `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/api.test.ts` y `npm run typecheck`; desde `backend/`, ejecutar `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_assignment_property.py tests/diarization/test_worker.py tests/diarization/test_reprocess_legacy.py tests/diarization/test_migration.py tests/meetings/test_diarization_endpoint.py tests/speaker_review`. Son comandos de validación futura, no resultados ya obtenidos.
+7. **Vista y playback:** `frontend/src/components/TranscriptView.test.tsx` fixtures garantizan que no mezcla revisión 1 y 2, revisión nueva muestra `Speaker N` hasta decisión humana, la review antigua no se expone en el ID nuevo y transcript permanece visible durante carga/fallo. `frontend/src/components/__tests__/MeetingPlaybackView.test.tsx` verifica una fila visual A para dos fuentes A, dos intervalos exactos en el controller, gap sin passage activo y Play desde el inicio del primer intervalo; `frontend/src/components/__tests__/PlaybackController.test.ts` conserva la propiedad de no hallar passage dentro de un gap.
+8. Desde `frontend/`, ejecutar `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/components/__tests__/MeetingPlaybackView.test.tsx src/components/__tests__/PlaybackController.test.ts src/api.test.ts` y `npm run typecheck`; desde `backend/`, ejecutar `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_assignment_property.py tests/diarization/test_worker.py tests/diarization/test_reprocess_legacy.py tests/diarization/test_migration.py tests/meetings/test_diarization_endpoint.py tests/speaker_review`. Son comandos de validación futura, no resultados ya obtenidos.
