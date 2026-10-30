@@ -4,19 +4,19 @@
 - **Sistema de diseño usado:** "Terra" (`assets/14831859670672193485`).
 - **Extraída:** 2026-10-30.
 - **Archivos de referencia en esta carpeta:**
-  - `login`, `biblioteca`, `subir`, `reunion`, `hablantes` y `plantillas` en versión `.html` (código exacto de Stitch, con clases Tailwind) y `.jpg` (captura).
+  - HTML por pantalla y sus capturas originales: `login.html` / `login.jpg`, `biblioteca.html` / `biblioteca.png`, `subir.html` / `subir.png`, `reunion.html` / `reunion.jpg`, `hablantes.html` / `hablantes.png` y `plantillas.html` / `plantillas.png`. Las extensiones de captura reflejan el formato real decodificado.
   - `*.txt`: texto visible de cada pantalla, en orden.
   - `project.json` y `design_systems.json`: tokens completos.
 
 ## 0. Cómo usar esta especificación
 
-**Estas pantallas son la referencia visual aprobada por Fer.** Definen estructura, estilo, textos y estados.
+**Las seis pantallas son exploratorias y no fueron aprobadas como especificación de interfaz ni como autorización de implementación.** Las capturas y HTML son referencias visuales no vinculantes; solo el alcance expresamente confirmado en el snapshot aprobado de `PRODUCT_BASELINE.md` puede guiar producto. Los textos, controles, estados, datos y composiciones no confirmados deben omitirse o esperar una decisión explícita.
 
 **Conflicto con el producto:** el mock inventa datos y funciones que no son producto real. Donde contradice `PRODUCT_BASELINE.md`, **manda la línea base**. Los puntos están en la sección 8. Regla: nada de cifras de adorno, nada de funciones sin respaldo en la línea base.
 
-**Orden de verdad:** `PRODUCT_BASELINE.md` > esta especificación > el HTML de Stitch.
+**Orden de autoridad:** snapshot aprobado de `PRODUCT_BASELINE.md` > decisiones de producto posteriores aprobadas > estas referencias de Stitch (solo inspiración). Este README no agrega requisitos.
 
-**El HTML de Stitch no se copia tal cual.** Trae Tailwind por CDN y imágenes de ejemplo. Se usa como guía de clases, espaciado y estructura, y se implementa en React con los tokens de la sección 1.
+**El HTML y las descripciones siguientes son material de referencia no normativo, no instrucciones de implementación.** Traen contenido inventado y pueden sugerir capacidades, controles, datos y tratamientos no aprobados. No derivar requisitos de sus verbos imperativos, títulos, tokens visuales o ejemplos. Cualquier uso de estilos también requiere alcance visual aprobado.
 
 ## 1. Sistema de diseño: Terra ("Rooted Warmth")
 
@@ -90,7 +90,11 @@ Material Symbols Outlined. Los nombres exactos están en los `.txt` (por ejemplo
 
 **Pie:** derechos de autor y enlaces Privacidad y Ética, Documentación y Soporte.
 
-## 3. Inicio de sesión (`login`)
+## 3. Inicio de sesión (`login`) — exploratorio, fuera de alcance
+
+La autenticación, el inicio de sesión, la recuperación de credenciales, las sesiones y su experiencia siguen sin decisión. La captura `login.jpg` y su HTML son únicamente exploración visual: no implementar ni especificar esos flujos, estados, textos, controles o marca corporativa desde este documento.
+
+<!-- Contenido de la maqueta conservado como referencia no normativa; no es especificación. -->
 
 **Disposición:** tarjeta centrada de 480 px de ancho máximo, con encabezado fijo.
 
@@ -126,7 +130,7 @@ Material Symbols Outlined. Los nombres exactos están en los `.txt` (por ejemplo
 **Tarjetas de resumen:** cuatro, con total, listas, en procesamiento y requieren atención. Son solo una idea visual (ver sección 8).
 
 **Barra de búsqueda y filtros:**
-- Búsqueda por título, participante, cliente o palabras clave.
+- Búsqueda: solo la capacidad expresamente respaldada por la línea base; la búsqueda de texto completo en reuniones queda excluida.
 - Filtros: **Cliente**, **Proyecto**, **Estado** (Lista, Transcribiendo, Identificando hablantes, Subiendo, Con error), **Rango de fechas**.
 - Etiquetas de tema como chips: `#GenAI`, `#DigitalTwin`, `#CloudArchitecture`, `#Finanzas`, con X para quitar, y "Limpiar filtros".
 
@@ -214,7 +218,7 @@ Esta pantalla no estaba en el primer mock. Se generó después en Stitch con el 
    - Título "Transcripción Interactiva Diarizada" y el número de turnos.
    - Aviso: "Edición de nombre actualiza automáticamente todos los turnos del hablante para este usuario."
    - Filtro por palabra clave.
-   - Chips de hablantes con su porcentaje de habla.
+   - Chips de hablantes. No mostrar métricas o porcentajes de tiempo de habla; talk-time y métricas asociadas son Phase 2 / fuera del alcance inicial.
    - **Cada turno:**
      - nombre del hablante con su color y lápiz para renombrar;
      - botón con la hora (por ejemplo 00:11:05), que lleva el video a ese punto;
@@ -227,10 +231,7 @@ Esta pantalla no estaba en el primer mock. Se generó después en Stitch con el 
 
 - **Notas y Resumen** (activa):
   - **Resumen IA** con botones "Copiar resumen" y "Descargar (MD/PDF)", y un botón para regenerar.
-  - Estructura del resumen:
-    1. Objetivo y contexto central.
-    2. Acuerdos y puntos clave de decisión.
-    3. Próximos pasos y responsables, cada uno con responsable y fecha.
+  - La estructura, el formato, la regeneración y las acciones del resumen no quedan definidos por esta maqueta; siguen el alcance que se apruebe expresamente. No inferir un formato fijo de tres secciones ni campos obligatorios.
   - **Notas de la reunión:** las capturadas durante la llamada, cada una con hora y minuto; campo "Escribe una nota rápida y presiona Enter…" y botón **Guardar**.
 - **Chat con la grabación:** pestaña visible, marcada "Fase 2 – Próximamente". No funciona.
 
@@ -287,38 +288,32 @@ Esta pantalla no estaba en el primer mock. Se generó después en Stitch con el 
 
 **Importar JSON y los bloques de "Directivas de Extracción Personalizadas" y "Reglas globales de LLM" no están en la línea base.** Quedan fuera del primer corte.
 
-## 8. Qué NO construir (contradice la línea base o la decisión del proyecto)
+## 8. Exclusiones explícitas y elementos no autorizados
+
+Todo contenido de las maquetas que no esté afirmativamente respaldado por el snapshot aprobado de `PRODUCT_BASELINE.md` queda fuera de alcance. Esta lista es ilustrativa, no exhaustiva; conservar algo en las capturas/HTML no lo convierte en requisito. No implementar ni presentar como hecho ninguna capacidad, dato, métrica, promesa, estado, control o texto no confirmado.
 
 | Elemento del mock | Por qué se descarta |
 |---|---|
-| "Generado con Whisper Large v3 + Claude 3.5 Sonnet", "Sauri-Instruct v3" | El proveedor de resumen decidido por Fer es **Ollama local**. No se nombra ningún modelo en pantalla. |
+| Proveedor, modelo, Ollama u otra tecnología de generación | La elección del proveedor/método sigue abierta. No prescribir Ollama ni ningún otro proveedor o modelo en interfaz ni en especificación. |
 | "99.4% certeza", "Precisión LLM", "Tasa de Fidelidad", "Ahorro Promedio 38 min", "DER 3.8%" | Cifras inventadas. La línea base no define umbrales de precisión. |
 | Texto sobre huellas biométricas, "ECAPA-TDNN", "AES-256 Tenant-Isolated", "Zero-Trust", "TLS 1.3" | Afirmaciones técnicas y de seguridad sin respaldo. |
-| Acceso con Google Workspace y Microsoft SSO, "Recordar dispositivo" | La autenticación de varios usuarios es una decisión abierta. |
-| Menú de configuración: General, Diarización, Directivas de IA, Integraciones, Miembros y Permisos, Retención | No están en la línea base. Solo se implementa **Plantillas de resumen**. |
+| Login, autenticación, sesión, expiración, recuperación, Google/Microsoft SSO, recordar dispositivo y textos de credenciales | La autenticación y su experiencia siguen abiertas; la maqueta no define ninguna UX. |
+| Menú de configuración: General, Diarización, Directivas de IA, Integraciones, Miembros y Permisos, Retención | No usar esta maqueta para afirmar qué pantallas o módulos están aprobados; el alcance lo determina exclusivamente el snapshot aprobado de la línea base. |
 | Descargar lote, Exportar CSV, Archivar, selección múltiple | No están en la línea base. |
-| "Minuta enviada por correo", estado "En vivo" | No están en la línea base. |
+| Búsqueda full-text; porcentajes de tiempo de habla; compartir/exportar métricas de talk-time; chat interactivo | Búsqueda full-text y talk-time/share son fuera del alcance inicial (Phase 2 donde corresponda); no insinuar que están disponibles. |
+| Diagnósticos, telemetría, logs, contenido/campos copiados o garantías de privacidad | Requieren definición de privacidad y gobernanza; no recopilar ni prometer nada desde esta referencia. |
+| Diseño fijo del resumen, incluidas exactamente tres secciones o campos/fechas obligatorios | La estructura del resumen sigue abierta; no fijarla con la maqueta. |
+| Cantidades o estados de plantillas/reuniones, incluyendo “8 activas”, “12 operativas”, “42 grabaciones” y cualquier conteo | Datos de maqueta fabricados; no son cifras ni objetivos de producto. |
+| Controles y acciones de mock no confirmados (incluye contadores, botones, badges, filtros, exportación, edición y estados) | Excluir todos los controles sin respaldo explícito, incluso si no aparecen individualmente en esta tabla. |
+| Aprobación de seis pantallas o conformidad/aceptación visual | No existe aprobación de las seis pantallas. La inspiración visual no constituye aceptación de producto ni autorización para construir. |
 | Importar JSON de plantillas | No está en la línea base. |
 | Botón "Simular error" | Es de la maqueta. |
 | Fechas y datos de ejemplo (Grupo Éxito, Bancolombia, etc.) | Son solo ejemplos. |
 
-## 9. Observabilidad pedida por Fer
+## 9. Diagnósticos — decisión pendiente
 
-El mock ya incluye un botón **"Copiar diagnóstico"** en la reunión y en la revisión de hablantes. Se implementa en todas las pantallas con carga: subida, biblioteca y reunión.
+La presencia del botón **"Copiar diagnóstico"** en algunos mocks no es un requerimiento. La recolección, contenido, exposición, retención y controles de diagnóstico requieren decisión de privacidad/gobernanza. Esta referencia no autoriza instrumentación, captura, copia ni garantías de exclusión de datos sensibles. No añadir funciones ni promesas de diagnóstico hasta que se apruebe su alcance y manejo de datos.
 
-**Contenido del diagnóstico:**
-- ID de sesión y de la reunión.
-- Estado de cada paso del procesamiento.
-- Errores recientes de la interfaz.
-- Hora y versión de la aplicación.
+## 10. Criterios de uso de estas referencias
 
-**No incluye** ninguna contraseña, token ni contenido de la transcripción.
-
-## 10. Criterios de aceptación visual
-
-1. Cada pantalla coincide con su captura `.jpg` en estructura, jerarquía, colores y tipografía.
-2. Todos los botones y textos del mock que no están en la sección 8 están presentes y legibles.
-3. Contraste mínimo WCAG AA en todo texto.
-4. Funciona en escritorio de 1280 px o más.
-5. Estados vacío, cargando y error implementados en las seis pantallas.
-6. Ninguna cifra ni afirmación de la sección 8 aparece en pantalla.
+Este documento no establece criterios de aceptación visual ni autoriza construir las seis pantallas. No se exige coincidencia con capturas, breakpoints, estados, WCAG targets ni contenido de mock; no se da por aprobada ninguna pantalla. Cualquier futura implementación requiere un alcance aprobado que identifique expresamente pantallas, controles, estados, datos de ejemplo, accesibilidad y aceptación. Toda afirmación o conteo de maqueta debe tratarse como dato ficticio y no mostrarse como dato real.
