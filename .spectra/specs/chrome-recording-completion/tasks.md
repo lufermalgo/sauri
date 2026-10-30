@@ -171,3 +171,29 @@
 - Design's intended module paths are canonical; exact existing test placement/export names should be verified before code changes. If an indicated seam does not exist, use its nearest existing module test and retain the specified behavior, not a speculative new production API.
 - Current backend schema needs no migration unless implementation investigation proves existing durable state insufficient; no Compose change is expected.
 - Teams capture capability is explicitly not presumed or added by this plan. No visual redesign, consent, retention, or upload-defect remediation is included.
+
+## Publication tracking
+
+Mira approved the unchanged task plan at `56e36feff04406cda3435ac00a0621aec3c1b3b7`. GitHub issues are created in milestone `chrome-recording-completion` (#17). APX card creation is pending resolution of the platform requirement that each subtask have an assignee; no card IDs are claimed here.
+
+| Task | GitHub issue | APX card |
+|---|---:|---|
+| T1.1 | #610 | Pending — APX assignment resolution |
+| T1.2 | #611 | Pending — APX assignment resolution |
+| T1.3 | #612 | Pending — APX assignment resolution |
+| T1.4 | #613 | Pending — APX assignment resolution |
+| T1.5 | #614 | Pending — APX assignment resolution |
+| T1.6 | #615 | Pending — APX assignment resolution |
+| T1.7 | #616 | Pending — APX assignment resolution |
+| T1.8 | #617 | Pending — APX assignment resolution |
+| T1.9 | #618 | Pending — APX assignment resolution |
+| T2.1 | #619 | Pending — APX assignment resolution |
+| T2.2 | #620 | Pending — APX assignment resolution |
+| T2.3 | #621 | Pending — APX assignment resolution |
+| T2.4 | #622 | Pending — APX assignment resolution |
+| T2.5 | #623 | Pending — APX assignment resolution |
+| T2.6 | #624 | Pending — APX assignment resolution |
+| T2.7 | #625 | Pending — APX assignment resolution |
+| T2.8 | #626 | Pending — APX assignment resolution |
+| T3.1 | #627 | Pending — APX assignment resolution |
+| T3.2 | #628 | Pending — APX assignment resolution |
