@@ -2,7 +2,7 @@
 
 ## Resumen
 
-El defecto nace porque `worker.py` conserva cada segmento ASR como fila `SpeechTurn`; la ruta actual de transcripción y el portal respetan esas filas una por una. Las filas no llevan hablante; el worker de diarización asigna después speakers a las filas por solapamiento temporal. La instrucción directa de Fer del 2026-10-30 (chat `th_a9681ad91c2f4b5d`, mensaje `msg_ae70285a69464de2`) autoriza unir segmentos consecutivos del mismo hablante en frases/párrafos con inicio-fin. La fuente de requisitos es el `bugfix.md` aprobado en commit `b0766bced264473d500d81ca74477b104378d2e7` (blob `dd7895959fbbf43e4348d19f00b20426c22a07a3`), publicado sin cambios en PR #607, actualmente dependiente y no afirmado como integrado en `main`. Esa decisión directa y el bugfix aprobado son la autoridad funcional: el snapshot de `PRODUCT_BASELINE.md` citado por el bugfix está marcado DRAFT y no se presenta como baseline aprobado.
+El defecto nace porque `worker.py` conserva cada segmento ASR como fila `SpeechTurn`; la ruta actual de transcripción y el portal respetan esas filas una por una. Las filas no llevan hablante; el worker de diarización asigna después speakers a las filas por solapamiento temporal. Además, `assign_turns` actualmente resuelve incluso el caso de solapamiento máximo cero asignando el speaker de menor secuencia, lo que puede presentar una atribución sin evidencia temporal. La instrucción directa de Fer del 2026-10-30 (chat `th_a9681ad91c2f4b5d`, mensaje `msg_ae70285a69464de2`) autoriza unir segmentos consecutivos del mismo hablante en frases/párrafos con inicio-fin. La fuente de requisitos es el `bugfix.md` aprobado en commit `b0766bced264473d500d81ca74477b104378d2e7` (blob `dd7895959fbbf43e4348d19f00b20426c22a07a3`), publicado sin cambios en PR #607, actualmente dependiente y no afirmado como integrado en `main`. Esa decisión directa y el bugfix aprobado son la autoridad funcional: el snapshot de `PRODUCT_BASELINE.md` citado por el bugfix está marcado DRAFT y no se presenta como baseline aprobado.
 
 1. Conservar sin cambios las filas `SpeechTurn` y asignaciones de diarización ya persistidas; no agregar modelo ni migración.
 2. En el frontend, derivar grupos de presentación desde los `SpeechTurn` ordenados y `SpeakerAssignment` del endpoint de diarización, comparando identidad estable de speaker, no texto visible de la etiqueta.
@@ -20,7 +20,9 @@ El defecto nace porque `worker.py` conserva cada segmento ASR como fila `SpeechT
 
 **Sin cambio de API, modelo, contrato compartido ni migración.** La ruta autenticada de transcript ya retorna cada `SpeechTurn` con ID, texto, límites y secuencia; la ruta autenticada de diarización ya retorna speakers y asignaciones. El cliente une las respuestas manteniendo su autoridad existente y sin cambiar el payload del backend. No se toca `packages/shared-types` (no es el contrato de estas llamadas HTTP) ni `docker-compose.yml`. *Alternativa descartada:* un endpoint nuevo o una columna de turno persistido duplica una transformación de presentación y añade compatibilidad/migración sin necesidad técnica.
 
-**Atribución desde la diarización existente.** `backend/app/diarization/worker.py` ejecuta el motor de diarización y `assign_turns` relaciona sus segmentos temporales con las filas `SpeechTurn`; el endpoint de diarización serializa speaker y asignaciones. El normalizador del frontend consume este resultado; no presupone que ASR incluya speaker IDs o IDs de turno. La etiqueta que se muestra sigue la precedencia ya implementada en `speakerPresentation`: speaker review vigente, luego etiqueta de diarización, luego `Speaker N`.
+**Solo atribuciones con solapamiento temporal positivo son utilizables.** `backend/app/diarization/worker.py` ejecuta el motor; `assign_turns` calcula el solapamiento acumulado entre intervalos de diarización y cada fila `SpeechTurn`. Se modifica esa función para emitir una asignación solo si el máximo solapamiento es mayor que cero. Entre candidatos con solapamiento positivo se conserva el desempate determinista por menor secuencia; si todos son cero, no se persiste `SpeakerAssignment`. La respuesta existente de diarización simplemente no contiene esa fila y el normalizador trata la atribución como no resuelta, evitando agruparla por un speaker elegido arbitrariamente. No se infiere calidad a partir del speaker ID por sí solo.
+
+**Etiqueta de presentación acorde al código actual.** `TranscriptView.speakerPresentation` usa el `currentLabel.trim()` del elemento de speaker review coincidente si está disponible; si no, usa `speaker.label` de diarización y, por último, `Speaker N`. La agrupación no depende de esa etiqueta editable: depende de la asignación positiva por `speaker_id`. No se agrega integración nueva de review.
 
 ## Arquitectura
 
@@ -30,7 +32,8 @@ Especializaciones: **backend-api**, **web-application** y **cross-surface-integr
 graph LR
     ASR[Proveedor ASR: segmentos temporizados] --> TW[Worker de transcripción]
     TW --> ST[(SpeechTurn: filas fuente)]
-    D[Motor y worker de diarización] --> SA[(Speaker y asignaciones a SpeechTurn)]
+    D[Motor y worker de diarización] --> A[Asignar solo con solapamiento positivo]
+    A --> SA[(Speaker y asignaciones a SpeechTurn)]
     ST -->|GET transcript autenticado| API[API de reuniones]
     SA -->|GET diarization autenticado| API2[API de reuniones]
     API --> UI[TranscriptView]
@@ -64,7 +67,11 @@ La transcripción no espera a diarización para ser visible. Mientras no se disp
 - `GET /api/v1/meetings/{meeting_id}/diarization` conserva los speakers y asignaciones autenticados. `SpeakerAssignment.turn_id` apunta al ID de la fila `SpeechTurn`; cada asignación resuelta identifica un `speaker_id`.
 - Ningún endpoint se vuelve público ni relaja autorización. No se cambia schema HTTP ni migración DB.
 
-### 2. Agrupador puro frontend (`frontend/src/transcript-turns.ts`)
+### 2. Atribución diarization (`backend/app/diarization/assignment.py`)
+
+Ajustar `assign_turns` para que el speaker candidato solo sea asignable cuando su solapamiento temporal acumulado máximo con la fila sea positivo. Si el máximo es `0`, devolver cero asignaciones para esa fila; si hay uno o más candidatos con solapamiento positivo, preservar la regla actual de mayor solapamiento y desempate por menor secuencia. El worker solo persiste las asignaciones retornadas. No cambia la tabla `speaker_assignments` ni el payload de API: una fila sin asignación ya es representable como ausencia en la lista existente.
+
+### 3. Agrupador puro frontend (`frontend/src/transcript-turns.ts`)
 
 Añadir función determinista y sin I/O, con prueba colocalizada `frontend/src/transcript-turns.test.ts`:
 
@@ -110,7 +117,8 @@ Las filas sin tiempo válido permanecen representables como texto pero nunca se 
 | Área | Archivos que se modifican | Pruebas | Migración | Shared types / Compose |
 |---|---|---|---|---|
 | Portal, lógica de agrupación | `frontend/src/transcript-turns.ts` (nuevo), `frontend/src/components/TranscriptView.tsx` | `frontend/src/transcript-turns.test.ts` (nuevo), `frontend/src/components/TranscriptView.test.tsx` | No | Sin cambio |
-| Backend/API/DB | Sin cambios: fuentes existentes `backend/app/transcription/worker.py`, `backend/app/diarization/worker.py`, `backend/app/meetings/router.py`, `backend/app/infra/models.py` | Pruebas backend existentes sirven de cobertura de contrato; no requieren cambios para esta solución cliente | No | Sin cambio |
+| Backend, atribución | `backend/app/diarization/assignment.py` (omitir asignaciones con cero solapamiento); worker/repository guardan solo las asignaciones retornadas | `backend/tests/diarization/test_assignment_property.py` (nuevo caso sintético de cero solapamiento y control de positivo) | No | Sin cambio |
+| API/modelo/datos fuente | Sin cambios: `backend/app/meetings/router.py`, `backend/app/infra/models.py`, worker de transcripción y tablas existentes | Pruebas de contrato existentes, sin cambio de esquema/API | No | Sin cambio |
 | Extensión | Sin cambios | No aplica | No | No aplica |
 
 ## Modelos de Datos
@@ -123,7 +131,7 @@ No se cambia persistencia. `Transcript` conserva sus filas fuente `SpeechTurn` c
 
 **Propiedad 2 — Repetición no consecutiva.** Si una secuencia de IDs es `A, B, A`, la salida conserva tres turnos en ese orden, aunque la etiqueta visible de A coincida. Valida “Comportamiento Sin Cambios” 2.
 
-**Propiedad 3 — Speaker no resuelto.** La falta de speaker ID no se interpreta como identidad común: las filas sin asignación no se agrupan entre sí y se presentan con `Speaker N`; ninguna etiqueta o identidad se inventa. Valida criterios 2–3 y “Comportamiento Sin Cambios” 1.
+**Propiedad 3 — Solo atribución con evidencia positiva.** Un turno recibe asignación solo si al menos un segmento de diarización tiene solapamiento temporal positivo; cuando todos los candidatos tienen solapamiento cero, `assign_turns` produce ninguna asignación para esa fila. La falta de speaker ID no se interpreta como identidad común: filas no asignadas se presentan con `Speaker N` y no se agrupan entre sí. Con empate de overlap positivo se conserva el desempate por secuencia actual. Valida criterios 2–3 y “Comportamiento Sin Cambios” 1.
 
 **Propiedad 4 — Límites y relaciones de tiempo.** Para cada grupo con tiempo válido, inicio es el inicio de la primera fuente y fin el fin de la última. Los tiempos fuente permanecen iguales; intervalos y gaps entre grupos se conservan sin desplazamiento, ensanchamiento artificial ni cierre de huecos. Los huecos dentro del grupo compuesto no reescriben las fuentes. Valida criterio 4 y “Comportamiento Sin Cambios” 3.
 
@@ -136,6 +144,7 @@ No se cambia persistencia. `Transcript` conserva sus filas fuente `SpeechTurn` c
 | Escenario | Comportamiento |
 |---|---|
 | Diarización sigue procesando, no está disponible o falla | No bloquear la lectura de texto. Renderizar fragmentos sin asignación con `Speaker N`, sin unirlos por presunción; cuando hay datos, rederivar grupos desde los IDs. La agrupación es derivada e idempotente, no requiere reintento de escritura. |
+| Ningún segmento de diarización se solapa temporalmente con una fila transcript | `assign_turns` no devuelve asignación para esa fila cuando el overlap máximo es cero; no se persiste un speaker escogido por orden. El endpoint no incluye asignación, el portal presenta `Speaker N` y deja esa fila sin agrupar. |
 | Asignación apunta a fila que no está en el transcript | Ignorar la asignación huérfana; mantener esa fila como fuente no asignada con `Speaker N`. |
 | Speaker ID presente pero etiqueta/revisión ausente | Mostrar `Speaker N`; agrupar solo si el mismo ID resuelto coincide, nunca por el texto de etiqueta. |
 | Texto vacío, tiempo ausente o inválido | No fabricar texto ni tiempo. Mantener texto válido como unidad no temporizada; excluirlo de playback según el comportamiento existente. |
@@ -146,10 +155,11 @@ No se cambia persistencia. `Transcript` conserva sus filas fuente `SpeechTurn` c
 
 Pruebas unitarias sintéticas para el agrupador puro y pruebas de vista para verificar wiring. La QA ejecutó pruebas previas del comportamiento actual (frontend: 2 archivos/24 tests; backend: 5 tests), no son validación de esta corrección.
 
-1. **Agrupador (Vitest):** casos y propiedades con segmentos `A,A,B,B,A`, distintos speaker IDs con igual texto de etiqueta, ausencia de asignaciones, gaps/overlaps, texto vacío, tiempos inválidos y secuencias. Afirmar agrupación de corridas máximas, orden, límites exteriores y fuente inmutable.
-2. **Vista:** fixtures sintéticos donde la diarización asigna speakers a IDs de transcript; verificar que fragmentos consecutivos A se ven como una fila y que B intermedio y A posterior siguen separados. Comprobar speaker color/label proveniente de los datos/review existentes.
-3. **Carga degradada:** transcript disponible y diarización pendiente/404/error; confirmar que el texto queda visible como entradas no asignadas, no se bloquea la ruta principal y no se agrupan identidades desconocidas.
-4. **Playback:** comprobar que `MeetingPlaybackView` recibe un pasaje por grupo con límites exteriores, que seek inicia en el comienzo del grupo y que highlight usa su intervalo; fixtures específicos conservan huecos y solapamientos entre grupos distintos y entradas no temporizadas no producen pasaje.
-5. Ejecutar `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx` y luego `npm run typecheck` desde `frontend/`; ejecutar pruebas de backend relevantes existentes como contrato, sin afirmar resultados hasta correrlas. Datos sintéticos únicamente.
+1. **Atribución backend:** en `backend/tests/diarization/test_assignment_property.py`, con fixtures sintéticos, verificar que todos los candidatos con cero overlap producen lista vacía de asignación para ese turno; overlap positivo se asigna al máximo y un empate positivo conserva el menor `sequence`.
+2. **Agrupador (Vitest):** casos y propiedades con segmentos `A,A,B,B,A`, distintos speaker IDs con igual texto de etiqueta, ausencia de asignaciones, gaps/overlaps, texto vacío, tiempos inválidos y secuencias. Afirmar agrupación de corridas máximas, orden, límites exteriores y fuente inmutable; cero-overlap se representa como ausencia de ID y no se agrupa.
+3. **Vista:** fixtures sintéticos donde la diarización asigna speakers a IDs de transcript; verificar que fragmentos consecutivos A se ven como una fila y que B intermedio y A posterior siguen separados. Comprobar fallback `Speaker N` sin asignación. Verificar etiqueta según código actual: `currentLabel.trim()` del item de review coincidente, luego `speaker.label`, luego `Speaker N`; el cambio no crea una nueva integración de review.
+4. **Carga degradada:** transcript disponible y diarización pendiente/404/error; confirmar que el texto queda visible como entradas no asignadas, no se bloquea la ruta principal y no se agrupan identidades desconocidas.
+5. **Playback:** comprobar que `MeetingPlaybackView` recibe un pasaje por grupo con límites exteriores, que seek inicia en el comienzo del grupo y que highlight usa su intervalo; fixtures específicos conservan huecos y solapamientos entre grupos distintos y entradas no temporizadas no producen pasaje.
+6. Ejecutar `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx` y luego `npm run typecheck` desde `frontend/`; ejecutar pruebas de backend relevantes existentes como contrato, sin afirmar resultados hasta correrlas. Datos sintéticos únicamente.
 
 La corrección no depende de que ASR provea speaker IDs o límites explícitos: usa las asignaciones reales de diarización que ya se calculan sobre las filas persistidas. La lectura del transcript sigue disponible si diarización tarda/falla; esa degradación no autoriza a agrupar speakers desconocidos ni impide que el cliente presente el texto.
