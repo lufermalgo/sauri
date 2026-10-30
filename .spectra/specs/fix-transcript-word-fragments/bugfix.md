@@ -24,7 +24,9 @@ WHEN the reported full meeting was reviewed, THEN it displayed 2,919 approximate
 
 ## Comportamiento Esperado (Correcto)
 
-WHEN the portal presents a meeting transcript, THEN the system SHALL present the transcript as complete speaker turns, each with a timestamp, speaker label, and associated text, as required by the owner-approved product baseline §4.C.4. Raw ASR segment boundaries SHALL NOT, by themselves, be treated as proof that each segment is a separate user-facing speaker turn.
+WHEN the portal presents a transcript for a new recording, or a historical recording whose audio is available and authorized under existing retention, THEN the system SHALL present the transcript as complete speaker turns, each with a timestamp, speaker label, and associated text, as required by the owner-approved product baseline §4.C.4. Raw ASR segment boundaries SHALL NOT, by themselves, be treated as proof that each segment is a separate user-facing speaker turn.
+
+WHEN a historical recording's audio is confirmed expired or irrecoverable under existing retention, THEN the system SHALL preserve its existing source fragments ungrouped and mark them `not_reconstructible`; it SHALL NOT recreate, infer, or fabricate turn groupings without authorized available audio.
 
 WHEN consecutive speech belongs to different speakers or to distinct nonconsecutive turns, THEN the system SHALL preserve the correct turn distinction and attribution; repeated speaker labels alone SHALL NOT cause separate turns to be merged. The approved product behavior is turn-level presentation; the technical signal and processing layer needed to determine those boundaries are not yet established and belong in design, not this bugfix specification.
 
@@ -48,14 +50,16 @@ WHEN text or timing is absent or invalid for an entry, THEN the system SHALL CON
 - Do not treat the observed counts or the offline turn estimate as thresholds, targets, or pass/fail criteria.
 - Do not introduce an arbitrary silence-gap duration or other numerical threshold. The approved sources do not specify one.
 - Do not merge nonconsecutive turns solely because speaker labels match; preserve turn order, speaker changes, unknown labels, and original timing gaps/overlaps.
+- Do not change retention policy or recover audio outside existing retention and authorization; when historical audio is confirmed expired or irrecoverable, preserve source fragments ungrouped and mark them `not_reconstructible`.
 - Preserve playback passage start/end fidelity and current seek/highlight behavior. Do not redesign the UI or add transcript editing.
 - Establish the failing layer with reproducible synthetic test evidence before choosing backend, API, or frontend implementation placement. If a proposed fix requires new product behavior beyond presenting each turn as specified in the approved baseline, stop and identify that scope delta to Ansel for an authorized decision; do not silently broaden this bugfix.
 
 ## Criterios de Aceptación
 
-1. Given a meeting transcript whose processing output represents multiple low-level text fragments within a spoken turn, the portal SHALL present the complete turn text as a turn-level passage with its timestamp and correct speaker label, rather than exposing each low-level ASR fragment as a user-facing turn. The approved baseline specifies this observable turn-level behavior; the source of reliable turn boundaries is an unresolved technical design investigation.
-2. Given a speaker change or a distinct later nonconsecutive turn with a previously used speaker label, the output SHALL preserve separate turns, their original order, and their correct labels; matching labels alone SHALL NOT merge them.
-3. Given unknown or uncertain speaker attribution, the output SHALL preserve the `Speaker N` label rather than assert an unsupported identity, consistent with `recording-speaker-review` requirement 2.
-4. Given transcript timing with gaps or overlapping intervals, the fix SHALL preserve the original timing relationships and SHALL NOT fabricate continuous timing or bridge the intervals. No numeric silence-gap threshold is prescribed.
-5. Given playback at a passage boundary or activation of a passage control, highlighting and playback start SHALL continue to use the correct passage timing; the fix SHALL NOT regress approved playback requirements 2 and 3.
-6. Tests SHALL use synthetic transcript content only. Neither the reported 2,919 fragments nor the offline estimate of roughly 75 turns in 61 minutes is a numeric acceptance threshold.
+1. Given a new recording, or a historical recording whose audio is available and authorized under existing retention, and a processing output representing multiple low-level text fragments within a spoken turn, the portal SHALL present the complete turn text as a turn-level passage with its timestamp and correct speaker label, rather than exposing each low-level ASR fragment as a user-facing turn. The approved baseline specifies this observable turn-level behavior; the source of reliable turn boundaries is an unresolved technical design investigation.
+2. Given a historical recording whose audio is confirmed expired or irrecoverable under existing retention, the portal SHALL preserve the existing source fragments ungrouped and mark them `not_reconstructible`; this state SHALL be observable in the transcript representation, and no turn grouping SHALL be inferred or fabricated.
+3. Given a speaker change or a distinct later nonconsecutive turn with a previously used speaker label, the output SHALL preserve separate turns, their original order, and their correct labels; matching labels alone SHALL NOT merge them.
+4. Given unknown or uncertain speaker attribution, the output SHALL preserve the `Speaker N` label rather than assert an unsupported identity, consistent with `recording-speaker-review` requirement 2.
+5. Given transcript timing with gaps or overlapping intervals, the fix SHALL preserve the original timing relationships and SHALL NOT fabricate continuous timing or bridge the intervals. No numeric silence-gap threshold is prescribed.
+6. Given playback at a passage boundary or activation of a passage control, highlighting and playback start SHALL continue to use the correct passage timing; the fix SHALL NOT regress approved playback requirements 2 and 3.
+7. Tests SHALL use synthetic transcript content only. Neither the reported 2,919 fragments nor the offline estimate of roughly 75 turns in 61 minutes is a numeric acceptance threshold.
