@@ -83,7 +83,7 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Archivo / seam:** `backend/tests/diarization/test_state_property.py`; funciones de transición de `backend/app/diarization/state.py`.
 
-**Acción:** Añadir propiedades sintéticas para transición terminal `pending -> not_reconstructible` solo con `audio_unavailable`, rechazo de causa/evidencia no autoritativa, terminalidad y no-op de reentrega; incluir estados pendientes/fallidos que no desplazan generación activa. Ejecutar y capturar RED.
+**Acción:** Añadir propiedades sintéticas para transición terminal `pending -> not_reconstructible` solo con `audio_unavailable`, rechazo de causa/evidencia no autoritativa, terminalidad y no-op de reentrega; incluir que `failed -> pending` solo se permite ante retry explícito con causa reintentable, y se rechaza para causa terminal, permisos o causa no verificada. Comprobar además que pending/failed no desplazan la generación activa. Ejecutar y capturar RED.
 
 **Criterio de Completado:** Desde `backend/`, `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_state_property.py` falla en los nuevos estados/reglas, no por setup.
 
@@ -93,7 +93,7 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Archivo / seam:** `backend/app/diarization/state.py`, enum/check de estado en `backend/app/infra/models.py`; transiciones `pending`, `failed`, `completed`.
 
-**Acción:** Incorporar `not_reconstructible` terminal con causa `audio_unavailable` y las transiciones explícitas aprobadas; errores transitorios, permisos y falta de evidencia no permiten marcar terminal.
+**Acción:** Incorporar `not_reconstructible` terminal con causa `audio_unavailable`; permitir `failed -> pending` únicamente cuando una solicitud de retry explícita confirme causa reintentable, manteniendo la misma revisión. Rechazar retry para estado terminal, permisos, causa desconocida o solicitud ausente. Los errores de storage/engine no crean `not_reconstructible` sin evidencia terminal.
 
 **Criterio de Completado:** Desde `backend/`, `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_state_property.py` pasa.
 
@@ -209,7 +209,7 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Archivo / seam:** suites listadas en diseño §Ubicación y pruebas; validación final de backend, API, portal, agrupador y playback.
 
-**Acción:** Ejecutar desde `frontend/`: `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/components/__tests__/MeetingPlaybackView.test.tsx src/components/__tests__/PlaybackController.test.ts src/api.test.ts` y `npm run typecheck`. Desde `backend/`, ejecutar `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_assignment_property.py tests/diarization/test_state_property.py tests/diarization/test_worker.py tests/diarization/test_reprocess_legacy.py tests/diarization/test_migration.py tests/infra/test_object_store_availability.py tests/meetings/test_diarization_endpoint.py tests/speaker_review`; también `<root>/backend/.venv/bin/python -m pytest tests/integration/test_diarization_reservation_concurrency.py` contra PostgreSQL real, nunca SQLite.
+**Acción:** Ejecutar desde `frontend/`: `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/components/__tests__/MeetingPlaybackView.test.tsx src/components/__tests__/PlaybackController.test.ts src/api.test.ts` y `npm run typecheck`. Desde `backend/`, ejecutar `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_assignment_property.py tests/diarization/test_state_property.py tests/diarization/test_worker.py tests/diarization/test_repository.py tests/diarization/test_reprocess_legacy.py tests/diarization/test_migration.py tests/infra/test_object_store_availability.py tests/meetings/test_diarization_endpoint.py tests/speaker_review`; también `<root>/backend/.venv/bin/python -m pytest tests/integration/test_diarization_reservation_concurrency.py` contra PostgreSQL real, nunca SQLite.
 
 **Criterio de Completado:** Todos los comandos terminan con exit 0 en el entorno indicado; conservar logs/salida y SHA probado. No reportar ejecución como aprobada si falta DB/runner.
 
