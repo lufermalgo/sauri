@@ -9,6 +9,9 @@ Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import httpx
 
 from app.diarization.diarization_engine import (
@@ -18,6 +21,20 @@ from app.diarization.diarization_engine import (
     DiarizationResult,
     SpeakerSegment,
 )
+from app.infra.recording_capability import create_recording_capability
+
+
+def _engine_auth_headers(audio_ref: str) -> dict[str, str]:
+    token_file = os.environ.get("SAURI_ENGINE_TOKEN_FILE")
+    if not token_file:
+        return {}
+    try:
+        token = Path(token_file).read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers["X-Sauri-Recording-Capability"] = create_recording_capability(audio_ref)
+    return headers
 
 
 class LocalProvider(DiarizationEngine):
@@ -68,7 +85,8 @@ class LocalProvider(DiarizationEngine):
             response = await client.post(
                 f"{self._url}/diarize",
                 json=payload,
-                timeout=600.0,  # Diarization can take several minutes (Req. 3.1)
+                headers=_engine_auth_headers(audio_ref),
+                timeout=float(os.environ.get("DIARIZATION_TIMEOUT_SECONDS", "3600")),
             )
             response.raise_for_status()
 

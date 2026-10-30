@@ -382,3 +382,34 @@ async def test_example_without_transcript_acks_without_persisting(
     await _process_diarization({"meeting_id": meeting_id}, session_factory)
     async with session_factory() as session:
         assert (await session.execute(select(Diarization))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_diarization_uses_recording_from_meeting_not_queue_audio_ref(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A queue-supplied reference cannot substitute another meeting's recording."""
+    meeting_id = str(uuid.uuid4())
+    foreign_meeting_id = str(uuid.uuid4())
+    persisted_audio_ref = "synthetic/owned-recording.webm"
+    foreign_audio_ref = "synthetic/foreign-recording.webm"
+
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting(meeting_id))
+        session.add(_create_meeting(foreign_meeting_id))
+        session.add(_create_recording(meeting_id, persisted_audio_ref))
+        session.add(_create_recording(foreign_meeting_id, foreign_audio_ref))
+        transcript, turns = _create_transcript_with_turns(meeting_id, num_turns=1)
+        session.add(transcript)
+        session.add_all(turns)
+
+    engine = _mock_engine(segments=[])
+    with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
+        await _process_diarization(
+            {"meeting_id": meeting_id, "audio_ref": foreign_audio_ref},
+            session_factory,
+        )
+
+    engine.diarize.assert_awaited_once()
+    assert engine.diarize.await_args is not None
+    assert engine.diarize.await_args.args[0] == persisted_audio_ref
