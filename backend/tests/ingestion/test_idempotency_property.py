@@ -123,7 +123,9 @@ async def test_same_owner_retry_for_existing_meeting_returns_original_recording(
     assert retry.id == original.id
     assert retry.meeting_id == meeting_id
     assert retry.audio_ref == "private/original-audio"
-    assert (await db_session.get(Meeting, meeting_id)).created_by == owner_id
+    persisted_meeting = await db_session.get(Meeting, meeting_id)
+    assert persisted_meeting is not None
+    assert persisted_meeting.created_by == owner_id
     recordings = (await db_session.execute(select(SessionRecording))).scalars().all()
     assert [recording.id for recording in recordings] == [original.id]
 

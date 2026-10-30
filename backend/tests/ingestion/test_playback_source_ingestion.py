@@ -180,6 +180,7 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
+    from app.auth.schemas import AuthenticatedUser
     from app.infra.models import Meeting
 
     foreign_meeting = Meeting(
@@ -214,11 +215,10 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
     monkeypatch.setattr(router, "_get_queue", Mock(return_value=queue))
     monkeypatch.setattr(router, "create_engine", Mock(return_value=engine))
     monkeypatch.setattr(router, "create_session_factory", Mock(return_value=Mock(return_value=session)))
-    monkeypatch.setattr(
-        router,
-        "process_ingestion",
-        AsyncMock(return_value=(SimpleNamespace(id="synthetic-recording", process_state="recording"), True)),
+    process_ingestion_mock = AsyncMock(
+        return_value=(SimpleNamespace(id="synthetic-recording", process_state="recording"), True)
     )
+    monkeypatch.setattr("app.ingestion.router.process_ingestion", process_ingestion_mock)
     monkeypatch.setattr(
         router, "record_transition", AsyncMock(return_value=SimpleNamespace(successful=True))
     )
@@ -235,10 +235,15 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
                     video_presence="absent",
                 )
             ),
-            user=SimpleNamespace(id="requesting-owner", is_sales=True),
+            user=AuthenticatedUser(
+                id="requesting-owner",
+                email="requesting@example.test",
+                name="Synthetic Requester",
+                is_sales=True,
+            ),
         )
 
     assert error.value.status_code == 404
     assert error.value.detail == "Meeting not found"
     store.save.assert_not_awaited()
-    router.process_ingestion.assert_not_awaited()
+    process_ingestion_mock.assert_not_awaited()
