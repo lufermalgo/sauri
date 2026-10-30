@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_standard" name="shell-type"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,300..900;1,6..12,300..900&amp;family=Literata:ital,opsz,wght@0,7..72,400..800;1,7..72,400..800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"primary-fixed":"#c8e8d0","on-secondary":"#ffffff","tertiary-fixed-dim":"#dcc48e","surface-tint":"#4a7c59","on-error-container":"#690005","on-secondary-fixed":"#1e1a13","inverse-primary":"#8ecf9e","inverse-surface":"#2e3230","error-container":"#ffdad8","on-secondary-fixed-variant":"#4a4538","secondary-fixed-dim":"#d4ccbf","surface-container-highest":"#e4e0d8","outline-variant":"#c4c8bc","surface-container":"#f0ece4","on-secondary-container":"#5e5548","on-primary":"#ffffff","secondary":"#6b6358","on-primary-container":"#d8f0de","surface-container-high":"#eae6de","on-primary-fixed-variant":"#2a6038","tertiary-container":"#c4a66a","error":"#b83230","on-surface":"#2e3230","surface-dim":"#dbd7cf","on-error":"#ffffff","secondary-fixed":"#f0e8db","on-primary-fixed":"#002110","surface-container-lowest":"#ffffff","surface":"#faf6f0","primary-fixed-dim":"#8ecf9e","on-surface-variant":"#4a4e4a","tertiary":"#705c30","secondary-container":"#f0e8db","inverse-on-surface":"#f5f0e8","primary":"#4a7c59","background":"#faf6f0","tertiary-fixed":"#f8e0a8","on-tertiary-fixed":"#221a05","on-background":"#2e3230","primary-container":"#78a886","on-tertiary":"#ffffff","on-tertiary-fixed-variant":"#554020","on-tertiary-container":"#554020","surface-bright":"#faf6f0","surface-variant":"#e4e0d8","surface-container-low":"#f5f1ea","outline":"#74796e"},"borderRadius":{"DEFAULT":"0.5rem","lg":"1rem","xl":"1.5rem","full":"9999px"},"fontFamily":{"headline":["Literata"],"display":["Literata"],"body":["Nunito Sans"],"label":["Nunito Sans"],"mono-timestamp":["JetBrains Mono"]}}}}</script></head><body class="bg-background font-body text-on-surface antialiased min-h-screen flex flex-col"><header class="fixed top-0 inset-x-0 z-50 bg-surface/90 backdrop-blur-xl border-b border-outline-variant/50 shadow-sm"><div class="h-16 w-full px-6 lg:px-8 flex items-center justify-between gap-4"><div class="flex items-center gap-6"><div class="flex items-center"><img alt="Sauri" class="h-9 w-auto object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5FMoruVborhnDir2QNenuQochQKvE3_Hy-yY0OjPDV4OV1cCPPhIa_jHqmJlhg9a0dmCw2AsTy_XCrnyvjDQl-KV4ZJOULsSlTQNcQKpdtTZF_rqryXfK7FKkKonOpSXGIBqLSUGN9Kw7hQRjOETODVTWnphktCiSOnnfyINSZ03q96GqD_SdasFlr4X03KGT2aDrsdyN2VlqACb0e_3JI5WU2-4F85w24HyaZKvq8wOlk93lR83piA"/></div><nav class="hidden lg:flex items-center gap-1 p-1 bg-surface-container-low rounded-lg border border-outline-variant/40"><a class="px-3 py-1.5 font-label text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-all" data-path="biblioteca-de-grabaciones" href="#">Biblioteca de grabaciones</a><a class="px-3 py-1.5 font-label text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-all" data-path="revision-de-hablantes" href="#">Revisión de hablantes</a><a aria-current="page" class="px-3 py-1.5 transition-all bg-surface-container-lowest text-primary font-label text-sm font-semibold rounded-lg shadow-sm border border-outline-variant/40" data-path="configuracion" href="#">Configuración</a></nav></div><div class="flex items-center gap-3"><button class="hidden xl:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:border-outline transition-all text-left group shadow-xs" type="button"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[16px] text-outline group-hover:text-primary transition-colors">search</span><span class="text-xs text-outline group-hover:text-on-surface-variant">Buscar configuraciones...</span></div><kbd class="font-mono-timestamp text-[11px] px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant/60 text-outline">⌘K</kbd></button><div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-low border border-outline-variant/50"><span class="w-2 h-2 rounded-full bg-primary shadow-xs"></span><span class="text-xs text-on-surface-variant font-medium">Sincronizado</span></div><button class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-on-primary font-label text-sm hover:bg-primary-container hover:text-on-surface shadow-xs transition-all font-semibold active:scale-[0.98]" type="button"><span class="material-symbols-outlined text-[16px]">add</span><span class="">Subir grabación</span></button><div class="relative group pl-2 border-l border-outline-variant/40"><button class="flex items-center gap-2 p-1 rounded-lg hover:bg-surface-container transition-all focus:outline-none" type="button"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-outline-variant/60" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBwpp5qm8Jb_Zr4klo6lCXGfmi2IUv853qXwpUOkrZPG0MO2JQ39nJPnKaYAxoREypzg8Tx9YzNhOiSvjDDi_VzD0o8qO2XBbBQQHPnSEWuAeVQN82bL36DkEitGap1g-IafgyI3eno2OcKov05v1Dow-8Cu72qmV1KDZ8D78VR9HMvKq2Cla-tPuyrbhnRvx3UxAM1uYIJgUNLwDozJIjZRmpeIRbYlw5q7gqWIVAG"/><div class="hidden md:flex flex-col text-left"><span class="font-label text-xs text-on-surface font-semibold leading-none">Fer (Summan)</span><span class="font-label text-[10px] text-outline leading-tight mt-0.5">Admin</span></div><span class="material-symbols-outlined text-[18px] text-outline group-hover:text-on-surface transition-colors hidden md:inline-block">expand_more</span></button><div class="absolute right-0 top-full mt-2 w-52 py-2 bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-150 z-50"><div class="px-4 py-2 border-b border-outline-variant/30 md:hidden"><p class="text-sm text-on-surface font-medium">Fer (Summan)</p><p class="text-xs text-outline">Admin</p></div><a class="flex items-center gap-2 px-4 py-2 text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="diagnostico" href="#"><span class="material-symbols-outlined text-[16px] text-outline">troubleshoot</span>Diagnóstico</a><div class="my-1 border-t border-outline-variant/30"></div><a class="flex items-center gap-2 px-4 py-2 text-sm text-error hover:bg-error-container/30 transition-colors" data-path="login" href="#"><span class="material-symbols-outlined text-[16px] text-error">logout</span>Cerrar sesión</a></div></div></div></div></header><main class="w-full pt-16 bg-background flex-1"><div class="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+<div class="flex flex-col lg:flex-row gap-8 items-start">
+<!-- Left Sidebar: Settings Navigation Panel -->
+<aside class="w-full lg:w-72 xl:w-80 flex-shrink-0 flex flex-col gap-6 sticky top-24">
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl p-5 shadow-xs flex flex-col gap-4">
+<div class="flex items-center justify-between pb-3 border-b border-outline-variant/30">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">settings</span>
+<span class="font-headline font-bold text-base text-on-surface">Configuración del Sistema</span>
+</div>
+<span class="font-mono-timestamp text-[11px] text-primary font-semibold px-2 py-0.5 rounded-full bg-primary-fixed/40">Enterprise</span>
+</div>
+<nav class="flex flex-col gap-1.5">
+<!-- Item 1: General -->
+<a class="group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px] text-outline group-hover:text-primary transition-colors">corporate_fare</span>
+<div class="flex flex-col text-left">
+<span class="font-label text-sm font-semibold text-on-surface leading-tight">General y Espacio</span>
+<span class="text-[11px] text-outline">Datos de empresa, idioma base</span>
+</div>
+</div>
+</a>
+<!-- Item 2: Plantillas de Resumen (ACTIVE) -->
+<a aria-current="page" class="group flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-primary-fixed/30 border border-primary/30 text-on-surface transition-all shadow-xs" href="#">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[18px]">neurology</span>
+</div>
+<div class="flex flex-col text-left">
+<span class="font-label text-sm font-bold text-primary leading-tight">Plantillas de Resumen</span>
+<span class="text-[11px] text-on-surface-variant">Extracción y minutas IA</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-primary text-on-primary font-label text-[11px] font-bold shadow-xs">8 activas</span>
+</a>
+<!-- Item 3: Diarización & Voces -->
+<a class="group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px] text-outline group-hover:text-primary transition-colors">record_voice_over</span>
+<div class="flex flex-col text-left">
+<span class="font-label text-sm font-semibold text-on-surface leading-tight">Motor de Diarización &amp; Voces</span>
+<span class="text-[11px] text-outline">Whisper v3, umbrales de confianza</span>
+</div>
+</div>
+</a>
+<!-- Item 4: Directivas y Prompts -->
+<a class="group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px] text-outline group-hover:text-primary transition-colors">auto_fix_high</span>
+<div class="flex flex-col text-left">
+<span class="font-label text-sm font-semibold text-on-surface leading-tight">Directivas y Prompts de IA</span>
+<span class="text-[11px] text-outline">Reglas estrictas y guardrails</span>
+</div>
+</div>
+</a>
+<!-- Item 5: Integraciones -->
+<a class="group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px] text-outline group-hover:text-primary transition-colors">hub</span>
+<div class="flex flex-col text-left">
+<span class="font-label text-sm font-semibold text-on-surface leading-tight">Integraciones &amp; Webhooks</span>
+<span class="text-[11px] text-outline">Meet, Teams, Slack, Cloud</span>
+</div>
+</div>
+</a>
+<!-- Item 6: Miembros -->
+<a class="group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px] text-outline group-hover:text-primary transition-colors">group</span>
+<div class="flex flex-col text-left">
+<span class="font-label text-sm font-semibold text-on-surface leading-tight">Miembros y Permisos</span>
+<span class="text-[11px] text-outline">Roles, SSO, llaves de API</span>
+</div>
+</div>
+</a>
+<!-- Item 7: Almacenamiento -->
+<a class="group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[20px] text-outline group-hover:text-primary transition-colors">lock</span>
+<div class="flex flex-col text-left">
+<span class="font-label text-sm font-semibold text-on-surface leading-tight">Almacenamiento y Retención</span>
+<span class="text-[11px] text-outline">Políticas y cifrado AES-256</span>
+</div>
+</div>
+</a>
+</nav>
+</div>
+<!-- Capacity & Infrastructure Card -->
+<div class="bg-surface-container-low border border-outline-variant/40 rounded-2xl p-5 shadow-xs flex flex-col gap-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 text-primary font-semibold text-xs tracking-wider uppercase">
+<span class="material-symbols-outlined text-[16px]">cloud_sync</span>
+<span>Capacidad Enterprise</span>
+</div>
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+</div>
+<p class="text-xs text-on-surface-variant leading-relaxed">
+          Whisper v3 Neural Cluster activo con procesamiento de inferencia acelerada GPU L40S.
+        </p>
+<div class="flex flex-col gap-1.5 pt-1">
+<div class="flex justify-between text-xs font-mono-timestamp">
+<span class="text-outline">Precisión LLM</span>
+<span class="text-primary font-bold">99.4%</span>
+</div>
+<div class="w-full bg-surface-container-highest h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 94%;"></div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area: Plantillas de Resumen Settings View -->
+<div class="flex-1 w-full flex flex-col gap-6">
+<!-- Main Content Header -->
+<div class="flex flex-col xl:flex-row xl:items-start justify-between gap-6 pb-2 border-b border-outline-variant/30">
+<div class="flex flex-col gap-2 max-w-3xl">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined text-[18px]">neurology</span>
+<span class="font-label text-xs tracking-widest uppercase text-primary font-bold">Motor de Extracción Semántica</span>
+</div>
+<h1 class="font-headline text-2xl sm:text-3xl lg:text-4xl text-on-surface tracking-tight font-bold">Plantillas de Resumen y Extracción Semántica</h1>
+<p class="font-body text-sm md:text-base text-on-surface-variant max-w-2xl leading-relaxed">
+            Configura las directrices estructurales que la IA utiliza para generar minutas automatizadas, acuerdos y asignación de responsables. Estandariza la captura de valor en toda la organización.
+          </p>
+</div>
+<!-- Action Toolbar -->
+<div class="flex items-center gap-2.5 flex-wrap">
+<button class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface-container-lowest hover:bg-surface-container text-on-surface font-label text-sm font-semibold border border-outline-variant/40 shadow-xs transition-all active:scale-[0.98]" type="button">
+<span class="material-symbols-outlined text-[18px] text-outline">file_upload</span>
+<span>Importar JSON</span>
+</button>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary hover:bg-primary-container hover:text-on-surface shadow-xs transition-all font-semibold active:scale-[0.98] font-label text-sm" type="button">
+<span class="material-symbols-outlined text-[18px]">add</span>
+<span>+ Nueva plantilla</span>
+</button>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface-container-highest hover:bg-surface-variant text-on-surface font-label text-sm font-bold transition-all active:scale-[0.98]" type="button">
+<span class="material-symbols-outlined text-[18px] text-primary">check</span>
+<span>Guardar cambios</span>
+</button>
+</div>
+</div>
+<!-- Metric Pills / Micro Indicators -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-3.5 flex items-center gap-3 shadow-xs">
+<div class="w-9 h-9 rounded-lg bg-primary-fixed flex items-center justify-center text-on-primary-fixed-variant flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">assignment_turned_in</span>
+</div>
+<div>
+<span class="font-label text-[11px] text-outline block">Plantillas Activas</span>
+<span class="font-headline text-base font-bold text-on-surface">12 operativas</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-3.5 flex items-center gap-3 shadow-xs">
+<div class="w-9 h-9 rounded-lg bg-secondary-container flex items-center justify-center text-on-secondary-container flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">timer</span>
+</div>
+<div>
+<span class="font-label text-[11px] text-outline block">Ahorro Promedio</span>
+<span class="font-headline text-base font-bold text-on-surface">38 min / reunión</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-3.5 flex items-center gap-3 shadow-xs">
+<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-secondary flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">precision_manufacturing</span>
+</div>
+<div>
+<span class="font-label text-[11px] text-outline block">Tasa de Fidelidad</span>
+<span class="font-headline text-base font-bold text-on-surface">99.4% precisión</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-3.5 flex items-center justify-between shadow-xs">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-lg bg-tertiary-fixed flex items-center justify-center text-on-tertiary-fixed flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">psychology</span>
+</div>
+<div>
+<span class="font-label text-[11px] text-outline block">Modelo Base</span>
+<span class="font-label text-xs font-bold text-on-surface">Sauri-Instruct v3</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded bg-surface-container text-tertiary font-mono-timestamp text-[11px] font-semibold">128k ctx</span>
+</div>
+</div>
+<!-- Filter & Search Command Strip -->
+<div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface-container-lowest border border-outline-variant/40 p-2 rounded-xl shadow-xs">
+<div class="flex items-center overflow-x-auto gap-1.5 p-0.5">
+<button class="filter-btn active px-3.5 py-1.5 rounded-lg bg-primary text-on-primary font-label text-sm font-semibold shadow-xs transition-all whitespace-nowrap" type="button">
+            Todas (8)
+          </button>
+<button class="filter-btn px-3.5 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-label text-sm transition-all whitespace-nowrap" type="button">
+            Comercial y Ventas
+          </button>
+<button class="filter-btn px-3.5 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-label text-sm transition-all whitespace-nowrap" type="button">
+            Técnica y Arquitectura
+          </button>
+<button class="filter-btn px-3.5 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-label text-sm transition-all whitespace-nowrap" type="button">
+            Sprints y Operaciones
+          </button>
+<button class="filter-btn px-3.5 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low font-label text-sm transition-all whitespace-nowrap" type="button">
+            1-on-1s
+          </button>
+</div>
+<div class="flex items-center gap-2 px-2">
+<div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-lg text-outline border border-outline-variant/30">
+<span class="material-symbols-outlined text-[16px]">filter_list</span>
+<span class="font-label text-xs text-on-surface-variant font-medium">Ordenar por: Recientes</span>
+</div>
+</div>
+</div>
+<!-- Templates Bento Grid -->
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5 items-stretch">
+<!-- Card 1: Default Active Commercial Proposal -->
+<div class="relative bg-surface-container-lowest border-2 border-primary/40 rounded-2xl p-5 flex flex-col justify-between shadow-xs transition-all hover:border-primary hover:shadow-md group">
+<div class="absolute -top-3 left-6">
+<span class="inline-flex items-center gap-1 px-3 py-0.5 rounded-full bg-primary text-on-primary font-label text-xs font-bold shadow-xs">
+<span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">star</span>
+              Predeterminada
+            </span>
+</div>
+<div class="flex flex-col gap-4 pt-1">
+<div class="flex items-start justify-between gap-3">
+<div class="flex flex-col">
+<span class="font-label text-xs text-primary font-bold uppercase tracking-wider">Comercial y Ventas</span>
+<h2 class="font-headline text-lg font-bold text-on-surface tracking-tight mt-1">Propuesta Comercial Estándar</h2>
+</div>
+<div class="w-9 h-9 rounded-lg bg-primary-fixed/60 flex items-center justify-center text-primary group-hover:scale-105 transition-transform flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">handshake</span>
+</div>
+</div>
+<p class="font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed">
+              Estructura optimizada para capturar el valor de negocio, dolores presupuestarios, dimensionamiento y cotización Summan.
+            </p>
+<!-- Structure preview -->
+<div class="bg-surface-container-low rounded-xl p-3 flex flex-col gap-1.5 border border-outline-variant/30">
+<div class="flex items-center justify-between text-outline font-label text-xs pb-1 border-b border-outline-variant/30">
+<span>Secciones procesadas por IA</span>
+<span class="font-mono-timestamp text-[11px]">5 puntos clave</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-primary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">1</span>
+<span class="font-medium truncate">Objetivos estratégicos del cliente</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-primary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">2</span>
+<span class="font-medium truncate">Puntos de dolor identificados</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-primary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">3</span>
+<span class="font-medium truncate">Solución Summan planteada</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-primary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">4</span>
+<span class="font-medium truncate">Acuerdos de valor y cotización</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-primary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">5</span>
+<span class="font-medium truncate">Siguientes pasos y fechas límite</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-3 pt-4">
+<!-- Toggle default -->
+<div class="flex items-center justify-between p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/30">
+<div class="flex flex-col">
+<span class="font-label text-xs font-bold text-on-surface">Usar por defecto</span>
+<span class="text-[10px] text-outline">Para reuniones comerciales</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-10 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface peer-checked:bg-primary after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest peer-checked:after:bg-on-primary after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+</label>
+</div>
+<!-- Actions -->
+<div class="flex items-center gap-2">
+<button class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-label text-xs font-bold border border-outline-variant/40 shadow-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">edit_note</span>
+<span>Editar estructura</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant/40 shadow-xs transition-colors" title="Duplicar plantilla" type="button">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant/40 shadow-xs transition-colors" title="Opciones avanzadas" type="button">
+<span class="material-symbols-outlined text-[16px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Card 2: Architecture Review -->
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl p-5 flex flex-col justify-between shadow-xs transition-all hover:border-outline hover:shadow-md group">
+<div class="flex flex-col gap-4">
+<div class="flex items-start justify-between gap-3">
+<div class="flex flex-col">
+<span class="font-label text-xs text-secondary font-bold uppercase tracking-wider">Técnica y Arquitectura</span>
+<h2 class="font-headline text-lg font-bold text-on-surface tracking-tight mt-1">Revisión Técnica y Arquitectura Cloud</h2>
+</div>
+<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-secondary group-hover:scale-105 transition-transform flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">account_tree</span>
+</div>
+</div>
+<p class="font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed">
+              Orientada a comités de diseño de sistemas, auditorías de latencia, topología Kubernetes y decisiones arquitectónicas (ADR).
+            </p>
+<div class="bg-surface-container-low rounded-xl p-3 flex flex-col gap-1.5 border border-outline-variant/30">
+<div class="flex items-center justify-between text-outline font-label text-xs pb-1 border-b border-outline-variant/30">
+<span>Secciones procesadas por IA</span>
+<span class="font-mono-timestamp text-[11px]">4 puntos clave</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-secondary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">1</span>
+<span class="font-medium truncate">Alcance y topología de infraestructura</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-secondary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">2</span>
+<span class="font-medium truncate">Decisiones de diseño (ADRs)</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-secondary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">3</span>
+<span class="font-medium truncate">Dependencias y riesgos de seguridad</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-secondary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">4</span>
+<span class="font-medium truncate">Entregables técnicos &amp; spikes asignados</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-3 pt-4">
+<div class="flex items-center justify-between p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/30">
+<div class="flex flex-col">
+<span class="font-label text-xs font-bold text-on-surface">Usar por defecto</span>
+<span class="text-[10px] text-outline">Para canales tech &amp; dev</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-10 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface peer-checked:bg-primary after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-outline-variant peer-checked:after:bg-on-primary after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+</label>
+</div>
+<div class="flex items-center gap-2">
+<button class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-label text-xs font-bold border border-outline-variant/40 shadow-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">edit_note</span>
+<span>Editar estructura</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant/40 shadow-xs transition-colors" title="Duplicar plantilla" type="button">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant/40 shadow-xs transition-colors" title="Opciones avanzadas" type="button">
+<span class="material-symbols-outlined text-[16px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Card 3: Executive Fast Minute -->
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-2xl p-5 flex flex-col justify-between shadow-xs transition-all hover:border-outline hover:shadow-md group">
+<div class="flex flex-col gap-4">
+<div class="flex items-start justify-between gap-3">
+<div class="flex flex-col">
+<span class="font-label text-xs text-tertiary font-bold uppercase tracking-wider">General</span>
+<h2 class="font-headline text-lg font-bold text-on-surface tracking-tight mt-1">Minuta Ejecutiva y Acuerdos Rápidos</h2>
+</div>
+<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-tertiary group-hover:scale-105 transition-transform flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">speed</span>
+</div>
+</div>
+<p class="font-body text-xs sm:text-sm text-on-surface-variant leading-relaxed">
+              Ideal para sincronizaciones breves de 15 a 30 minutos donde solo se requiere destilar accionables y dependencias críticas.
+            </p>
+<div class="bg-surface-container-low rounded-xl p-3 flex flex-col gap-1.5 border border-outline-variant/30">
+<div class="flex items-center justify-between text-outline font-label text-xs pb-1 border-b border-outline-variant/30">
+<span>Secciones procesadas por IA</span>
+<span class="font-mono-timestamp text-[11px]">3 puntos clave</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-tertiary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">1</span>
+<span class="font-medium truncate">Resumen ejecutivo en 3 frases</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-tertiary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">2</span>
+<span class="font-medium truncate">Decisiones clave acordadas</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface text-xs py-0.5">
+<span class="w-4 h-4 rounded bg-surface-container-highest text-tertiary flex items-center justify-center font-mono-timestamp text-[10px] font-bold">3</span>
+<span class="font-medium truncate">Matriz RACI / Responsables inmediatos</span>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-3 pt-4">
+<div class="flex items-center justify-between p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/30">
+<div class="flex flex-col">
+<span class="font-label text-xs font-bold text-on-surface">Usar por defecto</span>
+<span class="text-[10px] text-outline">Para sincronizaciones ágiles</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-10 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface peer-checked:bg-primary after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-outline-variant peer-checked:after:bg-on-primary after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
+</label>
+</div>
+<div class="flex items-center gap-2">
+<button class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-label text-xs font-bold border border-outline-variant/40 shadow-xs transition-colors" type="button">
+<span class="material-symbols-outlined text-[16px]">edit_note</span>
+<span>Editar estructura</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant/40 shadow-xs transition-colors" title="Duplicar plantilla" type="button">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant/40 shadow-xs transition-colors" title="Opciones avanzadas" type="button">
+<span class="material-symbols-outlined text-[16px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Intelligent Section Guide and Custom Prompt Tuning -->
+<div class="bg-surface-container rounded-2xl p-6 lg:p-7 shadow-xs border border-outline-variant/40 relative overflow-hidden">
+<div class="absolute -right-16 -top-16 w-80 h-80 rounded-full bg-gradient-to-br from-primary-fixed/50 via-secondary-fixed/40 to-transparent blur-3xl pointer-events-none"></div>
+<div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
+<div class="flex flex-col gap-2 max-w-2xl">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-symbols-outlined text-[18px]">auto_fix_high</span>
+<span class="font-label text-xs font-bold uppercase tracking-wider">Directivas de Extracción Personalizadas</span>
+</div>
+<h3 class="font-headline text-xl lg:text-2xl font-bold text-on-surface">¿Necesitas prompts específicos para tu vertical corporativa?</h3>
+<p class="font-body text-sm text-on-surface-variant leading-relaxed">
+              Configura directivas estrictas para la IA de Sauri (cumplimiento normativo, terminología SAP/Oracle interna de Summan, o lenguaje legal para licitaciones públicas).
+            </p>
+</div>
+<div class="flex items-center gap-3 flex-wrap">
+<button class="px-4 py-2 rounded-xl bg-surface-container-lowest hover:bg-surface-container-high text-on-surface font-label text-sm font-semibold border border-outline-variant/50 shadow-xs transition-all flex items-center gap-2" type="button">
+<span class="material-symbols-outlined text-[16px]">menu_book</span>
+<span>Ver librería de prompts</span>
+</button>
+<button class="px-5 py-2 rounded-xl bg-primary text-on-primary hover:bg-primary-container hover:text-on-surface font-label text-sm font-bold shadow-xs transition-all flex items-center gap-2" type="button">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+<span>Reglas globales de LLM</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div></main><footer class="w-full bg-surface-container-lowest border-t border-outline-variant/40 py-4"><div class="w-full px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 font-label text-xs text-outline"><span>© 2025 Sauri Platform by Summan. Inteligencia conversacional y transcripción de alta fidelidad.</span><div class="flex items-center gap-6"><span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-primary"></span> Whisper v3 Large &amp; Diarization Neural Core</span><span class="font-mono-timestamp">v2.4.0-enterprise</span></div></div></footer><script>
+    (function initFilterChips() {
+      const filterBtns = document.querySelectorAll('.filter-btn');
+      filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          filterBtns.forEach(b => {
+            b.classList.remove('bg-primary', 'text-on-primary', 'font-semibold', 'shadow-xs');
+            b.classList.add('text-on-surface-variant');
+          });
+          btn.classList.remove('text-on-surface-variant');
+          btn.classList.add('bg-primary', 'text-on-primary', 'font-semibold', 'shadow-xs');
+        });
+      });
+    })();
+  </script></body></html>
