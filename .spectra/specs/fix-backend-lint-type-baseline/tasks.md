@@ -152,7 +152,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.22 | Not applicable — not instantiated; Issue #347 closed as not planned; the mypy finding was removed by merged PR #418 · Card task_a51038580a414fcd · PR #508 |
 | T-3.1.23 | Issue #348 · Card task_7547e887bf434b12 |
 | T-3.1.24 | Done · Issue #349 · Card task_1663610cd4ed4cff · PR #525 |
-| T-3.1.25 | Issue #350 · Card task_d02b6e8c4d814984 |
+| T-3.1.25 | Done · Issue #350 · Card task_d02b6e8c4d814984 · PR #506 |
 | T-3.1.26 | Done · Issue #351 · Card task_59aac81ea8054377 · PR #483 |
 | T-3.1.27 | Done · Issue #352 · Card task_9f1282d6970a445d · PR #427 |
 | T-3.1.28 | Done · Issue #353 · Card task_33bf40d2ec6146e4 · PR #426 |
