@@ -70,7 +70,7 @@ async function runUpload(fetchImplementation: typeof fetch) {
 }
 
 describe("upload failures must remain retryable", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); });
   afterEach(() => { vi.unstubAllGlobals(); });
 
   it.each([
