@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { RegisterForm } from "./components/RegisterForm";
 import { MeetingList } from "./components/MeetingList";
@@ -14,6 +14,16 @@ export function App() {
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(localStorage.getItem("sauri_token"))
   );
+
+  useEffect(() => {
+    function handleUnauthorized() {
+      setAuthenticated(false);
+      setView({ type: "list" });
+    }
+
+    window.addEventListener("sauri:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("sauri:unauthorized", handleUnauthorized);
+  }, []);
 
   function handleRegistered() {
     setRefreshKey((key) => key + 1);

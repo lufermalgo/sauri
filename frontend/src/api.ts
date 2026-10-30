@@ -73,6 +73,10 @@ function getAuthHeaders(): HeadersInit {
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
+  if (response.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    window.dispatchEvent(new Event("sauri:unauthorized"));
+  }
   if (!response.ok) {
     throw new Error(`Error ${response.status}`);
   }

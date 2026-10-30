@@ -40,6 +40,7 @@ function mockFetch(body: unknown, status = 200) {
   vi.stubGlobal("localStorage", {
     getItem: vi.fn().mockReturnValue("synthetic-token"),
     setItem: vi.fn(),
+    removeItem: vi.fn(),
     clear: vi.fn(),
   });
   return fetchMock;
