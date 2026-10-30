@@ -33,6 +33,7 @@ function createLocalStorage(): Storage {
 }
 
 function openSpeakerTest() {
+  localStorage.setItem("sauri_token", "synthetic-existing-token");
   render(<App />);
   fireEvent.click(screen.getByRole("button", { name: /open speaker recognition test/i }));
 }
@@ -64,20 +65,20 @@ afterEach(() => {
 });
 
 describe("speaker-test login and local session gate", () => {
-  it("shows login and hides authenticated test controls when no token exists", () => {
-    openSpeakerTest();
+  it("shows login before mounting the authenticated app when no token exists", () => {
+    render(<App />);
 
     expect(screen.getByLabelText(/email/i)).toBeTruthy();
     expect(screen.getByLabelText(/password/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /log in|sign in/i })).toBeTruthy();
+    expect(screen.queryByText("Meeting registration")).toBeNull();
     expect(screen.queryByRole("heading", { name: /speaker recognition test/i })).toBeNull();
-    expect(screen.queryByLabelText(/recording/i)).toBeNull();
   });
 
   it("keeps test controls hidden while login is pending and prevents duplicate submission", async () => {
     const pendingLogin = deferred<{ access_token: string; token_type: string; expires_in: number }>();
     vi.mocked(api.login).mockReturnValue(pendingLogin.promise);
-    openSpeakerTest();
+    render(<App />);
     enterCredentials();
     const submit = screen.getByRole("button", { name: /log in|sign in/i });
 
@@ -92,6 +93,7 @@ describe("speaker-test login and local session gate", () => {
     expect(api.login).toHaveBeenCalledTimes(1);
 
     pendingLogin.resolve({ access_token: "synthetic-access-token", token_type: "bearer", expires_in: 3600 });
+    fireEvent.click(await screen.findByRole("button", { name: /open speaker recognition test/i }));
     await screen.findByRole("heading", { name: /speaker recognition test/i });
   });
 
@@ -101,10 +103,12 @@ describe("speaker-test login and local session gate", () => {
       token_type: "bearer",
       expires_in: 3600,
     });
-    openSpeakerTest();
+    render(<App />);
     enterCredentials();
     fireEvent.click(screen.getByRole("button", { name: /log in|sign in/i }));
 
+    await screen.findByRole("button", { name: /open speaker recognition test/i });
+    fireEvent.click(screen.getByRole("button", { name: /open speaker recognition test/i }));
     await screen.findByRole("heading", { name: /speaker recognition test/i });
     expect(localStorage.getItem("sauri_token")).toBe("synthetic-access-token");
     expect(localStorage.length).toBe(1);
@@ -120,7 +124,7 @@ describe("speaker-test login and local session gate", () => {
     ["network failure", () => Promise.reject(new TypeError("synthetic network failure"))],
   ])("remains unauthenticated and shows a generic error after %s", async (_failure, response) => {
     vi.mocked(api.login).mockImplementation(response);
-    openSpeakerTest();
+    render(<App />);
     enterCredentials();
     fireEvent.click(screen.getByRole("button", { name: /log in|sign in/i }));
 

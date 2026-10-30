@@ -47,6 +47,7 @@ function mockFetch(body: unknown, status = 200) {
   vi.stubGlobal("localStorage", {
     getItem: vi.fn().mockReturnValue("synthetic-token"),
     setItem: vi.fn(),
+    removeItem: vi.fn(),
     clear: vi.fn(),
   });
   return fetchMock;
@@ -293,5 +294,45 @@ describe("meeting playback API adapter", () => {
 
     await expect(api.getTranscript("meeting-1")).rejects.toThrow();
     await expect(api.getTranscript("meeting-1")).rejects.not.toThrow(privateReference);
+  });
+});
+
+describe("meeting list API adapter", () => {
+  it("clears the stored token when a protected request returns 401", async () => {
+    const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);
+    const removeItem = vi.fn();
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn().mockReturnValue("synthetic-token"),
+      setItem: vi.fn(),
+      removeItem,
+    });
+
+    await expect(api.listMeetings()).rejects.toThrow("Error 401");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledWith("sauri_token");
+  });
+
+  it("maps the backend snake_case meeting payload into the shared UI type", async () => {
+    mockFetch([{
+      meeting_id: "fb02f350-0000-4000-8000-000000000001",
+      meet_link: null,
+      origin: "manual",
+      process_state: "completed",
+      failure_cause: null,
+      created_at: "2026-10-28T17:45:00Z",
+      title: "Synthetic processed meeting",
+    }]);
+
+    await expect(api.listMeetings()).resolves.toEqual([{
+      id: "fb02f350-0000-4000-8000-000000000001",
+      meetLink: null,
+      origin: "manual",
+      processState: "completed",
+      failureCause: null,
+      createdAt: "2026-10-28T17:45:00Z",
+      title: "Synthetic processed meeting",
+    }]);
   });
 });

@@ -75,6 +75,23 @@ async def _process_transcription(
 
     logger.info("Processing transcription for meeting_id=%s", meeting_id)
 
+    async with session_factory() as session:
+        recording = (
+            await session.execute(
+                select(SessionRecording).where(
+                    SessionRecording.meeting_id == meeting_id
+                )
+            )
+        ).scalar_one_or_none()
+    if recording is None:
+        logger.warning(
+            "Message discarded: SessionRecording not found for meeting_id=%s",
+            meeting_id,
+        )
+        return
+    recording_audio_ref = recording.audio_ref
+    audio_duration_seconds = recording.duration_seconds
+
     # Initial transition recording -> transcribing (Req. 8.1)
     async with session_factory() as session, session.begin():
         meeting = await session.get(Meeting, meeting_id)
@@ -87,21 +104,12 @@ async def _process_transcription(
     # 1. Create the ASR engine via the factory (selects provider by config)
     engine = create_asr_engine()
 
-    async with session_factory() as session:
-        recording = (
-            await session.execute(
-                select(SessionRecording).where(
-                    SessionRecording.meeting_id == meeting_id
-                )
-            )
-        ).scalar_one_or_none()
-    audio_duration_seconds = recording.duration_seconds if recording else None
-
-    # 2. Transcribe with the preferred language es-CO (Req. 3.2)
+    # 2. Transcribe only the audio persisted for this meeting. The queue's
+    # audio_ref is untrusted and must not select the object sent to the engine.
     options = TranscriptionOptions(preferred_language="es-CO")
     started_at = time.monotonic()
     try:
-        result = await engine.transcribe(audio_ref, options)
+        result = await engine.transcribe(recording_audio_ref, options)
     except httpx.TimeoutException:
         elapsed_seconds = time.monotonic() - started_at
         async with session_factory() as session, session.begin():

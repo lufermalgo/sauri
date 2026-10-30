@@ -22,7 +22,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Files:** `backend/tests/test_migration.py`; `backend/tests/ingestion/test_playback_source_ingestion.py` (new); `extension/src/core/capture.test.ts`.
 
-**Action:** Add synthetic RED tests for migration from revision `008_speaker_review_aggregate`: backfill exactly one `Original` audio source per existing `audio_ref`, one video source per non-null `video_ref`, initialize every legacy recording's `video_presence` to `unknown` regardless of MIME or refs, leave unavailable legacy MIME/offset null, preserve original refs through downgrade/re-upgrade, and reject duplicate `(recording_id, kind, object_ref)`. Add capture tests proving observed `MediaStream` video-track presence is reported before the existing interleaved single-object upload is constructed. Add ingestion tests requiring explicit metadata consistent with capture mode: `muxed` only for the single-object interleaved path with an observed video track; `absent` only when capture observed no video; `separate` only with a distinct video object and finite signed integer `video_offset_ms`; reject missing/inconsistent metadata with 422 before persistence or media storage. Do not use real recordings or infer presence from MIME, missing `video_ref`, or recording association.
+**Action:** Add synthetic RED tests for migration from revision `008_speaker_review_aggregate`: backfill exactly one `RecordingMediaSource` audio row per existing `audio_ref`, one `RecordingMediaSource` video row per non-null `video_ref`, initialize every legacy recording's `video_presence` to `unknown` regardless of MIME or refs, leave unavailable legacy MIME/offset null, preserve original refs through downgrade/re-upgrade, and reject duplicate `(recording_id, kind, object_ref)`. Add capture tests proving observed `MediaStream` video-track presence is reported before the existing interleaved single-object upload is constructed. Add ingestion tests requiring explicit metadata consistent with capture mode: `muxed` only for the single-object interleaved path with an observed video track; `absent` only when capture observed no video; `separate` only with a distinct video object and finite signed integer `video_offset_ms`; reject missing/inconsistent metadata with 422 before persistence or media storage. Do not use real recordings or infer presence from MIME, missing `video_ref`, or recording association.
 
 **Acceptance evidence:** New migration/ingestion tests fail against the pre-feature persistence contract for the missing inventory, `video_presence` and offset validation; capture test fails because no explicit track-presence metadata is reported. Keep test results synthetic.
 
@@ -76,7 +76,8 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Tracking:** Task done · Issue #303 · Card `task_b51714b10bb6489e` · PR #484
 
-**Files:** Frontend API adapter tests for `frontend/src/api.ts`; transcript mapping tests in the existing frontend test structure.
+**Files:** `frontend/src/api.test.ts` (tests for `getPlaybackManifest` and `getTranscript`).
+
 
 **Action:** Add synthetic tests for typed `getPlaybackManifest(meetingId)` and `getTranscript(meetingId)` responses. Verify manifest mapping preserves `video_presence` (`muxed`, `separate`, `absent`, `unknown`), nullable `muxed_video_source`, and separate `video_sources` with signed offsets; MIME and missing video rows must not determine mode. Verify `segments` preserve sequence/text while mapping `start_ms`/`end_ms` to `TimedPassage.startMs`/`endMs`; invalid/missing timing retains text but produces no playback action. Handle errors without exposing object-store refs beyond signed URLs.
 
@@ -102,7 +103,8 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Tracking:** Issue #305 · Card `task_a03f9dcab3d24308`
 
-**Files:** `frontend/src/**/__tests__/PlaybackController.test.ts` (place in the established frontend test location).
+**Files:** `frontend/src/components/__tests__/PlaybackController.test.ts`.
+
 
 **Action:** Add tests for valid interval matching (half-open `[startMs,endMs)`), first supplied matching passage on overlap, gaps, invalid timing, empty input, seek/pause/resume/rate/volume/mute state, active passage changes and clear-on-no-match. Use synthetic controller inputs for each `video_presence` mode: `muxed` uses one media clock; `absent`/`unknown` (including legacy null MIME/no video rows) use audio only; `separate` uses paired media only when a signed offset is present. Cover paired audio/video alignment, signed offset formula, positive-offset wait, correction only above 250 ms, and audio as authoritative clock.
 
@@ -132,7 +134,8 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Tracking:** Issue #307 · Card `task_2eadd0c5aca84eda`
 
-**Files:** `frontend/src/**/__tests__/MeetingPlaybackView.test.tsx` (place in the established frontend test location).
+**Files:** `frontend/src/components/__tests__/MeetingPlaybackView.test.tsx` (new).
+
 
 **Action:** Add synthetic component tests for seek, pause/resume, speed, volume, mute, passage play, and active-passage highlight/scroll behavior. Assert source selection exists only for multiple playable separate video options and preserves audio source and position. Test all modes: explicit `muxed` evidence renders the same single asset in one native video element with its own audio/timestamps; `absent` and every legacy `unknown` manifest (including null MIME and no `video_ref`/video rows) render audio-only and never infer muxed playback; `separate` uses authoritative audio plus muted video only when its offset is known. Also cover missing-offset legacy video exclusion, metadata-loading disabled controls, one URL refresh at saved time then accessible error/stop on failure, paired startup failures pausing both elements, and accessible empty/unavailable/error states. Assert no editing, library, notes, summary, metadata, or other excluded controls.
 
@@ -146,9 +149,10 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-10: Implement accessible meeting playback view
 
-**Tracking:** Issue #308 · Card `task_3af577f121a04340`
+**Tracking:** Issue #308 · Card `task_6a271652b2c34130` · PR #594
 
-**Files:** `frontend/src/components/MeetingPlaybackView.tsx` (new); existing meeting review route/view integration point.
+**Files:** `frontend/src/components/MeetingPlaybackView.tsx` (new); integrated at `frontend/src/App.tsx` transcript view route (existing `TranscriptView`, mounted on the meeting review path) and consumes `getPlaybackManifest`/`getTranscript` from `frontend/src/api.ts` plus `PlaybackController` from `frontend/src/components/PlaybackController.ts`.
+
 
 **Action:** Add the view around the playback controller and typed adapter data. Select the media mode strictly from persisted `video_presence`: explicit `muxed` plays the `muxed_video_source` in one native video element with its own audio/timestamps; `absent` and `unknown` (including legacy null-MIME rows and missing video refs) are audio-only; `separate` uses authoritative audio plus muted video only when signed offset is known. Provide accessible controls for seek, pause/resume, speed, volume, mute and conditional separate-video quality selection; render transcript/active passage from playback time; passage action seeks to `startMs` and requests play. Disable controls during unavailable metadata, retain text with invalid timing but no time-linked controls, and show accessible loading/empty/error states. Add no excluded feature.
 

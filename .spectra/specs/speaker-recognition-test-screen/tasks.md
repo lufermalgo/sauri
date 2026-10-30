@@ -19,7 +19,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-1: RED — Specify authenticated multipart upload and measured duration
 
-**Tracking:** Issue #552 · Card task_833c47d6ae754443 · PR #570
+**Tracking:** Issue #552 · Card task_833c47d6ae754443 · PR #570; follow-up bug #574 · Card task_7ca09fe6d0d04cc2 · PR #584 (done)
 
 **Files / test seam:** `frontend/src/api.test.ts` (existing API test module) for `POST /api/v1/ingestion/upload`; upload adapter in `frontend/src/api.ts`; media-metadata/upload behavior in `frontend/src/components/SpeakerRecognitionTestScreen.tsx`.
 
@@ -31,7 +31,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-2: GREEN — Implement the authenticated upload adapter and browser duration handling
 
-**Tracking:** Issue #553 · Card task_6dc1779dfd874fed
+**Tracking:** Issue #553 · Card task_6dc1779dfd874fed · PR #570
 
 **Files:** `frontend/src/api.ts`, `frontend/src/api.test.ts`, `frontend/src/components/SpeakerRecognitionTestScreen.tsx`.
 
@@ -141,7 +141,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-10: GREEN — Add nullable meeting links and the web-upload contract
 
-**Tracking:** Issue #561 · Card task_094a330d32cd462b
+**Tracking:** Issue #561 · Card task_094a330d32cd462b · PR #590
 
 **Files:** `backend/app/infra/models.py`, the existing ingestion schema in `backend/app/ingestion/`, the single sequential Alembic migration after `010_speaker_excerpt_reference`, `packages/shared-types/src/index.ts`, and corresponding backend tests.
 
@@ -169,7 +169,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-12: GREEN — Implement owner-safe ingestion retries and linkless creation
 
-**Tracking:** Issue #563 · Card task_7bde75fa77f34e37
+**Tracking:** Issue #563 · Card task_7bde75fa77f34e37 · PR #601 (done)
 
 **Files:** `backend/app/ingestion/router.py`, `backend/app/ingestion/service.py`, existing ingestion schema and `backend/tests/ingestion/`.
 

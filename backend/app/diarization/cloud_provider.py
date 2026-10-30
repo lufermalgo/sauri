@@ -91,11 +91,11 @@ class CloudProvider(DiarizationEngine):
                 )
                 response.raise_for_status()
                 data = response.json()
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
             raise ExternalServiceError(
                 "The external diarization service did not respond within the "
                 "120 second timeout"
-            )
+            ) from exc
         except httpx.HTTPStatusError as exc:
             raise ExternalServiceError(
                 f"The external diarization service responded with an error: "

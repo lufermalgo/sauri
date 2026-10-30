@@ -19,10 +19,11 @@ from pydantic import ValidationError
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
+from app.infra.models import Meeting
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.ingestion.schemas import IngestionData
-from app.ingestion.service import process_ingestion
+from app.ingestion.service import preflight_ingestion, process_ingestion
 from app.meetings.service import record_transition
 
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
@@ -83,7 +84,34 @@ async def upload_recording(
             detail="Video upload does not match the declared video_presence",
         )
 
-    # Get infrastructure
+    # Check ownership and exact retries before writing any media object.
+    preflight_engine = create_engine()
+    preflight_session_factory = create_session_factory(preflight_engine)
+    existing_recording = None
+    prior_state: str | None = None
+    try:
+        async with preflight_session_factory() as session:
+            existing_recording = await preflight_ingestion(
+                session, ingestion_data, user.id
+            )
+            if existing_recording is not None:
+                meeting = await session.get(Meeting, ingestion_data.meeting_id)
+                if meeting is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Meeting not found",
+                    )
+                prior_state = meeting.process_state
+    finally:
+        await preflight_engine.dispose()
+
+    if existing_recording is not None:
+        return {
+            "recording_id": existing_recording.id,
+            "state": prior_state,
+        }
+
+    # Get infrastructure only after preflight passes.
     object_store = _get_object_store()
     queue = _get_queue()
 
@@ -122,15 +150,19 @@ async def upload_recording(
         # If this is an idempotent retry (duplicate key), return without
         # transitioning or enqueuing again (Req. 2.3, 4.1, 4.2).
         if not is_new:
+            meeting = await session.get(Meeting, ingestion_data.meeting_id)
+            if meeting is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Meeting not found",
+                )
             await engine.dispose()
             return {
                 "recording_id": recording.id,
-                "state": "idempotent_duplicate",
+                "state": meeting.process_state,
             }
 
         # f. Transition Meeting to "transcribing"
-        from app.infra.models import Meeting
-
         meeting = await session.get(Meeting, ingestion_data.meeting_id)
         if meeting is None:
             raise HTTPException(

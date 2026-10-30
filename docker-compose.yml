@@ -68,9 +68,11 @@ services:
       - SPEAKER_EXCERPT_KEYRING=${SPEAKER_EXCERPT_KEYRING:?Set a managed versioned excerpt keyring}
       - RETENTION_DAYS=${RETENTION_DAYS:-90}
       - SAURI_ENGINE_TOKEN_FILE=/run/secrets/sauri_engine_token
+      - SAURI_RECORDING_CAPABILITY_KEY_FILE=/run/secrets/recording_capability_key
       - MINIO_AUDIO_PREFIX=recordings/
     volumes:
       - "${HOME:?HOME must be set}/.config/sauri/engine_token:/run/secrets/sauri_engine_token:ro"
+      - "${HOME:?HOME must be set}/.config/sauri/recording_capability_key:/run/secrets/recording_capability_key:ro"
     networks:
       - sauri-net
 
