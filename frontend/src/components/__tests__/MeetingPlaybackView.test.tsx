@@ -110,6 +110,24 @@ describe("MeetingPlaybackView", () => {
     expect(audio.currentTime).toBe(5);
   });
 
+  it("renders a colored speaker label on every playback transcript passage", () => {
+    renderView({
+      passages: passages.map((passage, index) => ({
+        ...passage,
+        speakerLabel: `Synthetic Speaker ${index + 1}`,
+        speakerColor: index === 0 ? "#1d4ed8" : "#b45309",
+      })),
+    });
+
+    const rows = screen.getByRole("list", { name: "Transcript passages" }).querySelectorAll("li");
+    expect(rows).toHaveLength(3);
+    rows.forEach((row, index) => {
+      const label = row.querySelector('[data-testid="transcript-speaker-label"]');
+      expect(label?.textContent).toBe(`Synthetic Speaker ${index + 1}`);
+      expect(label?.getAttribute("style")).toContain("color:");
+    });
+  });
+
   it("seeks the active highlight as playback advances and scrolls when the passage changes", () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
@@ -119,7 +137,12 @@ describe("MeetingPlaybackView", () => {
     setMediaTime(audio, 2);
     expect(screen.getByText("Synthetic opening passage").closest("[data-passage-id]")).toHaveAttribute("data-active", "true");
     setMediaTime(audio, 6);
-    expect(screen.getByText("Synthetic middle passage").closest("[data-passage-id]")).toHaveAttribute("data-active", "true");
+    const activePassage = screen.getByText("Synthetic middle passage").closest("[data-passage-id]");
+    const inactivePassage = screen.getByText("Synthetic opening passage").closest("[data-passage-id]");
+    expect(activePassage).toHaveAttribute("data-active", "true");
+    expect(
+      window.getComputedStyle(activePassage!).backgroundColor,
+    ).not.toBe(window.getComputedStyle(inactivePassage!).backgroundColor);
     expect(scrollIntoView).toHaveBeenCalled();
   });
 

@@ -18,6 +18,7 @@ import * as api from "../api";
 vi.mock("../api", () => ({
   getTranscript: vi.fn(),
   getPlaybackManifest: vi.fn(),
+  getDiarization: vi.fn(),
   getSpeakerReview: vi.fn(),
   playSpeakerExcerpt: vi.fn(),
   submitSpeakerDisposition: vi.fn(),
@@ -27,6 +28,7 @@ beforeEach(() => {
   vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(
     null as unknown as Awaited<ReturnType<typeof api.getPlaybackManifest>>,
   );
+  vi.spyOn(api, "getDiarization").mockResolvedValue({ speakers: [], assignments: [] });
 });
 
 afterEach(() => {
@@ -81,6 +83,69 @@ describe("TranscriptView — renders the transcript view", () => {
     expect(screen.getByText("Hola")).toBeDefined(); // spanish-sample-data
     expect(screen.getByText("¿Cómo estás?")).toBeDefined(); // spanish-sample-data
     expect(screen.getByText(/00:00.*00:01/)).toBeDefined();
+  });
+
+  it("renders a speaker label on every transcript row, including unresolved rows", async () => {
+    const transcriptData = transcript([
+      turn({ id: "t1", text: "Synthetic first turn", sequence: 1 }),
+      turn({ id: "t2", text: "Synthetic second turn", sequence: 2 }),
+      turn({ id: "t3", text: "Synthetic unresolved turn", sequence: 3 }),
+    ]);
+    transcriptData.segments = transcriptData.turns.map((speechTurn) => ({
+      id: speechTurn.id,
+      text: speechTurn.text,
+      startMs: speechTurn.startMs,
+      endMs: speechTurn.endMs,
+      sequence: speechTurn.sequence,
+    }));
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcriptData);
+    const diarizationApi = api as unknown as {
+      getDiarization: ReturnType<typeof vi.fn>;
+    };
+    diarizationApi.getDiarization.mockResolvedValue({
+      speakers: [
+        { id: "speaker-a", label: "Speaker 1", sequence: 1 },
+        { id: "speaker-b", label: "Speaker 2", sequence: 2 },
+      ],
+      assignments: [
+        { turn_id: "t1", speaker_id: "speaker-a" },
+        { turn_id: "t2", speaker_id: "speaker-b" },
+      ],
+    });
+    vi.spyOn(api, "getSpeakerReview").mockResolvedValue({
+      reviewId: "review-synthetic",
+      revisionId: "revision-synthetic",
+      status: "complete",
+      items: [
+        { speakerId: "speaker-a", currentLabel: "Synthetic Person A", attributionState: "recognized", disposition: "named", excerptRef: "synthetic-a", expectedVersion: 1 },
+        { speakerId: "speaker-b", currentLabel: "Synthetic Person B", attributionState: "recognized", disposition: "named", excerptRef: "synthetic-b", expectedVersion: 1 },
+      ],
+    });
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1",
+      duration_seconds: 10,
+      video_presence: "absent",
+      audio_source: { source_id: "audio-1", url: "https://media.example.test/audio.wav", mime_type: "audio/wav" },
+      muxed_video_source: null,
+      video_sources: [],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
+    const secondLabels = screen.getAllByText("Synthetic Person B", { selector: '[data-testid="transcript-speaker-label"]' });
+    const unresolvedLabels = screen.getAllByText("Speaker N", { selector: '[data-testid="transcript-speaker-label"]' });
+    expect(firstLabels).toHaveLength(2);
+    expect(secondLabels).toHaveLength(2);
+    expect(unresolvedLabels).toHaveLength(2);
+    const firstStyle = firstLabels[0].getAttribute("style");
+    const secondStyle = secondLabels[0].getAttribute("style");
+    expect(firstStyle).toContain("color:");
+    expect(secondStyle).toContain("color:");
+    expect(secondStyle).not.toBe(firstStyle);
+    for (const label of [...firstLabels, ...secondLabels, ...unresolvedLabels]) {
+      expect(label).toBeVisible();
+    }
   });
 
   it("renders the playback player before the transcript passages", async () => {

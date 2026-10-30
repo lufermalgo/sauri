@@ -6,9 +6,14 @@ import {
   type PlaybackState,
 } from "./PlaybackController";
 
+interface PlaybackTranscriptPassage extends TimedPassage {
+  speakerLabel?: string;
+  speakerColor?: string;
+}
+
 interface MeetingPlaybackViewProps {
   manifest: PlaybackManifest | null;
-  passages: TimedPassage[];
+  passages: PlaybackTranscriptPassage[];
   loading: boolean;
   error: string | null;
   onRefreshManifest?: (currentTimeMs: number) => Promise<PlaybackManifest>;
@@ -23,6 +28,11 @@ const INITIAL_STATE: PlaybackState = {
   muted: false,
   activePassageId: null,
   selectedSourceId: null,
+};
+
+const ACTIVE_PASSAGE_STYLE: React.CSSProperties = {
+  backgroundColor: "#fef3c7",
+  fontWeight: 600,
 };
 
 function isPlayablePassage(passage: TimedPassage): passage is TimedPassage & { startMs: number; endMs: number } {
@@ -309,6 +319,7 @@ export function MeetingPlaybackView({
             return (
               <li
                 key={passage.id}
+                style={isActive ? ACTIVE_PASSAGE_STYLE : undefined}
                 data-passage-id={passage.id}
                 data-active={isActive ? "true" : "false"}
                 ref={(element) => {
@@ -317,6 +328,12 @@ export function MeetingPlaybackView({
                 }}
                 aria-current={isActive ? "true" : undefined}
               >
+                <span
+                  data-testid="transcript-speaker-label"
+                  style={{ color: passage.speakerColor ?? "#6b7280", fontWeight: 600, marginRight: "0.5rem" }}
+                >
+                  {passage.speakerLabel ?? "Speaker N"}
+                </span>
                 {playable && <span>{formatTime(passage.startMs)} </span>}
                 <span>{passage.text}</span>
                 {playable && (

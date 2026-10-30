@@ -6,6 +6,13 @@ const manifestMethod = api as typeof api & {
   getPlaybackManifest?: (meetingId: string) => Promise<PlaybackManifest>;
 };
 
+const diarizationMethod = api as typeof api & {
+  getDiarization?: (meetingId: string) => Promise<{
+    speakers: Array<{ id: string; label: string; sequence: number }>;
+    assignments: Array<{ turn_id: string; speaker_id: string }>;
+  }>;
+};
+
 interface PlaybackSource {
   source_id: string;
   url: string;
@@ -167,6 +174,24 @@ describe("login API adapter", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(storageSetItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("speaker diarization API adapter", () => {
+  it("returns persisted turn-to-speaker assignments for the authenticated meeting", async () => {
+    expect(typeof diarizationMethod.getDiarization).toBe("function");
+    const fixture = {
+      speakers: [{ id: "speaker-synthetic", label: "Speaker 1", sequence: 1 }],
+      assignments: [{ turn_id: "turn-synthetic", speaker_id: "speaker-synthetic" }],
+    };
+    const fetchMock = mockFetch(fixture);
+
+    await expect(diarizationMethod.getDiarization!("meeting / synthetic")).resolves.toEqual(fixture);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/meetings/meeting%20%2F%20synthetic/diarization"),
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }),
+    );
   });
 });
 
