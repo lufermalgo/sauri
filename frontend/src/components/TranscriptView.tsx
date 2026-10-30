@@ -127,6 +127,13 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   return (
     <section>
       <button onClick={onBack}>← Back to list</button>
+      <MeetingPlaybackView
+        manifest={playbackManifest}
+        passages={data.segments}
+        loading={playbackLoading}
+        error={playbackError}
+        onRefreshManifest={() => getPlaybackManifest(meetingId)}
+      />
       <h2>Transcript</h2>
       <p>
         Language: {data.language} | Provider: {data.provider} |
@@ -146,13 +153,6 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           ))}
         </ol>
       )}
-      <MeetingPlaybackView
-        manifest={playbackManifest}
-        passages={data.segments}
-        loading={playbackLoading}
-        error={playbackError}
-        onRefreshManifest={() => getPlaybackManifest(meetingId)}
-      />
       {reviewError && <p role="alert" style={{ color: "red" }}>{reviewError}</p>}
       {review && (
         <section aria-labelledby="speaker-review-heading">

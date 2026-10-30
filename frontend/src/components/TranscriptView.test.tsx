@@ -83,6 +83,30 @@ describe("TranscriptView — renders the transcript view", () => {
     expect(screen.getByText(/00:00.*00:01/)).toBeDefined();
   });
 
+  it("renders the playback player before the transcript passages", async () => {
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1",
+      duration_seconds: 10,
+      video_presence: "absent",
+      audio_source: {
+        source_id: "audio-1",
+        url: "https://media.example.test/audio.wav",
+        mime_type: "audio/wav",
+      },
+      muxed_video_source: null,
+      video_sources: [],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const player = await screen.findByTestId("playback-audio");
+    const transcriptHeading = await screen.findByRole("heading", { name: "Transcript" });
+    expect(
+      player.compareDocumentPosition(transcriptHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("shows the empty-state message when there are no segments", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([]));
 
