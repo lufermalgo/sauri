@@ -64,13 +64,26 @@ implement the existing Sauri HTTP contracts (`POST /transcribe` and `POST /diari
 repository does not provide native MLX, whisper.cpp, or MPS HTTP adapters. Compose configuration
 alone therefore does not make native inference runnable or demonstrate API/worker integration.
 
-Compare MLX `whisper-large-v3-turbo` with whisper.cpp `large-v3-turbo-q5_0` for ASR, and evaluate
-pyannote 3.1 with PyTorch MPS for diarization. Reuse the existing shared caches: MLX and Hugging Face
-models (including pyannote) under `~/.cache/huggingface`, and the whisper.cpp GGML turbo model under
-`~/.apx/v2/models`. Download any genuinely missing model only once into its shared cache; never place
-model-sized files in this repository or copy existing model files. A repository-local `models/`
-directory is not a cache and must not be used for this experiment. Use only the same recording Fer
-explicitly authorized for this experiment; do not expose tokens, model files, or recording data.
+Install the host-native engine dependencies with `make engines-install`, then start the local
+ASR and diarization servers with `make engines-up`. The lifecycle command provisions missing engine
+credentials under `~/.config/sauri/`; `make up` also provisions them before Compose starts. Both
+paths use the same host files: `engine_token` and `recording_capability_key`. The files are created
+outside the repository, preserved if already present, and restricted to mode `0600` (the containing
+`~/.config/sauri` directory is mode `0700`). Compose mounts these files read-only into the worker,
+while the host-native engines read the same files. Do not copy credentials into the repository or
+logs. To restart the engines and worker after updating code, run `make engines-down`, `make
+engines-up`, then `docker compose build worker && docker compose up -d worker`.
+
+The host-native adapters are implemented in `backend/asr-engine/native_main.py` (MLX Whisper) and
+`backend/diar-engine/native_main.py` (pyannote on MPS); both implement the existing HTTP contracts.
+They are started on loopback by `make engines-up`, outside Compose. This remains a local feasibility
+experiment, not a production configuration or rollout. Reuse the existing shared caches: MLX and
+Hugging Face models (including pyannote) under `~/.cache/huggingface`, and the whisper.cpp GGML turbo
+model under `~/.apx/v2/models`. Download any genuinely missing model only once into its shared cache;
+never place model-sized files in this repository or copy existing model files. A repository-local `models/`
+directory is not a cache and must not be used for this experiment. Use synthetic audio for this
+credential and integration validation. For a separate spike experiment, use only the same recording
+Fer explicitly authorized; do not expose tokens, model files, or recording data.
 Record hardware, OS, runtime/library and model versions, clip duration, initialization/cold-start and
 processing times, processing time per audio hour, observed transcript and speaker-label quality, and
 whether inference actually ran on Metal/MPS without CPU fallback. Report installation footprint only
