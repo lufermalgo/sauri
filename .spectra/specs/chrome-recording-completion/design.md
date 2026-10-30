@@ -10,17 +10,17 @@ The approved requirements join two independently sufficient capture-ending event
 4. Resolve a recording's authenticated review URL only after processing success; serialize launch attempts and persist a launch marker so repeated events/reloads do not open duplicate tabs.
 5. Keep review data behind the existing authenticated and authorized Sauri boundary; do not add a consent flow, retention policy, or visual redesign.
 
-**Traceability:** authored from approved `.spectra/specs/chrome-recording-completion/requirements.md` snapshot at upstream commit `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` (Mira APPROVED, card `task_ed37bc5db81a46d1`, author PR #605 open/not merged). Source requirements and `.config.spectra` are carried into this worktree unchanged for traceability. Scope authority is Fer's 2026-10-30 direction and Cyrus's reconciliation recorded in that requirements snapshot; the current DRAFT baseline is not blanket authority.
+**Traceability:** authored from approved `.spectra/specs/chrome-recording-completion/requirements.md` snapshot at upstream commit `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` (Mira APPROVED, card `task_ed37bc5db81a46d1`, author PR #605 open/not merged). Source requirements and `.config.spectra` are carried into this worktree unchanged for traceability. The approved product baseline packet supplied for this audit is `PRODUCT_BASELINE.md` at commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`, blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446` (owner approval task `task_a08baf81140a4073`, PR #528); this design uses it only for established portal/access boundaries, not as blanket authorization for this new extension delta. Scope authority for that delta remains Fer's 2026-10-30 direction and Cyrus's reconciliation recorded in the approved requirements snapshot.
 
 ## Key Design Decisions
 
-**Use one durable completion record keyed by the existing recording identity, with explicit lifecycle states and idempotent transitions.** Stop and captured-tab-close race or may both arrive; both must converge on the already-active recording rather than allocate one. Persist state before asynchronous upload and tab-launch side effects, then make each side effect conditional on an uncompleted state transition. *Rejected alternative:* ephemeral service-worker variables lose state when MV3 terminates; creating a new record per trigger violates same-recording and duplicate-prevention criteria. Do not mint an unrelated client identity if a stable recording identifier is already created by capture; if the existing identifier cannot uniquely identify a recording, resolve that implementation dependency without changing product semantics.
+**Keep the capture session ID as the stable client correlation/idempotency key and explicitly persist its backend identity mapping.** The current worker creates a `sessionId` at capture start and uses it as `idempotency_key`, but the upload code currently creates a fresh `meeting_id` inside each request. The completion record and durable upload job must instead carry `sessionId`, one `meetingId` generated and persisted once for this capture, and the server-returned `recordingId`. The mapping is `sessionId → meetingId → recordingId`; use `sessionId` as the IndexedDB key for finalization/retry and idempotency, `meetingId` as the Sauri meeting/review/status route key, and `recordingId` as the backend `SessionRecording` identity returned by ingestion. Persist the mapping before network I/O; retries reuse the same `meetingId` and `sessionId`, validate/persist the returned `recordingId`, and never generate a new meeting. Existing backend ingestion already uniquely constrains `SessionRecording.idempotency_key` and returns `recording_id` plus `state`; the extension must retain `meetingId` because the response does not return it. A retry response must map back to the same meeting; any mismatch is a protocol error, not a reason to silently remap. *Rejected alternative:* using an ephemeral worker variable or generating `meeting_id` per request loses stable association across MV3 restarts/retries; using `recordingId` before ingestion is impossible because the backend assigns it.
 
 **Keep extension orchestration in the MV3 service worker and capture-specific operations in the existing offscreen/capture boundary.** Content scripts report captured-tab lifecycle; they do not own durable state, upload, or auth. The worker coordinates finalization, persisted transitions, upload queue, status observation, and tab opening through Chrome messaging and APIs. *Rejected alternative:* embedding the full workflow in a content script couples it to a page lifetime and page context; a long-running worker is not available under MV3.
 
-**Use the existing authenticated Sauri processing and review APIs as the source of truth for server-side processing outcome.** The extension may show locally known finalization/upload outcomes, but must not infer server processing success from upload completion, an accepted response, or elapsed time. Poll/refresh the existing recording status through its authenticated API, or consume an existing status signal if one is already supported; API mapping/auth work in `task_dfcb314806c04033` is a dependency, not scope to duplicate here. *Rejected alternative:* local-only processing status cannot survive reload reliably and can display stale or fabricated success; adding an independent status store would create conflicting authorities.
+**Use authenticated meeting state and asset endpoints as the processing source of truth; gate review on all required assets.** The existing meeting record exposes `process_state` (`queued`, `joining`, `recording`, `transcribing`, `completed`, `failed`). Map `queued`/`joining`/`recording`/`transcribing` to in-progress and `failed` to processing failure. `completed` alone is not the requirement's `Processing_Success`: for the same `meetingId`, authenticate and require (a) `process_state === 'completed'`, (b) the protected transcript endpoint returns a transcript for that meeting, and (c) the protected playback manifest returns a usable video source (`muxed_video_source` or at least one `video_sources` entry; `video_presence: absent|unknown` or no usable source is not ready). Only then persist `processing_succeeded` and launch review. If `process_state` is completed but either asset is unavailable, retain a non-ready/reconciling state; do not assert success or launch. Authenticated meeting/status, transcript, and playback access are bound to `meetingId`; `recordingId` must match the ingestion response associated with that meeting. API/login repair (`task_dfcb314806c04033`) must provide or preserve authenticated status access; if no existing status read is available, downstream implementation must add the minimal authenticated meeting-status read in that task's API ownership rather than inventing a new processing state. *Rejected alternative:* trusting `process_state === completed`, upload acceptance, or local state alone can launch review without the transcript and video required by the glossary; creating a new client-side processing authority conflicts with backend state.
 
-**Launch review only when the server reports processing success and authorization is enforced by the review destination.** Construct the target from the same recording/meeting identity, and let the web destination enforce authenticated session and per-recording authorization before returning video or transcript. Login redirection may lead to the same protected target after authentication, but an extension tab URL or opaque identifier is not authorization. Playback behavior is owned by `task_6a271652b2c34130`; this design consumes its resulting review route rather than redefining playback. *Rejected alternative:* auto-opening on upload acceptance exposes incomplete work as ready; embedding media/transcript in extension state bypasses the Sauri authorization boundary.
+**Launch review only after authenticated completed status and both required assets are verified for the persisted identity mapping.** `process_state=completed` is necessary but insufficient: require the matching meeting's protected transcript endpoint and playback manifest to confirm transcript and usable video before marking `processing_succeeded`; launch to that same `meetingId` and let the web destination enforce authentication and authorization before returning data. Login redirection may preserve the target but an extension URL or identifier is not authorization. Playback behavior is owned by `task_6a271652b2c34130`; this design consumes its resulting review route rather than redefining playback. *Rejected alternative:* auto-opening on upload acceptance or meeting completion alone can misrepresent a missing video/transcript as ready; embedding protected data in extension state bypasses the Sauri authorization boundary.
 
 **Persist a single launch decision per recording and serialize concurrent launch attempts.** Mark launch as pending/started before invoking `chrome.tabs.create`, then record the created tab ID/result and reconcile an interrupted attempt at startup using the persisted recording/launch state. Use an idempotent recording-specific target, not repeated calls from event listeners. The guarantee is that repeated completion/retry/reload handling does not issue multiple launches; if a browser crash occurs in the narrow interval between tab creation and persisting its ID, reconciliation must inspect an already-open matching Sauri target before creating another. *Rejected alternative:* a process-local boolean fails after worker termination; tab URL query parameters alone do not prevent concurrent duplicate creation.
 
@@ -58,28 +58,27 @@ sequenceDiagram
   participant Q as Existing upload queue
   participant A as Authenticated Sauri API
   participant T as Chrome tabs / Sauri review
-  C->>W: completion signal(recordingId, trigger)
-  W->>S: atomically claim finalization if active
+  C->>W: completion signal(sessionId, trigger)
+  W->>S: atomically claim finalization by sessionId
   alt first accepted completion signal
-    W->>O: finalize media for recordingId
+    W->>O: finalize media for sessionId
     O-->>W: finalized audio and video
-    W->>S: persist finalized/upload-pending state
-    W->>Q: enqueue same recordingId and assets
-    Q->>A: upload recording assets
-    A-->>Q: upload result for recordingId
-    Q->>S: persist truthful upload result
-    A-->>W: processing state for recordingId
-    loop until terminal processing outcome
-      W->>A: authenticated status read(recordingId)
-      A-->>W: processing or failure or success
+    W->>S: persist sessionId + stable meetingId + finalized state
+    W->>Q: enqueue sessionId, meetingId and assets
+    Q->>A: upload using meetingId and idempotency_key=sessionId
+    A-->>Q: recording_id + process_state
+    Q->>S: persist recordingId mapping and truthful upload result
+    loop until terminal state or assets are ready
+      W->>A: authenticated status, transcript and playback reads for meetingId
+      A-->>W: process_state and available assets
     end
-    alt processing success
-      W->>S: claim one review launch(recordingId)
-      W->>T: open authenticated review target
+    alt completed and transcript plus video available
+      W->>S: claim one review launch by sessionId/meetingId
+      W->>T: open authenticated review target for meetingId
       T->>A: authenticated, authorized review request
-      A-->>T: video and transcript for recordingId
-    else processing failure
-      W->>S: retain processing failure(recordingId)
+      A-->>T: video and transcript for same meetingId
+    else processing failure or required asset unavailable
+      W->>S: retain failure or non-ready outcome for same mapping
     end
   else duplicate signal or retry
     W->>S: resume/reconcile existing lifecycle; do not create another recording
@@ -94,8 +93,8 @@ The flow above describes desired boundaries, not a claim that every endpoint or 
 
 - The content script reports capture-context lifecycle messages only; a meeting-ended page signal is not a completion message.
 - The service worker observes closure of the specific captured tab associated with the active recording, not arbitrary tab closure. It also receives the explicit Stop command.
-- Both signals include the existing `recordingId`; the closure listener must resolve this association from persisted active-capture state, not a transient global variable.
-- Both signals call one `completeRecording(recordingId, trigger)` coordinator. That coordinator performs an atomic state transition and safely ignores/reconciles duplicate signals.
+- Both signals resolve the persisted `sessionId` for the active captured tab; the closure listener must use durable active-capture association, not a transient global variable.
+- Both signals call one `completeRecording(sessionId, trigger)` coordinator. It performs an atomic state transition; `meetingId` is already persisted or generated once and the backend `recordingId` is filled from the ingestion response, so duplicate signals never create new identities.
 - Keep captured media finalization in the existing offscreen/capture owner. Do not move capture data into page DOM, content-script storage, or tab URLs.
 
 ### 2. Durable completion coordinator — `extension/src/background.ts` plus `extension/src/recording-db.ts`
@@ -110,15 +109,21 @@ type CompletionStatus =
   | 'uploading'
   | 'upload_succeeded'
   | 'upload_failed'
+  | 'upload_outcome_unavailable'
   | 'processing'
+  | 'processing_assets_unavailable'
   | 'processing_failed'
   | 'processing_succeeded'
   | 'review_launch_pending'
   | 'review_opened';
 
 interface RecordingCompletion {
-  recordingId: string;
+  /** Extension-generated at capture start; stable local key and backend idempotency_key. */
+  sessionId: string;
+  /** Generated once before first upload and reused for every retry; Sauri meeting/review key. */
   meetingId: string;
+  /** Server-returned SessionRecording.id; absent until first successful ingestion response. */
+  recordingId?: string;
   capturedTabId: number;
   status: CompletionStatus;
   trigger?: 'stop' | 'captured_tab_closed';
@@ -133,34 +138,34 @@ Persist only state and opaque identifiers needed to resume. Do not add audio/vid
 
 ### 3. Upload and processing status bridge — `extension/src/upload-queue.ts`, `extension/src/background.ts`, and authenticated backend API
 
-- Invoke the established queue for both finalized audio and video, retaining the same `recordingId`/meeting association used by the active recording. This design does not specify a replacement upload protocol or repair the separate upload defect.
-- Distinguish `upload_pending`/`uploading` from `upload_succeeded`; record `upload_failed` on terminal failure and retain it across restart. A retry resumes the existing recording and does not allocate a new meeting/recording.
-- After upload is accepted, obtain the recording's actual processing status from the authenticated Sauri API. A queue acceptance or upload success is not processing success.
-- Persist observed status transitions by recording ID. On worker startup or completion UI reload, reconcile from the server, preventing a prior recording's outcome from being displayed for another.
-- If server status cannot be read (network/auth/API error), preserve last truthful known state and indicate unavailable/retryable status; never replace it with success. Do not invent retry limits or timing targets absent from requirements.
-- Match existing API contracts and the in-flight API/login task; document any required endpoint/status contract in downstream tasks rather than assuming an unverified route shape here.
+- Enqueue the already-finalized media with the stable `sessionId` idempotency key and persisted `meetingId`; audio/video representation must match the capture's declared `video_presence`. The API response's `recording_id` and `state` are validated and saved as `recordingId`/initial process state before upload chunks are cleared. A retry uses precisely the same IDs and payload identity; the backend unique idempotency key returns the existing recording rather than creating another.
+- Truthful upload display is gated on the upload queue's settled result, not merely on calling it. In current code, `uploadRecording` catches non-2xx and network failures without throwing, while `processUploadQueue` interprets resolution as success and marks the job done. This spec does not duplicate `task_11001b7f5b084e09`'s repair: this flow depends on that repair (or an equivalent separately reviewed result contract) making non-2xx/network/invalid response observable as queue failure. The completion UI may display `upload_succeeded` only when the queue reports success after a valid successful response containing the stable `recording_id`; while the repaired contract is absent/unconfirmed, retain `uploading`/`upload_outcome_unavailable`, never success. Terminal failure is retained against this same `sessionId`/`meetingId`/`recordingId` mapping; retry does not allocate a new recording.
+- Map authenticated meeting `process_state` exactly: `queued`, `joining`, `recording`, `transcribing` → processing; `failed` → processing failure; `completed` → candidate completion only. For `completed`, require authenticated status for the persisted `meetingId`, a successful transcript response for that meeting, and a playback manifest with an accessible muxed or separate video source before `processing_succeeded`. Missing video (including `video_presence` absent/unknown), missing transcript, 404, network failure, or auth failure remains unavailable/non-ready; never open the review tab. The endpoint must authorize the authenticated user for that meeting.
+- Persist all mapping/status transitions by `sessionId`; on worker startup/reload reconcile the same `meetingId` and verify the returned `recordingId` association, preventing a prior recording's result from bleeding into another.
+- If the authenticated status/assets cannot be read, preserve the last truthful known state and indicate unavailable/retryable status; never replace it with success. Do not invent retry limits or timing targets absent from requirements.
+- API/login contract work remains with `task_dfcb314806c04033`; review/playback route remains with `task_6a271652b2c34130`. The upload outcome contract is a blocking dependency on `task_11001b7f5b084e09`, not an implementation of its fix.
 
 ### 4. Review launch — `extension/src/background.ts` and `frontend/src/`
 
-- Trigger only from `processing_succeeded` for the matching `recordingId`.
-- Resolve the canonical review destination from the existing Sauri route/meeting identity. The route must resolve the same recording and provide both video and transcript as required; playback implementation stays with `task_6a271652b2c34130`.
+- Trigger only from `processing_succeeded` for the persisted `sessionId → meetingId → recordingId` mapping, after checking completed status plus both assets.
+- Resolve the canonical review destination from the persisted `meetingId` (the current review/playback APIs are meeting-keyed); verify the server-returned `recordingId` still belongs to it. The route must provide both video and transcript as required; playback implementation stays with `task_6a271652b2c34130`.
 - Before exposing protected data, frontend/API enforces login and authorization for the requested recording. A redirect to login may preserve the target, but access is granted only after server authorization.
 - Claim and persist launch before `chrome.tabs.create`; persist returned tab ID and reconcile pending launches after service-worker restart. Repeated signal, retry, or status refresh must not create another review tab. Tests must cover concurrent signals and crash/reload reconciliation, including lookup of an already-open matching protected target.
 - The extension reports the launch result; it does not cache, proxy, or display transcript/video data itself.
 
 ## Data Models
 
-The `RecordingCompletion` record above is an extension-side workflow projection keyed by the canonical recording ID; backend recording/meeting entities remain authoritative for persisted media association and processing status. Add no backend entity or migration unless the existing backend lacks a durable same-recording status contract required by approved criteria. If such a gap exists, specify the smallest compatible schema/API addition in implementation tasks and explicitly review migration necessity there; this design does not assume a migration is needed.
+The `RecordingCompletion` record above is keyed by `sessionId`; its immutable persisted mapping is `sessionId → meetingId → recordingId`. `sessionId` is generated at capture start and already accompanies the capture/upload queue; generate one `meetingId` once for the recording and persist it with the completion record before upload; the backend `recordingId` is populated only from the authenticated ingestion response. The current backend `SessionRecording.idempotency_key` uniqueness and ingestion `recording_id` response provide retry deduplication and the server identity. The current extension request's fresh `meeting_id` per attempt must change to the persisted `meetingId`; never regenerate it on retry. Backend meeting, recording and process-state records remain authoritative. This is a request/identity-flow correction; no new backend entity or migration is implied.
 
-The browser tab ID is transient routing metadata, not recording identity or authorization. On a stale/missing tab ID, compare the canonical Sauri origin and recording-specific review target before deciding whether an open tab already represents the launch. Never treat a client-provided recording/meeting ID as access permission.
+The browser tab ID is transient routing metadata, not recording identity or authorization. On a stale/missing tab ID, compare the canonical Sauri origin and `meetingId`-specific review target before deciding whether an open tab already represents the launch. Never treat a client-provided identifier as access permission.
 
 ## Correctness Properties
 
-1. **Trigger convergence — Requirements 1.1–1.5, 5.2:** For any active recording, Stop, captured-tab-close, or both in either order cause at most one finalization of that recording; a meeting-ended signal alone causes none.
-2. **Recording identity conservation — Requirements 1.3, 2.2, 2.6, 4.6, 5.5:** Every final media asset, upload result, processing state, and review target in a completion lifecycle refers to the same `recordingId` and associated `meetingId`; retries do not create another recording.
-3. **Truthful upload state — Requirements 2.1–2.5:** Upload-in-progress never renders success; upload success is recorded only after successful upload completion; failure remains a failure for that recording until a later verified success transition.
-4. **Truthful processing state — Requirements 3.1–3.4:** Processing success is shown only from server-confirmed success for the same recording; processing failure is retained; reload/retry cannot substitute another recording's stale result.
-5. **Success-gated review — Requirements 4.1, 4.4:** No review launch is claimed before server-confirmed processing success; processing failure or pending state cannot open a ready review destination.
+1. **Trigger convergence — Requirements 1.1–1.5, 5.2:** For any active recording, Stop, captured-tab-close, or both in either order cause at most one finalization for its persisted `sessionId`; a meeting-ended signal alone causes none.
+2. **Recording identity conservation — Requirements 1.3, 2.2, 2.6, 4.6, 5.5:** Every final media asset and upload request uses the same `sessionId` and persisted `meetingId`; the server `recordingId` returned for that idempotency key remains mapped to that meeting across retries, and review/status uses that same `meetingId`. No retry generates a replacement ID or recording.
+3. **Truthful upload state — Requirements 2.1–2.5:** Upload-in-progress or unverified outcome never renders success; upload success is recorded only after the separately repaired queue contract resolves with a valid successful response for the same mapping; observable failure remains failure for that recording until a later verified success.
+4. **Truthful processing state — Requirements 3.1–3.4:** `process_state=completed` alone is insufficient. Processing success is shown only when authenticated status is completed and same-meeting transcript and accessible video are both confirmed; processing failure is retained; reload/retry cannot substitute another recording's stale result.
+5. **Success-gated review — Requirements 4.1, 4.4:** No review launch is claimed before server-confirmed completed state plus transcript and video readiness for the mapped meeting; processing failure, pending state, or missing/unavailable assets cannot open a ready review destination.
 6. **At-most-one launch — Requirements 4.5, 5.5:** Any set of duplicate completion events, retries, reloads, or concurrent worker handlers for one recording leads to at most one review tab creation/recognized matching destination.
 7. **Authorization boundary — Requirements 4.2–4.3, 5.3:** Without an authenticated session and server authorization for the recording, the review route returns no video/transcript data, regardless of extension launch state or identifier knowledge.
 8. **Surface scope — Requirements 5.1, 5.4:** Completion wiring does not imply Teams capture implementation and introduces no visual redesign, consent workflow, retention rule, or privacy-policy change.
@@ -184,7 +189,7 @@ The browser tab ID is transient routing metadata, not recording identity or auth
 
 Use synthetic recordings and synthetic meeting IDs only. No real meeting audio/video, transcript, credentials, or customer data in fixtures.
 
-**Extension unit and property tests:** place pure transition/idempotency logic under `extension/src/core/` with colocated `*.test.ts`; add persistence/coordinator coverage beside the existing extension modules/tests. Exercise Stop then close, close then Stop, repeated events, event after worker restart, status from another recording, retry preserving identity, processing failure, and launch deduplication. Property-based tests should generate event sequences and assert trigger convergence, identity conservation, success gating, and at-most-one launch claim.
+**Extension unit and property tests:** place pure transition/idempotency logic under `extension/src/core/` with colocated `*.test.ts`; add persistence/coordinator coverage beside the existing extension modules/tests. Exercise Stop then close, close then Stop, repeated events, event after worker restart, retry preserving the exact `sessionId`/`meetingId`/`recordingId` mapping, backend response mismatch, non-2xx/network/invalid-response queue result, each `process_state` mapping, `completed` without transcript, `completed` without video, and launch deduplication. Property-based tests should generate event sequences and assert trigger convergence, identity conservation, truthful queue outcomes, success requiring completed state plus both assets, and at-most-one launch claim.
 
 **Extension integration/E2E:** `extension/tests/e2e/` should verify a synthetic capture's completion-to-upload/status path and that only confirmed success opens one Sauri target. Include reload/restart and duplicate-event scenarios. Mock external network only at test boundaries; use synthetic server responses, never production or live meeting content.
 
