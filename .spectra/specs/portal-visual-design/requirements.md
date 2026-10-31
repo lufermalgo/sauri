@@ -62,7 +62,8 @@ Este documento traduce únicamente ese alcance a requisitos verificables. La lí
 4. WHEN the user edits company, project, or participant metadata for a recording and saves the changes, THE portal SHALL show the saved values for that recording.
 5. THE portal SHALL allow the user to apply predefined tags to a recording.
 6. WHEN the user creates a tag and applies it to a recording, THE portal SHALL show that tag among the tags applied to that recording.
-7. THE requirements SHALL NOT add deletion guarantees, export formats, bulk actions, archival behavior, tag-governance rules, or metadata fields beyond company, project, and participants unless established by the baseline.
+7. WHEN capture stops or the Google Meet session ends, THE portal SHALL automatically open the corresponding meeting's portal view.
+8. THE requirements SHALL NOT add deletion guarantees, export formats, bulk actions, archival behavior, tag-governance rules, or metadata fields beyond company, project, and participants unless established by the baseline.
 
 ### Requisito 4: Revisar medios y transcripción de una reunión
 
@@ -78,7 +79,9 @@ Este documento traduce únicamente ese alcance a requisitos verificables. La lí
 4. WHEN the user selects a transcript passage, THE Vista_De_Reunion SHALL start media playback at its linked time.
 5. WHEN the user edits a speaker name from the transcript, THE portal SHALL change speaker attribution only and SHALL NOT offer manual transcript-text editing.
 6. THE initial side-panel composition SHALL include Chat and Notes/Summary tabs; THE Chat tab SHALL NOT provide interactive chat-with-the-recording in this scope.
-7. THE portal SHALL keep notes and summaries distinct from the transcript. THE requirements SHALL NOT prescribe exact controls, timestamp format, colors, additional tabs, a fixed summary format, or video-specific behavior.
+7. THE portal SHALL provide ordinary media playback controls, including seek, speed, quality/resolution, pause, volume, and mute; THE design SHALL determine their precise presentation and any video-specific behavior.
+8. THE portal SHALL keep notes and summaries distinct from the transcript; THE summary SHALL be available to copy or download and SHALL identify the main topic and key arguments/points in a clear structure, without requiring a fixed layout.
+9. THE requirements SHALL NOT prescribe a timestamp format, colors, additional tabs, or video-specific behavior.
 
 ### Requisito 5: Seleccionar y preparar una carga manual elegible
 
