@@ -124,6 +124,46 @@ describe("TranscriptView — renders the transcript view", () => {
     expect(rows[1].querySelector('[data-testid="transcript-speaker-label"]')?.textContent).toBe("Speaker B");
   });
 
+  it("seeks playback to the first source fragment when a grouped turn is activated", async () => {
+    const transcriptData = transcript([
+      turn({ id: "fragment-1", text: "Synthetic opening", startMs: 500, endMs: 900, sequence: 1 }),
+      turn({ id: "fragment-2", text: "continues here", startMs: 900, endMs: 1300, sequence: 2 }),
+    ]);
+    transcriptData.segments = transcriptData.turns.map((speechTurn) => ({
+      id: speechTurn.id,
+      text: speechTurn.text,
+      startMs: speechTurn.startMs,
+      endMs: speechTurn.endMs,
+      sequence: speechTurn.sequence,
+    }));
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcriptData);
+    const diarizationApi = api as unknown as {
+      getDiarization: ReturnType<typeof vi.fn>;
+    };
+    diarizationApi.getDiarization.mockResolvedValue({
+      speakers: [{ id: "speaker-a", label: "Speaker A", sequence: 1 }],
+      assignments: [
+        { turn_id: "fragment-1", speaker_id: "speaker-a" },
+        { turn_id: "fragment-2", speaker_id: "speaker-a" },
+      ],
+    });
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1",
+      duration_seconds: 10,
+      video_presence: "absent",
+      audio_source: { source_id: "audio-1", url: "https://media.example.test/audio.wav", mime_type: "audio/wav" },
+      muxed_video_source: null,
+      video_sources: [],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const seekButton = await screen.findByRole("button", { name: "Play turn at 00:00" });
+    fireEvent.click(seekButton);
+
+    expect(screen.getByTestId("playback-audio")).toHaveProperty("currentTime", 0.5);
+  });
+
   it("shows the speaker-identification state when diarization is not found", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
     vi.spyOn(api, "getDiarization").mockRejectedValue(new Error("Error 404"));
