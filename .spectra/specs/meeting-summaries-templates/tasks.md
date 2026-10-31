@@ -162,7 +162,7 @@
 
 ### T13: RED — Specify required generated content and lineage (P1)
 
-**Tracking:** Issue #281 · Card task_5af1bb7ec0114ea4
+**Tracking:** Issue #281 · Card task_5af1bb7ec0114ea9
 
 **Archivo / test seam:** `backend/tests/summaries/test_worker.py` exercises `backend/app/summaries/worker.py` and `create_summarization_engine()` from `backend/app/summaries/factory.py`; extend `backend/tests/integration/test_summary_pipeline.py` for the persisted-result contract.
 **Acción:** Add and run failing RED tests asserting each successful persisted result makes topic and key points identifiable, reflects the frozen template instructions through `SummarizationEngine.generate(transcript_text, instructions_snapshot)`, records template id/version lineage, and is unaffected by later template edits. Test the local-Ollama factory contract: `SUMMARIZATION_OLLAMA_URL` and `SUMMARIZATION_OLLAMA_MODEL` are required and invalid/missing configuration fails closed; no alternate/cloud provider is selected. Use synthetic transcript text and a contract-compliant test engine; do not invoke a real provider or assert provider accuracy, prompt text, or output policy for empty values.
