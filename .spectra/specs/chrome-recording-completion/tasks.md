@@ -4,7 +4,7 @@
 
 - Approved baseline snapshot: `PRODUCT_BASELINE.md` commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`, blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446` (context only; it does not authorize this extension delta).
 - Requirements: `.spectra/specs/chrome-recording-completion/requirements.md`, Mira APPROVED, snapshot `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2`, PR #605 (not merged at planning time).
-- Design: `.spectra/specs/chrome-recording-completion/design.md`, Mira APPROVED, snapshot `109dec118438400fa6a634fd6b506a832995ff65`, PR #608 (not merged at planning time).
+- Design: `.spectra/specs/chrome-recording-completion/design.md`, Mira APPROVED, amended snapshot `bf4ca181e70e8d97088a23a221438663a01d0b25`, PR #608.
 - Owner direction: 2026-10-30; requirements contain traceability to the source direction and Cyrus reconciliation.
 - Import provenance: upstream approved requirements, design and `.config.spectra` were copied byte-identically from worktree `feature-chrome-recording-completion-design`; SHA-256 respectively `ad6208cc61fd8472ee2e1a257eab75ab0e67cf1ac0e35ccc670f640f852f0f6e`, `b101c0cb5b22250faba1bd5cee7309d8f865a4452ebabc1ba4415df9329101c1`, and `b1ebd08a08ba54d6cbb7effd66266ee3b37331f930f68651cb6265a8a4985af2`.
 
