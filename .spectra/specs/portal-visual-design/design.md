@@ -9,7 +9,7 @@ El portal existente es una SPA React pequeña con login y vistas de reuniones/tr
 3. Extender el backend en sus módulos existentes y contratos para completar CRUD/metadatos, descarga, revisión, listado y carga, con control de usuario en cada operación.
 4. Modelar transferencia, confirmación de carga, resultado y reintento como estados distintos; no equiparar respuesta de ingestión con procesamiento finalizado.
 5. Enrutar la apertura automática de una reunión desde el flujo de captura hacia una URL de portal identificada por meeting ID, usando un destino de navegación explícito y sin compartir tokens.
-6. Mantener la elegibilidad de archivo como prerrequisito de producto; no implementar validaciones ni habilitar «Subir y procesar» hasta que exista esa regla aprobada.
+6. Aplicar la aclaración de producto de Fer: la elegibilidad provisional de carga coincide con lo que acepta hoy la validación existente de ingesta; al seleccionar un archivo se habilita «Subir y procesar», y un rechazo del backend se muestra con su mensaje claro. No agregar restricciones de formato o tamaño.
 
 ## Decisiones de Diseño Clave
 
@@ -25,7 +25,7 @@ El portal existente es una SPA React pequeña con login y vistas de reuniones/tr
 
 **Tratar carga manual como estado de UI coordinado con endpoint de ingestión, no como tarea síncrona de transcripción.** `uploadRecording` actual usa `fetch`, que no expone progreso de subida; se añadirá un adaptador con progreso de bytes (por ejemplo XMLHttpRequest) tras la misma capa `api.ts`, evitando exponer progreso de procesamiento no existente. El éxito solo confirma recepción/encolado que pruebe el contrato del servidor; muestra vínculo/abre reunión con ID de resultado y título inicial igual al nombre seleccionado. El estado de error conserva el mismo `File` mientras la página permanece montada y ofrece reintento. *Alternativas descartadas:* porcentaje simulado, que sería engañoso; mostrar éxito de transcripción tras respuesta HTTP de carga; reintentar creando silenciosamente una operación no idempotente.
 
-**Tratar ingestión como frontera de datos autenticada con identidad estable e idempotencia.** El cliente obtiene un `meeting_id` e `idempotency_key` por intento lógico y reutiliza el mismo identificador en retry de esa operación; no genera una operación nueva al reintentar. No guarda audio en almacenamiento web persistente ni registra contenido/credenciales. Sin embargo, el esquema actual `IngestionData` requiere además `duration_seconds`, `video_presence` y los campos de captura, mientras la elegibilidad/formatos están abiertos y el endpoint actual recibe audio opcionalmente video. No se inventará cómo obtener duración ni cómo clasificar archivos: el contrato web debe adecuarse con implementación a reglas de producto aprobadas antes de habilitar la acción. *Alternativas descartadas:* inferir formato/tamaño/duración permitidos desde HTML o código legado; crear metadatos ficticios para satisfacer la API.
+**Tratar ingestión como frontera de datos autenticada con identidad estable e idempotencia.** El cliente obtiene un `meeting_id` e `idempotency_key` por intento lógico y reutiliza el mismo identificador en retry de esa operación; no genera una operación nueva al reintentar. No guarda audio en almacenamiento web persistente ni registra contenido/credenciales. La decisión de Fer establece provisionalmente como elegible lo que acepte hoy la validación de ingesta del backend; seleccionar un archivo habilita «Subir y procesar», sin validaciones locales adicionales ni límites nuevos de formato o tamaño. El formulario envía el contrato de ingesta vigente; si el backend rechaza el archivo o la solicitud, la UI presenta su mensaje claro y conserva el archivo para corregir/reintentar cuando corresponda. No sintetizar metadata requerida ni ocultar incompatibilidades del contrato: cualquier rechazo por datos requeridos también se informa según el mensaje del backend. *Alternativas descartadas:* inferir restricciones adicionales de formatos/tamaño/duración desde HTML, mocks o código legado; duplicar en cliente la validación autoritativa del backend.
 
 **Extender módulos de backend existentes en vez de crear un módulo portal.** Reuniones permanecen en `backend/app/meetings/`; ingesta en `backend/app/ingestion/`; auth en `backend/app/auth/`; persistencia compartida continúa en `backend/app/infra/`. Mantener cambios de modelo y migración juntos si se necesitan, con pruebas en módulos espejo. *Alternativas descartadas:* duplicar lógica del portal en frontend o inventar un `backend/app/portal/`; saltarse controles/ownership existentes.
 
@@ -60,15 +60,16 @@ sequenceDiagram
   participant API as frontend/src/api.ts
   participant BE as API Sauri
   U->>UI: Selecciona archivo
-  UI->>UI: Mantiene File en memoria y evalúa elegibilidad aprobada
-  alt política de elegibilidad pendiente
-    UI-->>U: No ofrece la acción de carga
-  else archivo elegible según regla aprobada
-    UI-->>U: Habilita acción de carga
-    U->>UI: Subir y procesar
-    UI->>API: Archivo + metadata + idempotency key
-    API->>BE: Multipart autenticado; informa bytes transferidos
-    BE-->>API: Resultado de ingestión (meeting/recording ID y estado)
+  UI->>UI: Mantiene File en memoria
+  UI-->>U: Habilita «Subir y procesar» al seleccionar archivo
+  U->>UI: Subir y procesar
+  UI->>API: Archivo + metadata del contrato + idempotency key
+  API->>BE: Multipart autenticado; informa bytes transferidos
+  BE-->>API: Resultado o mensaje claro de rechazo
+  alt rechazo del backend
+    API-->>UI: Error de ingesta
+    UI-->>U: Mensaje del backend; conserva archivo
+  else carga aceptada
     API-->>UI: Transferencia completada, procesamiento pendiente/no afirmado
     UI-->>U: Enlace o apertura de reunión
   end
@@ -84,7 +85,7 @@ sequenceDiagram
 - **Shell autenticado:** no realiza peticiones de datos antes de comprobar la sesión existente. Mantiene el mecanismo actual de `sauri_token` mientras no se apruebe un cambio de auth. El evento 401 vuelve al login según patrón existente.
 - **Biblioteca:** solicitudes tienen estados inicial/cargando, resultado vacío, error recuperable con volver a solicitar, y lista. La lista presenta registros más nuevos primero; búsqueda, filtros derivados de metadatos disponibles y ordenamiento se limitan a datos de grabación/metadatos, no texto de transcripción. Los filtros no se predefinen como catálogo ni se muestran tarjetas con agregados inventados.
 - **Vista de reunión:** carga de entidad y artefactos con estados loading/empty/error por recurso para que un fallo de resumen no oculte la transcripción. Reproductor arriba; transcripción debajo; cada turno con timestamp, color/identidad visual de speaker y texto. El controlador sincroniza posición: avance de media selecciona y desplaza al turno temporizado; seleccionar turno busca al inicio enlazado. Cambiar nombre de speaker solo actualiza atribución. Panel lateral inicialmente contiene Chat no interactivo y Notes/Summary; notas/resumen separados de transcripción; resumen puede copiarse o descargarse y presenta tema principal y argumentos/puntos clave sin fijar layout. Eliminación requiere confirmación de intención y refleja el resultado o error; no implica garantía de borrado más allá de respuesta del servidor. Los controles de reproducción contemplan seek, velocidad, calidad/resolución cuando el medio lo soporte, pausa, volumen y mute; no inventan conducta específica para video.
-- **Carga:** selección, lista para carga (solo con elegibilidad resuelta), transferiendo con progreso de bytes real, transferencia completa/resultado, fallo recuperable y retry. No hay progreso de procesamiento inferido. Error no borra el archivo seleccionado. «Copiar diagnóstico» solo copia un payload expresamente allowlisted, sin token, secretos, nombre de archivo ni transcripción; el backend no devuelve contenido sensible como diagnóstico a la UI. Esta restricción implementa la exclusión del requisito, sin definir otros campos diagnósticos.
+- **Carga:** al seleccionar el archivo, «Subir y procesar» queda habilitado; el backend vigente es autoridad para aceptar o rechazar. No se añaden filtros locales de formato/tamaño ni límites nuevos. Estados: selección, transfiriendo con progreso de bytes real, transferencia completa/resultado y fallo recuperable/retry. No hay progreso de procesamiento inferido. Error no borra el archivo seleccionado; la UI muestra en claro el mensaje de rechazo del backend. «Copiar diagnóstico» solo copia un payload expresamente allowlisted, sin token, secretos, nombre de archivo ni transcripción. Esta regla de elegibilidad es provisional por decisión de Fer, hasta que se definan otras reglas.
 - **Login:** solo composición/estilo del flujo existente; presentación no define estados nuevos ni altera comportamiento.
 
 ## Componentes e Interfaces
@@ -98,7 +99,7 @@ Las interfaces siguientes son límites de diseño; el detalle de campos debe seg
 - `components/LoginScreen.tsx`: reemplazo visual o estilizado del login actual, conserva `api.login`, almacenamiento y eventos actuales.
 - `components/RecordingLibrary.tsx`: lista, búsqueda local/servidor, filtros de metadatos disponibles, selección/orden. Datos de filtro derivan de metadatos reales retornados.
 - `components/MeetingView.tsx`: compone reproductor, transcripción y panel Chat/Notes-Summary; piezas existentes `MeetingPlaybackView.tsx`, `TranscriptView.tsx`, `PlaybackController.ts` se reutilizan solo si pasan criterios actuales.
-- `components/RecordingUpload.tsx`: selector local, estados de transferencia y resultado, reintento, diagnóstico reducido. El selector no determina por sí solo elegibilidad.
+- `components/RecordingUpload.tsx`: selector local, botón habilitado al seleccionar, estados de transferencia y resultado, mensaje claro de rechazo del backend, reintento y diagnóstico reducido; sin validaciones adicionales de elegibilidad del lado cliente.
 - `api.ts`: agregar funciones tipadas para list/search/sort, detalle/actualización de metadatos/tags, rename/delete/download, notas/resumen y subida con callback `onProgress(loadedBytes, totalBytes)`. Mantener `fetch` solo donde progreso no sea requerido; no llamadas HTTP directas desde componentes.
 - `styles/` o archivo CSS global ya existente (verificar package y árbol al implementar): tokens de rol y estilos de shell/pantallas, sin importar CSS/HTML de Stitch.
 
@@ -134,13 +135,13 @@ La transferencia necesita un estado temporal explícito:
 ```typescript
 type UploadUiState =
   | { kind: "idle" }
-  | { kind: "selected"; file: File; eligibility: "unresolved" | "eligible" | "ineligible" }
+  | { kind: "selected"; file: File }
   | { kind: "uploading"; file: File; loadedBytes: number; totalBytes: number | null; idempotencyKey: string }
   | { kind: "uploaded"; meetingId: string; recordingId: string; processingState: string }
   | { kind: "failed"; file: File; idempotencyKey: string; message: string };
 ```
 
-`eligibility` no se calcula ni se muestra como permitido hasta que producto defina reglas. No se define aquí estructura del archivo/transcripción, retención de blobs ni nuevos campos backend sin revisar modelo. En respuesta exitosa, los IDs de reunión y grabación vienen del servidor; `processingState` se representa con vocabulario validado por contrato y nunca se reduce a «completo» por éxito de transferencia.
+La selección siempre habilita el intento de carga; la validación vigente del backend decide aceptación, sin duplicarse como filtro cliente ni ampliarse con formatos o límites nuevos. No se define aquí estructura del archivo/transcripción, retención de blobs ni nuevos campos backend sin revisar modelo. En respuesta exitosa, los IDs de reunión y grabación vienen del servidor; `processingState` se representa con vocabulario validado por contrato y nunca se reduce a «completo» por éxito de transferencia.
 
 ## Propiedades de Correctitud
 
@@ -148,7 +149,7 @@ type UploadUiState =
 2. **Biblioteca sin texto transcripto.** Ninguna consulta/filtro entre grabaciones inspecciona contenido de segmentos/turnos; primera carga ordenada por fecha más reciente; filtros solo proceden de metadatos disponibles. Valida requisito 2.1–2.5.
 3. **Selección y mutaciones por grabación.** Elegir registro abre esa reunión; cambios de metadatos guardados se vuelven a mostrar; rename/tag/delete/download se refieren al meeting seleccionado y fallos no mutan UI a éxito. Valida requisito 3.1–3.8.
 4. **Sincronización reproductor-transcripción.** Cada turno representado conserva timestamp, color de speaker y texto; avance a tiempo enlazado desplaza/resalta pasaje; seleccionar pasaje busca al tiempo correspondiente; cambio de speaker no cambia texto. Valida requisito 4.1–4.9.
-5. **Elegibilidad no inventada.** Con política no resuelta, ningún archivo se declara elegible ni se ofrece acción de iniciar upload; con regla aprobada, solo entonces la interfaz delega esa decisión a regla contractual verificada. Valida requisito 5.1–5.4.
+5. **Elegibilidad provisional sin restricciones nuevas.** Seleccionar cualquier archivo habilita el intento de carga; no se filtra por formato o tamaño en cliente. La validación actual del backend decide aceptación; su rechazo se comunica claramente y conserva el archivo. Valida requisitos 5.1–5.4 según la aclaración de producto de Fer, que resuelve provisionalmente la elegibilidad abierta.
 6. **Progreso veraz y fin diferenciado.** Por cada evento reportado, loadedBytes no decrece durante un intento y el porcentaje, si totalBytes es conocido, se deriva de loaded/total; transferencia completada no representa por sí sola procesamiento completado. Valida requisito 6.1–6.3.
 7. **Retry conserva operación y archivo.** Error de transferencia mantiene `File` y clave idempotente para reintentar la misma carga; no se crea una grabación duplicada por reenvío de la misma operación. Valida requisito 6.4 y contrato de ingestión inspeccionado.
 8. **Diagnóstico allowlist.** El texto copiado no contiene token, secret ni contenido de transcripción. Valida requisito 6.5.
@@ -168,15 +169,15 @@ type UploadUiState =
 | API no puede reportar progreso | Mostrar actividad de transferencia indeterminada, no porcentaje inventado. |
 | Error de carga | Mensaje claro, conservar archivo para retry durante sesión de página, mantener idempotency key de la operación; «Copiar diagnóstico» copia solo campos seguros allowlisted; no persistir la carga en local storage. |
 | Respuesta exitosa de carga sin estado final de proceso | Mostrar transferencia recibida y reunión resultante con procesamiento no afirmado/completado; enlace a meeting ID del servidor. |
-| Archivo seleccionado con elegibilidad aún sin política | No ofrecer acción de carga; tratar como dependencia de producto, no como error de archivo con reglas inventadas. |
+| Archivo rechazado por la validación actual de ingesta | Mostrar claramente el mensaje de rechazo devuelto por backend y conservar el archivo seleccionado para corrección/reintento; no añadir reglas locales de formato/tamaño. |
 | Fin de captura sin meeting ID o portal no disponible | No construir una ruta falsa ni insertar identificador sensible en URL; conservar flujo existente e informar según mecanismos existentes de la extensión. |
 
 ## Estrategia de Testing
 
 **Frontend — pruebas de componentes y API:** usar runner ya configurado en `frontend/package.json` y patrones en `MeetingList.test.tsx`, `TranscriptView.test.tsx`, `api.test.ts`. Cubrir estados loading/empty/error, filtros basados en metadatos, newest-first, ausencia de búsqueda full-text, navegación de meeting ID, controles de reproductor/transcripción, login sin cambios de protocolo y propiedades de estados de carga/retry. La prueba de progreso debe alimentar eventos de progreso deterministas del adaptador, validar derivación del porcentaje y que no se dibuje porcentaje cuando no hay total.
 
-**Backend — pruebas autenticadas de contrato y límites:** ampliar suites existentes de meetings/ingestion/auth. Verificar ownership, respuestas de mutaciones, ID/title inicial por filename, idempotencia al retry, estado tras recepción vs procesamiento, manejo de errores y descarga autenticada. Usar solo fixtures sintéticos. Añadir migración + pruebas de upgrade/downgrade si se incorpora persistencia nueva.
+**Backend — pruebas autenticadas de contrato y límites:** ampliar suites existentes de meetings/ingestion/auth. Verificar ownership, respuestas de mutaciones, ID/title inicial por filename, idempotencia al retry, estado tras recepción vs procesamiento, rechazo de ingesta con mensaje comprensible y descarga autenticada. Usar solo fixtures sintéticos. Añadir migración + pruebas de upgrade/downgrade si se incorpora persistencia nueva.
 
-**Cross-surface / extensión:** probar que el fin de captura con meeting ID produce destino del portal correcto y que no hay token/datos de medios en URL; ausencia de ID no navega. E2E browser para upload solo después de que elegibilidad, contrato del request y destino de portal estén aprobados/implementados; no simular elegibilidad real antes.
+**Cross-surface / extensión:** probar que el fin de captura con meeting ID produce destino del portal correcto y que no hay token/datos de medios en URL; ausencia de ID no navega. E2E browser de upload comprueba que seleccionar habilita la acción y que un rechazo controlado del backend expone el mensaje y conserva el archivo; usar solo fixtures sintéticos.
 
 **Comandos configurados:** `npm run test`, `npm run typecheck`, `npm run build` en `frontend/`; `npm run test` y `npm run test:e2e` en `extension/` si se modifica el flujo de captura; `pytest`, `ruff check .`, `mypy .` desde `backend/` cuando sus módulos se amplíen. Esta fase no ejecuta tests de implementación.
