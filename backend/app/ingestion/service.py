@@ -60,6 +60,15 @@ async def preflight_ingestion(
     )
 
 
+def resolve_upload_title(title: str | None, filename: str | None) -> str:
+    """Use an explicit title or a bounded filename basename for uploaded meetings."""
+    if title is not None and title.strip():
+        return title
+
+    basename = (filename or "").replace("\\", "/").rsplit("/", maxsplit=1)[-1].strip()
+    return (basename or "Untitled recording")[:512]
+
+
 async def process_ingestion(
     session: AsyncSession,
     data: IngestionData,

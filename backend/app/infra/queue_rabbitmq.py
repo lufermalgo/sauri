@@ -8,6 +8,8 @@ exhausted (nack without requeue).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -70,6 +72,32 @@ def _read_max_retries(topic: str = "transcribe") -> int:
 
 
 _HEADER_RETRIES = "x-sauri-retries"
+_HEADER_SIGNATURE = "x-sauri-signature"
+_SIGNING_KEY_ENV = "QUEUE_MESSAGE_SIGNING_KEY"
+
+
+def _signing_key() -> bytes:
+    value = os.environ.get(_SIGNING_KEY_ENV, "")
+    if len(value.encode("utf-8")) < 32:
+        raise RuntimeError(f"{_SIGNING_KEY_ENV} must contain at least 32 bytes")
+    return value.encode("utf-8")
+
+
+def _message_signature(topic: str, body: bytes, retries: int = 0) -> str:
+    signed_data = topic.encode("utf-8") + b"\0" + str(retries).encode("ascii") + b"\0" + body
+    return hmac.new(_signing_key(), signed_data, hashlib.sha256).hexdigest()
+
+
+def _has_valid_signature(topic: str, body: bytes, headers: dict[str, Any] | None) -> bool:
+    message_headers = headers or {}
+    signature = message_headers.get(_HEADER_SIGNATURE)
+    retries = message_headers.get(_HEADER_RETRIES, 0)
+    return (
+        isinstance(signature, str)
+        and type(retries) is int
+        and retries >= 0
+        and hmac.compare_digest(signature, _message_signature(topic, body, retries))
+    )
 
 
 def _count_retries(message: aio_pika.abc.AbstractIncomingMessage) -> int:
@@ -131,6 +159,7 @@ class RabbitMQJobQueue(JobQueue):
             body=body,
             delivery_mode=DeliveryMode.PERSISTENT,
             content_type="application/json",
+            headers={_HEADER_SIGNATURE: _message_signature(topic, body)},
         )
         await self._channel.default_exchange.publish(
             amqp_message,
@@ -156,6 +185,7 @@ class RabbitMQJobQueue(JobQueue):
         """
         if self._channel is None:
             raise RuntimeError("No active connection. Call `connect()` first.")
+        _signing_key()
         channel = self._channel
 
         max_retries = _read_max_retries(topic)
@@ -169,6 +199,10 @@ class RabbitMQJobQueue(JobQueue):
         )
 
         async def _on_message(message: aio_pika.abc.AbstractIncomingMessage) -> None:
+            if not _has_valid_signature(topic, message.body, message.headers):
+                logger.error("Unauthenticated message rejected on '%s'.", topic)
+                await message.nack(requeue=False)
+                return
             try:
                 payload: dict[str, Any] = json.loads(message.body.decode("utf-8"))
                 await handler(payload)
@@ -183,11 +217,18 @@ class RabbitMQJobQueue(JobQueue):
                         retries + 1,
                         max_retries,
                     )
+                    retry_headers = {
+                        **(message.headers or {}),
+                        _HEADER_RETRIES: retries + 1,
+                    }
+                    retry_headers[_HEADER_SIGNATURE] = _message_signature(
+                        topic, message.body, retries + 1
+                    )
                     retry_message = Message(
                         body=message.body,
                         delivery_mode=DeliveryMode.PERSISTENT,
                         content_type=message.content_type,
-                        headers={**(message.headers or {}), _HEADER_RETRIES: retries + 1},
+                        headers=retry_headers,
                     )
                     await channel.default_exchange.publish(retry_message, routing_key=topic)
                     await message.ack()
