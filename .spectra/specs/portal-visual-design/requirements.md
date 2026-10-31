@@ -48,18 +48,21 @@ Este documento traduce únicamente ese alcance a requisitos verificables. La lí
 4. THE Biblioteca_De_Grabaciones SHALL NOT provide or imply full-text search across meetings.
 5. THE requirements SHALL NOT prescribe mock counts, example customer data, specific filter values, pagination, summary cards, or processing-state controls absent from the approved baseline.
 
-### Requisito 3: Acciones aprobadas sobre una grabación
+### Requisito 3: Administrar una grabación y sus metadatos
 
-**Historia de Usuario:** Como usuario, quiero seleccionar una grabación y administrar o descargar sus artefactos aprobados, para retomar o llevarme el material de una sesión.
+**Historia de Usuario:** Como usuario, quiero seleccionar una grabación, administrar sus artefactos y editar sus metadatos y etiquetas, para retomar, organizar o llevarme el material de una sesión.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §4.C.2 y §5 (selección, renombrado, eliminación y descarga de video/transcripción confirmados; garantías de eliminación y formatos de exportación no especificados).
+**Trazabilidad:** `PRODUCT_BASELINE.md` §4.C.2–3 y §5 (selección, renombrado, eliminación, descarga de video/transcripción, edición de metadatos de empresa/proyecto/participantes y uso de etiquetas predefinidas o creadas por el usuario confirmados; garantías de eliminación, formatos de exportación, gobierno de etiquetas y campos adicionales no especificados).
 
 #### Criterios de Aceptación
 
 1. WHEN the user selects a recording in the Biblioteca_De_Grabaciones, THE portal SHALL make that recording available for review in its Vista_De_Reunion.
 2. THE portal SHALL support renaming and deleting a selected recording.
 3. THE portal SHALL support downloading the selected recording's video and transcript.
-4. THE requirements SHALL NOT add deletion guarantees, export formats, bulk actions, or archival behavior not established by the baseline.
+4. WHEN the user edits company, project, or participant metadata for a recording and saves the changes, THE portal SHALL show the saved values for that recording.
+5. THE portal SHALL allow the user to apply predefined tags to a recording.
+6. WHEN the user creates a tag and applies it to a recording, THE portal SHALL show that tag among the tags applied to that recording.
+7. THE requirements SHALL NOT add deletion guarantees, export formats, bulk actions, archival behavior, tag-governance rules, or metadata fields beyond company, project, and participants unless established by the baseline.
 
 ### Requisito 4: Revisar medios y transcripción de una reunión
 
