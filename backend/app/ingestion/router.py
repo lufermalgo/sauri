@@ -23,7 +23,7 @@ from app.infra.models import Meeting
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.ingestion.schemas import IngestionData
-from app.ingestion.service import preflight_ingestion, process_ingestion
+from app.ingestion.service import preflight_ingestion, process_ingestion, resolve_upload_title
 from app.meetings.service import record_transition
 
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
@@ -67,6 +67,7 @@ async def upload_recording(
     try:
         data_dict = json.loads(data)
         ingestion_data = IngestionData(**data_dict)
+        ingestion_data.title = resolve_upload_title(ingestion_data.title, audio.filename)
     except (json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -183,6 +184,8 @@ async def upload_recording(
             topic="transcribe",
             message={
                 "meeting_id": ingestion_data.meeting_id,
+                "owner_id": user.id,
+                "recording_id": recording.id,
                 "audio_ref": audio_ref,
             },
         )
