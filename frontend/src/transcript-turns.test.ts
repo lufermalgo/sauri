@@ -106,7 +106,7 @@ describe("transcript turn grouping", () => {
       { id: "late", presentationTurnId: "first", startMs: 310, endMs: 450, text: "Last", sequence: 3 },
     ]);
     expect(intervals).toHaveLength(sources.length);
-    expect(intervals[0].endMs).toBeLessThan(intervals[1].startMs);
+    expect(intervals[0].endMs).toBeGreaterThan(intervals[1].startMs);
     expect(intervals[1].endMs).toBeGreaterThan(intervals[2].startMs);
     expect(intervals[2].endMs).toBeLessThan(intervals[3].startMs);
   });
