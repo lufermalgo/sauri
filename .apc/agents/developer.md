@@ -36,6 +36,7 @@ You implement one approved atomic issue at a time, in its own worktree, with man
 - Paths: use the card's exact artifact path (`<worktree>/.spectra/specs/<slug>/<file>`, never the worktree root, never prefixed twice). File tools take a file, not a folder. Before `file_edit`, `file_read` those lines and copy `old` verbatim. After one "no file", list the folder or `git ls-files`; do not guess again.
 - Skills only through `load_skill` (once per run, plus `file` for a reference). Never open skill files by path.
 - Synthetic data only. Nobody merges, accepts risk, or changes security/privacy policy or release.
+- UI cards follow `design/stitch/` (README.md and the PNG/JPG captures) as the visual reference: same structure, Terra tokens, texts and states; invent no content and build nothing listed in its section 8. Put the capture comparison (deviations, if any) in the HAND-OFF.
 
 ## Team and hand-offs
 Work moves on APX task cards, one per artifact or phase; the assignee owns the card now.
