@@ -6,7 +6,7 @@
 - Requirements: `.spectra/specs/chrome-recording-completion/requirements.md`, Mira APPROVED, snapshot `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2`, PR #605 (not merged at planning time).
 - Design: `.spectra/specs/chrome-recording-completion/design.md`, Mira APPROVED, amended snapshot `bf4ca181e70e8d97088a23a221438663a01d0b25`, PR #608.
 - Owner direction: 2026-10-30; requirements contain traceability to the source direction and Cyrus reconciliation.
-- Import provenance: requirements and `.config.spectra` remain byte-identical to the approved source worktree; the design was replaced with the exact approved snapshot at `bf4ca181e70e8d97088a23a221438663a01d0b25` (Git blob `5c2bcf118ae52d5bf26dceefb1db4018ef7bba7f`, SHA-256 `3218adc2aba2d6caec8ed94ed6081f463317f1f56d06f546e2b6dcd69660da5a`). The earlier imported design blob `1def4a307e68758602f3d5ba4d162d1205327507` was stale and is not the approved design.
+- Import provenance: requirements and `.config.spectra` remain byte-identical to the approved source worktree; the design matches exact approved snapshot `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Git blob `ec67cad96b6907911f2f335b17917753993d6937`, SHA-256 `16bbfc35dcaf3a4ccc74b8e21790ca12faf2be30d51591c03f6bde465383ba6a`).
 
 ## Summary of phases
 
@@ -160,8 +160,8 @@
 ## Dependency graph and rationale
 
 - Mandatory RED→GREEN edges: T1.1→T2.1; T1.2→T2.2; T1.3+T1.8→T2.3; T1.4→T2.4; T1.5→T2.5; T1.6→T2.6; T1.7→T2.7; T1.9→T2.8. T1.8 also depends on T1.1/T1.2 because it exercises the completion coordinator and persisted identity before enqueue.
-- Actual implementation prerequisites: T2.1+T2.2→T2.3 (finalized media and persisted identity must exist before automatic enqueue); T2.2→T2.4 (status is bound to persisted mapping; owner authorization is covered by T1.4/T2.4 pending resolution of the design's conflicting `task_dfcb314806c04033` ownership statement); T2.4→T2.5 (success gate precedes launch); T2.1+T2.2→T2.7 (provider adapters require the shared coordinator and durable provider/tab/session binding); T2.2+T2.3+T2.4+T2.7→T2.8 (status presentation needs persisted state, upload/processing outcomes, and adapter completion errors).
-- External dependencies named by design: `task_11001b7f5b084e09` upload result/failure contract; `task_dfcb314806c04033` API/login and owner-authorized status contract; `task_6a271652b2c34130` protected meeting review/playback. However, #602/#603 (the implementation associated with `task_dfcb314806c04033`) do not contain the backend owner check that the approved design assigns to that task. T2.4 currently owns the missing check per Ansel's earlier ruling; Ansel must reconcile this owner/dependency conflict with the approved design before Mira audit.
+- Actual implementation prerequisites: T2.1+T2.2→T2.3 (finalized media and persisted identity must exist before automatic enqueue); T2.2→T2.4 (status is bound to the persisted mapping); T2.4→T2.5 (verified success precedes launch); T2.1+T2.2→T2.7 (provider adapters require the shared coordinator and durable provider/tab/session binding); T2.2+T2.3+T2.4+T2.7→T2.8 (status presentation needs persisted state, upload/processing outcomes, and adapter completion errors).
+- External dependencies named by design: `task_11001b7f5b084e09` upload result/failure contract and `task_6a271652b2c34130` protected meeting review/playback. Portal authentication/login remains a separate contract consumed by the protected review integration in T1.6/T2.6; it does not own the existing meeting-status route's owner check. T1.4 (#613) tests that route, and T2.4 (#622) implements authorization through `_get_authorized_meeting`.
 - Independent RED tasks T1.1–T1.7 and T1.9 can proceed concurrently; T1.8 follows T1.1/T1.2. Implementation tasks remain parallel except explicit mapping/status/launch/UI dependencies. T1.6/T2.6 wait for existing protected playback/API contracts; its seams are `get_transcript`, `get_playback_manifest`, and `_get_authorized_meeting` in `backend/app/meetings/router.py`.
 - T3.1 depends on every feature-flow GREEN task, T2.1–T2.8, so end-to-end validation cannot precede authenticated review integration (T2.6), provider adapter wiring (T2.7), or visible status/recovery (T2.8). T3.2 follows T3.1, so final configured validation includes all implementations, the migration, both provider paths, and status presentation.
 
@@ -174,7 +174,7 @@
 
 ## Publication tracking
 
-Mira approved the prior task-plan snapshot `56e36feff04406cda3435ac00a0621aec3c1b3b7`; this scoped amendment derives from the amended design snapshot `bf4ca181e70e8d97088a23a221438663a01d0b25` (Mira APPROVED) and awaits focused audit. GitHub issues #610–#628 remain the mapping for this plan in milestone `chrome-recording-completion` (#17). APX card creation is pending real owners and dependency readiness; no card IDs are claimed here.
+Mira approved the prior task-plan snapshot `56e36feff04406cda3435ac00a0621aec3c1b3b7`; this scoped amendment derives from the corrected design snapshot `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED) and awaits focused tasks audit. GitHub issues #610–#628 remain the mapping for this plan in milestone `chrome-recording-completion` (#17). APX card creation is pending real owners and dependency readiness; no card IDs are claimed here.
 
 | Task | GitHub issue | APX card |
 |---|---:|---|
