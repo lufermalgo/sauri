@@ -110,6 +110,6 @@ Este documento traduce únicamente ese alcance a requisitos verificables. La lí
 
 ## Dependencias y límites upstream
 
-- Fuente del alcance: baseline aprobado en #528 (commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`) y enmienda de carga manual aprobada por Fer para el snapshot exacto de #665 (commit `85b603ada14996842d913cfbbed4bcffe9fe54c5`, blob `2337a46b2ba78ef4364e23a86df9918db621c881`). La enmienda está publicada en PR #665, aún abierta; cualquier promoción/publicación del baseline depende de que Fer la incorpore.
+- Fuente del alcance: baseline aprobado en #528 (commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`) y enmienda de carga manual aprobada por Fer para el snapshot exacto de #665 (commit `85b603ada14996842d913cfbbed4bcffe9fe54c5`, blob `2337a46b2ba78ef4364e23a86df9918db621c881`). La enmienda fue publicada en PR #665 y fusionada en `main` mediante el commit `7d5dd29edaae65256fab3d7b84564693f5603081`.
 - Referencia visual: `design/stitch/README.md` y seis recursos en `origin/main` `29002a98de8a3c9cd882e05887e221cfeed184bd`; solo inspiración no normativa. Su §8 enumera exclusiones y los §§0 y 10 niegan que la referencia autorice alcance o aceptación visual.
 - No se afirma aceptación de producto, implementación, conformidad visual ni estado runtime.
