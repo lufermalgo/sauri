@@ -6,7 +6,7 @@
   "idea": "Fix the meeting transcript rendering as thousands of short word-level fragments with speaker attribution per word instead of complete speaker turns.",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
+    "design": "complete",
     "tasks": "pending"
   }
 }
