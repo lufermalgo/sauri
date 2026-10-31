@@ -12,6 +12,23 @@ Este documento traduce únicamente ese alcance a requisitos verificables. La lí
 
 **Fuera de alcance:** cambiar autenticación, permisos, política de acceso, consentimiento, retención o garantías de eliminación; búsqueda full-text entre reuniones; edición del texto de la transcripción; límites de formato/tamaño/duración no aprobados; chat interactivo y métricas de tiempo de habla (Phase 2); diagnósticos distintos de la condición explícita de no incluir secretos ni contenido de transcripción; las pantallas Terra no respaldadas por la línea base. `design/stitch/README.md` y sus recursos son inspiración visual no normativa, no requisitos ni autorización para reproducir sus textos, controles, estados, datos o composiciones.
 
+## Matriz de fases de entrega
+
+Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los criterios de aceptación de Requisitos 1–6 siguen siendo el alcance aprobado completo. La matriz asigna capacidades ya especificadas; no crea aceptación de producto por sí sola ni autoriza comportamientos que no estén respaldados por la línea base. Stitch continúa siendo una referencia visual no normativa.
+
+| Capacidad | Fase | Trazabilidad y límites |
+| --- | --- | --- |
+| Tratamiento visual del acceso existente | Fase 1 | Requisito 1; solo autenticación existente, sin cambios de comportamiento, política ni permisos. |
+| Biblioteca: lista de grabaciones y sus estados de presentación respaldados por el alcance aprobado | Fase 1 | Requisito 2; lista en orden más reciente primero. No se definen estados de procesamiento ni se agregan controles/estados no establecidos por la línea base. |
+| Carga manual de una grabación | Fase 1 | Requisitos 5–6; conserva elegibilidad sin límites inferidos, progreso de transferencia, resultado y recuperación de fallo según los criterios existentes. |
+| Vista de reunión: video/medio, turnos de transcripción atribuidos, notas y resumen; pestaña Chat en la composición inicial | Fase 1 | Requisito 4; conserva la composición reproductor-sobre-transcripción, controles ordinarios, sincronización y notas/resumen distintos. La pestaña Chat es de composición y no ofrece interacción con la grabación en Fase 1; los detalles abiertos permanecen abiertos. |
+| Apertura automática de la vista de la reunión correspondiente | Fase 1 | Requisito 3, criterio 7; al detenerse la captura o finalizar la sesión de Google Meet. |
+| Búsqueda, filtros y ordenamiento de la biblioteca | Fase 2 | Requisito 2; filtros derivados de metadatos disponibles; no incluye búsqueda full-text entre reuniones ni catálogo arbitrario. |
+| Renombrar, eliminar y descargar video/transcripción | Fase 2 | Requisito 3; sin añadir garantías de eliminación ni formatos de exportación. |
+| Editar metadatos de empresa, proyecto y participantes; aplicar etiquetas predefinidas o creadas por el usuario | Fase 2 | Requisito 3; sin campos adicionales ni reglas de gobierno de etiquetas. |
+| Renombrar hablantes desde la transcripción | Fase 2 | Requisito 4; solo cambia atribución; no habilita edición del texto transcrito y mantiene el límite de identidad por usuario. |
+| Chat interactivo con la grabación y métricas de tiempo de habla | Fase 2 según la línea base | Capacidades ya clasificadas como Fase 2 en `PRODUCT_BASELINE.md` §5; siguen fuera de la interacción inicial y no se detallan ni amplían en esta enmienda. |
+
 ## Glosario
 
 - **Biblioteca_De_Grabaciones**: vista web donde el usuario encuentra y selecciona grabaciones existentes.
