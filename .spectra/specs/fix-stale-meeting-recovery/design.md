@@ -23,7 +23,7 @@ Re-ingesting a recording is intentionally idempotent and does not restore a stal
 
 **Preserve existing identity, ownership, and retention boundaries.** Place the authenticated operation under `backend/app/meetings/`; reuse the established meeting owner authorization and access-audit mechanisms, and do not add a broader administrator capability or change consent/retention rules. The permitted human operator role must remain limited to the existing authorized owner unless an approved requirement changes that boundary. No UI or client changes are required for this backend defect scope.
 
-**Use an explicit one-meeting pilot gate outside the automatic path.** The recovery endpoint can process only the single requested meeting. An operational runbook/authorization must enforce one pilot and human verification of final state plus notes/speaker/review preservation before any expansion. No batch endpoint, bulk flag, automatic retries, deployment, live operation, or release authorization is part of the design.
+**Enforce the first pilot with a fail-closed, one-meeting gate.** Recovery is disabled by default via runtime setting `SAURI_MANUAL_RECOVERY_MODE=disabled`. To authorize the first use, Fer (project owner) must explicitly authorize the pilot after implementation, QA and security review; the deployment operator then sets `SAURI_MANUAL_RECOVERY_MODE=pilot` and one exact opaque `SAURI_RECOVERY_PILOT_MEETING_ID` in the protected deployment environment, never in source control, logs, or shared evidence. The first explicit recovery POST for that allowlisted meeting locks the singleton gate row without changing it, performs every eligibility check, then atomically claims the gate (`disabled -> running`) together with its accepted recovery operation; an ineligible request rolls back with the gate and all recovery/meeting data unchanged. Startup, deployment, and ordinary processing never arm or consume it. The gate moves atomically `disabled -> running -> awaiting_verification`; while running or awaiting verification every other recovery request is rejected without mutation. It is consumed only by the first accepted recovery operation and cannot be re-armed by the recovery API. The meeting owner who submits the pilot request is the named pilot operator and must inspect the content-free status endpoint, verify the final result and artifact-preservation verdict, and explicitly acknowledge verification. Only then can the gate become `verified`; this feature remains pilot-only and disabled for any second meeting. Expansion beyond that one pilot requires a separate explicit Fer authorization after reviewing the recorded verification evidence, plus a separate controlled configuration change; neither occurs automatically or within this fix. If status is incomplete, preservation is false/unknown, or the explicit verification is absent, the pilot remains blocked and no further recovery can run. No batch endpoint, bulk flag, automatic retries, deployment, live operation, or release authorization is part of this design.
 
 ## Arquitectura
 
@@ -73,13 +73,19 @@ sequenceDiagram
             W->>D: Persist transcript/state and completion evidence
         end
         S-->>R: accepted + operation reference
-        R-->>O: Minimal status; operator verifies final result
+        R-->>O: Minimal accepted receipt
+        O->>R: GET recovery status for operation_id
+        R->>D: Verify owner; compare final state and artifact snapshot
+        R-->>O: Content-free result + preservation verdict
+        O->>R: POST verify-pilot acknowledgement
+        R->>D: Confirm completed + unchanged snapshot; close pilot gate
+        R-->>O: pilot_verified or fail-closed result
     end
 ```
 
 The current queue API has no transactional publish with PostgreSQL. To avoid committing a state change while losing the recovery message, the recovery operation and a single outbox row must commit atomically; an outbox dispatcher publishes the job and marks delivery. The dispatcher is an implementation detail of this manual recovery path, not an automatic recovery trigger. It retries delivery of the already-authorized operation only, using the same operation ID and generation; it must not create a second recovery or reset processing state. If the implementation cannot provide durable outbox delivery and idempotent worker handling, recovery remains unavailable rather than falling back to an unsafe direct publish.
 
-A recovery result has a small finite outcome vocabulary: `accepted`, `already_requested`, `not_found`, `not_authorized`, `ineligible_state`, `ineligible_artifacts`, `active_or_pending_work`, `eligibility_unverified`, `dispatch_pending`, `processing_failed`, and `completed`. Messages/logs contain only outcome/reason codes and opaque operation/meeting identifiers. They must not include transcript text, notes, speaker labels, audio/video object references, or raw queue payloads.
+A recovery result has a small finite outcome vocabulary: `accepted`, `already_requested`, `not_found`, `not_authorized`, `pilot_not_armed`, `pilot_in_use`, `ineligible_state`, `ineligible_artifacts`, `active_or_pending_work`, `eligibility_unverified`, `dispatch_pending`, `awaiting_operator_verification`, `pilot_verified`, `processing_failed`, and `completed`. Messages/logs contain only outcome/reason codes and opaque operation/meeting identifiers. They must not include transcript text, notes, speaker labels, audio/video object references, or raw queue payloads.
 
 ## Componentes e Interfaces
 
@@ -87,7 +93,11 @@ A recovery result has a small finite outcome vocabulary: `accepted`, `already_re
 
 Add a single authenticated `POST /api/v1/meetings/{meeting_id}/recover` operation. Reuse `get_current_user`, the existing owner-scoped meeting authorization, and access auditing. Require an `Idempotency-Key`; validate its bounded format and bind it to actor + meeting + request operation. The body does not accept object references, owner IDs, processing state, or a batch of meeting IDs. Return a typed minimal response with `operation_id`, `meeting_id`, `status`, `reason_code` (when not accepted), and timestamps. Do not return transcript, notes, speakers, or media metadata.
 
-An unauthorized or non-owner caller cannot use this endpoint to discover another user's meeting or its artifacts; preserve the current not-found behavior for non-owned records.
+Add an owner-authenticated `GET /api/v1/meetings/{meeting_id}/recoveries/{operation_id}` status/verification operation, using the same meeting-owner authorization and not-found behavior. It returns only durable processing status, reason code, timestamps, final meeting state, and an artifact-preservation verdict with before/after counts and a boolean result. The persisted snapshot is a digest of sorted opaque artifact-row IDs for preserved notes and confirmed speakers, plus counts for artifact types; it contains no text, labels, object references, or raw IDs in the response. Compute the current snapshot when status is read and compare with the pre-recovery snapshot; report `preservation_verified=false` on any mismatch or read error. A completed recovery is not considered operator-verified until this GET result confirms completed state and preserved snapshot. Ineligible/uncertain POST responses are transient no-op results and have no operation ID; their exact reason is returned directly without persisting recovery data.
+
+Add a separate owner-authenticated `POST /api/v1/meetings/{meeting_id}/recoveries/{operation_id}/verify-pilot` acknowledgement. It accepts only an explicit `verified=true` confirmation from the named pilot operator and succeeds only when the persisted operation is complete, the status read recomputes an exact matching artifact snapshot, and the result is for the gate's one allowlisted meeting. It atomically advances `awaiting_verification` to `verified`; it cannot authorize another recovery or expand the allowlist. A failed check leaves the gate blocked.
+
+An unauthorized or non-owner caller cannot use these endpoints to discover another user's meeting or its artifacts; preserve the current not-found behavior for non-owned records.
 
 ### 2. Recovery service — `backend/app/meetings/recovery_service.py`
 
@@ -140,6 +150,15 @@ RecoveryOutbox
 - generation (integer)
 - delivery_state (pending | published)
 - attempts / next_attempt_at / created_at
+
+RecoveryPilotGate (singleton)
+- state (disabled | running | awaiting_verification | verified | closed)
+- allowed_meeting_id (nullable FK; exactly one when mode=pilot and gate is active)
+- authorized_by (opaque meeting-owner actor ID; set by first accepted request)
+- pilot_operation_id (nullable unique FK)
+- armed_at / updated_at (UTC)
+- verification_actor_id / verified_at (nullable)
+- verification_artifact_snapshot_match (nullable boolean)
 ```
 
 Names above describe conceptual fields; implementation must align with actual ORM/migration conventions. A database claim is not deemed inactive solely because a lease timestamp elapsed. Expired or missing claim state, database errors, uncertain broker state, missing generation on potentially overlapping jobs, or failure to query any artifact table causes fail-closed abort. The schema and protocol must ensure existing producers/workers participate before any recovery endpoint is enabled; if safe fleet-wide coordination cannot be established, the endpoint stays disabled and no operational recovery is possible.
@@ -160,6 +179,8 @@ The eligibility query explicitly covers current transcript/turn relationship, di
 
 **Propiedad 6 — Content-safe observability (Acceptance 4).** For every response, access/audit row, application log and outbox record produced by recovery, synthetic transcript and note sentinel text, participant names, and object references are absent; the response still exposes a finite reason/outcome and operation reference sufficient to verify no-op or completion.
 
+**Propiedad 7 — Pilot lock and operator verification (Acceptance 5).** With the runtime mode disabled, no recovery operation can be accepted. In pilot mode, the first accepted request must match the single configured meeting ID and atomically claim the singleton gate. Until the operation completes, the status endpoint verifies the saved artifact snapshot, and the meeting owner acknowledges verification, every subsequent recovery request is a no-op; even after acknowledgement, no second meeting can be processed in pilot mode. A mismatch, incomplete processing, snapshot change, missing acknowledgement, or failed status read leaves the gate blocking.
+
 ## Manejo de Errores
 
 | Escenario | Comportamiento |
@@ -169,7 +190,9 @@ The eligibility query explicitly covers current transcript/turn relationship, di
 | Existing transcript, diarization, review, other output, or conflicting note/speaker preservation cannot be guaranteed | No-op `ineligible_artifacts` / `eligibility_unverified`; no deletion, replacement, or replay. Transcript-bearing observed candidate remains intact and requires review. |
 | Active claim, pending/in-flight job, delayed legacy job, or unknown worker status | No-op `active_or_pending_work` / `eligibility_unverified`; do not infer safety from broker totals, object existence, or elapsed time. |
 | Database lock, eligibility query, artifact store, or transaction failure | Roll back state and outbox changes; return a generic retry-later/no-op reason without object/content details. Do not auto-retry the recovery request. |
-| Same idempotency key repeated | Return the stored outcome/operation reference; never create a second logical job. |
+| Same idempotency key repeated | Return the stored accepted outcome/operation reference; never create a second logical job. Eligibility no-ops persist no idempotency record, so any later explicit request repeats all checks. |
+| Pilot mode disabled, allowlist missing/mismatched, or singleton gate already claimed | Return a content-free `pilot_not_armed` / `pilot_in_use` no-op; do not alter recovery or meeting data and do not queue a job. |
+| Status is incomplete, artifact snapshot differs, or verification acknowledgement fails | Return `awaiting_operator_verification` / `eligibility_unverified`; keep pilot gate locked and do not permit another recovery. |
 | Queue publish failure after commit | Keep operation `dispatch_pending`; outbox dispatcher retries delivery of that same authorized operation with stable IDs. Do not make it a new recovery attempt or report completed. |
 | Worker sees stale, missing, mismatched generation or duplicate operation | Acknowledge safely without engine invocation or persistence; emit minimal reason-code evidence. |
 | Transcription fails after accepted recovery | Preserve existing data and report `processing_failed`; do not introduce automatic full-recording retries. A future human action requires a new guarded operation and fresh eligibility proof. |
@@ -181,7 +204,7 @@ Use synthetic meeting IDs, users, notes, speaker labels, object references, and 
 - **Service unit/integration:** eligible synthetic queued and transcribing records; wrong state; no/duplicate recording; existing transcript, diarization, review, notes/speakers; missing artifact/probe; DB exception; idempotent same key; distinct keys; exact meeting isolation. Confirm all disqualifying cases have no state, job, or artifact mutation.
 - **Concurrency/fencing:** worker already holds a claim; recovery wins claim before delayed worker; worker wins claim before recovery; duplicate delivery; legacy job without generation; claim expiration/worker restart; two concurrent recovery calls. Prove no engine invocation or duplicate artifact creation for stale jobs.
 - **Outbox/queue contract:** transaction rollback leaves no publishable message; committed request is delivered once logically despite publisher timeout/ack ambiguity; worker de-duplicates by operation + generation; dispatch failures remain `dispatch_pending` and do not create another recovery operation.
-- **API:** authenticated owner can submit one explicit request; no body-supplied owner/object reference; unauthorized/non-owner cannot probe; response is verifiable and content-free; repeated idempotency key is stable. Test actual API, database and publisher boundary independently from the existing ingestion service reproduction.
+- **API and pilot gate:** authenticated meeting owner can submit one explicit request only when runtime mode is `pilot`, exact allowlist matches, and singleton gate is unused; mode disabled, missing/mismatched allowlist, second candidate, or already claimed gate must no-op. Verify gate is claimed atomically with the one accepted operation and remains blocking through pending/failure states. The owner-authorized status GET reports final state and artifact preservation without content; the explicit verification POST succeeds only for a completed operation with matching artifact snapshot and moves the gate to verified. A subsequent meeting remains blocked even after verification. Exercise unauthorized/non-owner access, no body-supplied owner/object reference, stable accepted idempotency, content-free responses, and failed/incomplete verification. Test actual API, database and publisher boundary independently from the existing ingestion service reproduction.
 - **Regression:** retain `backend/tests/ingestion/` existing-recording test and assert only that service's return and persisted meeting/recording/transcript state; separately run meetings/transcription/diarization tests and the relevant integration suite. Confirm no automatic recovery call in normal ingestion/worker startup.
 
 No live pilot occurs in automated tests. Once implementation, QA and required security review pass, operational authorization is still separate: perform exactly one approved pilot meeting and manually verify completion and preservation before considering expansion. This design does not authorize that action.
