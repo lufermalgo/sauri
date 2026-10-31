@@ -175,7 +175,7 @@
 
 ## Publication tracking
 
-Mira approved the prior task-plan snapshot `56e36feff04406cda3435ac00a0621aec3c1b3b7`; this scoped amendment derives from the corrected design snapshot `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED) and awaits focused tasks audit. GitHub issues #610–#628 remain the mapping for this plan in milestone `chrome-recording-completion` (#17). APX card creation is pending real owners and dependency readiness; no card IDs are claimed here.
+Mira APPROVED this exact task-plan snapshot `c0eb360fdb964c00bc76f1b72444022a10dfa00a` on 2026-10-31. It derives from requirements `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` and corrected design `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED). GitHub issues #610–#628 map the 19 tasks in milestone `chrome-recording-completion` (#17). Per Ansel's coordination decision, APX card creation is deferred until real responsible agents and dependency readiness are available; no card IDs are claimed here.
 
 | Task | GitHub issue | APX card |
 |---|---:|---|
