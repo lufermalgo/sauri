@@ -2,182 +2,143 @@
 
 ## Resumen
 
-El portal existente es una SPA React pequeña con login y vistas de reuniones/transcripción, mientras que el alcance aprobado amplía su papel a biblioteca, revisión integral de reunión y carga web manual. El código existente acredita patrones y capacidades disponibles, pero no satisface por sí solo los nuevos comportamientos de producto. La UI debe mantener autenticación y autorización existentes, distinguir transferencia de procesamiento y presentar solo funciones respaldadas por requisitos; Stitch orienta exploración visual, no define pantallas ni políticas.
+El portal web cubre solo el acceso visual existente, la biblioteca básica, la revisión de una reunión y la carga manual. Esta entrega no incorpora las operaciones de administración todavía no respaldadas por contratos y persistencia disponibles. La extensión debe llevar a la reunión correcta al finalizar la captura, y mantener recuperable el audio si la carga, autenticación o navegación falla.
 
-1. Evolucionar `frontend/src/App.tsx` a un shell web autenticado con vistas explícitas de biblioteca, reunión y carga, manteniendo el login existente como única operación de acceso.
-2. Separar componentes de presentación de estado/efectos y conservar `frontend/src/api.ts` como única capa HTTP.
-3. Extender el backend en sus módulos existentes y contratos para completar CRUD/metadatos, descarga, revisión, listado y carga, con control de usuario en cada operación.
-4. Modelar transferencia, confirmación de carga, resultado y reintento como estados distintos; no equiparar respuesta de ingestión con procesamiento finalizado.
-5. Enrutar la apertura automática de una reunión desde el flujo de captura hacia una URL de portal identificada por meeting ID, usando un destino de navegación explícito y sin compartir tokens.
-6. Aplicar la aclaración de producto de Fer: la elegibilidad provisional de carga coincide con lo que acepta hoy la validación existente de ingesta; al seleccionar un archivo se habilita «Subir y procesar», y un rechazo del backend se muestra con su mensaje claro. No agregar restricciones de formato o tamaño.
+1. Mantener el login y la sesión existentes, con tratamiento visual consistente.
+2. Estructurar la SPA en biblioteca, carga manual y vista de reunión, con `frontend/src/api.ts` como única capa HTTP.
+3. Usar solo capacidades API actualmente disponibles para listar/abrir reuniones, presentar video y turnos, y solicitar/resumir artefactos existentes; no diseñar mutaciones sin contrato.
+4. Usar backend como autoridad de aceptación de carga: seleccionar archivo habilita «Subir y procesar»; un rechazo se muestra claramente.
+5. Tras detenerse la captura o cerrarse la pestaña de Meet/Teams, completar la subida con reintentos durables y abrir `/meetings/:meetingId` solo con ID confirmado por la respuesta del servidor.
 
 ## Decisiones de Diseño Clave
 
-**Mantener la SPA React en `frontend/` y su API central en `frontend/src/api.ts`.** La aplicación existente usa `App.tsx` para navegación local y concentra HTTP en `api.ts`; extender ese límite reduce nuevas abstracciones y conserva el aislamiento de superficies. *Alternativas descartadas:* llamadas HTTP desde componentes, porque fragmentarían autenticación y errores; mover la UI al backend o a la extensión, porque los requisitos describen portal web.
+**Acotar esta entrega al comportamiento soportado actualmente: login visual, biblioteca (lista, estados y abrir), carga de grabación, reunión (video, turnos y resumen).** Renombrar/eliminar/descargar grabaciones, editar metadatos, gestionar tags, renombrar hablantes y filtrar la biblioteca quedan fuera de esta fase y requieren contratos y persistencia antes de diseñarse. *Alternativa descartada:* inferir endpoints, modelos o derechos de acceso a partir de los requisitos de producto o de código no verificado; produciría una interfaz que no puede implementarse de forma segura y verificable. Los requisitos de alcance mayor siguen trazables al documento aprobado, pero este diseño identifica expresamente esas funciones como fase posterior y no propone su API.
 
-**Usar navegación de aplicación con rutas identificables `/` (biblioteca), `/meetings/:meetingId` y `/upload`, con enlaces internos y resolución de ID.** La ruta de reunión hace posible volver a una reunión concreta y es destino estable del flujo de captura; guardar directamente URLs evita depender de un estado React efímero. Si no hay librería de routing en `frontend/package.json`, usar History API con un módulo pequeño en `frontend/src/` antes que agregar una dependencia solo para tres rutas. *Alternativas descartadas:* estado local exclusivo, que no permite navegación directa ni abrir una reunión desde otra superficie; introducir ahora un framework de routing sin necesidad demostrada.
+**Mantener SPA y capa HTTP existentes.** La interfaz se compone en `frontend/src/`; todas las solicitudes pasan por `frontend/src/api.ts`. *Alternativas descartadas:* HTTP desde componentes, que dispersa autenticación/errores, o mover la experiencia a backend/extensión, contrario al alcance web.
 
-**Separar el shell y las pantallas por función bajo `frontend/src/components/` y mantener lógica reusable de estado/formatos en módulos dedicados del mismo `frontend/src/`.** El shell resuelve login y navegación; cada pantalla posee sus solicitudes, estados y acciones. La biblioteca aplica búsqueda/filtros/orden sobre campos/metadatos disponibles, orden inicial newest-first y nunca busca texto de transcripción entre reuniones. *Alternativas descartadas:* un componente monolítico condicional como el `App.tsx` actual, que ya mezcla autenticación, navegación y vistas; una nueva capa global de estado, no requerida para flujos acotados.
+**Rutas explícitas `/` (biblioteca), `/upload` y `/meetings/:meetingId`.** Usar el router existente si lo hubiera; en su defecto un módulo pequeño con History API, evitando nueva dependencia solo para estas rutas. *Alternativa descartada:* navegación solo en estado React, que no permite URL directa ni apertura desde otra superficie.
 
-**CSS semántico mediante variables de tema centralizadas en `frontend/src/` (archivo global de estilos a determinar por inspección al implementar), componentes sin colores inline y tokens de rol para superficie, texto, borde, acción, foco, selección y error.** La guía Terra de `design/stitch/README.md` puede inspirar el tono cálido, pero sus hex, tipografías, composiciones y umbrales no son requisitos aprobados ni se copiarán como decisión normativa. La línea base no aprueba un catálogo de tokens visuales ni conformidad visual; por tanto se evita fijar valores, breakpoint o claims de accesibilidad no especificados. En todos los estados los controles deben seguir siendo operables con teclado y etiquetas semánticas como condición técnica básica, sin afirmar una certificación. *Alternativas descartadas:* convertir valores de mock directamente en contrato visual; estilos inline por pantalla, que impiden una escala coherente.
+**Mantener componentes por pantalla y estado local a cada flujo.** Shell autenticado, biblioteca, carga y vista de reunión se separan bajo `frontend/src/components/`; estilos en el CSS global ya existente y tokens semánticos. Stitch informa tono, no fija UI, textos ni comportamiento. *Alternativas descartadas:* un `App.tsx` monolítico o copiar mockups no normativos como contrato visual.
 
-**Reutilizar login y sesión existentes sin alterar el protocolo ni su política.** El rediseño se limita a la presentación del componente login existente y delega `login()` a la API actual. No se derivan del mock campos, copy, expiración, recuperación, IdP, mensajes de sesión ni pasos adicionales. *Alternativas descartadas:* introducir auth nueva o replicar UI de login Stitch, ambas contrarias al requisito 1.
+**Login solo cambia en presentación.** Reutilizar la experiencia y llamada de autenticación actuales, sin alterar protocolo, permisos ni estados funcionales. *Alternativa descartada:* recrear el login de Stitch, que no define el acceso aprobado.
 
-**Tratar carga manual como estado de UI coordinado con endpoint de ingestión, no como tarea síncrona de transcripción.** `uploadRecording` actual usa `fetch`, que no expone progreso de subida; se añadirá un adaptador con progreso de bytes (por ejemplo XMLHttpRequest) tras la misma capa `api.ts`, evitando exponer progreso de procesamiento no existente. El éxito solo confirma recepción/encolado que pruebe el contrato del servidor; muestra vínculo/abre reunión con ID de resultado y título inicial igual al nombre seleccionado. El estado de error conserva el mismo `File` mientras la página permanece montada y ofrece reintento. *Alternativas descartadas:* porcentaje simulado, que sería engañoso; mostrar éxito de transcripción tras respuesta HTTP de carga; reintentar creando silenciosamente una operación no idempotente.
+**Elegibilidad de carga = aceptación actual del backend, provisionalmente.** Al elegir un archivo se habilita «Subir y procesar», sin filtros locales ni límites nuevos de formato/tamaño. El backend decide; si rechaza, mostrar su mensaje claro y conservar el archivo. *Alternativa descartada:* duplicar/anticipar validación autoritativa con reglas inventadas.
 
-**Tratar ingestión como frontera de datos autenticada con identidad estable e idempotencia.** El cliente obtiene un `meeting_id` e `idempotency_key` por intento lógico y reutiliza el mismo identificador en retry de esa operación; no genera una operación nueva al reintentar. No guarda audio en almacenamiento web persistente ni registra contenido/credenciales. La decisión de Fer establece provisionalmente como elegible lo que acepte hoy la validación de ingesta del backend; seleccionar un archivo habilita «Subir y procesar», sin validaciones locales adicionales ni límites nuevos de formato o tamaño. El formulario envía el contrato de ingesta vigente; si el backend rechaza el archivo o la solicitud, la UI presenta su mensaje claro y conserva el archivo para corregir/reintentar cuando corresponda. No sintetizar metadata requerida ni ocultar incompatibilidades del contrato: cualquier rechazo por datos requeridos también se informa según el mensaje del backend. *Alternativas descartadas:* inferir restricciones adicionales de formatos/tamaño/duración desde HTML, mocks o código legado; duplicar en cliente la validación autoritativa del backend.
+**Estados de carga separados de procesamiento.** Mostrar progreso de transferencia real cuando el transporte lo informa; no simular porcentaje ni afirmar que el procesamiento terminó por recibir HTTP exitoso. La operación conserva archivo e identidad idempotente para retry. *Alternativa descartada:* porcentaje o finalización ficticios.
 
-**Extender módulos de backend existentes en vez de crear un módulo portal.** Reuniones permanecen en `backend/app/meetings/`; ingesta en `backend/app/ingestion/`; auth en `backend/app/auth/`; persistencia compartida continúa en `backend/app/infra/`. Mantener cambios de modelo y migración juntos si se necesitan, con pruebas en módulos espejo. *Alternativas descartadas:* duplicar lógica del portal en frontend o inventar un `backend/app/portal/`; saltarse controles/ownership existentes.
-
-**Abrir automáticamente la reunión al detenerse la captura mediante navegación a la ruta del portal con el ID confirmado.** El componente de captura/extensión notifica al coordinador existente el meeting ID cuando conoce el fin de sesión; una navegación de pestaña explícita abre el portal en `/meetings/:meetingId`. El evento no lleva JWT, audio ni transcripción. Requiere identificar y modificar el punto exacto que observa el fin de captura en la extensión durante implementación; no se asume que el backend actual notifique a una pestaña web. *Alternativas descartadas:* polling global del portal, que no resuelve portal cerrado; incluir token en URL; fingir que la sesión de Meet terminada implica procesamiento completo.
+**Apertura automática ligada a la finalización durable del flujo de captura.** `background.ts` observa `chrome.tabs.onRemoved` para cierre de la pestaña propietaria mientras `status === "recording"`, que invoca `handleStopCapture`; el stop normal lleva `stop-recording` al offscreen, y `handleRecordingStopped` encola el trabajo y ejecuta `processUploadQueue`. El resultado de `POST /api/v1/ingestion/upload` proporciona el `meeting_id`; no usar `sessionId` como sustituto. Al confirmarse éxito, la extensión crea/activa una pestaña al destino configurado del portal con `/meetings/{meeting_id}`. Cierre de pestaña Meet/Teams usa la señal de tab removal asociada a la captura; no depende de `meet-ended` que actualmente puede resetear estado. *Alternativa descartada:* abrir al detener, antes de subir/recibir ID; produciría ruta inválida y fallaría si hay error de red/auth.
 
 ## Arquitectura
 
 ```mermaid
 graph TD
-  Browser[Portal React] --> Shell[Shell y navegación]
+  Browser[Portal React] --> Shell[Shell autenticado y rutas]
   Shell --> Login[Login existente]
-  Shell --> Library[Biblioteca]
-  Shell --> Meeting[Vista de reunión]
+  Shell --> Library[Biblioteca: listar y abrir]
   Shell --> Upload[Carga manual]
+  Shell --> Meeting[Reunión: video, turnos y resumen]
   Login --> Api[frontend/src/api.ts]
   Library --> Api
-  Meeting --> Api
   Upload --> Api
-  Api --> Auth[backend/app/auth]
-  Api --> Meetings[backend/app/meetings]
-  Api --> Ingestion[backend/app/ingestion]
-  Meetings --> Infra[backend/app/infra]
-  Ingestion --> Infra
-  Capture[Extensión Chrome: ciclo de captura] --> Navigate[Navegación de pestaña al portal]
+  Meeting --> Api
+  Api --> Backend[API Sauri existente]
+  Capture[Extensión MV3 background] --> Queue[Cola durable de subida]
+  Queue --> Ingestion[POST ingestion upload]
+  Ingestion -->|respuesta con meeting_id confirmado| Navigate[Nueva pestaña al portal]
   Navigate --> Meeting
 ```
 
 ```mermaid
 sequenceDiagram
-  participant U as Usuario
-  participant UI as Portal React
-  participant API as frontend/src/api.ts
-  participant BE as API Sauri
-  U->>UI: Selecciona archivo
-  UI->>UI: Mantiene File en memoria
-  UI-->>U: Habilita «Subir y procesar» al seleccionar archivo
-  U->>UI: Subir y procesar
-  UI->>API: Archivo + metadata del contrato + idempotency key
-  API->>BE: Multipart autenticado; informa bytes transferidos
-  BE-->>API: Resultado o mensaje claro de rechazo
-  alt rechazo del backend
-    API-->>UI: Error de ingesta
-    UI-->>U: Mensaje del backend; conserva archivo
-  else carga aceptada
-    API-->>UI: Transferencia completada, procesamiento pendiente/no afirmado
-    UI-->>U: Enlace o apertura de reunión
-  end
-  opt error recuperable durante transferencia
-    BE-->>API: Error
-    API-->>UI: Error normalizado
-    UI-->>U: Explicación clara; conserva archivo y permite reintentar
+  participant T as Pestaña Meet/Teams
+  participant SW as extension/src/background.ts
+  participant Q as Cola de subida
+  participant API as API de ingesta
+  participant P as Portal
+  T->>SW: chrome.tabs.onRemoved (tabId propietario, recording)
+  SW->>SW: handleStopCapture()
+  SW->>SW: recording-stopped → handleRecordingStopped
+  SW->>Q: enqueueUpload(sessionId, idempotencyKey=sessionId)
+  Q->>API: POST upload, repetir con misma clave ante falla recuperable
+  alt Éxito autenticado
+    API-->>Q: respuesta con meeting_id
+    Q->>SW: completar job con meeting_id
+    SW->>P: crear/activar URL /meetings/{meeting_id}
+  else Error de red, auth o carga
+    API-->>Q: error / sin respuesta
+    Q->>Q: conservar grabación y reintentar
+    SW-->>T: notificación clara con acción para reintentar
   end
 ```
-
-### Fronteras y estados de pantalla
-
-- **Shell autenticado:** no realiza peticiones de datos antes de comprobar la sesión existente. Mantiene el mecanismo actual de `sauri_token` mientras no se apruebe un cambio de auth. El evento 401 vuelve al login según patrón existente.
-- **Biblioteca:** solicitudes tienen estados inicial/cargando, resultado vacío, error recuperable con volver a solicitar, y lista. La lista presenta registros más nuevos primero; búsqueda, filtros derivados de metadatos disponibles y ordenamiento se limitan a datos de grabación/metadatos, no texto de transcripción. Los filtros no se predefinen como catálogo ni se muestran tarjetas con agregados inventados.
-- **Vista de reunión:** carga de entidad y artefactos con estados loading/empty/error por recurso para que un fallo de resumen no oculte la transcripción. Reproductor arriba; transcripción debajo; cada turno con timestamp, color/identidad visual de speaker y texto. El controlador sincroniza posición: avance de media selecciona y desplaza al turno temporizado; seleccionar turno busca al inicio enlazado. Cambiar nombre de speaker solo actualiza atribución. Panel lateral inicialmente contiene Chat no interactivo y Notes/Summary; notas/resumen separados de transcripción; resumen puede copiarse o descargarse y presenta tema principal y argumentos/puntos clave sin fijar layout. Eliminación requiere confirmación de intención y refleja el resultado o error; no implica garantía de borrado más allá de respuesta del servidor. Los controles de reproducción contemplan seek, velocidad, calidad/resolución cuando el medio lo soporte, pausa, volumen y mute; no inventan conducta específica para video.
-- **Carga:** al seleccionar el archivo, «Subir y procesar» queda habilitado; el backend vigente es autoridad para aceptar o rechazar. No se añaden filtros locales de formato/tamaño ni límites nuevos. Estados: selección, transfiriendo con progreso de bytes real, transferencia completa/resultado y fallo recuperable/retry. No hay progreso de procesamiento inferido. Error no borra el archivo seleccionado; la UI muestra en claro el mensaje de rechazo del backend. «Copiar diagnóstico» solo copia un payload expresamente allowlisted, sin token, secretos, nombre de archivo ni transcripción. Esta regla de elegibilidad es provisional por decisión de Fer, hasta que se definan otras reglas.
-- **Login:** solo composición/estilo del flujo existente; presentación no define estados nuevos ni altera comportamiento.
 
 ## Componentes e Interfaces
 
-Las interfaces siguientes son límites de diseño; el detalle de campos debe seguir contratos backend/shared existentes y cambios aprobados, no recrear estructuras divergentes.
+### Web — `frontend/src/`
 
-### Frontend — `frontend/src/`
+- `App.tsx`: sesión existente, shell y rutas `/`, `/upload`, `/meetings/:meetingId`.
+- `components/PortalShell.tsx`: navegación limitada a Biblioteca, Subir grabación y reunión abierta.
+- `components/LoginScreen.tsx`: presentación nueva alrededor de login existente, sin cambiar su contrato.
+- `components/RecordingLibrary.tsx`: carga de lista ordenada newest-first, estados cargando/vacío/error, abrir selección. Sin filtros, mutaciones ni descargas en esta entrega.
+- `components/RecordingUpload.tsx`: selector; selección habilita acción; estados de transferencia/progreso/éxito/error; retry y diagnóstico seguro conforme al contrato existente.
+- `components/MeetingView.tsx`: video encima de turnos/transcripción y panel existente de resumen; resumen separado de la transcripción y con acciones copiar/descargar únicamente si ya están soportadas por el contrato actual.
+- `api.ts`: métodos tipados para login, listado/detalle existentes y carga. No agregar funciones de rename/delete/download/metadata/tags/speaker rename/filter sin contratos autorizados.
+- CSS global existente: estilos y tokens semánticos. No imponer hex, breakpoints o certificación visual no fijados por requisitos.
 
-- `App.tsx`: resolver ruta, autenticación y shell; delegar por pantalla. Ruta no encontrada vuelve a biblioteca o muestra una ruta interna no encontrada sin petición de API.
-- `components/PortalShell.tsx`: navegación entre Biblioteca, Subir grabación y reunión seleccionada; no incorpora secciones de hablantes o plantillas como destinos de navegación.
-- `components/LoginScreen.tsx`: reemplazo visual o estilizado del login actual, conserva `api.login`, almacenamiento y eventos actuales.
-- `components/RecordingLibrary.tsx`: lista, búsqueda local/servidor, filtros de metadatos disponibles, selección/orden. Datos de filtro derivan de metadatos reales retornados.
-- `components/MeetingView.tsx`: compone reproductor, transcripción y panel Chat/Notes-Summary; piezas existentes `MeetingPlaybackView.tsx`, `TranscriptView.tsx`, `PlaybackController.ts` se reutilizan solo si pasan criterios actuales.
-- `components/RecordingUpload.tsx`: selector local, botón habilitado al seleccionar, estados de transferencia y resultado, mensaje claro de rechazo del backend, reintento y diagnóstico reducido; sin validaciones adicionales de elegibilidad del lado cliente.
-- `api.ts`: agregar funciones tipadas para list/search/sort, detalle/actualización de metadatos/tags, rename/delete/download, notas/resumen y subida con callback `onProgress(loadedBytes, totalBytes)`. Mantener `fetch` solo donde progreso no sea requerido; no llamadas HTTP directas desde componentes.
-- `styles/` o archivo CSS global ya existente (verificar package y árbol al implementar): tokens de rol y estilos de shell/pantallas, sin importar CSS/HTML de Stitch.
+### Backend / persistencia
 
-### Backend
+Esta fase consume endpoints existentes de login, listado/detalle de reuniones, lectura de medios/turnos/resumen e ingesta. No se define endpoint nuevo ni cambio de esquema en este diseño. Si el código actual no ofrece una operación necesaria para los cuatro flujos acotados, registrar la brecha concreta y elevarla para requisito/contrato aprobado antes de implementarla; no improvisar ruta, payload ni persistencia. Las capacidades excluidas (rename/delete/download, metadata/tags, rename speaker y filtros de biblioteca) requieren contrato API y modelo/persistencia diseñados y aprobados en fase posterior.
 
-- `backend/app/meetings/router.py`, `service.py`, `repository.py`, `schemas.py`: contratos requeridos para listar y ordenar, leer/renombrar/eliminar, metadatos company/project/participants, tags, descarga autenticada y artefactos de reunión. Aplicar ownership por usuario en cada acceso; el diseño no define garantía de eliminación ni formato de exportación.
-- `backend/app/ingestion/router.py`, `service.py`, `schemas.py`: aceptar carga web con origen `web_upload`; resolver respuesta con meeting ID/recording ID y estado de transferencia/ingestión; respetar idempotencia; no indicar procesamiento terminado sin estado backend que lo demuestre.
-- `backend/app/auth/`: mantener login/dependencies existentes. Los nuevos endpoints usan dependencia de usuario existente, no un bypass por origen web.
-- `backend/app/infra/models.py` y `backend/alembic/versions/`: solo si los campos/tags requeridos no tienen persistencia existente; cualquier migración secuencial y reversible acompaña el cambio de modelo. La revisión de modelo actual y migraciones determinará si hace falta migrar.
+### Extensión y correlación de resultado
 
-### Extensión e integración
-
-- La detección de fin de captura vive en ciclo de vida existente de `extension/src/background.ts`, `content.ts` o coordinador correspondiente, no en UI del portal.
-- En señal confirmada con `meeting_id`, construir destino con origen/configuración de portal vigente y navegar a `/meetings/:meetingId`; no pasar JWT ni datos de medios por URL/mensaje. Si no hay destino de portal configurado o no se obtiene ID, no fabricar una reunión; registrar el fallo operacional según mecanismos existentes y preservar comportamiento actual. La configuración del destino y agente responsable de la navegación requieren inspección del código de captura antes de implementar.
+- `extension/src/background.ts`: stop explícito y `chrome.tabs.onRemoved` de la pestaña capturada disparan finalización; el handler escucha resultado de `recording-stopped`, encola job persistente y procesa cola.
+- `extension/src/upload-queue.ts`: mantener job/reintentos con misma idempotency key. Extender el resultado persistido para incluir `meeting_id` solo después de parsear respuesta de éxito de ingesta. Reintentos tras auth fallida deben preservar datos; acción de reintento vuelve a solicitar autenticación existente y no descarta el job.
+- Apertura: solo luego de respuesta exitosa validada con meeting ID; componer URL desde origen de portal configurado, codificar ID como segmento y abrir/activar pestaña. No incluir token, audio ni transcripción en URL o mensajes.
+- Señales de error: informar al usuario mediante mecanismo existente de extensión y permitir reintento; nunca limpiar IndexedDB ni marcar job `done` hasta respuesta autenticada aceptada y meeting ID guardado. Si resultado exitoso no contiene ID válido, mantener job recuperable, informar error y no navegar.
+- Stop manual: seguir el mismo camino de `stop-recording` → evento de grabación completa → upload. Cierre de tab detectado con `chrome.tabs.onRemoved` para la pestaña propietaria y estado de captura. El stop no equivale a subida completada.
 
 ### Colocación y pruebas
 
-| Superficie | Archivos previstos | Pruebas previstas | Migración / configuración |
+| Superficie | Carpetas / archivos | Pruebas | Migración / Compose / shared-types |
 |---|---|---|---|
-| Web | `frontend/src/App.tsx`, `frontend/src/api.ts`, `frontend/src/components/`, estilos globales existentes | Unitarias/componentes React en `frontend/src/**/*.test.ts(x)`; flujos de navegación/upload en ubicación frontend establecida por package | Sin migración web; comprobar `frontend/package.json`, sin `docker-compose.yml` |
-| Backend API | módulos existentes `backend/app/auth/`, `meetings/`, `ingestion/`, `infra/` | `backend/tests/meetings/`, `backend/tests/ingestion/`, `backend/tests/auth/`, integración autenticada bajo `backend/tests/integration/` | Migración en `backend/alembic/versions/` si el modelo cambia; sin servicio Compose nuevo salvo requisito operativo probado |
-| Chrome integración de apertura | coordinador real dentro de `extension/src/` (punto exacto por verificar) | pruebas unitarias junto al módulo y E2E `extension/tests/e2e/` si aplica | no cambiar permisos/manifest sin necesidad demostrada; inspeccionar conexión existente |
-| Tipos compartidos | `packages/shared-types/src/index.ts` solo si un contrato requerido es común a frontend/extensión | suite del paquete y consumidores | Sin duplicar tipos ni cambiar paquete por comodidad; Compose no aplica |
-
-No se planea nueva carpeta top-level, módulo backend `portal`, ni modificación de `docker-compose.yml`. El frontend consume API por HTTP y no importa source de backend/extensión.
+| Web | Modificar `frontend/src/App.tsx`, `frontend/src/api.ts`, `frontend/src/components/` y CSS global existente | Tests de componentes y API en las ubicaciones ya usadas bajo `frontend/src/`; estados, rutas y retry | Sin migración, Compose ni `packages/shared-types` salvo que contrato compartido aprobado lo exija |
+| Backend | Sin cambios previstos en `backend/app/` | Reutilizar tests existentes de API como evidencia contractual; brechas se elevan antes de codificar | Ninguna en esta fase |
+| Extensión | `extension/src/background.ts`, `extension/src/upload-queue.ts` y módulos existentes solo si requieren correlación durable | Tests unitarios colocados junto al módulo y E2E en `extension/tests/e2e/` para fin, respuesta ID, retry y navegación | Sin migración ni Compose; contratos HTTP, no import de fuentes cruzadas/shared-types |
 
 ## Modelos de Datos
 
-La pantalla consume entidades existentes `Meeting`, `MeetingListItem`, `MeetingTranscript`, `PlaybackManifest` y estados definidos en `@sauri/shared-types` donde correspondan. Antes de ampliar contratos se verifica el shape real. No persistir estado UI en el backend.
-
-La transferencia necesita un estado temporal explícito:
-
-```typescript
-type UploadUiState =
-  | { kind: "idle" }
-  | { kind: "selected"; file: File }
-  | { kind: "uploading"; file: File; loadedBytes: number; totalBytes: number | null; idempotencyKey: string }
-  | { kind: "uploaded"; meetingId: string; recordingId: string; processingState: string }
-  | { kind: "failed"; file: File; idempotencyKey: string; message: string };
-```
-
-La selección siempre habilita el intento de carga; la validación vigente del backend decide aceptación, sin duplicarse como filtro cliente ni ampliarse con formatos o límites nuevos. No se define aquí estructura del archivo/transcripción, retención de blobs ni nuevos campos backend sin revisar modelo. En respuesta exitosa, los IDs de reunión y grabación vienen del servidor; `processingState` se representa con vocabulario validado por contrato y nunca se reduce a «completo» por éxito de transferencia.
+- **Trabajo de carga existente**: `sessionId`, `idempotencyKey` (misma identidad para retries), datos del blob en IndexedDB y estado de cola. Añadir `meetingId?: string` al resultado durable del trabajo; solo se establece tras respuesta satisfactoria parseada.
+- **URL de destino**: configuración existente del origen del portal + `meetingId`; nunca credenciales, contenido audiovisual o transcripción.
+- En web, reutilizar tipos actuales de meeting/turn/transcript; no declarar estructuras para capacidades excluidas.
 
 ## Propiedades de Correctitud
 
-1. **Acceso existente preservado.** Estilizar login sin cambiar la llamada, datos enviados, manejo de token ni política; fallo 401 conserva retorno al login. Valida requisito 1.1–1.3.
-2. **Biblioteca sin texto transcripto.** Ninguna consulta/filtro entre grabaciones inspecciona contenido de segmentos/turnos; primera carga ordenada por fecha más reciente; filtros solo proceden de metadatos disponibles. Valida requisito 2.1–2.5.
-3. **Selección y mutaciones por grabación.** Elegir registro abre esa reunión; cambios de metadatos guardados se vuelven a mostrar; rename/tag/delete/download se refieren al meeting seleccionado y fallos no mutan UI a éxito. Valida requisito 3.1–3.8.
-4. **Sincronización reproductor-transcripción.** Cada turno representado conserva timestamp, color de speaker y texto; avance a tiempo enlazado desplaza/resalta pasaje; seleccionar pasaje busca al tiempo correspondiente; cambio de speaker no cambia texto. Valida requisito 4.1–4.9.
-5. **Elegibilidad provisional sin restricciones nuevas.** Seleccionar cualquier archivo habilita el intento de carga; no se filtra por formato o tamaño en cliente. La validación actual del backend decide aceptación; su rechazo se comunica claramente y conserva el archivo. Valida requisitos 5.1–5.4 según la aclaración de producto de Fer, que resuelve provisionalmente la elegibilidad abierta.
-6. **Progreso veraz y fin diferenciado.** Por cada evento reportado, loadedBytes no decrece durante un intento y el porcentaje, si totalBytes es conocido, se deriva de loaded/total; transferencia completada no representa por sí sola procesamiento completado. Valida requisito 6.1–6.3.
-7. **Retry conserva operación y archivo.** Error de transferencia mantiene `File` y clave idempotente para reintentar la misma carga; no se crea una grabación duplicada por reenvío de la misma operación. Valida requisito 6.4 y contrato de ingestión inspeccionado.
-8. **Diagnóstico allowlist.** El texto copiado no contiene token, secret ni contenido de transcripción. Valida requisito 6.5.
-9. **Fin de captura navega a reunión confirmada.** Solo una señal de fin con meeting ID lleva a ruta correspondiente; ausencia de ID no produce navegación a una entidad inventada. Valida requisito 3.7.
-10. **Límites de reunión.** Chat no permite interacción con grabación; texto de transcripción es solo lectura; resumen permanece artefacto separado y expone copiar/descargar; controles ordinarios no anuncian calidad/resolución que no ofrezca el medio. Valida requisito 4.5–4.9.
+1. **Acceso preservado:** aplicar estilo al login no cambia solicitud, sesión ni permisos.
+2. **Biblioteca veraz:** muestra registros reales en orden newest-first y permite abrirlos; no presenta búsqueda full-text ni filtros/acciones no incluidas en esta entrega.
+3. **Revisión:** video antecede a turnos; cada turno muestra timestamp, speaker y texto; resumen es separado de transcript y cualquier reproducción sincronizada usa timestamps enlazados disponibles.
+4. **Elegibilidad y rechazo:** seleccionar un archivo habilita acción sin límites locales nuevos; rechazo backend se presenta claramente y conserva archivo.
+5. **Progreso honesto:** progreso mostrado deriva bytes reportados; no se informa procesamiento completado por fin de transferencia.
+6. **Fin correcto:** stop explícito o cierre de tab de captura siguen el mismo flujo de finalización y encolado; ningún ID de sesión local se trata como meeting ID.
+7. **Apertura tras confirmación:** solo una respuesta de ingesta exitosa con `meeting_id` validado habilita navegación al meeting correspondiente.
+8. **Recuperación:** fallo de subida o autenticación conserva blob/job y clave idempotente; no limpiar grabación ni marcar completado. Si abrir pestaña falla después de éxito, conservar `meeting_id` y reintentar navegación sin volver a subir.
+9. **Privacidad:** URL/mensajes de navegación no incluyen tokens, audio ni texto de transcripción.
 
 ## Manejo de Errores
 
 | Escenario | Comportamiento |
 |---|---|
-| Token expirado / API 401 | Respetar evento `sauri:unauthorized`, limpiar estado autenticado según mecanismo actual y volver al login; no filtrar respuesta sensible. |
-| Error al cargar biblioteca | Mantener pantalla, mensaje recuperable y acción de recarga; no renderizar conteos/filas ficticias. |
-| Recurso o artefacto de reunión no disponible | Mostrar error en sección afectada y permitir volver/reintentar; preservar el resto de vista que sí cargó. |
-| Error al guardar metadatos/tag o rename | Mantener valores previos como guardados hasta confirmación servidor; informar fallo y permitir corrección/reintento. |
-| Error al eliminar | No quitar registro de forma optimista irreversible; mantenerlo visible con error y volver a sincronizar con servidor. No afirmar borrado garantizado. |
-| Error al descargar | Informar descarga fallida sin crear archivo de contenido alternativo ni cambiar estado del registro. |
-| API no puede reportar progreso | Mostrar actividad de transferencia indeterminada, no porcentaje inventado. |
-| Error de carga | Mensaje claro, conservar archivo para retry durante sesión de página, mantener idempotency key de la operación; «Copiar diagnóstico» copia solo campos seguros allowlisted; no persistir la carga en local storage. |
-| Respuesta exitosa de carga sin estado final de proceso | Mostrar transferencia recibida y reunión resultante con procesamiento no afirmado/completado; enlace a meeting ID del servidor. |
-| Archivo rechazado por la validación actual de ingesta | Mostrar claramente el mensaje de rechazo devuelto por backend y conservar el archivo seleccionado para corrección/reintento; no añadir reglas locales de formato/tamaño. |
-| Fin de captura sin meeting ID o portal no disponible | No construir una ruta falsa ni insertar identificador sensible en URL; conservar flujo existente e informar según mecanismos existentes de la extensión. |
+| Login/API 401 en portal | Reutilizar `sauri:unauthorized` y volver al login; no exponer detalles sensibles. |
+| Biblioteca vacía/error | Mostrar vacío solo con respuesta vacía real; ante error mostrar aviso y reintento, no datos ficticios. |
+| Archivo rechazado por backend | Mostrar mensaje claro devuelto; conservar selección y no imponer validación local extra. |
+| Transferencia interrumpida / red | Mantener blob y job; mensaje de error y reintento con la misma clave. |
+| Autenticación de extensión ausente/expirada | Notificar que hace falta autenticarse y ofrecer reintento tras resolver auth; conservar audio localmente. |
+| Éxito HTTP sin `meeting_id` válido | Tratar como resultado incompleto, no navegar ni borrar blob; conservar job para recuperación y mostrar aviso. |
+| Error al crear/activar pestaña de portal | Mantener `meeting_id` confirmado y ofrecer/ejecutar nuevo intento de apertura; no repetir upload. |
+| Fallo leyendo blob o cola | Informar que la grabación sigue pendiente si puede comprobarse; nunca declarar subida exitosa. |
 
 ## Estrategia de Testing
 
-**Frontend — pruebas de componentes y API:** usar runner ya configurado en `frontend/package.json` y patrones en `MeetingList.test.tsx`, `TranscriptView.test.tsx`, `api.test.ts`. Cubrir estados loading/empty/error, filtros basados en metadatos, newest-first, ausencia de búsqueda full-text, navegación de meeting ID, controles de reproductor/transcripción, login sin cambios de protocolo y propiedades de estados de carga/retry. La prueba de progreso debe alimentar eventos de progreso deterministas del adaptador, validar derivación del porcentaje y que no se dibuje porcentaje cuando no hay total.
+**Frontend:** usar comandos y runner establecidos en `frontend/package.json`; probar login sin cambio de contrato, biblioteca con datos reales sintéticos, apertura de meeting, estados de carga y rechazo/error con archivo retenido. Probar que no aparecen acciones fuera de alcance.
 
-**Backend — pruebas autenticadas de contrato y límites:** ampliar suites existentes de meetings/ingestion/auth. Verificar ownership, respuestas de mutaciones, ID/title inicial por filename, idempotencia al retry, estado tras recepción vs procesamiento, rechazo de ingesta con mensaje comprensible y descarga autenticada. Usar solo fixtures sintéticos. Añadir migración + pruebas de upgrade/downgrade si se incorpora persistencia nueva.
+**Extensión:** probar stop normal y cierre de la pestaña propietaria durante captura; evento de fin encola una sola operación; errores de red/auth mantienen blob, job y clave; respuesta con ID produce navegación correcta; éxito sin ID o fallo al abrir pestaña no descarta grabación ni repite innecesariamente el upload. Usar fixtures sintéticos y APIs Chrome controladas en tests.
 
-**Cross-surface / extensión:** probar que el fin de captura con meeting ID produce destino del portal correcto y que no hay token/datos de medios en URL; ausencia de ID no navega. E2E browser de upload comprueba que seleccionar habilita la acción y que un rechazo controlado del backend expone el mensaje y conserva el archivo; usar solo fixtures sintéticos.
-
-**Comandos configurados:** `npm run test`, `npm run typecheck`, `npm run build` en `frontend/`; `npm run test` y `npm run test:e2e` en `extension/` si se modifica el flujo de captura; `pytest`, `ruff check .`, `mypy .` desde `backend/` cuando sus módulos se amplíen. Esta fase no ejecuta tests de implementación.
+**Comandos configurados:** `npm run test`, `npm run typecheck`, `npm run build` desde `frontend/`; `npm run test`, `npm run typecheck`, `npm run build` y `npm run test:e2e` desde `extension/` para cambios de captura. Backend sin cambios previstos; no ejecutar validaciones de implementación en esta fase.
