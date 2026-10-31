@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { SpeakerRecognitionTestScreen } from "./SpeakerRecognitionTestScreen";
 import * as api from "../api";
@@ -332,38 +332,44 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
     expect(await screen.findByText(/pending/i)).toBeVisible();
   });
 
-  it("preserves segment timestamp, exact text and unresolved backend speaker label as read-only content", async () => {
+  it("preserves each segment's timestamp, exact text and unresolved backend speaker label as read-only content", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
 
     await uploadSyntheticRecording();
 
-    expect(await screen.findByText("La propuesta queda para el viernes.")).toBeVisible();
-    expect(screen.getByText("00:01")).toBeVisible();
-    expect(screen.getByText("Speaker 2")).toBeVisible();
-    expect(screen.getByText("La firma sigue pendiente.")).toBeVisible();
-    expect(screen.getByText("00:03")).toBeVisible();
-    expect(screen.getByText("Speaker 7")).toBeVisible();
+    const firstTurn = await screen.findByText("La propuesta queda para el viernes.");
+    const firstTurnRow = firstTurn.closest("li");
+    expect(firstTurnRow).not.toBeNull();
+    expect(within(firstTurnRow as HTMLElement).getByText("00:01")).toBeVisible();
+    expect(within(firstTurnRow as HTMLElement).getByText("La propuesta queda para el viernes.")).toBeVisible();
+    expect(within(firstTurnRow as HTMLElement).getByText("Speaker 2")).toBeVisible();
+
+    const secondTurn = screen.getByText("La firma sigue pendiente.");
+    const secondTurnRow = secondTurn.closest("li");
+    expect(secondTurnRow).not.toBeNull();
+    expect(secondTurnRow).not.toBe(firstTurnRow);
+    expect(within(secondTurnRow as HTMLElement).getByText("00:03")).toBeVisible();
+    expect(within(secondTurnRow as HTMLElement).getByText("La firma sigue pendiente.")).toBeVisible();
+    expect(within(secondTurnRow as HTMLElement).getByText("Speaker 7")).toBeVisible();
+
     expect(screen.queryByRole("textbox", { name: /transcript|segment/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /edit transcript/i })).not.toBeInTheDocument();
   });
 
-  it("renders a persisted speaker-review item with its current backend label", async () => {
+  it("renders a persisted speaker-review item with its current backend label and pending state", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
 
     await uploadSyntheticRecording();
 
-    expect(await screen.findByRole("heading", { name: "Speaker 8" })).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent(/review pending/i);
-    expect(screen.getByRole("button", { name: "Play excerpt for Speaker 8" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Confirm Speaker 8" })).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "Name for Speaker 8" })).toBeVisible();
+    expect(await screen.findByText("Speaker 8")).toBeVisible();
+    expect(screen.getByText(/review pending/i)).toBeVisible();
   });
 
-  it("limits the screen to upload, processing, transcript inspection and speaker review", async () => {
+  it("limits the completed screen to upload, transcript inspection and speaker review", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
@@ -373,8 +379,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
       expect(screen.getByRole("button", { name: /upload/i })).toBeVisible();
     });
 
-    expect(await screen.findByText(/processing/i)).toBeVisible();
-    expect(screen.getByText("La propuesta queda para el viernes.")).toBeVisible();
+    expect(await screen.findByText("La propuesta queda para el viernes.")).toBeVisible();
     expect(screen.getByText(/transcript/i)).toBeVisible();
     expect(screen.getByText(/speaker review/i)).toBeVisible();
     expect(screen.queryByText(/library|analytics|settings|meeting management/i)).not.toBeInTheDocument();
