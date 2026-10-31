@@ -2,13 +2,13 @@
 
 ## Resumen
 
-El portal web cubre solo el acceso visual existente, la biblioteca básica, la revisión de una reunión y la carga manual. Esta entrega no incorpora las operaciones de administración todavía no respaldadas por contratos y persistencia disponibles. La extensión debe llevar a la reunión correcta al finalizar la captura, y mantener recuperable el audio si la carga, autenticación o navegación falla.
+Este diseño cubre Fase 1; Fase 2 está secuenciada, no excluida, conforme a la tabla de fases de los requisitos aprobados. La Fase 1 abarca login visual, biblioteca básica, carga manual y revisión de reunión, incluyendo pestañas Chat (solo composición) y Notes/Summary. La apertura automática corresponde únicamente a Google Meet. No se amplía a Teams ni se inventa comportamiento/API allí donde falten contratos; esas brechas deben resolverse antes de implementación.
 
 1. Mantener el login y la sesión existentes, con tratamiento visual consistente.
 2. Estructurar la SPA en biblioteca, carga manual y vista de reunión, con `frontend/src/api.ts` como única capa HTTP.
 3. Usar solo capacidades API actualmente disponibles para listar/abrir reuniones, presentar video y turnos, y solicitar/resumir artefactos existentes; no diseñar mutaciones sin contrato.
 4. Usar backend como autoridad de aceptación de carga: seleccionar archivo habilita «Subir y procesar»; un rechazo se muestra claramente.
-5. Tras detenerse la captura o cerrarse la pestaña de Meet/Teams, completar la subida con reintentos durables y abrir `/meetings/:meetingId` solo con ID confirmado por la respuesta del servidor.
+5. Tras detenerse la captura o cerrarse la pestaña de Google Meet, completar la subida con reintentos durables y abrir `/meetings/:meetingId` solo con ID confirmado por la respuesta del servidor.
 
 ## Decisiones de Diseño Clave
 
@@ -26,7 +26,7 @@ El portal web cubre solo el acceso visual existente, la biblioteca básica, la r
 
 **Estados de carga separados de procesamiento.** Mostrar progreso de transferencia real cuando el transporte lo informa; no simular porcentaje ni afirmar que el procesamiento terminó por recibir HTTP exitoso. La operación conserva archivo e identidad idempotente para retry. *Alternativa descartada:* porcentaje o finalización ficticios.
 
-**Apertura automática ligada a la finalización durable del flujo de captura.** `background.ts` observa `chrome.tabs.onRemoved` para cierre de la pestaña propietaria mientras `status === "recording"`, que invoca `handleStopCapture`; el stop normal lleva `stop-recording` al offscreen, y `handleRecordingStopped` encola el trabajo y ejecuta `processUploadQueue`. El resultado de `POST /api/v1/ingestion/upload` proporciona el `meeting_id`; no usar `sessionId` como sustituto. Al confirmarse éxito, la extensión crea/activa una pestaña al destino configurado del portal con `/meetings/{meeting_id}`. Cierre de pestaña Meet/Teams usa la señal de tab removal asociada a la captura; no depende de `meet-ended` que actualmente puede resetear estado. *Alternativa descartada:* abrir al detener, antes de subir/recibir ID; produciría ruta inválida y fallaría si hay error de red/auth.
+**Apertura automática ligada a la finalización durable del flujo de captura.** `background.ts` observa `chrome.tabs.onRemoved` para cierre de la pestaña propietaria mientras `status === "recording"`, que invoca `handleStopCapture`; el stop normal lleva `stop-recording` al offscreen, y `handleRecordingStopped` encola el trabajo y ejecuta `processUploadQueue`. El resultado de `POST /api/v1/ingestion/upload` proporciona el `meeting_id`; no usar `sessionId` como sustituto. Al confirmarse éxito, la extensión crea/activa una pestaña al destino configurado del portal con `/meetings/{meeting_id}`. Cierre de pestaña Google Meet usa la señal de tab removal asociada a la captura; no depende de `meet-ended` que actualmente puede resetear estado. *Alternativa descartada:* abrir al detener, antes de subir/recibir ID; produciría ruta inválida y fallaría si hay error de red/auth.
 
 ## Arquitectura
 
@@ -50,7 +50,7 @@ graph TD
 
 ```mermaid
 sequenceDiagram
-  participant T as Pestaña Meet/Teams
+  participant T as Pestaña Google Meet
   participant SW as extension/src/background.ts
   participant Q as Cola de subida
   participant API as API de ingesta
