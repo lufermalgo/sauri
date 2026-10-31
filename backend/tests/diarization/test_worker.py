@@ -27,7 +27,7 @@ from app.diarization.diarization_engine import (
     DiarizationResult,
     SpeakerSegment,
 )
-from app.diarization.worker import _process_diarization
+from app.diarization.worker import _process_diarization as _process_diarization_worker
 from app.infra.models import (
     Diarization,
     Meeting,
@@ -114,6 +114,29 @@ async def _seed_complete_meeting(
             session.add(turn)
 
 
+async def _process_diarization_for_seeded_recording(
+    message: dict[str, Any],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Add the persisted identity expected from the authenticated producer."""
+    bound_message = dict(message)
+    meeting_id = bound_message.get("meeting_id")
+    if isinstance(meeting_id, str):
+        async with session_factory() as session:
+            meeting = await session.get(Meeting, meeting_id)
+            recording = (
+                await session.execute(
+                    select(SessionRecording).where(
+                        SessionRecording.meeting_id == meeting_id
+                    )
+                )
+            ).scalar_one_or_none()
+        if meeting is not None and recording is not None:
+            bound_message.setdefault("owner_id", meeting.created_by)
+            bound_message.setdefault("recording_id", recording.id)
+    await _process_diarization_worker(bound_message, session_factory)
+
+
 def _mock_engine(segments: list[SpeakerSegment], is_local: bool = True) -> AsyncMock:
     """Builds a mock of the DiarizationEngine (external boundary, test-only)."""
     count = len({s.raw_label for s in segments})
@@ -150,7 +173,7 @@ async def test_property_19_invalid_message_does_not_persist(
     session_factory: async_sessionmaker[AsyncSession], message: dict[str, Any]
 ) -> None:
     """Missing/empty/non-string meeting_id -> finishes with no exception and nothing persisted."""
-    await _process_diarization(message, session_factory)
+    await _process_diarization_for_seeded_recording(message, session_factory)
     async with session_factory() as session:
         result = await session.execute(select(Diarization))
         assert result.scalars().all() == []
@@ -161,7 +184,7 @@ async def test_property_19_nonexistent_meeting_does_not_persist(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Nonexistent meeting_id -> ack without persisting (Req 1.5)."""
-    await _process_diarization({"meeting_id": str(uuid.uuid4())}, session_factory)
+    await _process_diarization_for_seeded_recording({"meeting_id": str(uuid.uuid4())}, session_factory)
     async with session_factory() as session:
         result = await session.execute(select(Diarization))
         assert result.scalars().all() == []
@@ -177,7 +200,7 @@ async def test_property_19_without_transcript_does_not_persist(
         session.add(_create_meeting(meeting_id))
         session.add(_create_recording(meeting_id))
 
-    await _process_diarization({"meeting_id": meeting_id}, session_factory)
+    await _process_diarization_for_seeded_recording({"meeting_id": meeting_id}, session_factory)
     async with session_factory() as session:
         result = await session.execute(select(Diarization))
         assert result.scalars().all() == []
@@ -200,7 +223,7 @@ async def test_property_11_empty_result_completed_diarization(
 
     engine = _mock_engine(segments=[])
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
-        await _process_diarization({"meeting_id": meeting_id}, session_factory)
+        await _process_diarization_for_seeded_recording({"meeting_id": meeting_id}, session_factory)
 
     async with session_factory() as session:
         diar = (
@@ -230,7 +253,7 @@ async def test_property_11_without_turns_zero_assignments(
     ]
     engine = _mock_engine(segments=segments)
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
-        await _process_diarization({"meeting_id": meeting_id}, session_factory)
+        await _process_diarization_for_seeded_recording({"meeting_id": meeting_id}, session_factory)
 
     from app.infra.models import SpeakerAssignment
 
@@ -273,7 +296,7 @@ async def test_property_20_engine_failure_propagates_without_completed(
         patch("app.diarization.worker.create_diarization_engine", return_value=engine),
         pytest.raises(RuntimeError, match="diar-engine crashed"),
     ):
-        await _process_diarization({"meeting_id": meeting_id}, session_factory)
+        await _process_diarization_for_seeded_recording({"meeting_id": meeting_id}, session_factory)
 
     async with session_factory() as session:
         completed = (
@@ -309,7 +332,7 @@ async def test_property_18_preserves_meeting_process_state(
     segments = [SpeakerSegment(raw_label="SPEAKER_00", start_ms=0, end_ms=2000)]
     engine = _mock_engine(segments=segments)
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
-        await _process_diarization({"meeting_id": meeting_id}, session_factory)
+        await _process_diarization_for_seeded_recording({"meeting_id": meeting_id}, session_factory)
 
     async with session_factory() as session:
         meeting = await session.get(Meeting, meeting_id)
@@ -336,7 +359,7 @@ async def test_property_17_utc_timestamp_on_final_state(
     engine = _mock_engine(segments=segments)
     before = datetime.now(UTC)
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
-        await _process_diarization({"meeting_id": meeting_id}, session_factory)
+        await _process_diarization_for_seeded_recording({"meeting_id": meeting_id}, session_factory)
     after = datetime.now(UTC)
 
     async with session_factory() as session:
@@ -365,7 +388,7 @@ async def test_example_nonexistent_meeting_acks_without_persisting(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Req 1.5: nonexistent meeting_id -> ack without persisting (no exception)."""
-    await _process_diarization({"meeting_id": "no-existe"}, session_factory)
+    await _process_diarization_for_seeded_recording({"meeting_id": "no-existe"}, session_factory)
     async with session_factory() as session:
         assert (await session.execute(select(Diarization))).scalars().all() == []
 
@@ -379,7 +402,7 @@ async def test_example_without_transcript_acks_without_persisting(
     async with session_factory() as session, session.begin():
         session.add(_create_meeting(meeting_id))
         session.add(_create_recording(meeting_id))
-    await _process_diarization({"meeting_id": meeting_id}, session_factory)
+    await _process_diarization_for_seeded_recording({"meeting_id": meeting_id}, session_factory)
     async with session_factory() as session:
         assert (await session.execute(select(Diarization))).scalars().all() == []
 
@@ -405,7 +428,7 @@ async def test_diarization_uses_recording_from_meeting_not_queue_audio_ref(
 
     engine = _mock_engine(segments=[])
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
-        await _process_diarization(
+        await _process_diarization_for_seeded_recording(
             {"meeting_id": meeting_id, "audio_ref": foreign_audio_ref},
             session_factory,
         )
@@ -413,3 +436,38 @@ async def test_diarization_uses_recording_from_meeting_not_queue_audio_ref(
     engine.diarize.assert_awaited_once()
     assert engine.diarize.await_args is not None
     assert engine.diarize.await_args.args[0] == persisted_audio_ref
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["owner", "recording"])
+async def test_diarization_rejects_mismatched_queue_identity(
+    session_factory: async_sessionmaker[AsyncSession], mismatch: str
+) -> None:
+    """Jobs must bind both owner and recording before invoking diarization."""
+    meeting_id = str(uuid.uuid4())
+    await _seed_complete_meeting(session_factory, meeting_id, num_turns=1)
+    async with session_factory() as session:
+        recording = (
+            await session.execute(
+                select(SessionRecording).where(SessionRecording.meeting_id == meeting_id)
+            )
+        ).scalar_one()
+
+    message = {
+        "meeting_id": meeting_id,
+        "owner_id": "test-user",
+        "recording_id": recording.id,
+    }
+    if mismatch == "owner":
+        message["owner_id"] = "different-owner"
+    else:
+        message["recording_id"] = str(uuid.uuid4())
+
+    engine = _mock_engine(segments=[])
+    with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
+        await _process_diarization_for_seeded_recording(message, session_factory)
+
+    engine.diarize.assert_not_awaited()
+    async with session_factory() as session:
+        diarizations = await session.execute(select(Diarization))
+        assert diarizations.scalars().all() == []

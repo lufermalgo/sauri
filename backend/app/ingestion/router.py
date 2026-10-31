@@ -184,6 +184,8 @@ async def upload_recording(
             topic="transcribe",
             message={
                 "meeting_id": ingestion_data.meeting_id,
+                "owner_id": user.id,
+                "recording_id": recording.id,
                 "audio_ref": audio_ref,
             },
         )
