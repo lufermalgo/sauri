@@ -312,42 +312,45 @@ export function MeetingPlaybackView({
       {passages.length === 0 ? (
         <p>No transcript or empty transcript.</p>
       ) : (
-        <ol aria-label="Transcript passages">
-          {passages.map((passage) => {
-            const playable = isPlayablePassage(passage);
-            const isActive = state.activePassageId === passage.id;
-            return (
-              <li
-                key={passage.id}
-                style={isActive ? ACTIVE_PASSAGE_STYLE : undefined}
-                data-passage-id={passage.id}
-                data-active={isActive ? "true" : "false"}
-                ref={(element) => {
-                  if (element) passageRefs.current.set(passage.id, element);
-                  else passageRefs.current.delete(passage.id);
-                }}
-                aria-current={isActive ? "true" : undefined}
-              >
-                <span
-                  data-testid="transcript-speaker-label"
-                  style={{ color: passage.speakerColor ?? "#6b7280", fontWeight: 600, marginRight: "0.5rem" }}
+        <details>
+          <summary>Playback passages ({passages.length})</summary>
+          <ol aria-label="Transcript passages">
+            {passages.map((passage) => {
+              const playable = isPlayablePassage(passage);
+              const isActive = state.activePassageId === passage.id;
+              return (
+                <li
+                  key={passage.id}
+                  style={isActive ? ACTIVE_PASSAGE_STYLE : undefined}
+                  data-passage-id={passage.id}
+                  data-active={isActive ? "true" : "false"}
+                  ref={(element) => {
+                    if (element) passageRefs.current.set(passage.id, element);
+                    else passageRefs.current.delete(passage.id);
+                  }}
+                  aria-current={isActive ? "true" : undefined}
                 >
-                  {passage.speakerLabel ?? "Speaker N"}
-                </span>
-                {playable && <span>{formatTime(passage.startMs)} </span>}
-                <span>{passage.text}</span>
-                {playable && (
-                  <button
-                    type="button"
-                    aria-label={`Play ${passage.text}`}
-                    disabled={controlsDisabled}
-                    onClick={() => void controllerRef.current?.playPassage(passage)}
-                  >Play passage</button>
-                )}
-              </li>
-            );
-          })}
-        </ol>
+                  <span
+                    data-testid="transcript-speaker-label"
+                    style={{ color: passage.speakerColor ?? "#6b7280", fontWeight: 600, marginRight: "0.5rem" }}
+                  >
+                    {passage.speakerLabel ?? "Speaker N"}
+                  </span>
+                  {playable && <span>{formatTime(passage.startMs)} </span>}
+                  <span>{passage.text}</span>
+                  {playable && (
+                    <button
+                      type="button"
+                      aria-label={`Play ${passage.text}`}
+                      disabled={controlsDisabled}
+                      onClick={() => void controllerRef.current?.playPassage(passage)}
+                    >Play passage</button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </details>
       )}
     </section>
   );
