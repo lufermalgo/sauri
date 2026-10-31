@@ -4,7 +4,7 @@
 
 - Approved baseline snapshot: `PRODUCT_BASELINE.md` commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`, blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446` (context only; it does not authorize this extension delta).
 - Requirements: `.spectra/specs/chrome-recording-completion/requirements.md`, Mira APPROVED, snapshot `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2`, PR #605 (not merged at planning time).
-- Design: `.spectra/specs/chrome-recording-completion/design.md`, Mira APPROVED, amended snapshot `bf4ca181e70e8d97088a23a221438663a01d0b25`, PR #608.
+- Design: `.spectra/specs/chrome-recording-completion/design.md`, Mira APPROVED, corrected snapshot `a477c0bde2ac3f140d04020af06afa05fb96c4f6`, PR #608.
 - Owner direction: 2026-10-30; requirements contain traceability to the source direction and Cyrus reconciliation.
 - Import provenance: requirements and `.config.spectra` remain byte-identical to the approved source worktree; the design matches exact approved snapshot `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Git blob `ec67cad96b6907911f2f335b17917753993d6937`, SHA-256 `16bbfc35dcaf3a4ccc74b8e21790ca12faf2be30d51591c03f6bde465383ba6a`).
 
@@ -22,37 +22,37 @@
 
 ### Tarea 1.1: Test convergence of Stop and captured-tab-close
 
-**Archivo:** `extension/src/background.test.ts`; seam `completeRecording(sessionId, trigger)` in `extension/src/background.ts`
-**Acción:** Add required property-based coverage at the design's named completion coordinator `completeRecording(sessionId, trigger)` for Stop, captured-tab-close, both event orders, duplicates, and meeting-ended-only input. Assert one finalization claim at most once per `sessionId`, and zero claims for meeting-ended alone; use `fast-check` sequences with ≥100 cases and synthetic IDs.
-**Criterio de Completado:** `cd extension && npm run test -- src/background.test.ts` fails against current behavior for the missing transition semantics and reports a counterexample; the test contains ≥100 generated cases.
+**Archivo:** `extension/src/core/recording-completion.test.ts`; pure transition/idempotency seam under `extension/src/core/`, invoked by the design-named `completeRecording(sessionId, trigger)` coordinator in `extension/src/background.ts`
+**Acción:** Add required `fast-check` property tests beside the pure completion transition/idempotency logic under `extension/src/core/` for Stop, captured-tab-close, both event orders, duplicates, and meeting-ended-only input. Assert one finalization claim at most once per `sessionId` and zero claims for meeting-ended alone. Generate event sequences with ≥100 cases and synthetic IDs.
+**Criterio de Completado:** `cd extension && npm run test -- src/core/recording-completion.test.ts` fails against current behavior with a counterexample; each property has ≥100 generated cases.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.2: Test durable identity conservation and atomic completion claims
 
 **Archivo:** `extension/src/recording-db.test.ts`; persistence seam `openDB()` and IndexedDB upgrade/transaction boundaries in `extension/src/recording-db.ts`
-**Acción:** With a populated synthetic v1 `sauri-recordings` fixture, call `openDB()` to exercise the v1→v2 upgrade. Assert the existing `chunks` store, key path, `by_session` index, and chunk rows remain readable; the new `completion_records` store is keyed by `sessionId` and has a non-unique `capturedTabId` index; no completion rows are synthesized for legacy chunks. Exercise durable `RecordingCompletion` identity (`provider`, `sessionId → meetingId → recordingId`), retry/reload preservation, response mismatch rejection, and transactional duplicate finalization/launch claims. Include `blocked`/`versionchange` handling without data loss.
-**Criterio de Completado:** `cd extension && npm run test -- src/recording-db.test.ts` fails against v1 behavior and verifies the v1→v2 migration, preserved chunk data/indexes, new completion store/index, stable identity, mismatched response, and transactional claim cases.
+**Acción:** With a populated synthetic v1 `sauri-recordings` fixture, call `openDB()` to exercise the v1→v2 upgrade. Assert the existing `chunks` store, key path, `by_session` index, and chunk rows remain readable; the new `completion_records` store is keyed by `sessionId` and has a non-unique `capturedTabId` index; no completion rows are synthesized for legacy chunks. Use `fast-check` to generate ≥100 synthetic `provider`/ID/retry sequences and assert durable `sessionId → meetingId → recordingId` identity conservation, retry/reload preservation, mismatch rejection, and transactional duplicate finalization/launch claims. Include `blocked`/`versionchange` handling without data loss.
+**Criterio de Completado:** `cd extension && npm run test -- src/recording-db.test.ts` fails against v1 behavior and verifies the v1→v2 migration, preserved chunk data/indexes, new completion store/index, and ≥100 generated identity/claim cases.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.3: Test truthful upload outcome mapping
 
-**Archivo:** `extension/src/upload-queue.test.ts`
-**Acción:** At `uploadRecording` / `processUploadQueue` result seams, cover success only for a valid successful response with the same recording mapping; cover network, non-2xx, and invalid-response outcomes as failure/unavailable, never success. Assert retries retain sessionId and meetingId.
-**Criterio de Completado:** `cd extension && npm run test -- src/upload-queue.test.ts` fails for the specified missing truthful result contract using synthetic responses.
+**Archivo:** `extension/src/upload-queue.property.test.ts`; seams `uploadRecording` / `processUploadQueue` in `extension/src/upload-queue.ts`
+**Acción:** At the existing result seams, use `fast-check` to generate ≥100 synthetic success, network, non-2xx, invalid-response, and retry cases. Assert only a valid successful response for the same mapping reports success; all unsettled/failed results remain failure/unavailable, and retries retain the exact `sessionId` and `meetingId`.
+**Criterio de Completado:** `cd extension && npm run test -- src/upload-queue.property.test.ts` fails for the missing truthful queue contract and includes ≥100 generated response/retry cases.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.4: Test owner-authorized status and same-meeting processing success
 
-**Archivo:** `extension/src/background.test.ts`; seams `completeRecording(sessionId, trigger)` in `extension/src/background.ts` and `get_meeting_endpoint` for `GET /api/v1/meetings/{meeting_id}` in `backend/app/meetings/router.py`; `backend/tests/meetings/test_get_meeting_property.py`
-**Acción:** At `completeRecording(sessionId, trigger)`, cover each documented `process_state` mapping and the authenticated status/transcript/playback-manifest gate. Assert completed without transcript, usable video, or matching meeting/recording never produces `processing_succeeded`; pending and failed remain distinct. At the existing `get_meeting_endpoint`, verify `_get_authorized_meeting` enforces ownership: the owner receives status, unauthenticated access returns 401, and a different authenticated user requesting an existing synthetic meeting receives 404 with no status/recording fields. Use synthetic DB fixtures and users.
-**Criterio de Completado:** `cd extension && npm run test -- src/background.test.ts` and `cd backend && pytest tests/meetings/test_get_meeting_property.py` fail on the missing completion or owner-authorization gates; backend assertions cover owner success, unauthenticated 401, and non-owner 404/no status disclosure.
+**Archivo:** `extension/src/background.processing-status.test.ts`; seam `completeRecording(sessionId, trigger)` in `extension/src/background.ts`; backend seam `get_meeting_endpoint` for `GET /api/v1/meetings/{meeting_id}` in `backend/app/meetings/router.py`, tested by `backend/tests/meetings/test_get_meeting_property.py`
+**Acción:** At `completeRecording(sessionId, trigger)`, use `fast-check` to generate ≥100 synthetic combinations of documented `process_state`, transcript/video availability, and meeting/recording identity. Assert `processing_succeeded` occurs only for completed status plus both same-meeting assets and matching mapping; pending, failed, unavailable, or mismatched cases never succeed. At the existing `get_meeting_endpoint`, verify `_get_authorized_meeting` enforces ownership: the owner receives status, unauthenticated access returns 401, and a different authenticated user requesting an existing synthetic meeting receives 404 with no status/recording fields. Use synthetic DB fixtures and users.
+**Criterio de Completado:** `cd extension && npm run test -- src/background.processing-status.test.ts` fails on the missing completion gate and covers ≥100 generated state/asset/mapping combinations; `cd backend && pytest tests/meetings/test_get_meeting_property.py` fails on missing owner authorization and asserts owner success, unauthenticated 401, and non-owner 404/no status disclosure.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.5: Test review launch gating and at-most-one recovery
 
-**Archivo:** `extension/src/background.test.ts`; service-worker review-launch path in `extension/src/background.ts`, including the design-specified `chrome.tabs.create` boundary
-**Acción:** Exercise the persisted review-launch claim/reconciliation path leading to `chrome.tabs.create`. Cover concurrent completion signals, retries, worker restart with launch pending, and discovery of a matching canonical Sauri target; assert at most one tab creation and only after `processing_succeeded`. Use synthetic IDs and Chrome API boundary fixtures.
-**Criterio de Completado:** `cd extension && npm run test -- src/background.test.ts` fails on duplicate launch or launch before verified success; the test covers the named `chrome.tabs.create` boundary, pending-marker reconciliation, and matching-target discovery.
+**Archivo:** `extension/src/background.review-launch.test.ts`; service-worker review-launch path in `extension/src/background.ts`, including the design-specified `chrome.tabs.create` boundary
+**Acción:** Use `fast-check` to generate ≥100 synthetic duplicate/retry/restart event sequences against the persisted review-launch claim/reconciliation path. Assert at most one claim/tab creation and only after `processing_succeeded`; cover a pending marker and discovery of an existing matching canonical Sauri target at the `chrome.tabs.create` boundary.
+**Criterio de Completado:** `cd extension && npm run test -- src/background.review-launch.test.ts` fails on duplicate launch or launch before verified success and includes ≥100 generated launch sequences plus matching-target recovery.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.6: Test authorization boundary for transcript and playback endpoints
@@ -110,7 +110,7 @@
 
 **Archivo:** `backend/app/meetings/router.py:get_meeting_endpoint`, `extension/src/background.ts`, and the status mapping/bridge under `extension/src/core/`
 **Acción:** On the existing `GET /api/v1/meetings/{meeting_id}` handler, enforce meeting ownership for the authenticated user using the existing meetings authorization boundary; return 404 for a non-owner without disclosing meeting status or recording fields, while preserving 401 for unauthenticated requests. Do not add a parallel route. In the extension status bridge, map documented `process_state` values; for `completed`, require the persisted `meetingId`, matching `recordingId`, protected transcript availability, and usable playback-manifest video before persisting `processing_succeeded`. Preserve unavailable/auth-required, failed, and non-ready states without inventing retry intervals or limits. Publish per-recording status for T2.8; do not implement a speculative UI component.
-**Criterio de Completado:** T1.4 passes with owner success, unauthenticated 401, and non-owner 404/no status disclosure; `cd backend && pytest tests/meetings/test_get_meeting_property.py` and `cd extension && npm run test -- src/background.test.ts` pass; `cd extension && npm run typecheck` passes. The status bridge emits the matching durable per-recording state consumed by T2.8.
+**Criterio de Completado:** T1.4 passes with owner success, unauthenticated 401, and non-owner 404/no status disclosure; `cd backend && pytest tests/meetings/test_get_meeting_property.py` and `cd extension && npm run test -- src/background.processing-status.test.ts` pass; `cd extension && npm run typecheck` passes. The status bridge emits the matching durable per-recording state consumed by T2.8.
 **Dependencias:** T1.4, T2.2, `task_6a271652b2c34130` (protected transcript/playback asset contract).
 
 ### Tarea 2.5: Open one authenticated review destination only after verified success
