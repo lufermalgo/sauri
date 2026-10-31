@@ -297,6 +297,29 @@ describe("meeting playback API adapter", () => {
   });
 });
 
+describe("speaker excerpt API adapter", () => {
+  it("invalidates the session when an excerpt request returns 401", async () => {
+    const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);
+    const removeItem = vi.fn();
+    const dispatchEvent = vi.spyOn(window, "dispatchEvent");
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn().mockReturnValue("synthetic-token"),
+      setItem: vi.fn(),
+      removeItem,
+    });
+
+    await expect(api.playSpeakerExcerpt("meeting-1", "revision-1", "speaker-1"))
+      .rejects.toThrow("Error 401");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledOnce();
+    expect(removeItem).toHaveBeenCalledWith("sauri_token");
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+    expect(dispatchEvent.mock.calls[0][0]).toBeInstanceOf(Event);
+    expect(dispatchEvent.mock.calls[0][0].type).toBe("sauri:unauthorized");
+  });
+});
+
 describe("meeting list API adapter", () => {
   it("clears the stored token when a protected request returns 401", async () => {
     const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);

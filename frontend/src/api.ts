@@ -302,6 +302,9 @@ export async function playSpeakerExcerpt(
     `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review/revisions/${encodeURIComponent(revisionId)}/speakers/${encodeURIComponent(speakerId)}/excerpt`,
     { method: "GET", headers: getAuthHeaders() }
   );
+  if (response.status === 401) {
+    await handleResponse<void>(response);
+  }
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(`Error ${response.status}: ${body}`);
