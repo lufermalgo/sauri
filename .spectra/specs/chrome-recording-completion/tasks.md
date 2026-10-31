@@ -41,11 +41,11 @@
 **Criterio de Completado:** `cd extension && npm run test -- src/upload-queue.test.ts` fails for the specified missing truthful result contract using synthetic responses.
 **Dependencias:** Ninguna.
 
-### Tarea 1.4: Test processing success requires same-meeting transcript and video
+### Tarea 1.4: Test owner-authorized status and same-meeting processing success
 
-**Archivo:** `extension/src/core/recording-completion.test.ts` and module-adjacent coordinator test for status bridge
-**Acción:** Cover every documented process_state mapping and the authenticated status/transcript/playback-manifest gate. Assert completed without transcript, usable video, or matching meeting/recording never produces `processing_succeeded`; pending and failed remain distinct.
-**Criterio de Completado:** `cd extension && npm run test -- src/core/recording-completion.test.ts` fails on any absent success gate and includes synthetic missing-asset and identity-mismatch cases.
+**Archivo:** `extension/src/core/recording-completion.test.ts`; `backend/tests/meetings/test_get_meeting_property.py`; status route `GET /api/v1/meetings/{meeting_id}` in `backend/app/meetings/router.py`
+**Acción:** Cover every documented `process_state` mapping and the authenticated status/transcript/playback-manifest gate. Assert completed without transcript, usable video, or matching meeting/recording never produces `processing_succeeded`; pending and failed remain distinct. Against the existing meeting-status route, assert the authenticated owner receives that meeting's status, an unauthenticated request receives 401, and a different authenticated user receives 404 with no status or recording fields disclosed. Use synthetic meetings and users.
+**Criterio de Completado:** `cd extension && npm run test -- src/core/recording-completion.test.ts` and `cd backend && pytest tests/meetings/test_get_meeting_property.py` fail on the missing completion or authorization gates; the backend test asserts owner success, unauthenticated 401, and non-owner 404/no status disclosure.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.5: Test review launch gating and at-most-one recovery
@@ -106,11 +106,11 @@
 **Criterio de Completado:** T1.3 and T1.8 pass; both media assets are automatically enqueued without user action, retries retain the same identity, and failure/unavailable queue results never appear as success.
 **Dependencias:** T1.3, T1.8, T2.1, T2.2, `task_11001b7f5b084e09` (separate upload failure/result-contract repair).
 
-### Tarea 2.4: Gate processing success on authenticated status and both protected assets
+### Tarea 2.4: Gate processing success on owner-authorized status and both protected assets
 
-**Archivo:** `extension/src/background.ts`, status bridge and pure mapping under `extension/src/core/`; backend meeting/status owner only if the existing authenticated read contract is absent
-**Acción:** Map documented `process_state` values; for `completed`, require authenticated status for persisted `meetingId`, matching `recordingId`, protected transcript availability, and usable video in playback manifest before persisting `processing_succeeded`. Preserve unavailable/auth-required, failed, and non-ready states without inventing retry intervals or limits. Publish each per-recording transition for the side-panel status component in T2.8; use portal API/login contract rather than duplicating its fix.
-**Criterio de Completado:** T1.4 passes; status bridge emits the matching persisted recording state for T2.8 to render; `cd extension && npm run typecheck` passes; any changed backend endpoint also passes the configured `cd backend && pytest <matching test path>` and authorization tests.
+**Archivo:** `extension/src/background.ts`, status bridge and pure mapping under `extension/src/core/`; consume existing `GET /api/v1/meetings/{meeting_id}` in `backend/app/meetings/router.py` without adding a parallel route
+**Acción:** Map documented `process_state` values; for `completed`, require authenticated status for persisted `meetingId`, matching `recordingId`, protected transcript availability, and usable video in playback manifest before persisting `processing_succeeded`. Consume the owner-only status authorization contract from `task_dfcb314806c04033`: the owner receives status, unauthenticated callers receive 401, and authenticated non-owners receive 404 without status or recording disclosure. Do not duplicate the API/login authorization repair in this task. Preserve unavailable/auth-required, failed, and non-ready states without inventing retry intervals or limits. Publish each per-recording transition for the side-panel status component in T2.8.
+**Criterio de Completado:** T1.4 passes, including owner-success, unauthenticated 401, and non-owner 404/no status disclosure on the existing status route; `cd extension && npm run test -- src/core/recording-completion.test.ts`, `cd extension && npm run typecheck`, and `cd backend && pytest tests/meetings/test_get_meeting_property.py` pass. The status bridge emits the matching persisted recording state for T2.8 to render.
 **Dependencias:** T1.4, T2.2, `task_dfcb314806c04033` (authenticated API/login contract), `task_6a271652b2c34130` (status/assets review API contract).
 
 ### Tarea 2.5: Open one authenticated review destination only after verified success
@@ -160,7 +160,7 @@
 ## Dependency graph and rationale
 
 - Mandatory RED→GREEN edges: T1.1→T2.1; T1.2→T2.2; T1.3→T2.3; T1.4→T2.4; T1.5→T2.5; T1.6→T2.6; T1.7→T2.7; T1.9→T2.8. T1.8 verifies T2.3 automatic enqueue, in addition to the upload result tests in T1.3.
-- Actual implementation prerequisites: T2.1+T2.2→T2.3 (finalized media and persisted identity must exist before automatic enqueue); T2.2→T2.4 (status is bound to persisted mapping); T2.4→T2.5 (success gate precedes launch); T2.1→T2.7 (scope is applied to completion wiring); T2.2+T2.3+T2.4→T2.8 (status presentation needs persisted state and upload/processing outcomes).
+- Actual implementation prerequisites: T2.1+T2.2→T2.3 (finalized media and persisted identity must exist before automatic enqueue); T2.2 and `task_dfcb314806c04033`→T2.4 (status is bound to the persisted mapping and the existing status route's owner-only authorization contract must be in place); T2.4→T2.5 (success gate precedes launch); T2.1→T2.7 (scope is applied to completion wiring); T2.2+T2.3+T2.4→T2.8 (status presentation needs persisted state and upload/processing outcomes).
 - External dependencies are the existing tracked work: `task_11001b7f5b084e09` upload result/failure contract; `task_dfcb314806c04033` portal authenticated API/login; `task_6a271652b2c34130` protected meeting review/playback. These tasks are not duplicated here.
 - Independent RED tasks T1.1–T1.5, T1.7–T1.9 can proceed concurrently; implementation tasks remain parallel except for the explicit mapping/status/launch dependencies. T1.6/T2.6 wait for existing portal/playback contracts; the test seam is fixed to `get_transcript`, `get_playback_manifest`, and `_get_authorized_meeting` in the meetings router.
 - T3.1 depends on every feature-flow GREEN task, T2.1–T2.8, so its end-to-end flow cannot precede authenticated review integration (T2.6), supported-context event wiring (T2.7), or visible status presentation (T2.8). T3.2 follows T3.1 and every GREEN task so final configured validation cannot omit any implementation.
@@ -174,7 +174,7 @@
 
 ## Publication tracking
 
-Mira approved the unchanged task plan at `56e36feff04406cda3435ac00a0621aec3c1b3b7`. GitHub issues are created in milestone `chrome-recording-completion` (#17). APX card creation is pending resolution of the platform requirement that each subtask have an assignee; no card IDs are claimed here.
+Mira approved the prior task-plan snapshot `56e36feff04406cda3435ac00a0621aec3c1b3b7`; this scoped amendment derives from the amended design snapshot `bf4ca181e70e8d97088a23a221438663a01d0b25` (Mira APPROVED) and awaits focused audit. GitHub issues #610–#628 remain the mapping for this plan in milestone `chrome-recording-completion` (#17). APX card creation is pending real owners and dependency readiness; no card IDs are claimed here.
 
 | Task | GitHub issue | APX card |
 |---|---:|---|
