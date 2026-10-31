@@ -135,6 +135,15 @@ describe("TranscriptView — renders the transcript view", () => {
     const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
     const secondLabels = screen.getAllByText("Synthetic Person B", { selector: '[data-testid="transcript-speaker-label"]' });
     const unresolvedLabels = screen.getAllByText("Speaker N", { selector: '[data-testid="transcript-speaker-label"]' });
+    const passageDetails = screen.getByText("Playback passages (3)").closest("details");
+    const rawLabels = Array.from(passageDetails?.querySelectorAll('[data-testid="transcript-speaker-label"]') ?? []);
+    const groupedLabels = [...firstLabels, ...secondLabels, ...unresolvedLabels]
+      .filter((label) => !passageDetails?.contains(label));
+    expect(passageDetails).not.toHaveAttribute("open");
+    expect(rawLabels).toHaveLength(3);
+    expect(groupedLabels).toHaveLength(3);
+    groupedLabels.forEach((label) => expect(label).toBeVisible());
+    rawLabels.forEach((label) => expect(label).not.toBeVisible());
     expect(firstLabels).toHaveLength(2);
     expect(secondLabels).toHaveLength(2);
     expect(unresolvedLabels).toHaveLength(2);
@@ -143,9 +152,10 @@ describe("TranscriptView — renders the transcript view", () => {
     expect(firstStyle).toContain("color:");
     expect(secondStyle).toContain("color:");
     expect(secondStyle).not.toBe(firstStyle);
-    for (const label of [...firstLabels, ...secondLabels, ...unresolvedLabels]) {
-      expect(label).toBeVisible();
-    }
+    fireEvent.click(screen.getByText("Playback passages (3)"));
+    expect(passageDetails).toHaveAttribute("open");
+    rawLabels.forEach((label) => expect(label).toBeVisible());
+    groupedLabels.forEach((label) => expect(label).toBeVisible());
   });
 
   it("renders the playback player before the transcript passages", async () => {
