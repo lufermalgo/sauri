@@ -3,8 +3,8 @@
 Spec: `.spectra/specs/meeting-summaries-templates/`
 Requirements source: `requirements.md` @ commit `cdce9c34c566b72f42bb6db5eecdd76bdacb4532`
 (blob `12025987ad4ac44ac52a9acb5373ddf0f5f4520b`), Mira-APPROVED; PR #231 merged to main.
-Baseline source: `PRODUCT_BASELINE.md` @ commit `26d44ca7b212097c82415d0ae038bd9d096873d4`
-(blob `3afefd5e3da230cc3e26d7b89e74f48dc01d82ae`), owner-approved snapshot assigned by Ansel.
+Baseline source: `PRODUCT_BASELINE.md` @ commit `d738e78d65940f17d209edf9a54af5d34e92e059`
+(blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`), the owner-approved baseline snapshot.
 Owner decision: Fer, 2026-10-16 — templates are personal; users create multiple templates with
 specific instructions in Sauri web and configure their personal default there. That default is
 automatically applied across categories when a transcript summary is requested without an
@@ -51,19 +51,21 @@ The solution consists of:
 
 ## Decisiones de Diseño Clave
 
-**D1 — Summary generation stays out of scope; the design defines the mechanism, not the
-method.** The requirements do not select a generation method or accuracy threshold. The design
-therefore defines where summaries are produced (a queue worker triggered only by a user summary request), what
-they persist (a structured model), and what the worker requires to run (a `SummarizationEngine`
-protocol). The engine's internal method is a task-level implementation choice, constrained by
-the protocol, not a product decision made here. The design does not claim any verified
-provider, deployment, or executable generation path exists in this repository; it specifies
-only a testable adapter boundary and a hard technical prerequisite: no implementation task may
-begin end-to-end summary generation until the provider/configuration/deployment binding is
-selected, configured, and verified (D14). *Alternativas descartadas:* choosing an LLM
-provider here would invent unapproved product scope; leaving generation entirely open would
-leave the architecture under-specified for Zoya's task plan, since the worker, persistence, and
-lineage model do not depend on which engine fills the protocol.
+**D1 — Summary generation uses the owner-selected local Ollama integration, without cloud
+fallback.** The requirements do not select an accuracy threshold or generation behavior beyond
+the required structured topic and key points; Fer's decision recorded in PR #597 selects local
+Ollama on the Mac as the initial provider, with a configurable endpoint URL and model. The
+summaries worker calls a `SummarizationEngine` protocol through a local-Ollama adapter; its
+endpoint and model are backend configuration, while the provider choice is fixed to local
+Ollama for this scope. Configuration and startup validation fail closed; runtime/provider
+failure is reported through the existing retry/dead-letter path and MUST NOT silently route
+transcript data to a cloud provider. The repository contains no summary engine or verified
+Ollama deployment today, so this design does not claim the endpoint is already reachable or
+working; the task plan must verify local service availability and connectivity from the actual
+worker runtime before generation is considered executable (D14). *Alternativas descartadas:*
+cloud or automatic cloud fallback contradicts the owner's local-only data-routing decision;
+leaving the provider undecided would keep the approved user decision out of the implementation
+binding and leave end-to-end generation without a concrete adapter.
 
 **D2 — Every summary identifies both required content elements (R1.2).** Every persisted
 summary contains identifiable main-topic and key-arguments/points content. Template instructions
@@ -348,11 +350,12 @@ exception disciplines at `f5aa6b3e`):
 - On first delivery, mark the outbox request `running` before invoking the engine; retries keep
   it nonterminal (`running`). The terminal dead-letter handler marks it `failed` only after
   retry exhaustion. Status writes are scoped by `event_id` and do not expose exception details.
-- Calls the configured `SummarizationEngine` via `create_summarization_engine()` (factory
-  reading `SUMMARIZATION_PROVIDER` from env, same pattern as `transcription/factory.py`;
-  an unrecognized value raises `ValueError` at worker startup, mirroring
-  `create_asr_engine()`). Engine exceptions propagate uncaught — the same discipline as the
-  transcription worker — so queue redelivery governs retries (D9).
+- Calls the configured `SummarizationEngine` via `create_summarization_engine()`; the factory
+  constructs the local Ollama adapter from `SUMMARIZATION_OLLAMA_URL` and
+  `SUMMARIZATION_OLLAMA_MODEL`, and fails worker startup when either is missing or invalid.
+  There is no provider selector or alternate/cloud adapter for this feature. Engine exceptions
+  propagate uncaught — the same discipline as the transcription worker — so queue redelivery
+  governs retries (D9).
 - Applies the template instructions frozen in the event to both required summary elements;
   it never reads a mutable template row to determine the event's instructions or version. Within
   one DB transaction, it atomically claims `event_id` in `processed_summary_events` (unique
@@ -636,7 +639,8 @@ export interface SummaryTemplate {
   ownerId: string;
   categoryId?: string;
   version: number;
-  // Instruction payload shape is deferred by the approved requirements (D12).
+  /** Opaque instruction string, returned unchanged for editing (D12). */
+  instructions: string;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -655,7 +659,8 @@ export interface TemplateCategory {
 
 **`api.ts`** additions (same `getAuthHeaders`/`handleResponse` pattern, verified in the
 existing file; every new function maps its snake_case response explicitly into the camelCase
-shared types, D13):
+shared types, D13). The template response mapper preserves the opaque `instructions` string
+unchanged in `SummaryTemplate`, so list/get results populate the edit form (R3.3, D12):
 
 ```typescript
 export async function getSummary(meetingId: string): Promise<MeetingSummary>;
@@ -721,23 +726,24 @@ and a nav entry. Contains:
 
 ### 8. Worker bootstrap and configuration
 
-- `SUMMARIZATION_PROVIDER` env var selects the engine via
-  `summaries/factory.py::create_summarization_engine()`; recognized values and their default
-  are fixed at task level (the protocol, not the provider, is the design contract). Startup
-  raises `ValueError` on an unrecognized value, mirroring `create_asr_engine()`.
-- **Generation prerequisite (B3 containment, D14).** This design specifies the adapter seam and
-  fail-closed factory validation; it does **not** select or verify a summarization provider,
-  model, endpoint, credential, or deployment route, and no executable end-to-end generation
-  path exists in this repository today (verified: `backend/app/` has ASR/diarization
-  factories/providers but no summary engine implementation or provider endpoint). Selecting
-  that binding is a technical prerequisite that Zoya's plan must schedule before any task whose
-  acceptance depends on actually producing a summary (worker engine call, integration test of
-  generated content, UI states that assume a summary appears); if the choice changes privacy,
-  cost, or product behavior it needs upstream approval. Tasks that depend only on the protocol
-  seam — repository, resolver, persistence, event idempotency, API surface, UI empty state, and
-  the outbox/dispatcher of D15 — are independent of that prerequisite and may proceed without
-  it. Until the binding is verified, a worker that cannot construct an engine fails closed at
-  startup rather than emitting summaries of unknown provenance.
+- `SUMMARIZATION_OLLAMA_URL` and `SUMMARIZATION_OLLAMA_MODEL` configure the local Ollama
+  adapter created by `summaries/factory.py::create_summarization_engine()`. The URL must point
+  to the local Ollama service on Fer's Mac, not an arbitrary remote provider. Factory validation
+  rejects missing or malformed URL/model configuration at worker startup. There is no provider
+  selector, cloud provider, or fallback configured for this feature.
+- **Generation prerequisite (D14).** The owner-selected provider is Ollama running locally on
+  Fer's Mac, but this repository contains no summary adapter, endpoint configuration, or
+  verified deployment. Configure the URL to an Ollama endpoint reachable from the worker's
+  actual runtime, and verify that the configured model is available there before end-to-end
+  generation tasks are considered ready. In particular, a host-local URL that resolves on the
+  Mac itself may not resolve from a containerized worker; task-level implementation and tests
+  must establish the correct host-to-worker route without hard-coding an assumed address. If the
+  service or model is unavailable, fail closed or propagate the provider error through the
+  existing retry/dead-letter path; never silently fall back to a cloud service. Repository,
+  resolver, persistence, event idempotency, API, UI empty-state, and outbox/dispatcher work that
+  does not claim successful generation can proceed independently. No new Compose service is
+  specified: Ollama is a local host dependency, and this design does not claim a particular
+  container networking setup has been verified.
 - No new Compose service is introduced. The summaries worker subscribes inside the existing
   worker process (`backend/app/worker.py`), avoiding the known Compose/diarization-engine gap
   pattern (AGENTS.md: the Compose stack does not define a diarization-engine service; do not
@@ -867,7 +873,7 @@ implied.
 | Request exhausts retries and reaches dead-letter handling | Mark that outbox request `failed`; status response includes no exception detail and the prior current summary remains available |
 | Frontend status endpoint/network error | Keep generation status distinct from polling error; expose retry-status action and continue polling while mounted |
 | Worker: engine returns empty topic or key points | Output handling remains unspecified; no renderer or empty-value policy is introduced by this design (D1, D8, D12) |
-| `SUMMARIZATION_PROVIDER` unrecognized at worker startup | `ValueError` at startup, mirroring `create_asr_engine()` |
+| Ollama URL/model missing or invalid at worker startup | Factory raises a configuration error; worker does not start and no alternate/cloud provider is selected |
 | `GET /api/v1/templates/categories` vs `/{template_id}` route conflict | Static route registered first (implementation-order guard in the router file) |
 | Frontend copy blocked (clipboard permission) | Button shows a transient "Copy failed" state; no data loss |
 | Frontend `getSummary` 404 | Show neutral "No summary available for this meeting yet." only if no latest request is pending/running; otherwise show the request status (UI state, not fallback behavior) |
@@ -957,17 +963,17 @@ cd backend && ruff check . && mypy .
 
 ## Scope Boundaries (explicit non-decisions)
 
-Restated for the auditor: this design does not select a summarization method or accuracy
-threshold (D1); define a template grammar or summary visual layout (D2, D12); broaden access
-control beyond the existing sales-user policy (P7); add retention periods or deletion guarantees
-beyond deleting a persisted summary with its transcript (R6); or define template/category
-deletion endpoints (D9). It does not adopt the baseline's imagined portal layout (D7), nor define
-what a request does when neither explicit template nor configured default exists; that case is
-gated pending product decision (D9). It adds no automatic transcript-commit generation, and
-no standalone regeneration endpoint. A later user request is a subsequent summary and resolves
-the then-current selection; historical summaries retain their recorded lineage. Category names
-are free text owned by the user; no taxonomy is invented. The download filename is the one
-concrete user-visible string fixed by this design (D11, P6).
+Restated for the auditor: this design selects local Ollama as the summarization provider per
+Fer's owner decision (D1/D14), but does not define an accuracy threshold (D1), template grammar
+or summary visual layout (D2, D12), broaden access control beyond the existing sales-user policy
+(P7), add retention periods or deletion guarantees beyond deleting a persisted summary with its
+transcript (R6), or define template/category deletion endpoints (D9). It does not adopt the
+baseline's imagined portal layout (D7), nor define what a request does when neither explicit
+template nor configured default exists; that case is gated pending product decision (D9). It adds
+no automatic transcript-commit generation, and no standalone regeneration endpoint. A later user
+request is a subsequent summary and resolves the then-current selection; historical summaries
+retain their recorded lineage. Category names are free text owned by the user; no taxonomy is
+invented. Download filename and serialization remain unspecified (D8, D11).
 
 ## Correcciones de auditoría — ronda 1 (sustituyen reglas incompatibles anteriores)
 
@@ -990,25 +996,24 @@ These amendments are normative for implementation and supersede any conflicting 
    historical summary. A later request uses the then-current selection; a default change alone
    does not regenerate old summaries.
 
-3. **Generation engine integration boundary (D1).** The application invokes a configured
-   `SummarizationEngine` adapter; business services and workers depend only on its protocol.
-   Configuration is supplied through backend environment (`SUMMARIZATION_PROVIDER` plus
-   provider-specific endpoint/model/credential settings, with credentials supplied through
-   the deployment secret mechanism and never logged). Factory validation fails closed at
-   worker startup for unsupported/missing configuration; adapter uses authenticated TLS for
-   remote calls, bounded request timeouts, and propagates provider failures to the queue's
-   retry/dead-letter handling. The adapter receives only the transcript text required to
-   produce the canonical `topic` and `key_points`; it must not send recording/audio/video,
-   user identity, template names, or unrelated meeting metadata. Output is parsed/validated
-   into the canonical schema before persistence. Provider choice, model, prompt, deployment,
-   accuracy threshold, and any new observable quality or fallback rule remain explicitly
-   unselected because approved requirements do not select them. Do not claim an existing
-   summarization provider or deployed endpoint: none was verified in this repository. Before
-   implementation, the provider/configuration/deployment binding is a technical prerequisite
-   for Zoya's task plan (D14); choosing a provider requires approval if it changes privacy,
-   cost, or product behavior. This design therefore specifies a viable integration *boundary*
-   with fail-closed validation and bounded data transfer, not a verified executable generation
-   path; tasks that depend only on the protocol seam are independent of that prerequisite.
+3. **Generation engine integration boundary (D1/D14).** Business services and workers
+   depend only on the `SummarizationEngine` protocol; the configured implementation is a local
+   Ollama adapter. Backend configuration provides `SUMMARIZATION_OLLAMA_URL` and
+   `SUMMARIZATION_OLLAMA_MODEL`; the URL targets the local Mac Ollama service, and validation
+   rejects missing/invalid settings at worker startup. The adapter sends only transcript text and the frozen
+   template instructions needed to produce canonical `topic` and `key_points`; it must not send
+   recording/audio/video, user identity, template names, or unrelated meeting metadata. It
+   parses and validates the response before persistence, applies bounded request timeouts, and
+   propagates provider failures to queue retry/dead-letter handling. This feature has no cloud
+   adapter or fallback: local Ollama unavailability must not reroute transcript data to a cloud
+   provider. The URL must be reachable from the actual worker runtime; when the worker is
+   containerized, a Mac-local endpoint address cannot be assumed to resolve inside the
+   container. Implementation tasks must verify host-to-worker connectivity and model
+   availability with synthetic fixtures before treating generation as executable. No summary
+   provider or working endpoint was verified in this repository, and no particular network
+   address or container networking change is asserted here. Generation accuracy thresholds,
+   prompt policy, and additional product-visible quality behavior remain unspecified by the
+   requirements and owner decision; this design introduces none.
 
 4. **Post-commit enqueue recovery (D15).** Acceptance of a summary request and job publication
    are separate systems; publication after commit can fail or the process can stop between
