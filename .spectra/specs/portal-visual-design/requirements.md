@@ -14,7 +14,7 @@ Este documento traduce únicamente ese alcance a requisitos verificables. La lí
 
 ## Matriz de fases de entrega
 
-Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los criterios de aceptación de Requisitos 1–6 siguen siendo el alcance aprobado completo. La matriz asigna capacidades ya especificadas; no crea aceptación de producto por sí sola ni autoriza comportamientos que no estén respaldados por la línea base. Stitch continúa siendo una referencia visual no normativa.
+Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los criterios de aceptación de Requisitos 1–6 siguen siendo el alcance aprobado completo. La matriz asigna capacidades ya especificadas; no crea aceptación de producto por sí sola ni autoriza comportamientos que no estén respaldados por la línea base. La asignación de fases sigue la decisión explícita de Fer del 2026-10-31 (`th_b10e4fd4b9e34ecd`, mensaje `msg_3a2b00358306468c`): la Fase 1 y la Fase 2 se definen en la tabla siguiente; las capacidades de Fase 2 siguen dentro del alcance aprobado, aunque su entrega se secuencie después. Esta decisión de secuenciación no modifica la línea base ni sus requisitos. Stitch continúa siendo una referencia visual no normativa.
 
 | Capacidad | Fase | Trazabilidad y límites |
 | --- | --- | --- |
