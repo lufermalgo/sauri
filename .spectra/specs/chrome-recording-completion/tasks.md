@@ -22,15 +22,15 @@
 
 ### Tarea 1.1: Test convergence of Stop and captured-tab-close
 
-**Archivo:** `extension/src/core/recording-completion.test.ts` (or colocated core test for the introduced transition module)
-**Acción:** Add required property-based coverage at the core transition seam for Stop, captured-tab-close, both event orders, duplicates, and meeting-ended-only input. Assert a single `sessionId` finalization claim at most once, and zero claims for meeting-ended alone; use `fast-check` sequences with ≥100 cases.
-**Criterio de Completado:** `cd extension && npm run test -- src/core/recording-completion.test.ts` fails against current behavior for the missing transition semantics and reports the counterexample; the test contains ≥100 generated cases.
+**Archivo:** `extension/src/background.test.ts`; seam `completeRecording(sessionId, trigger)` in `extension/src/background.ts`
+**Acción:** Add required property-based coverage at the design's named completion coordinator `completeRecording(sessionId, trigger)` for Stop, captured-tab-close, both event orders, duplicates, and meeting-ended-only input. Assert one finalization claim at most once per `sessionId`, and zero claims for meeting-ended alone; use `fast-check` sequences with ≥100 cases and synthetic IDs.
+**Criterio de Completado:** `cd extension && npm run test -- src/background.test.ts` fails against current behavior for the missing transition semantics and reports a counterexample; the test contains ≥100 generated cases.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.2: Test durable identity conservation and atomic completion claims
 
-**Archivo:** `extension/src/recording-db.test.ts` (or adjacent test for the persistence API)
-**Acción:** Exercise the `sessionId → meetingId → recordingId` record and transactional claim/update seams with synthetic data. Assert persisted `meetingId` survives retry/reload, response mismatch is rejected, and concurrent duplicate completion claims cannot create a second identity/finalization.
+**Archivo:** `extension/src/recording-db.test.ts`; persistence seam `openDB()` and its IndexedDB transaction/object-store boundary in `extension/src/recording-db.ts`
+**Acción:** Exercise the design's durable `RecordingCompletion` record through `openDB()` and the transaction boundary used to persist it, with synthetic data. Assert persisted `meetingId` survives retry/reload, a mismatched response `recordingId` is rejected, and concurrent duplicate finalization/launch claims cannot create a second identity or claim.
 **Criterio de Completado:** `cd extension && npm run test -- src/recording-db.test.ts` fails on missing durable mapping/atomic claim behavior and includes concurrent duplicate claim and mismatched-response cases.
 **Dependencias:** Ninguna.
 
@@ -43,16 +43,16 @@
 
 ### Tarea 1.4: Test owner-authorized status and same-meeting processing success
 
-**Archivo:** `extension/src/core/recording-completion.test.ts`; `backend/tests/meetings/test_get_meeting_property.py`; status route `GET /api/v1/meetings/{meeting_id}` in `backend/app/meetings/router.py`
-**Acción:** Cover every documented `process_state` mapping and the authenticated status/transcript/playback-manifest gate. Assert completed without transcript, usable video, or matching meeting/recording never produces `processing_succeeded`; pending and failed remain distinct. Against the existing meeting-status route, assert the authenticated owner receives that meeting's status, an unauthenticated request receives 401, and a different authenticated user receives 404 with no status or recording fields disclosed. Use synthetic meetings and users.
-**Criterio de Completado:** `cd extension && npm run test -- src/core/recording-completion.test.ts` and `cd backend && pytest tests/meetings/test_get_meeting_property.py` fail on the missing completion or authorization gates; the backend test asserts owner success, unauthenticated 401, and non-owner 404/no status disclosure.
+**Archivo:** `extension/src/background.test.ts`; seams `completeRecording(sessionId, trigger)` in `extension/src/background.ts` and `get_meeting_endpoint` for `GET /api/v1/meetings/{meeting_id}` in `backend/app/meetings/router.py`; `backend/tests/meetings/test_get_meeting_property.py`
+**Acción:** At `completeRecording(sessionId, trigger)`, cover each documented `process_state` mapping and the authenticated status/transcript/playback-manifest gate. Assert completed without transcript, usable video, or matching meeting/recording never produces `processing_succeeded`; pending and failed remain distinct. At the existing `get_meeting_endpoint`, assert owner status success, unauthenticated 401, and non-owner 404 with no status or recording fields disclosed. Use synthetic meetings and users.
+**Criterio de Completado:** `cd extension && npm run test -- src/background.test.ts` and `cd backend && pytest tests/meetings/test_get_meeting_property.py` fail on the missing completion or owner-authorization gates; the backend test asserts owner success, unauthenticated 401, and non-owner 404/no status disclosure.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.5: Test review launch gating and at-most-one recovery
 
-**Archivo:** `extension/src/background.test.ts` (or colocated background coordinator test)
-**Acción:** Exercise `completeRecording`/review-launch coordinator and `chrome.tabs.create` test boundary. Cover concurrent signals, repeated retries, worker restart with launch pending, and matching-target discovery; assert at most one tab creation and only for processing success.
-**Criterio de Completado:** `cd extension && npm run test -- src/background.test.ts` fails on duplicate launch or launch before verified success; tests use synthetic IDs and Chrome API boundary fixtures.
+**Archivo:** `extension/src/background.test.ts`; service-worker review-launch path in `extension/src/background.ts`, including the design-specified `chrome.tabs.create` boundary
+**Acción:** Exercise the persisted review-launch claim/reconciliation path leading to `chrome.tabs.create`. Cover concurrent completion signals, retries, worker restart with launch pending, and discovery of a matching canonical Sauri target; assert at most one tab creation and only after `processing_succeeded`. Use synthetic IDs and Chrome API boundary fixtures.
+**Criterio de Completado:** `cd extension && npm run test -- src/background.test.ts` fails on duplicate launch or launch before verified success; the test covers the named `chrome.tabs.create` boundary, pending-marker reconciliation, and matching-target discovery.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.6: Test authorization boundary for transcript and playback endpoints
@@ -76,11 +76,13 @@
 **Criterio de Completado:** `cd extension && npm run test -- src/background.test.ts` fails before implementation because completion does not yet enqueue the finalized media automatically; assertion verifies both media references and stable IDs.
 **Dependencias:** T1.1, T1.2.
 
-### Tarea 1.9: Test user-visible truthful upload and processing states
+### Tarea 1.9: RED test for user-visible truthful recording status — blocked on design seam
 
-**Archivo:** `extension/src/panel/components/RecordingCompletionStatus.test.tsx`; seam `RecordingCompletionStatus` rendered in `SidePanelApp`
-**Acción:** Add RED component tests for persisted per-recording `uploading`, `upload_succeeded`, `upload_failed`/`upload_outcome_unavailable`, `processing`, `processing_failed`, `processing_assets_unavailable`, and `processing_succeeded` states. Verify success is never shown for in-progress, failed, unavailable, stale, or different-recording state.
-**Criterio de Completado:** `cd extension && npm run test -- src/panel/components/RecordingCompletionStatus.test.tsx` fails before implementation and asserts visible status text/role for each outcome against synthetic recording IDs.
+**Design gap:** The approved `design.md` requires truthful status presentation but names no existing panel component, UI route, or status-rendering interface; `RecordingCompletionStatus` and its file path were speculative and are removed. Do not write or implement against an invented component/API. An approved design amendment must name the UI surface/component and its status input seam before this required RED task can be finalized.
+
+**Archivo:** Pending approved design amendment; then the exact colocated UI test path and component/function seam named there.
+**Acción:** After the design amendment, add RED coverage for the required persisted upload and processing outcomes, including no success display for pending, failed, unavailable, stale, or different-recording state.
+**Criterio de Completado:** Blocked until the amended design supplies the concrete test seam; then name and run the configured extension test command for that exact test path.
 **Dependencias:** Ninguna.
 
 ## Phase 2: GREEN implementation
@@ -106,12 +108,12 @@
 **Criterio de Completado:** T1.3 and T1.8 pass; both media assets are automatically enqueued without user action, retries retain the same identity, and failure/unavailable queue results never appear as success.
 **Dependencias:** T1.3, T1.8, T2.1, T2.2, `task_11001b7f5b084e09` (separate upload failure/result-contract repair).
 
-### Tarea 2.4: Gate processing success on owner-authorized status and both protected assets
+### Tarea 2.4: Enforce owner authorization for status and gate processing success on both protected assets
 
-**Archivo:** `extension/src/background.ts`, status bridge and pure mapping under `extension/src/core/`; consume existing `GET /api/v1/meetings/{meeting_id}` in `backend/app/meetings/router.py` without adding a parallel route
-**Acción:** Map documented `process_state` values; for `completed`, require authenticated status for persisted `meetingId`, matching `recordingId`, protected transcript availability, and usable video in playback manifest before persisting `processing_succeeded`. Consume the owner-only status authorization contract from `task_dfcb314806c04033`: the owner receives status, unauthenticated callers receive 401, and authenticated non-owners receive 404 without status or recording disclosure. Do not duplicate the API/login authorization repair in this task. Preserve unavailable/auth-required, failed, and non-ready states without inventing retry intervals or limits. Publish each per-recording transition for the side-panel status component in T2.8.
-**Criterio de Completado:** T1.4 passes, including owner-success, unauthenticated 401, and non-owner 404/no status disclosure on the existing status route; `cd extension && npm run test -- src/core/recording-completion.test.ts`, `cd extension && npm run typecheck`, and `cd backend && pytest tests/meetings/test_get_meeting_property.py` pass. The status bridge emits the matching persisted recording state for T2.8 to render.
-**Dependencias:** T1.4, T2.2, `task_dfcb314806c04033` (authenticated API/login contract), `task_6a271652b2c34130` (status/assets review API contract).
+**Archivo:** `backend/app/meetings/router.py:get_meeting_endpoint`, `extension/src/background.ts`, and the status mapping/bridge under `extension/src/core/`
+**Acción:** On the existing `GET /api/v1/meetings/{meeting_id}` handler, enforce meeting ownership for the authenticated user using the existing meetings authorization boundary; return 404 for a non-owner without disclosing meeting status or recording fields, while preserving 401 for unauthenticated requests. Do not add a parallel route. In the extension status bridge, map documented `process_state` values; for `completed`, require the persisted `meetingId`, matching `recordingId`, protected transcript availability, and usable playback-manifest video before persisting `processing_succeeded`. Preserve unavailable/auth-required, failed, and non-ready states without inventing retry intervals or limits. Publish per-recording status for T2.8; do not implement a speculative UI component.
+**Criterio de Completado:** T1.4 passes with owner success, unauthenticated 401, and non-owner 404/no status disclosure; `cd backend && pytest tests/meetings/test_get_meeting_property.py` and `cd extension && npm run test -- src/background.test.ts` pass; `cd extension && npm run typecheck` passes. The status bridge emits state for the panel surface once its design seam is approved.
+**Dependencias:** T1.4, T2.2, `task_6a271652b2c34130` (protected transcript/playback asset contract).
 
 ### Tarea 2.5: Open one authenticated review destination only after verified success
 
@@ -134,11 +136,13 @@
 **Criterio de Completado:** T1.7 passes; `cd extension && npm run typecheck` passes and the change adds no new capture capability or excluded product flow.
 **Dependencias:** T1.7, T2.1.
 
-### Tarea 2.8: Present truthful per-recording outcomes in the existing side panel
+### Tarea 2.8: Present truthful per-recording outcomes — blocked on design seam
 
-**Archivo:** `extension/src/panel/components/RecordingCompletionStatus.tsx`, its colocated test, `extension/src/panel/SidePanelApp.tsx`
-**Acción:** Render the persisted completion status received from the worker in the existing side panel, keyed by `sessionId`/`meetingId`. Display distinct user-visible in-progress, success, failure, and unavailable states for upload and processing; do not show stale state from a different recording or claim review readiness before `processing_succeeded`. This is status presentation only, not a visual redesign.
-**Criterio de Completado:** T1.9 passes for every specified visible state and stale/different-recording case; `cd extension && npm run typecheck` passes.
+**Design gap:** The approved design does not name the side-panel component or status-rendering API. The previously proposed `RecordingCompletionStatus.tsx` path is not authorized by the design. Do not create that component or dispatch this GREEN task until an approved design amendment names the existing UI surface, component/function seam, and test path.
+
+**Archivo:** Pending approved design amendment; then the exact extension UI files named there.
+**Acción:** Render persisted worker status for the same `sessionId`/`meetingId` with the user-visible distinctions required by Requirements 2–4, without stale cross-recording success or claiming readiness before `processing_succeeded`.
+**Criterio de Completado:** Blocked until T1.9 has an approved design-defined seam; then run its test and `cd extension && npm run typecheck`.
 **Dependencias:** T1.9, T2.2, T2.3, T2.4.
 
 ## Phase 3: Integration and validation
@@ -159,10 +163,10 @@
 
 ## Dependency graph and rationale
 
-- Mandatory RED→GREEN edges: T1.1→T2.1; T1.2→T2.2; T1.3→T2.3; T1.4→T2.4; T1.5→T2.5; T1.6→T2.6; T1.7→T2.7; T1.9→T2.8. T1.8 verifies T2.3 automatic enqueue, in addition to the upload result tests in T1.3.
-- Actual implementation prerequisites: T2.1+T2.2→T2.3 (finalized media and persisted identity must exist before automatic enqueue); T2.2 and `task_dfcb314806c04033`→T2.4 (status is bound to the persisted mapping and the existing status route's owner-only authorization contract must be in place); T2.4→T2.5 (success gate precedes launch); T2.1→T2.7 (scope is applied to completion wiring); T2.2+T2.3+T2.4→T2.8 (status presentation needs persisted state and upload/processing outcomes).
-- External dependencies are the existing tracked work: `task_11001b7f5b084e09` upload result/failure contract; `task_dfcb314806c04033` portal authenticated API/login; `task_6a271652b2c34130` protected meeting review/playback. These tasks are not duplicated here.
-- Independent RED tasks T1.1–T1.5, T1.7–T1.9 can proceed concurrently; implementation tasks remain parallel except for the explicit mapping/status/launch dependencies. T1.6/T2.6 wait for existing portal/playback contracts; the test seam is fixed to `get_transcript`, `get_playback_manifest`, and `_get_authorized_meeting` in the meetings router.
+- Mandatory RED→GREEN edges: T1.1→T2.1; T1.2→T2.2; T1.3+T1.8→T2.3; T1.4→T2.4; T1.5→T2.5; T1.6→T2.6; T1.7→T2.7; T1.9→T2.8. T1.9/T2.8 are blocked until the approved design defines their UI seam; no implementation may start before that amendment and the RED task.
+- Actual implementation prerequisites: T2.1+T2.2→T2.3 (finalized media and persisted identity must exist before automatic enqueue); T2.2→T2.4 (status is bound to the persisted mapping; T2.4 itself adds owner authorization to the existing `get_meeting_endpoint`, with RED coverage in T1.4); T2.4→T2.5 (success gate precedes launch); T2.1→T2.7 (scope is applied to completion wiring); T2.2+T2.3+T2.4→T2.8 (status presentation needs persisted state and upload/processing outcomes).
+- External dependencies are the existing tracked work: `task_11001b7f5b084e09` upload result/failure contract; `task_6a271652b2c34130` protected meeting review/playback. `task_dfcb314806c04033` is not a prerequisite for owner authorization on the existing meeting-status route; that authorization is implemented and tested in T1.4/T2.4. Portal login remains an authentication boundary consumed by the flow, not ownership of this route's access-control fix.
+- Independent RED tasks T1.1–T1.8 can proceed concurrently; T1.9 awaits the design seam. Implementation tasks remain parallel except explicit mapping/status/launch dependencies. T1.6/T2.6 wait for the existing protected playback contract; test seams are `get_transcript`, `get_playback_manifest`, and `_get_authorized_meeting` in `backend/app/meetings/router.py`.
 - T3.1 depends on every feature-flow GREEN task, T2.1–T2.8, so its end-to-end flow cannot precede authenticated review integration (T2.6), supported-context event wiring (T2.7), or visible status presentation (T2.8). T3.2 follows T3.1 and every GREEN task so final configured validation cannot omit any implementation.
 
 ## Assumptions and unresolved implementation checks
