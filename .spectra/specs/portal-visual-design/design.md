@@ -2,13 +2,13 @@
 
 ## Resumen
 
-Este diseño cubre Fase 1; Fase 2 está secuenciada, no excluida, conforme a la tabla de fases de los requisitos aprobados. La Fase 1 abarca login visual, biblioteca básica, carga manual y revisión de reunión, incluyendo pestañas Chat (solo composición) y Notes/Summary. La apertura automática corresponde únicamente a Google Meet. No se amplía a Teams ni se inventa comportamiento/API allí donde falten contratos; esas brechas deben resolverse antes de implementación.
+Este diseño cubre Fase 1; Fase 2 está secuenciada, no excluida, conforme a la tabla de fases de los requisitos aprobados. La Fase 1 abarca login visual, biblioteca básica, carga manual y revisión de reunión, incluyendo pestañas Chat (solo composición) y Notes/Summary. El disparador de producto para apertura es detener grabación o cerrar pestaña Meet/Teams; la apertura automática requiere trabajo dependiente de extensión. No se inventa comportamiento/API allí donde falten contratos; esas brechas deben resolverse antes de implementación.
 
 1. Mantener el login y la sesión existentes, con tratamiento visual consistente.
 2. Estructurar la SPA en biblioteca, carga manual y vista de reunión, con `frontend/src/api.ts` como única capa HTTP.
 3. Usar solo capacidades API actualmente disponibles para listar/abrir reuniones, presentar video y turnos, y solicitar/resumir artefactos existentes; no diseñar mutaciones sin contrato.
-4. Usar backend como autoridad de aceptación de carga: seleccionar archivo habilita «Subir y procesar»; un rechazo se muestra claramente.
-5. Abrir automáticamente la reunión correspondiente tanto cuando se detiene la captura como cuando termina la sesión de Google Meet, usando el identificador de reunión confirmado por el servidor; los límites de detección del fin de sesión deben respetar las señales reales disponibles.
+4. Aplicar la decisión de producto de Fer del 2026-10-31: es elegible lo que acepta la validación actual de ingesta, sin límites nuevos; si el backend rechaza el archivo, la UI muestra su mensaje.
+5. Abrir la vista al detener la grabación o cerrar la pestaña de Meet/Teams, sujeto a la dependencia explícita de que `background.ts` actualmente solo reinicia estado al recibir `meet-ended` y no abre el portal.
 
 ## Decisiones de Diseño Clave
 
@@ -22,11 +22,11 @@ Este diseño cubre Fase 1; Fase 2 está secuenciada, no excluida, conforme a la 
 
 **Login solo cambia en presentación.** Reutilizar la experiencia y llamada de autenticación actuales, sin alterar protocolo, permisos ni estados funcionales. *Alternativa descartada:* recrear el login de Stitch, que no define el acceso aprobado.
 
-**Elegibilidad de carga = aceptación actual del backend, provisionalmente.** Al elegir un archivo se habilita «Subir y procesar», sin filtros locales ni límites nuevos de formato/tamaño. El backend decide; si rechaza, mostrar su mensaje claro y conservar el archivo. *Alternativa descartada:* duplicar/anticipar validación autoritativa con reglas inventadas.
+**Elegibilidad de carga sigue la decisión de producto de Fer del 2026-10-31.** Es elegible lo que acepta la validación actual de ingesta; no se agregan límites ni reglas nuevas. Tras elegir el archivo, ofrecer «Subir y procesar» y, si el backend lo rechaza, mostrar su mensaje. Esta regla es una decisión de producto vigente, no un detalle pendiente. *Alternativa descartada:* introducir validaciones locales o límites de formato/tamaño no aprobados.
 
-**Estados de carga separados de procesamiento.** Mostrar progreso de transferencia real cuando el transporte lo informa; no simular porcentaje ni afirmar que el procesamiento terminó por recibir HTTP exitoso. La operación conserva archivo e identidad idempotente para retry. *Alternativa descartada:* porcentaje o finalización ficticios.
+**Estados de transferencia separados de procesamiento y reintento acotado.** Mostrar progreso solo cuando el transporte informa bytes; no simular porcentaje ni afirmar que el procesamiento terminó al finalizar HTTP. Conforme a `PRODUCT_BASELINE.md` §4.D.5 ya fusionado en `main`, ante fallo el archivo seleccionado queda disponible para reintentar y se ofrecen «Reintentar» y «Copiar diagnóstico». No se garantiza conservación del blob/job en servidor, idempotencia ni supervivencia de reintentos ante interrupción de red o cierre. *Alternativa descartada:* prometer persistencia/continuidad no aprobada.
 
-**Apertura automática en los dos disparadores aprobados.** Tanto la detención de captura como el fin de la sesión de Google Meet deben converger al cierre normal de captura, subida y apertura de la reunión identificada por un `meeting_id` confirmado por servidor; nunca usar `sessionId` local como sustituto. El código actual demuestra el camino de detener/cerrar la pestaña propietaria mediante `chrome.tabs.onRemoved`, `handleStopCapture` y `handleRecordingStopped`, pero no basta para afirmar que detecta el fin de la sesión Meet independientemente del cierre de pestaña. Antes de implementar, verificar la señal observable disponible en la integración Meet y conectar ambas señales al mismo camino idempotente; si no existe una señal fiable, registrar la brecha para resolverla, sin presentar cierre de pestaña como equivalente al fin de sesión. *Alternativa descartada:* abrir antes de tener el `meeting_id` confirmado, que puede producir un destino inválido.
+**Apertura automática al detener grabación o cerrar pestaña de Meet/Teams: dependencia de extensión.** El disparador de producto definido por Fer es detener la grabación o cerrar la pestaña Meet/Teams. Hoy `extension/src/background.ts` maneja `chrome.tabs.onRemoved` para detener captura cuando se cierra la pestaña propietaria; el mensaje `meet-ended` llama a `handleMeetEnded()`, que reinicia estado, pero no abre el portal. Por lo tanto, el cierre Meet/Teams y la navegación automática requieren una tarea dependiente de extensión que conecte los eventos existentes con la subida y el destino, sin describirlo como un «fin de sesión» ya soportado. *Alternativa descartada:* atribuir apertura automática al código actual, que solo realiza stop/reset.
 
 ## Arquitectura
 
@@ -44,7 +44,8 @@ graph TD
   Api --> Backend[API Sauri existente]
   Capture[Extensión MV3 background] --> Queue[Cola durable de subida]
   Queue --> Ingestion[POST ingestion upload]
-  Ingestion -->|respuesta con meeting_id confirmado| Navigate[Nueva pestaña al portal]
+  Ingestion -->|solo recording_id y state hoy| Gap[Contrato de ingesta pendiente: identificar meeting resultante]
+  Gap -.->|tras contrato aprobado| Navigate[Nueva pestaña al portal]
   Navigate --> Meeting
 ```
 
@@ -58,16 +59,14 @@ sequenceDiagram
   T->>SW: chrome.tabs.onRemoved (tabId propietario, recording)
   SW->>SW: handleStopCapture()
   SW->>SW: recording-stopped → handleRecordingStopped
-  SW->>Q: enqueueUpload(sessionId, idempotencyKey=sessionId)
-  Q->>API: POST upload, repetir con misma clave ante falla recuperable
-  alt Éxito autenticado
-    API-->>Q: respuesta con meeting_id
-    Q->>SW: completar job con meeting_id
-    SW->>P: crear/activar URL /meetings/{meeting_id}
-  else Error de red, auth o carga
-    API-->>Q: error / sin respuesta
-    Q->>Q: conservar grabación y reintentar
-    SW-->>T: notificación clara con acción para reintentar
+  SW->>Q: iniciar carga según comportamiento actual
+  Q->>API: POST upload
+  alt Éxito de ingesta
+    API-->>Q: recording_id, state
+    Q-->>P: no hay meeting_id confirmado; registrar brecha de contrato
+  else Rechazo/error informado
+    API-->>Q: error
+    Q-->>T: mensaje; UI ofrece reintentar y copiar diagnóstico
   end
 ```
 
@@ -79,37 +78,43 @@ sequenceDiagram
 - `components/PortalShell.tsx`: navegación limitada a Biblioteca, Subir grabación y reunión abierta.
 - `components/LoginScreen.tsx`: presentación nueva alrededor de login existente, sin cambiar su contrato.
 - `components/RecordingLibrary.tsx`: carga de lista ordenada newest-first, estados cargando/vacío/error, abrir selección.
-- `components/RecordingUpload.tsx`: selector; selección habilita acción cuando se conoce elegibilidad aprobada; progreso de transferencia, resultado, reintento y «Copiar diagnóstico» sin secretos ni transcripción; no inventar límites de elegibilidad.
+- `components/RecordingUpload.tsx`: selector; ofrecer acción según validación actual de ingesta conforme a decisión de producto Fer 2026-10-31, sin límites nuevos; mostrar error del backend. Progreso real, reintento y «Copiar diagnóstico» sin secretos ni transcripción; archivo seleccionado disponible para reintentar, sin prometer recuperación tras cierre/interrupción.
 - `components/MeetingView.tsx`: reproductor arriba de transcripción; controles ordinarios visibles de seek, velocidad, calidad/resolución, pausa, volumen y mute. Calidad/resolución solo refleja opciones disponibles del medio/reproductor y no promete calidad inexistente. Cada turno muestra timestamp, etiqueta de hablante coloreada y texto; al avanzar playback se resalta el turno correspondiente y se desplaza la lista para mantenerlo visible; seleccionar turno hace seek a su tiempo vinculado e inicia reproducción. No fijar colores ni formato de timestamp.
 - Panel lateral inicial con pestañas **Chat** y **Notes/Summary**. Chat en Fase 1 es solo pestaña, sin interfaz ni interacción de chat; sus capacidades interactivas quedan Fase 2. Notes/Summary mantiene notas, resumen y transcripción como contenidos distintos, no mezcla el transcript en el resumen. El resumen ofrece copiar y descargar su propio contenido; estructura legible que identifica tema principal y argumentos/puntos clave, sin imponer un layout fijo. No depender de capacidades ya existentes como condición para exponer estos comportamientos aprobados: si faltan API/contratos o datos, registrar esa brecha concreta antes de implementar, no simularlos.
 - `api.ts`: métodos tipados para login, listado/detalle existentes y carga; cualquier endpoint/mutación faltante se eleva como brecha, no se inventa contrato.
-- CSS global existente: estilos y tokens semánticos. No imponer hex, breakpoints ni formato de timestamp no fijados por requisitos.
+- CSS global existente: estilos y tokens semánticos.
 
-### Backend / persistencia
+### Reglas visuales accionables
 
-Esta fase consume endpoints existentes de login, listado/detalle de reuniones, lectura de medios/turnos/resumen e ingesta. No se define endpoint nuevo ni cambio de esquema en este diseño. Si el código actual no ofrece una operación necesaria para los cuatro flujos acotados, registrar la brecha concreta y elevarla para requisito/contrato aprobado antes de implementarla; no improvisar ruta, payload ni persistencia. Las capacidades excluidas (rename/delete/download, metadata/tags, rename speaker y filtros de biblioteca) requieren contrato API y modelo/persistencia diseñados y aprobados en fase posterior.
+- Tomar `design/stitch/` como referencia de tokens Terra y componentes semánticos, no como especificación de pantallas o contenido.
+- En viewport de escritorio ≥1280 px, distribuir shell, contenido principal y panel lateral sin superposición; al reducir ancho, colapsar panel lateral/navegación en flujo vertical y mantener controles utilizables sin desplazamiento horizontal de página.
+- Foco de teclado siempre visible en controles interactivos; orden de tabulación sigue el orden visual y semántico.
+- Texto y controles cumplen contraste WCAG AA (4.5:1 texto normal, 3:1 texto grande y componentes gráficos), usando los tokens Terra existentes/de referencia. Verificar combinaciones reales en pruebas visuales/accesibilidad; no inventar una paleta.
+
+### Backend / contratos dependientes
+
+No se inventan endpoints. `frontend/src/api.ts` no tiene método para obtener el resumen. El endpoint actual de ingesta devuelve `recording_id` y `state`; no confirma `meeting_id`. Cada brecha requiere una tarea dependiente de definición y aprobación del contrato API antes de implementar la interfaz correspondiente. La vista no puede afirmar que accede a resumen ni abrir un meeting resultante de carga hasta resolver el contrato. Las capacidades excluidas (rename/delete/download, metadata/tags, rename speaker y filtros de biblioteca) requieren contrato API y modelo/persistencia diseñados y aprobados en fase posterior.
 
 ### Extensión y correlación de resultado
 
-- `extension/src/background.ts`: stop explícito y `chrome.tabs.onRemoved` de la pestaña capturada disparan finalización; el handler escucha resultado de `recording-stopped`, encola job persistente y procesa cola.
-- `extension/src/upload-queue.ts`: mantener job/reintentos con misma idempotency key. Extender el resultado persistido para incluir `meeting_id` solo después de parsear respuesta de éxito de ingesta. Reintentos tras auth fallida deben preservar datos; acción de reintento vuelve a solicitar autenticación existente y no descarta el job.
-- Apertura: solo luego de respuesta exitosa validada con meeting ID; componer URL desde origen de portal configurado, codificar ID como segmento y abrir/activar pestaña. No incluir token, audio ni transcripción en URL o mensajes.
-- Señales de error: informar al usuario mediante mecanismo existente de extensión y permitir reintento; nunca limpiar IndexedDB ni marcar job `done` hasta respuesta autenticada aceptada y meeting ID guardado. Si resultado exitoso no contiene ID válido, mantener job recuperable, informar error y no navegar.
-- Stop manual: seguir el mismo camino de `stop-recording` → evento de grabación completa → upload. Cierre de tab detectado con `chrome.tabs.onRemoved` para la pestaña propietaria y estado de captura. El stop no equivale a subida completada.
+- `extension/src/background.ts`: hoy `chrome.tabs.onRemoved` detiene la captura en la pestaña propietaria; el mensaje `meet-ended` llama al reset de estado, no abre el portal. La tarea dependiente de extensión debe conectar la detención y cierre de pestaña a la experiencia portal; tratar el evento `meet-ended` como reset existente, no como apertura ya implementada.
+- La correlación durable, semántica de reintento y navegación tras ingesta dependen de contratos/tareas aprobados. No asumir preservación de job/blob o clave idempotente ante fallo o cierre.
+- Contrato pendiente: no hay `meeting_id` confirmado en respuesta de ingesta; sin él no se construye una ruta de reunión. La API tampoco ofrece método de resumen actualmente.
+- El cierre de pestaña es disparador definido por producto, pero la extensión debe efectuar la transición y apertura; la implementación actual no completa ese recorrido.
 
 ### Colocación y pruebas
 
 | Superficie | Carpetas / archivos | Pruebas | Migración / Compose / shared-types |
 |---|---|---|---|
-| Web | Modificar `frontend/src/App.tsx`, `frontend/src/api.ts`, `frontend/src/components/` y CSS global existente | Tests de componentes y API en las ubicaciones ya usadas bajo `frontend/src/`; estados, rutas y retry | Sin migración, Compose ni `packages/shared-types` salvo que contrato compartido aprobado lo exija |
-| Backend | Sin cambios previstos en `backend/app/` | Reutilizar tests existentes de API como evidencia contractual; brechas se elevan antes de codificar | Ninguna en esta fase |
-| Extensión | `extension/src/background.ts`, `extension/src/upload-queue.ts` y módulos existentes solo si requieren correlación durable | Tests unitarios colocados junto al módulo y E2E en `extension/tests/e2e/` para fin, respuesta ID, retry y navegación | Sin migración ni Compose; contratos HTTP, no import de fuentes cruzadas/shared-types |
+| Web | Modificar `frontend/src/App.tsx`, `frontend/src/api.ts`, `frontend/src/components/` y CSS global existente | Tests de componentes y API en ubicaciones existentes bajo `frontend/src/`; estados, rutas y retry | Sin migración, Compose ni `packages/shared-types` salvo contrato aprobado |
+| Backend/API | Tareas dependientes para acordar resumen y correlación de resultado de ingesta; no se prescriben rutas ni payloads | Tests contractuales tras aprobar el contrato, en `backend/tests/` del módulo dueño | Migración/Compose/shared-types solo si el contrato aprobado lo requiere; no asumidos |
+| Extensión | Tarea dependiente en `extension/src/background.ts` para conectar disparadores a apertura; sin garantías sobre job/blob | Tests colocados junto al módulo y E2E en `extension/tests/e2e/` para señales y navegación, cuando contrato esté listo | Sin migración ni Compose salvo necesidad aprobada; no importar fuentes cruzadas/shared-types |
 
 ## Modelos de Datos
 
-- **Trabajo de carga existente**: `sessionId`, `idempotencyKey` (misma identidad para retries), datos del blob en IndexedDB y estado de cola. Añadir `meetingId?: string` al resultado durable del trabajo; solo se establece tras respuesta satisfactoria parseada.
-- **URL de destino**: configuración existente del origen del portal + `meetingId`; nunca credenciales, contenido audiovisual o transcripción.
-- En web, reutilizar tipos actuales de meeting/turn/transcript; no declarar estructuras para capacidades excluidas.
+- **Resultado de ingesta actual**: `recording_id` y `state`; no contiene `meeting_id` confirmado. La correlación con reunión requiere contrato dependiente aprobado.
+- **Reintento manual**: el archivo seleccionado permanece disponible en el flujo de UI para la acción «Reintentar» según `PRODUCT_BASELINE.md` §4.D.5; no se especifican garantías de almacenamiento o continuidad fuera de ese flujo.
+- En web, reutilizar tipos actuales cuando correspondan; no declarar contratos de resumen ni estructuras para capacidades excluidas.
 
 ## Propiedades de Correctitud
 
@@ -118,9 +123,9 @@ Esta fase consume endpoints existentes de login, listado/detalle de reuniones, l
 3. **Revisión sincronizada:** video/media antecede a turnos; cada turno presenta timestamp, etiqueta coloreada y texto; durante playback el turno correspondiente se resalta y la lista lo desplaza a vista; seleccionar un pasaje busca su tiempo enlazado e inicia playback. El reproductor expone seek, velocidad, calidad/resolución, pausa, volumen y mute. El panel empieza con Chat y Notes/Summary; Chat no interactúa en Fase 1. Notes, resumen y transcripción permanecen separados; copiar/descargar exporta únicamente resumen con tema principal y argumentos/puntos clave.
 4. **Elegibilidad y rechazo:** seleccionar un archivo habilita acción sin límites locales nuevos; rechazo backend se presenta claramente y conserva archivo.
 5. **Progreso honesto:** progreso mostrado deriva bytes reportados; no se informa procesamiento completado por fin de transferencia.
-6. **Disparadores de apertura:** detener captura y fin de sesión de Google Meet convergen a una sola finalización idempotente; la señal de cierre de pestaña por sí sola no se presenta como prueba de fin de sesión.
-7. **Apertura tras confirmación:** solo una respuesta de ingesta exitosa con `meeting_id` validado habilita abrir la reunión correspondiente; ningún ID local sustituye al ID del servidor.
-8. **Recuperación:** fallo de subida o autenticación conserva blob/job y clave idempotente; no limpiar grabación ni marcar completado. Si abrir pestaña falla después de éxito, conservar `meeting_id` y reintentar navegación sin volver a subir.
+6. **Disparadores de apertura:** detener grabación y cierre de pestaña Meet/Teams están definidos como disparadores de producto; la apertura requiere la tarea dependiente de extensión, pues `meet-ended` hoy reinicia estado y no abre el portal.
+7. **Contratos de navegación:** la ingesta actual solo devuelve `recording_id` y `state`; no se navega a meeting sin contrato aprobado que confirme su ID. `api.ts` carece de método de resumen; su uso también espera contrato.
+8. **Reintento acotado:** mostrar «Reintentar» y «Copiar diagnóstico» y mantener el archivo seleccionado disponible; no afirmar garantías de blob/job/idempotencia en servidor o tras interrupciones.
 9. **Privacidad:** URL/mensajes de navegación no incluyen tokens, audio ni texto de transcripción.
 
 ## Manejo de Errores
@@ -130,16 +135,16 @@ Esta fase consume endpoints existentes de login, listado/detalle de reuniones, l
 | Login/API 401 en portal | Reutilizar `sauri:unauthorized` y volver al login; no exponer detalles sensibles. |
 | Biblioteca vacía/error | Mostrar vacío solo con respuesta vacía real; ante error mostrar aviso y reintento, no datos ficticios. |
 | Archivo rechazado por backend | Mostrar mensaje claro devuelto; conservar selección y no imponer validación local extra. |
-| Transferencia interrumpida / red | Mantener blob y job; mensaje de error y reintento con la misma clave. |
-| Autenticación de extensión ausente/expirada | Notificar que hace falta autenticarse y ofrecer reintento tras resolver auth; conservar audio localmente. |
-| Éxito HTTP sin `meeting_id` válido | Tratar como resultado incompleto, no navegar ni borrar blob; conservar job para recuperación y mostrar aviso. |
-| Error al crear/activar pestaña de portal | Mantener `meeting_id` confirmado y ofrecer/ejecutar nuevo intento de apertura; no repetir upload. |
-| Fallo leyendo blob o cola | Informar que la grabación sigue pendiente si puede comprobarse; nunca declarar subida exitosa. |
+| Rechazo de ingesta | Mostrar el mensaje de backend; no agregar límite local de elegibilidad. |
+| Fallo de carga | Explicar en lenguaje claro, ofrecer «Reintentar» y «Copiar diagnóstico», dejar disponible el archivo seleccionado conforme a `PRODUCT_BASELINE.md` §4.D.5; no afirmar recuperación de servidor. |
+| Ingesta exitosa sin reunión confirmada | No inventar `meeting_id` ni construir ruta; señalar brecha de contrato como dependencia. |
+| Resumen solicitado sin método API | Registrar dependencia de contrato para resumen; no simular contenido ni inventar endpoint. |
+| Cierre de pestaña / `meet-ended` | `tabs.onRemoved` actual detiene captura; `meet-ended` reinicia estado pero no abre portal. Requiere tarea de extensión para cumplir el disparador de producto. |
 
 ## Estrategia de Testing
 
 **Frontend:** usar comandos y runner establecidos en `frontend/package.json`; probar login sin cambio de contrato, biblioteca con datos reales sintéticos, apertura de meeting, estados de carga y rechazo/error con archivo retenido. Probar que no aparecen acciones fuera de alcance.
 
-**Extensión:** probar stop normal y cierre de la pestaña propietaria durante captura; evento de fin encola una sola operación; errores de red/auth mantienen blob, job y clave; respuesta con ID produce navegación correcta; éxito sin ID o fallo al abrir pestaña no descarta grabación ni repite innecesariamente el upload. Usar fixtures sintéticos y APIs Chrome controladas en tests.
+**Extensión (tarea dependiente):** probar stop y cierre de pestaña Meet/Teams como disparadores de apertura implementados, junto con contrato de correlación de meeting cuando aprobado. No asumir que `meet-ended` hoy abre portal ni exigir garantías de retención/reintento no definidas por baseline. Usar fixtures sintéticos y APIs Chrome controladas en tests.
 
 **Comandos configurados:** `npm run test`, `npm run typecheck`, `npm run build` desde `frontend/`; `npm run test`, `npm run typecheck`, `npm run build` y `npm run test:e2e` desde `extension/` para cambios de captura. Backend sin cambios previstos; no ejecutar validaciones de implementación en esta fase.
