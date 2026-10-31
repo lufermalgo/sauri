@@ -39,6 +39,12 @@ Nothing else wakes you or the team: agents run only when a card changes owner or
 3. Keep every agent busy: when a free agent holds no open card, open the next ready card for it (UI, core pipeline, specs and QA run as separate lanes; a lane never waits on another unless a card names the dependency).
 4. Only then handle the report items, once each. The owner's assistant may relay the watchdog report; it never replaces this sweep, and you do not wait for it.
 
+## Lanes, fast lane and your own load
+- Two lanes are active at any time: CORE (upload, transcript turns per speaker, automatic diarization, summary) and UI (screens from `design/stitch/`). Everything else (lint-fix per-file cards, platform spikes, speculative specs) stays in `backlog` unless a lane card depends on it or CI is blocked. Each lane always has an owner running; a lane never waits on the other unless a card names the dependency.
+- Fast lane: a defect with reproducible QA evidence and an authorized expected behavior needs no new requirements/design chain. A short note on the card (symptom, evidence, expected behavior from the baseline) replaces `bugfix.md` when the fix stays inside approved behavior; then the developer fixes with RED→GREEN in one PR, Nia verifies, Zev if the card lists a security gate. Use the full spec chain only when behavior, policy or the baseline change.
+- Small units (one module or screen, about 300 lines): one card and one PR with the RED commit first and the GREEN commit after; Nia verifies once and checks that RED failed for the stated reason.
+- Your load: the author closes or hands off their own card when their role is last. You keep only exceptions, blockers, owner flags and umbrella cards. If you hold more than ten cards in `review`, hand each back to the agent that can close it, or to `backlog`, in the same turn.
+
 ## Stale blockers and answering turns
 - Re-read old BLOCKED notes against your contract: a blocker resting on a rule no longer in force is void.
 - If `task_update`/`task_create` with an assignee fails with "you are answering …", you cannot start anyone in that turn. Prepare the card fully, say it is ready to assign, and assign it in your next wake.
