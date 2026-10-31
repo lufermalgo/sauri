@@ -145,6 +145,40 @@ describe("MeetingPlaybackView", () => {
     expect(screen.getByText("Synthetic grouped turn A1")).toBeVisible();
   });
 
+  it("keeps the active passage visible and highlighted while the long passage list is collapsed", async () => {
+    const play = vi.fn().mockResolvedValue(undefined);
+    HTMLMediaElement.prototype.play = play;
+    const longPassages: TimedPassage[] = Array.from({ length: 320 }, (_, index) => ({
+      id: `synthetic-passage-${index + 1}`,
+      text: `Synthetic passage ${index + 1}`,
+      startMs: index * 1000,
+      endMs: (index + 1) * 1000,
+      sequence: index + 1,
+      speakerLabel: `Speaker ${index % 2 === 0 ? "A" : "B"}`,
+    }));
+    renderView({ passages: longPassages });
+
+    const audio = mediaElement();
+    Object.defineProperty(audio, "duration", { configurable: true, value: 320 });
+    fireEvent.loadedMetadata(audio);
+    const summary = screen.getByText("Playback passages (320)");
+    fireEvent.click(summary);
+    fireEvent.click(screen.getByRole("button", { name: "Play Synthetic passage 18" }));
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    setMediaTime(audio, 17.5);
+    fireEvent.click(summary);
+
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    const activePassage = screen.queryByTestId("active-playback-passage");
+    expect(activePassage).not.toBeNull();
+    expect(activePassage).toBeVisible();
+    expect(activePassage).toHaveTextContent("Speaker B · 0:17 · Synthetic passage 18");
+    expect(activePassage).toHaveStyle({ backgroundColor: "#fef3c7" });
+
+    setMediaTime(audio, 18.5);
+    expect(activePassage).toHaveTextContent("Speaker A · 0:18 · Synthetic passage 19");
+  });
+
   it("renders a colored speaker label on every playback transcript passage", () => {
     renderView({
       passages: passages.map((passage, index) => ({

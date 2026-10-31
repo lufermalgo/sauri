@@ -197,6 +197,10 @@ export function MeetingPlaybackView({
   const activeError = error ?? playbackError;
   const hasPlayableMedia = isMuxed || needsAudio;
   const durationMs = state.durationMs;
+  const activePassage = passages.find((passage) => passage.id === state.activePassageId);
+  const activePassagePreview = activePassage
+    ? `${activePassage.speakerLabel ?? "Speaker N"} · ${formatTime(isPlayablePassage(activePassage) ? activePassage.startMs : state.currentTimeMs)} · ${activePassage.text}`
+    : null;
 
   return (
     <section aria-label="Meeting playback">
@@ -313,7 +317,28 @@ export function MeetingPlaybackView({
         <p>No transcript or empty transcript.</p>
       ) : (
         <details>
-          <summary>Playback passages ({passages.length})</summary>
+          <summary>
+            Playback passages ({passages.length})
+            {activePassage && activePassagePreview && (
+              <span
+                aria-current="true"
+                data-testid="active-playback-passage"
+                title={`Current passage: ${activePassagePreview}`}
+                style={{
+                  ...ACTIVE_PASSAGE_STYLE,
+                  display: "block",
+                  marginTop: "0.25rem",
+                  maxWidth: "min(100%, 48rem)",
+                  overflow: "hidden",
+                  padding: "0.25rem",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {activePassagePreview}
+              </span>
+            )}
+          </summary>
           <ol aria-label="Transcript passages">
             {passages.map((passage) => {
               const playable = isPlayablePassage(passage);
