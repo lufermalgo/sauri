@@ -170,7 +170,7 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
-    expect(await screen.findByText("Identificando hablantes")).toBeVisible();
+    expect(await screen.findByText("Identificando hablantes")).toBeVisible(); // spanish-sample-data
   });
 
   it("renders a speaker label on every transcript row, including unresolved rows", async () => {

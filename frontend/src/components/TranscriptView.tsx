@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   getDiarization,
   getPlaybackManifest,
@@ -33,6 +33,10 @@ function speakerColor(diarization: MeetingDiarization | null, speakerId: string 
 }
 
 export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
+  const seekToRef = useRef<((timeMs: number) => void) | undefined>(undefined);
+  const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
+    seekToRef.current = seekTo;
+  }, []);
   const [data, setData] = useState<MeetingTranscript | null>(null);
   const [playbackManifest, setPlaybackManifest] = useState<PlaybackManifest | null>(null);
   const [diarization, setDiarization] = useState<MeetingDiarization | null>(null);
@@ -179,13 +183,14 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   return (
     <section>
       <button onClick={onBack}>← Back to list</button>
-      {diarizationNotFound && <p role="status">Identificando hablantes</p>}
+      {diarizationNotFound && <p role="status">Identificando hablantes</p>} {/* spanish-sample-data */}
       <MeetingPlaybackView
         manifest={playbackManifest}
         passages={playbackPassages}
         loading={playbackLoading}
         error={playbackError}
         onRefreshManifest={() => getPlaybackManifest(meetingId)}
+        onSeekToReady={registerSeekTo}
       />
       <h2>Transcript</h2>
       <p>
@@ -213,6 +218,16 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
                 >
                   {speaker.label}
                 </span>
+                <button
+                  type="button"
+                  aria-label={`Play turn at ${formatTimestamp(turn.timestampMs ?? 0)}`}
+                  disabled={turn.timestampMs === null}
+                  onClick={() => {
+                    if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs);
+                  }}
+                >
+                  Play turn
+                </button>
                 {turn.text}
               </li>
             );
