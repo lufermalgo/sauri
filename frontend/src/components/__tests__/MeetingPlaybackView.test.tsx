@@ -110,6 +110,41 @@ describe("MeetingPlaybackView", () => {
     expect(audio.currentTime).toBe(5);
   });
 
+  it("keeps grouped transcript turns discoverable with 320 playback passages while preserving the raw passage list", () => {
+    const longPassages: TimedPassage[] = Array.from({ length: 320 }, (_, index) => ({
+      id: `synthetic-passage-${index + 1}`,
+      text: `Synthetic passage ${index + 1}`,
+      startMs: index * 1000,
+      endMs: (index + 1) * 1000,
+      sequence: index + 1,
+      speakerLabel: `Speaker ${index % 2 === 0 ? "A" : "B"}`,
+    }));
+    render(
+      <>
+        <MeetingPlaybackView manifest={manifest()} passages={longPassages} loading={false} error={null} />
+        <section aria-label="Grouped transcript">
+          <ol>
+            <li>Synthetic grouped turn A1</li>
+            <li>Synthetic grouped turn B</li>
+            <li>Synthetic grouped turn A2</li>
+          </ol>
+        </section>
+      </>,
+    );
+
+    expect(screen.getByText("Synthetic grouped turn A1")).toBeVisible();
+    expect(screen.getByText("Synthetic grouped turn B")).toBeVisible();
+    expect(screen.getByText("Synthetic grouped turn A2")).toBeVisible();
+    const disclosure = screen.getByText("Playback passages (320)").closest("details");
+    expect(disclosure).not.toHaveAttribute("open");
+
+    fireEvent.click(screen.getByText("Playback passages (320)"));
+    expect(disclosure).toHaveAttribute("open");
+    const passageList = screen.getByRole("list", { name: "Transcript passages" });
+    expect(passageList.querySelectorAll("[data-passage-id]")).toHaveLength(320);
+    expect(screen.getByText("Synthetic grouped turn A1")).toBeVisible();
+  });
+
   it("renders a colored speaker label on every playback transcript passage", () => {
     renderView({
       passages: passages.map((passage, index) => ({
