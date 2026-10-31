@@ -1,4 +1,10 @@
-import type { Meeting, Transcript, SpeechTurn } from "@sauri/shared-types";
+import type {
+  Meeting,
+  MeetingListApiResponse,
+  MeetingListItem,
+  Transcript,
+  SpeechTurn,
+} from "@sauri/shared-types";
 
 export interface PlaybackSource {
   source_id: string;
@@ -52,6 +58,11 @@ export type MeetingTranscript = Transcript & {
   turns: SpeechTurn[];
 };
 
+export interface MeetingDiarization {
+  speakers: Array<{ id: string; label: string; sequence: number }>;
+  assignments: Array<{ turn_id: string; speaker_id: string }>;
+}
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const TOKEN_KEY = "sauri_token";
 
@@ -67,10 +78,66 @@ function getAuthHeaders(): HeadersInit {
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
+  if (response.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    window.dispatchEvent(new Event("sauri:unauthorized"));
+  }
   if (!response.ok) {
     throw new Error(`Error ${response.status}`);
   }
   return response.json() as Promise<T>;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+export async function login(
+  email: string,
+  password: string
+): Promise<LoginResponse> {
+  const response = await fetch(`${BASE_URL}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  return handleResponse<LoginResponse>(response);
+}
+
+export interface RecordingUploadData {
+  duration_seconds: number;
+  meeting_id: string;
+  idempotency_key: string;
+  capture_origin: "web_upload";
+  video_presence: "absent" | "muxed";
+}
+
+export interface RecordingUploadResult {
+  recording_id: string;
+  state: string;
+}
+
+export async function uploadRecording(
+  audio: File,
+  data: RecordingUploadData
+): Promise<RecordingUploadResult> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) {
+    throw new Error("Not authenticated: token not found");
+  }
+
+  const formData = new FormData();
+  formData.append("audio", audio);
+  formData.append("data", JSON.stringify(data));
+
+  const response = await fetch(`${BASE_URL}/api/v1/ingestion/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  return handleResponse<RecordingUploadResult>(response);
 }
 
 export async function registerMeeting(meetLink: string): Promise<Meeting> {
@@ -82,12 +149,21 @@ export async function registerMeeting(meetLink: string): Promise<Meeting> {
   return handleResponse<Meeting>(response);
 }
 
-export async function listMeetings(): Promise<Meeting[]> {
+export async function listMeetings(): Promise<MeetingListItem[]> {
   const response = await fetch(`${BASE_URL}/api/v1/meetings`, {
     method: "GET",
     headers: getAuthHeaders(),
   });
-  return handleResponse<Meeting[]>(response);
+  const meetings = await handleResponse<MeetingListApiResponse[]>(response);
+  return meetings.map((meeting) => ({
+    id: meeting.meeting_id,
+    meetLink: meeting.meet_link,
+    origin: meeting.origin,
+    processState: meeting.process_state,
+    failureCause: meeting.failure_cause,
+    createdAt: meeting.created_at,
+    title: meeting.title,
+  }));
 }
 
 export async function getPlaybackManifest(
@@ -151,6 +227,14 @@ export async function getTranscript(meetingId: string): Promise<MeetingTranscrip
     segments,
     turns,
   };
+}
+
+export async function getDiarization(meetingId: string): Promise<MeetingDiarization> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/diarization`,
+    { method: "GET", headers: getAuthHeaders() }
+  );
+  return handleResponse<MeetingDiarization>(response);
 }
 
 export interface SpeakerReviewItem {

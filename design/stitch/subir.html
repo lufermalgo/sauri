@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Subir una grabación - Sauri</title>
+  <!-- Google Fonts: Nunito Sans & Newsreader / Playfair for Terra editorial feel -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,300..900;1,6..12,300..900&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Nunito Sans"', 'sans-serif'],
+            serif: ['"Playfair Display"', 'Georgia', 'serif'],
+          },
+          colors: {
+            terra: {
+              50: '#fbf9f6',
+              100: '#f5f0e8',
+              200: '#ece3d6',
+              300: '#ded0bc',
+              400: '#c5b095',
+              primary: '#4a7c59',
+              'primary-dark': '#3b6548',
+              'primary-light': '#639873',
+              'primary-tint': '#eff5f0',
+              accent: '#d97736',
+              dark: '#1c221e',
+              muted: '#636c65',
+              border: '#e4ddd3',
+              card: '#ffffff'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #faf7f2;
+      color: #1c221e;
+      font-family: 'Nunito Sans', sans-serif;
+    }
+    .font-editorial {
+      font-family: 'Playfair Display', Georgia, serif;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[#faf7f2] text-terra-dark flex flex-col antialiased">
+
+  <!-- ================= TOP NAVIGATION BAR (UNIFIED TERRA SAURI) ================= -->
+  <header class="bg-[#fcfbf9] border-b border-[#e7e1d6] sticky top-0 z-50 px-6 py-3">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      
+      <!-- Brand & Global Nav Links -->
+      <div class="flex items-center gap-8">
+        <!-- Logo & Isotipo -->
+        <a href="#" class="flex items-center gap-2.5 group">
+          <div class="w-9 h-9 rounded-full bg-[#4a7c59] flex items-center justify-center text-white shadow-sm transition group-hover:scale-105">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2a1 1 0 0 1 1 1v18a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm5 4a1 1 0 0 1 1 1v10a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1zM7 6a1 1 0 0 1 1 1v10a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1zm15 4a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1zM2 10a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1z"/>
+            </svg>
+          </div>
+          <span class="text-2xl font-bold font-serif tracking-tight text-[#1c221e]">Sauri</span>
+        </a>
+
+        <!-- Main Navigation Links -->
+        <nav class="hidden md:flex items-center gap-1.5 text-sm font-medium">
+          <a href="#" class="px-3.5 py-1.5 rounded-full text-[#4a554d] hover:text-[#1c221e] hover:bg-[#ede7dc] transition">
+            Biblioteca de grabaciones
+          </a>
+          <a href="#" class="px-3.5 py-1.5 rounded-full text-[#4a554d] hover:text-[#1c221e] hover:bg-[#ede7dc] transition">
+            Revisión de hablantes
+          </a>
+          <a href="#" class="px-3.5 py-1.5 rounded-full text-[#4a554d] hover:text-[#1c221e] hover:bg-[#ede7dc] transition">
+            Plantillas de resumen
+          </a>
+        </nav>
+      </div>
+
+      <!-- Right Utility Bar -->
+      <div class="flex items-center gap-3">
+        <!-- Search Field -->
+        <div class="relative hidden sm:block w-48 lg:w-64">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#7d867f]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+            </svg>
+          </div>
+          <input type="text" placeholder="Buscar grabaciones..." 
+                 class="w-full pl-9 pr-8 py-1.5 text-xs bg-[#f4eee4] border border-[#e2d9cc] rounded-full text-[#1c221e] placeholder-[#858e87] focus:outline-none focus:border-[#4a7c59] focus:bg-white transition">
+          <span class="absolute inset-y-0 right-0 pr-2.5 flex items-center text-[10px] text-[#858e87] font-semibold">⌘K</span>
+        </div>
+
+        <!-- Sync status pill -->
+        <div class="flex items-center gap-1.5 px-3 py-1 bg-[#edf5ef] border border-[#d2e3d6] rounded-full text-xs font-medium text-[#3b6b49]">
+          <span class="w-2 h-2 rounded-full bg-[#4a7c59] animate-pulse"></span>
+          <span>Sincronizado</span>
+        </div>
+
+        <!-- User profile menu (Fer - Summan) with Dropdown -->
+        <div class="relative group">
+          <button class="flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-full hover:bg-[#ede7dc] transition border border-transparent hover:border-[#ded6c7]">
+            <div class="w-7 h-7 rounded-full bg-[#3b6548] text-white flex items-center justify-center font-bold text-xs">
+              F
+            </div>
+            <div class="text-left hidden lg:block leading-tight">
+              <div class="text-xs font-semibold text-[#1c221e]">Fer (Summan)</div>
+            </div>
+            <svg class="w-3.5 h-3.5 text-[#636c65]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+
+          <!-- Dropdown menu -->
+          <div class="absolute right-0 mt-1 w-52 bg-white rounded-xl shadow-lg border border-[#e4ddd3] py-1.5 z-50 hidden group-hover:block hover:block">
+            <div class="px-4 py-2 border-b border-[#f0ebe1]">
+              <p class="text-xs font-bold text-[#1c221e]">Fer</p>
+              <p class="text-[11px] text-[#717b73]">fer@summan.com</p>
+            </div>
+            <a href="#" class="flex items-center gap-2.5 px-4 py-2 text-xs text-[#2c332e] hover:bg-[#faf7f2] hover:text-[#4a7c59] transition">
+              <svg class="w-4 h-4 text-[#636c65]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+              </svg>
+              Diagnóstico
+            </a>
+            <div class="border-t border-[#f0ebe1] my-1"></div>
+            <a href="#" class="flex items-center gap-2.5 px-4 py-2 text-xs text-[#b83a30] hover:bg-[#fdf2f1] transition">
+              <svg class="w-4 h-4 text-[#b83a30]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+              </svg>
+              Cerrar sesión
+            </a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTENT AREA ================= -->
+  <main class="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
+    
+    <!-- 1. Breadcrumbs & Editorial Page Header -->
+    <div class="mb-8">
+      <nav class="flex items-center gap-2 text-xs text-[#636c65] mb-2 font-medium">
+        <a href="#" class="hover:text-[#1c221e] hover:underline transition">Biblioteca de grabaciones</a>
+        <span class="text-[#a4aca6]">/</span>
+        <span class="text-[#4a7c59] font-semibold">Subir grabación</span>
+      </nav>
+
+      <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h1 class="text-3xl md:text-4xl font-bold font-serif text-[#1c221e] tracking-tight">
+            Subir una grabación
+          </h1>
+          <p class="text-sm md:text-base text-[#565f57] mt-1.5 max-w-3xl">
+            Sube un video o audio de una reunión. Sauri lo transcribe, identifica a los hablantes y genera el resumen.
+          </p>
+        </div>
+        
+        <!-- Subtle explanatory badge -->
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#f2ecdf] border border-[#e0d6c4] text-xs text-[#4e5650] self-start md:self-auto">
+          <svg class="w-4 h-4 text-[#4a7c59]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Procesamiento seguro y privado
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Grid: Top Row (Upload Box & Data Form) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-7 items-start mb-10">
+      
+      <!-- LEFT COLUMN: 2. Zona grande para soltar archivos & 3. Estado con archivo elegido -->
+      <div class="lg:col-span-7 flex flex-col gap-6">
+
+        <!-- 2. Zona grande para soltar archivos (Borde punteado) -->
+        <section class="bg-white rounded-2xl border-2 border-dashed border-[#c9beae] hover:border-[#4a7c59] p-8 md:p-10 text-center transition-all bg-[#faf8f5]/60 hover:bg-white group shadow-sm">
+          <div class="max-w-md mx-auto flex flex-col items-center">
+            
+            <!-- Icono de nube -->
+            <div class="w-16 h-16 rounded-full bg-[#edf5ef] text-[#4a7c59] flex items-center justify-center mb-4 transition-transform group-hover:scale-110 group-hover:bg-[#4a7c59] group-hover:text-white duration-200">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+              </svg>
+            </div>
+
+            <h3 class="text-base md:text-lg font-bold text-[#1c221e] mb-1">
+              Arrastra aquí tu archivo o elígelo desde tu equipo
+            </h3>
+            <p class="text-xs text-[#6e7770] mb-5">
+              Suelta cualquier grabación de audio o video directamente en esta área.
+            </p>
+
+            <!-- Botón "Elegir archivo" -->
+            <label class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[#4a7c59] text-white text-xs font-semibold hover:bg-[#3b6548] active:scale-95 transition cursor-pointer shadow-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              <span>Elegir archivo</span>
+              <input type="file" class="hidden" accept=".webm,.mp4,.mov,.mkv,.wav,.mp3,.m4a">
+            </label>
+
+            <!-- Formatos y tamaño máximo -->
+            <div class="mt-6 pt-5 border-t border-[#ede7dc] w-full text-[11px] text-[#78827a] leading-relaxed">
+              <span class="font-medium text-[#444c46]">Formatos:</span> WebM, MP4, MOV, MKV, WAV, MP3, M4A.<br>
+              <span class="font-medium text-[#444c46]">Tamaño máximo:</span> 4 GB.
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 3. Estado con archivo elegido (Tarjeta de selección) -->
+        <section class="bg-white rounded-2xl border border-[#ded6c7] p-5 md:p-6 shadow-sm">
+          <div class="flex items-center justify-between border-b border-[#f0ebd9] pb-3 mb-4">
+            <span class="text-xs font-bold uppercase tracking-wider text-[#4a7c59] flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-[#4a7c59]"></span>
+              Archivo seleccionado para procesar
+            </span>
+            <span class="text-[11px] bg-[#eef5f0] text-[#3b6548] px-2.5 py-0.5 rounded-full font-medium">
+              Listo para iniciar
+            </span>
+          </div>
+
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            
+            <!-- Archivo info con icono de video -->
+            <div class="flex items-start sm:items-center gap-3.5">
+              <div class="w-12 h-12 rounded-xl bg-[#eef4f0] border border-[#d7e5db] text-[#4a7c59] flex items-center justify-center shrink-0">
+                <!-- Icono de video -->
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+              </div>
+
+              <div>
+                <h4 class="text-sm font-bold text-[#1c221e] break-all">
+                  Reunion_Estrategica_Bancolombia_Q4.mp4
+                </h4>
+                <div class="flex flex-wrap items-center gap-2 text-xs text-[#6e7770] mt-0.5">
+                  <span class="font-medium text-[#3b423d]">142.8 MB</span>
+                  <span class="text-[#b5bcb6]">•</span>
+                  <span>Duración detectada: <strong class="text-[#3b423d] font-semibold">54 min 12 s</strong></span>
+                  <span class="text-[#b5bcb6]">•</span>
+                  <span>Video 1080p</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Acciones: Quitar y Botón primario verde "Subir y procesar" -->
+            <div class="flex items-center gap-2.5 self-end sm:self-auto shrink-0">
+              <button type="button" class="px-3.5 py-2 text-xs font-semibold text-[#8b4138] hover:bg-[#fcf0ef] rounded-lg transition border border-transparent hover:border-[#eed4d1]">
+                Quitar
+              </button>
+              
+              <button type="button" class="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#4a7c59] hover:bg-[#3b6548] text-white text-xs font-bold transition shadow-sm hover:shadow active:scale-95">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <span>Subir y procesar</span>
+              </button>
+            </div>
+
+          </div>
+        </section>
+
+      </div>
+
+      <!-- RIGHT COLUMN: 4. Formulario opcional "Datos de la reunión" -->
+      <div class="lg:col-span-5">
+        <section class="bg-white rounded-2xl border border-[#ded6c7] p-6 shadow-sm">
+          
+          <div class="flex items-center justify-between mb-4 border-b border-[#f0ebd9] pb-3">
+            <div>
+              <h3 class="text-base font-bold text-[#1c221e]">
+                Datos de la reunión
+              </h3>
+              <p class="text-xs text-[#717b73]">Opcional: puedes editarlos ahora o más adelante.</p>
+            </div>
+            <span class="text-[11px] bg-[#f2eee6] text-[#555e57] px-2.5 py-0.5 rounded-full font-medium">
+              Opcional
+            </span>
+          </div>
+
+          <form class="space-y-4 text-xs">
+            
+            <!-- Título (por defecto nombre del archivo) -->
+            <div>
+              <label class="block font-semibold text-[#303832] mb-1">
+                Título de la reunión
+              </label>
+              <input type="text" 
+                     value="Reunion_Estrategica_Bancolombia_Q4" 
+                     class="w-full px-3.5 py-2 text-xs rounded-xl bg-[#faf7f2] border border-[#ded6c7] text-[#1c221e] focus:bg-white focus:outline-none focus:border-[#4a7c59] transition">
+              <span class="text-[10px] text-[#7d867f] mt-1 block">Por defecto toma el nombre del archivo cargado.</span>
+            </div>
+
+            <!-- Empresa & Proyecto en dos columnas -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block font-semibold text-[#303832] mb-1">
+                  Empresa
+                </label>
+                <input type="text" 
+                       placeholder="Ej. Bancolombia S.A." 
+                       value="Bancolombia"
+                       class="w-full px-3 py-2 text-xs rounded-xl bg-[#faf7f2] border border-[#ded6c7] text-[#1c221e] focus:bg-white focus:outline-none focus:border-[#4a7c59] transition">
+              </div>
+
+              <div>
+                <label class="block font-semibold text-[#303832] mb-1">
+                  Proyecto
+                </label>
+                <input type="text" 
+                       placeholder="Ej. Modernización Core" 
+                       value="Arquitectura Cloud 2025"
+                       class="w-full px-3 py-2 text-xs rounded-xl bg-[#faf7f2] border border-[#ded6c7] text-[#1c221e] focus:bg-white focus:outline-none focus:border-[#4a7c59] transition">
+              </div>
+            </div>
+
+            <!-- Participantes -->
+            <div>
+              <label class="block font-semibold text-[#303832] mb-1">
+                Participantes
+              </label>
+              <input type="text" 
+                     placeholder="Nombres o correos separados por comas..." 
+                     value="Carlos Mendieta, Andrea Pérez, Fer (Summan)"
+                     class="w-full px-3.5 py-2 text-xs rounded-xl bg-[#faf7f2] border border-[#ded6c7] text-[#1c221e] focus:bg-white focus:outline-none focus:border-[#4a7c59] transition">
+            </div>
+
+            <!-- Etiquetas con chips (#GenAI, #DigitalTwin, #Automatización) -->
+            <div>
+              <label class="block font-semibold text-[#303832] mb-1.5">
+                Etiquetas
+              </label>
+              <div class="flex flex-wrap gap-1.5 items-center">
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#edf5ef] border border-[#cfdfd2] text-[#3b6548] font-medium text-[11px]">
+                  #GenAI
+                  <button type="button" class="hover:text-[#1c221e] ml-0.5">×</button>
+                </span>
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#edf5ef] border border-[#cfdfd2] text-[#3b6548] font-medium text-[11px]">
+                  #DigitalTwin
+                  <button type="button" class="hover:text-[#1c221e] ml-0.5">×</button>
+                </span>
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#edf5ef] border border-[#cfdfd2] text-[#3b6548] font-medium text-[11px]">
+                  #Automatización
+                  <button type="button" class="hover:text-[#1c221e] ml-0.5">×</button>
+                </span>
+                <button type="button" class="px-2.5 py-1 rounded-full border border-dashed border-[#b6afa3] text-[#636c65] hover:text-[#1c221e] hover:border-[#4a7c59] text-[11px] transition">
+                  + Agregar etiqueta
+                </button>
+              </div>
+            </div>
+
+            <!-- Selector "Plantilla de resumen" con "Propuesta Comercial Estándar" predeterminada -->
+            <div>
+              <label class="block font-semibold text-[#303832] mb-1">
+                Plantilla de resumen
+              </label>
+              <div class="relative">
+                <select class="w-full px-3.5 py-2 text-xs rounded-xl bg-[#faf7f2] border border-[#ded6c7] text-[#1c221e] focus:bg-white focus:outline-none focus:border-[#4a7c59] appearance-none pr-8 transition">
+                  <option selected>Propuesta Comercial Estándar (Predeterminada)</option>
+                  <option>Revisión Técnica y Arquitectura</option>
+                  <option>Minuta Ejecutiva y Acuerdos Rápidos</option>
+                  <option>Seguimiento de Proyecto & Sprints</option>
+                </select>
+                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-[#636c65]">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                  </svg>
+                </div>
+              </div>
+              <span class="text-[10px] text-[#7d867f] mt-1 block">Define la estructura y secciones con las que se sintetizará la reunión.</span>
+            </div>
+
+          </form>
+
+        </section>
+      </div>
+
+    </div>
+
+    <!-- SECTION TITLE: ESTADOS Y VISTAS DE PROCESAMIENTO -->
+    <div class="border-t border-[#e2d8c9] pt-8 mb-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold font-serif text-[#1c221e]">
+            Estados del ciclo de procesamiento
+          </h2>
+          <p class="text-xs text-[#636c65] mt-0.5">
+            Cada fase y contingencia en tarjetas independientes dentro del mismo flujo de la plataforma.
+          </p>
+        </div>
+        <span class="text-[11px] font-semibold text-[#4a7c59] bg-[#eef5f0] px-3 py-1 rounded-full border border-[#d2e3d6]">
+          Simulación en vivo de estados
+        </span>
+      </div>
+    </div>
+
+    <!-- ROW OF CARDS: ESTADO SUBIENDO & LÍNEA DE PASOS -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      
+      <!-- 5. Estado subiendo: barra de progreso, MB subidos de total, botón Cancelar -->
+      <section class="bg-white rounded-2xl border border-[#ded6c7] p-6 shadow-sm flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#4a7c59] animate-ping"></span>
+              <h3 class="text-sm font-bold text-[#1c221e]">
+                5. Subiendo archivo al almacenamiento seguro
+              </h3>
+            </div>
+            <span class="text-xs font-extrabold text-[#4a7c59] bg-[#edf5ef] px-2.5 py-0.5 rounded-full">
+              68% completado
+            </span>
+          </div>
+
+          <div class="text-xs text-[#555d56] mb-4 flex items-center justify-between">
+            <span class="font-medium text-[#1c221e]">Reunion_Estrategica_Bancolombia_Q4.mp4</span>
+            <span class="text-[#78827a]">97.1 MB de 142.8 MB</span>
+          </div>
+
+          <!-- Barra de progreso -->
+          <div class="w-full bg-[#eee7dc] rounded-full h-3 mb-2 overflow-hidden p-0.5">
+            <div class="bg-[#4a7c59] h-full rounded-full transition-all duration-300 relative" style="width: 68%;">
+              <div class="absolute inset-0 bg-white/20 animate-pulse"></div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-[11px] text-[#717b73]">
+            <span>Velocidad de carga: ~4.2 MB/s</span>
+            <span>Tiempo restante: ~11 segundos</span>
+          </div>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-[#f0ebd9] flex items-center justify-between">
+          <span class="text-[11px] text-[#636c65]">Puedes mantener esta pestaña abierta mientras finaliza la carga.</span>
+          <!-- Botón "Cancelar subida" -->
+          <button type="button" class="px-4 py-1.5 rounded-xl border border-[#deb8b3] bg-[#fdf5f4] text-[#9c3930] hover:bg-[#fae8e6] text-xs font-semibold transition">
+            Cancelar subida
+          </button>
+        </div>
+      </section>
+
+      <!-- 6. Línea de pasos del procesamiento: Subida, Transcripción, Hablantes, Resumen -->
+      <section class="bg-white rounded-2xl border border-[#ded6c7] p-6 shadow-sm flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-bold text-[#1c221e]">
+              6. Línea de pasos del procesamiento
+            </h3>
+            <span class="text-[11px] text-[#555e57] bg-[#f2eee6] px-2.5 py-0.5 rounded-full font-medium">
+              Paso 3 de 4
+            </span>
+          </div>
+
+          <!-- Timeline Stepper -->
+          <div class="grid grid-cols-4 gap-2 pt-2">
+            
+            <!-- Paso 1: Subida (Listo) -->
+            <div class="flex flex-col items-center text-center">
+              <div class="w-8 h-8 rounded-full bg-[#4a7c59] text-white flex items-center justify-center font-bold text-xs mb-1.5 shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                </svg>
+              </div>
+              <span class="text-xs font-bold text-[#1c221e]">Subida</span>
+              <span class="text-[10px] text-[#4a7c59] font-semibold mt-0.5">Listo</span>
+            </div>
+
+            <!-- Paso 2: Transcripción (Listo) -->
+            <div class="flex flex-col items-center text-center">
+              <div class="w-8 h-8 rounded-full bg-[#4a7c59] text-white flex items-center justify-center font-bold text-xs mb-1.5 shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                </svg>
+              </div>
+              <span class="text-xs font-bold text-[#1c221e]">Transcripción</span>
+              <span class="text-[10px] text-[#4a7c59] font-semibold mt-0.5">Listo</span>
+            </div>
+
+            <!-- Paso 3: Hablantes (En curso) -->
+            <div class="flex flex-col items-center text-center">
+              <div class="w-8 h-8 rounded-full bg-[#fdf5ed] border-2 border-[#d97736] text-[#d97736] flex items-center justify-center font-bold text-xs mb-1.5 shadow-sm">
+                <span class="w-2.5 h-2.5 rounded-full bg-[#d97736] animate-pulse"></span>
+              </div>
+              <span class="text-xs font-bold text-[#1c221e]">Hablantes</span>
+              <span class="text-[10px] text-[#d97736] font-semibold mt-0.5">En curso</span>
+            </div>
+
+            <!-- Paso 4: Resumen (Pendiente) -->
+            <div class="flex flex-col items-center text-center">
+              <div class="w-8 h-8 rounded-full bg-[#f4eee4] border border-[#d6cdbf] text-[#868f88] flex items-center justify-center font-bold text-xs mb-1.5">
+                <span class="w-2 h-2 rounded-full bg-[#868f88]"></span>
+              </div>
+              <span class="text-xs font-medium text-[#7d867f]">Resumen</span>
+              <span class="text-[10px] text-[#8e9890] mt-0.5">Pendiente</span>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="mt-5 pt-3.5 border-t border-[#f0ebd9] text-[11px] text-[#5a625b] flex items-center gap-2">
+          <svg class="w-4 h-4 text-[#d97736] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span>Segmentando turnos vocales de los participantes de la llamada.</span>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ROW OF CARDS: ESTADO TERMINADO & ESTADO DE ERROR -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- 7. Estado terminado: mensaje "Tu reunión está lista" con botón primario "Abrir reunión" -->
+      <section class="bg-white rounded-2xl border border-[#c4dcce] bg-gradient-to-br from-white to-[#f5faf6] p-6 shadow-sm flex flex-col justify-between">
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-[#e3f0e6] text-[#2e5d3c]">
+              Procesamiento completado
+            </span>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-[#4a7c59] text-white flex items-center justify-center shrink-0 shadow-md">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold font-serif text-[#1c221e]">
+                Tu reunión está lista
+              </h3>
+              <p class="text-xs text-[#525b54] mt-1 leading-relaxed">
+                El audio y video han sido transcritos con precisión, los 4 hablantes fueron identificados y el resumen ejecutivo estructurado ya está disponible para consultar y descargar.
+              </p>
+            </div>
+          </div>
+
+          <!-- Quick summary pill overview -->
+          <div class="mt-4 p-3 bg-white rounded-xl border border-[#dde7e0] grid grid-cols-3 gap-2 text-center text-xs">
+            <div>
+              <div class="text-[10px] text-[#717b73]">Hablantes</div>
+              <div class="font-bold text-[#1c221e]">4 asignados</div>
+            </div>
+            <div class="border-x border-[#ede7dc]">
+              <div class="text-[10px] text-[#717b73]">Transcripción</div>
+              <div class="font-bold text-[#1c221e]">100% limpia</div>
+            </div>
+            <div>
+              <div class="text-[10px] text-[#717b73]">Minuta generada</div>
+              <div class="font-bold text-[#4a7c59]">Lista para ver</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-[#dce8e0] flex items-center justify-between">
+          <span class="text-xs text-[#525b54]">Reunion_Estrategica_Bancolombia_Q4.mp4</span>
+          <!-- Botón primario "Abrir reunión" -->
+          <button type="button" class="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-[#4a7c59] hover:bg-[#3b6548] text-white text-xs font-bold transition shadow-sm hover:shadow active:scale-95">
+            <span>Abrir reunión</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+            </svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- 8. Estado de error: lenguaje simple, nota "No se perdió tu archivo", botones "Reintentar" y "Copiar diagnóstico" -->
+      <section class="bg-white rounded-2xl border border-[#f0c8c4] bg-gradient-to-br from-white to-[#fff8f7] p-6 shadow-sm flex flex-col justify-between">
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-[#fde8e6] text-[#a13227]">
+              Incidencia de procesamiento
+            </span>
+          </div>
+
+          <div class="flex items-start gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-[#be3e32] text-white flex items-center justify-center shrink-0 shadow-md">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold font-serif text-[#1c221e]">
+                No pudimos completar el procesamiento
+              </h3>
+              <p class="text-xs text-[#5e6660] mt-1 leading-relaxed">
+                Hubo una interrupción de conectividad durante la separación de audio de la grabación.
+              </p>
+              
+              <!-- Nota destacada: No se perdió tu archivo -->
+              <div class="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#fbf0ee] border border-[#f5d4d0] text-xs font-semibold text-[#8b2d24]">
+                <svg class="w-4 h-4 text-[#8b2d24]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+                </svg>
+                <span>No se perdió tu archivo: está seguro y guardado en tu espacio.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-[#f3d9d6] flex flex-wrap items-center justify-between gap-3">
+          <span class="text-[11px] text-[#737c75]">Código: ERR_AUDIO_CONN_RESET (Paso: Transcripción)</span>
+
+          <!-- Botones "Copiar diagnóstico" y "Reintentar" -->
+          <div class="flex items-center gap-2">
+            <button type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#ded6c7] bg-white hover:bg-[#faf7f2] text-xs font-semibold text-[#444c46] transition">
+              <svg class="w-3.5 h-3.5 text-[#636c65]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+              <span>Copiar diagnóstico</span>
+            </button>
+
+            <button type="button" class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#be3e32] hover:bg-[#a63429] text-white text-xs font-bold transition shadow-sm active:scale-95">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              <span>Reintentar</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+  </main>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="mt-12 border-t border-[#e7e1d6] bg-[#f8f5ee] py-5 px-6 text-xs text-[#717b73]">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="font-bold font-serif text-[#1c221e]">Sauri</span>
+        <span>•</span>
+        <span>Espacio corporativo Summan</span>
+      </div>
+      <div class="flex items-center gap-6 text-[#5b645d]">
+        <a href="#" class="hover:underline">Documentación</a>
+        <a href="#" class="hover:underline">Políticas de privacidad</a>
+        <a href="#" class="hover:underline">Soporte técnico</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

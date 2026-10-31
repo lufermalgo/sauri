@@ -16,7 +16,7 @@ Approved requirements call for a stored recording to yield a transcript and spea
 
 **Use lease-based, idempotent stage claims.** Claim each `(processing_revision_id, stage)` with a conditional `pending → running` transition and lease: completed stages return their persisted result, an unexpired claim prevents duplicate provider execution, and an expired claim permits recovery.
 
-**Commit stage output and outbox events transactionally.** Persist the stage output, completion state, and transactional outbox event in one database transaction; uniqueness on `(processing_revision_id, stage)` prevents duplicate result/event rows. ASR and diarization keep their separate commits.
+**Commit candidate admission and stage output with durable outbox events.** Persist a new candidate revision, its `in_flight_revision_id`, and one `processing_revision_admitted` outbox event in the same transaction; uniqueness on `(processing_revision_id, event_type)` prevents duplicate admission events. Persist each stage output, completion state and stage outbox event in one transaction, with uniqueness on `(processing_revision_id, stage)`; ASR and diarization keep their separate commits. The T-15 dispatcher publishes pending admission/stage events to the existing at-least-once queue and retries unacknowledged events, so broker failure cannot strand a committed candidate.
 
 **Finalize after both stages and activate atomically.** A finalizer consumes the event only when both stage records are complete, then creates excerpt refs and the review aggregate and atomically switches the active pointer in one transaction. If review creation fails after diarization commits, the outbox event remains retryable; the finalizer retries from persisted transcript/diarization and never reruns a successful provider stage solely to recreate the review. The review is not review-ready or active until the finalizer commits. *Alternatives rejected:* inline processing blocks web requests; overwriting current rows loses pending-review source data; creating review items before both stages finish exposes a mutable/incomplete speaker set; queue-only notifications can be lost after a stage commit.
 
@@ -40,7 +40,10 @@ Voice samples are sensitive data; security review must resolve applicable handli
 
 ```mermaid
 graph LR
-  Store[Stored recording] --> Queue[Existing job queue]
+  Upload[Existing ingestion path] --> Admission[ProcessingRevisionService]
+  Admission -->|same transaction| Outbox[Transactional outbox]
+  Outbox --> Publisher[T-15 outbox dispatcher]
+  Publisher --> Queue[Existing job queue]
   Queue --> Worker[Processing coordinator]
   Worker --> ASR[Transcription provider]
   Worker --> Diar[Diarization provider]
@@ -62,15 +65,22 @@ The coordinator correlates processing by stored recording/meeting ID and passes 
 
 ```mermaid
 sequenceDiagram
-  participant Q as Job queue
+  participant Upload as Existing ingestion path
+  participant DB as Database, state and outbox
+  participant O as T-15 outbox dispatcher
+  participant Q as Existing job queue
   participant W as Processing coordinator
   participant A as ASR/diarization providers
   participant I as Owner-scoped matcher
-  participant DB as Repositories
   participant U as Web user
   participant API as Meeting API
 
-  Q->>W: recording available
+  Upload->>DB: persist recording, candidate and admission event atomically
+  DB-->>Upload: commit with in-flight revision
+  O->>DB: claim pending admission event
+  DB-->>O: exact recording/revision IDs
+  O->>Q: publish processing_revision_admitted (at-least-once)
+  Q->>W: process exact admitted revision
   W->>A: transcribe and diarize stored audio
   A-->>W: transcript turns and speaker segments
   W->>I: compare speakers within recording owner's scope
@@ -169,10 +179,15 @@ Meeting media, transcripts, speaker identity data and participant details are se
 | Stale item version/concurrent update | Different idempotency key plus stale `expected_version` returns conflict with current version/state and no mutation; same key/hash replay returns the original saved response; same key with changed hash returns conflict. |
 | New processing revision requested while active review is pending | Reject the distinct revision request without changing the active pointer or pending review; exact retry/recovery continues the existing revision. |
 | Database transaction failure | Roll back item and identity-reference changes together; do not return success or render local completion as saved. |
+| Job queue unavailable after candidate admission | Keep the `processing_revision_admitted` outbox event pending and retry publishing the same `recording_id`/`processing_revision_id`; do not allocate another revision or clear `in_flight_revision_id`. If broker acknowledgement is lost after acceptance, at-least-once duplicate delivery uses that same revision; an unexpired stage lease prevents parallel provider execution, and a completed stage replays its persisted result. |
 
 ## Testing Strategy
 
 Use synthetic recordings/audio fixtures and deterministic fake matcher/provider implementations; never use real meeting audio, transcripts, identities, credentials or customer details.
+
+**Processing-revision admission test seam (T-8).** Put candidate admission in the production service boundary `backend/app/meetings/processing_revision_service.py`, as `ProcessingRevisionService(session: AsyncSession)` with `async def admit_candidate(*, owner_id: str, recording_id: str, request_id: str, request_fingerprint: str) -> ProcessingRevision`. The production caller is `backend/app/ingestion/service.py::process_ingestion`, invoked by the existing `backend/app/ingestion/router.py::upload_recording` path. `upload_recording` wraps `process_ingestion` in `session.begin()`; after creating/flushing a `SessionRecording`, and also when resolving an existing idempotency key, `process_ingestion` calls this method using `created_by`, `recording.id`, `IngestionData.idempotency_key`, and a canonical fingerprint of `IngestionData`. `process_ingestion` returns `(SessionRecording, is_new, ProcessingRevision)`; queue publication is delegated to the outbox dispatcher after the transaction commits. The method participates in this caller transaction, not a nested/independent transaction. For a new candidate, the same transaction persists a durable outbox event of type `processing_revision_admitted`, keyed uniquely by `(processing_revision_id, event_type)` and carrying the exact `recording_id` and `processing_revision_id`; an exact retry reuses the revision and creates no second event. `upload_recording` does not publish directly. After commit, the T-15 outbox dispatcher publishes the event to the existing job queue and retries unacknowledged events; duplicate delivery remains safe because workers claim the exact revision/stage lease. Within the transaction, lock the recording's processing-state row; resolve the supplied request ID against its persisted revision; return that same revision only when the request fingerprint is identical; otherwise reject a changed replay. For a new request, reject without allocation when an in-flight revision exists, and reject a distinct candidate when the active revision's review is pending; otherwise allocate and persist exactly one revision and set `in_flight_revision_id` before commit. Preserve the existing `SpeakerReviewService.get_active_review(owner_id, meeting_id)` behavior and its shared row-lock ordering: the service operation and GET must serialize on that same row, so GET-first may activate eligible legacy revision 1 and subsequent admission sees its pending review, while admission-first leaves legacy state unactivated and GET returns not-ready until that exact candidate is finalized. Persist the request ID and fingerprint on the `ProcessingRevision` row introduced by T-17; they are internal correlation data, not new HTTP fields. Persist the admission outbox event in the same transaction; T-15 owns its durable schema, dispatcher and delivery/recovery behavior, not a new route. This keeps admission outside `ProcessingPipeline`'s three-method API and adds no HTTP route or request field; exact retries reuse the existing ingestion idempotency key. Placement is `backend/app/meetings/processing_revision_service.py` plus the existing `backend/app/ingestion/service.py` and `backend/app/ingestion/router.py` call path; T-17 owns revision/request persistence and T-15 owns outbox schema, dispatch and retry. No Compose or `packages/shared-types` change is needed. Keep exact-candidate activation in the existing finalizer boundary. T-8 tests remain in `backend/tests/meetings/test_speaker_review_revisions.py` and call this production service boundary with the real persistence/session fixture, not a test-only helper; they assert GET/admission lock ordering, the in-flight pointer, exact retry result, pending-review rejection, and no mutation on conflict. T-8 does not test outbox delivery, stage leases or finalizer recovery. T-15 integration tests additionally verify the admission outbox event commits atomically with the candidate, exact retry creates no duplicate event, failed/unacknowledged queue publication remains retryable, and redelivery carries the same revision ID without duplicate stage execution.
+
+*Alternatives rejected:* testing only through `upload_recording` would couple lock-order and retry assertions to multipart/object-store/queue behavior; T-8 instead calls the same production `ProcessingRevisionService.admit_candidate` boundary with real persistence. A new HTTP route changes the approved interface, while a private test hook would not prove production callers use that lock boundary. The service method is an internal implementation seam only and does not change user-visible behavior.
 
 - **Backend unit/property tests:** review status equivalence, per-speaker isolation, matcher threshold/margin fail-closed behavior, correction changing only the item's identity while preserving source samples, idempotent replay (same key/hash), key/hash mismatch conflict, and stale-version competing-write conflict. Generate varying review sizes, dispositions and retry sequences.
 - **Backend integration tests:** migration backfill and replacement of meeting-only uniqueness with revision-scoped constraints; complete legacy record lazy-finalization into revision 1 and atomic activation; GET-versus-admission race tests for both lock orders (GET first: lazily activate revision 1, then distinct admission conflicts on its pending review; admission first: set a candidate in flight, GET returns not-ready without activating revision 1, then that candidate's finalizer activates only its exact revision); partial legacy record (transcript without diarization) keeps a null active pointer, returns only the compatibility transcript, preserves the existing no-row diarization response and exposes no review until a later candidate is ready; concurrent duplicate delivery blocked by an active stage lease, completed-stage replay and expired-lease recovery; recovery when finalization/review creation fails after diarization commits; excerpt candidate duration/VAD ranking, bounds/decoder/assignment rejection and retry-before-readiness; unique review creation; source-recording expiry/deletion removing linked samples; owner isolation for legacy and new routes; and revision-pinning for transcript/diarization reads, exact-revision worker persistence, review GET/PUT and excerpt lookup. Include a regression scenario with revision 1 active and partially reviewed: request distinct reprocessing, assert conflict and no mutation/displacement; complete the review, process revision 2, then assert atomic activation and that each response contains rows from only one revision. Add a concurrent-admission scenario with `active_processing_revision_id` NULL (including partial legacy input): submit two distinct requests concurrently, assert exactly one allocates and sets `in_flight_revision_id`, the other conflicts without mutation, exact retries resume the admitted revision, and a finalizer for any non-current candidate cannot activate or replace a newly pending review. Also test two separately reviewed speaker items from one recording explicitly assigned to the same identity: both item-keyed samples persist, while replaying either item's same idempotency key/hash creates no duplicate sample.

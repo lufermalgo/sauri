@@ -39,7 +39,7 @@ async def _process_transcription(
     """Processes a message from the transcription queue.
 
     Args:
-        message: Expected: {"meeting_id": str, "audio_ref": str}
+        message: Expected: {"meeting_id": str, "owner_id": str, "recording_id": str, "audio_ref": str}
         session_factory: Async SQLAlchemy session factory.
         queue: Optional JobQueue; if provided, once the Transcript becomes
             available a Diarization_Message is published to the "diarize"
@@ -48,6 +48,8 @@ async def _process_transcription(
     """
     # --- Message validation (Req. 1.2, 1.3) ---
     meeting_id = message.get("meeting_id")
+    owner_id = message.get("owner_id")
+    recording_id = message.get("recording_id")
     audio_ref = message.get("audio_ref")
 
     if not meeting_id or not isinstance(meeting_id, str) or not meeting_id.strip():
@@ -56,15 +58,30 @@ async def _process_transcription(
         )
         return
 
+    if not owner_id or not isinstance(owner_id, str) or not owner_id.strip():
+        logger.warning("Message discarded: owner_id missing or empty.")
+        return
+
+    if not recording_id or not isinstance(recording_id, str) or not recording_id.strip():
+        logger.warning("Message discarded: recording_id missing or empty.")
+        return
+
     if not audio_ref or not isinstance(audio_ref, str) or not audio_ref.strip():
         logger.warning(
             "Message discarded: audio_ref missing or empty. message=%s", message
         )
         return
 
-    # --- Load Meeting (Req. 1.4) ---
+    # Bind the job to the persisted meeting owner and its exact recording.
     async with session_factory() as session:
         meeting = await session.get(Meeting, meeting_id)
+        recording = (
+            await session.execute(
+                select(SessionRecording).where(
+                    SessionRecording.meeting_id == meeting_id
+                )
+            )
+        ).scalar_one_or_none()
 
     if meeting is None:
         logger.warning(
@@ -72,8 +89,16 @@ async def _process_transcription(
             meeting_id,
         )
         return
+    if meeting.created_by != owner_id:
+        logger.warning("Message discarded: queue owner does not match meeting owner.")
+        return
+    if recording is None or recording.id != recording_id:
+        logger.warning("Message discarded: queue recording does not match meeting recording.")
+        return
 
     logger.info("Processing transcription for meeting_id=%s", meeting_id)
+    recording_audio_ref = recording.audio_ref
+    audio_duration_seconds = recording.duration_seconds
 
     # Initial transition recording -> transcribing (Req. 8.1)
     async with session_factory() as session, session.begin():
@@ -87,21 +112,12 @@ async def _process_transcription(
     # 1. Create the ASR engine via the factory (selects provider by config)
     engine = create_asr_engine()
 
-    async with session_factory() as session:
-        recording = (
-            await session.execute(
-                select(SessionRecording).where(
-                    SessionRecording.meeting_id == meeting_id
-                )
-            )
-        ).scalar_one_or_none()
-    audio_duration_seconds = recording.duration_seconds if recording else None
-
-    # 2. Transcribe with the preferred language es-CO (Req. 3.2)
+    # 2. Transcribe only the audio persisted for this meeting. The queue's
+    # audio_ref is untrusted and must not select the object sent to the engine.
     options = TranscriptionOptions(preferred_language="es-CO")
     started_at = time.monotonic()
     try:
-        result = await engine.transcribe(audio_ref, options)
+        result = await engine.transcribe(recording_audio_ref, options)
     except httpx.TimeoutException:
         elapsed_seconds = time.monotonic() - started_at
         async with session_factory() as session, session.begin():
@@ -200,7 +216,14 @@ async def _process_transcription(
     # committed (Req. 1.2 of the speaker-identification feature). Doesn't
     # alter the Meeting's ProcessState (Req. 9.5).
     if queue is not None and transcript_created:
-        await queue.publish("diarize", {"meeting_id": meeting_id})
+        await queue.publish(
+            "diarize",
+            {
+                "meeting_id": meeting_id,
+                "owner_id": owner_id,
+                "recording_id": recording_id,
+            },
+        )
         logger.info(
             "Diarization_Message enqueued for meeting_id=%s (topic 'diarize')",
             meeting_id,
