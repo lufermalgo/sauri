@@ -8,7 +8,7 @@ Este diseño cubre Fase 1; Fase 2 está secuenciada, no excluida, conforme a la 
 2. Estructurar la SPA en biblioteca, carga manual y vista de reunión, con `frontend/src/api.ts` como única capa HTTP.
 3. Usar solo capacidades API actualmente disponibles para listar/abrir reuniones, presentar video y turnos, y solicitar/resumir artefactos existentes; no diseñar mutaciones sin contrato.
 4. Usar backend como autoridad de aceptación de carga: seleccionar archivo habilita «Subir y procesar»; un rechazo se muestra claramente.
-5. Tras detenerse la captura o cerrarse la pestaña de Google Meet, completar la subida con reintentos durables y abrir `/meetings/:meetingId` solo con ID confirmado por la respuesta del servidor.
+5. Abrir automáticamente la reunión correspondiente tanto cuando se detiene la captura como cuando termina la sesión de Google Meet, usando el identificador de reunión confirmado por el servidor; los límites de detección del fin de sesión deben respetar las señales reales disponibles.
 
 ## Decisiones de Diseño Clave
 
@@ -26,7 +26,7 @@ Este diseño cubre Fase 1; Fase 2 está secuenciada, no excluida, conforme a la 
 
 **Estados de carga separados de procesamiento.** Mostrar progreso de transferencia real cuando el transporte lo informa; no simular porcentaje ni afirmar que el procesamiento terminó por recibir HTTP exitoso. La operación conserva archivo e identidad idempotente para retry. *Alternativa descartada:* porcentaje o finalización ficticios.
 
-**Apertura automática ligada a la finalización durable del flujo de captura.** `background.ts` observa `chrome.tabs.onRemoved` para cierre de la pestaña propietaria mientras `status === "recording"`, que invoca `handleStopCapture`; el stop normal lleva `stop-recording` al offscreen, y `handleRecordingStopped` encola el trabajo y ejecuta `processUploadQueue`. El resultado de `POST /api/v1/ingestion/upload` proporciona el `meeting_id`; no usar `sessionId` como sustituto. Al confirmarse éxito, la extensión crea/activa una pestaña al destino configurado del portal con `/meetings/{meeting_id}`. Cierre de pestaña Google Meet usa la señal de tab removal asociada a la captura; no depende de `meet-ended` que actualmente puede resetear estado. *Alternativa descartada:* abrir al detener, antes de subir/recibir ID; produciría ruta inválida y fallaría si hay error de red/auth.
+**Apertura automática en los dos disparadores aprobados.** Tanto la detención de captura como el fin de la sesión de Google Meet deben converger al cierre normal de captura, subida y apertura de la reunión identificada por un `meeting_id` confirmado por servidor; nunca usar `sessionId` local como sustituto. El código actual demuestra el camino de detener/cerrar la pestaña propietaria mediante `chrome.tabs.onRemoved`, `handleStopCapture` y `handleRecordingStopped`, pero no basta para afirmar que detecta el fin de la sesión Meet independientemente del cierre de pestaña. Antes de implementar, verificar la señal observable disponible en la integración Meet y conectar ambas señales al mismo camino idempotente; si no existe una señal fiable, registrar la brecha para resolverla, sin presentar cierre de pestaña como equivalente al fin de sesión. *Alternativa descartada:* abrir antes de tener el `meeting_id` confirmado, que puede producir un destino inválido.
 
 ## Arquitectura
 
@@ -78,11 +78,12 @@ sequenceDiagram
 - `App.tsx`: sesión existente, shell y rutas `/`, `/upload`, `/meetings/:meetingId`.
 - `components/PortalShell.tsx`: navegación limitada a Biblioteca, Subir grabación y reunión abierta.
 - `components/LoginScreen.tsx`: presentación nueva alrededor de login existente, sin cambiar su contrato.
-- `components/RecordingLibrary.tsx`: carga de lista ordenada newest-first, estados cargando/vacío/error, abrir selección. Sin filtros, mutaciones ni descargas en esta entrega.
-- `components/RecordingUpload.tsx`: selector; selección habilita acción; estados de transferencia/progreso/éxito/error; retry y diagnóstico seguro conforme al contrato existente.
-- `components/MeetingView.tsx`: video encima de turnos/transcripción y panel existente de resumen; resumen separado de la transcripción y con acciones copiar/descargar únicamente si ya están soportadas por el contrato actual.
-- `api.ts`: métodos tipados para login, listado/detalle existentes y carga. No agregar funciones de rename/delete/download/metadata/tags/speaker rename/filter sin contratos autorizados.
-- CSS global existente: estilos y tokens semánticos. No imponer hex, breakpoints o certificación visual no fijados por requisitos.
+- `components/RecordingLibrary.tsx`: carga de lista ordenada newest-first, estados cargando/vacío/error, abrir selección.
+- `components/RecordingUpload.tsx`: selector; selección habilita acción cuando se conoce elegibilidad aprobada; progreso de transferencia, resultado, reintento y «Copiar diagnóstico» sin secretos ni transcripción; no inventar límites de elegibilidad.
+- `components/MeetingView.tsx`: reproductor arriba de transcripción; controles ordinarios visibles de seek, velocidad, calidad/resolución, pausa, volumen y mute. Calidad/resolución solo refleja opciones disponibles del medio/reproductor y no promete calidad inexistente. Cada turno muestra timestamp, etiqueta de hablante coloreada y texto; al avanzar playback se resalta el turno correspondiente y se desplaza la lista para mantenerlo visible; seleccionar turno hace seek a su tiempo vinculado e inicia reproducción. No fijar colores ni formato de timestamp.
+- Panel lateral inicial con pestañas **Chat** y **Notes/Summary**. Chat en Fase 1 es solo pestaña, sin interfaz ni interacción de chat; sus capacidades interactivas quedan Fase 2. Notes/Summary mantiene notas, resumen y transcripción como contenidos distintos, no mezcla el transcript en el resumen. El resumen ofrece copiar y descargar su propio contenido; estructura legible que identifica tema principal y argumentos/puntos clave, sin imponer un layout fijo. No depender de capacidades ya existentes como condición para exponer estos comportamientos aprobados: si faltan API/contratos o datos, registrar esa brecha concreta antes de implementar, no simularlos.
+- `api.ts`: métodos tipados para login, listado/detalle existentes y carga; cualquier endpoint/mutación faltante se eleva como brecha, no se inventa contrato.
+- CSS global existente: estilos y tokens semánticos. No imponer hex, breakpoints ni formato de timestamp no fijados por requisitos.
 
 ### Backend / persistencia
 
@@ -114,11 +115,11 @@ Esta fase consume endpoints existentes de login, listado/detalle de reuniones, l
 
 1. **Acceso preservado:** aplicar estilo al login no cambia solicitud, sesión ni permisos.
 2. **Biblioteca veraz:** muestra registros reales en orden newest-first y permite abrirlos; no presenta búsqueda full-text ni filtros/acciones no incluidas en esta entrega.
-3. **Revisión:** video antecede a turnos; cada turno muestra timestamp, speaker y texto; resumen es separado de transcript y cualquier reproducción sincronizada usa timestamps enlazados disponibles.
+3. **Revisión sincronizada:** video/media antecede a turnos; cada turno presenta timestamp, etiqueta coloreada y texto; durante playback el turno correspondiente se resalta y la lista lo desplaza a vista; seleccionar un pasaje busca su tiempo enlazado e inicia playback. El reproductor expone seek, velocidad, calidad/resolución, pausa, volumen y mute. El panel empieza con Chat y Notes/Summary; Chat no interactúa en Fase 1. Notes, resumen y transcripción permanecen separados; copiar/descargar exporta únicamente resumen con tema principal y argumentos/puntos clave.
 4. **Elegibilidad y rechazo:** seleccionar un archivo habilita acción sin límites locales nuevos; rechazo backend se presenta claramente y conserva archivo.
 5. **Progreso honesto:** progreso mostrado deriva bytes reportados; no se informa procesamiento completado por fin de transferencia.
-6. **Fin correcto:** stop explícito o cierre de tab de captura siguen el mismo flujo de finalización y encolado; ningún ID de sesión local se trata como meeting ID.
-7. **Apertura tras confirmación:** solo una respuesta de ingesta exitosa con `meeting_id` validado habilita navegación al meeting correspondiente.
+6. **Disparadores de apertura:** detener captura y fin de sesión de Google Meet convergen a una sola finalización idempotente; la señal de cierre de pestaña por sí sola no se presenta como prueba de fin de sesión.
+7. **Apertura tras confirmación:** solo una respuesta de ingesta exitosa con `meeting_id` validado habilita abrir la reunión correspondiente; ningún ID local sustituye al ID del servidor.
 8. **Recuperación:** fallo de subida o autenticación conserva blob/job y clave idempotente; no limpiar grabación ni marcar completado. Si abrir pestaña falla después de éxito, conservar `meeting_id` y reintentar navegación sin volver a subir.
 9. **Privacidad:** URL/mensajes de navegación no incluyen tokens, audio ni texto de transcripción.
 
