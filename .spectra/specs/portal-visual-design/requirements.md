@@ -104,14 +104,16 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 
 **Historia de Usuario:** Como usuario, quiero seleccionar un archivo local elegible desde el portal, para añadir una grabación existente sin iniciar una captura de la extensión.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §4.D.1–2, §5 y §6 (carga manual confirmada y separada de captura; Elegibilidad_De_Carga abierta; sin límites inferibles).
+**Trazabilidad:** `PRODUCT_BASELINE.md` §4.D.1–2, §5 y §6 (carga manual confirmada y sin límites inferibles); decisión de Fer del 2026-10-31 registrada en la tarjeta de carga manual (criterio provisional basado en la validación vigente de ingesta del backend, sin nuevos límites, con mensaje claro ante rechazo; Fer podrá definir reglas explícitas después).
 
 #### Criterios de Aceptación
 
 1. THE Carga_Manual SHALL allow the user to select a local recording file through the web portal, separately from Chrome extension capture.
-2. WHEN a selected file satisfies the Elegibilidad_De_Carga rules established by product, THE portal SHALL offer «Subir y procesar».
-3. THE requirements SHALL NOT define or infer file formats, size or duration limits, or other eligibility rules from Stitch examples or implementation details.
-4. THE design and implementation SHALL treat unresolved Elegibilidad_De_Carga rules as a prerequisite to specifying which files qualify; they SHALL NOT invent defaults.
+2. UNTIL Fer defines explicit Elegibilidad_De_Carga rules, THE portal SHALL treat a selected file as eligible exactly when the current backend ingestion validation accepts it.
+3. WHEN the current backend ingestion validation accepts a selected file, THE portal SHALL offer «Subir y procesar» for that file.
+4. IF the current backend ingestion validation rejects a selected file, THEN THE portal SHALL display the backend's rejection message clearly.
+5. THE requirements, design, and implementation SHALL NOT add file-format, size, duration, or other eligibility limits beyond the current backend ingestion validation.
+6. THE provisional eligibility criterion SHALL NOT be treated as a prerequisite to designing the portal; Fer may define explicit Elegibilidad_De_Carga rules later.
 
 ### Requisito 6: Informar transferencia, resultado y fallo recuperable
 
