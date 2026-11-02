@@ -151,6 +151,8 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Tracking:** Task done · Issue #308 · Card `task_6a271652b2c34130` · PR #594
 
+**Visibility follow-up:** Task done · Issue #680 · Card `task_e1f49584919a4ca9` · PR #682
+
 **Files:** `frontend/src/components/MeetingPlaybackView.tsx` (new); integrated at `frontend/src/App.tsx` transcript view route (existing `TranscriptView`, mounted on the meeting review path) and consumes `getPlaybackManifest`/`getTranscript` from `frontend/src/api.ts` plus `PlaybackController` from `frontend/src/components/PlaybackController.ts`.
 
 

@@ -1,6 +1,6 @@
 # Sauri Product Baseline
 
-> **Status: DRAFT — Fer approved the portal and Phase 2 scope amendment at commit `f31c1437d002a49849fc577446290ab83d29a584`, as recorded in task `task_a08baf81140a4073`. This current snapshot contains subsequent edits and requires Fer's approval of this exact version before it becomes APPROVED.** This amendment preserves the product content approved on 2026-10-16 at commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`). The earlier content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
+> **Status: APPROVED — Fer approved this exact product content on 2026-10-31 at commit `85b603ada14996842d913cfbbed4bcffe9fe54c5` (file blob `2337a46b2ba78ef4364e23a86df9918db621c881`), as recorded in task `task_919d018dbf5e46a5`.** The merged snapshot preserves that approved content. Proposed, deferred, and open items remain outside the approved scope and are not implementation authorization.
 
 ## 1. Product purpose
 
@@ -58,9 +58,19 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 4. The meeting portal places the media player above the transcript. The player has ordinary playback controls, including seek, speed, quality/resolution, pause, volume, and mute. The transcript presents each turn with a timestamp, colored speaker label, and text. During playback, the corresponding transcript passage is highlighted and the transcript follows playback by scrolling to it; selecting a passage starts playback at its linked time. Speaker names can be edited from the transcript, subject to the existing per-user identity boundary. This changes speaker attribution only; manual transcript-text editing is excluded. The precise control, timestamp format, colors, and video-specific behavior are for design.
 5. A side panel separates meeting content into tabs, including Chat and Notes/Summary. The Chat tab is part of the initial portal composition; its interactive chat-with-the-recording capability is Phase 2 and is not available as an initial interaction. Notes and summaries remain distinct artifacts and separate from the transcript; the summary can be copied or downloaded and identifies the main topic and key arguments/points in a clear structure. Speaker talk-time insights are also Phase 2. Other tab names or content are not specified by this baseline.
 
+### D. Add a recording from the web portal
+
+1. The user can select a local recording file in the web portal, separately from starting an automatic capture with the Chrome extension. This manual path does not replace or change the extension capture journey.
+2. Once the selected file meets the product's upload eligibility rules, the portal offers **«Subir y procesar»**. This baseline does not set file formats, size, or duration limits; do not infer them from examples or implementation.
+3. While the file is being transferred, the user sees a progress bar that reflects upload progress. Successful completion means the file upload finished; it must not be presented as proof that transcription or other processing is complete. Processing feedback and timing remain open as described in §5 and §7.
+4. When upload finishes, the portal gives the user a link to or opens the resulting meeting. The meeting's initial title defaults to the selected filename.
+5. If upload fails, the portal explains the problem in clear language and offers **«Reintentar»** and **«Copiar diagnóstico»**. The selected file remains available for retry. Copied diagnostics must not contain secrets or transcript content. Their exact fields and any other personal or meeting data remain unspecified and require review before definition.
+
+Login presentation may be styled for the portal, but this is a visual treatment of the existing authentication only. It does not authorize changing authentication behavior, access policy, or permissions.
+
 ## 5. Capability catalogue and scope state
 
-“Confirmed intent” means the capability is grounded in the user's discovery and included in this approved baseline. It does not settle implementation details or the open boundaries in the Dependencies column. Product acceptance and runtime delivery remain separate later gates.
+“Confirmed intent” means the capability is grounded in the user's discovery and included in the baseline's confirmed product scope. It does not settle implementation details or the open boundaries in the Dependencies column. Product acceptance and runtime delivery remain separate later gates.
 
 | Capability | User / outcome | State in this baseline | Dependencies or boundary |
 | --- | --- | --- | --- |
@@ -71,6 +81,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 | Recording-associated notes, separate from transcript | Recorder adds context for later review | Confirmed intent | Note format/editing and access when indicator is hidden remain open/design work |
 | Recording storage, transcription, and automatic speaker identification | Recorder can review the captured meeting and who spoke | Confirmed intent | Transcription/diarization technology and quality thresholds are not chosen here |
 | Speaker review, `Speaker N` for unknown/uncertain voices, and same-user future effect of corrections | Recorder resolves attribution and improves future recognition for that same user | Confirmed intent | Cross-user sharing of speaker labels, names, and voice data is not implied; future multi-user implementation must preserve per-user isolation. Permissions and technical recognition mechanism remain unresolved |
+| Manual web-portal upload of a selected recording file, with truthful upload progress, a meeting link/open result, filename default title, and recoverable failure actions | User adds an existing recording without automatic extension capture | Confirmed intent | Separate from extension capture. Supported formats, size/duration limits, upload eligibility rules, progress semantics, and processing feedback/timing need definition; upload completion is not processing completion. Diagnostics must exclude secrets and transcript content; other fields need review |
 | Web recording library with search, newest-first ordering, metadata-derived filters, session selection | User finds recordings later | Confirmed intent | Search semantics and filter catalogue are for design; full-text search across meetings is excluded |
 | Rename/delete/download recording video and transcript | User manages and takes away a session's artifacts | Confirmed intent | Retention, deletion guarantees, and export formats are not specified |
 | Editable company, project, participant metadata; predefined and user-created tags | User organizes recordings | Confirmed intent | Tag governance and extra fields are not specified |
@@ -90,7 +101,9 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 ### Confirmed product constraints
 
 - Sauri is an internal Summan platform, initially for the functional user, with future multi-user scale under consideration.
-- A recording is initiated on demand from the extension; the current described journey selects a Google Meet browser tab.
+- A recording can be added either by on-demand capture from the extension, whose current described journey selects a Google Meet browser tab, or by the distinct manual file-upload journey in §4.D. Manual upload does not start or imply extension capture.
+- The portal's login presentation may receive visual styling only; it must use existing authentication behavior and does not decide or change access policy or permissions.
+- Meeting recordings and derived material are sensitive. A manual upload does not itself define new consent, retention, deletion, or access rules. Do not expose secrets or transcript content through copied diagnostics; other diagnostic fields are not yet defined.
 - The user expects usable audio and video, transcription, and speaker attribution. Expectations do not represent technical verification or a guaranteed outcome.
 - Unknown or uncertain speaker attribution must be represented as `Speaker N` until human review.
 - A user's saved speaker name/identity associations are that user's preferences/data and may influence later recognition for that same user only. They are not shared with other users; future per-user isolation is required. This does not authorize global voice modeling.
@@ -101,6 +114,9 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 
 - CRM integration, taking meeting intelligence into the CRM, and any CRM AI agent. These are future topics, not current functionality.
 - Assuming that a UI screenshot selects a framework, technology, exact layout, default value, capture mode, or additional preference.
+- Treating manual portal upload as automatic extension capture, or treating upload completion as transcription/processing completion.
+- Inferring supported upload formats, file-size or duration limits, or other eligibility rules not set by product.
+- Changing authentication behavior, access policy, permissions, consent workflow, retention, or deletion guarantees through visual login styling or the manual-upload capability.
 - Treating the six-person example as a maximum or assuming all automatic speaker matches will be correct.
 - Treating existing source code, old roadmaps, or tests as product approval or evidence of deployment.
 - Sharing speaker labels, names, or voice data between users, or using them for global voice modeling, is not authorized by this baseline clarification.
@@ -122,6 +138,8 @@ These are not questions already answered by the user; they are the remaining bou
 9. **Portal details:** the approved composition is a player above the transcript, with side-panel tabs including Chat and Notes/Summary. Exact control details, timestamp format, colors, and the names/content of any additional tabs remain for design; no unlisted tabs or capabilities are implied.
 10. **Privacy and data governance:** consent workflow, retention, deletion guarantees, and access policy require explicit definition before their behavior is specified. Meeting media, transcripts, speaker identity data, and participant details are sensitive.
 11. **CRM:** whether and how a future transfer/integration should work remains deferred until the product is stable; there are no agreed fields or mechanisms.
+12. **Manual upload eligibility and failures:** define which file properties make a recording eligible, without assuming formats or size/duration limits before that decision. Define understandable failure messages and the safe diagnostic fields only after reviewing privacy implications; diagnostics must exclude secrets and transcript content.
+13. **Manual-upload data governance:** the uploaded recording is sensitive meeting material. Consent/provenance expectations, access rules, retention, and deletion guarantees remain governed by the existing open privacy/access decisions; this baseline adds no new policy or consent workflow. Define any consequences before specifying behavior that would change those boundaries.
 
 ## 8. Success signals
 
@@ -133,6 +151,7 @@ These are outcome signals for later measurement, not committed targets or accept
 - Users reach the meeting portal automatically when recording stops or the Google Meet session ends.
 - Users can add and later distinguish meeting notes, transcript, and summary.
 - Users can retrieve a meeting summary and download the relevant recording artifacts.
+- Users can add an existing recording through the portal, understand whether it is transferring versus still processing, recover from an upload failure, and reach the resulting meeting.
 
 Numerical targets, measurement windows, and representative-user acceptance evidence remain to be set. Technical QA alone does not constitute product acceptance.
 
@@ -140,4 +159,4 @@ Numerical targets, measurement windows, and representative-user acceptance evide
 
 This baseline was prepared from `PRODUCT_DISCOVERY.md`, especially §§1–6 and the chronological clarifications in §7. The 2026-10-16 owner clarification, relayed by Teo in `th_24d098a54e5c4187`, narrows the earlier speaker-correction wording: Speaker N can be reviewed/named per recording; saved name/identity associations are that user's data/preferences and may assist recognition in later recordings for that same user only; there is no implied sharing of labels, names, or voice data with other users. Future per-user isolation is intended; multi-user rollout and Google authentication are separate work. This does not authorize global voice modeling. Other clarifications remain: `Speaker N` for unknown/uncertain voices; hiding the indicator means no in-recording controls are required and capture ends by stopping Chrome tab sharing; notes are separate from the transcript and attached to the recording; CRM and its AI agent remain outside current scope.
 
-Fer approved the product content of the prior snapshot on 2026-10-16: commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`). On 2026-10-22, Fer approved the portal and Phase 2 scope amendment in this baseline at commit `f31c1437d002a49849fc577446290ab83d29a584`, as recorded in task `task_a08baf81140a4073`. The earlier product content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. The discovery record preserves examples, references, and distinctions in greater detail. Other open and deferred decisions remain unresolved and outside approved scope. Product acceptance and runtime delivery are separate gates.
+Fer approved the product content of the prior snapshot on 2026-10-16: commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (file blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`). On 2026-10-22, Fer approved the portal and Phase 2 scope amendment in this baseline at commit `f31c1437d002a49849fc577446290ab83d29a584`, as recorded in task `task_a08baf81140a4073`. On 2026-10-30, Fer authorized adding an explicit manual recording-upload journey from the portal with the user outcomes in §4.D; login may receive visual treatment only over existing authentication, without changing authentication or access policy. Fer approved this exact product content on 2026-10-31 at commit `85b603ada14996842d913cfbbed4bcffe9fe54c5` (file blob `2337a46b2ba78ef4364e23a86df9918db621c881`), as recorded in task `task_919d018dbf5e46a5`. The earlier product content published in `main` at commit `d738e78` (file blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`) was approved on 2026-10-09. The discovery record preserves examples, references, and distinctions in greater detail. Other open and deferred decisions remain unresolved and outside approved scope. Product acceptance and runtime delivery are separate gates.

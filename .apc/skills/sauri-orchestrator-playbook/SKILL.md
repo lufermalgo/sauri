@@ -32,9 +32,23 @@ A card in `review` with open subtasks is an umbrella: leave it alone while child
 ## Platform problems go to Teo
 For APX itself (a tool or permission missing for an agent, provider limit, APX error), `delegate` to Teo (`roby`): exact error, card and agent blocked, what you tried, the change you propose. He may adjust agent settings within what the owner delegated; anything else he asks the owner, and an APX defect he reports to the owner with a draft. Meanwhile continue independent cards. Ordinary project problems are yours or the owner's, never Teo's.
 
+## Sweep on every wake
+Nothing else wakes you or the team: agents run only when a card changes owner or someone messages them, and a run cut off by a provider limit, a restart or the 6-minute deadline leaves its card in `doing` with no run. So every wake, before anything else:
+1. `task_list` the cards in `doing` and `review`, and `list_agents` for who is running. A card is stalled when its last activity is older than 10 minutes and its assignee is not shown as running; if `list_agents` does not show run state, use the card's last activity alone and say so in your reply. An agent free for more than 10 minutes while holding an open card is stalled too.
+2. Restart every stalled card in this same turn, all of them: `task_update(assignee=null)` then assign the same agent, then confirm with `task_list`. Give a card whose last run was cut off a smaller scope and say so in the PACKET. Do not wait for a second report and do not restart one agent per wake.
+3. In an answering turn (the owner or the owner's assistant messaged you) `task_update` with an assignee fails with "you are answering": do not retry. List every stalled card in your reply as `agent — card — one-line order`, so the owner's assistant starts each by direct chat, and restart them yourself at your next wake that is not an answering turn.
+4. Keep every agent busy: when a free agent holds no open card, open the next ready card for it in the lane that needs it (see "Lanes, fast lane and your own load").
+5. Only then handle the report items, once each. The owner's assistant may relay the watchdog report; it never replaces this sweep, and you do not wait for it.
+
+## Lanes, fast lane and your own load
+- Two lanes are active at any time: CORE (upload, transcript turns per speaker, automatic diarization, summary) and UI (screens from `design/stitch/`). Specs, QA and security work serve those two lanes. Everything else (lint-fix per-file cards, platform spikes, speculative specs) stays in `backlog` unless a lane card depends on it or CI is blocked. Each lane always has an owner running; a lane never waits on the other unless a card names the dependency.
+- Fast lane: a defect with reproducible QA evidence and an expected behavior stated in `PRODUCT_BASELINE.md` or an approved spec needs no new requirements/design chain. Zoya writes the short note on the card (symptom, evidence, expected behavior with its source) in place of `bugfix.md`, and Mira confirms in one line on the card that the fix stays inside approved behavior; no full audit round. The developer then fixes with RED→GREEN (test commit first, failing output kept) in one PR, Nia verifies, Zev if the card lists a security gate. Use the full spec chain whenever behavior, policy or the baseline change.
+- Small units: one card and one PR with the RED commit first and the GREEN commit after; Nia verifies once and checks that RED failed for the stated reason. Size rule and exceptions are in `zoya-task-planning`.
+- Your load: the author closes or hands off their own card when their role is last. You keep only exceptions, blockers, owner flags and umbrella cards. If you hold more than ten cards in `review`, hand each back to the agent that can close it, or to `backlog` only when it is not waiting on a Nia, Zev or Mira gate, in the same turn.
+
 ## Stale blockers and answering turns
 - Re-read old BLOCKED notes against your contract: a blocker resting on a rule no longer in force is void.
-- If `task_update`/`task_create` with an assignee fails with "you are answering …", you cannot start anyone in that turn. Prepare the card fully, say it is ready to assign, and assign it in your next routine wake.
+- If `task_update`/`task_create` with an assignee fails with "you are answering …", you cannot start anyone in that turn. Prepare the card fully, say it is ready to assign, and assign it in your next wake.
 
 ## Security findings
 A finding fixed inside the active issue stays on its card and PR. One that needs a spec change or code outside it gets its own GitHub issue (Zev opens it) and its own card (you open it) and follows the normal flow to its own PR.

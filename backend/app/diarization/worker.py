@@ -49,26 +49,47 @@ async def _process_diarization(
     """Processes a Diarization_Message from the "diarize" topic.
 
     Args:
-        message: Expected: {"meeting_id": str}
+        message: Expected: {"meeting_id": str, "owner_id": str, "recording_id": str}
         session_factory: Async SQLAlchemy session factory.
     """
     # --- Message validation (Req. 1.3, 1.4) ---
     meeting_id = message.get("meeting_id")
+    owner_id = message.get("owner_id")
+    recording_id = message.get("recording_id")
     if not meeting_id or not isinstance(meeting_id, str) or not meeting_id.strip():
         logger.warning(
             "Diarization message discarded: meeting_id missing or invalid. message=%s",
             message,
         )
         return
+    if not owner_id or not isinstance(owner_id, str) or not owner_id.strip():
+        logger.warning("Diarization message discarded: owner_id missing or invalid.")
+        return
+    if not recording_id or not isinstance(recording_id, str) or not recording_id.strip():
+        logger.warning("Diarization message discarded: recording_id missing or invalid.")
+        return
 
-    # --- Load Meeting (Req. 1.5) ---
+    # Bind the job to the persisted meeting owner and its exact recording.
     async with session_factory() as session:
         meeting = await session.get(Meeting, meeting_id)
+        recording = (
+            await session.execute(
+                select(SessionRecording).where(
+                    SessionRecording.meeting_id == meeting_id
+                )
+            )
+        ).scalar_one_or_none()
     if meeting is None:
         logger.warning(
             "Diarization discarded: Meeting not found for meeting_id=%s",
             meeting_id,
         )
+        return
+    if meeting.created_by != owner_id:
+        logger.warning("Diarization discarded: queue owner does not match meeting owner.")
+        return
+    if recording is None or recording.id != recording_id:
+        logger.warning("Diarization discarded: queue recording does not match meeting recording.")
         return
 
     # --- Load Transcript + turns (Req. 1.6) ---
@@ -77,22 +98,6 @@ async def _process_diarization(
     if transcript is None:
         logger.warning(
             "Diarization discarded: Transcript not found for meeting_id=%s",
-            meeting_id,
-        )
-        return
-
-    # --- Load SessionRecording for audio_ref and duration ---
-    async with session_factory() as session:
-        recording = (
-            await session.execute(
-                select(SessionRecording).where(
-                    SessionRecording.meeting_id == meeting_id
-                )
-            )
-        ).scalar_one_or_none()
-    if recording is None:
-        logger.warning(
-            "Diarization discarded: SessionRecording not found for meeting_id=%s",
             meeting_id,
         )
         return

@@ -146,6 +146,13 @@ export function SpeakerRecognitionTestScreen() {
   const [recording, setRecording] = useState<SelectedRecording | null>(null);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "failed" | "uploaded">("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [diagnostic, setDiagnostic] = useState({
+    validation: "not checked",
+    request: "not sent",
+    httpStatus: "not available",
+    error: "none",
+  });
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
   useEffect(() => () => {
@@ -173,6 +180,13 @@ export function SpeakerRecognitionTestScreen() {
     });
     setUploadState("idle");
     setUploadError(null);
+    setDiagnostic({
+      validation: "not checked",
+      request: "not sent",
+      httpStatus: "not available",
+      error: "none",
+    });
+    setCopyStatus(null);
   }
 
   function handleMetadata(event: React.SyntheticEvent<HTMLMediaElement>) {
@@ -180,14 +194,28 @@ export function SpeakerRecognitionTestScreen() {
     if (recording) releaseObjectUrl(recording.objectUrl);
     if (!Number.isFinite(duration) || duration < 0) {
       setRecording((current) => current ? { ...current, durationSeconds: null } : current);
+      setDiagnostic((current) => ({ ...current, validation: "duration unavailable" }));
       return;
     }
     setRecording((current) => current ? { ...current, durationSeconds: Math.ceil(duration) } : current);
+    setDiagnostic((current) => ({ ...current, validation: "passed" }));
   }
 
   async function submitUpload() {
-    if (!recording || recording.durationSeconds === null || uploadState === "uploading") return;
+    if (!recording || uploadState === "uploading") return;
+    if (recording.durationSeconds === null) {
+      const message = "Upload blocked: recording duration is unavailable. Wait for media metadata to load or choose another file.";
+      setUploadError(message);
+      setDiagnostic({
+        validation: "duration unavailable",
+        request: "not sent",
+        httpStatus: "not available",
+        error: "duration unavailable",
+      });
+      return;
+    }
     setUploadError(null);
+    setDiagnostic({ validation: "passed", request: "in progress", httpStatus: "not available", error: "none" });
     setUploadState("uploading");
     try {
       const declaredVideo = recording.file.type.startsWith("video/");
@@ -213,10 +241,37 @@ export function SpeakerRecognitionTestScreen() {
       };
       await uploadRecording(recording.file, data);
       setUploadState("uploaded");
+      setDiagnostic({ validation: "passed", request: "accepted", httpStatus: "success", error: "none" });
       releaseObjectUrl(recording.objectUrl);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Upload failed. Check that the file type matches its audio/video tracks and try again.";
+      const statusMatch = errorMessage.match(/^Error (\d{3})$/);
       setUploadState("failed");
-      setUploadError(error instanceof Error ? error.message : "Upload failed. Check that the file type matches its audio/video tracks and try again.");
+      setUploadError(errorMessage);
+      const validationFailed = errorMessage.startsWith("Could not verify") || errorMessage.startsWith("The recording contains");
+      setDiagnostic({
+        validation: validationFailed ? "failed" : "passed",
+        request: statusMatch ? "failed" : "failed or not sent",
+        httpStatus: statusMatch?.[1] ?? "not available",
+        error: statusMatch ? "HTTP error" : "upload or validation error",
+      });
+    }
+  }
+
+  async function copyDiagnostic() {
+    if (!recording) return;
+    const report = {
+      file: { name: recording.file.name, type: recording.file.type, sizeBytes: recording.file.size },
+      validation: diagnostic.validation,
+      request: diagnostic.request,
+      httpStatus: diagnostic.httpStatus,
+      error: diagnostic.error,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+      setCopyStatus("Diagnostic copied.");
+    } catch {
+      setCopyStatus("Could not copy diagnostic. Check clipboard permissions.");
     }
   }
 
@@ -248,6 +303,8 @@ export function SpeakerRecognitionTestScreen() {
           aria-label="Selected recording metadata"
         />
       ))}
+      {recording && <button type="button" onClick={copyDiagnostic}>Copy diagnostic</button>}
+      {copyStatus && <p role="status">{copyStatus}</p>}
       {recording && uploadState !== "uploaded" && (
         <button type="button" onClick={submitUpload} disabled={uploadState === "uploading"}>
           {uploadState === "failed" ? "Retry upload" : uploadState === "uploading" ? "Uploading…" : "Upload"}
