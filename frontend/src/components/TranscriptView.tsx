@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   getDiarization,
   getPlaybackManifest,
@@ -9,6 +9,7 @@ import {
 } from "../api";
 import type { MeetingDiarization, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
+import { groupTranscriptTurns } from "../transcript-turns";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -32,9 +33,14 @@ function speakerColor(diarization: MeetingDiarization | null, speakerId: string 
 }
 
 export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
+  const seekToRef = useRef<((timeMs: number) => void) | undefined>(undefined);
+  const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
+    seekToRef.current = seekTo;
+  }, []);
   const [data, setData] = useState<MeetingTranscript | null>(null);
   const [playbackManifest, setPlaybackManifest] = useState<PlaybackManifest | null>(null);
   const [diarization, setDiarization] = useState<MeetingDiarization | null>(null);
+  const [diarizationNotFound, setDiarizationNotFound] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackLoading, setPlaybackLoading] = useState(true);
   const [review, setReview] = useState<SpeakerReview | null>(null);
@@ -50,6 +56,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     setPlaybackLoading(true);
     setPlaybackManifest(null);
     setDiarization(null);
+    setDiarizationNotFound(false);
     setPlaybackError(null);
     setError(null);
     setReviewError(null);
@@ -70,8 +77,11 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       .then((result) => {
         if (!cancelled) setDiarization(result);
       })
-      .catch(() => {
-        if (!cancelled) setDiarization(null);
+      .catch((err) => {
+        if (!cancelled) {
+          setDiarization(null);
+          setDiarizationNotFound(err instanceof Error && err.message === "Error 404");
+        }
       });
 
     getPlaybackManifest(meetingId)
@@ -158,32 +168,49 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     const speaker = speakerPresentation(passage.id);
     return { ...passage, speakerLabel: speaker.label, speakerColor: speaker.color };
   });
+  const sourceTurnById = new Map(data.turns.map((turn) => [turn.id, turn]));
+  const presentationTurns = groupTranscriptTurns(
+    data.turns.map((turn) => ({
+      id: turn.id,
+      text: turn.text,
+      startMs: turn.startMs,
+      endMs: turn.endMs,
+      sequence: turn.sequence,
+    })),
+    new Map(diarization?.assignments.map(({ turn_id, speaker_id }) => [turn_id, speaker_id]) ?? []),
+  );
 
   return (
     <section>
       <button onClick={onBack}>← Back to list</button>
+      {diarizationNotFound && <p role="status">Identificando hablantes</p>} {/* spanish-sample-data */}
       <MeetingPlaybackView
         manifest={playbackManifest}
         passages={playbackPassages}
         loading={playbackLoading}
         error={playbackError}
         onRefreshManifest={() => getPlaybackManifest(meetingId)}
+        onSeekToReady={registerSeekTo}
       />
       <h2>Transcript</h2>
       <p>
         Language: {data.language} | Provider: {data.provider} |
         Turns: {data.supportsTurns ? "Yes" : "No"}
       </p>
-      {data.turns.length === 0 ? (
+      {presentationTurns.length === 0 ? (
         <p>No transcript segments.</p>
       ) : (
         <ol>
-          {data.turns.map((turn) => {
+          {presentationTurns.map((turn) => {
             const speaker = speakerPresentation(turn.id);
+            const lastSource = sourceTurnById.get(turn.sourceIds.at(-1) ?? "");
+            const timestamp = lastSource && turn.sourceIds.length === 1
+              ? `[${formatTimestamp(turn.timestampMs ?? 0)} – ${formatTimestamp(lastSource.endMs)}]`
+              : `[${formatTimestamp(turn.timestampMs ?? 0)}]`;
             return (
               <li key={turn.id}>
                 <span style={{ color: "#6b7280", marginRight: "0.5rem" }}>
-                  [{formatTimestamp(turn.startMs)} – {formatTimestamp(turn.endMs)}]
+                  {timestamp}
                 </span>
                 <span
                   data-testid="transcript-speaker-label"
@@ -191,6 +218,16 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
                 >
                   {speaker.label}
                 </span>
+                <button
+                  type="button"
+                  aria-label={`Play turn at ${formatTimestamp(turn.timestampMs ?? 0)}`}
+                  disabled={turn.timestampMs === null}
+                  onClick={() => {
+                    if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs);
+                  }}
+                >
+                  Play turn
+                </button>
                 {turn.text}
               </li>
             );

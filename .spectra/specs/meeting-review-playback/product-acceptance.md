@@ -60,3 +60,27 @@ No specific control layout, time display, video-specific behavior, playback-spee
 ## Decision
 
 `INSUFFICIENT_USER_EVIDENCE` for exact candidate `6a9c838b1bab204d35ec046a4b9fad7e786ccbdb`. The pre-test plan is frozen, but user testing is blocked because the playback view and usable synthetic media/transcript fixture are missing; two-user availability is also unconfirmed. This is not `PRODUCT_ACCEPTED` and does not waive or change any approved requirement. Reopen readiness verification after the approved playback view and a usable synthetic fixture are integrated, and confirm two representative users are available before scheduling controlled sessions. Retain this plan unless the evaluated candidate or approved criteria change.
+
+## Browser-reachable playback product acceptance — PR #635
+
+### Candidate and frozen evaluation plan
+
+- **Outcome:** `INSUFFICIENT_USER_EVIDENCE`.
+- **Exact candidate:** `80304dd690bf187d3b255464e49d672262078143` (PR #635, `bugfix/issue-632-browser-playback`, base `main`). This decision applies only to this SHA.
+- **Scope:** whether a functional user can access and use uploaded synthetic audio/video playback in a browser after the signed playback endpoint was made browser-reachable. This does not accept the broader meeting-review feature or authorize release/merge.
+- **Approved product context:** the meeting portal includes media playback with ordinary controls, including seek (approved baseline §4.C). The browser-reachability behaviors assessed here were explicitly scoped in the assigned acceptance packet: media plays, seeking works, playback remains available after reload, requests do not target the internal storage hostname, and unauthorized access remains denied. The packet criteria do not relax authorization or storage access policy.
+- **Target profile and minimum sample:** functional users who review Sauri meeting media; minimum two representative users, following the frozen user-evaluation plan above. Synthetic media only; no real recordings, identities, personal data, customer content, or sharing of playback links.
+- **Scenarios and observable pass conditions (fixed before observations):** (1) open the authorized synthetic uploaded media and observe playback start; (2) seek to a selected media position and observe playback move to that position; (3) reload the page and observe the authorized media remains available and can play; for each scenario the browser's media request must use a browser-reachable host, not the internal `minio:9000` hostname. An unauthorized request must be denied. Product-user observations are recorded separately from the browser/network check; storage HTTP responses alone cannot pass a browser scenario.
+- **Overall threshold:** `PRODUCT_ACCEPTED` only if both users pass all three applicable user scenarios and the separate browser/network check confirms browser-reachable requests, no internal host, and unauthorized denial. Any observed failed pass condition means `PRODUCT_NOT_ACCEPTED`; absent or incomplete observations mean `INSUFFICIENT_USER_EVIDENCE`. Do not count agent simulations as user evidence.
+- **Evidence method:** controlled observation of user actions/results, ephemeral participant codes only, concise non-sensitive notes, no session recording and no media or signed URL disclosure. Bind all evidence to the exact candidate above; do not transfer results to another SHA.
+
+### Evidence and limitations
+
+- **Representative users observed:** 0 of 2; **user scenarios observed:** 0.
+- **User evidence:** none. The owner reported on PR #635 that no live browser-playback stack was available in the verification worktree and that no actual browser `<video>` element was exercised. The owner requested a browser-run environment or owner browser replay. No replay results have been supplied in this evaluation.
+- **Technical evidence only:** the PR description reports same-SHA synthetic storage checks: CORS preflight 200, byte-range read 206, reload read 200, tampered signed URL 403. The owner’s PR comment independently notes these checks establish storage HTTP behavior but do not exercise a browser media element. These checks do not establish that a user can play or seek media in a browser.
+- **Limitations:** the frozen user threshold and browser playback condition cannot be evaluated without an exact-candidate browser environment and representative user observations. Do not infer success from QA/security verdicts or storage HTTP results.
+
+### Decision
+
+`INSUFFICIENT_USER_EVIDENCE` for exact candidate `80304dd690bf187d3b255464e49d672262078143`. No representative user scenario was observed and the actual browser media element was not exercised; the synthetic storage checks are insufficient substitutes. Next step: provide an exact-candidate browser environment and have the owner conduct the authorized synthetic-media replay, recording the three scenario outcomes and browser/network check without sharing media or signed URLs. If that evidence is against a different candidate, evaluate and record it separately. This decision is not merge or release authorization.

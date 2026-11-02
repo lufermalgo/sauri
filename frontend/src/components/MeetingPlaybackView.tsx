@@ -17,6 +17,7 @@ interface MeetingPlaybackViewProps {
   loading: boolean;
   error: string | null;
   onRefreshManifest?: (currentTimeMs: number) => Promise<PlaybackManifest>;
+  onSeekToReady?: (seekTo: ((timeMs: number) => void) | undefined) => void;
 }
 
 const INITIAL_STATE: PlaybackState = {
@@ -54,6 +55,7 @@ export function MeetingPlaybackView({
   loading,
   error,
   onRefreshManifest,
+  onSeekToReady,
 }: MeetingPlaybackViewProps) {
   const [state, setState] = useState<PlaybackState>(INITIAL_STATE);
   const [mediaReady, setMediaReady] = useState(false);
@@ -127,6 +129,7 @@ export function MeetingPlaybackView({
       },
     });
     controllerRef.current = controller;
+    onSeekToReady?.((timeMs) => controller.seekTo(timeMs));
     if (savedTimeMs.current > 0) controller.seekTo(savedTimeMs.current);
     setState(controller.getState());
     setMediaReady(false);
@@ -151,9 +154,12 @@ export function MeetingPlaybackView({
       clock.removeEventListener("loadedmetadata", onMetadata);
       clock.removeEventListener("durationchange", onMetadata);
       controller.destroy();
-      if (controllerRef.current === controller) controllerRef.current = null;
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+        onSeekToReady?.(undefined);
+      }
     };
-  }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, passages, playableVideoSources]);
+  }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, onSeekToReady, passages, playableVideoSources]);
 
   useEffect(() => {
     if (state.activePassageId === previousActivePassage.current) return;
@@ -197,6 +203,10 @@ export function MeetingPlaybackView({
   const activeError = error ?? playbackError;
   const hasPlayableMedia = isMuxed || needsAudio;
   const durationMs = state.durationMs;
+  const activePassage = passages.find((passage) => passage.id === state.activePassageId);
+  const activePassagePreview = activePassage
+    ? `${activePassage.speakerLabel ?? "Speaker N"} · ${formatTime(isPlayablePassage(activePassage) ? activePassage.startMs : state.currentTimeMs)} · ${activePassage.text}`
+    : null;
 
   return (
     <section aria-label="Meeting playback">
@@ -312,42 +322,66 @@ export function MeetingPlaybackView({
       {passages.length === 0 ? (
         <p>No transcript or empty transcript.</p>
       ) : (
-        <ol aria-label="Transcript passages">
-          {passages.map((passage) => {
-            const playable = isPlayablePassage(passage);
-            const isActive = state.activePassageId === passage.id;
-            return (
-              <li
-                key={passage.id}
-                style={isActive ? ACTIVE_PASSAGE_STYLE : undefined}
-                data-passage-id={passage.id}
-                data-active={isActive ? "true" : "false"}
-                ref={(element) => {
-                  if (element) passageRefs.current.set(passage.id, element);
-                  else passageRefs.current.delete(passage.id);
+        <details>
+          <summary>
+            Playback passages ({passages.length})
+            {activePassage && activePassagePreview && (
+              <span
+                aria-current="true"
+                data-testid="active-playback-passage"
+                title={`Current passage: ${activePassagePreview}`}
+                style={{
+                  ...ACTIVE_PASSAGE_STYLE,
+                  display: "block",
+                  marginTop: "0.25rem",
+                  maxWidth: "min(100%, 48rem)",
+                  overflow: "hidden",
+                  padding: "0.25rem",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
-                aria-current={isActive ? "true" : undefined}
               >
-                <span
-                  data-testid="transcript-speaker-label"
-                  style={{ color: passage.speakerColor ?? "#6b7280", fontWeight: 600, marginRight: "0.5rem" }}
+                {activePassagePreview}
+              </span>
+            )}
+          </summary>
+          <ol aria-label="Transcript passages">
+            {passages.map((passage) => {
+              const playable = isPlayablePassage(passage);
+              const isActive = state.activePassageId === passage.id;
+              return (
+                <li
+                  key={passage.id}
+                  style={isActive ? ACTIVE_PASSAGE_STYLE : undefined}
+                  data-passage-id={passage.id}
+                  data-active={isActive ? "true" : "false"}
+                  ref={(element) => {
+                    if (element) passageRefs.current.set(passage.id, element);
+                    else passageRefs.current.delete(passage.id);
+                  }}
+                  aria-current={isActive ? "true" : undefined}
                 >
-                  {passage.speakerLabel ?? "Speaker N"}
-                </span>
-                {playable && <span>{formatTime(passage.startMs)} </span>}
-                <span>{passage.text}</span>
-                {playable && (
-                  <button
-                    type="button"
-                    aria-label={`Play ${passage.text}`}
-                    disabled={controlsDisabled}
-                    onClick={() => void controllerRef.current?.playPassage(passage)}
-                  >Play passage</button>
-                )}
-              </li>
-            );
-          })}
-        </ol>
+                  <span
+                    data-testid="transcript-speaker-label"
+                    style={{ color: passage.speakerColor ?? "#6b7280", fontWeight: 600, marginRight: "0.5rem" }}
+                  >
+                    {passage.speakerLabel ?? "Speaker N"}
+                  </span>
+                  {playable && <span>{formatTime(passage.startMs)} </span>}
+                  <span>{passage.text}</span>
+                  {playable && (
+                    <button
+                      type="button"
+                      aria-label={`Play ${passage.text}`}
+                      disabled={controlsDisabled}
+                      onClick={() => void controllerRef.current?.playPassage(passage)}
+                    >Play passage</button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </details>
       )}
     </section>
   );

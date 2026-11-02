@@ -85,6 +85,94 @@ describe("TranscriptView — renders the transcript view", () => {
     expect(screen.getByText(/00:00.*00:01/)).toBeDefined();
   });
 
+  it("groups adjacent transcript fragments by their assigned speaker while preserving speaker changes", async () => {
+    const transcriptData = transcript([
+      turn({ id: "fragment-1", text: "Synthetic opening", startMs: 0, endMs: 500, sequence: 1 }),
+      turn({ id: "fragment-2", text: "continues here", startMs: 500, endMs: 900, sequence: 2 }),
+      turn({ id: "fragment-3", text: "Synthetic reply", startMs: 900, endMs: 1400, sequence: 3 }),
+    ]);
+    transcriptData.segments = transcriptData.turns.map((speechTurn) => ({
+      id: speechTurn.id,
+      text: speechTurn.text,
+      startMs: speechTurn.startMs,
+      endMs: speechTurn.endMs,
+      sequence: speechTurn.sequence,
+    }));
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcriptData);
+    const diarizationApi = api as unknown as {
+      getDiarization: ReturnType<typeof vi.fn>;
+    };
+    diarizationApi.getDiarization.mockResolvedValue({
+      speakers: [
+        { id: "speaker-a", label: "Speaker A", sequence: 1 },
+        { id: "speaker-b", label: "Speaker B", sequence: 2 },
+      ],
+      assignments: [
+        { turn_id: "fragment-1", speaker_id: "speaker-a" },
+        { turn_id: "fragment-2", speaker_id: "speaker-a" },
+        { turn_id: "fragment-3", speaker_id: "speaker-b" },
+      ],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("Synthetic opening continues here");
+    expect(rows[0].querySelector('[data-testid="transcript-speaker-label"]')?.textContent).toBe("Speaker A");
+    expect(rows[1].textContent).toContain("Synthetic reply");
+    expect(rows[1].querySelector('[data-testid="transcript-speaker-label"]')?.textContent).toBe("Speaker B");
+  });
+
+  it("seeks playback to the first source fragment when a grouped turn is activated", async () => {
+    const transcriptData = transcript([
+      turn({ id: "fragment-1", text: "Synthetic opening", startMs: 500, endMs: 900, sequence: 1 }),
+      turn({ id: "fragment-2", text: "continues here", startMs: 900, endMs: 1300, sequence: 2 }),
+    ]);
+    transcriptData.segments = transcriptData.turns.map((speechTurn) => ({
+      id: speechTurn.id,
+      text: speechTurn.text,
+      startMs: speechTurn.startMs,
+      endMs: speechTurn.endMs,
+      sequence: speechTurn.sequence,
+    }));
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcriptData);
+    const diarizationApi = api as unknown as {
+      getDiarization: ReturnType<typeof vi.fn>;
+    };
+    diarizationApi.getDiarization.mockResolvedValue({
+      speakers: [{ id: "speaker-a", label: "Speaker A", sequence: 1 }],
+      assignments: [
+        { turn_id: "fragment-1", speaker_id: "speaker-a" },
+        { turn_id: "fragment-2", speaker_id: "speaker-a" },
+      ],
+    });
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1",
+      duration_seconds: 10,
+      video_presence: "absent",
+      audio_source: { source_id: "audio-1", url: "https://media.example.test/audio.wav", mime_type: "audio/wav" },
+      muxed_video_source: null,
+      video_sources: [],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const seekButton = await screen.findByRole("button", { name: "Play turn at 00:00" });
+    fireEvent.click(seekButton);
+
+    expect(screen.getByTestId("playback-audio")).toHaveProperty("currentTime", 0.5);
+  });
+
+  it("shows the speaker-identification state when diarization is not found", async () => {
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
+    vi.spyOn(api, "getDiarization").mockRejectedValue(new Error("Error 404"));
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    expect(await screen.findByText("Identificando hablantes")).toBeVisible(); // spanish-sample-data
+  });
+
   it("renders a speaker label on every transcript row, including unresolved rows", async () => {
     const transcriptData = transcript([
       turn({ id: "t1", text: "Synthetic first turn", sequence: 1 }),
@@ -135,6 +223,15 @@ describe("TranscriptView — renders the transcript view", () => {
     const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
     const secondLabels = screen.getAllByText("Synthetic Person B", { selector: '[data-testid="transcript-speaker-label"]' });
     const unresolvedLabels = screen.getAllByText("Speaker N", { selector: '[data-testid="transcript-speaker-label"]' });
+    const passageDetails = screen.getByText("Playback passages (3)").closest("details");
+    const rawLabels = Array.from(passageDetails?.querySelectorAll('[data-testid="transcript-speaker-label"]') ?? []);
+    const groupedLabels = [...firstLabels, ...secondLabels, ...unresolvedLabels]
+      .filter((label) => !passageDetails?.contains(label));
+    expect(passageDetails).not.toHaveAttribute("open");
+    expect(rawLabels).toHaveLength(3);
+    expect(groupedLabels).toHaveLength(3);
+    groupedLabels.forEach((label) => expect(label).toBeVisible());
+    rawLabels.forEach((label) => expect(label).not.toBeVisible());
     expect(firstLabels).toHaveLength(2);
     expect(secondLabels).toHaveLength(2);
     expect(unresolvedLabels).toHaveLength(2);
@@ -143,9 +240,10 @@ describe("TranscriptView — renders the transcript view", () => {
     expect(firstStyle).toContain("color:");
     expect(secondStyle).toContain("color:");
     expect(secondStyle).not.toBe(firstStyle);
-    for (const label of [...firstLabels, ...secondLabels, ...unresolvedLabels]) {
-      expect(label).toBeVisible();
-    }
+    fireEvent.click(screen.getByText("Playback passages (3)"));
+    expect(passageDetails).toHaveAttribute("open");
+    rawLabels.forEach((label) => expect(label).toBeVisible());
+    groupedLabels.forEach((label) => expect(label).toBeVisible());
   });
 
   it("renders the playback player before the transcript passages", async () => {
