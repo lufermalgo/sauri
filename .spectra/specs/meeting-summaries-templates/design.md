@@ -450,7 +450,7 @@ transcript use the same `POST /summary-requests` flow and create distinct genera
 the default alone creates no request and does not reshape an existing summary; a later request
 resolves the then-current explicit selection or default (see Scope Boundaries).
 
-### 4. Data model additions (`backend/app/infra/models.py` + Alembic migration `008_`)
+### 4. Data model additions (`backend/app/infra/models.py` + Alembic migration `012_meeting_summaries_templates`)
 
 ```python
 class TemplateCategory(Base):
@@ -553,12 +553,16 @@ default_summary_template_id: Mapped[str | None] = mapped_column(
 timestamps are `DateTime(timezone=True)`, matching every existing table (verified in
 `backend/app/infra/models.py`).
 
-Alembic migration `008_summaries_and_templates.py`
-(`down_revision = "007_rename_schema_to_english"`, the verified current head):
+Alembic migration `012_meeting_summaries_templates.py` (`revision =
+"012_meeting_summaries_templates"`, `down_revision = "011_linkless_cleanup"`). The
+existing graph at the design baseline has `008_speaker_review_aggregate` after `007`, two
+parallel `009` revisions after `008`, `010_speaker_excerpt_reference` merging those branches,
+and `011_linkless_cleanup` after `010`. Therefore this feature migration is appended after
+`011`; it does not replace, rewrite, or re-parent any existing revision. Its upgrade is:
 
 1. `CREATE TABLE template_categories`, then `CREATE TABLE summary_templates` (columns as
-   above; creation order matters — `users` must exist, and `users.default_summary_template_id`
-   will reference `summary_templates`).
+   above). Both reference the already-existing `users` table. Create these before any new FK
+   from `users` to `summary_templates`.
 2. `CREATE TABLE summary_request_outbox` with immutable request fields (`event_id`, meeting,
    transcript, selected template id/version, instructions snapshot), per-transcript `generation`,
    request `status` (`pending`, `running`, `succeeded`, or terminal `failed`), and nullable
@@ -574,17 +578,28 @@ Alembic migration `008_summaries_and_templates.py`
    already-processed event do not update its row. Do not add uniqueness on `transcript_id`
    alone or on `meeting_id`: each request event remains distinct, and the current artifact is
    a query over successful rows ordered by request generation, not a mutable singleton slot.
-4. `ALTER TABLE users ADD COLUMN default_summary_template_id VARCHAR(36) NULL REFERENCES
-   summary_templates(id) ON DELETE SET NULL`.
-5. Do not seed a template or configure a default in this migration. Requirements do not
-   define a seed template, and R5.1 only allows users to configure a template they own as their
-   personal default; it does not require a default to exist for every user (D12). The ownership
-   and onboarding behavior for template instructions/default setup remains unresolved pending
-   an approved requirements decision.
-6. `downgrade()` reverses in exact reverse order: drop `users.default_summary_template_id`,
-   then `meeting_summaries`, `processed_summary_events`, `summary_request_outbox`,
-   `summary_templates`, and `template_categories`. Drop the outbox after any dependent summary
-   rows/ledger and before its referenced template table.
+4. Add nullable `users.default_summary_template_id VARCHAR(36)` without a foreign key, then
+   add a named FK constraint to `summary_templates(id) ON DELETE SET NULL` only after both
+   tables exist. This explicit two-step construction resolves the cycle: `summary_templates`
+   already references `users`, and `users.default_summary_template_id` references
+   `summary_templates`. Do not use `use_alter` as an implicit migration-order substitute; the
+   Alembic revision must create the column and add its constraint in this order.
+5. No seed: do not insert a template or assign a default. R5.1 requires user ownership but
+   does not require a preconfigured default; no seed behavior is approved.
+6. Supported upgrade path: the repository's Compose-supported PostgreSQL 16 databases upgrade
+   through the current converged head `011_linkless_cleanup` and then
+   `012_meeting_summaries_templates`. A database stamped at either 009 branch must first
+   traverse the existing 010 merge and 011 revision; this feature revision must never be
+   attached directly to 007 or either 009 branch. `upgrade()` uses PostgreSQL 16-compatible
+   table/column/constraint operations. Do not assume this revision repairs a database whose
+   existing Alembic version state is inconsistent with its schema.
+7. `downgrade()` from 012 to 011 first drops the named `users.default_summary_template_id`
+   FK and column, then drops `meeting_summaries`, `processed_summary_events`,
+   `summary_request_outbox`, `summary_templates`, and `template_categories` (respecting
+   referencing tables). This PostgreSQL 16 rollback is intentionally destructive to feature
+   data. It does not downgrade 011 or alter any earlier revision; downgrade beyond 011 remains
+   subject to the existing 011 guard conditions for pending cleanup rows and null `meet_link`
+   values.
 
 ### 5. Default-template resolver (`backend/app/templates/default_resolver.py`)
 
@@ -751,7 +766,7 @@ and a nav entry. Contains:
 
 ## Modelos de Datos
 
-Entity-relationship additions (PostgreSQL, migration `008_summaries_and_templates`):
+Entity-relationship additions (PostgreSQL, migration `012_meeting_summaries_templates`):
 
 ```mermaid
 erDiagram
@@ -1031,7 +1046,7 @@ These amendments are normative for implementation and supersede any conflicting 
 
 5. **No implied template seed or personal default (R3/R5).** The approved requirements do
    not specify a seed template, a system-provided template, or onboarding behavior. Migration
-   `008_summaries_and_templates.py` therefore creates the template tables and nullable
+   `012_meeting_summaries_templates.py` therefore creates the template tables and nullable
    `users.default_summary_template_id` column but seeds neither a template nor a personal
    default. Do not infer a shared/system template or model one as selectable by personal users;
    any such template or onboarding behavior would require an approved requirements decision
