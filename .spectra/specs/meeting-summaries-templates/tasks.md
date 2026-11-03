@@ -1,7 +1,7 @@
 # Implementation Plan — Meeting Summaries and Templates
 
 **Spec:** `meeting-summaries-templates`
-**Approved inputs:** requirements `cdce9c34c566b72f42bb6db5eecdd76bdacb4532` (Mira APPROVED, PR #231 merged); owner-approved `PRODUCT_BASELINE.md` `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`); design `cc9db3885b58672b0b46b39fddbbbdd87d844815` (Mira APPROVED, PR #636 open). This amendment is based on the previously approved tasks snapshot `8cccde7a59c95600cf5b6ce84d3270a3988794df`; these identify planning sources and are not recurring implementation checks.
+**Approved inputs:** requirements `cdce9c34c566b72f42bb6db5eecdd76bdacb4532` (Mira APPROVED, PR #231 merged); owner-approved `PRODUCT_BASELINE.md` `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`); revised design `6a0db6dcc0deab546fc81ebc778413bb81e5eedd` (blob `2297f0f92234f1c948246b66ca27d5c95fd8238e`; Mira APPROVED, PR #687 open). This amendment is based on the previously approved tasks snapshot `8cccde7a59c95600cf5b6ce84d3270a3988794df`; these identify planning sources and are not recurring implementation checks.
 
 ## Planning constraints and unresolved gates
 
@@ -38,10 +38,10 @@
 
 **Tracking:** Issue #270 · Card task_76551eb8a88047d8
 
-**Archivo:** `backend/app/infra/models.py`; `backend/alembic/versions/008_summaries_and_templates.py`
-**Acción:** Implement the design's `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary` models, nullable `User.default_summary_template_id`, constraints and FKs; add migration `008` from `007_rename_schema_to_english` in the specified create/reverse order. Do not seed templates/defaults. Use transcript `ON DELETE CASCADE`, user-default `ON DELETE SET NULL`, and allow multiple summary generations.
+**Archivo:** `backend/app/infra/models.py`; `backend/alembic/versions/012_meeting_summaries_templates.py`
+**Acción:** Implement the design's `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary` models, nullable `User.default_summary_template_id`, constraints and FKs; add revision `012_meeting_summaries_templates` with `down_revision = "011_linkless_cleanup"`. Preserve the existing 007→008→009 branches→010 merge→011 lineage; do not attach this migration to 007 or either 009 branch. In `upgrade()`, create `template_categories`, `summary_templates`, `summary_request_outbox`, `processed_summary_events`, and `meeting_summaries` in the design's dependency order; add the nullable user-default column before its named `summary_templates(id) ON DELETE SET NULL` FK, and preserve transcript/meeting `ON DELETE CASCADE` plus multiple summary generations. Do not seed templates/defaults. In `downgrade()`, drop the named user-default FK and column first, then `meeting_summaries`, `processed_summary_events`, `summary_request_outbox`, `summary_templates`, and `template_categories`; this rollback is destructive to feature data and stops at 011.
 
-**Criterio de Completado:** T1's RED test passes and `cd backend && pytest tests/summaries/test_summary_models_property.py -q` succeeds; migration upgrade/downgrade is exercised by the repository's configured test fixture.
+**Criterio de Completado:** T1's RED test passes and `cd backend && pytest tests/summaries/test_summary_models_property.py -q` succeeds; the repository's configured PostgreSQL migration test fixture exercises upgrade from the supported 011 head to 012 and downgrade back to 011.
 
 **Dependencias:** T1 (mandatory RED→GREEN)
 
