@@ -524,6 +524,8 @@ async def test_speaker_receipt_upgrade_failure_rolls_back_width(
 RECORDING_MEDIA_REVISION = "009_recording_media_sources"
 SPEAKER_REVIEW_RECEIPTS_REVISION = "009_speaker_review_idempotency_receipts"
 AGGREGATE_REVISION = "008_speaker_review_aggregate"
+RECONCILIATION_REVISION = "010_speaker_excerpt_reference"
+LINKLESS_REVISION = "011_linkless_cleanup"
 LEGACY_PREDECESSOR_REVISION = "007_rename_schema_to_english"
 LEGACY_PREDECESSOR_PARENT = "006_add_titulo_reunion"
 
@@ -548,19 +550,22 @@ def test_published_009_revision_ids_and_immediate_parent_are_preserved() -> None
     )
 
 
-def test_reconciliation_revision_is_the_only_head_with_both_exact_009_parents() -> None:
+def test_linkless_migration_is_the_only_head_after_the_009_reconciliation() -> None:
     script = _migration_script()
     heads = script.get_heads()
 
-    assert len(heads) == 1, (
-        "Alembic graph must have one reconciliation head; "
-        f"found {heads!r} instead of converged 009 branches"
+    assert heads == [LINKLESS_REVISION], (
+        "Alembic graph must have one linkless migration head; "
+        f"found {heads!r}"
     )
-    reconciliation = script.get_revision(heads[0])
+    linkless_migration = script.get_revision(heads[0])
+    assert linkless_migration.down_revision == RECONCILIATION_REVISION
+
+    reconciliation = script.get_revision(RECONCILIATION_REVISION)
     assert set(cast(tuple[str, ...], reconciliation.down_revision)) == {
         RECORDING_MEDIA_REVISION,
         SPEAKER_REVIEW_RECEIPTS_REVISION,
-    }, "the sole head must directly reconcile both existing 009 revisions"
+    }, "the reconciliation revision must directly merge both existing 009 revisions"
 
 
 def test_head_ancestry_contains_both_009_branches_and_008() -> None:
@@ -570,7 +575,7 @@ def test_head_ancestry_contains_both_009_branches_and_008() -> None:
 
     ancestry = {
         revision.revision
-        for revision in script.iterate_revisions(heads[0], AGGREGATE_REVISION)
+        for revision in script.iterate_revisions(heads[0], "base")
     }
     assert {
         RECORDING_MEDIA_REVISION,
@@ -590,8 +595,8 @@ def test_each_009_state_has_a_structural_forward_path_through_sibling_to_head() 
         (SPEAKER_REVIEW_RECEIPTS_REVISION, RECORDING_MEDIA_REVISION),
     ):
         planned = {
-            revision.revision
-            for revision in script.iterate_revisions(head, current_revision)
+            step.revision.revision
+            for step in script._upgrade_revs(head, current_revision)
         }
         assert head in planned, f"upgrade from {current_revision} must reach reconciliation head"
         assert sibling_revision in planned, (

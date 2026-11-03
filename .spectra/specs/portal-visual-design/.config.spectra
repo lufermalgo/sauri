@@ -1,0 +1,12 @@
+{
+  "specId": "9c076b47-3382-4688-9b75-780f36dd9908",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-10-31",
+  "idea": "Define traceable requirements for the approved minimum web portal scope: visual treatment of existing login, recording library, meeting review, and manual recording upload. Use the Stitch reference only as non-normative visual inspiration and exclude unsupported mock content.",
+  "phases": {
+    "requirements": "complete",
+    "design": "pending",
+    "tasks": "pending"
+  }
+}

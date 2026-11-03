@@ -34,3 +34,4 @@ tree.txt
 extension/test-results/
 extension/tests/e2e/.backend-pid
 extension/tests/e2e/.backend.log
+frontend/test-results/
