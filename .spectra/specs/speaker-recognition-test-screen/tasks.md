@@ -47,7 +47,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-3: RED — Specify processing, transcript fidelity, honest labels, and bounded screen scope
 
-**Tracking:** Issue #554 · Card task_6a2457aa02d3464e
+**Tracking:** Issue #554 · Card task_6a2457aa02d3464e · PR #668 (done)
 
 **Files / test seam:** `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`; component behavior in `frontend/src/components/SpeakerRecognitionTestScreen.tsx`; screen selection in `frontend/src/App.tsx`; API read paths in `frontend/src/api.ts`: `GET /api/v1/meetings/{meeting_id}` for persisted processing state, `GET /api/v1/meetings/{meeting_id}/transcript` for completed segments, and `GET /api/v1/meetings/{meeting_id}/speaker-review` for persisted review status/items.
 
