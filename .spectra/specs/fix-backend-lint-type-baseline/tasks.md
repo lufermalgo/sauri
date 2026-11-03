@@ -6,10 +6,10 @@
 |---|---|---|---|
 | 1 | Establish an isolated candidate environment and capture the exact pre-correction baseline | 1.1–1.2 | None; 1.2 requires 1.1 |
 | 2 | Map and preserve existing behavior before production edits | 2.1 | 1.2 |
-| 3 | Correct findings in atomic, file-scoped units with RED evidence transferred before each edit | T-3.1.01–T-3.1.61 (one per current diagnostic-bearing in-scope path) | Historical Task 1.2 evidence plus current-base checker snapshot; matching 2.1 handoff before production-file edits |
-| 4 | Validate and hand off the integrated candidate | 4.1–4.2 | Every T-3.1.01–T-3.1.61 instance; Task 4.1 also requires authorized resolution/integration of separate 009 defect card `task_6ccdc76cbc0f4fe9` because current default migration tests fail there |
+| 3 | Correct findings in atomic, file-scoped units with RED evidence transferred before each edit | T-3.1.01–T-3.1.21 and T-3.1.23–T-3.1.61 (one per current diagnostic-bearing in-scope path; 60 materialized corrections — T-3.1.22 excluded as not applicable) | Historical Task 1.2 evidence plus current-base checker snapshot; matching 2.1 handoff before production-file edits |
+| 4 | Validate and hand off the integrated candidate | 4.1–4.2 | Every materialized T-3.1.01–T-3.1.61 instance excluding T-3.1.22; Task 4.1 also requires authorized resolution/integration of separate 009 defect card `task_6ccdc76cbc0f4fe9` because current default migration tests fail there |
 
-The frozen Task 1.2 evidence remains historically based on `a6c74bb92b286e7819602a07e47785ee7ba1f78c`; it is not treated as a current-base inventory. Current-base checker output/version and per-path diagnostic inventory are preserved in `evidence-current-base/` for exact base `0d6f2713abcf08d960e98451b04bbdd31b4c8843`. It records 190 Ruff findings across 47 paths and 303 mypy errors across 31 files. Relative to Task 1.2: Ruff added `alembic/versions/009_recording_media_sources.py` and `app/ingestion/schemas.py`, and removed `app/infra/models.py`; mypy added `app/meetings/speaker_review_service.py` and `tests/ingestion/test_playback_source_ingestion.py`, and removed `tests/speaker_review/test_disposition_idempotency.py`. The two new application paths are in the approved bugfix scope, but production edits remain gated by their exact Task 2.1 handoffs. The 009 recording-media migration's I001 is recorded as excluded: the separate migration-lineage defect is tracked by `task_6ccdc76cbc0f4fe9`; do not fold that migration or its behavior repair into this plan. Thus the current materialized correction set is 61 paths after removing that separate 009 file. One file's Ruff and mypy findings are combined into one atomic correction task; test-only paths remain separate. Findings removed from current base receive no correction task.
+The frozen Task 1.2 evidence remains historically based on `a6c74bb92b286e7819602a07e47785ee7ba1f78c`; it is not treated as a current-base inventory. Current-base checker output/version and per-path diagnostic inventory are preserved in `evidence-current-base/` for exact base `0d6f2713abcf08d960e98451b04bbdd31b4c8843`. It records 190 Ruff findings across 47 paths and 303 mypy errors across 31 files. Relative to Task 1.2: Ruff added `alembic/versions/009_recording_media_sources.py` and `app/ingestion/schemas.py`, and removed `app/infra/models.py`; mypy added `app/meetings/speaker_review_service.py` and `tests/ingestion/test_playback_source_ingestion.py`, and removed `tests/speaker_review/test_disposition_idempotency.py`. The two new application paths are in the approved bugfix scope, but production edits remain gated by their exact Task 2.1 handoffs. The 009 recording-media migration's I001 is recorded as excluded: the separate migration-lineage defect is tracked by `task_6ccdc76cbc0f4fe9`; do not fold that migration or its behavior repair into this plan. Thus the current materialized correction set is 60 instances after removing that separate 009 file and excluding not-applicable T-3.1.22: T-3.1.01–T-3.1.21 and T-3.1.23–T-3.1.61. One file's Ruff and mypy findings are combined into one atomic correction task; test-only paths remain separate. Findings removed from current base receive no correction task.
 
 ## Phase 1: Isolated Candidate Environment and Baseline
 
@@ -57,6 +57,8 @@ Before any corresponding production-file edit, transfer to its writer: (a) the e
 ### T-3.1.01–T-3.1.61: One correction task per current diagnostic-bearing file
 
 Each row is one separate atomic task, issue, and board card after this exact plan amendment is approved. It authorizes only the exact listed file and the current Ruff/mypy findings shown below. Multiple checker findings for one file stay in one task. Labels are `task` for all; test-only paths also get `test`, and files explicitly named `*_property.py` also get `pbt`. The task's issue/card descriptions must cite this plan version, exact branch/worktree, and dependency IDs. No issue/card exists before Mira approves this amended plan.
+
+**Scope reconciliation:** `T-3.1.22` (`app/meetings/speaker_review_service.py`, mypy union-attr×1) remains listed for traceability but is **not applicable**: its issue #347 was closed as not planned, its mypy finding was removed by merged PR #418, and `tests/speaker_review/` (its focused seam `tests/speaker_review/test_disposition_idempotency.py::test_persistent_replay_returns_original_result_without_second_mutation`) does not exist in the source tree. It must not be instantiated as an issue, card, or PR, and must not be counted toward the completion dependency. The materialized completion set is therefore 60 instances: T-3.1.01–T-3.1.21 and T-3.1.23–T-3.1.61.
 
 | Task | Exact file | Current findings (Ruff / mypy) | Issue labels |
 |---|---|---|---|
@@ -139,18 +141,18 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.11 | Done · Issue #336 · Card task_e31207d8cfb042c3 · PR #474 |
 | T-3.1.12 | Issue #337 · Card task_4fe91b55210f4902 |
 | T-3.1.13 | Done · Issue #338 · Card task_b2894a1b41664ef5 · PR #466 |
-| T-3.1.14 | Issue #339 · Card task_d9060c9f79b346ce |
+| T-3.1.14 | Issue #339 · Card task_d9060c9f79b346ce · PR #339 · Done |
 | T-3.1.15 | Done · Issue #340 · Card task_bc422932256d4afd · PR #469 |
 | T-3.1.16 | Done · Issue #341 · Card task_b18c2cd83e214a3b · PR #470 |
 | T-3.1.17 | Done · Issue #342 · Card task_153535d2f483425e · PR #471 |
 | T-3.1.18 | Issue #343 · Card task_b7d536f17b744d05 |
 | T-3.1.19 | Done · Issue #344 · Card task_80bb9d30b55d4460 · PR #477 |
 | T-3.1.20 | Done · Issue #345 · Card task_debf2ac069c54a40 · PR #472 |
-| T-3.1.21 | Issue #346 · Card task_7741f6f73f4744b9 |
-| T-3.1.22 | Not applicable — Issue #347 closed as not planned; the mypy finding was removed by merged PR #418 · Card task_a51038580a414fcd · PR #508 |
+| T-3.1.21 | Done · Issue #346 · Card task_7741f6f73f4744b9 · PR #593 |
+| T-3.1.22 | Not applicable — not instantiated; Issue #347 closed as not planned; the mypy finding was removed by merged PR #418 · Card task_a51038580a414fcd · PR #508 |
 | T-3.1.23 | Issue #348 · Card task_7547e887bf434b12 |
-| T-3.1.24 | Issue #349 · Card task_1663610cd4ed4cff |
-| T-3.1.25 | Issue #350 · Card task_d02b6e8c4d814984 |
+| T-3.1.24 | Done · Issue #349 · Card task_1663610cd4ed4cff · PR #525 |
+| T-3.1.25 | Done · Issue #350 · Card task_d02b6e8c4d814984 · PR #506 |
 | T-3.1.26 | Done · Issue #351 · Card task_59aac81ea8054377 · PR #483 |
 | T-3.1.27 | Done · Issue #352 · Card task_9f1282d6970a445d · PR #427 |
 | T-3.1.28 | Done · Issue #353 · Card task_33bf40d2ec6146e4 · PR #426 |
@@ -160,7 +162,7 @@ Each row is one separate atomic task, issue, and board card after this exact pla
 | T-3.1.32 | Done · Issue #357 · Card task_b2193d5a036c4013 · PR #430 |
 | T-3.1.33 | Issue #358 · Card task_0f9b0e5cff7441f0 |
 | T-3.1.34 | Done · Issue #359 · Card task_4d85d49373ed4e3e · PR #431 |
-| T-3.1.35 | Issue #360 · Card task_a0215908954e429b |
+| T-3.1.35 | Done · Issue #360 · Card task_a0215908954e429b · PR #592 |
 | T-3.1.36 | Issue #361 · Card task_679c84ddba6544df |
 | T-3.1.37 | Done · Issue #362 · Card task_76c632e57e91477e · PR #433 |
 | T-3.1.38 | Done · Issue #363 · Card task_10a2fd0ed4d4439d · PR #435 |
@@ -260,7 +262,7 @@ For each task, scope remains only its listed source file. Its dependency is the 
 
 **Completion Criteria (each instance):** Only the listed file changes; all listed checker findings are absent on the same targeted checker rerun; applicable focused pytest evidence passes; for production files, the matching Task 2.1 handoff is present and semantics-preserving equivalence is recorded. Migration edits preserve operations, order, resulting schema/data semantics; no exception context, FastAPI injection/body shape, cleanup, or runtime behavior changes without a separate authorized disposition. Findings that cannot be fixed within these bounds are escalated to Ansel, not suppressed.
 
-**Dependencies:** Current-base evidence snapshot and Task 1.2; for each production path, its matching Task 2.1 evidence/handoff before edits. Distinct paths have no invented pairwise dependency; each runs in its own issue worktree. Ansel sequences only real prerequisites and verified shared-resource conflicts. Changes integrate to the single candidate only through Ansel's authorized route. The excluded `009_recording_media_sources.py` I001 remains with separate card `task_6ccdc76cbc0f4fe9`, not among these 61 instances.
+**Dependencies:** Current-base evidence snapshot and Task 1.2; for each production path, its matching Task 2.1 evidence/handoff before edits. Distinct paths have no invented pairwise dependency; each runs in its own issue worktree. Ansel sequences only real prerequisites and verified shared-resource conflicts. Changes integrate to the single candidate only through Ansel's authorized route. The excluded `009_recording_media_sources.py` I001 remains with separate card `task_6ccdc76cbc0f4fe9`, not among these 60 instances.
 
 **Task 3.1.36 tracking:** Done · Issue #361 · Card `task_679c84ddba6544df` · PR #389
 
@@ -285,7 +287,7 @@ For each task, scope remains only its listed source file. Its dependency is the 
 
 **Completion Criteria:** Every correction instance is integrated into the identified candidate; focused tests and all full checks have recorded results. An unblocked pass requires `pytest -q`, `ruff check .`, and `mypy .` to exit 0 under unchanged configuration. Any failure, timeout, or unavailable service is recorded as such and cannot be reported as acceptance pass.
 
-**Dependencies:** All T-3.1.01–T-3.1.61 instances and their authorized integration into the candidate worktree, plus completion and authorized integration of the separate migration 009 lineage defect tracked by `task_6ccdc76cbc0f4fe9`. The current-base map records three default migration-test failures in that separate defect; this phase is not green until they are resolved or explicitly reported as blocked.
+**Dependencies:** All materialized T-3.1.01–T-3.1.61 instances excluding T-3.1.22 and their authorized integration into the candidate worktree, plus completion and authorized integration of the separate migration 009 lineage defect tracked by `task_6ccdc76cbc0f4fe9`. The current-base map records three default migration-test failures in that separate defect; this phase is not green until they are resolved or explicitly reported as blocked.
 
 **Tracking:** Issue #265 · Card task_f6e79b01ba8a4ea0
 

@@ -180,6 +180,7 @@ async def test_property_13_store_delete_leaves_unavailable(
     store: ObjectStore = impl_cls()
     reference = await store.save(key, content)
     await store.delete(reference)
+    await store.delete(reference)
 
     with pytest.raises((KeyError, ValueError, IndexError)):
         await store.get(reference)

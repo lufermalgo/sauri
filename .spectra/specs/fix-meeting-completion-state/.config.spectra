@@ -1,0 +1,12 @@
+{
+  "specId": "05dac10b-5f3b-4b54-b6f7-23b562473dab",
+  "specType": "bugfix",
+  "workflowType": "requirements-first",
+  "created": "2026-10-31",
+  "idea": "Fix the defect where an uploaded meeting remains queued after successful processing.",
+  "phases": {
+    "requirements": "complete",
+    "design": "pending",
+    "tasks": "pending"
+  }
+}

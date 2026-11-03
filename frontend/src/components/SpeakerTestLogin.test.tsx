@@ -1,0 +1,164 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { App } from "../App";
+import * as api from "../api";
+
+vi.mock("../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api")>();
+  return { ...actual, login: vi.fn(), uploadRecording: vi.fn() };
+});
+vi.mock("../components/RegisterForm", () => ({
+  RegisterForm: () => <div>Meeting registration</div>,
+}));
+vi.mock("../components/MeetingList", () => ({
+  MeetingList: () => <div>Meeting list</div>,
+}));
+vi.mock("../components/TranscriptView", () => ({
+  TranscriptView: () => <div>Transcript</div>,
+}));
+
+const credentials = { email: "owner@example.test", password: "synthetic-password" };
+
+function createLocalStorage(): Storage {
+  const values = new Map<string, string>();
+  return {
+    get length() { return values.size; },
+    clear: () => values.clear(),
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => values.delete(key),
+    setItem: (key, value) => values.set(key, String(value)),
+  };
+}
+
+function openSpeakerTest() {
+  localStorage.setItem("sauri_token", "synthetic-existing-token");
+  render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: /open speaker recognition test/i }));
+}
+
+function enterCredentials() {
+  fireEvent.change(screen.getByLabelText(/email/i), { target: { value: credentials.email } });
+  fireEvent.change(screen.getByLabelText(/password/i), { target: { value: credentials.password } });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+beforeEach(() => {
+  vi.stubGlobal("localStorage", createLocalStorage());
+});
+
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.clearAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("speaker-test login and local session gate", () => {
+  it("shows login before mounting the authenticated app when no token exists", () => {
+    render(<App />);
+
+    expect(screen.getByLabelText(/email/i)).toBeTruthy();
+    expect(screen.getByLabelText(/password/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /log in|sign in/i })).toBeTruthy();
+    expect(screen.queryByText("Meeting registration")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /speaker recognition test/i })).toBeNull();
+  });
+
+  it("keeps test controls hidden while login is pending and prevents duplicate submission", async () => {
+    const pendingLogin = deferred<{ access_token: string; token_type: string; expires_in: number }>();
+    vi.mocked(api.login).mockReturnValue(pendingLogin.promise);
+    render(<App />);
+    enterCredentials();
+    const submit = screen.getByRole("button", { name: /log in|sign in/i });
+
+    fireEvent.click(submit);
+    expect(api.login).toHaveBeenCalledTimes(1);
+    expect(api.login).toHaveBeenCalledWith(credentials.email, credentials.password);
+    expect(localStorage.length).toBe(0);
+    expect(screen.queryByRole("heading", { name: /speaker recognition test/i })).toBeNull();
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(submit);
+    expect(api.login).toHaveBeenCalledTimes(1);
+
+    pendingLogin.resolve({ access_token: "synthetic-access-token", token_type: "bearer", expires_in: 3600 });
+    fireEvent.click(await screen.findByRole("button", { name: /open speaker recognition test/i }));
+    await screen.findByRole("heading", { name: /speaker recognition test/i });
+  });
+
+  it("stores only the access token, clears transient password state and reveals test controls on success", async () => {
+    vi.mocked(api.login).mockResolvedValue({
+      access_token: "synthetic-access-token",
+      token_type: "bearer",
+      expires_in: 3600,
+    });
+    render(<App />);
+    enterCredentials();
+    fireEvent.click(screen.getByRole("button", { name: /log in|sign in/i }));
+
+    await screen.findByRole("button", { name: /open speaker recognition test/i });
+    fireEvent.click(screen.getByRole("button", { name: /open speaker recognition test/i }));
+    await screen.findByRole("heading", { name: /speaker recognition test/i });
+    expect(localStorage.getItem("sauri_token")).toBe("synthetic-access-token");
+    expect(localStorage.length).toBe(1);
+    expect(localStorage.getItem("synthetic-password")).toBeNull();
+    expect(screen.queryByLabelText(/password/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /log out|sign out/i }));
+    expect(screen.getByLabelText(/password/i)).toHaveProperty("value", "");
+  });
+
+  it.each([
+    ["rejected credentials", () => Promise.reject(new Error("synthetic rejection"))],
+    ["network failure", () => Promise.reject(new TypeError("synthetic network failure"))],
+  ])("remains unauthenticated and shows a generic error after %s", async (_failure, response) => {
+    vi.mocked(api.login).mockImplementation(response);
+    render(<App />);
+    enterCredentials();
+    fireEvent.click(screen.getByRole("button", { name: /log in|sign in/i }));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByLabelText(/email/i)).toBeTruthy();
+    expect(screen.getByLabelText(/password/i)).toHaveProperty("value", credentials.password);
+    expect(screen.queryByRole("heading", { name: /speaker recognition test/i })).toBeNull();
+    expect(localStorage.getItem("sauri_token")).toBeNull();
+    expect(localStorage.getItem("synthetic-password")).toBeNull();
+  });
+
+  it("allows the test screen when a token already exists", () => {
+    localStorage.setItem("sauri_token", "synthetic-existing-token");
+
+    openSpeakerTest();
+
+    expect(screen.getByRole("heading", { name: /speaker recognition test/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /log out|sign out/i })).toBeTruthy();
+    expect(screen.queryByLabelText(/password/i)).toBeNull();
+  });
+
+  it("logs out locally by removing only sauri_token without making a server request", async () => {
+    localStorage.setItem("sauri_token", "synthetic-existing-token");
+    localStorage.setItem("unrelated_preference", "keep-me");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    openSpeakerTest();
+
+    fireEvent.click(screen.getByRole("button", { name: /log out|sign out/i }));
+
+    await waitFor(() => expect(screen.getByLabelText(/email/i)).toBeTruthy());
+    expect(localStorage.getItem("sauri_token")).toBeNull();
+    expect(localStorage.getItem("unrelated_preference")).toBe("keep-me");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(api.login).not.toHaveBeenCalled();
+  });
+});

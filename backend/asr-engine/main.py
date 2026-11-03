@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import boto3
 from botocore.config import Config
@@ -125,15 +125,17 @@ def _download_audio_from_s3(audio_ref: str) -> str:
     if "." in audio_ref:
         ext = "." + audio_ref.rsplit(".", 1)[-1]
 
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+        tmp_path = tmp.name
+
     try:
-        s3_client.download_file(MINIO_BUCKET, audio_ref, tmp.name)
+        s3_client.download_file(MINIO_BUCKET, audio_ref, tmp_path)
     except Exception as e:
         # Clean up temp file on download failure
-        os.unlink(tmp.name)
+        os.unlink(tmp_path)
         raise RuntimeError(f"Failed to download audio_ref={audio_ref!r} from bucket={MINIO_BUCKET!r}: {e}") from e
 
-    return tmp.name
+    return tmp_path
 
 
 def _normalize_language_hint(language: str) -> str | None:
@@ -169,7 +171,7 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
         audio_path = _download_audio_from_s3(request.audio_ref)
     except Exception as e:
         logger.error("Failed to download audio: %s", e)
-        raise HTTPException(status_code=500, detail=f"Audio download failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Audio download failed: {e}") from e
 
     try:
         # 2. Run faster-whisper transcription
@@ -201,14 +203,12 @@ async def transcribe(request: TranscribeRequest) -> TranscribeResponse:
 
     except Exception as e:
         logger.error("Transcription failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}") from e
 
     finally:
         # 5. Clean up temporary file
-        try:
+        with suppress(OSError):
             os.unlink(audio_path)
-        except OSError:
-            pass
 
 
 @app.get("/health")

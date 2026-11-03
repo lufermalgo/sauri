@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_standard" name="shell-type"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,300..900;1,6..12,300..900&amp;family=Literata:ital,opsz,wght@0,7..72,400..800;1,7..72,400..800&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#4a7c59",
+            "primary-container": "#78a886",
+            "primary-fixed": "#c8e8d0",
+            "primary-fixed-dim": "#8ecf9e",
+            "on-primary": "#ffffff",
+            "on-primary-container": "#0f321d",
+            "on-primary-fixed": "#002110",
+            "on-primary-fixed-variant": "#2a6038",
+            "surface-tint": "#4a7c59",
+            "secondary": "#6b6358",
+            "secondary-container": "#f0e8db",
+            "secondary-fixed": "#f0e8db",
+            "secondary-fixed-dim": "#d4ccbf",
+            "on-secondary": "#ffffff",
+            "on-secondary-container": "#5e5548",
+            "tertiary": "#705c30",
+            "tertiary-container": "#c4a66a",
+            "tertiary-fixed": "#f8e0a8",
+            "tertiary-fixed-dim": "#dcc48e",
+            "on-tertiary": "#ffffff",
+            "on-tertiary-container": "#554020",
+            "background": "#faf6f0",
+            "surface": "#faf6f0",
+            "surface-bright": "#ffffff",
+            "surface-dim": "#dbd7cf",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f5f1ea",
+            "surface-container": "#f0ece4",
+            "surface-container-high": "#eae6de",
+            "surface-container-highest": "#e4e0d8",
+            "on-surface": "#2e3230",
+            "on-surface-variant": "#4a4e4a",
+            "outline": "#74796e",
+            "outline-variant": "#c4c8bc",
+            "error": "#b83230",
+            "error-container": "#ffdad8",
+            "on-error": "#ffffff",
+            "on-error-container": "#690005"
+          },
+          borderRadius: {
+            DEFAULT: "0.5rem",
+            lg: "1rem",
+            xl: "1.5rem",
+            full: "9999px"
+          },
+          fontFamily: {
+            headline: ["Literata", "serif"],
+            display: ["Literata", "serif"],
+            body: ["Nunito Sans", "sans-serif"],
+            label: ["Nunito Sans", "sans-serif"],
+            "mono-timestamp": ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-background font-body text-on-surface antialiased min-h-screen flex flex-col justify-between">
+<!-- HEADER -->
+<header class="fixed top-0 inset-x-0 z-50 bg-surface/90 backdrop-blur-xl border-b border-outline-variant/40 shadow-xs">
+<div class="h-16 w-full max-w-7xl mx-auto px-6 lg:px-12 flex items-center justify-between gap-4">
+<div class="flex items-center gap-6">
+<!-- Logo limpio oficial Sauri -->
+<a class="flex items-center" href="#">
+<img alt="Sauri" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBTT5sUH9YjApkyylt1W8UgPBuFqAZD1cryfP1rx0eb0_LdnYph4JwCmaKdH5VUSikdtz-l0c5GpS0VL2CA_M6OU8Wt4tzP1inFatjDAEXpGcFUZ0IPpBSlnsy-E2D_DqdClaO4dg3DhqCzmFt2lQ5vVrT6avrfo-YOxWF9K6iN_yP7xgytZhJ66FBLgizmig_kL-YzaUWHdoISuQmpgF1E6FTLw0XjFqEMemC_ovJMz9vWoM0ntPyopA"/>
+</a>
+<!-- Navegación global consistente -->
+<nav class="hidden lg:flex items-center gap-1 p-1 bg-surface-container-low rounded-xl border border-outline-variant/40">
+<a class="px-3.5 py-1.5 font-label text-xs font-semibold text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-all" data-path="biblioteca-de-grabaciones" href="#">
+            Biblioteca de grabaciones
+          </a>
+<a class="px-3.5 py-1.5 font-label text-xs font-semibold text-primary bg-surface-container-lowest rounded-lg shadow-xs border border-outline-variant/40 transition-all" data-path="revision-de-hablantes" href="#">
+            Revisión de hablantes
+          </a>
+<a class="px-3.5 py-1.5 font-label text-xs font-semibold text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-lg transition-all" data-path="configuracion" href="#">
+            Configuración
+          </a>
+</nav>
+</div>
+<!-- Quick Global Search & Action Bar -->
+<div class="flex items-center gap-3">
+<button class="hidden xl:flex items-center gap-3 px-3.5 py-1.5 rounded-xl bg-surface-container-lowest border border-outline-variant/60 text-on-surface-variant hover:text-on-surface hover:border-outline transition-all text-left group shadow-xs" type="button">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-outline group-hover:text-primary transition-colors">search</span>
+<span class="text-xs text-outline group-hover:text-on-surface-variant">Buscar grabaciones...</span>
+</div>
+<kbd class="font-mono-timestamp text-[11px] px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant/60 text-outline">⌘K</kbd>
+</button>
+<div class="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-low border border-outline-variant/50">
+<span class="w-2 h-2 rounded-full bg-primary shadow-xs"></span>
+<span class="text-xs text-on-surface-variant font-medium">Sincronizado</span>
+</div>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary font-label text-xs hover:bg-primary/90 shadow-sm shadow-primary/20 transition-all font-semibold active:scale-[0.98]" type="button">
+<span class="material-symbols-outlined text-[16px]">add</span>
+<span>Subir grabación</span>
+</button>
+<!-- User Profile Dropdown -->
+<div class="relative group pl-2 border-l border-outline-variant/40">
+<button class="flex items-center gap-2.5 p-1 rounded-xl hover:bg-surface-container transition-all focus:outline-none" type="button">
+<div class="flex items-center gap-2">
+<div class="hidden md:flex flex-col text-right leading-tight">
+<span class="font-label text-xs text-on-surface font-semibold">Fer</span>
+<span class="font-label text-[10px] text-outline font-medium">Summan • Admin</span>
+</div>
+<img alt="Fer (Summan)" class="w-8 h-8 rounded-full object-cover ring-2 ring-primary/20 shadow-xs" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBwpp5qm8Jb_Zr4klo6lCXGfmi2IUv853qXwpUOkrZPG0MO2JQ39nJPnKaYAxoREypzg8Tx9YzNhOiSvjDDi_VzD0o8qO2XBbBQQHPnSEWuAeVQN82bL36DkEitGap1g-IafgyI3eno2OcKov05v1Dow-8Cu72qmV1KDZ8D78VR9HMvKq2Cla-tPuyrbhnRvx3UxAM1uYIJgUNLwDozJIjZRmpeIRbYlw5q7gqWIVAG"/>
+</div>
+<span class="material-symbols-outlined text-[18px] text-outline group-hover:text-on-surface transition-colors hidden md:inline-block">expand_more</span>
+</button>
+<div class="absolute right-0 top-full mt-2 w-52 py-2 bg-surface-container-lowest rounded-xl border border-outline-variant/50 shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-150 z-50">
+<div class="px-4 py-2 border-b border-outline-variant/30 md:hidden">
+<p class="font-label text-xs text-on-surface font-semibold">Fer (Summan)</p>
+<p class="font-label text-[10px] text-outline">Admin</p>
+</div>
+<a class="flex items-center gap-2.5 px-4 py-2 text-xs text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" data-path="diagnostico" href="#">
+<span class="material-symbols-outlined text-[16px] text-outline">troubleshoot</span>
+              Diagnóstico
+            </a>
+<div class="my-1 border-t border-outline-variant/30"></div>
+<a class="flex items-center gap-2.5 px-4 py-2 text-xs text-error hover:bg-error-container/30 transition-colors" data-path="login" href="#">
+<span class="material-symbols-outlined text-[16px] text-error">logout</span>
+              Cerrar sesión
+            </a>
+</div>
+</div>
+</div>
+</div>
+</header>
+<!-- MAIN -->
+<main class="w-full pt-16 bg-background flex-1">
+<div class="max-w-7xl mx-auto px-6 lg:px-12 py-8 flex flex-col gap-6">
+<!-- Breadcrumb / Header Kicker -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-2">
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container text-xs font-semibold tracking-wide uppercase font-label">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+            Espacio de Trabajo Summan • Calibración de Voces
+          </div>
+<span class="text-outline text-xs hidden sm:inline">•</span>
+<span class="font-mono-timestamp text-xs text-outline hidden sm:inline">Diarization Engine v3.4 • Neural Cluster #918</span>
+</div>
+<div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+<div>
+<h1 class="font-headline text-3xl sm:text-4xl text-on-surface font-bold tracking-tight">
+              Revisión y Asignación de Hablantes
+            </h1>
+<p class="text-sm sm:text-base text-on-surface-variant font-body leading-relaxed mt-1 max-w-3xl">
+              Verifica y nombra las voces no identificadas por el motor Whisper v3 para asegurar la precisión en las minutas automáticas y calibrar el perfil de voz del equipo.
+            </p>
+</div>
+<div class="flex items-center gap-2 shrink-0">
+<button class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-surface-container-lowest hover:bg-surface-container text-on-surface font-label text-xs font-semibold border border-outline-variant/40 shadow-xs transition-all" id="btnDiagTop" type="button">
+<span class="material-symbols-outlined text-[16px] text-primary">code</span>
+<span>Copiar diagnóstico JSON</span>
+</button>
+</div>
+</div>
+</div>
+<!-- BANNER ADVERTENCIA (TERRA ROOTED WARMTH ACCENT) -->
+<div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-secondary-container/50 via-surface-container-low to-surface-container border border-outline-variant/50 p-5 sm:p-6 shadow-xs">
+<div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 relative z-10">
+<div class="flex items-start gap-4">
+<div class="flex-shrink-0 w-11 h-11 rounded-xl bg-primary flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">record_voice_over</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-label text-[11px] uppercase tracking-wider text-on-primary-fixed-variant font-bold px-2.5 py-0.5 rounded-full bg-primary-fixed">Revisión Obligatoria</span>
+<span class="font-mono-timestamp text-xs text-outline">Whisper Diarization Pipeline</span>
+</div>
+<h2 class="font-headline text-lg text-on-surface font-bold">Esta reunión contiene voces pendientes de asignación</h2>
+<p class="font-body text-xs sm:text-sm text-on-surface-variant max-w-3xl leading-relaxed">
+                Para garantizar la precisión de futuras transcripciones y resúmenes de <span class="text-on-surface font-bold">Fer</span>, asigna los nombres correspondientes antes de cerrar. La calibración biométrica se indexará a tu vector de equipo.
+              </p>
+</div>
+</div>
+<div class="flex items-center gap-2 self-start md:self-center shrink-0">
+<span class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-surface-container-lowest border border-tertiary/30 text-tertiary font-mono-timestamp text-xs font-bold shadow-xs">
+<span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+              2 Pendientes por resolver
+            </span>
+</div>
+</div>
+</div>
+<!-- SOURCE FILE METADATA HEADER CARD -->
+<div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 bg-surface-container-lowest p-6 rounded-2xl border border-outline-variant/40 shadow-xs">
+<div class="flex flex-col gap-1.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-label text-xs uppercase tracking-wider text-outline font-bold">Archivo fuente</span>
+<span class="text-outline">•</span>
+<span class="font-mono-timestamp text-xs text-primary font-bold bg-primary-fixed/40 px-2 py-0.5 rounded">REC-20241024-EX-002</span>
+<span class="text-outline">•</span>
+<span class="inline-flex items-center gap-1 font-label text-xs font-bold text-tertiary bg-tertiary-fixed/40 px-2 py-0.5 rounded-full">
+<span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>
+              2 voces por resolver
+            </span>
+</div>
+<h2 class="font-headline text-2xl text-on-surface font-bold tracking-tight">Demo Comercial &amp; Arquitectura Cloud - Grupo Éxito</h2>
+<div class="flex flex-wrap items-center gap-4 text-on-surface-variant font-body text-xs pt-1">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary">calendar_today</span>
+              24 Oct 2025
+            </span>
+<span class="text-outline-variant">•</span>
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary">schedule</span>
+              42m 18s duración
+            </span>
+<span class="text-outline-variant">•</span>
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px] text-primary">group</span>
+              4 hablantes detectados
+            </span>
+<span class="text-outline-variant">•</span>
+<span class="flex items-center gap-1.5 font-mono-timestamp">
+<span class="material-symbols-outlined text-[16px] text-tertiary">graphic_eq</span>
+              PCM 48kHz Stereo FLAC
+            </span>
+</div>
+</div>
+<div class="flex items-center gap-2.5 w-full lg:w-auto">
+<a class="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-label text-xs font-semibold border border-outline-variant/40 transition-colors" href="#">
+<span class="material-symbols-outlined text-[16px] text-outline">description</span>
+<span>Ver transcripción cruda</span>
+</a>
+<a class="flex items-center justify-center w-9 h-9 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant border border-outline-variant/40 transition-colors" href="#" title="Abrir archivo original">
+<span class="material-symbols-outlined text-[18px]">open_in_new</span>
+</a>
+</div>
+</div>
+<!-- SPEAKER CARDS LIST -->
+<div class="grid grid-cols-1 gap-4">
+<!-- SPEAKER 1: CONFIRMED -->
+<div class="group relative overflow-hidden rounded-2xl bg-surface-container-lowest p-5 sm:p-6 border border-primary/30 shadow-xs transition-all hover:border-primary hover:shadow-md">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-primary"></div>
+<div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5 pl-2">
+<div class="flex items-start gap-4 min-w-[280px]">
+<div class="relative">
+<div class="w-12 h-12 rounded-xl bg-primary-fixed flex items-center justify-center font-headline text-base font-bold text-on-primary-fixed-variant shadow-xs">
+                  FS
+                </div>
+<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-surface-container-lowest border border-primary/30 flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[13px] text-primary" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+</div>
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline text-base font-bold text-on-surface">Fer (Summan)</span>
+<span class="font-label text-[11px] px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed-variant font-bold">Tú (usuario activo)</span>
+</div>
+<span class="font-body text-xs text-on-surface-variant">Speaker 1 • Canal Audio L</span>
+<div class="flex items-center gap-1.5 mt-1">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-label text-xs text-primary font-bold">92% de confianza biométrica</span>
+</div>
+</div>
+</div>
+<!-- Audio Waveform Player -->
+<div class="flex-1 w-full max-w-2xl bg-surface-container-low border border-outline-variant/30 p-3 rounded-xl flex flex-col sm:flex-row items-center gap-4">
+<button class="w-10 h-10 flex-shrink-0 rounded-xl bg-primary text-on-primary flex items-center justify-center shadow-xs hover:bg-primary/90 transition-all active:scale-95" onclick="togglePlay(this)" type="button">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<div class="flex-1 w-full flex flex-col gap-1.5">
+<div class="flex items-center justify-between font-mono-timestamp text-xs text-outline">
+<span class="text-primary font-bold">Muestra 00:01:12</span>
+<span>00:01:25 (13s)</span>
+</div>
+<!-- Waveform Organic Terra Green -->
+<div class="h-7 w-full flex items-center gap-[3px] overflow-hidden">
+<div class="w-1 bg-primary/40 h-2 rounded-full"></div>
+<div class="w-1 bg-primary/40 h-3 rounded-full"></div>
+<div class="w-1 bg-primary/60 h-6 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-primary h-5 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-primary h-6 rounded-full"></div>
+<div class="w-1 bg-primary h-4 rounded-full"></div>
+<div class="w-1 bg-primary/40 h-3 rounded-full"></div>
+<div class="w-1 bg-primary/60 h-6 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-primary h-5 rounded-full"></div>
+<div class="w-1 bg-primary/40 h-2 rounded-full"></div>
+<div class="w-1 bg-primary/50 h-4 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-primary h-6 rounded-full"></div>
+<div class="w-1 bg-primary/50 h-5 rounded-full"></div>
+<div class="w-1 bg-primary/40 h-3 rounded-full"></div>
+<div class="w-1 bg-primary/30 h-2 rounded-full"></div>
+<div class="w-1 bg-primary h-4 rounded-full"></div>
+<div class="w-1 bg-primary h-6 rounded-full"></div>
+<div class="w-1 bg-primary h-5 rounded-full"></div>
+<div class="w-1 bg-primary/40 h-2 rounded-full"></div>
+<div class="w-1 bg-primary/40 h-4 rounded-full"></div>
+<div class="w-1 bg-primary/50 h-6 rounded-full"></div>
+<div class="w-1 bg-primary/40 h-3 rounded-full"></div>
+<div class="w-1 bg-primary/30 h-2 rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center gap-1 font-mono-timestamp text-xs text-primary flex-shrink-0 font-bold bg-primary-fixed/40 px-2.5 py-1 rounded-lg">
+<span class="material-symbols-outlined text-[15px] text-primary">check_circle</span>
+<span>Validado</span>
+</div>
+</div>
+<!-- Action Status -->
+<div class="flex items-center gap-3 w-full xl:w-auto justify-end">
+<div class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-fixed/40 border border-primary/30 text-on-primary-fixed-variant font-label text-xs font-bold shadow-xs">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">done_all</span>
+<span>Confirmado</span>
+</div>
+</div>
+</div>
+</div>
+<!-- SPEAKER 2: SUGGESTED MATCH -->
+<div class="group relative overflow-hidden rounded-2xl bg-surface-container-lowest p-5 sm:p-6 border border-outline-variant/40 shadow-xs transition-all hover:border-primary/60 hover:shadow-md">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-primary-container"></div>
+<div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5 pl-2">
+<div class="flex items-start gap-4 min-w-[280px]">
+<div class="relative">
+<div class="w-12 h-12 rounded-xl bg-surface-container flex items-center justify-center font-headline text-base font-bold text-primary shadow-xs">
+                  CM
+                </div>
+<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-surface-container-lowest border border-outline-variant/40 flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[13px] text-primary">auto_awesome</span>
+</div>
+</div>
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline text-base font-bold text-on-surface">Carlos Mendieta</span>
+<span class="font-label text-[11px] px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold">Autodetectado</span>
+</div>
+<span class="font-body text-xs text-on-surface-variant">Speaker 2 • 88% afinidad tímbrica</span>
+<p class="font-label text-xs text-outline flex items-center gap-1 mt-0.5">
+<span class="material-symbols-outlined text-[13px]">history</span>
+                  Previo: 'Nutresa Kickoff'
+                </p>
+</div>
+</div>
+<!-- Audio Waveform Player -->
+<div class="flex-1 w-full max-w-2xl bg-surface-container-low border border-outline-variant/30 p-3 rounded-xl flex flex-col sm:flex-row items-center gap-4">
+<button class="w-10 h-10 flex-shrink-0 rounded-xl bg-surface-container text-primary border border-outline-variant/40 flex items-center justify-center shadow-xs hover:bg-primary hover:text-on-primary transition-all active:scale-95" onclick="togglePlay(this)" type="button">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<div class="flex-1 w-full flex flex-col gap-1.5">
+<div class="flex items-center justify-between font-mono-timestamp text-xs text-outline">
+<span class="text-primary font-bold">Muestra 00:05:40</span>
+<span>00:05:55 (15s)</span>
+</div>
+<!-- Waveform -->
+<div class="h-7 w-full flex items-center gap-[3px] overflow-hidden">
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-primary-container/70 h-5 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-primary h-6 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-4 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-primary-container/80 h-5 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-primary h-6 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-primary-container/70 h-4 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-primary h-6 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-primary-container/70 h-5 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-4 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-primary-container/80 h-6 rounded-full"></div>
+<div class="w-1 bg-primary h-7 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center gap-1 font-mono-timestamp text-xs text-outline flex-shrink-0">
+<span>Voz nítida</span>
+</div>
+</div>
+<!-- Contact Matching Field & Confirm -->
+<div class="flex items-center gap-2.5 w-full xl:w-auto">
+<div class="relative min-w-[200px]">
+<input class="w-full px-3.5 py-2 rounded-xl bg-surface-container-lowest border border-outline-variant/60 text-on-surface font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary shadow-xs" placeholder="Buscar contacto..." type="text" value="Carlos Mendieta"/>
+<span class="material-symbols-outlined absolute right-2.5 top-2.5 text-[16px] text-outline pointer-events-none">expand_more</span>
+</div>
+<button class="speaker-confirm-btn flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary font-label text-xs hover:bg-primary/90 shadow-xs transition-all font-semibold whitespace-nowrap active:scale-95" onclick="markConfirmed(this, 'Speaker 2')" type="button">
+<span class="material-symbols-outlined text-[16px]">check</span>
+<span>Confirmar</span>
+</button>
+</div>
+</div>
+</div>
+<!-- SPEAKER 3: UNKNOWN (AMBER/TERTIARY ACCENT) -->
+<div class="group relative overflow-hidden rounded-2xl bg-surface-container-lowest p-5 sm:p-6 border border-outline-variant/40 shadow-xs transition-all hover:border-tertiary hover:shadow-md">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-tertiary"></div>
+<div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5 pl-2">
+<div class="flex items-start gap-4 min-w-[280px]">
+<div class="relative">
+<div class="w-12 h-12 rounded-xl bg-secondary-container flex items-center justify-center font-headline text-base font-bold text-tertiary shadow-xs">
+                  S3
+                </div>
+<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-surface-container-lowest border border-tertiary/30 flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[13px] text-tertiary">help_outline</span>
+</div>
+</div>
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline text-base font-bold text-on-surface">Speaker 3</span>
+<span class="font-label text-[11px] px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-semibold">Desconocido</span>
+</div>
+<span class="font-body text-xs text-on-surface-variant">Speaker 3 • 26% de participación</span>
+<span class="font-label text-xs text-tertiary font-semibold mt-0.5">Frecuencia fundamental: 215 Hz</span>
+</div>
+</div>
+<!-- Audio Waveform Player -->
+<div class="flex-1 w-full max-w-2xl bg-surface-container-low border border-outline-variant/30 p-3 rounded-xl flex flex-col sm:flex-row items-center gap-4">
+<button class="w-10 h-10 flex-shrink-0 rounded-xl bg-secondary-container text-tertiary border border-tertiary/30 flex items-center justify-center shadow-xs hover:bg-tertiary hover:text-on-tertiary transition-all active:scale-95" onclick="togglePlay(this)" type="button">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<div class="flex-1 w-full flex flex-col gap-1.5">
+<div class="flex items-center justify-between font-mono-timestamp text-xs text-outline">
+<span class="text-tertiary font-bold">Muestra 00:14:20</span>
+<span>00:14:38 (18s)</span>
+</div>
+<!-- Waveform Organic Amber/Gold -->
+<div class="h-7 w-full flex items-center gap-[3px] overflow-hidden">
+<div class="w-1 bg-outline-variant h-4 rounded-full"></div>
+<div class="w-1 bg-tertiary-container/70 h-6 rounded-full"></div>
+<div class="w-1 bg-tertiary h-7 rounded-full"></div>
+<div class="w-1 bg-tertiary h-7 rounded-full"></div>
+<div class="w-1 bg-tertiary-container h-5 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-tertiary-container/80 h-5 rounded-full"></div>
+<div class="w-1 bg-tertiary h-7 rounded-full"></div>
+<div class="w-1 bg-tertiary h-7 rounded-full"></div>
+<div class="w-1 bg-tertiary-container h-4 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-tertiary-container/70 h-6 rounded-full"></div>
+<div class="w-1 bg-tertiary h-7 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-tertiary-container/70 h-5 rounded-full"></div>
+<div class="w-1 bg-tertiary h-7 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-4 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-tertiary-container/70 h-5 rounded-full"></div>
+<div class="w-1 bg-tertiary h-6 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center gap-1 font-mono-timestamp text-xs text-outline flex-shrink-0">
+<span>Calidad: Alta</span>
+</div>
+</div>
+<!-- Custom Input & Suggestions -->
+<div class="flex flex-col gap-1.5 w-full xl:w-auto min-w-[280px]">
+<div class="flex items-center gap-1.5">
+<input class="w-full px-3.5 py-2 rounded-xl bg-surface-container-lowest border border-outline-variant/60 text-on-surface font-body text-xs focus:outline-none focus:ring-2 focus:ring-tertiary shadow-xs" id="spk3Input" placeholder="Escribe o selecciona quién es..." type="text"/>
+<button class="speaker-confirm-btn flex items-center justify-center p-2 rounded-xl bg-tertiary text-on-tertiary hover:bg-tertiary/90 shadow-xs transition-all flex-shrink-0 active:scale-95" onclick="markConfirmed(this, 'Speaker 3')" type="button">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</button>
+</div>
+<div class="flex items-center gap-1.5 flex-wrap">
+<button class="text-left font-label text-[11px] px-2 py-0.5 rounded-lg bg-secondary-container text-on-secondary-container hover:bg-secondary-fixed-dim transition-all font-semibold" onclick="document.getElementById('spk3Input').value='Andrea Pérez (Gerente TI Éxito)'" type="button">
+                  + Andrea Pérez (Gerente TI Éxito)
+                </button>
+<button class="text-left font-label text-[11px] px-2 py-0.5 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" onclick="document.getElementById('spk3Input').focus()" type="button">
+                  + Nuevo contacto
+                </button>
+</div>
+<span class="font-label text-[11px] text-outline">Los nombres son privados en tu cuenta de Sauri.</span>
+</div>
+</div>
+</div>
+<!-- SPEAKER 4: UNKNOWN WITH QUICK ROLE TAGS -->
+<div class="group relative overflow-hidden rounded-2xl bg-surface-container-lowest p-5 sm:p-6 border border-outline-variant/40 shadow-xs transition-all hover:border-primary/50 hover:shadow-md">
+<div class="absolute left-0 top-0 bottom-0 w-1.5 bg-outline-variant"></div>
+<div class="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-5 pl-2">
+<div class="flex items-start gap-4 min-w-[280px]">
+<div class="relative">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center font-headline text-base font-bold text-on-surface-variant shadow-xs">
+                  S4
+                </div>
+<div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-surface-container-lowest border border-outline-variant/40 flex items-center justify-center shadow-xs">
+<span class="material-symbols-outlined text-[13px] text-outline">mic_external_off</span>
+</div>
+</div>
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline text-base font-bold text-on-surface">Speaker 4</span>
+<span class="font-label text-[11px] px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-semibold">Desconocido</span>
+</div>
+<span class="font-body text-xs text-on-surface-variant">Speaker 4 • 11% de intervención</span>
+<span class="font-label text-xs text-outline mt-0.5">Segmentos intermitentes (3 partes)</span>
+</div>
+</div>
+<!-- Audio Waveform Player -->
+<div class="flex-1 w-full max-w-2xl bg-surface-container-low border border-outline-variant/30 p-3 rounded-xl flex flex-col sm:flex-row items-center gap-4">
+<button class="w-10 h-10 flex-shrink-0 rounded-xl bg-surface-container text-on-surface-variant border border-outline-variant/40 flex items-center justify-center shadow-xs hover:bg-primary hover:text-on-primary transition-all active:scale-95" onclick="togglePlay(this)" type="button">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<div class="flex-1 w-full flex flex-col gap-1.5">
+<div class="flex items-center justify-between font-mono-timestamp text-xs text-outline">
+<span class="text-on-surface-variant font-bold">Muestra 00:28:10</span>
+<span>00:28:22 (12s)</span>
+</div>
+<!-- Waveform Neutral -->
+<div class="h-7 w-full flex items-center gap-[3px] overflow-hidden">
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline/60 h-5 rounded-full"></div>
+<div class="w-1 bg-primary/70 h-7 rounded-full"></div>
+<div class="w-1 bg-outline/60 h-5 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-outline/60 h-6 rounded-full"></div>
+<div class="w-1 bg-primary/70 h-7 rounded-full"></div>
+<div class="w-1 bg-outline/50 h-4 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline/70 h-6 rounded-full"></div>
+<div class="w-1 bg-primary/70 h-7 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-4 rounded-full"></div>
+<div class="w-1 bg-outline/50 h-5 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-3 rounded-full"></div>
+<div class="w-1 bg-outline-variant h-2 rounded-full"></div>
+</div>
+</div>
+<div class="flex items-center gap-1 font-mono-timestamp text-xs text-outline flex-shrink-0">
+<span>Eco moderado</span>
+</div>
+</div>
+<!-- Custom Input & Quick Tags -->
+<div class="flex flex-col gap-1.5 w-full xl:w-auto min-w-[280px]">
+<div class="flex items-center gap-1.5">
+<input class="w-full px-3.5 py-2 rounded-xl bg-surface-container-lowest border border-outline-variant/60 text-on-surface font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary shadow-xs" id="spk4Input" placeholder="Asignar nombre o rol..." type="text"/>
+<button class="speaker-confirm-btn flex items-center justify-center p-2 rounded-xl bg-primary text-on-primary hover:bg-primary/90 shadow-xs transition-all flex-shrink-0 active:scale-95" onclick="markConfirmed(this, 'Speaker 4')" type="button">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</button>
+</div>
+<div class="flex items-center gap-1.5 flex-wrap">
+<button class="font-label text-[11px] px-2 py-0.5 rounded-lg bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all font-semibold" onclick="document.getElementById('spk4Input').value='Cliente Éxito (Sistemas)'" type="button">
+                  Cliente Éxito
+                </button>
+<button class="font-label text-[11px] px-2 py-0.5 rounded-lg bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all font-semibold" onclick="document.getElementById('spk4Input').value='Proveedor Nube'" type="button">
+                  Proveedor
+                </button>
+<button class="font-label text-[11px] px-2 py-0.5 rounded-lg bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all font-semibold" onclick="document.getElementById('spk4Input').value='Consultor Externo'" type="button">
+                  Consultor
+                </button>
+</div>
+<span class="font-label text-[11px] text-outline">Identifica el rol si no conoces su nombre exacto.</span>
+</div>
+</div>
+</div>
+</div>
+<!-- INSIGHT PANEL: DIARIZATION METRICS & RULES (STYLE COHERENT WITH SCREEN_3) -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-2">
+<div class="rounded-2xl bg-surface-container-lowest p-5 border border-outline-variant/40 shadow-xs flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-lg bg-primary-fixed flex items-center justify-center text-on-primary-fixed-variant flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+</div>
+<div>
+<span class="font-label text-[11px] text-outline block uppercase tracking-wider font-bold">Algoritmo Acústico</span>
+<span class="font-headline text-base font-bold text-on-surface">Auto-Diarización Neural</span>
+</div>
+</div>
+<p class="font-body text-xs text-on-surface-variant leading-relaxed pt-1">
+            Sauri utiliza clustering espectral continuo con embeddings ECAPA-TDNN para separar canales vocales superpuestos sin pérdida de contenido semántico.
+          </p>
+<div class="mt-auto flex items-center justify-between font-mono-timestamp text-xs text-outline pt-3 border-t border-outline-variant/30">
+<span>Diarization Error Rate (DER)</span>
+<span class="text-primary font-bold">3.8% (Óptimo)</span>
+</div>
+</div>
+<div class="rounded-2xl bg-surface-container-lowest p-5 border border-outline-variant/40 shadow-xs flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-lg bg-secondary-container flex items-center justify-center text-on-secondary-container flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">security</span>
+</div>
+<div>
+<span class="font-label text-[11px] text-outline block uppercase tracking-wider font-bold">Gobernanza de Datos</span>
+<span class="font-headline text-base font-bold text-on-surface">Privacidad &amp; Tenancy</span>
+</div>
+</div>
+<p class="font-body text-xs text-on-surface-variant leading-relaxed pt-1">
+            Las huellas acústicas generadas solo pertenecen al espacio de trabajo Summan. Ningún vector biométrico es compartido con modelos públicos o terceros.
+          </p>
+<div class="mt-auto flex items-center justify-between font-mono-timestamp text-xs text-outline pt-3 border-t border-outline-variant/30">
+<span>Aislamiento de huellas</span>
+<span class="text-tertiary font-bold">AES-256 Tenant-Isolated</span>
+</div>
+</div>
+<div class="rounded-2xl bg-surface-container-lowest p-5 border border-outline-variant/40 shadow-xs flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">sync</span>
+</div>
+<div>
+<span class="font-label text-[11px] text-outline block uppercase tracking-wider font-bold">Retroactividad</span>
+<span class="font-headline text-base font-bold text-on-surface">Efecto en Transcripciones</span>
+</div>
+</div>
+<p class="font-body text-xs text-on-surface-variant leading-relaxed pt-1">
+            Al confirmar los 4 hablantes, los párrafos del documento final y los compromisos de acción se reetiquetarán de forma retroactiva en menos de 5 segundos.
+          </p>
+<div class="mt-auto flex items-center justify-between font-mono-timestamp text-xs text-outline pt-3 border-t border-outline-variant/30">
+<span>Párrafos a sincronizar</span>
+<span class="text-on-surface font-bold">142 bloques</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- STICKY BOTTOM ACTION BAR (TERRA DOCK THEME) -->
+<div class="sticky bottom-0 z-40 w-full bg-surface/95 backdrop-blur-xl border-t border-outline-variant/40 shadow-[0_-4px_24px_rgba(74,124,89,0.06)] py-3 px-6 lg:px-12">
+<div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+<!-- Progress Bar & Requirement Status -->
+<div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full md:w-auto">
+<div class="flex flex-col gap-1 min-w-[260px]">
+<div class="flex items-center justify-between font-label text-xs">
+<span class="text-on-surface font-bold" id="progressText">2 de 4 hablantes confirmados (50%)</span>
+<span class="font-mono-timestamp text-xs text-primary font-bold" id="progressPercentage">50%</span>
+</div>
+<div class="w-full h-2 rounded-full bg-surface-container overflow-hidden">
+<div class="h-full bg-primary transition-all duration-300 rounded-full" id="progressBarFill" style="width: 50%;"></div>
+</div>
+</div>
+<div class="flex items-center gap-1.5 text-outline font-body text-xs">
+<span class="material-symbols-outlined text-[16px] text-primary">info</span>
+<span class="hidden sm:inline">Regla: Requiere 100% para archivar como lista. Si sales, quedará pendiente.</span>
+<span class="sm:hidden">100% requerido para archivar.</span>
+</div>
+</div>
+<!-- Action CTAs -->
+<div class="flex items-center gap-2.5 w-full md:w-auto justify-end">
+<button class="px-4 py-2 rounded-xl bg-surface-container-lowest hover:bg-surface-container text-on-surface border border-outline-variant/40 font-label text-xs font-semibold transition-all shadow-xs" onclick="showFeedback('Borrador guardado con éxito. Estado: Pendiente.')" type="button">
+          Guardar borrador y salir
+        </button>
+<button class="flex items-center gap-2 px-5 py-2 rounded-xl bg-surface-container-highest text-outline font-label text-xs cursor-not-allowed transition-all font-semibold shadow-xs" disabled="" id="btnFinalize" onclick="finalizeReview()" type="button">
+<span class="material-symbols-outlined text-[17px]">verified</span>
+<span id="finalizeLabel">Confirmar todos y actualizar transcripción (2/4)</span>
+</button>
+</div>
+</div>
+</div>
+<!-- TOAST NOTIFICATION CONTAINER -->
+<div class="fixed bottom-24 right-8 z-50 transform translate-y-10 opacity-0 pointer-events-none transition-all duration-300 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-surface-container-lowest border border-outline-variant/50 text-on-surface shadow-xl" id="toast">
+<span class="material-symbols-outlined text-[20px] text-primary" id="toastIcon">info</span>
+<span class="font-body text-xs font-semibold" id="toastMessage">Acción completada</span>
+</div>
+<!-- FOOTER OFICIAL TERRA -->
+<footer class="w-full bg-surface-container-lowest border-t border-outline-variant/40 py-4">
+<div class="max-w-7xl mx-auto px-6 lg:px-12 flex flex-col sm:flex-row items-center justify-between gap-3 font-label text-xs text-outline">
+<span>© 2025 Sauri Platform by Summan. Inteligencia conversacional y transcripción de alta fidelidad.</span>
+<div class="flex items-center gap-6">
+<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-primary"></span> Whisper v3 Large &amp; Diarization Neural Core</span>
+<span class="font-mono-timestamp">v2.4.0-enterprise</span>
+</div>
+</div>
+</footer>
+<script>
+    let confirmedCount = 2; // Speaker 1 & default state start at 2
+    const totalSpeakers = 4;
+
+    function updateProgress() {
+      const percentage = Math.round((confirmedCount / totalSpeakers) * 100);
+      const progressText = document.getElementById('progressText');
+      const progressPercentage = document.getElementById('progressPercentage');
+      const progressBarFill = document.getElementById('progressBarFill');
+      const btnFinalize = document.getElementById('btnFinalize');
+      const finalizeLabel = document.getElementById('finalizeLabel');
+
+      if (progressText) progressText.innerText = `${confirmedCount} de ${totalSpeakers} hablantes confirmados (${percentage}%)`;
+      if (progressPercentage) progressPercentage.innerText = `${percentage}%`;
+      if (progressBarFill) progressBarFill.style.width = `${percentage}%`;
+      if (finalizeLabel) finalizeLabel.innerText = `Confirmar todos y actualizar transcripción (${confirmedCount}/${totalSpeakers})`;
+
+      if (confirmedCount >= totalSpeakers) {
+        if (btnFinalize) {
+          btnFinalize.disabled = false;
+          btnFinalize.className = "flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-on-primary font-label text-xs hover:bg-primary/90 transition-all font-semibold shadow-md shadow-primary/20 cursor-pointer active:scale-95";
+        }
+        showFeedback("¡Todos los hablantes han sido validados! Ya puedes actualizar la transcripción.");
+      } else {
+        if (btnFinalize) {
+          btnFinalize.disabled = true;
+          btnFinalize.className = "flex items-center gap-2 px-5 py-2 rounded-xl bg-surface-container-highest text-outline font-label text-xs cursor-not-allowed transition-all font-semibold shadow-xs";
+        }
+      }
+    }
+
+    function markConfirmed(button, speakerLabel) {
+      if (button.dataset.confirmed === "true") return;
+
+      button.dataset.confirmed = "true";
+      button.innerHTML = '<span class="material-symbols-outlined text-[16px]">done_all</span> Confirmado';
+      button.className = "flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-primary-fixed/40 border border-primary/30 text-on-primary-fixed-variant font-label text-xs font-bold";
+      
+      confirmedCount++;
+      showFeedback(`${speakerLabel} confirmado satisfactoriamente.`);
+      updateProgress();
+    }
+
+    function togglePlay(btn) {
+      const icon = btn.querySelector('.material-symbols-outlined');
+      if (!icon) return;
+      if (icon.innerText === 'play_arrow') {
+        icon.innerText = 'pause';
+        btn.classList.add('ring-2', 'ring-primary');
+      } else {
+        icon.innerText = 'play_arrow';
+        btn.classList.remove('ring-2', 'ring-primary');
+      }
+    }
+
+    function showFeedback(text) {
+      const toast = document.getElementById('toast');
+      const msg = document.getElementById('toastMessage');
+      if (!toast || !msg) return;
+      msg.innerText = text;
+      toast.classList.remove('opacity-0', 'translate-y-10', 'pointer-events-none');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-10', 'pointer-events-none');
+      }, 3200);
+    }
+
+    function finalizeReview() {
+      showFeedback("Revisión guardada. Reindexando reunión y actualizando transcripción...");
+      setTimeout(() => {
+        window.location.href = "#";
+      }, 1500);
+    }
+
+    document.getElementById('btnDiagTop')?.addEventListener('click', () => {
+      const diagData = {
+        meetingId: "REC-20241024-EX-002",
+        pipeline: "Whisper-v3-large + ECAPA-TDNN clustering",
+        detectedSpeakers: 4,
+        confidenceScores: {
+          speaker1: 0.92,
+          speaker2: 0.88,
+          speaker3: 0.65,
+          speaker4: 0.54
+        },
+        der: "3.8%",
+        snrDb: 24.2
+      };
+      navigator.clipboard?.writeText(JSON.stringify(diagData, null, 2));
+      showFeedback("Diagnóstico de diarización copiado al portapapeles.");
+    });
+  </script>
+</body></html>

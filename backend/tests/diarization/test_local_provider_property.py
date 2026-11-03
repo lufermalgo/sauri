@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+from pathlib import Path
 from typing import TypedDict, TypeGuard, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -237,3 +240,53 @@ async def test_example_empty_segments_is_a_valid_result() -> None:
 
     # Doesn't raise and produces zero segments
     assert result.segments == []
+
+
+@pytest.mark.asyncio
+async def test_local_provider_uses_configured_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DIARIZATION_TIMEOUT_SECONDS", "2400")
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"segments": [], "num_speakers": 0}
+
+    with patch("app.diarization.local_provider.httpx.AsyncClient") as client_class:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        client_class.return_value = mock_client
+        await provider.diarize("recordings/synthetic.wav", DiarizationOptions())
+
+    assert mock_client.post.call_args.kwargs["timeout"] == 2400.0
+
+
+@pytest.mark.asyncio
+async def test_local_provider_sends_bearer_token_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    token_file = tmp_path / "engine_token"
+    token_file.write_text("synthetic-token", encoding="utf-8")
+    monkeypatch.setenv("SAURI_ENGINE_TOKEN_FILE", str(token_file))
+    capability_key_file = tmp_path / "recording_capability_key"
+    capability_key_file.write_bytes(b"synthetic-capability-secret")
+    monkeypatch.setenv("SAURI_RECORDING_CAPABILITY_KEY_FILE", str(capability_key_file))
+    provider = LocalProvider(url="http://fake-diar-engine:8002")
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {"segments": [], "num_speakers": 0}
+
+    with patch("app.diarization.local_provider.httpx.AsyncClient") as client_class:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        client_class.return_value = mock_client
+        await provider.diarize("recordings/synthetic.wav", DiarizationOptions())
+
+    headers = mock_client.post.call_args.kwargs["headers"]
+    assert headers["Authorization"] == "Bearer synthetic-token"
+    expiry_text, signature = headers["X-Sauri-Recording-Capability"].split(".")
+    message = f"recordings/synthetic.wav\n{expiry_text}".encode()
+    expected = hmac.new(b"synthetic-capability-secret", message, hashlib.sha256).hexdigest()
+    assert signature == expected

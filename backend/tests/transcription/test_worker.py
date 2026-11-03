@@ -11,12 +11,14 @@ from datetime import UTC, datetime
 from typing import Any, TypeGuard, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import Meeting, SpeechTurn, Transcript
+from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
 from app.meetings.state_machine import (
     STATES,
     TERMINAL_STATES,
@@ -29,7 +31,7 @@ from app.transcription.asr_engine import (
     TranscriptionResult,
     TranscriptionSegment,
 )
-from app.transcription.worker import _process_transcription
+from app.transcription.worker import _process_transcription as _process_transcription_worker
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -48,6 +50,46 @@ def _create_meeting_in_db(meeting_id: str, state: str = "recording") -> Meeting:
         created_by="test-user",
         created_at=datetime.now(UTC),
     )
+
+
+def _create_recording_in_db(
+    meeting_id: str, audio_ref: str = "audio/test.webm"
+) -> SessionRecording:
+    return SessionRecording(
+        id=str(uuid.uuid4()),
+        meeting_id=meeting_id,
+        idempotency_key=str(uuid.uuid4()),
+        capture_origin="chrome_extension",
+        audio_ref=audio_ref,
+        video_ref=None,
+        duration_seconds=12,
+        interrupted=False,
+        expires_at=None,
+        finished_at=datetime.now(UTC),
+    )
+
+
+async def _process_transcription_for_seeded_recording(
+    message: dict[str, Any],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Add the persisted identity expected from the authenticated producer."""
+    bound_message = dict(message)
+    meeting_id = bound_message.get("meeting_id")
+    if isinstance(meeting_id, str):
+        async with session_factory() as session:
+            meeting = await session.get(Meeting, meeting_id)
+            recording = (
+                await session.execute(
+                    select(SessionRecording).where(
+                        SessionRecording.meeting_id == meeting_id
+                    )
+                )
+            ).scalar_one_or_none()
+        if meeting is not None and recording is not None:
+            bound_message.setdefault("owner_id", meeting.created_by)
+            bound_message.setdefault("recording_id", recording.id)
+    await _process_transcription_worker(bound_message, session_factory)
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +147,7 @@ async def test_property_16_invalid_input_does_not_persist(
 ) -> None:
     """Invalid message -> finishes with no exception and nothing persisted."""
     # Should not raise
-    await _process_transcription(message, session_factory)
+    await _process_transcription_for_seeded_recording(message, session_factory)
 
     # No Transcript should exist
     from sqlalchemy import select
@@ -241,6 +283,7 @@ async def test_property_7_segment_to_turn_mapping(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     asr_result = TranscriptionResult(
         segments=segments, language="es-CO", supports_turns=True
@@ -254,7 +297,7 @@ async def test_property_7_segment_to_turn_mapping(
     message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
 
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     # Verify turns
     from sqlalchemy import select
@@ -307,6 +350,7 @@ async def test_property_9_language_selection(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -323,7 +367,7 @@ async def test_property_9_language_selection(
     message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
 
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     from sqlalchemy import select
 
@@ -364,6 +408,7 @@ async def test_property_12_provider_metadata(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="test", start_ms=0, end_ms=500)]
     asr_result = TranscriptionResult(
@@ -378,7 +423,7 @@ async def test_property_12_provider_metadata(
     message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
 
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     from sqlalchemy import select
 
@@ -411,6 +456,7 @@ async def test_property_8_no_segments_does_not_persist(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     asr_result = TranscriptionResult(
         segments=[], language="es-CO", supports_turns=True
@@ -424,7 +470,7 @@ async def test_property_8_no_segments_does_not_persist(
     message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
 
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     from sqlalchemy import select
 
@@ -454,6 +500,7 @@ async def test_property_17_engine_failure_propagates(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     mock_engine = AsyncMock()
     mock_engine.transcribe.side_effect = RuntimeError("ASR engine crashed")
@@ -463,13 +510,39 @@ async def test_property_17_engine_failure_propagates(
     with patch(
         "app.transcription.worker.create_asr_engine", return_value=mock_engine
     ), pytest.raises(RuntimeError, match="ASR engine crashed"):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     from sqlalchemy import select
 
     async with session_factory() as session:
         result = await session.execute(select(Transcript))
         assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_timeout_fails_meeting_without_rethrowing_for_retry(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    meeting_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="recording"))
+        session.add(_create_recording_in_db(meeting_id))
+
+    mock_engine = AsyncMock()
+    mock_engine.transcribe.side_effect = httpx.ReadTimeout("ASR request timed out")
+
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
+        await _process_transcription_for_seeded_recording(
+            {"meeting_id": meeting_id, "audio_ref": "audio/synthetic.wav"},
+            session_factory,
+        )
+
+    mock_engine.transcribe.assert_awaited_once()
+    async with session_factory() as session:
+        persisted_meeting = cast(Meeting, await session.get(Meeting, meeting_id))
+        assert persisted_meeting.process_state == "failed"
+        assert persisted_meeting.failure_cause == "engine_failure"
+        assert await session.get(Transcript, meeting_id) is None
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +562,7 @@ async def test_property_10_transcript_uniqueness(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -504,7 +578,7 @@ async def test_property_10_transcript_uniqueness(
 
     # First processing — succeeds
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     # Second processing — should fail with IntegrityError (unique constraint)
     # Reset meeting state for the second attempt
@@ -517,7 +591,7 @@ async def test_property_10_transcript_uniqueness(
     with patch(
         "app.transcription.worker.create_asr_engine", return_value=mock_engine
     ), pytest.raises(IntegrityError):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     # Still only one Transcript
     from sqlalchemy import select
@@ -548,6 +622,7 @@ async def test_property_11_atomicity_rollback(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
@@ -566,7 +641,7 @@ async def test_property_11_atomicity_rollback(
         "app.transcription.worker.record_transition",
         side_effect=RuntimeError("DB failure during transition"),
     ), pytest.raises(RuntimeError, match="DB failure"):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     # Verify: no Transcript or SpeechTurn persisted
     from sqlalchemy import select
@@ -595,6 +670,7 @@ async def test_example_preferred_language_es_co(
     async with session_factory() as session, session.begin():
         meeting = _create_meeting_in_db(meeting_id, state="recording")
         session.add(meeting)
+        session.add(_create_recording_in_db(meeting_id))
 
     segments = [TranscriptionSegment(text="test", start_ms=0, end_ms=500)]
     asr_result = TranscriptionResult(
@@ -609,7 +685,7 @@ async def test_example_preferred_language_es_co(
     message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
 
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
-        await _process_transcription(message, session_factory)
+        await _process_transcription_for_seeded_recording(message, session_factory)
 
     # Verify the engine was called with preferred_language="es-CO"
     mock_engine.transcribe.assert_called_once()
@@ -617,3 +693,106 @@ async def test_example_preferred_language_es_co(
     options = call_args[0][1]
     assert isinstance(options, TranscriptionOptions)
     assert options.preferred_language == "es-CO"
+
+
+@pytest.mark.asyncio
+async def test_transcription_uses_audio_ref_from_recording_owned_by_meeting(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A queue message cannot substitute another recording's audio reference."""
+    meeting_id = str(uuid.uuid4())
+    foreign_meeting_id = str(uuid.uuid4())
+    persisted_audio_ref = "synthetic/owned-recording.wav"
+    foreign_audio_ref = "synthetic/foreign-recording.wav"
+
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="recording"))
+        session.add(_create_meeting_in_db(foreign_meeting_id, state="recording"))
+        session.add(
+            SessionRecording(
+                id=str(uuid.uuid4()),
+                meeting_id=meeting_id,
+                idempotency_key=str(uuid.uuid4()),
+                capture_origin="chrome_extension",
+                audio_ref=persisted_audio_ref,
+                video_ref=None,
+                duration_seconds=12,
+                interrupted=False,
+                expires_at=None,
+                finished_at=datetime.now(UTC),
+            )
+        )
+        session.add(_create_recording_in_db(foreign_meeting_id, foreign_audio_ref))
+
+    mock_engine = AsyncMock()
+    mock_engine.transcribe.return_value = TranscriptionResult(
+        segments=[TranscriptionSegment(text="synthetic", start_ms=0, end_ms=100)],
+        language="es-CO",
+        supports_turns=True,
+    )
+    mock_engine.capabilities = MagicMock(
+        return_value=ASRCapabilities(supports_turns=True, is_local=True)
+    )
+
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
+        await _process_transcription_for_seeded_recording(
+            {"meeting_id": meeting_id, "audio_ref": foreign_audio_ref}, session_factory
+        )
+
+    mock_engine.transcribe.assert_awaited_once()
+    assert mock_engine.transcribe.await_args is not None
+    assert mock_engine.transcribe.await_args.args[0] == persisted_audio_ref
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["owner", "recording"])
+async def test_transcription_rejects_mismatched_queue_identity(
+    session_factory: async_sessionmaker[AsyncSession], mismatch: str
+) -> None:
+    """Jobs must bind both owner and recording before invoking the ASR engine."""
+    meeting_id = str(uuid.uuid4())
+    recording_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="recording"))
+        session.add(
+            SessionRecording(
+                id=recording_id,
+                meeting_id=meeting_id,
+                idempotency_key=str(uuid.uuid4()),
+                capture_origin="chrome_extension",
+                audio_ref="synthetic/owned-recording.wav",
+                video_ref=None,
+                duration_seconds=12,
+                interrupted=False,
+                expires_at=None,
+                finished_at=datetime.now(UTC),
+            )
+        )
+
+    mock_engine = AsyncMock()
+    mock_engine.transcribe.return_value = TranscriptionResult(
+        segments=[TranscriptionSegment(text="synthetic", start_ms=0, end_ms=100)],
+        language="es-CO",
+        supports_turns=True,
+    )
+    mock_engine.capabilities = MagicMock(
+        return_value=ASRCapabilities(supports_turns=True, is_local=True)
+    )
+    message = {
+        "meeting_id": meeting_id,
+        "audio_ref": "synthetic/owned-recording.wav",
+        "owner_id": "test-user",
+        "recording_id": recording_id,
+    }
+    if mismatch == "owner":
+        message["owner_id"] = "different-owner"
+    else:
+        message["recording_id"] = str(uuid.uuid4())
+
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
+        await _process_transcription_for_seeded_recording(message, session_factory)
+
+    mock_engine.transcribe.assert_not_awaited()
+    async with session_factory() as session:
+        transcripts = await session.execute(select(Transcript))
+        assert transcripts.scalars().all() == []

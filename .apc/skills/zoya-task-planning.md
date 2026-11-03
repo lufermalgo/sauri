@@ -43,6 +43,11 @@ or infer approval from `.config.spectra` being `complete`.
   a required test task before its corresponding implementation task; the test must be run and
   shown failing before implementation. The implementation task makes that test pass, and any
   refactor preserves it. Tests are never optional (`*`) and never omitted to reduce task count.
+  The RED test and its GREEN implementation belong in ONE task (one card, one PR, test commit
+  first with its failing output kept, implementation commit after) whenever the unit is one
+  module or one screen and about 300 changed lines or fewer. Make a separate RED task only when
+  the test is shared infrastructure, needs its own environment, or the unit is larger. Do not
+  split a unit into several cards just to make each card smaller; every extra card costs a hand-off.
   If a test environment prerequisite is genuinely missing, create the smallest enabling task
   first and state the evidence needed to consider it ready.
 - Do not invent requirements, product acceptance criteria, technical constraints, test commands,
