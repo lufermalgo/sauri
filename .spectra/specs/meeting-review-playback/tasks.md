@@ -54,6 +54,8 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Files:** `backend/tests/meetings/test_playback_manifest.py`; `backend/tests/meetings/test_transcript_turn_id.py`
 
+**Production routes under test:** `backend/app/meetings/router.py` exposes `GET /api/v1/meetings/{meeting_id}/playback` (`get_playback_manifest`) and `GET /api/v1/meetings/{meeting_id}/transcript` (`get_transcript`). Exercise their authenticated meeting-ownership boundary and playback source signing through these HTTP routes, not an isolated test-only handler.
+
 **Action:** Add synthetic route tests for owner success, missing/invalid JWT (401), absent and non-owned meeting indistinguishable 404, no recording/playable source, one versus multiple video choices, and confirmation that every legacy row (`video_presence=unknown`), including null MIME and absent `video_ref`, is audio-only. Assert that only explicit persisted `muxed` evidence for the single-object capture mode returns `muxed_video_source`; `absent` returns no video sources; `separate` returns only rows with signed offsets. Verify signed positive/negative offsets, authorized signing with TTL 3600, no raw refs in responses, and transcript ownership/non-disclosure.
 
 **Acceptance evidence:** Tests fail before implementation for the absent playback manifest and/or missing transcript ownership check; unauthorized cases assert no signing and no transcript/object reference disclosure.
@@ -82,6 +84,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Files:** `frontend/src/api.test.ts` (tests for `getPlaybackManifest` and `getTranscript`).
 
+**Production seam under test:** The authenticated HTTP adapter in `frontend/src/api.ts`, specifically `getPlaybackManifest(meetingId)` and `getTranscript(meetingId)` and their manifest/segment-to-timed-passage mapping. Do not move HTTP access into the playback view.
 
 **Action:** Add synthetic tests for typed `getPlaybackManifest(meetingId)` and `getTranscript(meetingId)` responses. Verify manifest mapping preserves `video_presence` (`muxed`, `separate`, `absent`, `unknown`), nullable `muxed_video_source`, and separate `video_sources` with signed offsets; MIME and missing video rows must not determine mode. Verify `segments` preserve sequence/text while mapping `start_ms`/`end_ms` to `TimedPassage.startMs`/`endMs`; invalid/missing timing retains text but produces no playback action. Handle errors without exposing object-store refs beyond signed URLs.
 
@@ -205,6 +208,8 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 **Tracking:** Issue #501 · Card `task_c7bca3a1ade84745`.
 
 **Files:** `frontend/tests/e2e/meeting-review-playback-trial.spec.ts`; `frontend/src/App.tsx`; `frontend/src/components/MeetingPlaybackView.tsx`.
+
+**Production seam under test:** The Vite-development-only root link and `/_trial/meeting-review-playback` route in `frontend/src/App.tsx`, which mounts `MeetingPlaybackView` with the synthetic fixture. Navigate through that link to the exact route; T-13 remains RED until T-14 adds it, without bypassing the authenticated route for real meeting media.
 
 **Action:** Write a real-browser test that starts at `/`, follows the development-only trial link, and expects the trial view, actual fixture WAV with finite non-zero duration, and all three synthetic transcript passages. Use `data-testid="playback-media"` and visible Play/passage controls only; do not call `HTMLMediaElement.play()` or set `currentTime` in test code. Register listeners before clicks; assert Play unpauses and advances media time by at least 500 ms within 5 seconds, then assert the second passage action (`startMs=4000`) emits `seeked` within 250 ms of 4.000 s and subsequently `playing` while unpaused. This task must demonstrate RED before T-14 adds the fixture route/link.
 
