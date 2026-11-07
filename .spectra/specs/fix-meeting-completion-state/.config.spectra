@@ -6,7 +6,7 @@
   "idea": "Fix the defect where an uploaded meeting remains queued after successful processing.",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
+    "design": "complete",
     "tasks": "pending"
   }
 }

@@ -12,7 +12,7 @@ NATIVE_PYTHON311 ?= python3.11
 ## pero disponible aquí para quien solo trabaje en backend/ sin tocar npm.
 setup-hooks:
 	git config core.hooksPath .githooks
-	@echo "core.hooksPath -> .githooks (ver AGENTS.md §6-7)"
+	@echo "core.hooksPath -> .githooks (ver docs/engineering/WORKFLOW.md §7)"
 
 ## Crear un worktree + rama aislados para un spec/issue: make worktree BRANCH=feature/issue-12-desc
 worktree:

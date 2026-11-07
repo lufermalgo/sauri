@@ -4,10 +4,10 @@
 
 - **Outcome:** `INSUFFICIENT_USER_EVIDENCE`
 - **Exact candidate:** `5f9b26afc76ec02e9c9d3a9c1ccc2ff5044a546f`
-- **Candidate identity:** PR #634, `bugfix/issue-633-upload-default-title`, currently open against `main`; head SHA verified with `gh pr view 634`.
+- **Candidate identity:** PR #634, `bugfix/issue-633-upload-default-title`, merged into `main` on 2026-10-30; exact candidate SHA remains `5f9b26afc76ec02e9c9d3a9c1ccc2ff5044a546f`.
 - **Feature evaluated:** title behavior for newly uploaded meetings only. No retroactive renaming, migration, upload-screen redesign, or unrelated behavior is evaluated.
 - **Authorized expected behavior:** when no meaningful title is supplied, use the uploaded recording's safe filename basename without disclosing a local path; preserve a non-empty explicit title. Issue #633 also requires safe handling of synthetic edge cases.
-- **Technical evidence:** packet reports Nia `PASS` for 21 focused tests and changed-file Ruff/mypy checks; security is `N/A`. This is not user evidence or product acceptance.
+- **Technical evidence:** Nia's exact-candidate browser QA PASS is recorded in child task `task_820cc986bc9c4ddf`: authenticated synthetic upload→list; absent/blank titles displayed the basename, explicit title was retained, and markup-like filename content rendered as text. The run did not use a real meeting recording or a representative user's session. Focused tests and changed-file Ruff/mypy also passed per PR #634; security is `N/A`. None of this by itself is product acceptance.
 
 ## Frozen user-evaluation plan
 
@@ -39,9 +39,10 @@ Run on the exact candidate in a real browser. Record only pass/fail and brief no
 
 - **User sessions observed for this report:** 0.
 - **Scenarios observed:** 0 of 3.
-- **Browser evidence available:** none for the exact candidate. Existing automated tests and QA results do not establish the upload-to-list behavior in a real browser.
-- **Limitations:** the predeclared threshold cannot yet be evaluated. The authorized real recording must remain local. The one-user minimum is tied to the owner's explicit requested test and is not evidence of broader user representativeness.
+- **Technical browser evidence:** one exact-candidate synthetic QA session (Nia, `task_820cc986bc9c4ddf`) passed the upload-to-list scenarios; the task includes a screenshot and DOM snapshot. This establishes the observed technical UI behavior only.
+- **User evidence:** 0 representative functional-user sessions; 0 of 3 criteria observed in the predeclared user session. The QA session does not count toward the one-user minimum because it was an engineering verification with synthetic data, not a representative user's product-use observation.
+- **Limitations:** the predeclared user-evidence threshold cannot yet be evaluated. No real recording/user observation was performed in this evidence set. The authorized real recording must remain local. The one-user minimum does not establish usability for a broader user population.
 
 ## Decision
 
-`INSUFFICIENT_USER_EVIDENCE` for exact candidate `5f9b26afc76ec02e9c9d3a9c1ccc2ff5044a546f`. The criteria and evidence method are frozen, but no real-browser user observations are available. Before this product outcome can change, the owner must run the three predeclared scenarios on this exact candidate and provide non-sensitive pass/fail observations; otherwise the candidate must be re-evaluated after any change. This report does not approve merge, privacy, security, or release readiness.
+`INSUFFICIENT_USER_EVIDENCE` for exact candidate `5f9b26afc76ec02e9c9d3a9c1ccc2ff5044a546f`. Criteria and evidence method remain frozen. Nia's exact-candidate synthetic browser QA is valuable technical evidence, but does not meet the predeclared minimum of one functional-user session covering all three criteria; no such user observation is documented. To change this outcome, Ansel must coordinate the missing non-sensitive user observation against this exact candidate (not another technical QA run); re-evaluate after any candidate change. This report does not approve privacy, security, or release readiness.
