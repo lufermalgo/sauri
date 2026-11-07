@@ -1,17 +1,17 @@
 <!-- sauri-workflow v1.3 -->
 # Sauri engineering workflow (v1.3)
 
-Single source of truth for how work on Sauri is done, by agents or humans. `AGENTS.md` says what the project is and how its code is organized; this file says how work flows. On process, this file wins over `AGENTS.md`; agent contracts in `.apc/agents/` add role-specific duties and must agree with it (a conflict goes to Ansel).
+Single source of truth for how work on Sauri is done, by agents or humans. `AGENTS.md` says what the project is and how its code is organized; this file says how work flows. `AGENTS.md` defines project-wide rules, this file defines shared process, and agent contracts define role-specific duties. Routine prompts trigger a pass and provide context; they do not expand authority. Escalate unresolved conflicts to Ansel.
 
 **History.** v1.3 (2026-11-07, issue #726): no handoff file or skill (§6), wake-up step 9. v1.2 (2026-11-07, issue #726): approvals carry across a clean merge of `main` (§8). v1.1 (2026-11-07, issue #721): how the team talks to Fer (§3) and cards in review (§6). v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
 
 ## 1. Principles
 1. **One task = one issue = one branch = one worktree = one PR.** Small and reversible.
 2. **Fer decides product; specialists decide technique; Ansel decides when they disagree or when a technical question is open.** Owner decisions are limited to product direction, privacy and retention policy, spending, security policy, deployment and release.
-3. **The recommended solution, never the easiest one.** See §3.
+3. **The simplest solution that fully satisfies the approved requirements.** See §3.
 4. **Evidence over claims.** Report what was run and observed; anything not run is `UNVERIFIED`. A green check is not proof by itself.
 5. **Protect work you did not create.** Never discard, overwrite or absorb someone else's uncommitted work.
-6. **Nothing stays unresolved.** Every blocker or question has an owner and a condition; Ansel resolves technical ones or consults Teo in the same turn.
+6. **No silent blockers.** Every unresolved blocker has an owner and a resumption condition; Ansel resolves technical questions or consults Teo when needed.
 
 ## 2. Execution model and roles
 
@@ -40,7 +40,7 @@ Specs live in `.spectra/specs/[slug]/` with `.config.spectra` (`specType`: featu
 | Zev | Security | `NO_ACTIONABLE_FINDINGS` / `FINDINGS` / `BLOCKED` on an exact commit |
 
 * Only Mira's `APPROVED` on the submitted snapshot advances a spec phase; the verdict stays valid while that artifact is unchanged. Audits iterate until approved and list every blocker at once.
-* Each agent's contract in `.apc/agents/` defines its steps and who follows it; work is handed on by reassigning the APX task card. The contract prevails over this file on coordination.
+* Each agent's contract in `.apc/agents/` defines its steps and who follows it; work is handed on by reassigning the APX task card. The contract defines role-specific hand-offs and must follow the shared process.
 * Design, tasks and implementation use only the skills named on the card. Independent ready tasks run in parallel in separate worktrees; blocked tasks never stall unrelated ready ones.
 
 ### No-silent-stop status
@@ -50,8 +50,8 @@ Every turn ends as one of: `completed` with evidence; `in progress` with the nex
 ## 3. Questions and decisions
 - **Who decides.** Technical and sequencing questions are decided by Ansel after hearing the specialists who own the area. Product, privacy/retention, spending, security policy, deployment and release go to Fer through Ansel. A specialist never asks Fer a technical question.
 - **How a question is raised.** On the card HAND-OFF (or to Ansel): the decision needed, the options, the evidence, the risks of each, and the asker's recommended option. A question without a recommendation is incomplete.
-- **The recommended option, never the easiest.** Approve the option that is correct and complete for the approved requirement: it fixes the root cause, keeps tests real, stays maintainable and adds no hidden debt. Never choose an option because it is faster or smaller. Rejected by rule: dummy implementations, stubs or placeholders, mocks in production code, skipped or weakened tests, scope narrowed so a check turns green, and "temporary" workarounds without their own issue.
-- **When the right answer is unclear.** Ansel asks the relevant specialists (for example Brisa, the developer and Nia) to propose a solution with evidence in the same turn, compares them, and approves the most recommended one.
+- **The simplest complete option.** Approve the option that is correct and complete for the approved requirement: it fixes the root cause, keeps tests real, stays maintainable and adds no hidden debt. A simpler or faster option is acceptable when it fully meets the approved requirements and preserves real validation. Rejected by rule: dummy implementations, stubs or placeholders, mocks in production code, skipped or weakened tests, scope narrowed so a check turns green, and "temporary" workarounds without their own issue.
+- **When the right answer is unclear.** Ansel consults the relevant specialists when evidence is insufficient and chooses a solution that fully meets the approved requirement. If still blocked, consult Teo and continue independent work.
 - **When the correct solution exceeds the approved scope.** It becomes a spec amendment through the normal SDD flow (§2), never a shortcut inside the current task.
 - **Finding open questions.** On every wake-up Ansel scans `apx runs pending`, cards waiting on the owner or marked `NEEDS USER INPUT`, and hand-offs or comments that end in a question. Technical ones are decided in that turn and the decision is sent to the agent so the work continues. Product ones are batched into one message to Fer with a recommendation, and other work keeps moving. Permission prompts that only the owner can approve are listed for Fer, never bypassed.
 - **Record.** Decision, reason and rejected options go on the card; durable decisions also go to project memory.
@@ -152,11 +152,11 @@ These rules apply once the project has a repository, a default branch, and a PR 
 
 2. **Never merge a PR to a feature branch and call it done.** PRs go to `main`.
 
-3. **Before starting any task, sync with main:**
+3. **Before starting a task, fetch main and synchronize safely:**
 
    ```bash
    git fetch origin main
-   git rebase origin/main
+   # Rebase only before first push; for a published branch use a normal merge when needed.
    ```
 
 4. **If `main` is broken, stop and fix it first.**
@@ -204,7 +204,7 @@ git commit -m "feat(scope): description
 
 Closes #{id}"
 
-# 3. Rebase before push — never merge
+# 3. Before the first push, rebase if needed; never rebase a published branch
 git fetch origin main
 git rebase origin/main
 
@@ -272,11 +272,11 @@ Types:
 Before publishing, check `pwd`, the toplevel, branch, `git status --short` and the full tracked/untracked inventory, and preserve pre-existing changes. A PR request is end-to-end (issue, worktree, scoped change, validation, named-file commit, rebase, push, PR). Never claim a PR before verifying URL, base `main`, head SHA, issue link, files, draft state and mergeability. `EPERM` on `.git/worktrees/<name>/FETCH_HEAD` is a local permission failure: preserve the checkout, report the exact command and error, do not retry or bypass it. Full procedure: skill `sauri-git-recovery`.
 
 ### Merge and cleanup
-- **Ansel is the only agent who merges**, as soon as a PR qualifies: no conflicts, every existing CI check green, Nia `PASS` (and Zev when the card lists a security gate) on the exact head SHA, files within the issue scope, and for spec PRs Mira `APPROVED` on that artifact version. Command: `gh pr merge <n> --merge`; never `--admin`, never bypass a check.
-- **Approvals carry across a clean merge of `main`.** A verdict (Nia, Zev, Mira) names the head SHA it covers. After `git merge origin/main` into the PR branch, the verdict is carried to the new head when the merge had no conflict and changed none of the PR's own files: CI runs again, and Ansel records "verdict of <old SHA> carried after clean merge to <new SHA>" on the card. A conflict, or a merge that touches the PR's files, needs a new verdict on the delta only. Never re-review an artifact or a candidate that did not change.
-- **No cap on open PRs.** Merge in dependency order (a spec PR before its implementation PRs). A PR that depends on another waits for that merge; independent PRs proceed in parallel.
-- **After each merge, in the same turn:** update the root checkout only if it is clean (`git pull --ff-only`); `git worktree remove <path>` (never `--force`); `git branch -d <branch>` (`-D` only when the PR head SHA equals the branch head); `git push origin --delete <branch>`; confirm with `git worktree list`. Then bring every other open PR up to date (`git merge origin/main`, normal push, never force-push) and re-verify it.
-- A worktree with uncommitted or unpushed work is never removed: it gets a disposition and an owner. Whoever creates a temporary worktree (audit, baseline, snapshot, probe) removes it when its verdict or hand-off is recorded.
+- **Ansel alone merges** in dependency order using `gh pr merge <n> --merge`. Before merging, verify the current PR state and scope: it must have no conflicts and every existing CI check must have completed successfully. Pending, failing, missing or unavailable required checks are not green. Do not bypass protections.
+- Spec PRs require Mira's approval of the submitted artifact; Nia is required only when the card explicitly requires QA. Implementation and other non-spec PRs require Nia PASS; Zev's security verdict is required when the card lists that gate. Product acceptance remains distinct from QA and is required for completion of user-visible features (§2).
+- Reviews cover the changes actually reviewed. Record a durable Git reference to the reviewed candidate alongside each verdict. Before merge, compare that candidate with the current PR changes; if the reference or comparison is unavailable, do not merge. Revalidate material changes after review with the appropriate reviewer; an administrative-only change does not require repeating unrelated reviews. A manual SHA citation in each approval is not required.
+- No cap on open PRs. Update another branch only when conflicts, a relevant dependency, or merge requirements make it necessary; do not update every PR after every merge. Never force-push or rebase published history.
+- After merge, remove the worktree and branch when safe. Never remove uncommitted or unpublished work; record its disposition and owner. Update the primary checkout only if clean. Temporary worktree creators stop their servers and remove them when safe.
 
 ## 9. Spec → GitHub traceability
 
@@ -290,19 +290,11 @@ Each approved product module maps to a Spectra spec and a GitHub milestone:
 | Bug found during execution | Issue, label `bug` |
 
 * Only after Mira approves the exact `tasks.md`, Zoya creates, for every required task, one issue in the milestone and one board card (one task = one issue = one card) and records `Issue #n · Card task_x` in `tasks.md`; the implementer adds the PR number when opening the PR after QA (and security) pass and closes the card. Tests are never optional and never labeled `optional`.
-* Every approved spec artifact and every implemented issue ends in its own PR by its author; a security finding that needs a spec change or separate code gets its own `security` issue, card and PR. Local and remote must stay in step: push before hand-offs, rebase on `origin/main`, and fast-forward `main` and remove the worktree and local branch right after Ansel merges (`_tools/remove-worktree.sh`); Ansel is the only agent who merges.
+* Every approved spec artifact and every implemented issue ends in its own PR by its author; a security finding that needs a spec change or separate code gets its own `security` issue, card and PR. Publish reviewed candidates before hand-offs. Synchronize branches safely under §7. After merge, remove the worktree and branch only when safe; Ansel is the only agent who merges.
 * Each issue is implemented in its own worktree and PR (`Closes #id`); the milestone closes when all its issues are closed, no open `bug` blocks acceptance, property tests pass with ≥100 examples, and user-visible work has `PRODUCT_ACCEPTED`.
 * Test tasks are required, sequenced before their implementation (`test (red)` → `implementation (green)`). If test infrastructure is missing, the first task sets it up; tests blocked by external limits are documented as blocked, not skipped.
 
 ## 10. Orchestrator wake-up
-The routine `sauri-backlog-orchestration` wakes Ansel every 15 minutes. In each wake-up, in this order:
-1. If another session of Ansel is `working`, answer `SKIP`. Delegations to other agents and sessions waiting for input do not count.
-2. Mark every specialist busy (verified active run) or free. A card in `doing` is not proof of execution.
-3. Resolve open questions (§3), including every card waiting on Fer, and every card in review without a reviewer (§6).
-4. Close finished work: merge qualifying PRs and clean up (§8), route returned cards to their next step, approve or drop proposals.
-5. Give every free specialist the highest-priority ready task of their role with no file conflict; verify that it started.
-6. When a role has no cards, reconcile approved specs against tasks, issues, cards and evidence; create only missing, uniquely identified cards; keep spec status current.
-7. Resolve blockers or consult Teo in the same turn.
-8. Disk hygiene (§8).
-9. Record only what changed, on the cards it concerns: a decision, a blocker with its owner, a merged PR. The system summary (agent → task → state) is computed by the routine's pre-command; do not rewrite it by hand.
-A wake-up ends when every specialist is busy or has a written reason and an owner for unblocking, and no technical question is left undecided. Dispatch first and audit afterwards; a partial listing never justifies "no work".
+The routine runs every 15 minutes. If another Ansel session is working, skip this pass; the current session and sessions waiting for input do not count.
+
+Use the supplied state summary as a starting point and inspect current details when needed. Resolve technical questions from available evidence, consult Teo if blocked, and continue independent work while waiting. Advance existing approved tasks, prioritizing work that unblocks others, then work near completion, then recorded priority and waiting time. Assign actionable work to free specialists and verify it starts; do not invent work merely to occupy agents. Advance returned cards and proposals, assign reviewers where needed, merge ready PRs and clean worktrees when safe. Record decisions, owners and blockers on the relevant cards. Ask Fer only for decisions reserved in §3, in concise, nontechnical Spanish. If no action is needed, respond `SKIP`.
