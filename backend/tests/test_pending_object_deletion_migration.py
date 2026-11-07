@@ -102,7 +102,8 @@ def test_downgrade_refuses_only_while_pending_object_tasks_exist() -> None:
         assert inspect(connection).has_table(PENDING_TABLE)
 
         connection.execute(text("DELETE FROM pending_object_deletions"))
-        migration.downgrade()
+        with Operations.context(context):
+            migration.downgrade()
         assert not inspect(connection).has_table(PENDING_TABLE)
 
     engine.dispose()
