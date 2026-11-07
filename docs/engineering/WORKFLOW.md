@@ -7,7 +7,7 @@ Single source of truth for how work on Sauri is done, by agents or humans. `AGEN
 
 ## 1. Principles
 1. **One task = one issue = one branch = one worktree = one PR.** Small and reversible.
-2. **Fer decides product; specialists decide technique; Ansel decides when they disagree or when a technical question is open.** Owner decisions are limited to product direction, privacy and retention policy, spending, security policy, deployment and release.
+2. **Fer decides product, privacy and spending; specialists decide technique; Ansel resolves technical disagreements.** Technical work within approved scope does not need another owner approval. Do not assume authorization for spending, deployment or actions outside the approved scope.
 3. **The simplest solution that fully satisfies the approved requirements.** See §3.
 4. **Evidence over claims.** Report what was run and observed; anything not run is `UNVERIFIED`. A green check is not proof by itself.
 5. **Protect work you did not create.** Never discard, overwrite or absorb someone else's uncommitted work.
@@ -48,7 +48,7 @@ Specs live in `.spectra/specs/[slug]/` with `.config.spectra` (`specType`: featu
 Every turn ends as one of: `completed` with evidence; `in progress` with the next action and a verified active run; or `blocked` with what is blocked, evidence and attempts, next actor, whether the owner must act, and the exact condition that resumes work. `unknown` is not success and does not justify a blind retry. Do not promise background monitoring unless a verified mechanism is active.
 
 ## 3. Questions and decisions
-- **Who decides.** Technical and sequencing questions are decided by Ansel after hearing the specialists who own the area. Product, privacy/retention, spending, security policy, deployment and release go to Fer through Ansel. A specialist never asks Fer a technical question.
+- **Who decides.** Ansel decides technical and sequencing questions within approved scope. Product, privacy/retention and spending decisions go to Fer through Ansel. A specialist never asks Fer a technical question. Deployment or other actions outside approved scope require the applicable authorization; do not bypass permissions.
 - **How a question is raised.** On the card HAND-OFF (or to Ansel): the decision needed, the options, the evidence, the risks of each, and the asker's recommended option. A question without a recommendation is incomplete.
 - **The simplest complete option.** Approve the option that is correct and complete for the approved requirement: it fixes the root cause, keeps tests real, stays maintainable and adds no hidden debt. A simpler or faster option is acceptable when it fully meets the approved requirements and preserves real validation. Rejected by rule: dummy implementations, stubs or placeholders, mocks in production code, skipped or weakened tests, scope narrowed so a check turns green, and "temporary" workarounds without their own issue.
 - **When the right answer is unclear.** Ansel consults the relevant specialists when evidence is insufficient and chooses a solution that fully meets the approved requirement. If still blocked, consult Teo and continue independent work.
@@ -142,7 +142,18 @@ Validation must use the project’s actual commands and conventions. Do not assu
 ### Where state lives (no handoff file)
 * There is no `handoff.md` and no `handoff` skill. APX already keeps what a session needs: the conversation history of each thread, the card (description with PACKET and HAND-OFF, comments, plan), the board, the agent memory injected every turn, and the routine's own system summary.
 * A decision goes on the card it concerns. A decision that must outlive the card goes to project memory (`apx memory add project`), one short curated fact. Never write a status log into the repository.
-* A session that starts reads its card and the system summary it was given; it does not read a status file.
+* A task session reads its card and available summary; inspect current state when needed. It does not read a status file.
+
+### Agent execution and hand-offs
+
+- Inspect the card, execution context, permissions and relevant evidence before acting. A consultation or Flow invocation does not grant task-execution authority. Never bypass a refusal or permission boundary. Record an exact error and ask Ansel when blocked; continue independent work.
+- Use the assigned worktree and exact artifact paths; read relevant files before editing, stage explicit paths, and preserve other work and reviewed candidates. Use synthetic data unless the owner explicitly authorizes a specific fixture. Do not change product scope, policy, release or risk authority.
+- In APX, use `load_skill` for the skills required by the card. Assigning a card starts its executor; do not duplicate the execution by delegation or chat. Verify actual run state before claiming it started. If an assignment fails, tell Ansel; do not blindly retry or bypass the platform.
+- The card carries the hand-off: PACKET identifies scope, artifacts, worktree and upstream approvals; HAND-OFF records work done, evidence, verdicts, blockers and the next actor. Keep essential context within the first 2,000 characters. A consultation returns its findings without transferring execution. Verify transfer and closure; a status change alone is not proof of a run.
+- Specs move from Zoya to Mira, then Brisa to Mira, then Zoya to Mira. Approved artifacts are published by their authors. Implementation moves from Imre or Ilan to Nia, then Zev only when required, and back to the developer for the PR. Ansel coordinates exceptions and merges.
+- Reviewers report all findings together as BLOCKING or NON-BLOCKING. Only blockers hold approval; later passes check fixes and related regressions. Record the verdict, evidence and reviewed candidate reference for the merge check. If a blocker recurs or progress stalls, consult Ansel. Author self-checks use the applicable audit rubric.
+- Technical questions go to Ansel with the decision, evidence, options and recommendation. Product or owner decisions also go through Ansel; do not ask Fer to diagnose. Ansel consults Teo for platform limitations. Do not repeat an identical failure without new information.
+- File tools use paths relative to the project root, so pass absolute worktree paths when needed and set the shell working directory explicitly. If an edit reaches the primary checkout by mistake, stop, undo only your own change, and report it. Run long commands in the background and check their results; never claim work based on a dispatch alone.
 
 ### Coordination rules
 

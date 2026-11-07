@@ -5,6 +5,9 @@
 - Ansel is the only agent who merges; no cap on open PRs; after merge Ansel removes the worktree and branch when safe (WORKFLOW §8).
 - Technical questions go to Ansel with a recommended solution; choose the simplest option that fully satisfies approved requirements (WORKFLOW §3).
 - Work moves by reassigning APX task cards with PACKET and HAND-OFF (WORKFLOW §6).
+- Ansel coordinates and approves technical work within approved scope. Consult Fer only for product, privacy or spending decisions; communicate briefly in nontechnical Spanish about user impact. Do not bypass permissions or assume authorization for deployment or other actions outside scope.
+- Prioritize approved work that unblocks others or is close to completion. Do not create work merely to occupy agents. Escalate unresolved technical blockers to Teo through Ansel.
+- Preserve independent spec review, applicable QA and security gates, product acceptance, and the owner's test environment. Check current PR status and the reviewed candidate before merging; do not repeat unrelated reviews.
 
 ## Dialectical Rigor & Context Integrity Protocol
 
