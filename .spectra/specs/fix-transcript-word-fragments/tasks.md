@@ -11,11 +11,11 @@ Solo datos sintéticos en todas las pruebas. No almacenar ni alterar `Transcript
 | Fase | Descripción | Tareas | Dependencias |
 |---|---|---|---|
 | 1 | Agrupador y asignación | T1–T4 | T1 → T2; T3 → T4 |
-| 2 | Esquema, revisiones, atomicidad y backfill | T5–T12 | T5 → T6; T7 → T8; T6/T8 → T9 → T10; T10 → T11 → T12 |
+| 2 | Esquema, revisiones, atomicidad y backfill | T5–T12 | T5 → T6; T6 → T7/T8 integrado → T9 → T10; T10 → T11 → T12 |
 | 3 | API, portal y playback | T13–T18 | T10/T12 → T13 → T14; T15/T2/T14 → T16; T17/T2/T16 → T18 |
-| 4 | Validación integrada y gate independiente | T19–T20 | T4, T6, T8, T10, T12, T14, T16, T18 → T19 → T20 |
+| 4 | Validación integrada y gate independiente | T19–T20 | T4, T6, T7/T8 integrado, T10, T12, T14, T16, T18 → T19 → T20 |
 
-Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden obligatorio. Las pruebas RED anteceden a su implementación GREEN. T1, T3, T5, T7, T9, T11, T13, T15 y T17 son pruebas independientes listas en paralelo en worktrees separados. T9 requiere PostgreSQL real, no SQLite; es un prerrequisito de ejecución expresado por el diseño, no una dependencia artificial. La codificación por fases no obliga a serializar tareas sin una arista de dependencia.
+Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden obligatorio. Las pruebas RED anteceden a su implementación GREEN. T1, T3, T5, T13, T15 y T17 son pruebas independientes sin dependencias de entrada y pueden iniciarse en worktrees separados. El RED de T7/T8 ya está registrado; su GREEN requiere T6. T9 requiere T6 y T7/T8 integrado; T11 requiere T6, T7/T8 integrado y T10. El RED previamente registrado se conserva como primer commit/evidencia del mismo issue/PR #646/#720. El issue #647 se marca como supersedido por #646 solo después de que el GREEN integrado pase y se entregue; hasta entonces permanece abierto con vínculo de trazabilidad y sin duplicar rama, PR o ejecución. T9 requiere PostgreSQL real, no SQLite; es un prerrequisito de ejecución expresado por el diseño, no una dependencia artificial. La codificación por fases no obliga a serializar tareas sin una arista de dependencia.
 
 ## Fase 1: Agrupador y asignación
 
@@ -79,17 +79,19 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Dependencias:** T5 — obligatorio RED antes de código.
 
-### T7: RED — máquina de estados y terminal no reconstruible
+### T7/T8 integrado — RED→GREEN: máquina de estados y terminal no reconstruible
+
+**Mapeo y disposición de issues:** Esta unidad usa el issue #646, branch `feature/issue-646-transcript-turns-t7` y PR #720 para RED y GREEN: un solo task/issue/branch/PR, sin ejecución duplicada en #647. Preservar sin cambios el commit RED `19a229c1e2cb45b038ff890be34771eef267f3dc` y su salida enfocada (2 fallos de aserción esperados, 9 pases; sin `TypeError`) como primer commit/evidencia; el PR no se fusiona mientras la suite siga RED. Todo el comportamiento de T8 queda incorporado abajo sin reducción. #647 queda abierto y vinculado a #646/#720 hasta que el GREEN integrado satisfaga ambos criterios; recién entonces Ansel registra que #647 fue supersedido por #646, enlaza la evidencia de entrega y dispone su cierre. No crear issue, card, rama ni PR duplicados.
 
 **Archivo / seam:** `backend/tests/diarization/test_state_property.py`; funciones de transición de `backend/app/diarization/state.py`.
 
-**Acción:** Añadir propiedades sintéticas para transición terminal `pending -> not_reconstructible` solo con `audio_unavailable`, rechazo de causa/evidencia no autoritativa, terminalidad y no-op de reentrega; incluir que `failed -> pending` solo se permite ante retry explícito con causa reintentable, y se rechaza para causa terminal, permisos o causa no verificada. Representar la evidencia recibida, causa y retry explícito en un evento estructurado e inmutable y probar la decisión de la función pura de transición en `state.py`; esta prueba no autentica la evidencia ni consulta o selecciona generaciones persistidas. Conservar el criterio global de que pending/failed no desplazan la generación activa, con cobertura repartida por seam: T9/T10 prueban reserva, commit y conservación de la generación activa; T11/T12 prueban la inspección del objeto exacto y el backfill que aportan evidencia; T13/T14 prueban que API/review exponen la última generación completada pese a un intento posterior. Ejecutar y capturar RED.
+**Acción:** Mantener como fase RED del issue #646 el conjunto de propiedades sintéticas ya ejecutado, sin alterar sus casos ni su evidencia; cubren transición terminal `pending -> not_reconstructible` solo con `audio_unavailable`, rechazo de causa/evidencia no autoritativa, terminalidad y no-op de reentrega; incluir que `failed -> pending` solo se permite ante retry explícito con causa reintentable, y se rechaza para causa terminal, permisos o causa no verificada. Representar la evidencia recibida, causa y retry explícito en un evento estructurado e inmutable y probar la decisión de la función pura de transición en `state.py`; esta prueba no autentica la evidencia ni consulta o selecciona generaciones persistidas. Conservar el criterio global de que pending/failed no desplazan la generación activa, con cobertura repartida por seam: T9/T10 prueban reserva, commit y conservación de la generación activa; T11/T12 prueban la inspección del objeto exacto y el backfill que aportan evidencia; T13/T14 prueban que API/review exponen la última generación completada pese a un intento posterior. Conservar la salida RED ya ejecutada como evidencia del issue #646.
 
-**Criterio de Completado:** Desde `backend/`, `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_state_property.py` falla en los nuevos estados/reglas, no por setup.
+**Criterio de Completado (RED):** La salida RED ya registrada permanece preservada y ligada a #646/#720: desde `backend/`, `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_state_property.py` fallaba con aserciones esperadas, no por setup. Esta evidencia no autoriza merge ni GREEN antes de T6.
 
 **Dependencias:** Ninguna
 
-### T8: GREEN — estado versionado `not_reconstructible`
+#### GREEN — estado versionado `not_reconstructible` (misma unidad T7/T8)
 
 **Archivo / seam:** `backend/app/diarization/state.py`, enum/check de estado en `backend/app/infra/models.py`; transiciones `pending`, `failed`, `completed`.
 
@@ -97,7 +99,7 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Criterio de Completado:** Desde `backend/`, `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_state_property.py` pasa.
 
-**Dependencias:** T7 y T6 (modelo y constraints necesarios).
+**Dependencias:** T6 antes de ejecutar GREEN (modelo y constraints necesarios); RED ya evidenciado como primera fase del mismo issue/PR #646/#720.
 
 ### T9: RED — reserva idempotente y atomicidad concurrente
 
@@ -107,7 +109,7 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Criterio de Completado:** Desde `backend/`, `<root>/backend/.venv/bin/python -m pytest tests/integration/test_diarization_reservation_concurrency.py` (PostgreSQL disponible) falla en el comportamiento nuevo, sin usar SQLite.
 
-**Dependencias:** T6 y T8 — requiere esquema revisado y estados definidos.
+**Dependencias:** T6 y T7/T8 integrado — requiere esquema revisado y estados definidos.
 
 ## Fase 2: Esquema, revisiones, atomicidad y backfill
 
@@ -129,7 +131,7 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Criterio de Completado:** Desde `backend/`, `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_reprocess_legacy.py tests/infra/test_object_store_availability.py` falla en seams aún ausentes/nuevos, sin error de entorno.
 
-**Dependencias:** T6, T8 y T10 — requiere modelo, estado y reserva idempotente.
+**Dependencias:** T6, T7/T8 integrado y T10 — requiere modelo, estado y reserva idempotente.
 
 ### T12: GREEN — inspección de objeto y backfill seguro
 
@@ -213,7 +215,7 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Criterio de Completado:** Todos los comandos terminan con exit 0 en el entorno indicado; conservar logs/salida y SHA probado. No reportar ejecución como aprobada si falta DB/runner.
 
-**Dependencias:** T4, T6, T8, T10, T12, T14, T16 y T18; son los componentes incluidos en estas suites.
+**Dependencias:** T4, T6, T7/T8 integrado, T10, T12, T14, T16 y T18; son los componentes incluidos en estas suites.
 
 ### T20: Revisión de seguridad y privacidad independiente
 
