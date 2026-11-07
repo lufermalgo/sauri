@@ -242,6 +242,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-18: RED — Specify bounded excerpt reads and decoder lifecycle
 
+**Tracking:** Issue #749 · Card task_b55f0a653b9e49ae
+
 **Files / test seam:** `backend/tests/meetings/test_speaker_excerpt_limits.py`; `SpeakerExcerptService.derive` and `.play` in `backend/app/meetings/speaker_excerpt_service.py`; `ObjectStore.get_bounded` in `backend/app/infra/object_store.py` and its S3 implementation in `backend/app/infra/object_store_s3.py`.
 
 **Action:** Add required failing tests using synthetic media and fake storage/process adapters for the approved bounded-decoding contract. Cover exact 20 MiB source and 30-second audio boundaries, rejection of oversized/unknown/mismatched source length before probe/decode, bounded reads of at most the limit plus one sentinel with body closure, rejection of unknown/invalid/>30-second duration before interval decode, valid intervals no longer than 10,000 ms with overlong candidates skipped but never truncated, and no result/reference/partial bytes on rejection. Exercise the single non-blocking process-scoped two-permit limit across derive and playback, promptly reject a third request, and verify one 60-second monotonic budget is shared across reads/probes/candidates/output. On timeout/cancellation, assert body closure, hard-kill of the process group, staged-output discard, process/read-worker reap before permit release, and no partial result; when exit is unconfirmed, assert unhealthy-worker rejection, retained permit, and release only after background reap. Assert generic limit errors do not expose decoder/storage details. Use injected clocks and synthetic fixtures; do not use real recordings.
