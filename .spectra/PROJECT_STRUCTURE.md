@@ -214,7 +214,7 @@ change too.
 | `api` | `backend/Dockerfile` | port 8000; depends on postgres, minio, rabbitmq |
 | `worker` | `backend/Dockerfile`, `python -m app.worker` | transcription and retention workers |
 | `postgres` | `postgres:16` | volume `pgdata` |
-| `minio` | `minio/minio` | volume `minio-data`, bucket `sauri-recordings` |
+| `minio` | `rustfs/rustfs@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b` | volume `minio-data`, bucket `sauri-recordings` |
 | `rabbitmq` | `rabbitmq:3-management` | queue broker |
 | `asr-engine` | `backend/asr-engine/Dockerfile` | faster-whisper at `http://asr-engine:8001` |
 

@@ -6,7 +6,7 @@
   "idea": "Some meetings remain in Queued or Transcribing without completing; define a safe, operator-initiated recovery path.",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
+    "design": "complete",
     "tasks": "pending"
   }
 }
