@@ -642,3 +642,77 @@ async def test_managed_decoder_does_not_return_until_process_exit_is_confirmed()
     with pytest.raises((TimeoutError, ValueError, RuntimeError)):
         await operation
     assert events.index("wait_started") < events.index("wait_confirmed")
+
+
+@pytest.mark.asyncio
+async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
+    keyring: ExcerptKeyring,
+) -> None:
+    events: list[str] = []
+    managed_decoder, process = managed_decoder_for_test(events, confirm_exit_on_kill=False)
+    second_request_entered = asyncio.Event()
+    release_second_request = asyncio.Event()
+
+    async def decode_interval(
+        _object_key: str,
+        start_ms: int,
+        _end_ms: int,
+        **_kwargs: Any,
+    ) -> bytes:
+        if start_ms == 0:
+            return await managed_decoder.run(
+                ("synthetic-decoder",),
+                input_bytes=b"synthetic-source",
+                deadline_monotonic=0.01,
+            )
+        second_request_entered.set()
+        await release_second_request.wait()
+        return b"synthetic-complete-output"
+
+    excerpt_service = service(decode_interval=decode_interval, keyring=keyring)
+    first_request = asyncio.create_task(
+        derive(
+            excerpt_service,
+            duration_ms=MAX_AUDIO_DURATION_MS,
+            candidates=[Candidate(0, 1_000)],
+        )
+    )
+    await asyncio.sleep(0.03)
+    assert not first_request.done()
+    assert "killed_process_group" in events
+    assert "wait_started" in events
+    assert "wait_confirmed" not in events
+
+    second_request = asyncio.create_task(
+        derive(
+            excerpt_service,
+            duration_ms=MAX_AUDIO_DURATION_MS,
+            candidates=[Candidate(1_000, 2_000)],
+        )
+    )
+    await asyncio.wait_for(second_request_entered.wait(), timeout=0.2)
+
+    rejected_request_started = asyncio.get_running_loop().time()
+    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+        await asyncio.wait_for(
+            derive(
+                excerpt_service,
+                duration_ms=MAX_AUDIO_DURATION_MS,
+                candidates=[Candidate(2_000, 3_000)],
+            ),
+            timeout=0.1,
+        )
+    assert asyncio.get_running_loop().time() - rejected_request_started < 0.1
+
+    process.exited.set()
+    with pytest.raises((TimeoutError, ValueError, RuntimeError)):
+        await first_request
+    assert "wait_confirmed" in events
+
+    release_second_request.set()
+    await second_request
+    await derive(
+        excerpt_service,
+        duration_ms=MAX_AUDIO_DURATION_MS,
+        candidates=[Candidate(2_000, 3_000)],
+    )
