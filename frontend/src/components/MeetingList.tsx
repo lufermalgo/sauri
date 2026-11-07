@@ -1,7 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { ProcessState } from "@sauri/shared-types";
-import type { Meeting } from "@sauri/shared-types";
+import type { MeetingListItem } from "@sauri/shared-types";
 import { listMeetings } from "../api";
+
+const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("en", {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+const STATE_LABELS: Record<ProcessState, string> = {
+  [ProcessState.Queued]: "Queued",
+  [ProcessState.Joining]: "Joining",
+  [ProcessState.Recording]: "Recording",
+  [ProcessState.Transcribing]: "Transcribing",
+  [ProcessState.Completed]: "Ready",
+  [ProcessState.Failed]: "Failed",
+};
 
 const STATE_COLORS: Record<ProcessState, string> = {
   [ProcessState.Queued]: "#6b7280",
@@ -14,11 +28,11 @@ const STATE_COLORS: Record<ProcessState, string> = {
 
 interface MeetingListProps {
   refreshKey: number;
-  onSelectMeeting: (meeting: Meeting) => void;
+  onSelectMeeting: (meeting: MeetingListItem) => void;
 }
 
 export function MeetingList({ refreshKey, onSelectMeeting }: MeetingListProps) {
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [meetings, setMeetings] = useState<MeetingListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -51,33 +65,35 @@ export function MeetingList({ refreshKey, onSelectMeeting }: MeetingListProps) {
       <table>
         <thead>
           <tr>
-            <th>Link</th>
+            <th>Title</th>
+            <th>Created</th>
             <th>State</th>
-            <th>Failure cause</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {meetings.map((m) => (
-            <tr key={m.id}>
-              <td>{m.meetLink}</td>
+          {meetings.map((meeting) => (
+            <tr key={meeting.id}>
+              <td>{meeting.title}</td>
+              <td>
+                {meeting.createdAt
+                  ? CREATED_AT_FORMATTER.format(new Date(meeting.createdAt))
+                  : "—"}
+              </td>
               <td>
                 <span
                   style={{
-                    color: STATE_COLORS[m.processState],
+                    color: STATE_COLORS[meeting.processState],
                     fontWeight: "bold",
                   }}
                 >
-                  {m.processState}
+                  {STATE_LABELS[meeting.processState]}
                 </span>
               </td>
-              <td>{m.failureCause ?? "—"}</td>
               <td>
-                {m.processState === ProcessState.Completed && (
-                  <button onClick={() => onSelectMeeting(m)}>
-                    View transcript
-                  </button>
-                )}
+                <button type="button" onClick={() => onSelectMeeting(meeting)}>
+                  Open
+                </button>
               </td>
             </tr>
           ))}

@@ -25,14 +25,21 @@ class S3ObjectStore(ObjectStore):
         bucket: str,
         access_key: str,
         secret_key: str,
+        presign_endpoint_url: str | None = None,
     ) -> None:
         self._bucket = bucket
+        client_options = {
+            "aws_access_key_id": access_key,
+            "aws_secret_access_key": secret_key,
+            "config": Config(signature_version="s3v4"),
+        }
         self._client = boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            config=Config(signature_version="s3v4"),
+            "s3", endpoint_url=endpoint_url, **client_options
+        )
+        self._presign_client = (
+            boto3.client("s3", endpoint_url=presign_endpoint_url, **client_options)
+            if presign_endpoint_url and presign_endpoint_url != endpoint_url
+            else self._client
         )
 
     # ------------------------------------------------------------------
@@ -87,7 +94,7 @@ class S3ObjectStore(ObjectStore):
         """Generates a pre-signed read URL with expiration."""
         url: str = await asyncio.to_thread(
             functools.partial(
-                self._client.generate_presigned_url,
+                self._presign_client.generate_presigned_url,
                 ClientMethod="get_object",
                 Params={"Bucket": self._bucket, "Key": reference},
                 ExpiresIn=ttl_seconds,

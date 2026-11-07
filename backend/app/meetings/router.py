@@ -104,7 +104,7 @@ async def create_meeting(
         async with session_factory() as session, session.begin():
             meeting = await register_meeting(
                 session=session,
-                input=meeting_data,
+                meeting_data=meeting_data,
                 created_by=user.id,
             )
             return {
@@ -171,12 +171,9 @@ async def rename_meeting_endpoint(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session, session.begin():
-            meeting = await session.get(Meeting, meeting_id)
-            if meeting is None or meeting.created_by != user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Meeting not found: {meeting_id}",
-                )
+            await _get_authorized_meeting(
+                session, meeting_id, user, f"PATCH /api/v1/meetings/{meeting_id}"
+            )
             updated = await rename_meeting(session, meeting_id, rename_input.title)
             assert updated is not None
             return {"meeting_id": updated.id, "title": updated.title}
@@ -197,12 +194,9 @@ async def delete_meeting_endpoint(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session, session.begin():
-            meeting = await session.get(Meeting, meeting_id)
-            if meeting is None or meeting.created_by != user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Meeting not found: {meeting_id}",
-                )
+            await _get_authorized_meeting(
+                session, meeting_id, user, f"DELETE /api/v1/meetings/{meeting_id}"
+            )
             object_store = _get_object_store()
             await delete_meeting(session, object_store, meeting_id)
     finally:
@@ -222,6 +216,9 @@ async def get_meeting_endpoint(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
+            await _get_authorized_meeting(
+                session, meeting_id, user, f"GET /api/v1/meetings/{meeting_id}"
+            )
             result = await get_meeting(session, meeting_id)
             return result
     except ValueError as exc:
@@ -242,10 +239,15 @@ async def request_join_endpoint(
 
     Requirements: 1.2, 9.1
     """
-    queue = _get_queue()
     engine = create_engine()
     session_factory = create_session_factory(engine)
+    queue: JobQueue | None = None
     try:
+        async with session_factory() as session:
+            await _get_authorized_meeting(
+                session, meeting_id, user, f"POST /api/v1/meetings/{meeting_id}/request-join"
+            )
+        queue = _get_queue()
         await queue.connect()
         async with session_factory() as session, session.begin():
             result = await request_join(session, meeting_id, queue)
@@ -262,7 +264,8 @@ async def request_join_endpoint(
                 "process_state": result.new_state,
             }
     finally:
-        await queue.disconnect()
+        if queue is not None:
+            await queue.disconnect()
         await engine.dispose()
 
 
@@ -276,6 +279,12 @@ async def get_speaker_review(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
+            await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"GET /api/v1/meetings/{meeting_id}/speaker-review",
+            )
             result = await SpeakerReviewService(session).get_active_review(
                 user.id, meeting_id
             )

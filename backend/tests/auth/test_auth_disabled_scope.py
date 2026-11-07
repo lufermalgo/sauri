@@ -12,7 +12,7 @@ from app.auth.dependencies import get_current_user
 
 
 @pytest.mark.asyncio
-async def test_bypass_active_in_test_environment(monkeypatch: pytest.MonkeyPatch):
+async def test_bypass_active_in_test_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AUTH_DISABLED", "1")
     monkeypatch.setenv("APP_ENV", "test")
 
@@ -21,7 +21,7 @@ async def test_bypass_active_in_test_environment(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_bypass_inactive_outside_test_environment(monkeypatch: pytest.MonkeyPatch):
+async def test_bypass_inactive_outside_test_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AUTH_DISABLED", "1")
     monkeypatch.setenv("APP_ENV", "production")
 
@@ -30,7 +30,7 @@ async def test_bypass_inactive_outside_test_environment(monkeypatch: pytest.Monk
 
 
 @pytest.mark.asyncio
-async def test_bypass_inactive_without_app_env(monkeypatch: pytest.MonkeyPatch):
+async def test_bypass_inactive_without_app_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AUTH_DISABLED", "1")
     monkeypatch.delenv("APP_ENV", raising=False)
 

@@ -1,12 +1,12 @@
 # Implementation Plan — Meeting Summaries and Templates
 
 **Spec:** `meeting-summaries-templates`
-**Approved inputs:** requirements `cdce9c34c566b72f42bb6db5eecdd76bdacb4532` (Mira APPROVED, PR #231 merged); owner-approved `PRODUCT_BASELINE.md` `26d44ca7b212097c82415d0ae038bd9d096873d4` (blob `3afefd5e3da230cc3e26d7b89e74f48dc01d82ae`); design `23e7ed13546ea2abdfc58da87e0f7208b3da94e9` (Mira APPROVED, PR #268 open). These identify planning sources; they are not recurring implementation checks.
+**Approved inputs:** requirements `cdce9c34c566b72f42bb6db5eecdd76bdacb4532` (Mira APPROVED, PR #231 merged); owner-approved `PRODUCT_BASELINE.md` `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`); revised design `6a0db6dcc0deab546fc81ebc778413bb81e5eedd` (blob `2297f0f92234f1c948246b66ca27d5c95fd8238e`; Mira APPROVED, PR #687 open). This amendment is based on the previously approved tasks snapshot `8cccde7a59c95600cf5b6ce84d3270a3988794df`; these identify planning sources and are not recurring implementation checks.
 
 ## Planning constraints and unresolved gates
 
-- Follow the approved requirements and design only. No provider, model, endpoint, credential, template grammar, summary serialization, seed template, no-default fallback, or broader retention behavior is selected here.
-- Design D14 requires a verified `SummarizationEngine` provider/configuration/deployment binding before work whose acceptance depends on actual summary generation. Resolve that binding through the authorized decision process before dispatching those gated tasks; obtain upstream approval if the choice affects privacy, cost, or product behavior. Protocol/repository/resolver/API/UI-empty-state/outbox work that does not require generation is independent and may proceed.
+- Follow the approved requirements and design only. Local Ollama is the selected provider; `SUMMARIZATION_OLLAMA_URL` and `SUMMARIZATION_OLLAMA_MODEL` configure it. There is no provider selector or silent cloud fallback. Do not invent template grammar, summary serialization, seed template, no-default fallback, or broader retention behavior.
+- Design D14 requires configuring and verifying Ollama endpoint reachability and model availability from the actual worker runtime before claiming end-to-end generation is executable. Keep the endpoint route configurable; do not assume a host address or container network path. If unavailable, generation remains gated or follows the existing retry/dead-letter path without cloud fallback. Protocol/repository/resolver/API/UI-empty-state/outbox work that does not require successful generation remains independent.
 - Behavior when neither an explicit template nor a personal default exists remains unspecified. Do not infer a fallback or add acceptance tests for one.
 - Tests use synthetic fixtures only. Backend property tests use the already-present `hypothesis` dependency and run at least 100 examples per property. Test tasks are RED: commit the test and record the pre-implementation candidate SHA, exact command, captured failing output, and expected failure before their dependent implementation task starts. Hand the test commit/diff and evidence to that implementation task. Candidate work must include the predecessor test commit. No late test substitutes for RED evidence.
 - Suggested ready-task execution remains parallel across independent dependency branches; separate worktrees are required. Phase headings group work and do not add dependencies.
@@ -17,7 +17,7 @@
 |---|---|---|---|
 | 1 | Persistence foundations and default resolution | T1–T4 | RED→GREEN within each branch |
 | 2 | Personal templates and privacy boundaries | T5–T8 | T2/T4 where noted; otherwise independent |
-| 3 | Summary request, outbox, worker and API | T9–T16 | Explicit DAG below; generation tasks additionally gated by D14 |
+| 3 | Summary request, outbox, worker and API | T9–T16 | Explicit DAG below; end-to-end generation additionally requires verified D14 worker-runtime connectivity/model availability |
 | 4 | Shared contracts and web experiences | T17a–T24 | T17a → T17 → T18; other edges noted below |
 | 5 | End-to-end integration and validation | T25–T27 | Required predecessor tasks |
 
@@ -28,6 +28,7 @@
 **Tracking:** Issue #269 · Card task_9240ba5b9f47485a
 
 **Archivo:** `backend/tests/summaries/test_summary_models_property.py` (create)
+**Test seam:** Exercise `backend/app/infra/models.py`: `User.default_summary_template_id`, `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary`.
 **Acción:** Add synthetic-database/property coverage for the approved absence of a seeded template or configured default (P4), multiple summary generations per transcript, unique event/generation constraints, and deletion of every persisted summary when its transcript is deleted (P8/R6). Do not test a broader retention policy. Capture the pre-implementation candidate SHA and expected failing output.
 
 **Criterio de Completado:** Before schema implementation, `cd backend && pytest tests/summaries/test_summary_models_property.py -q` fails on the missing schema/relationship assertions; commit the RED test and record exact SHA and output.
@@ -38,10 +39,10 @@
 
 **Tracking:** Issue #270 · Card task_76551eb8a88047d8
 
-**Archivo:** `backend/app/infra/models.py`; `backend/alembic/versions/008_summaries_and_templates.py`
-**Acción:** Implement the design's `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary` models, nullable `User.default_summary_template_id`, constraints and FKs; add migration `008` from `007_rename_schema_to_english` in the specified create/reverse order. Do not seed templates/defaults. Use transcript `ON DELETE CASCADE`, user-default `ON DELETE SET NULL`, and allow multiple summary generations.
+**Archivo:** `backend/app/infra/models.py`; `backend/alembic/versions/012_meeting_summaries_templates.py`
+**Acción:** Implement the design's `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary` models, nullable `User.default_summary_template_id`, constraints and FKs; add revision `012_meeting_summaries_templates` with `down_revision = "011_linkless_cleanup"`. Preserve the existing 007→008→009 branches→010 merge→011 lineage; do not attach this migration to 007 or either 009 branch. In `upgrade()`, create `template_categories`, `summary_templates`, `summary_request_outbox`, `processed_summary_events`, and `meeting_summaries` in the design's dependency order; add the nullable user-default column before its named `summary_templates(id) ON DELETE SET NULL` FK, and preserve transcript/meeting `ON DELETE CASCADE` plus multiple summary generations. Do not seed templates/defaults. In `downgrade()`, drop the named user-default FK and column first, then `meeting_summaries`, `processed_summary_events`, `summary_request_outbox`, `summary_templates`, and `template_categories`; this rollback is destructive to feature data and stops at 011.
 
-**Criterio de Completado:** T1's RED test passes and `cd backend && pytest tests/summaries/test_summary_models_property.py -q` succeeds; migration upgrade/downgrade is exercised by the repository's configured test fixture.
+**Criterio de Completado:** T1's RED test passes and `cd backend && pytest tests/summaries/test_summary_models_property.py -q` succeeds; the repository's configured PostgreSQL migration test fixture exercises upgrade from the supported 011 head to 012 and downgrade back to 011.
 
 **Dependencias:** T1 (mandatory RED→GREEN)
 
@@ -51,6 +52,7 @@
 **Status:** Done
 
 **Archivo:** `backend/tests/templates/test_default_resolver_property.py` (create)
+**Test seam:** Exercise `backend/app/templates/default_resolver.py` and `resolve_default(template_row)`.
 **Acción:** Add Hypothesis properties for nullable default resolution, exact `(template_id, version)` selection, and the resolver's category-blind input/output contract; use at least 100 examples per property and synthetic template records. Do not assert any no-default fallback.
 
 **Criterio de Completado:** Before resolver implementation, `cd backend && pytest tests/templates/test_default_resolver_property.py -q` fails because the resolver is absent; commit RED test and record SHA/output.
@@ -97,6 +99,7 @@
 **Tracking:** Issue #275 · Card task_fdefb390888b442b
 
 **Archivo:** `backend/tests/templates/test_templates_api.py` (extend)
+**Test seam:** Exercise `PUT /api/v1/templates/default` and `GET /api/v1/templates` in `backend/app/templates/router.py`.
 **Acción:** Add tests that a user can set their own template as the one personal default, a foreign template cannot be selected, template-list responses identify the caller's configured default, and the default is independent of category. Verify failed foreign selection makes no change. Do not assert no-default request behavior.
 
 **Criterio de Completado:** Before default API implementation, `cd backend && pytest tests/templates/test_templates_api.py -q` fails on default-setting/list-identification cases; commit RED test and record SHA/output.
@@ -121,6 +124,7 @@
 **Tracking:** Issue #277 · Card task_be32b6373a0648dc
 
 **Archivo:** `backend/tests/summaries/test_summary_api.py`; `backend/tests/integration/test_summary_pipeline.py` (create/extend)
+**Test seam:** Exercise `POST /api/v1/meetings/{meeting_id}/summary-requests` via `backend/app/summaries/router.py` and the request transaction in `backend/app/summaries/service.py`; exercise pending-event recovery in `backend/app/summaries/outbox.py` against `SummaryRequestOutbox` in `backend/app/infra/models.py`.
 **Acción:** Add failing tests for explicit owned-template selection and implicit configured-default resolution at request time; each accepted event freezes template id/version/instructions, distinct requests receive increasing per-transcript generations, no enqueue occurs on transcript commit alone, and committed pending outbox events survive/re-dispatch after publication failure until broker confirmation. Cover status lifecycle and do not invent behavior when no default exists.
 
 **Criterio de Completado:** Before request/outbox implementation, `cd backend && pytest tests/summaries/test_summary_api.py tests/integration/test_summary_pipeline.py -q` fails with missing API/outbox behavior; commit RED tests with pre-implementation SHA and captured output.
@@ -143,6 +147,7 @@
 **Tracking:** Issue #279 · Card task_4fb964f1c8d54d70
 
 **Archivo:** `backend/tests/summaries/test_worker.py` (create/extend)
+**Test seam:** Exercise the consumer registered by `start_worker` in `backend/app/summaries/worker.py` and persistence in `backend/app/infra/models.py`: `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary`.
 **Acción:** Add failing tests for immutable event-snapshot use across template edits/default changes, duplicate-event no-op, atomic summary + processed-event + `succeeded` persistence, retryable failures, terminal dead-letter `failed`, and status transitions `pending → running → succeeded|failed`. Assert a later failed request does not overwrite an earlier successful summary.
 
 **Criterio de Completado:** Before worker implementation, `cd backend && pytest tests/summaries/test_worker.py -q` fails on the missing consumer behavior; commit RED test and record SHA/output.
@@ -162,31 +167,32 @@
 
 ### T13: RED — Specify required generated content and lineage (P1)
 
-**Tracking:** Issue #281 · Card task_5af1bb7ec0114ea4
+**Tracking:** Issue #281 · Card task_5af1bb7ec0114ea9
 
-**Archivo:** `backend/tests/summaries/test_worker.py`; `backend/tests/integration/test_summary_pipeline.py` (extend)
-**Acción:** Add failing integration tests asserting that every successful persisted result makes both topic and key points identifiable, reflects the applied template instructions through the engine boundary, records template id/version lineage, and is unaffected by later template edits. Add factory contract tests that unsupported/missing provider configuration fails closed. Use synthetic transcript text and a contract-compliant test engine; do not assert provider accuracy, a prompt, or output policy for empty values.
+**Archivo / test seam:** `backend/tests/summaries/test_worker.py` exercises `backend/app/summaries/worker.py` and `create_summarization_engine()` from `backend/app/summaries/factory.py`; extend `backend/tests/integration/test_summary_pipeline.py` for the persisted-result contract.
+**Acción:** Add and run failing RED tests asserting each successful persisted result makes topic and key points identifiable, reflects the frozen template instructions through `SummarizationEngine.generate(transcript_text, instructions_snapshot)`, records template id/version lineage, and is unaffected by later template edits. Test the local-Ollama factory contract: `SUMMARIZATION_OLLAMA_URL` and `SUMMARIZATION_OLLAMA_MODEL` are required and invalid/missing configuration fails closed; no alternate/cloud provider is selected. Use synthetic transcript text and a contract-compliant test engine; do not invoke a real provider or assert provider accuracy, prompt text, or output policy for empty values.
 
-**Criterio de Completado:** Before generation integration, `cd backend && pytest tests/summaries/test_worker.py tests/integration/test_summary_pipeline.py -q` fails on missing engine/content assertions; commit RED test and capture exact output. Actual-provider acceptance remains gated by D14.
+**Criterio de Completado:** Before generation implementation, `cd backend && pytest tests/summaries/test_worker.py tests/integration/test_summary_pipeline.py -q` fails on the missing content/lineage and Ollama configuration/no-cloud assertions; commit the RED tests and capture exact failing output. This test task does not claim Ollama is reachable from the worker runtime; that remains an explicit T14 readiness gate.
 
 **Dependencias:** T10, T12
 
-### T14: GREEN — Add engine protocol and fail-closed provider/configuration seam
+### T14: GREEN — Implement local Ollama engine and fail-closed configuration
 
 **Tracking:** Issue #282 · Card task_ae51c57ca7ed46e4
 
-**Archivo:** `backend/app/summaries/engine.py`; `backend/app/summaries/factory.py`; `backend/app/summaries/worker.py`
-**Acción:** Implement the `SummarizationEngine` protocol and factory seam; validate unsupported/missing configuration fail-closed at worker startup and keep business services provider-agnostic. Do not select or claim an actual provider, endpoint, model, credential, or executable generation deployment. The D14 provider/configuration/deployment binding and its adapter remain a separate gated prerequisite before any provider-backed summary-generation acceptance; if it changes privacy, cost, or product behavior, obtain upstream approval. Once authorized, the adapter must use bounded TLS-protected requests containing only transcript text needed for topic/key-points, not recording media, identity, template names or unrelated metadata.
+**Archivo:** `backend/app/summaries/engine.py`; `backend/app/summaries/factory.py`; `backend/app/summaries/worker.py`; corresponding tests in `backend/tests/summaries/test_worker.py` and `backend/tests/integration/test_summary_pipeline.py`
+**Acción:** Implement the `SummarizationEngine` protocol and local-Ollama adapter constructed by `create_summarization_engine()` from `SUMMARIZATION_OLLAMA_URL` and `SUMMARIZATION_OLLAMA_MODEL`; validate missing/malformed configuration fail-closed at worker startup and keep business services provider-agnostic. Do not add a provider selector or cloud fallback. Keep host-to-worker routing configurable; do not hard-code or assume a host address. Send only the transcript text needed for topic/key-points and the frozen instruction snapshot, not recording media, identity, template names or unrelated metadata. Provider errors propagate through the existing retry/dead-letter path.
 
-**Criterio de Completado:** T13's contract-engine and fail-closed configuration RED tests pass with `cd backend && pytest tests/summaries/test_worker.py tests/integration/test_summary_pipeline.py -q`. This does not establish a production provider or prove provider-backed generation; those remain blocked until the D14 binding is verified.
+**Criterio de Completado:** T13's RED tests pass with `cd backend && pytest tests/summaries/test_worker.py tests/integration/test_summary_pipeline.py -q`. Before reporting end-to-end generation executable, separately record evidence that the configured Ollama URL is reachable and the configured model is available from the actual worker runtime; no such deployment/connectivity is currently verified. If this runtime prerequisite cannot be met, keep generation gated—do not substitute cloud. The focused test command verifies the code contract, not deployment availability.
 
-**Dependencias:** T13 (mandatory RED→GREEN), T12; provider-backed portion is gated by the D14 binding
+**Dependencias:** T13 (mandatory RED→GREEN), T12. Actual generation execution additionally requires verified D14 worker-runtime connectivity and model availability; this is not a prerequisite for independent protocol/persistence/API/UI/outbox work.
 
 ### T15: RED — Specify current successful summary query and status routes (P5/P8)
 
 **Tracking:** Issue #283 · Card task_abb0a6217a484a7a
 
 **Archivo:** `backend/tests/summaries/test_summary_api.py` (extend)
+**Test seam:** Exercise `GET /api/v1/meetings/{meeting_id}/summary`, `GET /api/v1/meetings/{meeting_id}/summary-requests/latest`, and `GET /api/v1/meetings/{meeting_id}/summary-requests/{event_id}` in `backend/app/summaries/router.py`; verify current-summary selection through `SummaryService.get_current_summary_for_user(meeting_id, user)` in `backend/app/summaries/service.py`.
 **Acción:** Add failing tests for GET current summary choosing the highest-generation successful result (not a pending/failed later request), meeting association/ownership and `require_sales` access behavior, latest accepted request status selection, event-specific status ownership, and registration of static `/summary-requests/latest` before dynamic `{event_id}`. Include the literal-route test named `test_latest_summary_request_route_resolves_before_event_id`.
 
 **Criterio de Completado:** Before read/status route implementation, `cd backend && pytest tests/summaries/test_summary_api.py -q` fails on missing route/query assertions; commit RED test and record SHA/output.
@@ -347,7 +353,7 @@
 - T2 → T5 → T6 → T7 → T8: test-before-code for owned template CRUD and default setting; T8 also uses the resolver T4.
 - T2 + T8 → T9 → T10: request semantics depend on persistence and personal default selection; T9's RED evidence precedes outbox/request implementation.
 - T2 + T9 → T11 → T12: event-worker RED test precedes worker implementation, which consumes T10's accepted event.
-- T10 + T12 → T13 → T14: required-content integration RED precedes engine seam/generation integration. The real provider binding is a separate D14 gate; it does not block independent work.
+- T10 + T12 → T13 → T14: required-content, lineage, local-Ollama configuration and no-cloud RED tests precede the local adapter implementation. T14 also depends on T12 for the worker seam. Successful end-to-end generation is gated on verified D14 endpoint reachability and configured-model availability from the actual worker runtime; this gate does not serialize independent work.
 - T2 + T9 → T15 → T16: summary/status route tests precede route/query implementation; T16 consumes persisted request/summary data.
 - T16 + T18 → T19 → T20 → T21 → T22: frontend summary UI tests precede implementation, then copy/download tests precede controls; T6 → T20 because the summary selector consumes the implemented own-template list API.
 - T8 + T18 → T23 → T24: settings UI tests precede implementation and use the approved template/default API. T20 → T24 serializes their edits to shared `frontend/src/api.ts`; T20 owns summary/status calls and `listTemplates`, while T24 adds only settings-specific template/category calls.

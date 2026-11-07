@@ -130,10 +130,11 @@ async function uploadRecording(
       // Clear chunks from IndexedDB after successful upload
       await clearSession(sessionId);
     } else {
-      console.error("[sauri] Upload failed:", response.status, response.statusText);
+      throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
     }
   } catch (error) {
     console.error("[sauri] Upload error:", error);
+    throw error;
   }
 }
 
@@ -166,6 +167,13 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 configureSidePanel();
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const state = await getState();
+  if (state.status === "recording" && state.tabId === tabId) {
+    await handleStopCapture();
+  }
+});
 
 // On service worker startup, ensure state is loaded from session storage
 // (chrome.storage.session persists across SW restarts within the browser session)
