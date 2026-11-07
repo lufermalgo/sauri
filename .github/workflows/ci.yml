@@ -65,7 +65,6 @@ jobs:
       OBJECT_STORE_ENDPOINT: http://127.0.0.1:9000
       OBJECT_STORE_BUCKET: sauri-playback-${{ github.run_id }}
       MINIO_ROOT_USER: sauri-ci-${{ github.run_id }}
-      MINIO_ROOT_PASSWORD: ${{ format('sauri-ci-{0}-{1}', github.run_id, github.run_attempt) }}
       PLAYBACK_TEST_FRONTEND_ORIGIN: http://localhost:5173
     steps:
       - name: Check out repository
@@ -78,11 +77,16 @@ jobs:
           python-version: "3.11"
       - name: Install backend dependencies
         run: python -m pip install -e "./backend[dev]"
+      - name: Generate disposable object-store password
+        run: |
+          MINIO_ROOT_PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$MINIO_ROOT_PASSWORD"
+          echo "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" >> "$GITHUB_ENV"
       - name: Start disposable S3-compatible object store
         run: >-
-          docker run --detach --name sauri-ci-object-store --publish 9000:9000
-          --env MINIO_ROOT_USER="$MINIO_ROOT_USER"
-          --env MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD"
+          docker run --detach --name sauri-ci-object-store --publish 127.0.0.1:9000:9000
+          --env MINIO_ROOT_USER
+          --env MINIO_ROOT_PASSWORD
           rustfs/rustfs@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
       - name: Wait for object store and configure the disposable bucket
         run: |
