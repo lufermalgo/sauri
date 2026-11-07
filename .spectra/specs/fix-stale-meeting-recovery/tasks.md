@@ -111,7 +111,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-7 — RED: Specify recovery outbox delivery at worker startup
 
-**Files / RED test seams:** `backend/tests/infra/test_recovery_outbox.py` (new); existing `backend/app/worker/main.py` startup boundary with injected isolated queue/session factories and controlled stop event; use a persisted synthetic operation/outbox row produced through `MeetingRecoveryService.recover`.
+**Files / RED test seams:** `backend/tests/infra/test_recovery_outbox.py` (new); existing `backend/app/worker.py:main()` startup boundary with injected isolated queue/session factories and controlled stop event; use a persisted synthetic operation/outbox row produced through `MeetingRecoveryService.recover`.
 
 **Action:** After T-18 can create an authorized synthetic operation/outbox row, run the existing worker startup boundary and assert it publishes that committed row's opaque operation/generation once logically and does not create another operation. Before dispatcher wiring, fail on publish/row-state behavior, not imports. Assert ordinary startup with no authorized recovery row publishes no recovery message and that transaction rollback leaves no publishable outbox row.
 
@@ -121,7 +121,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-8 — GREEN: Wire startup to deliver only committed outbox records
 
-**Files:** `backend/app/infra/recovery_outbox.py` (new); `backend/app/worker/main.py` existing startup boundary; `backend/app/infra/queue.py:JobQueue.publish`; `backend/app/infra/queue_rabbitmq.py:RabbitMQJobQueue.publish`; `backend/tests/infra/test_recovery_outbox.py`.
+**Files:** `backend/app/infra/recovery_outbox.py` (new); `backend/app/worker.py:main()` existing startup boundary; `backend/app/infra/queue.py:JobQueue.publish`; `backend/app/infra/queue_rabbitmq.py:RabbitMQJobQueue.publish`; `backend/tests/infra/test_recovery_outbox.py`.
 
 **Action:** Implement the minimum `dispatch_pending_recoveries(...)` path and wire worker startup only to delivery of already-accepted committed outbox rows using stable operation/generation identifiers. It must never initiate recovery or alter meeting processing state; ordinary startup without an authorized row does not publish recovery. Narrow touched logs to content-free reason codes/opaque IDs. Do not claim ambiguous delivery retry safety yet; T-19/T-20 provide its required RED→GREEN pair.
 
