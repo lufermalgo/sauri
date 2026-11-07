@@ -704,13 +704,27 @@ async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
         )
     assert asyncio.get_running_loop().time() - rejected_request_started < 0.1
 
+    release_second_request.set()
+    await second_request
+
+    # The second permit is now free, but the worker must remain unavailable
+    # until the background reaper confirms the first process has exited.
+    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+        await asyncio.wait_for(
+            derive(
+                excerpt_service,
+                duration_ms=MAX_AUDIO_DURATION_MS,
+                candidates=[Candidate(2_000, 3_000)],
+            ),
+            timeout=0.1,
+        )
+    assert "wait_confirmed" not in events
+
     process.exited.set()
     with pytest.raises((TimeoutError, ValueError, RuntimeError)):
         await first_request
     assert "wait_confirmed" in events
 
-    release_second_request.set()
-    await second_request
     await derive(
         excerpt_service,
         duration_ms=MAX_AUDIO_DURATION_MS,
