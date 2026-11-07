@@ -273,6 +273,16 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Acceptance evidence:** Targeted tests passed (12); Nia recorded QA `PASS` and Zev recorded `NO_ACTIONABLE_FINDINGS` on the exact candidate. Full backend pytest remains blocked during collection by the missing `app.transcription.processing_pipeline`; Ruff was unavailable in the implementation environment.
 
+### B-2: Security remediation — authorize meeting detail, join, rename, and delete routes
+
+**Tracking:** Issue #504 · Card task_138287b156e54fa0 · PR #691 · Status: QA PASS and security NO_ACTIONABLE_FINDINGS on candidate `18432e379868690b911af95b1f3e4ab10dd9e395`
+
+**Files:** `backend/app/meetings/router.py`; `backend/tests/meetings/test_meeting_route_authorization.py`; `backend/tests/meetings/test_router_exception_chaining.py`; `.spectra/specs/recording-speaker-review/tasks.md`.
+
+**Action:** Apply the shared commercial-role and meeting-owner authorization helper to GET `/{meeting_id}`, POST `/{meeting_id}/request-join`, PATCH `/{meeting_id}`, and DELETE `/{meeting_id}`. Audit denials and preserve successful owner responses and the request-join 409 for non-queued meetings.
+
+**Acceptance evidence:** RED: against the pre-B-2 router, unauthorized GET and request-join returned 200, while PATCH/DELETE applied neither commercial-role checks nor denial audit (9 failing tests; 8 before the two added assertions). GREEN: 73 passed in `tests/meetings`, with one pre-existing environmental failure, `test_signed_playback_source_supports_range_and_frontend_cors`, requiring `OBJECT_STORE_ENDPOINT`; Ruff and mypy were clean. Nia recorded QA `PASS` and Zev `NO_ACTIONABLE_FINDINGS` on exact candidate `18432e379868690b911af95b1f3e4ab10dd9e395`. Coverage confirms denial paths never connect the broker, and unknown-ID request-join returns a non-disclosing 404 without echoing the ID and writes exactly one `denied` audit row. Deliberate privacy change: an unknown ID now returns 404 instead of 409 to prevent existence probing; the owner's 409 for a non-queued meeting is unchanged. The full backend suite remains blocked during collection by missing `app.transcription.processing_pipeline`.
+
 ### T-16: GREEN — enforce resource-owner checks on existing and new routes
 
 **Tracking:** Issue #249 · Card task_2c4350aa34a94025

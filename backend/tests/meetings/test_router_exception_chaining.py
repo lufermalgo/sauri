@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.auth.schemas import AuthenticatedUser
+from app.infra.models import Meeting
 from app.meetings import router
 
 
@@ -40,6 +43,23 @@ async def test_create_meeting_chains_value_error_as_http_422_cause(
 
 
 @pytest.mark.asyncio
+async def test_get_meeting_missing_meeting_returns_helper_404(
+    monkeypatch: pytest.MonkeyPatch,
+    authenticated_user: AuthenticatedUser,
+    async_engine: AsyncEngine,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    monkeypatch.setattr(router, "create_engine", lambda: async_engine)
+    monkeypatch.setattr(router, "create_session_factory", lambda _: session_factory)
+
+    with pytest.raises(HTTPException) as raised:
+        await router.get_meeting_endpoint("missing-meeting", authenticated_user)
+
+    assert raised.value.status_code == 404
+    assert raised.value.detail == "Meeting not found"
+
+
+@pytest.mark.asyncio
 async def test_get_meeting_chains_value_error_as_http_404_cause(
     monkeypatch: pytest.MonkeyPatch,
     authenticated_user: AuthenticatedUser,
@@ -49,6 +69,24 @@ async def test_get_meeting_chains_value_error_as_http_404_cause(
     monkeypatch.setattr(router, "create_engine", lambda: async_engine)
     monkeypatch.setattr(router, "create_session_factory", lambda _: session_factory)
 
+    async with session_factory() as session, session.begin():
+        session.add(Meeting(
+            id="missing-meeting",
+            meet_link="https://meet.google.com/abc-defg-hij",
+            title="Synthetic",
+            origin="link",
+            calendar_invite_id=None,
+            scheduled_start_time=None,
+            process_state="queued",
+            failure_cause=None,
+            created_by=authenticated_user.id,
+            created_at=datetime.now(UTC),
+        ))
+
+    async def _raise(_session: AsyncSession, _meeting_id: str) -> None:
+        raise ValueError("Meeting not found: missing-meeting")
+
+    monkeypatch.setattr(router, "get_meeting", _raise)
     with pytest.raises(HTTPException) as raised:
         await router.get_meeting_endpoint("missing-meeting", authenticated_user)
 
