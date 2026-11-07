@@ -6,7 +6,7 @@
   "idea": "Fer requested a simple owner-run test page to upload an audio/video recording, observe processing progress, inspect a transcript with Speaker N labels and timestamps, and use speaker review to name speakers; minimal UI, no portal redesign.",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
+    "design": "complete",
     "tasks": "pending"
   }
 }
