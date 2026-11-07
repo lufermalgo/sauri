@@ -526,6 +526,7 @@ SPEAKER_REVIEW_RECEIPTS_REVISION = "009_speaker_review_idempotency_receipts"
 AGGREGATE_REVISION = "008_speaker_review_aggregate"
 RECONCILIATION_REVISION = "010_speaker_excerpt_reference"
 LINKLESS_REVISION = "011_linkless_cleanup"
+DIARIZATION_GENERATIONS_REVISION = "012_diarization_generations"
 LEGACY_PREDECESSOR_REVISION = "007_rename_schema_to_english"
 LEGACY_PREDECESSOR_PARENT = "006_add_titulo_reunion"
 
@@ -535,30 +536,48 @@ def _migration_script() -> ScriptDirectory:
     return ScriptDirectory.from_config(config)
 
 
-def test_published_009_revision_ids_and_immediate_parent_are_preserved() -> None:
+def _load_published_migration(filename: str) -> ModuleType:
+    path = MIGRATIONS_DIR / filename
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_published_migration_revision_ids_and_immediate_parent_are_preserved() -> None:
     script = _migration_script()
-
-    assert script.get_revision(RECORDING_MEDIA_REVISION).revision == RECORDING_MEDIA_REVISION
-    assert script.get_revision(RECORDING_MEDIA_REVISION).down_revision == AGGREGATE_REVISION
-    assert (
-        script.get_revision(SPEAKER_REVIEW_RECEIPTS_REVISION).revision
-        == SPEAKER_REVIEW_RECEIPTS_REVISION
-    )
-    assert (
-        script.get_revision(SPEAKER_REVIEW_RECEIPTS_REVISION).down_revision
-        == AGGREGATE_REVISION
+    published_migrations = (
+        ("009_recording_media_sources.py", RECORDING_MEDIA_REVISION),
+        (
+            "009_speaker_review_idempotency_receipts.py",
+            SPEAKER_REVIEW_RECEIPTS_REVISION,
+        ),
     )
 
+    for filename, expected_revision in published_migrations:
+        migration = _load_published_migration(filename)
+        assert migration.revision == expected_revision
+        assert migration.down_revision == AGGREGATE_REVISION
 
-def test_linkless_migration_is_the_only_head_after_the_009_reconciliation() -> None:
+        graph_revision = script.get_revision(expected_revision)
+        assert graph_revision is not None
+        assert graph_revision.revision == expected_revision
+        assert graph_revision.down_revision == AGGREGATE_REVISION
+
+
+def test_diarization_generations_head_follows_linkless_cleanup_and_009_reconciliation() -> None:
     script = _migration_script()
     heads = script.get_heads()
 
-    assert heads == [LINKLESS_REVISION], (
-        "Alembic graph must have one linkless migration head; "
+    assert heads == [DIARIZATION_GENERATIONS_REVISION], (
+        "Alembic graph must have one diarization generations head; "
         f"found {heads!r}"
     )
-    linkless_migration = script.get_revision(heads[0])
+    generation_migration = script.get_revision(heads[0])
+    assert generation_migration.down_revision == LINKLESS_REVISION
+
+    linkless_migration = script.get_revision(LINKLESS_REVISION)
     assert linkless_migration.down_revision == RECONCILIATION_REVISION
 
     reconciliation = script.get_revision(RECONCILIATION_REVISION)

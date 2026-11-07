@@ -18,21 +18,19 @@ def assign_turns(
     turns: list[Any],
     segments: list[SpeakerSegment],
     speakers: list[Speaker],
-) -> list[tuple[str, Speaker]]:
+) -> list[tuple[str, Speaker, int]]:
     """Assigns each turn to the speaker with maximum accumulated overlap.
 
     Algorithm (Req. 7.1, 7.2):
     For each turn [ts, te]:
     1. For each speaker, sum the overlap with all of their segments.
        Overlap = max(0, min(te, se) - max(ts, ss))
-    2. Select the speaker with the maximum accumulated overlap.
-    3. Tie-break: if there's a tie (or everyone has zero overlap), assign
-       to the speaker with the lowest sequence.
-    4. Produce exactly one assignment per turn.
+    2. Select the speaker with the maximum accumulated overlap, only when it
+       is strictly positive.
+    3. Tie-break positive maxima by the lowest speaker sequence.
 
     Turns are not modified (Req. 7.3).
-    If there are no turns -> zero assignments (Req. 7.4).
-    If there are no segments/speakers -> zero assignments (Req. 7.5).
+    If there are no turns, segments, or speakers -> zero assignments (Req. 7.4, 7.5).
 
     Args:
         turns: List of objects with .id, .start_ms, .end_ms.
@@ -40,7 +38,8 @@ def assign_turns(
         speakers: List of Speaker from the labeler.
 
     Returns:
-        List of tuples (turn_id, assigned_speaker), one per turn.
+        List of tuples (turn_id, assigned_speaker, overlap_ms) for turns with
+        positive overlap; turns with no overlap evidence are left unassigned.
     """
     if not turns or not speakers:
         return []
@@ -50,7 +49,7 @@ def assign_turns(
     for seg in segments:
         segments_by_label.setdefault(seg.raw_label, []).append(seg)
 
-    assignments: list[tuple[str, Speaker]] = []
+    assignments: list[tuple[str, Speaker, int]] = []
 
     for turn in turns:
         ts = turn.start_ms
@@ -81,6 +80,7 @@ def assign_turns(
                 best_speaker = speaker
 
         assert best_speaker is not None  # Guaranteed if speakers isn't empty
-        assignments.append((turn.id, best_speaker))
+        if best_overlap > 0:
+            assignments.append((turn.id, best_speaker, best_overlap))
 
     return assignments
