@@ -29,6 +29,7 @@ FULL_MIN = 60
 DISPATCH_MIN = 30
 QUIET_MIN = 2  # a hand-off may still be in flight
 STALE_RUN_H = 6  # a run "working" for longer than this is not counted as busy
+MAX_CARDS = 12  # cards listed in the summary; the whole output stays under the 8,000-character step limit
 
 
 def now():
@@ -87,7 +88,7 @@ def main():
 
     # outside changes since the last wake
     ext_events = q(
-        "select e.by, substr(k.title,1,60), substr(e.data,1,90) from task_events e join tasks k on k.id=e.task_id "
+        "select e.by, substr(k.title,1,60), substr(e.data,1,90), k.id from task_events e join tasks k on k.id=e.task_id "
         "where k.project_id=? and e.at>? and e.by!=? and e.at<=? order by e.at limit 25",
         (project, last, orch, iso(t - timedelta(minutes=QUIET_MIN))),
     )
@@ -143,14 +144,46 @@ def main():
     )
     if ext_events or ended:
         L.append("Changes since the last wake:")
-        for by, title, data in ext_events[:12]:
+        for by, title, data, _tid in ext_events[:8]:
             L.append(f"  - {by.replace(prefix, '')} changed '{title}' {data[:60]}")
-        for a, title in ended[:10]:
+        for a, title in ended[:6]:
             L.append(f"  - {nm(a)} finished a run on '{title}'")
     if prs or pr_note:
         L.append("Open PRs: " + (pr_note or "; ".join(f"#{n} {ms.lower()} CI {ci} '{ti}'" for n, h, ms, ci, ti in prs[:14])))
+    # The cards to act on, with what the orchestrator needs to decide without opening each one.
+    def handoff_tail(desc):
+        d = desc or ""
+        i = d.rfind("HAND-OFF")
+        s = d[i:] if i >= 0 else d[-400:]
+        return " ".join(s.split())[:200]
+    picked, seen = [], set()
+    def add(label, rows):
+        for r in rows:
+            if r[0] in seen or len(picked) >= MAX_CARDS:
+                continue
+            seen.add(r[0]); picked.append((label,) + tuple(r))
+    cols = "id, status, coalesce(assignee,''), proposed, awaits_owner, coalesce(reviewer,''), substr(title,1,70), description"
+    base = f"select {cols} from tasks where project_id=? and state='open'"
+    changed_ids = list(dict.fromkeys(e[3] for e in ext_events))
+    if changed_ids:
+        add("changed", q(base + f" and id in ({','.join('?' * len(changed_ids))})", (project, *changed_ids)))
+    add("returned to you", q(base + " and assignee=? and status in ('todo','doing','review') order by activity_at desc limit 6", (project, orch)))
+    add("proposal", q(base + " and proposed=1 order by activity_at desc limit 4", (project,)))
+    add("waiting on the owner", q(base + " and awaits_owner=1 order by activity_at desc limit 3", (project,)))
+    add("review without reviewer", q(base + " and status='review' and (reviewer is null or reviewer='') order by activity_at asc limit 4", (project,)))
+    add("ready, unassigned", q(base + " and assignee is null and status='todo' order by activity_at desc limit 4", (project,)))
+    if picked:
+        L.append("Cards to act on (open only the ones you will move):")
+        for label, tid, status, assignee, prop, owner, reviewer, title, desc in picked:
+            flags = " ".join(f for f, on in (("proposed", prop), ("waits-owner", owner)) if on)
+            who = nm(assignee) if assignee else "unassigned"
+            rv = f" reviewer {nm(reviewer)}" if reviewer else ""
+            L.append(f"  - [{label}] {tid} | {status} | {who}{rv} {flags} | {title}")
+            tail = handoff_tail(desc)
+            if tail:
+                L.append(f"      {tail}")
     out = "\n".join(L)
-    print(out[:7500])
+    print(out[:6000])
     if dry:
         return
     st.update(last_wake=iso(t), pr_sig=pr_sig if not pr_note else st.get("pr_sig"), pending=pend)
