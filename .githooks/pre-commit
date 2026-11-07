@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Blocks direct commits to main. Part of the branch-isolation policy in AGENTS.md §6-7.
+# Blocks direct commits to main. Part of the branch-isolation policy in docs/engineering/WORKFLOW.md §7.
 #
 # Installed via `core.hooksPath .githooks` (see AGENTS.md / Makefile `make setup`).
 # Bypass: `git commit --no-verify` (intentional escape hatch, not silent).
