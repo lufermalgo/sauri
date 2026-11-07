@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import signal
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -143,6 +144,29 @@ class SyntheticS3Client:
         if self.length is not None:
             response["ContentLength"] = self.length
         return response
+
+
+@pytest.mark.asyncio
+async def test_late_s3_response_body_is_closed_after_deadline(object_store: S3ObjectStore) -> None:
+    body = SyntheticBody(1)
+
+    class DelayedClient(SyntheticS3Client):
+        def get_object(self, **kwargs: Any) -> dict[str, Any]:
+            time.sleep(0.05)
+            return super().get_object(**kwargs)
+
+    object_store._client = DelayedClient(length=1, body=body)
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        await object_store.get_bounded(
+            "synthetic/object",
+            max_bytes=10,
+            deadline_monotonic=started + 0.01,
+        )
+
+    await asyncio.sleep(0.06)
+    assert body.closed, "a response arriving after timeout must be closed by its late-result reaper"
+    assert time.monotonic() - started < 0.1
 
 
 @pytest.fixture
@@ -354,6 +378,67 @@ async def test_playback_is_awaited_and_returns_only_complete_persisted_excerpt(
 
     assert result == b"complete-synthetic-excerpt"
     assert read_calls == [("synthetic/object", 100, 1_100)]
+
+
+@pytest.mark.asyncio
+async def test_unhealthy_service_rejects_even_when_no_operation_is_active() -> None:
+    decode_calls: list[tuple[Any, ...]] = []
+    excerpt_service = service(decode_interval=lambda *args: decode_calls.append(args))
+    excerpt_service._unhealthy = True
+
+    with pytest.raises(ValueError, match="speaker excerpt unavailable"):
+        await derive(
+            excerpt_service,
+            duration_ms=MAX_AUDIO_DURATION_MS,
+            candidates=[Candidate(0, 1_000)],
+        )
+
+    assert decode_calls == []
+
+
+@pytest.mark.asyncio
+async def test_sync_decoder_does_not_block_loop_or_release_permit_before_worker_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS", 0.01, raising=False)
+    worker_started = threading.Event()
+    finish_worker = threading.Event()
+    threading.Timer(0.2, finish_worker.set).start()
+
+    def blocking_decode(*_args: Any, **_kwargs: Any) -> bytes:
+        worker_started.set()
+        finish_worker.wait()
+        return b"late-synthetic-output"
+
+    excerpt_service = service(decode_interval=blocking_decode)
+    operation = asyncio.create_task(
+        derive(
+            excerpt_service,
+            duration_ms=MAX_AUDIO_DURATION_MS,
+            candidates=[Candidate(0, 1_000)],
+        )
+    )
+    loop = asyncio.get_running_loop()
+    probe_started = loop.time()
+    loop_responsive = asyncio.create_task(asyncio.sleep(0.03))
+    loop_was_delayed = False
+    try:
+        await asyncio.wait_for(loop_responsive, timeout=0.08)
+    except TimeoutError:
+        loop_was_delayed = True
+    finish_worker.set()
+    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+        await operation
+
+    assert not loop_was_delayed and loop.time() - probe_started < 0.1, (
+        "a synchronous decoder callback must not block the asyncio loop past its budget"
+    )
+    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+        await derive(
+            excerpt_service,
+            duration_ms=MAX_AUDIO_DURATION_MS,
+            candidates=[Candidate(1_000, 2_000)],
+        )
 
 
 @pytest.mark.asyncio
@@ -612,6 +697,45 @@ def managed_decoder_for_test(
 
 
 @pytest.mark.asyncio
+async def test_managed_decoder_spawn_is_bounded_by_deadline() -> None:
+    spawn_started = asyncio.Event()
+    spawn_cancelled = asyncio.Event()
+    release_spawn = asyncio.Event()
+
+    async def blocked_spawn(*_command: str, start_new_session: bool) -> Any:
+        assert start_new_session
+        spawn_started.set()
+        try:
+            await release_spawn.wait()
+        except asyncio.CancelledError:
+            spawn_cancelled.set()
+            raise
+        raise AssertionError("spawn should have timed out before release")
+
+    decoder = speaker_excerpt_service.ManagedDecoderProcess(
+        spawn_process=blocked_spawn,
+        monotonic=lambda: 0.0,
+    )
+    operation = asyncio.create_task(
+        decoder.run(
+            ("synthetic-decoder",),
+            input_bytes=b"synthetic-source",
+            deadline_monotonic=0.01,
+        )
+    )
+    await spawn_started.wait()
+    await asyncio.sleep(0.03)
+    spawn_timed_out = operation.done()
+    if not spawn_timed_out:
+        operation.cancel()
+    with pytest.raises((TimeoutError, ValueError, RuntimeError, asyncio.CancelledError)):
+        await operation
+
+    assert spawn_timed_out, "decoder process creation must honor the remaining operation budget"
+    assert spawn_cancelled.is_set()
+
+
+@pytest.mark.asyncio
 async def test_managed_decoder_hard_kills_and_reaps_before_discarding_timed_out_output() -> None:
     events: list[str] = []
     decoder, _process = managed_decoder_for_test(events, confirm_exit_on_kill=True)
@@ -663,8 +787,7 @@ async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
 ) -> None:
     events: list[str] = []
     managed_decoder, process = managed_decoder_for_test(events, confirm_exit_on_kill=False)
-    second_request_entered = asyncio.Event()
-    release_second_request = asyncio.Event()
+    decode_calls: list[int] = []
 
     async def decode_interval(
         _object_key: str,
@@ -672,14 +795,16 @@ async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
         _end_ms: int,
         **_kwargs: Any,
     ) -> bytes:
+        decode_calls.append(start_ms)
         if start_ms == 0:
-            return cast(bytes, await managed_decoder.run(
-                ("synthetic-decoder",),
-                input_bytes=b"synthetic-source",
-                deadline_monotonic=0.01,
-            ))
-        second_request_entered.set()
-        await release_second_request.wait()
+            return cast(
+                bytes,
+                await managed_decoder.run(
+                    ("synthetic-decoder",),
+                    input_bytes=b"synthetic-source",
+                    deadline_monotonic=0.01,
+                ),
+            )
         return b"synthetic-complete-output"
 
     excerpt_service = service(decode_interval=decode_interval, keyring=keyring)
@@ -696,41 +821,19 @@ async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
     assert "wait_started" in events
     assert "wait_confirmed" not in events
 
-    second_request = asyncio.create_task(
-        derive(
-            excerpt_service,
-            duration_ms=MAX_AUDIO_DURATION_MS,
-            candidates=[Candidate(1_000, 2_000)],
-        )
-    )
-    await asyncio.wait_for(second_request_entered.wait(), timeout=0.2)
-
-    rejected_request_started = asyncio.get_running_loop().time()
-    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
-        await asyncio.wait_for(
-            derive(
-                excerpt_service,
-                duration_ms=MAX_AUDIO_DURATION_MS,
-                candidates=[Candidate(2_000, 3_000)],
-            ),
-            timeout=0.1,
-        )
-    assert asyncio.get_running_loop().time() - rejected_request_started < 0.1
-
-    release_second_request.set()
-    await second_request
-
-    # The second permit is now free, but the worker must remain unavailable
-    # until the background reaper confirms the first process has exited.
-    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
-        await asyncio.wait_for(
-            derive(
-                excerpt_service,
-                duration_ms=MAX_AUDIO_DURATION_MS,
-                candidates=[Candidate(2_000, 3_000)],
-            ),
-            timeout=0.1,
-        )
+    for start_ms in (1_000, 2_000):
+        rejected_request_started = asyncio.get_running_loop().time()
+        with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+            await asyncio.wait_for(
+                derive(
+                    excerpt_service,
+                    duration_ms=MAX_AUDIO_DURATION_MS,
+                    candidates=[Candidate(start_ms, start_ms + 1_000)],
+                ),
+                timeout=0.1,
+            )
+        assert asyncio.get_running_loop().time() - rejected_request_started < 0.1
+    assert decode_calls == [0], "unhealthy worker rejection must happen before interval decoding"
     assert "wait_confirmed" not in events
 
     process.exited.set()
