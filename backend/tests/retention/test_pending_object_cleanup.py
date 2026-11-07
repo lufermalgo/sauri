@@ -14,8 +14,9 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import UploadFile
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.auth.schemas import AuthenticatedUser
 from app.infra import models
 from app.ingestion import router as ingestion_router
 from app.retention import worker
@@ -28,6 +29,15 @@ PendingObjectDeletion = models.PendingObjectDeletion
 RecordingMediaSource = models.RecordingMediaSource
 SessionRecording = models.SessionRecording
 start_retention_worker = worker.start_retention_worker
+
+
+def _authenticated_user(user_id: str) -> AuthenticatedUser:
+    return AuthenticatedUser(
+        id=user_id,
+        email=f"{user_id}@example.test",
+        name="Synthetic owner",
+        is_sales=True,
+    )
 
 
 class _RecordingObjectStore:
@@ -250,7 +260,7 @@ async def test_duplicate_retry_drains_only_its_pending_scope_before_success(
                 "video_presence": "muxed",
             }
         ),
-        user=SimpleNamespace(id=user_id),
+        user=_authenticated_user(user_id),
     )
 
     assert response == {
@@ -339,7 +349,7 @@ async def test_precommit_failure_persists_all_unique_refs_before_any_delete(
             audio=audio,
             video=video,
             data=json.dumps(payload),
-            user=SimpleNamespace(id="synthetic-owner"),
+            user=_authenticated_user("synthetic-owner"),
         )
 
     assert set(store.deleted) == references
@@ -394,7 +404,7 @@ async def test_postcommit_queue_failure_never_queues_committed_recording_refs(
             audio=audio,
             video=None,
             data=json.dumps(payload),
-            user=SimpleNamespace(id="synthetic-owner"),
+            user=_authenticated_user("synthetic-owner"),
         )
 
     async with session_factory() as session:
@@ -405,3 +415,175 @@ async def test_postcommit_queue_failure_never_queues_committed_recording_refs(
     assert [recording.audio_ref for recording in committed] == [audio_ref]
     assert audio_ref not in set(pending.scalars().all())
     assert store.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_video_save_failure_persists_and_cleans_previously_saved_audio(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    audio_ref = "staged/partial-upload-audio"
+    observed_pending: list[set[str]] = []
+
+    class PartialUploadStore(_RecordingObjectStore):
+        async def save(self, key: str, _content: bytes, _content_type: str) -> str:
+            if key.endswith("/video"):
+                raise OSError("synthetic video storage failure")
+            return audio_ref
+
+        async def delete(self, reference: str) -> None:
+            async with session_factory() as observer:
+                observed_pending.append(await _pending_refs(observer))
+            await super().delete(reference)
+
+    store = PartialUploadStore({audio_ref})
+    engine = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(ingestion_router, "_get_object_store", Mock(return_value=store))
+    monkeypatch.setattr(ingestion_router, "_get_queue", Mock())
+    monkeypatch.setattr(ingestion_router, "create_engine", Mock(return_value=engine))
+    monkeypatch.setattr(ingestion_router, "create_session_factory", Mock(return_value=session_factory))
+
+    payload = {
+        "meeting_id": "synthetic-partial-upload-meeting",
+        "idempotency_key": "synthetic-partial-upload-key",
+        "capture_origin": "chrome_extension",
+        "duration_seconds": 1,
+        "video_presence": "separate",
+        "video_offset_ms": 0,
+    }
+    with pytest.raises(OSError, match="synthetic video storage failure"):
+        await ingestion_router.upload_recording(
+            audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic-audio")),
+            video=UploadFile(filename="synthetic-video.webm", file=BytesIO(b"synthetic-video")),
+            data=json.dumps(payload),
+            user=_authenticated_user("synthetic-owner"),
+        )
+
+    assert observed_pending == [{audio_ref}]
+    assert store.deleted == [audio_ref]
+    async with session_factory() as observer:
+        assert await _pending_refs(observer) == {audio_ref}
+
+
+@pytest.mark.asyncio
+async def test_preflight_duplicate_does_not_return_success_when_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: async_sessionmaker[AsyncSession],
+    meeting_recording: Meeting,
+) -> None:
+    user_id = "synthetic-owner"
+    idempotency_key = "synthetic-failed-cleanup-key"
+    scope_hash = hashlib.sha256(
+        json.dumps(
+            [user_id, meeting_recording.id, idempotency_key], separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    meeting_recording.created_by = user_id
+    async with session_factory() as setup:
+        setup.add(meeting_recording)
+        setup.add(
+            SessionRecording(
+                id="recording-failed-cleanup",
+                meeting_id=meeting_recording.id,
+                idempotency_key=idempotency_key,
+                capture_origin="chrome_extension",
+                audio_ref="recordings/committed/failed-cleanup-audio",
+                video_ref=None,
+                duration_seconds=1,
+                interrupted=False,
+                expires_at=None,
+                finished_at=datetime.now(UTC),
+            )
+        )
+        await setup.commit()
+        await _add_pending(setup, scope_hash, "staged/failed-preflight-retry")
+
+    store = _RecordingObjectStore({"staged/failed-preflight-retry"})
+    engine = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(ingestion_router, "_get_object_store", Mock(return_value=store))
+    monkeypatch.setattr(ingestion_router, "create_engine", Mock(return_value=engine))
+    monkeypatch.setattr(ingestion_router, "create_session_factory", Mock(return_value=session_factory))
+
+    with pytest.raises(OSError, match="synthetic object-store failure"):
+        await ingestion_router.upload_recording(
+            audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"unused")),
+            video=None,
+            data=json.dumps(
+                {
+                    "meeting_id": meeting_recording.id,
+                    "idempotency_key": idempotency_key,
+                    "capture_origin": "chrome_extension",
+                    "duration_seconds": 1,
+                    "video_presence": "muxed",
+                }
+            ),
+            user=_authenticated_user(user_id),
+        )
+
+    assert store.deleted == ["staged/failed-preflight-retry"]
+    async with session_factory() as observer:
+        assert await _pending_refs(observer) == {"staged/failed-preflight-retry"}
+
+
+@pytest.mark.asyncio
+async def test_late_race_duplicate_does_not_return_success_when_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    session_factory: async_sessionmaker[AsyncSession],
+    meeting_recording: Meeting,
+) -> None:
+    from app.ingestion.schemas import IngestionData
+    from app.ingestion.service import process_ingestion
+
+    user_id = "synthetic-owner"
+    idempotency_key = "synthetic-late-race-cleanup-key"
+    meeting_recording.created_by = user_id
+    async with session_factory() as setup:
+        setup.add(meeting_recording)
+        await setup.commit()
+
+    class RacingStore(_RecordingObjectStore):
+        async def save(self, _key: str, _content: bytes, _content_type: str) -> str:
+            async with session_factory() as concurrent_session, concurrent_session.begin():
+                await process_ingestion(
+                    session=concurrent_session,
+                    data=IngestionData(
+                        meeting_id=meeting_recording.id,
+                        idempotency_key=idempotency_key,
+                        capture_origin="chrome_extension",
+                        duration_seconds=1,
+                        video_presence="muxed",
+                    ),
+                    audio_ref="recordings/committed/concurrent-audio",
+                    video_ref=None,
+                    created_by=user_id,
+                )
+            return "staged/late-race-retry"
+
+    store = RacingStore({"staged/late-race-retry"})
+    engine = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(ingestion_router, "_get_object_store", Mock(return_value=store))
+    monkeypatch.setattr(ingestion_router, "_get_queue", Mock())
+    monkeypatch.setattr(ingestion_router, "create_engine", Mock(return_value=engine))
+    monkeypatch.setattr(ingestion_router, "create_session_factory", Mock(return_value=session_factory))
+
+    with pytest.raises(OSError, match="synthetic object-store failure"):
+        await ingestion_router.upload_recording(
+            audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic-audio")),
+            video=None,
+            data=json.dumps(
+                {
+                    "meeting_id": meeting_recording.id,
+                    "idempotency_key": idempotency_key,
+                    "capture_origin": "chrome_extension",
+                    "duration_seconds": 1,
+                    "video_presence": "muxed",
+                }
+            ),
+            user=_authenticated_user(user_id),
+        )
+
+    async with session_factory() as observer:
+        assert await _pending_refs(observer) == {"staged/late-race-retry"}
+        committed = (await observer.execute(select(SessionRecording))).scalars().all()
+    assert len(committed) == 1
+    assert committed[0].audio_ref == "recordings/committed/concurrent-audio"
