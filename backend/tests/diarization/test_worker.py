@@ -471,3 +471,36 @@ async def test_diarization_rejects_mismatched_queue_identity(
     async with session_factory() as session:
         diarizations = await session.execute(select(Diarization))
         assert diarizations.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_worker_persists_measured_overlap_for_assignments(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Persist the positive overlap that justified each speaker assignment."""
+    meeting_id = str(uuid.uuid4())
+    await _seed_complete_meeting(session_factory, meeting_id, num_turns=1)
+
+    engine = _mock_engine(
+        segments=[SpeakerSegment(raw_label="SPEAKER_00", start_ms=200, end_ms=800)]
+    )
+    with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
+        await _process_diarization_for_seeded_recording(
+            {"meeting_id": meeting_id}, session_factory
+        )
+
+    from app.infra.models import SpeakerAssignment
+
+    async with session_factory() as session:
+        assignment = (
+            await session.execute(
+                select(SpeakerAssignment).where(
+                    SpeakerAssignment.diarization_id
+                    == select(Diarization.id)
+                    .where(Diarization.meeting_id == meeting_id)
+                    .scalar_subquery()
+                )
+            )
+        ).scalar_one()
+
+    assert getattr(assignment, "overlap_ms", None) == 600

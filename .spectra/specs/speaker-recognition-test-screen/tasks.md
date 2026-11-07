@@ -185,7 +185,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-13: RED — Specify durable staged-media cleanup and recovery
 
-**Tracking:** Issue #564 · Card task_3f82fcec75ca4fc8
+**Tracking:** Issue #564 · Card task_3f82fcec75ca4fc8 · [RED PR #688](https://github.com/lufermalgo/sauri/pull/688)
 
 **Files / test seam:** `backend/tests/retention/test_pending_object_cleanup.py` for `drain_pending_object_deletions(session, object_store, cleanup_scope_hash=None)` in `backend/app/retention/cleanup.py` and scheduled `start_retention_worker` in `backend/app/retention/worker.py`; `backend/tests/infra/test_adaptadores_conformidad_property.py` for `ObjectStore.delete` idempotency; migration coverage in `backend/tests/`.
 
