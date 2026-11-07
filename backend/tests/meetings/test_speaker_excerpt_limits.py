@@ -1,7 +1,8 @@
-"""RED contract tests for bounded speaker-excerpt reads and decoder lifecycle.
+"""Behavioral RED tests for bounded speaker-excerpt reads and decoder lifecycle.
 
-All media and process behavior is synthetic. The service-facing async seam and
-bounded ObjectStore contract are intentionally specified here for T-19.
+All media, storage responses, clocks, and process behavior are synthetic. The
+small async service seam is specified here for T-19; no production adapter is
+mocked outside these tests.
 """
 
 from __future__ import annotations
@@ -9,15 +10,13 @@ from __future__ import annotations
 import asyncio
 import inspect
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from app.infra.object_store import ObjectStore
-from app.meetings.speaker_excerpt_service import (
-    ExcerptKeyring,
-    SpeakerExcerptService,
-)
+from app.infra.object_store_s3 import S3ObjectStore
+from app.meetings.speaker_excerpt_service import ExcerptKeyring, SpeakerExcerptService
 
 MAX_SOURCE_BYTES = 20 * 1024 * 1024
 MAX_AUDIO_DURATION_MS = 30_000
@@ -35,21 +34,29 @@ class Candidate:
 
 
 @pytest.fixture
-
 def keyring() -> ExcerptKeyring:
     return ExcerptKeyring(active_key_id="test", keys={"test": b"k" * 32})
 
 
-def service(*, decode_interval=None, read_interval=None, keyring=None):
+def service(*, decode_interval=None, read_interval=None, **kwargs):
+    keyring = kwargs.pop(
+        "keyring", ExcerptKeyring(active_key_id="test", keys={"test": b"k" * 32})
+    )
     return SpeakerExcerptService(
         decode_interval=decode_interval or (lambda *_args: b"synthetic-audio"),
         read_interval=read_interval or (lambda *_args: b"synthetic-audio"),
         keyring=keyring,
+        **kwargs,
     )
 
 
-def derive(excerpt_service: SpeakerExcerptService, *, duration_ms: int, candidates: list[Candidate]):
-    return excerpt_service.derive(
+async def derive(
+    excerpt_service: SpeakerExcerptService,
+    *,
+    duration_ms: int | None,
+    candidates: list[Candidate],
+):
+    result = excerpt_service.derive(
         recording_id="recording-1",
         revision_id=1,
         speaker_id="speaker-1",
@@ -57,46 +64,225 @@ def derive(excerpt_service: SpeakerExcerptService, *, duration_ms: int, candidat
         audio_duration_ms=duration_ms,
         candidates=candidates,
     )
+    return await result if inspect.isawaitable(result) else result
 
 
-def test_exact_audio_duration_boundary_is_accepted(keyring: ExcerptKeyring) -> None:
-    result = derive(
-        service(keyring=keyring),
+async def play(
+    excerpt_service: SpeakerExcerptService,
+    *,
+    recording_id: str,
+    revision_id: int,
+    review_item: Any,
+):
+    result = excerpt_service.play(
+        recording_id=recording_id,
+        revision_id=revision_id,
+        review_item=review_item,
+    )
+    return await result if inspect.isawaitable(result) else result
+
+
+def bounded_read(store: S3ObjectStore, *, max_bytes: int, deadline_monotonic: float):
+    method = getattr(store, "get_bounded", None)
+    assert callable(method), (
+        "the bounded-read behavior requires get_bounded(reference, max_bytes, deadline_monotonic)"
+    )
+    return method(
+        "synthetic/object",
+        max_bytes=max_bytes,
+        deadline_monotonic=deadline_monotonic,
+    )
+
+
+class SyntheticBody:
+    def __init__(self, content_size: int, *, fail_after: int | None = None) -> None:
+        self.content_size = content_size
+        self.offset = 0
+        self.read_sizes: list[int] = []
+        self.returned_bytes = 0
+        self.closed = False
+        self.fail_after = fail_after
+
+    def read(self, size: int = -1) -> bytes:
+        self.read_sizes.append(size)
+        if self.fail_after is not None and self.offset >= self.fail_after:
+            raise OSError("synthetic body read failed")
+        stop = self.content_size if size < 0 else min(self.offset + size, self.content_size)
+        chunk_size = stop - self.offset
+        self.offset = stop
+        self.returned_bytes += chunk_size
+        return b"x" * chunk_size
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class SyntheticS3Client:
+    def __init__(self, *, length: int | None, body: SyntheticBody) -> None:
+        self.length = length
+        self.body = body
+        self.calls: list[dict[str, Any]] = []
+
+    def get_object(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        response: dict[str, Any] = {"Body": self.body}
+        if self.length is not None:
+            response["ContentLength"] = self.length
+        return response
+
+
+@pytest.fixture
+
+def object_store() -> S3ObjectStore:
+    store = S3ObjectStore(
+        endpoint_url="http://synthetic.invalid",
+        bucket="synthetic-bucket",
+        access_key="synthetic-access-key",
+        secret_key="synthetic-secret-key",
+    )
+    return store
+
+
+@pytest.mark.asyncio
+async def test_exact_source_limit_reads_one_sentinel_and_closes_body(
+    object_store: S3ObjectStore,
+) -> None:
+    body = SyntheticBody(MAX_SOURCE_BYTES)
+    client = SyntheticS3Client(length=MAX_SOURCE_BYTES, body=body)
+    object_store._client = client
+
+    result = await bounded_read(
+        object_store,
+        max_bytes=MAX_SOURCE_BYTES,
+        deadline_monotonic=10_000.0,
+    )
+
+    assert len(result) == MAX_SOURCE_BYTES
+    assert body.returned_bytes == MAX_SOURCE_BYTES
+    assert body.read_sizes[-1] in {1, MAX_SOURCE_BYTES + 1}, (
+        "an exact-limit object must be checked with one sentinel byte"
+    )
+    assert body.returned_bytes <= MAX_SOURCE_BYTES + 1
+    assert body.closed
+    assert client.calls == [{"Bucket": "synthetic-bucket", "Key": "synthetic/object"}]
+
+
+@pytest.mark.parametrize(
+    ("declared_length", "content_size"),
+    [
+        (MAX_SOURCE_BYTES + 1, 9),
+        (MAX_SOURCE_BYTES, MAX_SOURCE_BYTES + 1),
+        (None, 9),
+        (9, 8),
+        (3, 4),
+    ],
+)
+@pytest.mark.asyncio
+async def test_unknown_oversized_or_divergent_source_is_rejected_without_partial_bytes(
+    object_store: S3ObjectStore,
+    declared_length: int | None,
+    content_size: int,
+) -> None:
+    body = SyntheticBody(content_size)
+    object_store._client = SyntheticS3Client(length=declared_length, body=body)
+
+    with pytest.raises((ValueError, OSError)):
+        await bounded_read(
+            object_store,
+            max_bytes=MAX_SOURCE_BYTES,
+            deadline_monotonic=10_000.0,
+        )
+
+    assert body.closed
+    assert body.returned_bytes <= MAX_SOURCE_BYTES + 1
+
+
+@pytest.mark.asyncio
+async def test_expired_deadline_rejects_before_object_retrieval(object_store: S3ObjectStore) -> None:
+    body = SyntheticBody(len(b"synthetic"))
+    client = SyntheticS3Client(length=9, body=body)
+    object_store._client = client
+
+    with pytest.raises((ValueError, OSError, TimeoutError)):
+        await bounded_read(
+            object_store,
+            max_bytes=MAX_SOURCE_BYTES,
+            deadline_monotonic=0.0,
+        )
+
+    assert client.calls == []
+    assert body.read_sizes == []
+    assert not body.closed, "no response body exists before retrieval"
+
+
+@pytest.mark.asyncio
+async def test_body_closes_when_bounded_read_fails(object_store: S3ObjectStore) -> None:
+    body = SyntheticBody(len(b"123456"), fail_after=0)
+    object_store._client = SyntheticS3Client(length=6, body=body)
+
+    with pytest.raises(OSError):
+        await bounded_read(
+            object_store,
+            max_bytes=10,
+            deadline_monotonic=10_000.0,
+        )
+
+    assert body.closed
+
+
+@pytest.mark.asyncio
+async def test_valid_exact_audio_and_excerpt_limits_are_accepted(keyring: ExcerptKeyring) -> None:
+    decode_calls: list[tuple[Any, ...]] = []
+
+    def decode(*args: Any, **_kwargs: Any) -> bytes:
+        decode_calls.append(args)
+        return b"synthetic-audio"
+
+    excerpt_service = service(decode_interval=decode, keyring=keyring)
+    result = await derive(
+        excerpt_service,
         duration_ms=MAX_AUDIO_DURATION_MS,
         candidates=[Candidate(0, MAX_EXCERPT_DURATION_MS)],
     )
 
-    assert result.end_ms - result.start_ms == MAX_EXCERPT_DURATION_MS
+    assert (result.start_ms, result.end_ms) == (0, MAX_EXCERPT_DURATION_MS)
     assert result.reference
+    assert decode_calls == [("synthetic/object", 0, MAX_EXCERPT_DURATION_MS)]
 
 
-def test_audio_over_duration_boundary_is_rejected_before_interval_decode(
-    keyring: ExcerptKeyring,
+@pytest.mark.parametrize("duration_ms", [None, 0, -1, MAX_AUDIO_DURATION_MS + 1])
+@pytest.mark.asyncio
+async def test_unknown_invalid_or_overlong_audio_is_rejected_before_interval_decode(
+    duration_ms: int | None,
 ) -> None:
     decode_calls: list[tuple[Any, ...]] = []
-    excerpt_service = service(
-        decode_interval=lambda *args: decode_calls.append(args) or b"synthetic-audio",
-        keyring=keyring,
-    )
 
-    with pytest.raises(ValueError):
-        derive(
+    def decode(*args: Any, **_kwargs: Any) -> bytes:
+        decode_calls.append(args)
+        return b"synthetic-audio"
+
+    excerpt_service = service(decode_interval=decode)
+    with pytest.raises(Exception) as error:
+        await derive(
             excerpt_service,
-            duration_ms=MAX_AUDIO_DURATION_MS + 1,
+            duration_ms=duration_ms,
             candidates=[Candidate(0, 5_000)],
         )
 
+    assert not isinstance(error.value, TypeError), "invalid duration must be explicitly rejected"
     assert decode_calls == []
 
 
-def test_overlong_candidate_is_skipped_not_truncated(keyring: ExcerptKeyring) -> None:
+@pytest.mark.asyncio
+async def test_overlong_candidate_is_skipped_not_truncated(keyring: ExcerptKeyring) -> None:
     decode_calls: list[tuple[Any, ...]] = []
-    excerpt_service = service(
-        decode_interval=lambda *args: decode_calls.append(args) or b"synthetic-audio",
-        keyring=keyring,
-    )
 
-    result = derive(
+    def decode(*args: Any, **_kwargs: Any) -> bytes:
+        decode_calls.append(args)
+        return b"synthetic-audio"
+
+    excerpt_service = service(decode_interval=decode, keyring=keyring)
+    result = await derive(
         excerpt_service,
         duration_ms=MAX_AUDIO_DURATION_MS,
         candidates=[Candidate(0, MAX_EXCERPT_DURATION_MS + 1), Candidate(12_000, 22_000)],
@@ -106,17 +292,17 @@ def test_overlong_candidate_is_skipped_not_truncated(keyring: ExcerptKeyring) ->
     assert decode_calls == [("synthetic/object", 12_000, 22_000)]
 
 
-def test_no_candidate_within_excerpt_boundary_yields_no_reference_or_decode(
-    keyring: ExcerptKeyring,
-) -> None:
+@pytest.mark.asyncio
+async def test_no_valid_candidate_returns_no_reference_or_partial_decode() -> None:
     decode_calls: list[tuple[Any, ...]] = []
-    excerpt_service = service(
-        decode_interval=lambda *args: decode_calls.append(args) or b"synthetic-audio",
-        keyring=keyring,
-    )
 
+    def decode(*args: Any, **_kwargs: Any) -> bytes:
+        decode_calls.append(args)
+        return b"synthetic-partial-output"
+
+    excerpt_service = service(decode_interval=decode)
     with pytest.raises(ValueError):
-        derive(
+        await derive(
             excerpt_service,
             duration_ms=MAX_AUDIO_DURATION_MS,
             candidates=[Candidate(0, MAX_EXCERPT_DURATION_MS + 1)],
@@ -125,167 +311,231 @@ def test_no_candidate_within_excerpt_boundary_yields_no_reference_or_decode(
     assert decode_calls == []
 
 
-def test_service_derivation_and_playback_are_awaitable(keyring: ExcerptKeyring) -> None:
-    del keyring  # The callable contract is independent of key material.
+@pytest.mark.asyncio
+async def test_playback_is_awaited_and_returns_only_complete_persisted_excerpt(
+    keyring: ExcerptKeyring,
+) -> None:
+    assert inspect.iscoroutinefunction(SpeakerExcerptService.play)
+    read_calls: list[tuple[Any, ...]] = []
 
+    def read(*args: Any, **_kwargs: Any) -> bytes:
+        read_calls.append(args)
+        return b"complete-synthetic-excerpt"
+
+    excerpt_service = service(read_interval=read, keyring=keyring)
+    excerpt = await derive(
+        excerpt_service,
+        duration_ms=MAX_AUDIO_DURATION_MS,
+        candidates=[Candidate(100, 1_100)],
+    )
+    review = SimpleNamespace(meeting_id="recording-1", processing_revision=1)
+    item = SimpleNamespace(review=review, speaker_key="speaker-1", excerpt_ref=excerpt.reference)
+
+    result = await play(
+        excerpt_service,
+        recording_id="recording-1",
+        revision_id=1,
+        review_item=item,
+    )
+
+    assert result == b"complete-synthetic-excerpt"
+    assert read_calls == [("synthetic/object", 100, 1_100)]
+
+
+@pytest.mark.asyncio
+async def test_one_nonblocking_two_permit_limit_is_shared_by_derive_and_play(
+    keyring: ExcerptKeyring,
+) -> None:
     assert inspect.iscoroutinefunction(SpeakerExcerptService.derive)
     assert inspect.iscoroutinefunction(SpeakerExcerptService.play)
+    entered = asyncio.Queue()
+    release = asyncio.Event()
+
+    async def blocking_decode(*_args: Any, **_kwargs: Any) -> bytes:
+        entered.put_nowait("derive")
+        await release.wait()
+        return b"synthetic-audio"
+
+    async def blocking_read(*_args: Any, **_kwargs: Any) -> bytes:
+        entered.put_nowait("play")
+        await release.wait()
+        return b"synthetic-audio"
+
+    excerpt_service = service(
+        decode_interval=blocking_decode,
+        read_interval=blocking_read,
+        keyring=keyring,
+    )
+    excerpt = await derive(
+        service(keyring=keyring),
+        duration_ms=MAX_AUDIO_DURATION_MS,
+        candidates=[Candidate(0, 1_000)],
+    )
+    review = SimpleNamespace(meeting_id="recording-1", processing_revision=1)
+    item = SimpleNamespace(review=review, speaker_key="speaker-1", excerpt_ref=excerpt.reference)
+
+    first = asyncio.create_task(
+        derive(excerpt_service, duration_ms=MAX_AUDIO_DURATION_MS, candidates=[Candidate(0, 1_000)])
+    )
+    second = asyncio.create_task(
+        play(excerpt_service, recording_id="recording-1", revision_id=1, review_item=item)
+    )
+    assert {await asyncio.wait_for(entered.get(), timeout=0.2) for _ in range(2)} == {"derive", "play"}
+
+    third_started = asyncio.get_running_loop().time()
+    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+        await asyncio.wait_for(
+            derive(excerpt_service, duration_ms=MAX_AUDIO_DURATION_MS, candidates=[Candidate(0, 1_000)]),
+            timeout=0.05,
+        )
+    assert asyncio.get_running_loop().time() - third_started < 0.05
+
+    release.set()
+    await asyncio.gather(first, second)
 
 
-def test_object_store_declares_bounded_read_contract() -> None:
-    assert hasattr(ObjectStore, "get_bounded"), (
-        "ObjectStore must expose get_bounded(reference, max_bytes, deadline_monotonic)"
+@pytest.mark.asyncio
+async def test_one_deadline_is_shared_across_candidate_retries_and_result(
+    keyring: ExcerptKeyring,
+) -> None:
+    assert inspect.iscoroutinefunction(SpeakerExcerptService.derive)
+    deadlines: list[float] = []
+    clock = SimpleNamespace(now=100.0)
+
+    async def decode(
+        _object_key: str,
+        start_ms: int,
+        _end_ms: int,
+        *,
+        deadline_monotonic: float,
+    ) -> bytes:
+        deadlines.append(deadline_monotonic)
+        clock.now += 15.0
+        if start_ms == 0:
+            raise ValueError("synthetic candidate rejected")
+        return b"synthetic-audio"
+
+    excerpt_service = service(decode_interval=decode, monotonic=lambda: clock.now, keyring=keyring)
+    await derive(
+        excerpt_service,
+        duration_ms=MAX_AUDIO_DURATION_MS,
+        candidates=[Candidate(0, 1_000), Candidate(2_000, 3_000)],
     )
 
-
-class SyntheticBody:
-    def __init__(self, chunks: list[bytes]) -> None:
-        self._chunks = iter(chunks)
-        self.read_sizes: list[int] = []
-        self.closed = False
-
-    def read(self, size: int = -1) -> bytes:
-        self.read_sizes.append(size)
-        return next(self._chunks, b"")
-
-    def close(self) -> None:
-        self.closed = True
-
-
-class SyntheticClock:
-    def __init__(self) -> None:
-        self.now = 100.0
-
-    def monotonic(self) -> float:
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
-
-
-class SyntheticProcess:
-    """Fake process adapter used to make kill/reap ordering deterministic."""
-
-    def __init__(self, *, exit_confirmed: bool = True) -> None:
-        self.exit_confirmed = exit_confirmed
-        self.events: list[str] = []
-        self.staged_output = b"synthetic-partial-output"
-
-    async def kill_process_group(self) -> None:
-        self.events.append("kill_group")
-
-    async def wait_reaped(self) -> bool:
-        self.events.append("reap")
-        return self.exit_confirmed
-
-    def discard_output(self) -> None:
-        self.events.append("discard_output")
-        self.staged_output = b""
+    assert deadlines == [
+        100.0 + OPERATION_BUDGET_SECONDS,
+        100.0 + OPERATION_BUDGET_SECONDS,
+    ]
 
 
 @pytest.mark.asyncio
-async def test_bounded_source_rejects_unknown_oversized_and_length_mismatch_before_probe(
+async def test_timeout_cancels_decoder_and_waits_for_kill_discard_and_reap_before_return(
+    monkeypatch: pytest.MonkeyPatch,
     keyring: ExcerptKeyring,
 ) -> None:
-    """No source rejected by the authoritative length check reaches probing."""
-    del keyring
-    assert hasattr(ObjectStore, "get_bounded"), (
-        "the source must be authoritatively bounded before media probing"
+    assert inspect.iscoroutinefunction(SpeakerExcerptService.derive)
+    monkeypatch.setattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS", 0.01, raising=False)
+    events: list[str] = []
+    never_finish = asyncio.Event()
+    active_body = SyntheticBody(len(b"synthetic-source"))
+
+    async def decoder(*_args: Any, **_kwargs: Any) -> bytes:
+        events.append("decode_started")
+        try:
+            await never_finish.wait()
+        except asyncio.CancelledError:
+            active_body.close()
+            events.append("close_active_read")
+            events.append("kill_process_group")
+            events.append("discard_staged_output")
+            await asyncio.sleep(0)
+            events.append("reap_process")
+            raise
+        return b"synthetic-partial-output"
+
+    excerpt_service = service(decode_interval=decoder, keyring=keyring)
+    with pytest.raises((TimeoutError, ValueError, RuntimeError)):
+        await derive(
+            excerpt_service,
+            duration_ms=MAX_AUDIO_DURATION_MS,
+            candidates=[Candidate(0, 1_000)],
+        )
+
+    assert events == [
+        "decode_started",
+        "close_active_read",
+        "kill_process_group",
+        "discard_staged_output",
+        "reap_process",
+    ]
+    assert active_body.closed
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_exit_holds_operation_and_rejects_new_work_until_reaped(
+    monkeypatch: pytest.MonkeyPatch,
+    keyring: ExcerptKeyring,
+) -> None:
+    assert inspect.iscoroutinefunction(SpeakerExcerptService.derive)
+    monkeypatch.setattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS", 0.01, raising=False)
+    reap_confirmed = asyncio.Event()
+    process_events: list[str] = []
+
+    async def unconfirmed_decoder(*_args: Any, **_kwargs: Any) -> bytes:
+        process_events.append("decode_started")
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            process_events.extend(("kill_process_group", "discard_staged_output", "reap_pending"))
+            await reap_confirmed.wait()
+            process_events.append("reap_confirmed")
+            raise
+
+    excerpt_service = service(decode_interval=unconfirmed_decoder, keyring=keyring)
+    operation = asyncio.create_task(
+        derive(excerpt_service, duration_ms=MAX_AUDIO_DURATION_MS, candidates=[Candidate(0, 1_000)])
     )
+    await asyncio.sleep(0.03)
+
+    assert not operation.done(), "the service must not release a permit while process exit is unconfirmed"
+    assert process_events == [
+        "decode_started",
+        "kill_process_group",
+        "discard_staged_output",
+        "reap_pending",
+    ]
+    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+        await asyncio.wait_for(
+            derive(excerpt_service, duration_ms=MAX_AUDIO_DURATION_MS, candidates=[Candidate(0, 1_000)]),
+            timeout=0.05,
+        )
+
+    reap_confirmed.set()
+    with pytest.raises((TimeoutError, ValueError, RuntimeError)):
+        await operation
+    assert process_events[-1] == "reap_confirmed"
 
 
 @pytest.mark.asyncio
-async def test_bounded_source_accepts_exact_limit_and_closes_body_after_sentinel_read(
-    keyring: ExcerptKeyring,
-) -> None:
-    """An exact-limit body gets one sentinel byte read and is always closed."""
-    del keyring
-    assert hasattr(ObjectStore, "get_bounded"), (
-        "the bounded source reader must support the exact 20 MiB boundary"
-    )
+async def test_decoder_failure_is_generic_at_service_boundary(keyring: ExcerptKeyring) -> None:
+    def decoder_failure(*_args: Any, **_kwargs: Any) -> bytes:
+        raise ValueError("secret-storage-endpoint decoder argv=/private/path")
 
+    excerpt_service = service(decode_interval=decoder_failure, keyring=keyring)
 
-@pytest.mark.asyncio
-async def test_third_decode_is_rejected_without_waiting_across_derive_and_playback(
-    keyring: ExcerptKeyring,
-) -> None:
-    """Two service operations hold the shared process permits; the third fails fast."""
-    del keyring
-    permits = getattr(SpeakerExcerptService, "_decoder_permits", None)
-    assert permits is not None, "derive and playback must share process-scoped decoder permits"
-    assert getattr(permits, "_value", None) == 2
+    with pytest.raises(ValueError) as error:
+        await derive(
+            excerpt_service,
+            duration_ms=MAX_AUDIO_DURATION_MS,
+            candidates=[Candidate(0, 1_000)],
+        )
 
-
-@pytest.mark.asyncio
-async def test_one_deadline_is_shared_across_storage_probe_candidates_and_output(
-    keyring: ExcerptKeyring,
-) -> None:
-    """Injected monotonic time must account for every phase under one 60 s budget."""
-    del keyring
-    assert hasattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS"), (
-        "speaker excerpt operations must enforce one shared 60-second monotonic budget"
-    )
-    assert SpeakerExcerptService.MAX_OPERATION_SECONDS == OPERATION_BUDGET_SECONDS
-
-
-@pytest.mark.asyncio
-async def test_timeout_kills_and_reaps_before_permit_release_and_discards_partial_output(
-    keyring: ExcerptKeyring,
-) -> None:
-    """Cancellation cannot return partial bytes or release a live decoder permit."""
-    del keyring
-    process = SyntheticProcess(exit_confirmed=True)
-    await process.kill_process_group()
-    process.discard_output()
-    assert await process.wait_reaped()
-    assert process.events == ["kill_group", "discard_output", "reap"]
-    assert process.staged_output == b""
-
-    lifecycle = getattr(SpeakerExcerptService, "_process_lifecycle", None)
-    assert lifecycle is not None, "the service must supervise process-group kill and reap"
-
-
-@pytest.mark.asyncio
-async def test_unconfirmed_exit_retains_permit_and_background_reap_fails_closed(
-    keyring: ExcerptKeyring,
-) -> None:
-    """An unconfirmed child exit marks the decoder unhealthy and retains capacity."""
-    del keyring
-    process = SyntheticProcess(exit_confirmed=False)
-    await process.kill_process_group()
-    process.discard_output()
-    assert not await process.wait_reaped()
-
-    lifecycle = getattr(SpeakerExcerptService, "_process_lifecycle", None)
-    assert lifecycle is not None, "unconfirmed exit requires tracked background reaping"
-    assert getattr(lifecycle, "unhealthy", False)
-
-
-@pytest.mark.asyncio
-async def test_timeout_and_limit_errors_do_not_disclose_internal_details(keyring: ExcerptKeyring) -> None:
-    """Externally visible failures stay generic and never include adapter details."""
-    del keyring
-    limit_error = getattr(SpeakerExcerptService, "LimitExceeded", None)
-    assert limit_error is not None, "bounded decoder rejections need a generic limit exception"
-    error = limit_error("secret-storage-endpoint decoder argv=/private/path")
-    message = str(error).lower()
-    for internal_fragment in ("secret-storage-endpoint", "decoder argv", "/private/path"):
+    message = str(error.value).lower()
+    assert message
+    for internal_fragment in (
+        "secret-storage-endpoint",
+        "decoder argv",
+        "/private/path",
+        "synthetic/object",
+    ):
         assert internal_fragment not in message
-
-
-@pytest.mark.asyncio
-async def test_test_harness_supports_concurrent_synthetic_lifecycle_calls() -> None:
-    """Keep concurrency assertions deterministic without real media or processes."""
-    gate = asyncio.Event()
-    started: list[int] = []
-
-    async def operation(number: int) -> int:
-        started.append(number)
-        await gate.wait()
-        return number
-
-    tasks = [asyncio.create_task(operation(number)) for number in range(3)]
-    await asyncio.sleep(0)
-    assert started == [0, 1, 2]
-    gate.set()
-    assert await asyncio.gather(*tasks) == [0, 1, 2]
