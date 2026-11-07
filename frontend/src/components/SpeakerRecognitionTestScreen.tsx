@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getMeeting, getSpeakerReview, getTranscript, uploadRecording } from "../api";
-import type { MeetingTranscript, RecordingUploadData, SpeakerReview } from "../api";
+import { getDiarization, getMeeting, getSpeakerReview, getTranscript, uploadRecording } from "../api";
+import type { MeetingDiarization, MeetingTranscript, RecordingUploadData, SpeakerReview } from "../api";
 
 interface EbmlElement {
   id: number;
@@ -142,6 +142,33 @@ function formatTimestamp(milliseconds: number): string {
   return `${minutes}:${seconds}`;
 }
 
+function withSpeakerLabels(
+  transcript: MeetingTranscript,
+  diarization: MeetingDiarization | null,
+  review: SpeakerReview | null,
+): MeetingTranscript {
+  const speakerIdByTurnId = new Map(
+    diarization?.assignments.map((assignment) => [assignment.turn_id, assignment.speaker_id]) ?? [],
+  );
+  const labelBySpeakerId = new Map(
+    diarization?.speakers.map((speaker) => [speaker.id, speaker.label]) ?? [],
+  );
+  const reviewedLabelBySpeakerId = new Map(
+    review?.items.map((item) => [item.speakerId, item.currentLabel]) ?? [],
+  );
+
+  return {
+    ...transcript,
+    segments: transcript.segments.map((segment) => {
+      const speakerId = speakerIdByTurnId.get(segment.id);
+      const speakerLabel = speakerId
+        ? reviewedLabelBySpeakerId.get(speakerId) ?? segment.speakerLabel ?? labelBySpeakerId.get(speakerId)
+        : segment.speakerLabel;
+      return speakerLabel ? { ...segment, speakerLabel } : segment;
+    }),
+  };
+}
+
 interface SelectedRecording {
   file: File;
   objectUrl: string;
@@ -156,6 +183,7 @@ export function SpeakerRecognitionTestScreen() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [meetingProcessState, setMeetingProcessState] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<MeetingTranscript | null>(null);
+  const [speakerDiarization, setSpeakerDiarization] = useState<MeetingDiarization | null>(null);
   const [speakerReview, setSpeakerReview] = useState<SpeakerReview | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
@@ -172,6 +200,15 @@ export function SpeakerRecognitionTestScreen() {
     let active = true;
     let timeout: number | undefined;
 
+    async function observeSpeakerReview() {
+      try {
+        const completedReview = await getSpeakerReview(meetingId);
+        if (active) setSpeakerReview(completedReview);
+      } catch {
+        if (active) timeout = window.setTimeout(observeSpeakerReview, PROCESSING_POLL_INTERVAL_MS);
+      }
+    }
+
     async function observeProcessing() {
       try {
         const meeting = await getMeeting(meetingId);
@@ -179,14 +216,14 @@ export function SpeakerRecognitionTestScreen() {
         setMeetingProcessState(meeting.processState);
 
         if (meeting.processState === "completed") {
-          const [completedTranscript, completedReview] = await Promise.all([
+          const [completedTranscript, completedDiarization] = await Promise.all([
             getTranscript(meetingId),
-            getSpeakerReview(meetingId),
+            getDiarization(meetingId).catch(() => null),
           ]);
-          if (active) {
-            setTranscript(completedTranscript);
-            setSpeakerReview(completedReview);
-          }
+          if (!active) return;
+          setTranscript(completedTranscript);
+          setSpeakerDiarization(completedDiarization);
+          void observeSpeakerReview();
           return;
         }
 
@@ -228,6 +265,7 @@ export function SpeakerRecognitionTestScreen() {
     setUploadError(null);
     setMeetingProcessState(null);
     setTranscript(null);
+    setSpeakerDiarization(null);
     setSpeakerReview(null);
   }
 
@@ -282,6 +320,10 @@ export function SpeakerRecognitionTestScreen() {
     }
   }
 
+  const displayedTranscript = transcript
+    ? withSpeakerLabels(transcript, speakerDiarization, speakerReview)
+    : null;
+
   return (
     <section aria-labelledby="speaker-test-heading">
       <h2 id="speaker-test-heading">Speaker recognition test</h2>
@@ -324,12 +366,12 @@ export function SpeakerRecognitionTestScreen() {
             : `Processing${meetingProcessState ? `: ${meetingProcessState}` : "…"}`}
         </p>
       )}
-      {transcript && speakerReview && (
+      {displayedTranscript && (
         <>
           <section aria-labelledby="test-transcript-heading">
             <h3 id="test-transcript-heading">Transcript</h3>
             <ol>
-              {transcript.segments.map((segment) => (
+              {displayedTranscript.segments.map((segment) => (
                 <li key={segment.id}>
                   {segment.startMs !== null && <time>{formatTimestamp(segment.startMs)}</time>}
                   {segment.speakerLabel && <strong>{segment.speakerLabel}</strong>}
@@ -338,13 +380,15 @@ export function SpeakerRecognitionTestScreen() {
               ))}
             </ol>
           </section>
-          <section aria-labelledby="test-speaker-review-heading">
-            <h3 id="test-speaker-review-heading">Speaker review</h3>
-            <p>{speakerReview.status === "complete" ? "Review complete" : "Review pending"}</p>
-            <ul>
-              {speakerReview.items.map((item) => <li key={item.speakerId}>{item.currentLabel}</li>)}
-            </ul>
-          </section>
+          {speakerReview && (
+            <section aria-labelledby="test-speaker-review-heading">
+              <h3 id="test-speaker-review-heading">Speaker review</h3>
+              <p>{speakerReview.status === "complete" ? "Review complete" : "Review pending"}</p>
+              <ul>
+                {speakerReview.items.map((item) => <li key={item.speakerId}>{item.currentLabel}</li>)}
+              </ul>
+            </section>
+          )}
         </>
       )}
     </section>
