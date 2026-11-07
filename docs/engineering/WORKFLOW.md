@@ -1,9 +1,9 @@
-<!-- sauri-workflow v1.1 -->
-# Sauri engineering workflow (v1.1)
+<!-- sauri-workflow v1.2 -->
+# Sauri engineering workflow (v1.2)
 
 Single source of truth for how work on Sauri is done, by agents or humans. `AGENTS.md` says what the project is and how its code is organized; this file says how work flows. On process, this file wins over `AGENTS.md`; agent contracts in `.apc/agents/` add role-specific duties and must agree with it (a conflict goes to Ansel).
 
-**History.** v1.1 (2026-11-07, issue #721): how the team talks to Fer (§3) and cards in review (§6). v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
+**History.** v1.2 (2026-11-07, issue #726): approvals carry across a clean merge of `main` (§8). v1.1 (2026-11-07, issue #721): how the team talks to Fer (§3) and cards in review (§6). v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
 
 ## 1. Principles
 1. **One task = one issue = one branch = one worktree = one PR.** Small and reversible.
@@ -278,6 +278,7 @@ Before publishing, check `pwd`, the toplevel, branch, `git status --short` and t
 
 ### Merge and cleanup
 - **Ansel is the only agent who merges**, as soon as a PR qualifies: no conflicts, every existing CI check green, Nia `PASS` (and Zev when the card lists a security gate) on the exact head SHA, files within the issue scope, and for spec PRs Mira `APPROVED` on that artifact version. Command: `gh pr merge <n> --merge`; never `--admin`, never bypass a check.
+- **Approvals carry across a clean merge of `main`.** A verdict (Nia, Zev, Mira) names the head SHA it covers. After `git merge origin/main` into the PR branch, the verdict is carried to the new head when the merge had no conflict and changed none of the PR's own files: CI runs again, and Ansel records "verdict of <old SHA> carried after clean merge to <new SHA>" on the card. A conflict, or a merge that touches the PR's files, needs a new verdict on the delta only. Never re-review an artifact or a candidate that did not change.
 - **No cap on open PRs.** Merge in dependency order (a spec PR before its implementation PRs). A PR that depends on another waits for that merge; independent PRs proceed in parallel.
 - **After each merge, in the same turn:** update the root checkout only if it is clean (`git pull --ff-only`); `git worktree remove <path>` (never `--force`); `git branch -d <branch>` (`-D` only when the PR head SHA equals the branch head); `git push origin --delete <branch>`; confirm with `git worktree list`. Then bring every other open PR up to date (`git merge origin/main`, normal push, never force-push) and re-verify it.
 - A worktree with uncommitted or unpushed work is never removed: it gets a disposition and an owner. Whoever creates a temporary worktree (audit, baseline, snapshot, probe) removes it when its verdict or hand-off is recorded.
