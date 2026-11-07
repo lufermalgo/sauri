@@ -118,6 +118,7 @@ async def upload_recording(
                         ingestion_data.meeting_id,
                         ingestion_data.idempotency_key,
                     ),
+                    raise_on_error=True,
                 )
                 meeting = await session.get(Meeting, ingestion_data.meeting_id)
                 if meeting is None:
@@ -139,30 +140,55 @@ async def upload_recording(
     object_store = _get_object_store()
     queue = _get_queue()
 
-    # c. Store audio in the ObjectStore
-    audio_content = await audio.read()
-    audio_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/audio"
-    audio_ref = await object_store.save(
-        audio_key,
-        audio_content,
-        audio.content_type or "audio/webm",
-    )
-
-    # d. Store video (optional)
-    video_ref: str | None = None
-    if video is not None:
-        video_content = await video.read()
-        video_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/video"
-        video_ref = await object_store.save(
-            video_key,
-            video_content,
-            video.content_type or "video/webm",
-        )
-
-    # e. Process ingestion (create SessionRecording, idempotency, notice)
     cleanup_scope_hash = _cleanup_scope_hash(
         user.id, ingestion_data.meeting_id, ingestion_data.idempotency_key
     )
+    staged_refs: list[str | None] = []
+    video_ref: str | None = None
+    try:
+        # c. Store audio in the ObjectStore
+        audio_content = await audio.read()
+        audio_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/audio"
+        audio_ref = await object_store.save(
+            audio_key,
+            audio_content,
+            audio.content_type or "audio/webm",
+        )
+        staged_refs.append(audio_ref)
+
+        # d. Store video (optional)
+        if video is not None:
+            video_content = await video.read()
+            video_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/video"
+            video_ref = await object_store.save(
+                video_key,
+                video_content,
+                video.content_type or "video/webm",
+            )
+            staged_refs.append(video_ref)
+    except Exception:
+        cleanup_engine: Any = None
+        try:
+            cleanup_engine = create_engine()
+            cleanup_session_factory = create_session_factory(cleanup_engine)
+            async with cleanup_session_factory() as cleanup_session:
+                await persist_pending_object_deletions(
+                    cleanup_session, cleanup_scope_hash, staged_refs
+                )
+                await drain_pending_object_deletions(
+                    cleanup_session, object_store, cleanup_scope_hash
+                )
+        except Exception:
+            logger.exception("Could not durably clean partially staged ingestion objects")
+        finally:
+            if cleanup_engine is not None:
+                try:
+                    await cleanup_engine.dispose()
+                except Exception:
+                    logger.exception("Could not dispose partial-ingestion cleanup engine")
+        raise
+
+    # e. Process ingestion (create SessionRecording, handles idempotency, notice)
     engine = create_engine()
     session_factory = create_session_factory(engine)
     try:
@@ -217,16 +243,21 @@ async def upload_recording(
     # If another request committed the same idempotency key during storage,
     # clean only this attempt's uncommitted refs and return the persisted result.
     if not is_new:
-        async with session_factory() as cleanup_session:
-            await persist_pending_object_deletions(
-                cleanup_session,
-                cleanup_scope_hash,
-                [audio_ref, video_ref],
-            )
-            await drain_pending_object_deletions(
-                cleanup_session, object_store, cleanup_scope_hash
-            )
-        await engine.dispose()
+        try:
+            async with session_factory() as cleanup_session:
+                await persist_pending_object_deletions(
+                    cleanup_session,
+                    cleanup_scope_hash,
+                    [audio_ref, video_ref],
+                )
+                await drain_pending_object_deletions(
+                    cleanup_session,
+                    object_store,
+                    cleanup_scope_hash,
+                    raise_on_error=True,
+                )
+        finally:
+            await engine.dispose()
         return {"recording_id": recording.id, "state": prior_state}
 
     # g. Enqueue the transcription job (only if the recording is new)

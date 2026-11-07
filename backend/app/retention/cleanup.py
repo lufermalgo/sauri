@@ -69,11 +69,14 @@ async def drain_pending_object_deletions(
     session: AsyncSession,
     object_store: ObjectStore,
     cleanup_scope_hash: str | None = None,
+    *,
+    raise_on_error: bool = False,
 ) -> None:
     """Delete unreferenced staged refs and retain failed tasks for retry.
 
     Passing a scope hash limits draining to one idempotent upload attempt. The
-    scheduled retention worker omits it to recover all outstanding tasks.
+    scheduled retention worker omits it to recover all outstanding tasks. API
+    retries can request the first storage error after all refs were attempted.
     """
     statement = select(PendingObjectDeletion)
     if cleanup_scope_hash is not None:
@@ -84,6 +87,7 @@ async def drain_pending_object_deletions(
     result = await session.execute(statement)
     pending_tasks = list(result.scalars().all())
     completed_tasks: list[PendingObjectDeletion] = []
+    first_error: Exception | None = None
     for task in pending_tasks:
         if await _is_live_reference(session, task.object_ref):
             completed_tasks.append(task)
@@ -91,7 +95,8 @@ async def drain_pending_object_deletions(
 
         try:
             await object_store.delete(task.object_ref)
-        except Exception:
+        except Exception as exc:
+            first_error = first_error or exc
             logger.exception(
                 "Could not delete staged object for cleanup scope %s",
                 task.cleanup_scope_hash,
@@ -106,3 +111,5 @@ async def drain_pending_object_deletions(
         await session.delete(task)
     if completed_tasks:
         await session.commit()
+    if raise_on_error and first_error is not None:
+        raise first_error
