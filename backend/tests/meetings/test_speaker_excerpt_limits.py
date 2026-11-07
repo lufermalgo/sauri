@@ -146,6 +146,115 @@ class SyntheticS3Client:
         return response
 
 
+class RecordingBoundedStore:
+    def __init__(self, content: bytes = b"synthetic-source") -> None:
+        self.content = content
+        self.calls: list[tuple[str, int, float]] = []
+
+    async def get_bounded(
+        self, reference: str, max_bytes: int, deadline_monotonic: float
+    ) -> bytes:
+        self.calls.append((reference, max_bytes, deadline_monotonic))
+        return self.content
+
+
+class CompletedDecoderProcess:
+    pid = 919
+
+    def __init__(self) -> None:
+        self.returncode: int | None = None
+
+    async def communicate(self, *, input: bytes) -> tuple[bytes, bytes]:
+        assert input == b"synthetic-source"
+        self.returncode = 0
+        return b"managed-synthetic-excerpt", b""
+
+    async def wait(self) -> int:
+        return 0
+
+
+@pytest.mark.asyncio
+async def test_service_routes_derive_and_play_through_bounded_store_and_managed_decoder(
+    keyring: ExcerptKeyring,
+) -> None:
+    storage = RecordingBoundedStore()
+    spawn_calls: list[tuple[str, ...]] = []
+    process = CompletedDecoderProcess()
+
+    async def spawn(*command: str, start_new_session: bool) -> CompletedDecoderProcess:
+        assert start_new_session
+        spawn_calls.append(command)
+        return process
+
+    decoder = speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn)
+    excerpt_service = service(
+        decode_interval=lambda *_args: b"decoded-by-direct-callback",
+        read_interval=lambda *_args: b"read-by-direct-callback",
+        keyring=keyring,
+    )
+    excerpt_service._object_store = storage
+    excerpt_service._decoder = decoder
+    excerpt = await derive(
+        excerpt_service,
+        duration_ms=MAX_AUDIO_DURATION_MS,
+        candidates=[Candidate(100, 1_100)],
+    )
+    review = SimpleNamespace(meeting_id="recording-1", processing_revision=1)
+    item = SimpleNamespace(review=review, speaker_key="speaker-1", excerpt_ref=excerpt.reference)
+
+    result = await play(
+        excerpt_service,
+        recording_id="recording-1",
+        revision_id=1,
+        review_item=item,
+    )
+
+    assert [call[:2] for call in storage.calls] == [
+        ("synthetic/object", MAX_SOURCE_BYTES),
+        ("synthetic/object", MAX_SOURCE_BYTES),
+    ], "both derive and playback must use the bounded source-read contract"
+    assert spawn_calls == [("synthetic-decoder",), ("synthetic-decoder",)]
+    assert result == b"managed-synthetic-excerpt"
+
+
+@pytest.mark.asyncio
+async def test_play_rejects_source_over_limit_before_managed_decode(
+    keyring: ExcerptKeyring,
+) -> None:
+    storage = RecordingBoundedStore()
+    process = CompletedDecoderProcess()
+
+    async def spawn(*_command: str, start_new_session: bool) -> CompletedDecoderProcess:
+        assert start_new_session
+        return process
+
+    excerpt_service = service(
+        decode_interval=lambda *_args: b"direct-decode",
+        read_interval=lambda *_args: b"direct-playback",
+        keyring=keyring,
+    )
+    excerpt_service._object_store = storage
+    excerpt_service._decoder = speaker_excerpt_service.ManagedDecoderProcess(
+        spawn_process=spawn
+    )
+    excerpt = await derive(
+        excerpt_service,
+        duration_ms=MAX_AUDIO_DURATION_MS,
+        candidates=[Candidate(100, 1_100)],
+    )
+    storage.content = b"x" * (MAX_SOURCE_BYTES + 1)
+    review = SimpleNamespace(meeting_id="recording-1", processing_revision=1)
+    item = SimpleNamespace(review=review, speaker_key="speaker-1", excerpt_ref=excerpt.reference)
+
+    with pytest.raises(ValueError, match="speaker excerpt unavailable"):
+        await play(
+            excerpt_service,
+            recording_id="recording-1",
+            revision_id=1,
+            review_item=item,
+        )
+
+
 @pytest.mark.asyncio
 async def test_late_s3_response_body_is_closed_after_deadline(object_store: S3ObjectStore) -> None:
     body = SyntheticBody(1)
