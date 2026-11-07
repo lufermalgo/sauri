@@ -1,9 +1,9 @@
-<!-- sauri-workflow v1.0 -->
-# Sauri engineering workflow (v1.0)
+<!-- sauri-workflow v1.1 -->
+# Sauri engineering workflow (v1.1)
 
 Single source of truth for how work on Sauri is done, by agents or humans. `AGENTS.md` says what the project is and how its code is organized; this file says how work flows. On process, this file wins over `AGENTS.md`; agent contracts in `.apc/agents/` add role-specific duties and must agree with it (a conflict goes to Ansel).
 
-**History.** v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
+**History.** v1.1 (2026-11-07, issue #721): how the team talks to Fer (§3) and cards in review (§6). v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
 
 ## 1. Principles
 1. **One task = one issue = one branch = one worktree = one PR.** Small and reversible.
@@ -55,6 +55,9 @@ Every turn ends as one of: `completed` with evidence; `in progress` with the nex
 - **When the correct solution exceeds the approved scope.** It becomes a spec amendment through the normal SDD flow (§2), never a shortcut inside the current task.
 - **Finding open questions.** On every wake-up Ansel scans `apx runs pending`, cards waiting on the owner or marked `NEEDS USER INPUT`, and hand-offs or comments that end in a question. Technical ones are decided in that turn and the decision is sent to the agent so the work continues. Product ones are batched into one message to Fer with a recommendation, and other work keeps moving. Permission prompts that only the owner can approve are listed for Fer, never bypassed.
 - **Record.** Decision, reason and rejected options go on the card; durable decisions also go to project memory.
+- **Talking to Fer.** Fer is not a developer. Anything addressed to him (`NEEDS USER INPUT`, a card waiting on the owner, an `@owner` comment, a question) is plain Spanish about the product, in at most four lines: what the person using Sauri will see or lose, the options in those terms, and the recommendation. No PR or issue numbers, hashes, commands, file names, or APX internals. If the question cannot be said that way, it is technical and the team decides it. Fer is asked to try or confirm something only when only he can (his own device, his own meeting): give the exact steps he can follow. Never ask him to diagnose.
+- **What is Fer's.** What the product does for its users, privacy/retention/consent, spending, release. Not Fer's: accepting proposals, merging, test or CI failures, schema or migration choices, limits and bounds, tool or APX behavior. Those are decided by the team and Ansel from the product requirement.
+- **Waiting on Fer has an owner.** A card is marked as waiting on Fer only with a question written as above. On every wake-up Ansel reviews each such card: a technical one is decided and unmarked; a product one is rewritten if it breaks these rules; an answered one is unmarked.
 
 ## 4. TDD and quality discipline
 
@@ -168,6 +171,9 @@ These rules apply once the project has a repository, a default branch, and a PR 
 6. **Read `_tools/SESSION_STATUS.md` before every task only when session tracking is enabled.**
 
 7. **Keep session state accurate when session tracking is enabled.** A stale session file is worse than no session file.
+
+### Cards in review
+A card moved to `review` always names a reviewer agent (`reviewer`, never the assignee). An empty reviewer means Fer in APX and shows as "Reviews: you", which is almost never right. A finished card, or one that only waits for a merge, is closed with `task_close` and a note instead of being parked in review. On every wake-up Ansel fixes any card in review without a reviewer: name the right agent, or close it.
 
 ## 7. Git: branches, worktrees, commits
 ### Branch naming
@@ -296,7 +302,7 @@ Each approved product module maps to a Spectra spec and a GitHub milestone:
 The routine `sauri-backlog-orchestration` wakes Ansel every 15 minutes. In each wake-up, in this order:
 1. If another session of Ansel is `working`, answer `SKIP`. Delegations to other agents and sessions waiting for input do not count.
 2. Mark every specialist busy (verified active run) or free. A card in `doing` is not proof of execution.
-3. Resolve open questions (§3).
+3. Resolve open questions (§3), including every card waiting on Fer, and every card in review without a reviewer (§6).
 4. Close finished work: merge qualifying PRs and clean up (§8), route returned cards to their next step, approve or drop proposals.
 5. Give every free specialist the highest-priority ready task of their role with no file conflict; verify that it started.
 6. When a role has no cards, reconcile approved specs against tasks, issues, cards and evidence; create only missing, uniquely identified cards; keep spec status current.
