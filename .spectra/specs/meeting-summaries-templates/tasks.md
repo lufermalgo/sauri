@@ -28,6 +28,7 @@
 **Tracking:** Issue #269 · Card task_9240ba5b9f47485a
 
 **Archivo:** `backend/tests/summaries/test_summary_models_property.py` (create)
+**Test seam:** Exercise `backend/app/infra/models.py`: `User.default_summary_template_id`, `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary`.
 **Acción:** Add synthetic-database/property coverage for the approved absence of a seeded template or configured default (P4), multiple summary generations per transcript, unique event/generation constraints, and deletion of every persisted summary when its transcript is deleted (P8/R6). Do not test a broader retention policy. Capture the pre-implementation candidate SHA and expected failing output.
 
 **Criterio de Completado:** Before schema implementation, `cd backend && pytest tests/summaries/test_summary_models_property.py -q` fails on the missing schema/relationship assertions; commit the RED test and record exact SHA and output.
@@ -51,6 +52,7 @@
 **Status:** Done
 
 **Archivo:** `backend/tests/templates/test_default_resolver_property.py` (create)
+**Test seam:** Exercise `backend/app/templates/default_resolver.py` and `resolve_default(template_row)`.
 **Acción:** Add Hypothesis properties for nullable default resolution, exact `(template_id, version)` selection, and the resolver's category-blind input/output contract; use at least 100 examples per property and synthetic template records. Do not assert any no-default fallback.
 
 **Criterio de Completado:** Before resolver implementation, `cd backend && pytest tests/templates/test_default_resolver_property.py -q` fails because the resolver is absent; commit RED test and record SHA/output.
@@ -97,6 +99,7 @@
 **Tracking:** Issue #275 · Card task_fdefb390888b442b
 
 **Archivo:** `backend/tests/templates/test_templates_api.py` (extend)
+**Test seam:** Exercise `PUT /api/v1/templates/default` and `GET /api/v1/templates` in `backend/app/templates/router.py`.
 **Acción:** Add tests that a user can set their own template as the one personal default, a foreign template cannot be selected, template-list responses identify the caller's configured default, and the default is independent of category. Verify failed foreign selection makes no change. Do not assert no-default request behavior.
 
 **Criterio de Completado:** Before default API implementation, `cd backend && pytest tests/templates/test_templates_api.py -q` fails on default-setting/list-identification cases; commit RED test and record SHA/output.
@@ -121,6 +124,7 @@
 **Tracking:** Issue #277 · Card task_be32b6373a0648dc
 
 **Archivo:** `backend/tests/summaries/test_summary_api.py`; `backend/tests/integration/test_summary_pipeline.py` (create/extend)
+**Test seam:** Exercise `POST /api/v1/meetings/{meeting_id}/summary-requests` via `backend/app/summaries/router.py` and the request transaction in `backend/app/summaries/service.py`; exercise pending-event recovery in `backend/app/summaries/outbox.py` against `SummaryRequestOutbox` in `backend/app/infra/models.py`.
 **Acción:** Add failing tests for explicit owned-template selection and implicit configured-default resolution at request time; each accepted event freezes template id/version/instructions, distinct requests receive increasing per-transcript generations, no enqueue occurs on transcript commit alone, and committed pending outbox events survive/re-dispatch after publication failure until broker confirmation. Cover status lifecycle and do not invent behavior when no default exists.
 
 **Criterio de Completado:** Before request/outbox implementation, `cd backend && pytest tests/summaries/test_summary_api.py tests/integration/test_summary_pipeline.py -q` fails with missing API/outbox behavior; commit RED tests with pre-implementation SHA and captured output.
@@ -143,6 +147,7 @@
 **Tracking:** Issue #279 · Card task_4fb964f1c8d54d70
 
 **Archivo:** `backend/tests/summaries/test_worker.py` (create/extend)
+**Test seam:** Exercise the consumer registered by `start_worker` in `backend/app/summaries/worker.py` and persistence in `backend/app/infra/models.py`: `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary`.
 **Acción:** Add failing tests for immutable event-snapshot use across template edits/default changes, duplicate-event no-op, atomic summary + processed-event + `succeeded` persistence, retryable failures, terminal dead-letter `failed`, and status transitions `pending → running → succeeded|failed`. Assert a later failed request does not overwrite an earlier successful summary.
 
 **Criterio de Completado:** Before worker implementation, `cd backend && pytest tests/summaries/test_worker.py -q` fails on the missing consumer behavior; commit RED test and record SHA/output.
@@ -187,6 +192,7 @@
 **Tracking:** Issue #283 · Card task_abb0a6217a484a7a
 
 **Archivo:** `backend/tests/summaries/test_summary_api.py` (extend)
+**Test seam:** Exercise `GET /api/v1/meetings/{meeting_id}/summary`, `GET /api/v1/meetings/{meeting_id}/summary-requests/latest`, and `GET /api/v1/meetings/{meeting_id}/summary-requests/{event_id}` in `backend/app/summaries/router.py`; verify current-summary selection through `SummaryService.get_current_summary_for_user(meeting_id, user)` in `backend/app/summaries/service.py`.
 **Acción:** Add failing tests for GET current summary choosing the highest-generation successful result (not a pending/failed later request), meeting association/ownership and `require_sales` access behavior, latest accepted request status selection, event-specific status ownership, and registration of static `/summary-requests/latest` before dynamic `{event_id}`. Include the literal-route test named `test_latest_summary_request_route_resolves_before_event_id`.
 
 **Criterio de Completado:** Before read/status route implementation, `cd backend && pytest tests/summaries/test_summary_api.py -q` fails on missing route/query assertions; commit RED test and record SHA/output.
