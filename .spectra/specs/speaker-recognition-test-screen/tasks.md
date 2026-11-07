@@ -6,14 +6,15 @@
 |---|---|---:|---|
 | 1 | Frontend upload RED/GREEN | T-1–T-2 | T-1 before T-2 |
 | 2 | Test-screen lifecycle RED/GREEN | T-3–T-4 | T-2 and T-3 before T-4 |
-| 3 | Speaker-review route and screen RED/GREEN | T-5–T-8 | T-5 before T-6; T-6 and T-7 before T-8 |
+| 3 | Speaker-review routes and screen RED/GREEN | T-5–T-8 | T-5 and T-19 before T-6; T-6 and T-7 before T-8 |
 | 4 | Linkless upload contract and shared types RED/GREEN | T-9–T-10 | T-9 and T-13 before T-10 |
 | 5 | Owner-safe ingestion RED/GREEN | T-11–T-12 | T-10 and T-11 before T-12 |
 | 6 | Durable cleanup RED/GREEN | T-13–T-14 | T-13, T-10, and T-12 before T-14 |
 | 7 | Meeting status/transcript labels RED/GREEN | T-15–T-16 | T-15 and T-6 before T-16 |
-| 8 | Candidate validation and independent gates | T-17 | All implementation tasks |
+| 8 | Bounded speaker-excerpt reads and decoder lifecycle RED/GREEN | T-18–T-19 | T-18 before T-19; T-19 before T-6 |
+| 9 | Candidate validation and independent gates | T-17 | All GREEN implementation tasks, including T-19 |
 
-The graph lists only RED-before-GREEN prerequisites and genuine interface prerequisites. T-12 depends on T-10 because ingestion must not persist null meeting links or accept `web_upload` before the compatible model/schema/type contract exists. T-10 waits for both T-9 and T-13 so the single migration can be tested RED for both the nullable link and cleanup table before it is authored. Tasks that edit separate test seams and production modules otherwise remain dependency-ready; the phase labels do not serialize them.
+The graph lists only RED-before-GREEN prerequisites and genuine interface prerequisites. T-12 depends on T-10 because ingestion must not persist null meeting links or accept `web_upload` before the compatible model/schema/type contract exists. T-10 waits for both T-9 and T-13 so the single migration can be tested RED for both the nullable link and cleanup table before it is authored. Bounded-decoder tests (T-18) can proceed independently; T-19 implements that tested read/process lifecycle, and T-6 waits for T-19 because the authenticated excerpt handler must await the bounded service. Tasks that edit separate test seams and production modules otherwise remain dependency-ready; the phase labels do not serialize them.
 
 ## Phase 1 — Frontend RED Tests
 
@@ -91,13 +92,13 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 **Files:** `backend/app/meetings/router.py`; related `backend/tests/speaker_review/` tests.
 
-**Action:** Implement the two specified authenticated handlers using the approved speaker-review contract and existing per-recording authorization, idempotency, version, and excerpt-access semantics. Persist only the targeted speaker disposition; preserve pending aggregate state until every displayed speaker has an explicit persisted disposition. Do not add a parallel review model or endpoint family.
+**Action:** Implement the two specified authenticated handlers using the approved speaker-review contract and existing per-recording authorization, idempotency, version, and excerpt-access semantics. Await the bounded `SpeakerExcerptService` operations from T-19 for excerpt playback; persist only the targeted speaker disposition and preserve pending aggregate state until every displayed speaker has an explicit persisted disposition. Do not add a parallel review model or endpoint family.
 
 **REFACTOR:** After T-5's tests pass on the minimum route implementation, clean up handler structure/naming/duplication within the listed files without changing behavior; rerun `pytest`, `ruff check .`, and `mypy .` from `backend/` and confirm T-5 remains green.
 
 **Acceptance evidence / validation:** `pytest`, `ruff check .`, and `mypy .` from `backend/` pass; T-5's tests pass.
 
-**Dependencies:** T-5.
+**Dependencies:** T-5, T-19.
 
 ### T-7: RED — Specify persisted review isolation and resume behavior in the screen
 
@@ -237,7 +238,35 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 **Dependencies:** T-15, T-6.
 
-## Phase 8 — Cross-Surface Validation
+## Phase 8 — Bounded Speaker-Excerpt Reads and Decoder Lifecycle
+
+### T-18: RED — Specify bounded excerpt reads and decoder lifecycle
+
+**Tracking:** Issue #749 · Card task_b55f0a653b9e49ae
+
+**Files / test seam:** `backend/tests/meetings/test_speaker_excerpt_limits.py`; `SpeakerExcerptService.derive` and `.play` in `backend/app/meetings/speaker_excerpt_service.py`; `ObjectStore.get_bounded` in `backend/app/infra/object_store.py` and its S3 implementation in `backend/app/infra/object_store_s3.py`.
+
+**Action:** Add required failing tests using synthetic media and fake storage/process adapters for the approved bounded-decoding contract. Cover exact 20 MiB source and 30-second audio boundaries, rejection of oversized/unknown/mismatched source length before probe/decode, bounded reads of at most the limit plus one sentinel with body closure, rejection of unknown/invalid/>30-second duration before interval decode, valid intervals no longer than 10,000 ms with overlong candidates skipped but never truncated, and no result/reference/partial bytes on rejection. Exercise the single non-blocking process-scoped two-permit limit across derive and playback, promptly reject a third request, and verify one 60-second monotonic budget is shared across reads/probes/candidates/output. On timeout/cancellation, assert body closure, hard-kill of the process group, staged-output discard, process/read-worker reap before permit release, and no partial result; when exit is unconfirmed, assert unhealthy-worker rejection, retained permit, and release only after background reap. Assert generic limit errors do not expose decoder/storage details. Use injected clocks and synthetic fixtures; do not use real recordings.
+
+**Acceptance evidence / validation:** Before implementation, `pytest` from `backend/` fails on the new bounded-read, cap, concurrency and lifecycle assertions for the expected missing behavior; retain the RED output for T-19.
+
+**Dependencies:** None.
+
+### T-19: GREEN — Enforce bounded speaker-excerpt reads and supervised decoding
+
+**Tracking:** Issue #750 · Card task_129af07a964a4a00 (proposed; backlog; blocked on T-18 RED evidence and #747 merge)
+
+**Files:** `backend/app/infra/object_store.py`, `backend/app/infra/object_store_s3.py`, `backend/app/meetings/speaker_excerpt_service.py`, and `backend/tests/meetings/test_speaker_excerpt_limits.py`.
+
+**Action:** Add `ObjectStore.get_bounded(reference, max_bytes, deadline_monotonic)` with authoritative length checks, a capped read plus one discarded sentinel byte, declared/actual size consistency, and body closure on all paths; never fall back to unbounded `get`. Make `SpeakerExcerptService.derive` and `.play` awaitable and apply the approved 20 MiB, 30-second audio, 10-second interval and process-wide non-blocking two-permit limits. Use one 60-second monotonic deadline from permit acquisition through bounded read, probing, candidate attempts and complete result construction. Run untrusted probes/decodes in managed child process groups with only the remaining budget; on timeout/cancellation close active reads, hard-kill and reap work, discard partial bytes/references, and release permits only after confirmed exit. If exit is unconfirmed, mark the worker unhealthy, retain the permit and let a background reaper release it only after confirmed exit; reject new work on that worker. Reject unknown/invalid durations and over-limit requests without truncation or decoder-detail leakage; preserve generic limit-error mapping. No schema, configuration, upload/playback limits outside speaker excerpts, or new worker/service is in scope.
+
+**REFACTOR:** After T-18's tests pass on the minimum bounded decoder, simplify the read/process-lifecycle structure without changing behavior; keep all resource/lifecycle assertions green.
+
+**Acceptance evidence / validation:** `pytest`, `ruff check .`, and `mypy .` from `backend/` pass, including T-18's tests; the tests demonstrate cap boundaries, prompt overload rejection, deadline enforcement, confirmed-exit permit release and fail-closed errors.
+
+**Dependencies:** T-18.
+
+## Phase 9 — Cross-Surface Validation
 
 ### T-17: Run configured validation on the integrated candidate
 
@@ -249,7 +278,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 **Acceptance evidence / validation:** All listed configured commands pass on the same candidate SHA; retain the command outputs as evidence.
 
-**Dependencies:** T-2, T-4, T-6, T-8, T-10, T-12, T-14, T-16.
+**Dependencies:** T-2, T-4, T-6, T-8, T-10, T-12, T-14, T-16, T-19.
 
 ## Independent Release Gates (not implementation tasks)
 
@@ -260,11 +289,12 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 ## Dependency Graph and Rationale
 
 - `T-1 → T-2`; `T-2 + T-3 → T-4`: required RED-before-GREEN, and the mounted screen uses the implemented API adapter.
-- `T-5 → T-6`; `T-6 + T-7 → T-8`: backend review operations must exist before the screen's write/playback adapter can complete its flow; the UI tests must fail before UI implementation.
+- `T-5 + T-19 → T-6`; `T-6 + T-7 → T-8`: route-contract tests and the bounded async excerpt service are both prerequisites for the authenticated routes; the UI tests must fail before UI implementation.
 - `T-9 + T-13 → T-10`: the single migration/model contract must be tested RED for both nullable links and the cleanup table before implementation; it also establishes the shared `web_upload` type/schema contract needed by ingestion.
 - `T-11 → T-12`: mandatory test-before-code for owner-safe idempotency; T-12 also follows T-10 because upload depends on the compatible nullable-link and `web_upload` contract.
 - `T-13 + T-10 + T-12 → T-14`: mandatory RED-before-GREEN for durable cleanup; the single migration/model is created in T-10, and cleanup integration uses the owner-safe ingestion path from T-12.
 - `T-15 → T-16`; T-6 precedes T-16 because transcript labels read the approved persisted review contract.
+- `T-18 → T-19 → T-6`: the bounded-read/process-lifecycle RED tests precede the implementation, and the authenticated excerpt route depends on the resulting awaitable bounded service.
 - T-17 follows all feature implementations because it validates the integrated candidate; Nia, Zev, and Cyrus then provide independent gates on that exact candidate, not additional implementation dependencies.
 - No other edges are imposed; independent test/implementation lanes may run in separate worktrees when their explicit prerequisites are met.
 
