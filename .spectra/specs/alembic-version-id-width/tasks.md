@@ -4,7 +4,7 @@
 
 | Phase | Description | Tasks | Dependencies |
 |---|---|---|---|
-| 1 | Required pre-GREEN tests for forward migration, atomicity, schema, identity, and downgrade properties | T-1–T-5 | T-1 → T-2 → T-3 → T-4 → T-5 (shared test module) |
+| 1 | Required pre-GREEN tests for forward migration, atomicity, schema, identity, and downgrade properties | T-1–T-5 | T-1 → T-2 → T-3; T-2 → T-4 → T-5 (shared test module; T-3 is no longer a prerequisite for T-4) |
 | 2 | GREEN migration-local width fix | T-6 | T-1–T-5 (required tests run before changing migration code; T-1, T-2, and T-5 demonstrate the defect, while T-4 is an unchanged-behavior guard expected to pass on baseline) |
 
 ## Phase 1: Required Pre-GREEN Tests
@@ -46,7 +46,7 @@
 **Action:** Add regression assertions that both published revision IDs and their existing parent declarations remain exact and appear in the script graph. Keep the target upgrade explicit; the assertions must not require `alembic upgrade head` to succeed or reconcile the sibling-009 graph.
 **Acceptance evidence:** Run this guard before T-6 and retain its passing result for both modules' exact revision/down-revision values and graph entries; it remains passing after T-6. It does not assert `alembic upgrade head` succeeds or that `head` is unambiguous.
 **Validation:** From `backend/`, run `.venv/bin/python -m pytest tests/test_migration.py`.
-**Dependencies:** T-3 (both edit `backend/tests/test_migration.py`; serialize to avoid merge conflicts).
+**Dependencies:** T-2 / Issue #489 (both edit `backend/tests/test_migration.py`; serialize to avoid merge conflicts). T-3 / Issue #490 is dropped and is not a prerequisite.
 **Tracking:** Issue #491 · Card task_10bb77d585bc4308
 
 ### T-5 (RED): Specify downgrade and re-upgrade behavior
