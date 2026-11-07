@@ -10,7 +10,7 @@ Follow the orchestration pass in docs/engineering/WORKFLOW.md §10:
 - Resolve technical questions from available evidence and consult Teo when blocked.
 - Advance existing approved tasks; prioritize unblocking work and tasks near completion. Assign actionable work to available specialists and verify it starts.
 - Advance returned cards and proposals; give review cards a reviewer or their correct state.
-- Merge qualifying PRs after checking current status and applicable checks. Clean up worktrees when safe.
+- Merge qualifying PRs only after confirming no conflicts, all existing CI checks succeeded, and the current changes match the reviewed candidate or material changes have been revalidated. Clean up worktrees when safe.
 - Continue independent work while waiting. Record decisions, blockers and their owners on the relevant cards.
 
 Inspect current details when needed; avoid redundant queries. Do not create work merely to occupy an agent, bypass permissions, or claim unverified outcomes.

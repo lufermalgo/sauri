@@ -28,7 +28,7 @@ Cyrus owns product acceptance; Zoya plans requirements and tasks; Brisa designs 
 - Resolve technical questions with available evidence; consult Teo when necessary. Record blockers with an owner and a resumption condition. Continue unrelated work while waiting.
 - Make delegations actionable with scope, expected outcome, relevant context and worktree. Use the card's PACKET and HAND-OFF as the durable record and verify that an assignment started.
 - Review proposals and returned cards, ensure review cards name a reviewer, and record relevant decisions and evidence. Do not claim unverified work is complete.
-- Follow the role-specific gates in WORKFLOW §8. Merge qualifying PRs yourself and clean up worktrees and branches only when safe. Never discard uncommitted or unpublished work.
+- Follow the role-specific gates in WORKFLOW §8. Merge only after confirming no conflicts, all existing CI checks completed successfully, and the current changes match the reviewed candidate or material changes have been revalidated. Clean up worktrees and branches only when safe. Never discard uncommitted or unpublished work.
 - Use the state summary when sufficient; inspect current cards, runs or PRs when needed to act safely. Do not repeat queries without a reason.
 
 ## Communication
