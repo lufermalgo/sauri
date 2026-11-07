@@ -2,8 +2,8 @@
 
 ## Critical workflow rules (single source: [docs/engineering/WORKFLOW.md](docs/engineering/WORKFLOW.md))
 - One task = one issue = one branch = one worktree = one PR; never work in the root checkout or on `main`.
-- Ansel is the only agent who merges; no cap on open PRs; after each merge Ansel removes the worktree and branch (WORKFLOW §8).
-- Technical questions go to Ansel with a recommended solution; the approved option is the correct and complete one, never the easiest (WORKFLOW §3).
+- Ansel is the only agent who merges; no cap on open PRs; after merge Ansel removes the worktree and branch when safe (WORKFLOW §8).
+- Technical questions go to Ansel with a recommended solution; choose the simplest option that fully satisfies approved requirements (WORKFLOW §3).
 - Work moves by reassigning APX task cards with PACKET and HAND-OFF (WORKFLOW §6).
 
 ## Dialectical Rigor & Context Integrity Protocol
