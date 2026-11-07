@@ -254,6 +254,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-19: GREEN — Enforce bounded speaker-excerpt reads and supervised decoding
 
+**Tracking:** Issue #750 · Card task_129af07a964a4a00 (proposed; backlog; blocked on T-18 RED evidence and #747 merge)
+
 **Files:** `backend/app/infra/object_store.py`, `backend/app/infra/object_store_s3.py`, `backend/app/meetings/speaker_excerpt_service.py`, and `backend/tests/meetings/test_speaker_excerpt_limits.py`.
 
 **Action:** Add `ObjectStore.get_bounded(reference, max_bytes, deadline_monotonic)` with authoritative length checks, a capped read plus one discarded sentinel byte, declared/actual size consistency, and body closure on all paths; never fall back to unbounded `get`. Make `SpeakerExcerptService.derive` and `.play` awaitable and apply the approved 20 MiB, 30-second audio, 10-second interval and process-wide non-blocking two-permit limits. Use one 60-second monotonic deadline from permit acquisition through bounded read, probing, candidate attempts and complete result construction. Run untrusted probes/decodes in managed child process groups with only the remaining budget; on timeout/cancellation close active reads, hard-kill and reap work, discard partial bytes/references, and release permits only after confirmed exit. If exit is unconfirmed, mark the worker unhealthy, retain the permit and let a background reaper release it only after confirmed exit; reject new work on that worker. Reject unknown/invalid durations and over-limit requests without truncation or decoder-detail leakage; preserve generic limit-error mapping. No schema, configuration, upload/playback limits outside speaker excerpts, or new worker/service is in scope.
