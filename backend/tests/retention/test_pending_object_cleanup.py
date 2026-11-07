@@ -255,7 +255,7 @@ async def test_duplicate_retry_drains_only_its_pending_scope_before_success(
 
     assert response == {
         "recording_id": "recording-synthetic",
-        "state": "idempotent_duplicate",
+        "state": "recording",
     }
     assert store.deleted == [pending_ref]
     async with session_factory() as observer:
