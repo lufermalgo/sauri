@@ -214,12 +214,14 @@
 
 ### T17a: Establish shared-types test infrastructure
 
-**Tracking:** Issue #420 · Card task_8a6485325e484cd8
+**Tracking:** Done · Issue #420 · Card task_8a6485325e484cd8 · PR #740
 
 **Archivo:** `packages/shared-types/package.json` and the test-runner configuration/location confirmed for this package
 **Acción:** Resolve the missing shared-types test harness using an existing repository-supported test runner and location. Add only the minimum configuration and package script needed to execute package tests; record the verified test-file location and command. Do not choose or configure a runner by assumption: confirm the repository-supported option before implementation, and return any unresolved runner-choice gap to Ansel.
 
 **Criterio de Completado:** A synthetic smoke test in the confirmed shared-types test location is actually executed by the package's non-placeholder test script; record the exact command and passing output. The script must no longer be the current `echo "no tests yet" && exit 0` placeholder.
+
+**Verificación registrada:** `packages/shared-types/src/index.test.ts`; `npm run test --workspace=@sauri/shared-types` — 1 file and 1 test passed with Vitest 1.6.1; `npm run typecheck --workspace=@sauri/shared-types` — passed.
 
 **Dependencias:** Ninguna
 
