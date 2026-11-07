@@ -164,6 +164,40 @@ def test_t7_confirmed_audio_unavailable_is_terminal(evidence: str) -> None:
     assert result.failure_cause == "audio_unavailable"
 
 
+@settings(max_examples=30)
+@given(evidence=st.sampled_from(TERMINAL_AUDIO_EVIDENCE))
+def test_t7_confirmed_audio_unavailable_during_processing_is_terminal(
+    evidence: str,
+) -> None:
+    event = ProcessingEvent(
+        kind="audio_unavailable",
+        failure_cause="audio_unavailable",
+        audio_evidence=evidence,
+    )
+    result = apply_diarization_event("in_progress", event)
+    assert result.successful is True
+    assert result.new_state == "not_reconstructible"
+    assert result.failure_cause == "audio_unavailable"
+
+
+@settings(max_examples=40)
+@given(
+    evidence=st.sampled_from(NONTERMINAL_AUDIO_EVIDENCE),
+    cause=st.sampled_from(("audio_unavailable", "engine_failure", None)),
+)
+def test_t7_unverified_audio_during_processing_does_not_become_terminal(
+    evidence: str | None, cause: str | None
+) -> None:
+    result = apply_diarization_event(
+        "in_progress",
+        ProcessingEvent(
+            kind="audio_unavailable", failure_cause=cause, audio_evidence=evidence
+        ),
+    )
+    assert result.successful is False
+    assert result.new_state == "in_progress"
+
+
 @settings(max_examples=40)
 @given(
     evidence=st.sampled_from(NONTERMINAL_AUDIO_EVIDENCE),

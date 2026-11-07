@@ -134,7 +134,7 @@ def apply_diarization_event(
             return DiarizationTransitionResult(successful=True, new_state="pending")
         return DiarizationTransitionResult(successful=False, new_state=current_state)
 
-    if current_state == "pending" and event_kind == "audio_unavailable":
+    if current_state in {"pending", "in_progress"} and event_kind == "audio_unavailable":
         if (
             failure_cause == "audio_unavailable"
             and audio_evidence in TERMINAL_AUDIO_EVIDENCE
