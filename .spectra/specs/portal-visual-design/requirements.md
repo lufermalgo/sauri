@@ -119,14 +119,14 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 
 **Historia de Usuario:** Como usuario, quiero entender si mi archivo se está transfiriendo, cuándo terminó la carga y cómo recuperarme de un fallo, para distinguir una transferencia de un procesamiento terminado y poder reintentar.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §4.D.3–5, §5, §6 y §7.12–13; la referencia `design/stitch/README.md` §4b no puede ampliar esos límites.
+**Trazabilidad:** `PRODUCT_BASELINE.md` §4.D.3–5, §5, §6 y §7.12–13; decisión de Fer para #555 (2026-11-07) de ocultar «Copiar diagnóstico» en errores de carga manual mientras se revisa qué datos podría incluir; la referencia `design/stitch/README.md` §4b no puede ampliar esos límites.
 
 #### Criterios de Aceptación
 
 1. WHILE the file is being transferred, THE portal SHALL show a progress bar reflecting upload progress.
 2. WHEN Finalizacion_De_Carga occurs, THE portal SHALL NOT present it as proof that transcription or other processing has completed.
 3. WHEN the upload finishes, THE portal SHALL provide a link to the resulting meeting or open that meeting; its initial title SHALL default to the selected filename.
-4. IF the upload fails, THEN THE portal SHALL explain the problem in clear language, offer «Reintentar» and «Copiar diagnóstico», and retain the selected file for retry.
+4. IF the upload fails, THEN THE portal SHALL explain the problem in clear language, offer «Reintentar», and retain the selected file for retry; it SHALL NOT offer «Copiar diagnóstico» in manual-upload error states while diagnostic contents are under review.
 5. WHEN diagnostic content is copied, THE copied diagnostics SHALL NOT contain secrets or transcript content.
 6. THE requirements SHALL NOT specify other diagnostic fields, unrelated personal or meeting data, upload-survival/retry guarantees after closing the tab or a network interruption, processing progress/timing, or invented speed/quality claims.
 
