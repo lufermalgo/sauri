@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import time
+from contextlib import suppress
+from typing import Any
 
 import boto3
 from botocore.config import Config
@@ -75,6 +78,66 @@ class S3ObjectStore(ObjectStore):
         )
         body: bytes = response["Body"].read()
         return body
+
+    async def get_bounded(
+        self,
+        reference: str,
+        max_bytes: int,
+        deadline_monotonic: float,
+    ) -> bytes:
+        """Fetch an object only when its declared and actual sizes fit the cap."""
+        if max_bytes < 0 or deadline_monotonic <= time.monotonic():
+            raise ValueError("bounded object read unavailable")
+        body: Any = None
+        try:
+            remaining = deadline_monotonic - time.monotonic()
+            async with asyncio.timeout(remaining):
+                response: dict[str, Any] = await asyncio.to_thread(
+                    functools.partial(
+                        self._client.get_object,
+                        Bucket=self._bucket,
+                        Key=reference,
+                    )
+                )
+            content_length = response.get("ContentLength")
+            body = response.get("Body")
+            if (
+                not isinstance(content_length, int)
+                or isinstance(content_length, bool)
+                or content_length < 0
+                or content_length > max_bytes
+                or body is None
+            ):
+                raise ValueError("bounded object read unavailable")
+
+            chunks: list[bytes] = []
+            total = 0
+            while total < max_bytes + 1:
+                remaining = deadline_monotonic - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("bounded object read deadline expired")
+                size = max_bytes + 1 - total
+                async with asyncio.timeout(remaining):
+                    chunk = await asyncio.to_thread(body.read, size)
+                if not isinstance(chunk, bytes):
+                    raise ValueError("bounded object read unavailable")
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("bounded object read unavailable")
+            if total != content_length:
+                raise ValueError("bounded object read unavailable")
+            return b"".join(chunks)
+        except TimeoutError:
+            raise
+        except Exception as error:
+            raise OSError("bounded object read unavailable") from error
+        finally:
+            if body is not None:
+                with suppress(Exception):
+                    await asyncio.to_thread(body.close)
 
     async def delete(self, reference: str) -> None:
         """Deletes an object from the bucket."""

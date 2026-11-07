@@ -31,6 +31,19 @@ class ObjectStore(ABC):
         """Retrieves the content of a stored object."""
         ...
 
+    async def get_bounded(
+        self,
+        reference: str,
+        max_bytes: int,
+        deadline_monotonic: float,
+    ) -> bytes:
+        """Read at most ``max_bytes`` plus one rejection sentinel byte.
+
+        Stores that cannot enforce a bounded read must fail closed; callers must
+        never fall back to :meth:`get` for security-sensitive bounded media.
+        """
+        raise NotImplementedError("bounded reads are not supported by this object store")
+
     @abstractmethod
     async def delete(self, reference: str) -> None:
         """Deletes an object from the store."""

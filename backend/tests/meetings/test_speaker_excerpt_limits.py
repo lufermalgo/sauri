@@ -10,9 +10,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 import signal
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -40,7 +42,12 @@ def keyring() -> ExcerptKeyring:
     return ExcerptKeyring(active_key_id="test", keys={"test": b"k" * 32})
 
 
-def service(*, decode_interval=None, read_interval=None, **kwargs):
+def service(
+    *,
+    decode_interval: Callable[..., Any] | None = None,
+    read_interval: Callable[..., Any] | None = None,
+    **kwargs: Any,
+) -> SpeakerExcerptService:
     keyring = kwargs.pop(
         "keyring", ExcerptKeyring(active_key_id="test", keys={"test": b"k" * 32})
     )
@@ -57,7 +64,7 @@ async def derive(
     *,
     duration_ms: int | None,
     candidates: list[Candidate],
-):
+) -> Any:
     result = excerpt_service.derive(
         recording_id="recording-1",
         revision_id=1,
@@ -75,7 +82,7 @@ async def play(
     recording_id: str,
     revision_id: int,
     review_item: Any,
-):
+) -> bytes:
     result = excerpt_service.play(
         recording_id=recording_id,
         revision_id=revision_id,
@@ -84,15 +91,20 @@ async def play(
     return await result if inspect.isawaitable(result) else result
 
 
-def bounded_read(store: S3ObjectStore, *, max_bytes: int, deadline_monotonic: float):
+def bounded_read(
+    store: S3ObjectStore, *, max_bytes: int, deadline_monotonic: float
+) -> Awaitable[bytes]:
     method = getattr(store, "get_bounded", None)
     assert callable(method), (
         "the bounded-read behavior requires get_bounded(reference, max_bytes, deadline_monotonic)"
     )
-    return method(
-        "synthetic/object",
-        max_bytes=max_bytes,
-        deadline_monotonic=deadline_monotonic,
+    return cast(
+        Awaitable[bytes],
+        method(
+            "synthetic/object",
+            max_bytes=max_bytes,
+            deadline_monotonic=deadline_monotonic,
+        ),
     )
 
 
@@ -156,7 +168,7 @@ async def test_exact_source_limit_reads_one_sentinel_and_closes_body(
     result = await bounded_read(
         object_store,
         max_bytes=MAX_SOURCE_BYTES,
-        deadline_monotonic=10_000.0,
+        deadline_monotonic=time.monotonic() + 60.0,
     )
 
     assert len(result) == MAX_SOURCE_BYTES
@@ -192,7 +204,7 @@ async def test_unknown_oversized_or_divergent_source_is_rejected_without_partial
         await bounded_read(
             object_store,
             max_bytes=MAX_SOURCE_BYTES,
-            deadline_monotonic=10_000.0,
+            deadline_monotonic=time.monotonic() + 60.0,
         )
 
     assert body.closed
@@ -226,7 +238,7 @@ async def test_body_closes_when_bounded_read_fails(object_store: S3ObjectStore) 
         await bounded_read(
             object_store,
             max_bytes=10,
-            deadline_monotonic=10_000.0,
+            deadline_monotonic=time.monotonic() + 60.0,
         )
 
     assert body.closed
@@ -350,7 +362,7 @@ async def test_one_nonblocking_two_permit_limit_is_shared_by_derive_and_play(
 ) -> None:
     assert inspect.iscoroutinefunction(SpeakerExcerptService.derive)
     assert inspect.iscoroutinefunction(SpeakerExcerptService.play)
-    entered = asyncio.Queue()
+    entered: asyncio.Queue[str] = asyncio.Queue()
     release = asyncio.Event()
 
     async def blocking_decode(*_args: Any, **_kwargs: Any) -> bytes:
@@ -492,6 +504,7 @@ async def test_unconfirmed_exit_holds_operation_and_rejects_new_work_until_reape
             await reap_confirmed.wait()
             process_events.append("reap_confirmed")
             raise
+        raise AssertionError("synthetic decoder unexpectedly completed")
 
     excerpt_service = service(decode_interval=unconfirmed_decoder, keyring=keyring)
     operation = asyncio.create_task(
@@ -660,11 +673,11 @@ async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
         **_kwargs: Any,
     ) -> bytes:
         if start_ms == 0:
-            return await managed_decoder.run(
+            return cast(bytes, await managed_decoder.run(
                 ("synthetic-decoder",),
                 input_bytes=b"synthetic-source",
                 deadline_monotonic=0.01,
-            )
+            ))
         second_request_entered.set()
         await release_second_request.wait()
         return b"synthetic-complete-output"

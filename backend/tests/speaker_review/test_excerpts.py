@@ -73,14 +73,14 @@ def _candidates() -> list[Candidate]:
     ]
 
 
-def _derive(
+async def _derive(
     service: SpeakerExcerptService,
     *,
     candidates: list[Candidate] | None = None,
     audio_duration_ms: int = 10_000,
     object_key: str = "private-bucket/private-recording.wav",
 ) -> Any:
-    return service.derive(
+    return await service.derive(
         recording_id="recording-a",
         revision_id=7,
         speaker_id="speaker-a",
@@ -90,7 +90,8 @@ def _derive(
     )
 
 
-def test_candidate_selection_uses_duration_then_vad_then_earliest_start() -> None:
+@pytest.mark.asyncio
+async def test_candidate_selection_uses_duration_then_vad_then_earliest_start() -> None:
     """Longest candidates win; equal durations use VAD ratio, then earliest start."""
     media = FakeMedia(
         {
@@ -101,7 +102,7 @@ def test_candidate_selection_uses_duration_then_vad_then_earliest_start() -> Non
         }
     )
 
-    excerpt = _derive(_service(media))
+    excerpt = await _derive(_service(media))
 
     assert (excerpt.start_ms, excerpt.end_ms) == (4_000, 5_500)
     assert media.decode_calls == [
@@ -109,7 +110,8 @@ def test_candidate_selection_uses_duration_then_vad_then_earliest_start() -> Non
     ]
 
 
-def test_invalid_candidates_are_rejected_before_excerpt_is_ready() -> None:
+@pytest.mark.asyncio
+async def test_invalid_candidates_are_rejected_before_excerpt_is_ready() -> None:
     """Bounds, decode, speech activity and speaker assignment are all validated."""
     candidates = [
         Candidate(-1, 1_000),  # starts before the recording
@@ -121,7 +123,7 @@ def test_invalid_candidates_are_rejected_before_excerpt_is_ready() -> None:
     ]
     media = FakeMedia({(6_000, 7_500): b"valid-speech"})
 
-    excerpt = _derive(_service(media), candidates=candidates)
+    excerpt = await _derive(_service(media), candidates=candidates)
 
     assert (excerpt.start_ms, excerpt.end_ms) == (6_000, 7_500)
     assert media.decode_calls == [
@@ -130,7 +132,8 @@ def test_invalid_candidates_are_rejected_before_excerpt_is_ready() -> None:
     ]
 
 
-def test_revision_is_not_ready_when_no_candidate_passes_validation() -> None:
+@pytest.mark.asyncio
+async def test_revision_is_not_ready_when_no_candidate_passes_validation() -> None:
     """No review excerpt may be created from empty or wholly invalid candidates."""
     media = FakeMedia()
     candidates = [
@@ -138,16 +141,17 @@ def test_revision_is_not_ready_when_no_candidate_passes_validation() -> None:
         Candidate(1_000, 2_000, vad_positive_windows=0),
     ]
 
-    with pytest.raises(ValueError, match="no validated speaker excerpt"):
-        _derive(_service(media), candidates=candidates)
+    with pytest.raises(ValueError, match="speaker excerpt unavailable"):
+        await _derive(_service(media), candidates=candidates)
 
 
-def test_excerpt_reference_is_opaque_and_bound_to_recording_revision_and_speaker() -> None:
+@pytest.mark.asyncio
+async def test_excerpt_reference_is_opaque_and_bound_to_recording_revision_and_speaker() -> None:
     """A public ref must not disclose its locator or resolve across scope boundaries."""
     media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
     service = _service(media)
     private_key = "private-bucket/private-recording.wav"
-    excerpt = _derive(service, object_key=private_key)
+    excerpt = await _derive(service, object_key=private_key)
 
     assert isinstance(excerpt.reference, str)
     assert excerpt.reference
@@ -163,16 +167,22 @@ def test_excerpt_reference_is_opaque_and_bound_to_recording_revision_and_speaker
         revision_id=7,
         speaker_id="speaker-a",
     ) == (private_key, excerpt.start_ms, excerpt.end_ms)
-    for scope in (
-        {"recording_id": "recording-b", "revision_id": 7, "speaker_id": "speaker-a"},
-        {"recording_id": "recording-a", "revision_id": 8, "speaker_id": "speaker-a"},
-        {"recording_id": "recording-a", "revision_id": 7, "speaker_id": "speaker-b"},
+    for recording_id, revision_id, speaker_id in (
+        ("recording-b", 7, "speaker-a"),
+        ("recording-a", 8, "speaker-a"),
+        ("recording-a", 7, "speaker-b"),
     ):
         with pytest.raises(LookupError):
-            service.resolve(excerpt.reference, **scope)
+            service.resolve(
+                excerpt.reference,
+                recording_id=recording_id,
+                revision_id=revision_id,
+                speaker_id=speaker_id,
+            )
 
 
-def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
+@pytest.mark.asyncio
+async def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
     """The actual playback call leaves its pending review model unchanged on read failure."""
     from datetime import UTC, datetime
 
@@ -181,7 +191,7 @@ def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
     media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
     media.fail_read = True
     service = _service(media)
-    excerpt = _derive(service)
+    excerpt = await _derive(service)
     review = SpeakerReview(
         id="review-a",
         meeting_id="recording-a",
@@ -203,8 +213,8 @@ def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
 
     service.persist(excerpt, review_item=item)
 
-    with pytest.raises(OSError, match="synthetic playback failure"):
-        service.play(
+    with pytest.raises(ValueError, match="speaker excerpt unavailable"):
+        await service.play(
             recording_id="recording-a",
             revision_id=7,
             review_item=item,
@@ -218,11 +228,12 @@ def test_playback_failure_does_not_substitute_or_complete_review_item() -> None:
     assert review_status({item.speaker_key: item.disposition}) == "pending"
 
 
-def test_excerpt_reference_is_persisted_and_playback_uses_only_the_item_reference() -> None:
+@pytest.mark.asyncio
+async def test_excerpt_reference_is_persisted_and_playback_uses_only_the_item_reference() -> None:
     """Playback must select the persisted opaque ref on its authorized review item."""
     media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
     service = _service(media)
-    excerpt = _derive(service)
+    excerpt = await _derive(service)
     review = SpeakerReview(
         id="review-a",
         meeting_id="recording-a",
@@ -247,8 +258,9 @@ def test_excerpt_reference_is_persisted_and_playback_uses_only_the_item_referenc
     service.persist(excerpt, review_item=item)
 
     assert item.excerpt_ref == excerpt.reference
+    assert item.excerpt_ref is not None
     assert "private-bucket/private-recording.wav" not in item.excerpt_ref
-    assert service.play(
+    assert await service.play(
         recording_id="recording-a",
         revision_id=7,
         review_item=item,
@@ -258,11 +270,12 @@ def test_excerpt_reference_is_persisted_and_playback_uses_only_the_item_referenc
     ]
 
 
-def test_playback_rejects_a_review_item_from_a_different_recording_or_revision() -> None:
+@pytest.mark.asyncio
+async def test_playback_rejects_a_review_item_from_a_different_recording_or_revision() -> None:
     """An item's persisted reference cannot be replayed under caller-selected scope."""
     media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
     service = _service(media)
-    excerpt = _derive(service)
+    excerpt = await _derive(service)
     review = SpeakerReview(
         id="review-a",
         meeting_id="recording-a",
@@ -284,7 +297,7 @@ def test_playback_rejects_a_review_item_from_a_different_recording_or_revision()
     review.items.append(item)
 
     with pytest.raises(LookupError, match="outside the requested scope"):
-        service.play(recording_id="recording-b", revision_id=7, review_item=item)
+        await service.play(recording_id="recording-b", revision_id=7, review_item=item)
 
     assert media.read_calls == []
 
@@ -298,7 +311,8 @@ def test_excerpt_keys_are_required_outside_the_jwt_secret(monkeypatch: pytest.Mo
         SpeakerExcerptService(decode_interval=lambda *_: b"", read_interval=lambda *_: b"")
 
 
-def test_versioned_excerpt_keyring_can_rotate_while_resolving_existing_refs(
+@pytest.mark.asyncio
+async def test_versioned_excerpt_keyring_can_rotate_while_resolving_existing_refs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Retaining a prior key ID permits old references after the active key rotates."""
@@ -306,7 +320,7 @@ def test_versioned_excerpt_keyring_can_rotate_while_resolving_existing_refs(
     monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", f"key-v1:{_encoded_test_key(1)}")
     monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "key-v1")
     before_rotation = SpeakerExcerptService(decode_interval=media.decode, read_interval=media.read)
-    excerpt = _derive(before_rotation)
+    excerpt = await _derive(before_rotation)
 
     monkeypatch.setenv(
         "SPEAKER_EXCERPT_KEYRING",

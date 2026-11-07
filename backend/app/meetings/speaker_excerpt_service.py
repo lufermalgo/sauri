@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
+import inspect
 import json
 import os
 import re
 import secrets
-from collections.abc import Mapping
+import signal
+import time
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -20,11 +25,20 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 class ExcerptCandidate(Protocol):
     """A diarization interval with its speaker assignment and VAD evidence."""
 
-    start_ms: int
-    end_ms: int
-    vad_positive_windows: int
-    vad_window_count: int
-    assigned_speaker_id: str
+    @property
+    def start_ms(self) -> int: ...
+
+    @property
+    def end_ms(self) -> int: ...
+
+    @property
+    def vad_positive_windows(self) -> int: ...
+
+    @property
+    def vad_window_count(self) -> int: ...
+
+    @property
+    def assigned_speaker_id(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -92,6 +106,78 @@ class SpeakerExcerpt:
         return {"start_ms": self.start_ms, "end_ms": self.end_ms, "reference": self.reference}
 
 
+async def _spawn_decoder_process(
+    *command: str, start_new_session: bool
+) -> asyncio.subprocess.Process:
+    return await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        start_new_session=start_new_session,
+    )
+
+
+_PROCESS_PERMITS = asyncio.Semaphore(2)
+_UNCONFIRMED_DECODERS = 0
+
+
+class ManagedDecoderProcess:
+    """Run a decoder in a dedicated process group and reap it on all paths."""
+
+    def __init__(
+        self,
+        *,
+        spawn_process: Callable[..., Awaitable[Any]] = _spawn_decoder_process,
+        kill_process_group: Callable[[int, signal.Signals], None] = os.killpg,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._spawn_process = spawn_process
+        self._kill_process_group = kill_process_group
+        self._monotonic = monotonic
+
+    async def run(
+        self,
+        command: tuple[str, ...],
+        *,
+        input_bytes: bytes,
+        deadline_monotonic: float,
+    ) -> bytes:
+        """Return complete stdout only after the child exits successfully."""
+        if not command or self._monotonic() >= deadline_monotonic:
+            raise ValueError("speaker excerpt unavailable")
+        process = await self._spawn_process(*command, start_new_session=True)
+        communication = asyncio.create_task(process.communicate(input=input_bytes))
+        try:
+            remaining = deadline_monotonic - self._monotonic()
+            if remaining <= 0:
+                raise TimeoutError
+            stdout, _stderr = await asyncio.wait_for(communication, timeout=remaining)
+            return_code = await asyncio.wait_for(
+                process.wait(), timeout=max(0.0, deadline_monotonic - self._monotonic())
+            )
+            if return_code != 0 or self._monotonic() > deadline_monotonic:
+                raise ValueError("speaker excerpt unavailable")
+            return cast(bytes, stdout)
+        except BaseException as error:
+            if getattr(process, "returncode", None) is None:
+                global _UNCONFIRMED_DECODERS
+                _UNCONFIRMED_DECODERS += 1
+                communication.cancel()
+                try:
+                    self._kill_process_group(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except OSError:
+                    # A failed kill is not evidence of exit; wait remains fail-closed.
+                    pass
+                await process.wait()
+                _UNCONFIRMED_DECODERS -= 1
+            if isinstance(error, asyncio.CancelledError):
+                raise
+            raise ValueError("speaker excerpt unavailable") from None
+
+
 class SpeakerExcerptService:
     """Select validated intervals and encrypt their private source locator.
 
@@ -100,73 +186,180 @@ class SpeakerExcerptService:
     callers must still authorize recording access before invoking ``play``.
     """
 
-    def __init__(self, *, decode_interval, read_interval, keyring: ExcerptKeyring | None = None) -> None:
+    MAX_SOURCE_BYTES = 20 * 1024 * 1024
+    MAX_AUDIO_DURATION_MS = 30_000
+    MAX_EXCERPT_DURATION_MS = 10_000
+    MAX_OPERATION_SECONDS = 60.0
+
+    def __init__(
+        self,
+        *,
+        decode_interval: Callable[..., Any],
+        read_interval: Callable[..., Any],
+        keyring: ExcerptKeyring | None = None,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._decode_interval = decode_interval
         self._read_interval = read_interval
         self._keyring = keyring or ExcerptKeyring.from_environment()
+        self._monotonic = monotonic
+        self._unhealthy = False
+        self._active_operations = 0
+        self._unconfirmed_retry_used = False
 
-    def derive(
+    async def _acquire(self) -> float:
+        if _UNCONFIRMED_DECODERS == 0:
+            self._unconfirmed_retry_used = False
+        if _UNCONFIRMED_DECODERS > 0 and self._active_operations == 1:
+            if self._unconfirmed_retry_used:
+                raise ValueError("speaker excerpt unavailable")
+            self._unconfirmed_retry_used = True
+        elif (self._unhealthy or _UNCONFIRMED_DECODERS > 0) and self._active_operations > 1:
+            raise ValueError("speaker excerpt unavailable")
+        if _PROCESS_PERMITS.locked():
+            raise ValueError("speaker excerpt unavailable")
+        await _PROCESS_PERMITS.acquire()
+        self._active_operations += 1
+        return self._monotonic() + self.MAX_OPERATION_SECONDS
+
+    async def _invoke(
+        self, callback: Callable[..., Any], *args: Any, deadline_monotonic: float
+    ) -> Any:
+        remaining = deadline_monotonic - self._monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        try:
+            parameters = inspect.signature(callback).parameters.values()
+            accepts_deadline = any(
+                parameter.name == "deadline_monotonic"
+                or parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters
+            )
+        except (TypeError, ValueError):
+            accepts_deadline = False
+        call = (
+            callback(*args, deadline_monotonic=deadline_monotonic)
+            if accepts_deadline
+            else callback(*args)
+        )
+        if inspect.isawaitable(call):
+            remaining = deadline_monotonic - self._monotonic()
+            if remaining <= 0:
+                if inspect.iscoroutine(call):
+                    call.close()
+                raise TimeoutError
+            task = asyncio.ensure_future(call)
+            try:
+                done, _pending = await asyncio.wait({task}, timeout=remaining)
+            except asyncio.CancelledError:
+                self._unhealthy = True
+                task.cancel()
+                with suppress(BaseException):
+                    await task
+                self._unhealthy = False
+                raise
+            if not done:
+                self._unhealthy = True
+                task.cancel()
+                with suppress(BaseException):
+                    await task
+                self._unhealthy = False
+                raise TimeoutError
+            return task.result()
+        return call
+
+    async def derive(
         self,
         *,
         recording_id: str,
         revision_id: int,
         speaker_id: str,
         object_key: str,
-        audio_duration_ms: int,
-        candidates: list[ExcerptCandidate],
+        audio_duration_ms: int | None,
+        candidates: Sequence[ExcerptCandidate],
     ) -> SpeakerExcerpt:
         """Return the highest-ranked candidate that passes all validations."""
-        if audio_duration_ms <= 0 or not all((recording_id, revision_id, speaker_id, object_key)):
-            raise ValueError("recording, revision, speaker and duration are required")
+        if (
+            not isinstance(audio_duration_ms, int)
+            or isinstance(audio_duration_ms, bool)
+            or not 0 < audio_duration_ms <= self.MAX_AUDIO_DURATION_MS
+            or not all((recording_id, revision_id, speaker_id, object_key))
+        ):
+            raise ValueError("speaker excerpt unavailable")
 
-        ordered = sorted(
-            candidates,
-            key=lambda candidate: (
-                -(candidate.end_ms - candidate.start_ms),
-                -(candidate.vad_positive_windows / candidate.vad_window_count)
-                if candidate.vad_window_count > 0
-                else 0,
-                candidate.start_ms,
-            ),
-        )
-        for candidate in ordered:
-            if (
-                candidate.assigned_speaker_id != speaker_id
-                or candidate.start_ms < 0
-                or candidate.end_ms <= candidate.start_ms
-                or candidate.end_ms > audio_duration_ms
-                or candidate.vad_window_count <= 0
-                or candidate.vad_positive_windows <= 0
-                or candidate.vad_positive_windows > candidate.vad_window_count
-            ):
-                continue
-            try:
-                decoded = self._decode_interval(object_key, candidate.start_ms, candidate.end_ms)
-            except (ValueError, OSError):
-                continue
-            if not decoded:
-                continue
-            payload = json.dumps(
-                {
-                    "recording_id": recording_id,
-                    "revision_id": revision_id,
-                    "speaker_id": speaker_id,
-                    "object_key": object_key,
-                    "start_ms": candidate.start_ms,
-                    "end_ms": candidate.end_ms,
-                },
-                separators=(",", ":"),
-                sort_keys=True,
-            ).encode("utf-8")
-            nonce = secrets.token_bytes(12)
-            key_id = self._keyring.active_key_id
-            associated_data = f"sauri-speaker-excerpt:v1:{key_id}".encode("ascii")
-            ciphertext = AESGCM(self._keyring.keys[key_id]).encrypt(nonce, payload, associated_data)
-            token = base64.urlsafe_b64encode(nonce + ciphertext).decode("ascii").rstrip("=")
-            reference = f"v1.{key_id}.{token}"
-            return SpeakerExcerpt(candidate.start_ms, candidate.end_ms, reference)
-
-        raise ValueError("no validated speaker excerpt")
+        deadline = await self._acquire()
+        try:
+            ordered = sorted(
+                candidates,
+                key=lambda candidate: (
+                    -(candidate.end_ms - candidate.start_ms),
+                    -(candidate.vad_positive_windows / candidate.vad_window_count)
+                    if candidate.vad_window_count > 0
+                    else 0,
+                    candidate.start_ms,
+                ),
+            )
+            for candidate in ordered:
+                if (
+                    candidate.assigned_speaker_id != speaker_id
+                    or candidate.start_ms < 0
+                    or candidate.end_ms <= candidate.start_ms
+                    or candidate.end_ms - candidate.start_ms > self.MAX_EXCERPT_DURATION_MS
+                    or candidate.end_ms > audio_duration_ms
+                    or candidate.vad_window_count <= 0
+                    or candidate.vad_positive_windows <= 0
+                    or candidate.vad_positive_windows > candidate.vad_window_count
+                ):
+                    continue
+                if self._monotonic() >= deadline:
+                    raise TimeoutError("speaker excerpt unavailable")
+                try:
+                    decoded = await self._invoke(
+                        self._decode_interval,
+                        object_key,
+                        candidate.start_ms,
+                        candidate.end_ms,
+                        deadline_monotonic=deadline,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    continue
+                if not decoded:
+                    continue
+                if self._monotonic() >= deadline:
+                    raise TimeoutError("speaker excerpt unavailable")
+                payload = json.dumps(
+                    {
+                        "recording_id": recording_id,
+                        "revision_id": revision_id,
+                        "speaker_id": speaker_id,
+                        "object_key": object_key,
+                        "start_ms": candidate.start_ms,
+                        "end_ms": candidate.end_ms,
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+                nonce = secrets.token_bytes(12)
+                key_id = self._keyring.active_key_id
+                associated_data = f"sauri-speaker-excerpt:v1:{key_id}".encode("ascii")
+                ciphertext = AESGCM(self._keyring.keys[key_id]).encrypt(
+                    nonce, payload, associated_data
+                )
+                token = base64.urlsafe_b64encode(nonce + ciphertext).decode("ascii").rstrip("=")
+                reference = f"v1.{key_id}.{token}"
+                return SpeakerExcerpt(candidate.start_ms, candidate.end_ms, reference)
+            raise ValueError("speaker excerpt unavailable")
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            if isinstance(error, TimeoutError):
+                raise ValueError("speaker excerpt unavailable") from None
+            raise
+        finally:
+            self._active_operations -= 1
+            _PROCESS_PERMITS.release()
 
     def resolve(
         self,
@@ -214,7 +407,7 @@ class SpeakerExcerptService:
             raise LookupError("invalid excerpt reference")
         return object_key, start_ms, end_ms
 
-    def persist(self, excerpt: SpeakerExcerpt, *, review_item) -> None:
+    def persist(self, excerpt: SpeakerExcerpt, *, review_item: Any) -> None:
         """Store a validated reference only on the matching speaker review item."""
         review = review_item.review
         self.resolve(
@@ -225,14 +418,14 @@ class SpeakerExcerptService:
         )
         review_item.excerpt_ref = excerpt.reference
 
-    def play(
+    async def play(
         self,
         *,
         recording_id: str,
         revision_id: int,
-        review_item,
+        review_item: Any,
     ) -> bytes:
-        """Read only the excerpt reference persisted on the authorized review item."""
+        """Read only a complete excerpt persisted on the authorized review item."""
         review = review_item.review
         if (
             review.meeting_id != recording_id
@@ -246,4 +439,24 @@ class SpeakerExcerptService:
             revision_id=revision_id,
             speaker_id=review_item.speaker_key,
         )
-        return self._read_interval(object_key, start_ms, end_ms)
+        if start_ms < 0 or end_ms <= start_ms or end_ms - start_ms > self.MAX_EXCERPT_DURATION_MS:
+            raise ValueError("speaker excerpt unavailable")
+        deadline = await self._acquire()
+        try:
+            result = await self._invoke(
+                self._read_interval,
+                object_key,
+                start_ms,
+                end_ms,
+                deadline_monotonic=deadline,
+            )
+            if not isinstance(result, bytes) or not result or self._monotonic() >= deadline:
+                raise ValueError("speaker excerpt unavailable")
+            return result
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            raise ValueError("speaker excerpt unavailable") from None
+        finally:
+            self._active_operations -= 1
+            _PROCESS_PERMITS.release()
