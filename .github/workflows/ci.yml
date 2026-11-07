@@ -9,11 +9,12 @@
 #   - Promote a step back to blocking by removing its `continue-on-error` line in
 #     the same commit that makes that scope green.
 #
-# Known-red scopes and their tracking issues (measured on origin/main @ 81a0932,
-# 2026-10-21, in the exact CI runtime: Python 3.11.17, ruff 0.17.1, mypy 2.4.0,
-# pytest 9.1.1, Node 20.20.2, npm 10.8.2):
-#   backend ruff        -> #228  (lint baseline debt on main: 26 findings)
-#   backend mypy        -> #228  (type baseline debt on main: 24 errors in 7 files)
+# Known-red scopes and their tracking issues (measured on origin/main @ 58abc1e,
+# 2026-10-21, in the hosted CI runtime: Python 3.11.17, ruff 0.17.1, mypy 2.4.0,
+# pytest 9.1.1, Node 20.20.2, npm 10.8.2; hosted run 39686916157):
+#   backend ruff        -> #228  (lint baseline debt on main: 16 errors, 7 fixable)
+#   backend mypy        -> #228  (type baseline debt on main: 24 errors in 7 files;
+#                          137 source files checked)
 #   backend pytest      -> #248  (collection error: app.transcription.processing_pipeline
 #                          is the module T-6/T-15 still has to create; the RED test
 #                          that imports it is already on main)
@@ -27,12 +28,16 @@
 #   frontend tsc        -> #304  (Transcript.segments contract in @sauri/shared-types)
 #                          #189  (frontend test environment readiness)
 #
-# Totals measured in that runtime: ruff 26 findings; mypy 24 errors in 7 files;
-# pytest 4 failed, 283 passed, 4 skipped, 1 collection error; frontend vitest
-# 10 failed, 21 passed; frontend tsc 6 errors. The Hypothesis deadline flakes
-# seen on a slower local 3.13 virtualenv do not reproduce in the CI runtime, so
-# they are not listed as a known-red scope. The counts move as the tool versions
-# and `main` move; the issue references are the contract, not the counts.
+# Current measurements, all read from hosted run 39686916157 on main @ 58abc1e:
+# ruff 16 errors (7 fixable, 1 unsafe fix); mypy 24 errors in 7 files (137 source
+# files checked); backend pytest 4 failed, 283 passed, 4 skipped, 1 error; frontend
+# vitest 10 failed, 21 passed; frontend tsc 6 errors. The four backend pytest
+# failures are the playback storage integration test (#505), the speaker-review PUT
+# schema test (#249/#250/#241) and the two Alembic 009 lineage tests
+# (#407/#491/#492/#493); the collection error is #248.
+#
+# The counts move as the tool versions and `main` move; issue references are the
+# contract, not the counts.
 #
 # `npm audit --omit=dev` reports 0 vulnerabilities; the advisories `npm ci`
 # prints are all in development dependencies.
@@ -56,6 +61,11 @@ jobs:
   backend:
     name: Backend lint and tests
     runs-on: ubuntu-latest
+    env:
+      OBJECT_STORE_ENDPOINT: http://127.0.0.1:9000
+      OBJECT_STORE_BUCKET: sauri-playback-${{ github.run_id }}
+      MINIO_ROOT_USER: sauri-ci-${{ github.run_id }}
+      PLAYBACK_TEST_FRONTEND_ORIGIN: http://localhost:5173
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -67,6 +77,61 @@ jobs:
           python-version: "3.11"
       - name: Install backend dependencies
         run: python -m pip install -e "./backend[dev]"
+      - name: Generate disposable object-store password
+        run: |
+          MINIO_ROOT_PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$MINIO_ROOT_PASSWORD"
+          echo "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" >> "$GITHUB_ENV"
+      - name: Start disposable S3-compatible object store
+        run: >-
+          docker run --detach --name sauri-ci-object-store --publish 127.0.0.1:9000:9000
+          --env MINIO_ROOT_USER
+          --env MINIO_ROOT_PASSWORD
+          rustfs/rustfs@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
+      - name: Wait for object store and configure the disposable bucket
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$OBJECT_STORE_ENDPOINT/minio/health/ready"; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "S3-compatible object store did not become ready" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          python - <<'PY'
+          import os
+
+          import boto3
+          from botocore.config import Config
+
+          client = boto3.client(
+              "s3",
+              endpoint_url=os.environ["OBJECT_STORE_ENDPOINT"],
+              aws_access_key_id=os.environ["MINIO_ROOT_USER"],
+              aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
+              config=Config(signature_version="s3v4"),
+          )
+          bucket = os.environ["OBJECT_STORE_BUCKET"]
+          client.create_bucket(Bucket=bucket)
+          client.put_bucket_cors(
+              Bucket=bucket,
+              CORSConfiguration={
+                  "CORSRules": [
+                      {
+                          "AllowedHeaders": ["range"],
+                          "AllowedMethods": ["GET"],
+                          "AllowedOrigins": [
+                              os.environ["PLAYBACK_TEST_FRONTEND_ORIGIN"]
+                          ],
+                          "ExposeHeaders": ["Content-Range", "Accept-Ranges"],
+                          "MaxAgeSeconds": 300,
+                      }
+                  ]
+              },
+          )
+          PY
       - name: "Backend lint (ruff) - non-blocking, tracked by #228"
         working-directory: backend
         continue-on-error: true
@@ -75,6 +140,12 @@ jobs:
         working-directory: backend
         continue-on-error: true
         run: mypy .
+      - name: "Live MinIO playback test (pytest) - issue #505"
+        working-directory: backend
+        run: >-
+          pytest
+          tests/meetings/test_playback_storage_integration.py::test_signed_playback_source_supports_range_and_frontend_cors
+          -q
       - name: "Backend tests (pytest) - non-blocking, tracked by #248"
         working-directory: backend
         continue-on-error: true
