@@ -109,23 +109,56 @@ def _calculate_overlap(turn: Turn, segment: SpeakerSegment) -> int:
     turns=turns_strategy,
     segments=segments_strategy,
 )
-def test_property_9_exactly_one_assignment_per_turn(
+def test_property_9_only_positive_maximum_overlap_is_assigned(
     turns: list[Turn],
     segments: list[SpeakerSegment],
 ) -> None:
-    """The assigner produces exactly one assignment per turn."""
+    """Assignments exist only for turns with positive maximum overlap and report it."""
     speakers = _create_speakers(segments)
     assume(len(speakers) >= 1)
+    turns = [
+        *turns,
+        Turn(
+            id="zero-overlap",
+            start_ms=100_001,
+            end_ms=100_002,
+            sequence=max(turn.sequence for turn in turns) + 1,
+        ),
+    ]
 
     result = assign_turns(turns, segments, speakers)
+    expected: dict[str, tuple[Speaker, int]] = {}
 
-    assert len(result) == len(turns), (
-        f"Expected {len(turns)} assignments, got {len(result)}"
+    for turn in turns:
+        overlaps = {
+            speaker.raw_label: sum(
+                _calculate_overlap(turn, segment)
+                for segment in segments
+                if segment.raw_label == speaker.raw_label
+            )
+            for speaker in speakers
+        }
+        max_overlap = max(overlaps.values())
+        if max_overlap > 0:
+            winning_speakers = [
+                speaker
+                for speaker in speakers
+                if overlaps[speaker.raw_label] == max_overlap
+            ]
+            expected[turn.id] = (
+                min(winning_speakers, key=lambda speaker: speaker.sequence),
+                max_overlap,
+            )
+
+    assert [turn_id for turn_id, *_ in result] == list(expected), (
+        "Only turns with positive maximum overlap may be assigned"
     )
-    # Each element is a tuple (turn_id, speaker)
-    for turn_id, speaker in result:
-        assert isinstance(turn_id, str)
-        assert isinstance(speaker, Speaker)
+    for assignment in result:
+        assert len(assignment) == 3, "Assignments must include measured overlap_ms"
+        turn_id, speaker, overlap_ms = assignment
+        expected_speaker, expected_overlap = expected[turn_id]
+        assert speaker == expected_speaker
+        assert overlap_ms == expected_overlap
 
 
 @settings(max_examples=100)
@@ -142,28 +175,33 @@ def test_property_9_assignment_to_speaker_with_maximum_overlap(
     assume(len(speakers) >= 1)
 
     result = assign_turns(turns, segments, speakers)
+    assert all(len(assignment) == 3 for assignment in result), (
+        "Assignments must include measured overlap_ms"
+    )
+    assignments_by_turn = {
+        assignment[0]: (assignment[1], assignment[2]) for assignment in result
+    }
 
-    for turn, (turn_id, assigned_speaker) in zip(turns, result, strict=False):
-        assert turn_id == turn.id
-
-        # Compute accumulated overlap per speaker
-        overlaps: dict[str, int] = {}
-        for sp in speakers:
-            accumulated_overlap = sum(
-                _calculate_overlap(turn, seg)
-                for seg in segments
-                if seg.raw_label == sp.raw_label
+    for turn in turns:
+        overlaps = {
+            speaker.raw_label: sum(
+                _calculate_overlap(turn, segment)
+                for segment in segments
+                if segment.raw_label == speaker.raw_label
             )
-            overlaps[sp.raw_label] = accumulated_overlap
-
-        # Find the maximum overlap
+            for speaker in speakers
+        }
         max_overlap = max(overlaps.values())
 
-        # The assigned speaker must have the maximum overlap
-        assert overlaps[assigned_speaker.raw_label] == max_overlap, (
-            f"Turn {turn.id}: assigned speaker '{assigned_speaker.raw_label}' "
-            f"has overlap {overlaps[assigned_speaker.raw_label]} but the max is {max_overlap}"
-        )
+        if max_overlap == 0:
+            assert turn.id not in assignments_by_turn, (
+                f"Turn {turn.id} has no positive overlap but was assigned"
+            )
+            continue
+
+        assigned_speaker, reported_overlap = assignments_by_turn[turn.id]
+        assert overlaps[assigned_speaker.raw_label] == max_overlap
+        assert reported_overlap == max_overlap
 
 
 @settings(max_examples=100, suppress_health_check=[HealthCheck.filter_too_much])
@@ -180,34 +218,58 @@ def test_property_9_tie_break_by_lower_sequence(
     assume(len(speakers) >= 2)
 
     result = assign_turns(turns, segments, speakers)
+    assert all(len(assignment) == 3 for assignment in result), (
+        "Assignments must include measured overlap_ms"
+    )
+    assignments_by_turn = {assignment[0]: assignment[1] for assignment in result}
 
-    for turn, (_turn_id, assigned_speaker) in zip(turns, result, strict=False):
-        # Compute accumulated overlap per speaker
-        overlaps: dict[str, int] = {}
-        for sp in speakers:
-            accumulated_overlap = sum(
-                _calculate_overlap(turn, seg)
-                for seg in segments
-                if seg.raw_label == sp.raw_label
+    for turn in turns:
+        overlaps = {
+            speaker.raw_label: sum(
+                _calculate_overlap(turn, segment)
+                for segment in segments
+                if segment.raw_label == speaker.raw_label
             )
-            overlaps[sp.raw_label] = accumulated_overlap
-
+            for speaker in speakers
+        }
         max_overlap = max(overlaps.values())
+        if max_overlap == 0:
+            assert turn.id not in assignments_by_turn
+            continue
 
-        # Candidates with the same maximum overlap
         candidates = [
-            sp for sp in speakers
-            if overlaps[sp.raw_label] == max_overlap
+            speaker for speaker in speakers
+            if overlaps[speaker.raw_label] == max_overlap
         ]
-
         if len(candidates) > 1:
-            # On a tie, the one with the lowest sequence must win
-            lowest_sequence = min(c.sequence for c in candidates)
-            assert assigned_speaker.sequence == lowest_sequence, (
-                f"Turn {turn.id}: overlap tie ({max_overlap}ms) between "
-                f"{[c.label for c in candidates]}, expected sequence {lowest_sequence} "
-                f"but sequence {assigned_speaker.sequence} was assigned"
-            )
+            lowest_sequence = min(candidate.sequence for candidate in candidates)
+            assert assignments_by_turn[turn.id].sequence == lowest_sequence
+
+
+def test_property_9_positive_tie_uses_lowest_sequence_independent_of_input_order() -> None:
+    """A positive-overlap tie selects the lowest sequence even if listed second."""
+    turn = Turn(id="positive-tie", start_ms=100, end_ms=200, sequence=1)
+    segments = [
+        SpeakerSegment(raw_label="SPEAKER_00", start_ms=100, end_ms=200),
+        SpeakerSegment(raw_label="SPEAKER_01", start_ms=100, end_ms=200),
+    ]
+    lowest_sequence = Speaker(
+        raw_label="SPEAKER_00", label="Speaker 1", sequence=1
+    )
+    higher_sequence = Speaker(
+        raw_label="SPEAKER_01", label="Speaker 2", sequence=2
+    )
+
+    result = assign_turns([turn], segments, [higher_sequence, lowest_sequence])
+
+    assert result == [(turn.id, lowest_sequence, 100)]
+
+
+def test_property_9_no_evidence_returns_no_assignments() -> None:
+    """Turns without diarization segments or speakers remain unassigned."""
+    turn = Turn(id="no-evidence", start_ms=100, end_ms=200, sequence=1)
+
+    assert assign_turns([turn], [], []) == []
 
 
 # ---------------------------------------------------------------------------
