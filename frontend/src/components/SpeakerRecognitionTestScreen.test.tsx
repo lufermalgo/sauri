@@ -217,31 +217,30 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     expect(retry[1].idempotency_key).toBe(first[1].idempotency_key);
   });
 
-  it("shows why upload is blocked when duration is unavailable and copies only bounded diagnostics", async () => {
+  it("does not expose diagnostic copying for a selected recording", () => {
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn().mockReturnValue("blob:synthetic-recording"),
+      revokeObjectURL: vi.fn(),
+    });
+    render(<SpeakerRecognitionTestScreen />);
+    selectSyntheticAudio();
+
+    expect(screen.queryByRole("button", { name: /copy diagnostic/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^upload$/i })).toBeVisible();
+  });
+
+  it("shows why upload is blocked when duration is unavailable", async () => {
     const uploadRecording = vi.mocked(api.uploadRecording);
     const createObjectURL = vi.fn().mockReturnValue("blob:synthetic-recording");
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
 
     render(<SpeakerRecognitionTestScreen />);
-    const file = selectSyntheticAudio();
+    selectSyntheticAudio();
     fireLoadedMetadata(Number.NaN);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
     expect((await screen.findByRole("alert")).textContent).toMatch(/duration.*unavailable|metadata.*duration/i);
-    fireEvent.click(screen.getByRole("button", { name: /copy diagnostic/i }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-
-    const diagnostic = writeText.mock.calls[0][0];
-    expect(diagnostic).toContain(file.name);
-    expect(diagnostic).toContain(file.type);
-    expect(diagnostic).toContain(String(file.size));
-    expect(diagnostic).toMatch(/duration.*unavailable/i);
-    expect(diagnostic).toMatch(/request.*not sent/i);
-    expect(diagnostic).toMatch(/httpStatus.*not available/i);
-    expect(diagnostic).not.toContain("synthetic file content");
-    expect(diagnostic).not.toMatch(/token|authorization|bearer|secret/i);
     expect(uploadRecording).not.toHaveBeenCalled();
   });
 
