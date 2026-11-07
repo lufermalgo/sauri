@@ -163,10 +163,7 @@ async def test_late_s3_response_body_is_closed_after_deadline(object_store: S3Ob
             max_bytes=10,
             deadline_monotonic=started + 0.01,
         )
-
-    await asyncio.sleep(0.06)
-    assert body.closed, "a response arriving after timeout must be closed by its late-result reaper"
-    assert time.monotonic() - started < 0.1
+    assert body.closed, "a response arriving after timeout must be closed before releasing the operation"
 
 
 @pytest.fixture
@@ -426,6 +423,13 @@ async def test_sync_decoder_does_not_block_loop_or_release_permit_before_worker_
         await asyncio.wait_for(loop_responsive, timeout=0.08)
     except TimeoutError:
         loop_was_delayed = True
+    if not loop_was_delayed:
+        with pytest.raises((RuntimeError, ValueError, TimeoutError)):
+            await derive(
+                excerpt_service,
+                duration_ms=MAX_AUDIO_DURATION_MS,
+                candidates=[Candidate(1_000, 2_000)],
+            )
     finish_worker.set()
     with pytest.raises((RuntimeError, ValueError, TimeoutError)):
         await operation
@@ -433,12 +437,6 @@ async def test_sync_decoder_does_not_block_loop_or_release_permit_before_worker_
     assert not loop_was_delayed and loop.time() - probe_started < 0.1, (
         "a synchronous decoder callback must not block the asyncio loop past its budget"
     )
-    with pytest.raises((RuntimeError, ValueError, TimeoutError)):
-        await derive(
-            excerpt_service,
-            duration_ms=MAX_AUDIO_DURATION_MS,
-            candidates=[Candidate(1_000, 2_000)],
-        )
 
 
 @pytest.mark.asyncio
@@ -779,6 +777,32 @@ async def test_managed_decoder_does_not_return_until_process_exit_is_confirmed()
     with pytest.raises((TimeoutError, ValueError, RuntimeError)):
         await operation
     assert events.index("wait_started") < events.index("wait_confirmed")
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_cannot_interrupt_decoder_reap() -> None:
+    events: list[str] = []
+    decoder, process = managed_decoder_for_test(events, confirm_exit_on_kill=False)
+    operation = asyncio.create_task(
+        decoder.run(
+            ("synthetic-decoder",),
+            input_bytes=b"synthetic-source",
+            deadline_monotonic=0.01,
+        )
+    )
+    await asyncio.sleep(0.03)
+    operation.cancel()
+    await asyncio.sleep(0)
+    operation.cancel()
+    await asyncio.sleep(0.01)
+
+    assert not operation.done(), "repeated cancellation must not abandon process reaping"
+    assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 1
+    process.exited.set()
+    with pytest.raises(asyncio.CancelledError):
+        await operation
+    assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 0
+    assert "wait_confirmed" in events
 
 
 @pytest.mark.asyncio

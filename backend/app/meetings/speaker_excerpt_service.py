@@ -146,7 +146,16 @@ class ManagedDecoderProcess:
         """Return complete stdout only after the child exits successfully."""
         if not command or self._monotonic() >= deadline_monotonic:
             raise ValueError("speaker excerpt unavailable")
-        process = await self._spawn_process(*command, start_new_session=True)
+        remaining = deadline_monotonic - self._monotonic()
+        if remaining <= 0:
+            raise ValueError("speaker excerpt unavailable")
+        try:
+            process = await asyncio.wait_for(
+                self._spawn_process(*command, start_new_session=True),
+                timeout=remaining,
+            )
+        except TimeoutError:
+            raise ValueError("speaker excerpt unavailable") from None
         communication = asyncio.create_task(process.communicate(input=input_bytes))
         try:
             remaining = deadline_monotonic - self._monotonic()
@@ -164,15 +173,32 @@ class ManagedDecoderProcess:
                 global _UNCONFIRMED_DECODERS
                 _UNCONFIRMED_DECODERS += 1
                 communication.cancel()
+                with suppress(BaseException):
+                    await communication
                 try:
                     self._kill_process_group(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
                 except OSError:
-                    # A failed kill is not evidence of exit; wait remains fail-closed.
+                    # A failed kill is not evidence of exit; retain unhealthy state.
                     pass
-                await process.wait()
-                _UNCONFIRMED_DECODERS -= 1
+                reap_task = asyncio.create_task(process.wait())
+                cancelled_again = False
+                while not reap_task.done():
+                    try:
+                        await asyncio.shield(reap_task)
+                    except asyncio.CancelledError:
+                        cancelled_again = True
+                    except BaseException:
+                        break
+                if (
+                    reap_task.done()
+                    and not reap_task.cancelled()
+                    and reap_task.exception() is None
+                ):
+                    _UNCONFIRMED_DECODERS -= 1
+                if cancelled_again:
+                    raise asyncio.CancelledError from None
             if isinstance(error, asyncio.CancelledError):
                 raise
             raise ValueError("speaker excerpt unavailable") from None
@@ -204,23 +230,27 @@ class SpeakerExcerptService:
         self._keyring = keyring or ExcerptKeyring.from_environment()
         self._monotonic = monotonic
         self._unhealthy = False
-        self._active_operations = 0
-        self._unconfirmed_retry_used = False
 
     async def _acquire(self) -> float:
-        if _UNCONFIRMED_DECODERS == 0:
-            self._unconfirmed_retry_used = False
-        if _UNCONFIRMED_DECODERS > 0 and self._active_operations == 1:
-            if self._unconfirmed_retry_used:
-                raise ValueError("speaker excerpt unavailable")
-            self._unconfirmed_retry_used = True
-        elif (self._unhealthy or _UNCONFIRMED_DECODERS > 0) and self._active_operations > 1:
-            raise ValueError("speaker excerpt unavailable")
-        if _PROCESS_PERMITS.locked():
+        if self._unhealthy or _UNCONFIRMED_DECODERS > 0 or _PROCESS_PERMITS.locked():
             raise ValueError("speaker excerpt unavailable")
         await _PROCESS_PERMITS.acquire()
-        self._active_operations += 1
         return self._monotonic() + self.MAX_OPERATION_SECONDS
+
+    async def _wait_for_worker(self, task: asyncio.Task[Any]) -> bool:
+        """Wait for worker cleanup despite repeated request cancellation."""
+        cancelled_again = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if not task.done():
+                    cancelled_again = True
+            except BaseException:
+                break
+        with suppress(BaseException):
+            task.result()
+        return cancelled_again
 
     async def _invoke(
         self, callback: Callable[..., Any], *args: Any, deadline_monotonic: float
@@ -237,36 +267,50 @@ class SpeakerExcerptService:
             )
         except (TypeError, ValueError):
             accepts_deadline = False
-        call = (
-            callback(*args, deadline_monotonic=deadline_monotonic)
-            if accepts_deadline
-            else callback(*args)
-        )
-        if inspect.isawaitable(call):
-            remaining = deadline_monotonic - self._monotonic()
-            if remaining <= 0:
-                if inspect.iscoroutine(call):
-                    call.close()
-                raise TimeoutError
-            task = asyncio.ensure_future(call)
-            try:
-                done, _pending = await asyncio.wait({task}, timeout=remaining)
-            except asyncio.CancelledError:
+        kwargs = {"deadline_monotonic": deadline_monotonic} if accepts_deadline else {}
+
+        if inspect.iscoroutinefunction(callback):
+            worker = asyncio.create_task(callback(*args, **kwargs))
+            wait_for_completion = False
+        else:
+            worker = asyncio.create_task(asyncio.to_thread(callback, *args, **kwargs))
+            wait_for_completion = True
+        try:
+            done, _pending = await asyncio.wait({worker}, timeout=remaining)
+        except asyncio.CancelledError:
+            self._unhealthy = True
+            if not wait_for_completion:
+                worker.cancel()
+            await self._wait_for_worker(worker)
+            self._unhealthy = False
+            raise
+
+        if not done:
+            self._unhealthy = True
+            if not wait_for_completion:
+                worker.cancel()
+            cancelled_again = await self._wait_for_worker(worker)
+            self._unhealthy = False
+            if cancelled_again:
+                raise asyncio.CancelledError
+            raise TimeoutError
+
+        result = worker.result()
+        if self._monotonic() >= deadline_monotonic:
+            raise TimeoutError
+        if inspect.isawaitable(result):
+            nested = asyncio.ensure_future(result)
+            nested_done, _pending = await asyncio.wait(
+                {nested}, timeout=max(0.0, deadline_monotonic - self._monotonic())
+            )
+            if not nested_done:
                 self._unhealthy = True
-                task.cancel()
-                with suppress(BaseException):
-                    await task
-                self._unhealthy = False
-                raise
-            if not done:
-                self._unhealthy = True
-                task.cancel()
-                with suppress(BaseException):
-                    await task
+                nested.cancel()
+                await self._wait_for_worker(nested)
                 self._unhealthy = False
                 raise TimeoutError
-            return task.result()
-        return call
+            return nested.result()
+        return result
 
     async def derive(
         self,
@@ -358,7 +402,6 @@ class SpeakerExcerptService:
                 raise ValueError("speaker excerpt unavailable") from None
             raise
         finally:
-            self._active_operations -= 1
             _PROCESS_PERMITS.release()
 
     def resolve(
@@ -458,5 +501,4 @@ class SpeakerExcerptService:
         except Exception:
             raise ValueError("speaker excerpt unavailable") from None
         finally:
-            self._active_operations -= 1
             _PROCESS_PERMITS.release()

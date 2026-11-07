@@ -79,6 +79,30 @@ class S3ObjectStore(ObjectStore):
         body: bytes = response["Body"].read()
         return body
 
+    async def _close_body(self, body: Any) -> None:
+        close_task = asyncio.create_task(asyncio.to_thread(body.close))
+        try:
+            await asyncio.shield(close_task)
+        except asyncio.CancelledError:
+            await self._await_thread_after_cancel(close_task)
+            raise
+
+    @staticmethod
+    async def _await_thread_after_cancel(task: asyncio.Task[Any]) -> Any | None:
+        """Keep an executor worker supervised through cancellation and reap."""
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                return None
+        if task.cancelled():
+            return None
+        with suppress(BaseException):
+            return task.result()
+        return None
+
     async def get_bounded(
         self,
         reference: str,
@@ -90,15 +114,27 @@ class S3ObjectStore(ObjectStore):
             raise ValueError("bounded object read unavailable")
         body: Any = None
         try:
-            remaining = deadline_monotonic - time.monotonic()
-            async with asyncio.timeout(remaining):
-                response: dict[str, Any] = await asyncio.to_thread(
+            response_task = asyncio.create_task(
+                asyncio.to_thread(
                     functools.partial(
                         self._client.get_object,
                         Bucket=self._bucket,
                         Key=reference,
                     )
                 )
+            )
+            remaining = deadline_monotonic - time.monotonic()
+            try:
+                async with asyncio.timeout(remaining):
+                    response: dict[str, Any] = await asyncio.shield(response_task)
+            except (TimeoutError, asyncio.CancelledError) as error:
+                late_response = await self._await_thread_after_cancel(response_task)
+                if late_response is not None:
+                    late_body = late_response.get("Body")
+                    if late_body is not None:
+                        with suppress(Exception):
+                            await self._close_body(late_body)
+                raise error
             content_length = response.get("ContentLength")
             body = response.get("Body")
             if (
@@ -117,8 +153,15 @@ class S3ObjectStore(ObjectStore):
                 if remaining <= 0:
                     raise TimeoutError("bounded object read deadline expired")
                 size = max_bytes + 1 - total
-                async with asyncio.timeout(remaining):
-                    chunk = await asyncio.to_thread(body.read, size)
+                read_task = asyncio.create_task(asyncio.to_thread(body.read, size))
+                try:
+                    async with asyncio.timeout(remaining):
+                        chunk = await asyncio.shield(read_task)
+                except (TimeoutError, asyncio.CancelledError) as error:
+                    with suppress(Exception):
+                        await self._close_body(body)
+                    await self._await_thread_after_cancel(read_task)
+                    raise error
                 if not isinstance(chunk, bytes):
                     raise ValueError("bounded object read unavailable")
                 if not chunk:
@@ -137,7 +180,7 @@ class S3ObjectStore(ObjectStore):
         finally:
             if body is not None:
                 with suppress(Exception):
-                    await asyncio.to_thread(body.close)
+                    await self._close_body(body)
 
     async def delete(self, reference: str) -> None:
         """Deletes an object from the bucket."""
