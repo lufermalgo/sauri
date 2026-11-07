@@ -275,6 +275,22 @@ export interface SpeakerReview {
   items: SpeakerReviewItem[];
 }
 
+interface SpeakerReviewItemResponse {
+  speaker_id: string;
+  current_label: string;
+  attribution_state: "recognized" | "uncertain";
+  disposition: "confirmed" | "named" | "corrected" | null;
+  excerpt_ref: string;
+  version: number;
+}
+
+interface SpeakerReviewResponse {
+  review_id: string;
+  revision_id: string | number;
+  status: "pending" | "complete";
+  items: SpeakerReviewItemResponse[];
+}
+
 export type SpeakerDisposition = "confirmed" | "named" | "corrected";
 
 export interface SpeakerDispositionRequest {
@@ -288,7 +304,20 @@ export async function getSpeakerReview(meetingId: string): Promise<SpeakerReview
     `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review`,
     { method: "GET", headers: getAuthHeaders() }
   );
-  return handleResponse<SpeakerReview>(response);
+  const review = await handleResponse<SpeakerReviewResponse>(response);
+  return {
+    reviewId: review.review_id,
+    revisionId: String(review.revision_id),
+    status: review.status,
+    items: review.items.map((item) => ({
+      speakerId: item.speaker_id,
+      currentLabel: item.current_label,
+      attributionState: item.attribution_state,
+      disposition: item.disposition,
+      excerptRef: item.excerpt_ref,
+      expectedVersion: item.version,
+    })),
+  };
 }
 
 export async function submitSpeakerDisposition(
