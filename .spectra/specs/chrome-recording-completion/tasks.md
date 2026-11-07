@@ -20,11 +20,11 @@
 
 ## Phase 1: Required RED tests
 
-### Tarea 1.1: Test convergence of Stop and captured-tab-close
+### Tarea 1.1: Test Stop and captured-tab-close completion behavior at existing listeners
 
-**Archivo:** `extension/src/core/recording-completion.test.ts`; pure transition/idempotency seam under `extension/src/core/`, invoked by the design-named `completeRecording(sessionId, trigger)` coordinator in `extension/src/background.ts`
-**Acción:** Add required `fast-check` property tests beside the pure completion transition/idempotency logic under `extension/src/core/` for Stop, captured-tab-close, both event orders, duplicates, and meeting-ended-only input. Assert one finalization claim at most once per `sessionId` and zero claims for meeting-ended alone. Generate event sequences with ≥100 cases and synthetic IDs.
-**Criterio de Completado:** `cd extension && npm run test -- src/core/recording-completion.test.ts` fails against current behavior with a counterexample; each property has ≥100 generated cases.
+**Archivo:** `extension/src/background.recording-completion.test.ts`; existing `chrome.tabs.onRemoved`, `meet-ended`, and `stop-capture` listeners in `extension/src/background.ts`, using the listener-invocation harness from `extension/src/background.tab-close.test.ts`
+**Acción:** Before changing production code, extend the existing Chrome/storage test harness to exercise the real background listeners with synthetic session and tab IDs. Use `fast-check` to generate ≥100 cases per property for Stop, captured-tab-close, both event orders, duplicate triggers, and meeting-ended-only input. Assert observable listener effects/state: Stop and captured-tab-close complete the same active recording at most once; meeting-ended alone neither finalizes nor clears/detaches the active recording, and a later captured-tab-close still reaches its completion effect. The test must produce an executed behavioral assertion counterexample against current listeners; an import/setup failure, zero collected cases, or an inferred-but-unrun failure does not satisfy RED. Make no production changes in this task.
+**Criterio de Completado:** `cd extension && npm run test -- src/background.recording-completion.test.ts` executes every property with ≥100 generated cases and fails on a behavioral assertion demonstrating the current listener defect; the test uses synthetic IDs and reuses the tab-close listener harness.
 **Dependencias:** Ninguna.
 
 ### Tarea 1.2: Test durable identity conservation and atomic completion claims
@@ -87,9 +87,9 @@
 
 ### Tarea 2.1: Implement one idempotent completion transition for authorized triggers
 
-**Archivo:** `extension/src/content.ts`, `extension/src/background.ts`, and pure state logic in `extension/src/core/`
-**Acción:** Route explicit Stop and closure of the specifically associated captured tab to `completeRecording(sessionId, trigger)`; use one atomic transition/finalization claim, ignore meeting-ended alone, and leave media finalization in the existing capture/offscreen owner.
-**Criterio de Completado:** T1.1 passes with ≥100 property cases; `cd extension && npm run typecheck` passes.
+**Archivo:** `extension/src/content.ts`, `extension/src/background.ts`, and new pure transition logic/tests in `extension/src/core/recording-completion.ts` and `extension/src/core/recording-completion.test.ts`
+**Acción:** After T1.1 has recorded its executed behavioral counterexample, implement a pure completion transition/idempotency seam and route explicit Stop and closure of the specifically associated captured tab through `completeRecording(sessionId, trigger)`. Preserve the captured-tab/session binding, make duplicate triggers converge on one completion, and ensure meeting-ended alone neither finalizes nor clears/detaches the active completion record. Add follow-up `fast-check` properties against the new pure seam (≥100 cases per property, synthetic IDs) for both authorized triggers, both event orders, duplicates, and meeting-ended-only input; retain T1.1's listener-level regression tests. Leave media finalization in the existing capture/offscreen owner.
+**Criterio de Completado:** T1.1's listener-level regression test and the new pure-seam properties pass with ≥100 generated cases per property; `cd extension && npm run test -- src/background.recording-completion.test.ts src/core/recording-completion.test.ts`, `cd extension && npm run typecheck`, and `cd extension && npm run build` pass.
 **Dependencias:** T1.1.
 
 ### Tarea 2.2: Migrate IndexedDB v1→v2 and persist completion identity/state
@@ -175,7 +175,7 @@
 
 ## Publication tracking
 
-Mira APPROVED this exact task-plan snapshot `c0eb360fdb964c00bc76f1b72444022a10dfa00a` on 2026-10-31. It derives from requirements `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` and corrected design `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED). GitHub issues #610–#628 map the 19 tasks in milestone `chrome-recording-completion` (#17). Per Ansel's coordination decision, APX card creation is deferred until real responsible agents and dependency readiness are available; no card IDs are claimed here.
+Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (Mira APPROVED, 2026-10-31). This is the scoped #709 amendment candidate to T1.1/T2.1; the candidate awaits Mira's independent audit, and `.config.spectra` phase `complete` records authorship only. The plan continues to derive from approved requirements `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` and corrected design `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED). GitHub issues #610–#628 map the 19 tasks in milestone `chrome-recording-completion` (#17); this amendment does not create, renumber, or publish implementation tasks. Per Ansel's coordination decision, APX card creation is deferred until real responsible agents and dependency readiness are available; no card IDs are claimed here.
 
 | Task | GitHub issue | APX card |
 |---|---:|---|
