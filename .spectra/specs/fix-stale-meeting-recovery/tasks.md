@@ -16,7 +16,7 @@ All test fixtures and sentinel content must be synthetic. No task reads or copie
 | Order | Tasks | Scope | Required dependencies |
 |---|---|---|---|
 | 1 | T-1 → T-2 | durable recovery/outbox/claim/pilot persistence | RED test before migration/model implementation |
-| 2 | T-3 → T-4 | existing-app disabled-mode route precursor | T-2 for GREEN persistence boundary; route RED before safe fail-closed GREEN |
+| 2 | T-3 → T-4 | existing-app disabled-mode route precursor | T-2 for the persisted RED fixture and GREEN persistence boundary; route RED before safe fail-closed GREEN |
 | 3 | T-17 → T-18 | complete guarded service operation | T-4, T-2 and T-6; behavioral RED through existing route before full service GREEN |
 | 4 | T-5 → T-6 | shared durable worker fencing | T-2; worker RED before worker GREEN |
 | 5 | T-7 → T-8 | worker-startup delivery of committed outbox rows | T-18, T-2 and T-6; existing startup RED before dispatcher wiring |
@@ -57,7 +57,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** Capture the expected HTTP result/assertion failure (not fixture/setup failure): `python -m pytest tests/meetings/test_manual_recovery_routes.py -q`.
 
-**Dependencies:** None.
+**Dependencies:** T-2.
 
 ## T-4 — GREEN: Add only the fail-closed disabled-mode route/service boundary
 
@@ -191,9 +191,9 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-11 — RED: Specify authenticated manual recovery API boundary
 
-**Files:** `backend/tests/meetings/test_manual_recovery_routes.py` (new); route seam `backend/app/meetings/router.py` and existing `_get_authorized_meeting`/`get_current_user` authorization dependencies.
+**Files / RED test seams:** `backend/tests/meetings/test_manual_recovery_routes.py` (new); `backend/app/meetings/router.py:recover_meeting_endpoint` (`POST /api/v1/meetings/{meeting_id}/recover`) and existing `_get_authorized_meeting`/`get_current_user`; `backend/app/ingestion/service.py:process_ingestion(...)` for the existing-recording regression; `backend/app/worker.py:main()` for ordinary worker startup; and `backend/app/infra/recovery_outbox.py:dispatch_pending_recoveries(...)` for the already-authorized outbox delivery seam.
 
-**Action:** Add failing synthetic API tests for explicit single-meeting `POST /api/v1/meetings/{meeting_id}/recover`, mandatory bounded `Idempotency-Key`, owner-only access and existing not-found disclosure behavior, no client-supplied owner/object/state/batch fields, finite content-free result/reason, and no transcript/note/speaker/media sentinels in response, audit, log or persisted recovery rows. Assert normal `process_ingestion` keeps its service-level `is_new=False` and persisted-state behavior for existing recordings, and that ordinary ingestion/startup paths do not call recovery; do not treat that service test as route/publisher evidence.
+**Action:** Add failing synthetic API tests for explicit single-meeting `POST /api/v1/meetings/{meeting_id}/recover`, mandatory bounded `Idempotency-Key`, owner-only access and existing not-found disclosure behavior, no client-supplied owner/object/state/batch fields, finite content-free result/reason, and no transcript/note/speaker/media sentinels in response, audit, log or persisted recovery rows. Assert `process_ingestion(...)` keeps its service-level `is_new=False` and persisted-state behavior for existing recordings and never calls `MeetingRecoveryService.recover(...)`; exercise `worker.main()` with no authorized recovery rows and assert it creates no operation or invokes recovery. Any startup `dispatch_pending_recoveries(...)` call may deliver only already-committed authorized outbox rows; do not treat the ingestion regression as route/publisher evidence.
 
 **Done evidence / validation:** Expected missing-route/guard assertions fail without environment/setup errors: `python -m pytest tests/meetings/test_manual_recovery_routes.py tests/ingestion/test_idempotency_property.py -q`.
 
