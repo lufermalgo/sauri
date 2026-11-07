@@ -1,6 +1,6 @@
 # Product-acceptance protocol — speaker-recognition test screen
 
-**Protocol version:** 1.2
+**Protocol version:** 1.3
 
 **Status:** PREDECLARED — no user observations recorded
 **Scope:** The owner-run test screen in `.spectra/specs/speaker-recognition-test-screen/`, specifically the upload → processing → transcript → speaker-review journey. This protocol is not the broader pilot in `pilot-done.md` and does not assess general product readiness.
@@ -10,12 +10,12 @@
 - **Feature:** Minimal speaker-recognition test screen described by the approved requirements for this spec.
 - **Candidate commit to test:** `13846b18a225925505eb47b307189c3724f0f22f` (PR #741's exact head verified on GitHub before this protocol revision; its parent is `15329eec4e1bbc2fc4726a74de763dd6d9832d5c`).
 - **Version rule:** A result applies only to this exact code version. Before a session, verify that the application being exercised is built from this commit. A different commit, rebuilt candidate with changes, or changed acceptance criteria requires a new protocol version before any new observation; results must not be transferred to it.
-- **Revision history:** Version 1.1 replaced the earlier pre-observation candidate reference with the then-current exact PR head. Version 1.2 adds the approved Requirement 4.5 leave-and-return check to scenario 4. No user observation had occurred when either revision was made.
+- **Revision history:** Version 1.1 replaced the earlier pre-observation candidate reference with the then-current exact PR head. Version 1.2 added the approved Requirement 4.5 leave-and-return check. Version 1.3 makes the unresolved-attribution and both correction behaviors explicit, and identifies the pre-session runtime/input checks. No user observation had occurred when these revisions were made.
 
 ## Target user and authorized representative test path
 
 - **Target user profile:** The owner of the Sauri test screen who needs to exercise the recording-to-transcript and speaker-correction flow; the approved representative participant for this bounded test is Fer, using the owner-run screen.
-- **Authorized path:** Fer performs one end-to-end session in the running web test screen on the exact frozen candidate, using one fresh **synthetic** audio or video file. The same uploaded item is followed through all four scenarios; for scenario 4, use synthetic media that yields at least two speaker-review items so one can be corrected while another remains pending. Do not substitute prerecorded synthetic UI responses or a mock/screenshot-only rendering for the interactive flow.
+- **Authorized path:** Before the session, Ansel confirms that the running web test screen is built from the exact frozen candidate and confirms that the planned synthetic input is available. Fer then performs one end-to-end session in that instance using one fresh **synthetic** audio or video file. Use synthetic media with at least three distinct, intelligible synthetic voices and clear audible segments suitable for speaker excerpts; scenario 4 requires the resulting review to contain (a) one unresolved `Speaker N` item, (b) a separate automatically assigned speaker-name item, and (c) a third item that can remain pending. Follow the same uploaded item through all four scenarios. If the candidate/input does not produce any required state, record the affected threshold as **Not observed**, not Pass. Do not substitute prerecorded synthetic UI responses or a mock/screenshot-only rendering for the interactive flow.
 - **Minimum sample:** One completed session by the named representative participant (n=1). This is sufficient only to evaluate this owner's narrow test-screen journey. It does not establish usability or acceptance for a broader or diverse customer population.
 - **Privacy boundary:** Use no real meeting, participant identity, customer information, or personal data. Do not capture or publish audio, video, transcript contents, names, credentials, or screen recordings. Keep only brief, non-sensitive observations and pass/fail outcomes.
 
@@ -27,8 +27,8 @@ Run the scenarios in order in the same session and on the same synthetic recordi
 |---|---|---|
 | 1 | Select and upload synthetic audio or video | The screen accepts the selected supported synthetic file; the user can start the upload; the screen visibly transitions into processing for that submitted recording without a second, unrelated workflow. |
 | 2 | Processing to result in the same flow | A processing state is visibly shown before completion. When processing completes, the transcript and speaker-review capability for that same recording become available in the same test-screen flow. No fabricated progress or inferred completion counts. |
-| 3 | Transcript timestamps and speaker attribution | The visible transcript shows text, a timestamp, and a speaker attribution for each displayed turn. When attribution is unresolved or uncertain, the UI uses the literal `Speaker N` fallback rather than implying a confirmed identity. This checks visible, honest presentation only; it does not score diarization accuracy or require every speaker to be named. |
-| 4 | Review playback, correction, and resume pending review | Using synthetic media with at least two speaker-review items, the user can play one speaker's review excerpt, change that speaker's label through the existing review flow, and observe the changed label. Leave a different speaker item pending, navigate away from the recording, then return to it. Pass only if Sauri requests the pending review again, exposes the remaining speaker item for review, and does not represent the recording as fully reviewed/completed. |
+| 3 | Transcript timestamps and unresolved speaker attribution | The visible transcript shows text, a timestamp, and a speaker attribution for each displayed turn. The session must include an actually unresolved or uncertain turn, and the running UI must show the literal `Speaker N` fallback for it rather than implying a confirmed identity. If no unresolved/uncertain turn occurs in the result, record this threshold **Not observed**, not Pass. This checks visible, honest presentation only; it does not score diarization accuracy or require every speaker to be named. |
+| 4 | Excerpt playback, both correction paths, and resume pending review | With the three distinct review items specified above, play the clear excerpt for the unresolved item, replace its `Speaker N` label through the existing review flow, and observe the chosen label. Separately correct the automatically assigned name on the second item and observe the corrected name. Leave the third item pending, navigate away from the recording before completing review, then return to that same recording. Pass only if Sauri requests the pending review again, exposes the remaining item for review, and does not represent the recording as fully reviewed/completed. Each behavior must be directly observed; if the required input/result state is absent, record the corresponding behavior **Not observed**, not Pass. |
 
 ## Decision rule and evidence record
 
@@ -42,8 +42,11 @@ For a future session, record below (without sensitive content): participant prof
 |---|---|---|
 | 1. Upload starts processing | Not observed | |
 | 2. Processing yields result in same flow | Not observed | |
-| 3. Timestamps and honest speaker attribution | Not observed | |
-| 4. Playback, correction, return to pending review | Not observed | |
+| 3a. Timestamps and attribution for displayed turns | Not observed | |
+| 3b. An unresolved turn visibly uses `Speaker N` | Not observed | |
+| 4a. Excerpt playback and replacement of unresolved `Speaker N` | Not observed | |
+| 4b. Correction of a separately auto-assigned name | Not observed | |
+| 4c. Leave, return, and resume the third pending review item | Not observed | |
 
 **Observed candidate:** Not tested.
 
