@@ -157,29 +157,60 @@ async def test_generation_migration_preserves_legacy_rows_and_review(
     from app.infra.database import Base
 
     ids = {
-        key: str(uuid4()) for key in ("meeting", "transcript", "turn", "diarization", "speaker", "assignment", "review")
+        key: str(uuid4())
+        for key in (
+            "meeting",
+            "transcript",
+            "turn",
+            "diarization",
+            "speaker",
+            "assignment",
+            "review",
+            "item",
+            "receipt",
+        )
     }
     now = datetime.now(UTC)
     async with async_engine.begin() as conn:
-        # Pin the revision-011 input independently of the future ORM schema.
+        # Reconstruct the revision-011 tables involved in generation lineage,
+        # independently of the future ORM. Enforce the real FK relationships.
         await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(text("PRAGMA foreign_keys=ON"))
+        assert (await conn.execute(text("PRAGMA foreign_keys"))).scalar_one() == 1
         for ddl in (
             "CREATE TABLE meetings (id VARCHAR(36) PRIMARY KEY)",
-            "CREATE TABLE transcripts (id VARCHAR(36) PRIMARY KEY, meeting_id VARCHAR(36))",
-            "CREATE TABLE speech_turns (id VARCHAR(36) PRIMARY KEY, transcript_id VARCHAR(36), "
-            "text TEXT, start_ms INTEGER, end_ms INTEGER, sequence INTEGER)",
-            "CREATE TABLE diarizations (id VARCHAR(36) PRIMARY KEY, meeting_id VARCHAR(36), "
-            "transcript_id VARCHAR(36), provider VARCHAR(128) NOT NULL, speaker_count INTEGER, "
+            "CREATE TABLE transcripts (id VARCHAR(36) PRIMARY KEY, meeting_id VARCHAR(36) "
+            "NOT NULL REFERENCES meetings(id) ON DELETE CASCADE)",
+            "CREATE TABLE speech_turns (id VARCHAR(36) PRIMARY KEY, transcript_id VARCHAR(36) "
+            "NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE, text TEXT, "
+            "start_ms INTEGER, end_ms INTEGER, sequence INTEGER)",
+            "CREATE TABLE diarizations (id VARCHAR(36) PRIMARY KEY, meeting_id VARCHAR(36) "
+            "NOT NULL REFERENCES meetings(id), transcript_id VARCHAR(36) NOT NULL "
+            "REFERENCES transcripts(id), provider VARCHAR(128) NOT NULL, speaker_count INTEGER, "
             "diarization_state VARCHAR(32), failure_cause VARCHAR(64), created_at DATETIME, "
             "updated_at DATETIME, CONSTRAINT uq_diarization_meeting_id UNIQUE(meeting_id))",
-            "CREATE TABLE speakers (id VARCHAR(36) PRIMARY KEY, diarization_id VARCHAR(36), "
-            "raw_label VARCHAR(128), label VARCHAR(64), sequence INTEGER)",
+            "CREATE TABLE speakers (id VARCHAR(36) PRIMARY KEY, diarization_id VARCHAR(36) "
+            "NOT NULL REFERENCES diarizations(id) ON DELETE CASCADE, raw_label VARCHAR(128), "
+            "label VARCHAR(64), sequence INTEGER)",
             "CREATE TABLE speaker_assignments (id VARCHAR(36) PRIMARY KEY, "
-            "diarization_id VARCHAR(36), turn_id VARCHAR(36), speaker_id VARCHAR(36), "
+            "diarization_id VARCHAR(36) NOT NULL REFERENCES diarizations(id) ON DELETE CASCADE, "
+            "turn_id VARCHAR(36) NOT NULL REFERENCES speech_turns(id), speaker_id VARCHAR(36) "
+            "NOT NULL REFERENCES speakers(id) ON DELETE CASCADE, "
             "CONSTRAINT uq_speaker_assignment_turn_id UNIQUE(turn_id))",
-            "CREATE TABLE speaker_reviews (id VARCHAR(36) PRIMARY KEY, meeting_id VARCHAR(36), "
-            "processing_revision INTEGER NOT NULL, status VARCHAR(16), created_at DATETIME, "
+            "CREATE TABLE speaker_reviews (id VARCHAR(36) PRIMARY KEY, meeting_id VARCHAR(36) "
+            "NOT NULL REFERENCES meetings(id) ON DELETE CASCADE, processing_revision INTEGER NOT NULL, "
+            "status VARCHAR(16), created_at DATETIME, "
             "CONSTRAINT uq_speaker_review_revision UNIQUE(meeting_id, processing_revision))",
+            "CREATE TABLE speaker_review_items (id VARCHAR(36) PRIMARY KEY, review_id VARCHAR(36) "
+            "NOT NULL REFERENCES speaker_reviews(id) ON DELETE CASCADE, speaker_key VARCHAR(128) NOT NULL, "
+            "current_label VARCHAR(64) NOT NULL, excerpt_ref VARCHAR(2048), disposition VARCHAR(16), "
+            "chosen_label VARCHAR(64), attribution_state VARCHAR(16) NOT NULL, version INTEGER NOT NULL, "
+            "CONSTRAINT uq_speaker_review_item_speaker UNIQUE(review_id, speaker_key))",
+            "CREATE TABLE speaker_review_idempotency_receipts (id VARCHAR(36) PRIMARY KEY, "
+            "review_id VARCHAR(36) NOT NULL REFERENCES speaker_reviews(id) ON DELETE CASCADE, "
+            "item_id VARCHAR(36) NOT NULL REFERENCES speaker_review_items(id) ON DELETE CASCADE, "
+            "idempotency_key VARCHAR(256) NOT NULL, request_hash VARCHAR(64) NOT NULL, response JSON NOT NULL, "
+            "CONSTRAINT uq_review_idempotency_key UNIQUE(review_id, idempotency_key))",
         ):
             await conn.execute(text(ddl))
         for table, values in (
@@ -234,8 +265,33 @@ async def test_generation_migration_preserves_legacy_rows_and_review(
                     "id": ids["review"],
                     "meeting_id": ids["meeting"],
                     "processing_revision": 1,
-                    "status": "pending",
+                    "status": "complete",
                     "created_at": now,
+                },
+            ),
+            (
+                "speaker_review_items",
+                {
+                    "id": ids["item"],
+                    "review_id": ids["review"],
+                    "speaker_key": ids["speaker"],
+                    "current_label": "Speaker 1",
+                    "excerpt_ref": "synthetic-encrypted-ref",
+                    "disposition": "corrected",
+                    "chosen_label": "Synthetic Name",
+                    "attribution_state": "attributed",
+                    "version": 2,
+                },
+            ),
+            (
+                "speaker_review_idempotency_receipts",
+                {
+                    "id": ids["receipt"],
+                    "review_id": ids["review"],
+                    "item_id": ids["item"],
+                    "idempotency_key": "synthetic-key",
+                    "request_hash": "a" * 64,
+                    "response": '{"label":"Synthetic Name"}',
                 },
             ),
         ):
@@ -265,9 +321,34 @@ async def test_generation_migration_preserves_legacy_rows_and_review(
                 {"id": ids["assignment"]},
             )
         ).one()
+        speaker = (
+            await conn.execute(
+                text("SELECT id, diarization_id, raw_label, label, sequence FROM speakers WHERE id=:id"),
+                {"id": ids["speaker"]},
+            )
+        ).one()
         review = (
             await conn.execute(
-                text("SELECT id, processing_revision FROM speaker_reviews WHERE id=:id"), {"id": ids["review"]}
+                text("SELECT id, meeting_id, processing_revision, status FROM speaker_reviews WHERE id=:id"),
+                {"id": ids["review"]},
+            )
+        ).one()
+        item = (
+            await conn.execute(
+                text(
+                    "SELECT id, review_id, speaker_key, current_label, excerpt_ref, disposition, "
+                    "chosen_label, attribution_state, version FROM speaker_review_items WHERE id=:id"
+                ),
+                {"id": ids["item"]},
+            )
+        ).one()
+        receipt = (
+            await conn.execute(
+                text(
+                    "SELECT id, review_id, item_id, idempotency_key, request_hash, response "
+                    "FROM speaker_review_idempotency_receipts WHERE id=:id"
+                ),
+                {"id": ids["receipt"]},
             )
         ).one()
         source = (
@@ -277,7 +358,27 @@ async def test_generation_migration_preserves_legacy_rows_and_review(
         ).one()
         assert legacy == (ids["diarization"], 1, True)
         assert assignment == (ids["assignment"], ids["diarization"], ids["turn"], ids["speaker"], None)
-        assert review == (ids["review"], 1)
+        assert speaker == (ids["speaker"], ids["diarization"], "synthetic-0", "Speaker 1", 1)
+        assert review == (ids["review"], ids["meeting"], 1, "complete")
+        assert item == (
+            ids["item"],
+            ids["review"],
+            ids["speaker"],
+            "Speaker 1",
+            "synthetic-encrypted-ref",
+            "corrected",
+            "Synthetic Name",
+            "attributed",
+            2,
+        )
+        assert receipt == (
+            ids["receipt"],
+            ids["review"],
+            ids["item"],
+            "synthetic-key",
+            "a" * 64,
+            '{"label":"Synthetic Name"}',
+        )
         assert source == ("Synthetic source", 100, 900)
 
         # A new generation can point to the same immutable source turn, but
