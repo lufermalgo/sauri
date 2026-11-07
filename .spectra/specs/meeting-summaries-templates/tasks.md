@@ -221,6 +221,8 @@
 
 **Criterio de Completado:** A synthetic smoke test in the confirmed shared-types test location is actually executed by the package's non-placeholder test script; record the exact command and passing output. The script must no longer be the current `echo "no tests yet" && exit 0` placeholder.
 
+**Verificación registrada:** `packages/shared-types/src/index.test.ts`; `npm run test --workspace=@sauri/shared-types` — 1 file and 1 test passed with Vitest 1.6.1; `npm run typecheck --workspace=@sauri/shared-types` — passed.
+
 **Dependencias:** Ninguna
 
 ### T17: RED — Specify shared summary/template/status API contracts
