@@ -61,9 +61,9 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-4 — GREEN: Add only the fail-closed disabled-mode route/service boundary
 
-**Files:** `backend/app/meetings/router.py` (`POST /api/v1/meetings/{meeting_id}/recover`); `backend/app/meetings/recovery_service.py` (new, initial safe boundary); existing owner authorization dependencies; `backend/tests/meetings/test_manual_recovery_routes.py`.
+**Files:** `backend/app/meetings/router.py` (`POST /api/v1/meetings/{meeting_id}/recover`); `backend/app/meetings/recovery_service.py` (new `MeetingRecoveryService.recover(meeting_id, actor_id, idempotency_key)`, initial safe boundary); existing owner authorization dependencies; `backend/tests/meetings/test_manual_recovery_routes.py`.
 
-**Action:** Add the authenticated owner-scoped route and service boundary that returns a content-free disabled/no-op result without meeting, recovery, outbox, or queue mutation. Preserve not-found behavior for unauthorized/non-owner callers. Do not accept or dispatch a recovery while eligibility and shared worker fencing are not implemented; this precursor must remain fail-closed and cannot be a production stub that reports success.
+**Action:** Add the authenticated owner-scoped route and `MeetingRecoveryService.recover(...)` boundary that returns a content-free disabled/no-op result without meeting, recovery, outbox, or queue mutation. Preserve not-found behavior for unauthorized/non-owner callers. Do not accept or dispatch a recovery while eligibility and shared worker fencing are not implemented; this precursor must remain fail-closed and cannot be a production stub that reports success.
 
 **Done evidence / validation:** T-3 disabled-mode and authorization assertions pass; state comparisons prove no writes: `python -m pytest tests/meetings/test_manual_recovery_routes.py -q`.
 
@@ -153,7 +153,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Files / RED test seams:** `backend/tests/meetings/test_recovery_preservation.py` (new); existing FastAPI app test client invoking owner-scoped `GET /api/v1/meetings/{meeting_id}/recoveries/{operation_id}` for a synthetic completed recovery with no note or confirmed-speaker/assignment rows.
 
-**Action:** Before a status route exists, assert the response explicitly reports `preservation_verified=false` whenever preservation cannot yet be established and never includes content or a digest. The current app returns 404; the expected RED is the HTTP status/result assertion, not a missing helper import. Test owner authorization and no disclosure on a mismatched meeting/operation pair.
+**Action:** Before a status route exists, assert the response explicitly reports `preservation_verified=false` whenever preservation cannot yet be established and never includes content or a digest. The current app returns 404; the expected RED is the HTTP status/result assertion, not a missing helper import. Test owner authorization, pilot-only access, and no disclosure on a mismatched meeting/operation pair.
 
 **Done evidence / validation:** Expected status-route HTTP assertion failure: `python -m pytest tests/meetings/test_recovery_preservation.py -q`.
 
@@ -161,9 +161,9 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-10 — GREEN: Add fail-closed status for empty artifact sets
 
-**Files:** `backend/app/meetings/router.py` (owner-only recovery status GET); the minimum status service/persistence boundary; `backend/tests/meetings/test_recovery_preservation.py`.
+**Files:** `backend/app/meetings/router.py` (`get_recovery_status_endpoint`, owner-only recovery status GET); the minimum status service/persistence boundary; `backend/tests/meetings/test_recovery_preservation.py`.
 
-**Action:** Add the real owner-authorized status route with composite meeting/operation lookup and no disclosure on mismatch. For recovery operations whose preserved artifact sets contain no note or confirmed-speaker/assignment rows, compute and persist/compare a real empty-set snapshot and counts, returning verified only when the complete check succeeds. Any nonempty or unreadable set returns `preservation_verified=false` and cannot advance the pilot gate. This is a limited safe behavior, not an always-false placeholder; do not expose or log digests.
+**Action:** Add the real owner-authorized, pilot-only status route with composite meeting/operation lookup and no disclosure on mismatch. For recovery operations whose preserved artifact sets contain no note or confirmed-speaker/assignment rows, compute and persist/compare a real empty-set snapshot and counts, returning verified only when the complete check succeeds. Any nonempty or unreadable set returns `preservation_verified=false` and cannot advance the pilot gate. This is a limited safe behavior, not an always-false placeholder; do not expose or log digests.
 
 **Done evidence / validation:** T-9 status, authorization, mismatch, empty-set and content-free assertions pass: `python -m pytest tests/meetings/test_recovery_preservation.py -q`.
 
