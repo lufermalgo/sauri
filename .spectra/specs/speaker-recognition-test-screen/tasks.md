@@ -197,7 +197,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-14: GREEN — Implement durable pending-object cleanup
 
-**Tracking:** Issue #565 · Card task_525bee7872064383
+**Tracking:** Issue #565 · Card task_525bee7872064383 · PR #728 (open; implementation done)
 
 **Files:** `backend/app/retention/cleanup.py`, `backend/app/retention/worker.py`, `backend/app/infra/object_store.py`, ingestion cleanup integration, and corresponding backend tests.
 
