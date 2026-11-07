@@ -1,9 +1,9 @@
-<!-- sauri-workflow v1.2 -->
-# Sauri engineering workflow (v1.2)
+<!-- sauri-workflow v1.3 -->
+# Sauri engineering workflow (v1.3)
 
 Single source of truth for how work on Sauri is done, by agents or humans. `AGENTS.md` says what the project is and how its code is organized; this file says how work flows. On process, this file wins over `AGENTS.md`; agent contracts in `.apc/agents/` add role-specific duties and must agree with it (a conflict goes to Ansel).
 
-**History.** v1.2 (2026-11-07, issue #726): approvals carry across a clean merge of `main` (§8). v1.1 (2026-11-07, issue #721): how the team talks to Fer (§3) and cards in review (§6). v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
+**History.** v1.3 (2026-11-07, issue #726): no handoff file or skill (§6), wake-up step 9. v1.2 (2026-11-07, issue #726): approvals carry across a clean merge of `main` (§8). v1.1 (2026-11-07, issue #721): how the team talks to Fer (§3) and cards in review (§6). v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
 
 ## 1. Principles
 1. **One task = one issue = one branch = one worktree = one PR.** Small and reversible.
@@ -139,15 +139,10 @@ Validation must use the project’s actual commands and conventions. Do not assu
 * If the project uses another language or framework, inspect the repository’s scripts, documentation, configuration files, or CI workflow before choosing a validation command.
 
 ## 6. Hand-offs and coordination
-### Canonical handoff
-
-* The `handoff` skill is the only workflow for creating or updating session handoff state.
-* At session start, read `<registered-project-root>/handoff.md` if it exists and resume from
-  `7 · Siguiente paso`; do not repeat items recorded under `6 · Qué ha fallado`.
-* Before ending or restarting a session, invoke the `handoff` skill from the registered Sauri
-  project root and update only `<registered-project-root>/handoff.md` using its seven fields.
-* Sauri has exactly one canonical handoff. Never create a `handoff.md` inside a worktree,
-  agent folder, or subproject; if an old duplicate is found, do not treat it as authoritative.
+### Where state lives (no handoff file)
+* There is no `handoff.md` and no `handoff` skill. APX already keeps what a session needs: the conversation history of each thread, the card (description with PACKET and HAND-OFF, comments, plan), the board, the agent memory injected every turn, and the routine's own system summary.
+* A decision goes on the card it concerns. A decision that must outlive the card goes to project memory (`apx memory add project`), one short curated fact. Never write a status log into the repository.
+* A session that starts reads its card and the system summary it was given; it does not read a status file.
 
 ### Coordination rules
 
@@ -309,5 +304,5 @@ The routine `sauri-backlog-orchestration` wakes Ansel every 15 minutes. In each 
 6. When a role has no cards, reconcile approved specs against tasks, issues, cards and evidence; create only missing, uniquely identified cards; keep spec status current.
 7. Resolve blockers or consult Teo in the same turn.
 8. Disk hygiene (§8).
-9. Update the summary card and `handoff.md` (skill `handoff`): agent → task → state, merged PRs, spec status, blockers with their owner.
+9. Record only what changed, on the cards it concerns: a decision, a blocker with its owner, a merged PR. The system summary (agent → task → state) is computed by the routine's pre-command; do not rewrite it by hand.
 A wake-up ends when every specialist is busy or has a written reason and an owner for unblocking, and no technical question is left undecided. Dispatch first and audit afterwards; a partial listing never justifies "no work".
