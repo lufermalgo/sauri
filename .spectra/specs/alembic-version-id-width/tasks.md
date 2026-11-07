@@ -74,7 +74,7 @@
 **Acceptance evidence:** Run this guard against the post-T-6 candidate and retain its passing result for both modules' exact revision/down-revision values and graph entries. T-6's earlier design intent was for this guard to remain passing across the width change; this amended task does not claim a pre-T-6 run or result. It does not assert `alembic upgrade head` succeeds or that `head` is unambiguous.
 **Validation:** From `backend/`, run `.venv/bin/python -m pytest tests/test_migration.py`.
 **Dependencies:** T-2 / Issue #489 (both edit `backend/tests/test_migration.py`; serialize to avoid merge conflicts). T-3 / Issue #490 is dropped and is not a prerequisite.
-**Tracking:** Issue #491 · Card task_10bb77d585bc4308
+**Tracking:** Done · Issue #491 · Card task_10bb77d585bc4308 · PR #713
 
 ## Validation Prerequisites and Scope Boundaries
 
