@@ -161,13 +161,14 @@ async def _process_diarization(
 
     # Map domain assignments -> ORM
     orm_assignments: list[SpeakerAssignment] = []
-    for turn_id, speaker in domain_assignments:
+    for turn_id, speaker, overlap_ms in domain_assignments:
         orm_assignments.append(
             SpeakerAssignment(
                 id=str(uuid.uuid4()),
                 diarization_id=diarization_id,
                 turn_id=turn_id,
                 speaker_id=speaker_id_by_label[speaker.raw_label],
+                overlap_ms=overlap_ms,
             )
         )
 
