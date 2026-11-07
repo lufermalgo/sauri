@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import signal
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
@@ -16,6 +17,7 @@ from typing import Any
 import pytest
 
 from app.infra.object_store_s3 import S3ObjectStore
+from app.meetings import speaker_excerpt_service
 from app.meetings.speaker_excerpt_service import ExcerptKeyring, SpeakerExcerptService
 
 MAX_SOURCE_BYTES = 20 * 1024 * 1024
@@ -539,3 +541,104 @@ async def test_decoder_failure_is_generic_at_service_boundary(keyring: ExcerptKe
         "synthetic/object",
     ):
         assert internal_fragment not in message
+
+
+class SyntheticChildProcess:
+    """External child-process adapter whose exit is controlled by each test."""
+
+    pid = 731
+
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+        self.exited = asyncio.Event()
+
+    async def communicate(self, **kwargs: Any) -> tuple[bytes, bytes]:
+        assert kwargs["input"] == b"synthetic-source"
+        self.events.append("communicate_started")
+        await self.exited.wait()
+        self.events.append("communicate_finished")
+        return b"synthetic-partial-output", b"private-decoder-diagnostic"
+
+    async def wait(self) -> int:
+        self.events.append("wait_started")
+        await self.exited.wait()
+        self.events.append("wait_confirmed")
+        return -signal.SIGKILL
+
+
+# T-19 seam: the production managed decoder accepts a synthetic process spawner
+# and kill-group adapter so tests exercise its lifecycle orchestration without OS media.
+def managed_decoder_for_test(
+    events: list[str], *, confirm_exit_on_kill: bool
+) -> tuple[Any, SyntheticChildProcess]:
+    decoder_type = getattr(speaker_excerpt_service, "ManagedDecoderProcess", None)
+    assert callable(decoder_type), (
+        "T-19 must provide ManagedDecoderProcess to supervise process-group kill and reap"
+    )
+    process = SyntheticChildProcess(events)
+
+    async def spawn_process(*command: str, start_new_session: bool) -> SyntheticChildProcess:
+        assert command == ("synthetic-decoder",)
+        assert start_new_session, "decoder must run in its own killable process group"
+        events.append("spawned_process_group")
+        return process
+
+    def kill_process_group(pid: int, sig: signal.Signals) -> None:
+        assert pid == process.pid
+        assert sig == signal.SIGKILL, "timeout must hard-kill the decoder process group"
+        events.append("killed_process_group")
+        if confirm_exit_on_kill:
+            process.exited.set()
+
+    decoder = decoder_type(
+        spawn_process=spawn_process,
+        kill_process_group=kill_process_group,
+        monotonic=lambda: 0.0,
+    )
+    return decoder, process
+
+
+@pytest.mark.asyncio
+async def test_managed_decoder_hard_kills_and_reaps_before_discarding_timed_out_output() -> None:
+    events: list[str] = []
+    decoder, _process = managed_decoder_for_test(events, confirm_exit_on_kill=True)
+
+    with pytest.raises((TimeoutError, ValueError, RuntimeError)) as error:
+        await decoder.run(
+            ("synthetic-decoder",),
+            input_bytes=b"synthetic-source",
+            deadline_monotonic=0.01,
+        )
+
+    assert events[:2] == ["spawned_process_group", "communicate_started"]
+    assert events.index("killed_process_group") < events.index("wait_started")
+    assert events.index("wait_started") < events.index("wait_confirmed")
+    assert "synthetic-partial-output" not in str(error.value)
+    assert "private-decoder-diagnostic" not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_managed_decoder_does_not_return_until_process_exit_is_confirmed() -> None:
+    events: list[str] = []
+    decoder, process = managed_decoder_for_test(events, confirm_exit_on_kill=False)
+    operation = asyncio.create_task(
+        decoder.run(
+            ("synthetic-decoder",),
+            input_bytes=b"synthetic-source",
+            deadline_monotonic=0.01,
+        )
+    )
+
+    await asyncio.sleep(0.03)
+    assert not operation.done(), "an unconfirmed process exit cannot release its caller"
+    assert events == [
+        "spawned_process_group",
+        "communicate_started",
+        "killed_process_group",
+        "wait_started",
+    ]
+
+    process.exited.set()
+    with pytest.raises((TimeoutError, ValueError, RuntimeError)):
+        await operation
+    assert events.index("wait_started") < events.index("wait_confirmed")
