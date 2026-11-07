@@ -221,10 +221,14 @@ class AccessLog(Base):
 
 
 class Diarization(Base):
-    """Diarization result associated 1:1 with a Meeting (Req. 8.1, 8.4, 9.3, 9.4, 10.5)."""
+    """Diarization result for one processing generation associated with a Meeting."""
 
     __tablename__ = "diarizations"
-    __table_args__ = (UniqueConstraint("meeting_id", name="uq_diarization_meeting_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "meeting_id", "processing_revision", name="uq_diarization_meeting_revision"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     meeting_id: Mapped[str] = mapped_column(
@@ -233,8 +237,16 @@ class Diarization(Base):
     transcript_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("transcripts.id"), nullable=False
     )
-    provider: Mapped[str] = mapped_column(String(128), nullable=False)
-    speaker_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    speaker_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    processing_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    is_legacy: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     diarization_state: Mapped[str] = mapped_column(
         String(32), nullable=False
     )  # pending | in_progress | completed | failed
@@ -284,7 +296,11 @@ class SpeakerAssignment(Base):
     """Assignment of a SpeechTurn to a Speaker (Req. 7.1)."""
 
     __tablename__ = "speaker_assignments"
-    __table_args__ = (UniqueConstraint("turn_id", name="uq_speaker_assignment_turn_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "diarization_id", "turn_id", name="uq_speaker_assignment_diarization_turn"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     diarization_id: Mapped[str] = mapped_column(
@@ -296,6 +312,7 @@ class SpeakerAssignment(Base):
     speaker_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("speakers.id", ondelete="CASCADE"), nullable=False
     )
+    overlap_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     diarization: Mapped["Diarization"] = relationship(
         "Diarization", back_populates="assignments"
