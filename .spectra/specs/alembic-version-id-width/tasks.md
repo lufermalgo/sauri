@@ -4,8 +4,11 @@
 
 | Phase | Description | Tasks | Dependencies |
 |---|---|---|---|
-| 1 | Required pre-GREEN tests for forward migration, atomicity, schema, identity, and downgrade properties | T-1–T-5 | T-1 → T-2 → T-3; T-2 → T-4 → T-5 (shared test module; T-3 is no longer a prerequisite for T-4) |
-| 2 | GREEN migration-local width fix | T-6 | T-1–T-5 (required tests run before changing migration code; T-1, T-2, and T-5 demonstrate the defect, while T-4 is an unchanged-behavior guard expected to pass on baseline) |
+| 1 | Planned pre-GREEN tests for forward migration, atomicity, schema, and downgrade properties | T-1–T-3, T-5 | Original test-before-code plan; T-3 and T-5 were later dropped |
+| 2 | GREEN migration-local width fix (completed) | T-6 | Historical implementation phase; T-6 merged before T-4 was executed |
+| 3 | Post-GREEN published-identity guard | T-4 | T-2 (shared test module; T-3 is not a prerequisite) |
+
+**Chronology:** T-6 has already merged. T-4 remains required and must now be executed against the post-T-6 candidate; it is not a pre-GREEN gate, and no pre-T-6 result is asserted here.
 
 ## Phase 1: Required Pre-GREEN Tests
 
@@ -39,16 +42,6 @@
 **Dependencies:** T-2 (both edit `backend/tests/test_migration.py`; serialize to avoid merge conflicts).
 **Tracking:** Issue #490 · Card task_3e697f0243b24be2
 
-### T-4: Guard published revision identities and parent links
-
-**Type:** Required unchanged-behavior regression test (pre-GREEN; baseline expected to pass)
-**Test seam:** `backend/tests/test_migration.py`, `test_published_009_revision_ids_and_immediate_parent_are_preserved`; import `revision` and `down_revision` from both `backend/alembic/versions/009_speaker_review_idempotency_receipts.py` and `backend/alembic/versions/009_recording_media_sources.py`, and inspect `ScriptDirectory` for the resulting Alembic graph.
-**Action:** Add regression assertions that both published revision IDs and their existing parent declarations remain exact and appear in the script graph. Keep the target upgrade explicit; the assertions must not require `alembic upgrade head` to succeed or reconcile the sibling-009 graph.
-**Acceptance evidence:** Run this guard before T-6 and retain its passing result for both modules' exact revision/down-revision values and graph entries; it remains passing after T-6. It does not assert `alembic upgrade head` succeeds or that `head` is unambiguous.
-**Validation:** From `backend/`, run `.venv/bin/python -m pytest tests/test_migration.py`.
-**Dependencies:** T-2 / Issue #489 (both edit `backend/tests/test_migration.py`; serialize to avoid merge conflicts). T-3 / Issue #490 is dropped and is not a prerequisite.
-**Tracking:** Issue #491 · Card task_10bb77d585bc4308
-
 ### T-5 (RED): Specify downgrade and re-upgrade behavior
 
 **Type:** Required test (RED)
@@ -56,7 +49,7 @@
 **Action:** Add integration assertions that after upgrade then downgrade to `008_speaker_review_aggregate`, the receipts table is removed while `alembic_version.version_num` remains length 39; re-upgrading records the exact 39-character receipts revision and restores the existing receipt schema. Demonstrate the test before T-6; do not test sibling branch reconciliation.
 **Acceptance evidence:** Downgrade removes the receipt table without narrowing the version column, and re-upgrade succeeds with the exact target revision and schema.
 **Validation:** From `backend/`, run `.venv/bin/python -m pytest tests/test_migration.py` with QA's recorded isolated PostgreSQL 16 setup.
-**Dependencies:** T-4 (both edit `backend/tests/test_migration.py`; serialize to avoid merge conflicts).
+**Dependencies (historical plan):** T-4 was listed for shared-test-file serialization. T-5 was later dropped and does not gate the post-GREEN T-4 guard.
 **Tracking:** Issue #492 · Card task_5d53808ed8a44d90
 
 ## Phase 2: GREEN Migration Fix
@@ -66,10 +59,22 @@
 **Type:** Required implementation
 **Files:** `backend/alembic/versions/009_speaker_review_idempotency_receipts.py`
 **Action:** At the beginning of that migration's `upgrade()`, before receipt-table operations, use `op.alter_column` to widen `alembic_version.version_num` from `sa.String(length=32)` to exactly `sa.String(length=39)`. Keep the widening in the same PostgreSQL migration transaction. Do not change either published 009 revision identity, parent relationship, receipt schema/operations, downgrade behavior (which must not shrink the column), migration graph, or introduce a later migration.
-**Acceptance evidence:** On isolated synthetic PostgreSQL 16, T-1, T-2, and T-5 each fail before T-6 for the documented width defect and pass after T-6; T-3 schema assertions pass without schema changes, and T-4's published-identity guard passes both before and after T-6.
+**Acceptance evidence (original plan, not a report of observed results):** On isolated synthetic PostgreSQL 16, T-1, T-2, and T-5 were specified to fail before T-6 for the documented width defect and pass after T-6; T-3 schema assertions were specified to pass without schema changes. T-4 was intended to preserve the published-identity guard across T-6; because it is now a post-GREEN task, its acceptance is the passing post-T-6 run defined under T-4. No pre-T-6 result is claimed.
 **Validation:** From `backend/`, run `.venv/bin/python -m pytest tests/test_migration.py` with QA's recorded isolated PostgreSQL 16 setup.
-**Dependencies:** T-1, T-2, T-3, T-4, T-5 (mandatory test-before-code order; the shared `backend/tests/test_migration.py` also serializes these tasks to avoid edit conflicts).
+**Dependencies (historical plan):** T-1–T-5 were listed as prerequisites under the original test-before-code order and shared-test-file serialization. T-6 is complete; T-4 is now a post-GREEN guard and cannot be a prospective prerequisite for T-6. T-3 and T-5 were dropped. This historical list does not assert that any task's test ran or passed.
 **Tracking:** Issue #493 · Card task_16c458c020924ae0
+
+## Phase 3: Post-GREEN Published-Identity Guard
+
+### T-4: Guard published revision identities and parent links
+
+**Type:** Required unchanged-behavior regression test (post-GREEN guard)
+**Test seam:** `backend/tests/test_migration.py`, `test_published_009_revision_ids_and_immediate_parent_are_preserved`; import `revision` and `down_revision` from both `backend/alembic/versions/009_speaker_review_idempotency_receipts.py` and `backend/alembic/versions/009_recording_media_sources.py`, and inspect `ScriptDirectory` for the resulting Alembic graph.
+**Action:** Add regression assertions that both published revision IDs and their existing parent declarations remain exact and appear in the script graph. Keep the target upgrade explicit; the assertions must not require `alembic upgrade head` to succeed or reconcile the sibling-009 graph.
+**Acceptance evidence:** Run this guard against the post-T-6 candidate and retain its passing result for both modules' exact revision/down-revision values and graph entries. T-6's earlier design intent was for this guard to remain passing across the width change; this amended task does not claim a pre-T-6 run or result. It does not assert `alembic upgrade head` succeeds or that `head` is unambiguous.
+**Validation:** From `backend/`, run `.venv/bin/python -m pytest tests/test_migration.py`.
+**Dependencies:** T-2 / Issue #489 (both edit `backend/tests/test_migration.py`; serialize to avoid merge conflicts). T-3 / Issue #490 is dropped and is not a prerequisite.
+**Tracking:** Issue #491 · Card task_10bb77d585bc4308
 
 ## Validation Prerequisites and Scope Boundaries
 
