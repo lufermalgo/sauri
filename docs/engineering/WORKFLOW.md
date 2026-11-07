@@ -7,7 +7,7 @@ Single source of truth for how work on Sauri is done, by agents or humans. `AGEN
 
 ## 1. Principles
 1. **One task = one issue = one branch = one worktree = one PR.** Small and reversible.
-2. **Fer decides product, privacy and spending; specialists decide technique; Ansel resolves technical disagreements.** Technical work within approved scope does not need another owner approval. Do not assume authorization for spending, deployment or actions outside the approved scope.
+2. **Fer decides product, privacy, spending and changes to security policy; specialists decide technique; Ansel resolves technical disagreements.** Technical work within approved scope does not need another owner approval. Do not assume authorization for spending, deployment or actions outside the approved scope.
 3. **The simplest solution that fully satisfies the approved requirements.** See §3.
 4. **Evidence over claims.** Report what was run and observed; anything not run is `UNVERIFIED`. A green check is not proof by itself.
 5. **Protect work you did not create.** Never discard, overwrite or absorb someone else's uncommitted work.
@@ -48,7 +48,7 @@ Specs live in `.spectra/specs/[slug]/` with `.config.spectra` (`specType`: featu
 Every turn ends as one of: `completed` with evidence; `in progress` with the next action and a verified active run; or `blocked` with what is blocked, evidence and attempts, next actor, whether the owner must act, and the exact condition that resumes work. `unknown` is not success and does not justify a blind retry. Do not promise background monitoring unless a verified mechanism is active.
 
 ## 3. Questions and decisions
-- **Who decides.** Ansel decides technical and sequencing questions within approved scope. Product, privacy/retention and spending decisions go to Fer through Ansel. A specialist never asks Fer a technical question. Deployment or other actions outside approved scope require the applicable authorization; do not bypass permissions.
+- **Who decides.** Ansel decides technical and sequencing questions within approved scope. Product, privacy/retention, spending and changes to security policy go to Fer through Ansel. Implementing an approved security requirement is a technical decision, not a policy change. A specialist never asks Fer a technical question. Deployment or other actions outside approved scope require the applicable authorization; do not bypass permissions.
 - **How a question is raised.** On the card HAND-OFF (or to Ansel): the decision needed, the options, the evidence, the risks of each, and the asker's recommended option. A question without a recommendation is incomplete.
 - **The simplest complete option.** Approve the option that is correct and complete for the approved requirement: it fixes the root cause, keeps tests real, stays maintainable and adds no hidden debt. A simpler or faster option is acceptable when it fully meets the approved requirements and preserves real validation. Rejected by rule: dummy implementations, stubs or placeholders, mocks in production code, skipped or weakened tests, scope narrowed so a check turns green, and "temporary" workarounds without their own issue.
 - **When the right answer is unclear.** Ansel consults the relevant specialists when evidence is insufficient and chooses a solution that fully meets the approved requirement. If still blocked, consult Teo and continue independent work.
