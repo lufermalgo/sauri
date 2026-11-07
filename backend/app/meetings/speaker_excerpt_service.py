@@ -21,6 +21,8 @@ from typing import Any, Protocol, cast
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from app.infra.object_store import ObjectStore
+
 
 class ExcerptCandidate(Protocol):
     """A diarization interval with its speaker assignment and VAD evidence."""
@@ -210,6 +212,9 @@ class SpeakerExcerptService:
     The returned reference is intended to be persisted in the review item. Its
     authenticated encryption contains the server-side object locator and scope;
     callers must still authorize recording access before invoking ``play``.
+
+    Interval callbacks build process arguments only. Source bytes are read through
+    ``ObjectStore.get_bounded`` and every interval runs in ``ManagedDecoderProcess``.
     """
 
     MAX_SOURCE_BYTES = 20 * 1024 * 1024
@@ -220,11 +225,15 @@ class SpeakerExcerptService:
     def __init__(
         self,
         *,
+        object_store: ObjectStore,
+        decoder: ManagedDecoderProcess,
         decode_interval: Callable[..., Any],
         read_interval: Callable[..., Any],
         keyring: ExcerptKeyring | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
+        self._object_store = object_store
+        self._decoder = decoder
         self._decode_interval = decode_interval
         self._read_interval = read_interval
         self._keyring = keyring or ExcerptKeyring.from_environment()
@@ -312,6 +321,46 @@ class SpeakerExcerptService:
             return nested.result()
         return result
 
+    async def _read_source(self, object_key: str, deadline_monotonic: float) -> bytes:
+        source = await self._invoke(
+            self._object_store.get_bounded,
+            object_key,
+            self.MAX_SOURCE_BYTES,
+            deadline_monotonic=deadline_monotonic,
+        )
+        if not isinstance(source, bytes) or not source or len(source) > self.MAX_SOURCE_BYTES:
+            raise ValueError("speaker excerpt unavailable")
+        return source
+
+    async def _decode_with_managed_process(
+        self,
+        command_builder: Callable[..., Any],
+        object_key: str,
+        start_ms: int,
+        end_ms: int,
+        source: bytes,
+        deadline_monotonic: float,
+    ) -> bytes:
+        command = await self._invoke(
+            command_builder,
+            object_key,
+            start_ms,
+            end_ms,
+            deadline_monotonic=deadline_monotonic,
+        )
+        if (
+            not isinstance(command, Sequence)
+            or isinstance(command, (str, bytes))
+            or not command
+            or any(not isinstance(part, str) or not part for part in command)
+        ):
+            raise ValueError("speaker excerpt unavailable")
+        return await self._decoder.run(
+            tuple(command),
+            input_bytes=source,
+            deadline_monotonic=deadline_monotonic,
+        )
+
     async def derive(
         self,
         *,
@@ -343,27 +392,32 @@ class SpeakerExcerptService:
                     candidate.start_ms,
                 ),
             )
-            for candidate in ordered:
-                if (
-                    candidate.assigned_speaker_id != speaker_id
-                    or candidate.start_ms < 0
-                    or candidate.end_ms <= candidate.start_ms
-                    or candidate.end_ms - candidate.start_ms > self.MAX_EXCERPT_DURATION_MS
-                    or candidate.end_ms > audio_duration_ms
-                    or candidate.vad_window_count <= 0
-                    or candidate.vad_positive_windows <= 0
-                    or candidate.vad_positive_windows > candidate.vad_window_count
-                ):
-                    continue
+            eligible = [
+                candidate
+                for candidate in ordered
+                if candidate.assigned_speaker_id == speaker_id
+                and candidate.start_ms >= 0
+                and candidate.end_ms > candidate.start_ms
+                and candidate.end_ms - candidate.start_ms <= self.MAX_EXCERPT_DURATION_MS
+                and candidate.end_ms <= audio_duration_ms
+                and candidate.vad_window_count > 0
+                and candidate.vad_positive_windows > 0
+                and candidate.vad_positive_windows <= candidate.vad_window_count
+            ]
+            if not eligible:
+                raise ValueError("speaker excerpt unavailable")
+            source = await self._read_source(object_key, deadline)
+            for candidate in eligible:
                 if self._monotonic() >= deadline:
                     raise TimeoutError("speaker excerpt unavailable")
                 try:
-                    decoded = await self._invoke(
+                    decoded = await self._decode_with_managed_process(
                         self._decode_interval,
                         object_key,
                         candidate.start_ms,
                         candidate.end_ms,
-                        deadline_monotonic=deadline,
+                        source,
+                        deadline,
                     )
                 except asyncio.CancelledError:
                     raise
@@ -397,10 +451,8 @@ class SpeakerExcerptService:
             raise ValueError("speaker excerpt unavailable")
         except asyncio.CancelledError:
             raise
-        except Exception as error:
-            if isinstance(error, TimeoutError):
-                raise ValueError("speaker excerpt unavailable") from None
-            raise
+        except Exception:
+            raise ValueError("speaker excerpt unavailable") from None
         finally:
             _PROCESS_PERMITS.release()
 
@@ -486,12 +538,14 @@ class SpeakerExcerptService:
             raise ValueError("speaker excerpt unavailable")
         deadline = await self._acquire()
         try:
-            result = await self._invoke(
+            source = await self._read_source(object_key, deadline)
+            result = await self._decode_with_managed_process(
                 self._read_interval,
                 object_key,
                 start_ms,
                 end_ms,
-                deadline_monotonic=deadline,
+                source,
+                deadline,
             )
             if not isinstance(result, bytes) or not result or self._monotonic() >= deadline:
                 raise ValueError("speaker excerpt unavailable")

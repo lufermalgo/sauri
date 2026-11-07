@@ -52,10 +52,16 @@ def service(
     keyring = kwargs.pop(
         "keyring", ExcerptKeyring(active_key_id="test", keys={"test": b"k" * 32})
     )
+    monotonic = kwargs.pop("monotonic", time.monotonic)
+    object_store = kwargs.pop("object_store", RecordingBoundedStore())
+    decoder = kwargs.pop("decoder", synthetic_managed_decoder(monotonic=monotonic))
     return SpeakerExcerptService(
-        decode_interval=decode_interval or (lambda *_args: b"synthetic-audio"),
-        read_interval=read_interval or (lambda *_args: b"synthetic-audio"),
+        object_store=object_store,
+        decoder=decoder,
+        decode_interval=decode_interval or (lambda *_args: ("synthetic-decoder",)),
+        read_interval=read_interval or (lambda *_args: ("synthetic-decoder",)),
         keyring=keyring,
+        monotonic=monotonic,
         **kwargs,
     )
 
@@ -164,13 +170,27 @@ class CompletedDecoderProcess:
     def __init__(self) -> None:
         self.returncode: int | None = None
 
-    async def communicate(self, *, input: bytes) -> tuple[bytes, bytes]:
-        assert input == b"synthetic-source"
+    async def communicate(self, **kwargs: Any) -> tuple[bytes, bytes]:
+        assert kwargs["input"] == b"synthetic-source"
         self.returncode = 0
         return b"managed-synthetic-excerpt", b""
 
     async def wait(self) -> int:
         return 0
+
+
+def synthetic_managed_decoder(
+    *, monotonic: Callable[[], float] = time.monotonic
+) -> speaker_excerpt_service.ManagedDecoderProcess:
+    async def spawn(*_command: str, start_new_session: bool) -> CompletedDecoderProcess:
+        assert start_new_session
+        return CompletedDecoderProcess()
+
+    return speaker_excerpt_service.ManagedDecoderProcess(
+        spawn_process=spawn,
+        kill_process_group=lambda _pid, _signal: None,
+        monotonic=monotonic,
+    )
 
 
 @pytest.mark.asyncio
@@ -188,12 +208,12 @@ async def test_service_routes_derive_and_play_through_bounded_store_and_managed_
 
     decoder = speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn)
     excerpt_service = service(
-        decode_interval=lambda *_args: b"decoded-by-direct-callback",
-        read_interval=lambda *_args: b"read-by-direct-callback",
+        decode_interval=lambda *_args: ("synthetic-decoder",),
+        read_interval=lambda *_args: ("synthetic-decoder",),
+        object_store=storage,
+        decoder=decoder,
         keyring=keyring,
     )
-    excerpt_service._object_store = storage
-    excerpt_service._decoder = decoder
     excerpt = await derive(
         excerpt_service,
         duration_ms=MAX_AUDIO_DURATION_MS,
@@ -222,26 +242,26 @@ async def test_play_rejects_source_over_limit_before_managed_decode(
     keyring: ExcerptKeyring,
 ) -> None:
     storage = RecordingBoundedStore()
-    process = CompletedDecoderProcess()
+    spawn_calls: list[tuple[str, ...]] = []
 
-    async def spawn(*_command: str, start_new_session: bool) -> CompletedDecoderProcess:
+    async def spawn(*command: str, start_new_session: bool) -> CompletedDecoderProcess:
         assert start_new_session
-        return process
+        spawn_calls.append(command)
+        return CompletedDecoderProcess()
 
     excerpt_service = service(
-        decode_interval=lambda *_args: b"direct-decode",
-        read_interval=lambda *_args: b"direct-playback",
+        decode_interval=lambda *_args: ("synthetic-decoder",),
+        read_interval=lambda *_args: ("synthetic-decoder",),
+        object_store=storage,
+        decoder=speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn),
         keyring=keyring,
-    )
-    excerpt_service._object_store = storage
-    excerpt_service._decoder = speaker_excerpt_service.ManagedDecoderProcess(
-        spawn_process=spawn
     )
     excerpt = await derive(
         excerpt_service,
         duration_ms=MAX_AUDIO_DURATION_MS,
         candidates=[Candidate(100, 1_100)],
     )
+    spawn_calls.clear()
     storage.content = b"x" * (MAX_SOURCE_BYTES + 1)
     review = SimpleNamespace(meeting_id="recording-1", processing_revision=1)
     item = SimpleNamespace(review=review, speaker_key="speaker-1", excerpt_ref=excerpt.reference)
@@ -253,6 +273,7 @@ async def test_play_rejects_source_over_limit_before_managed_decode(
             revision_id=1,
             review_item=item,
         )
+    assert spawn_calls == [], "oversized source bytes must be rejected before child creation"
 
 
 @pytest.mark.asyncio
@@ -378,9 +399,9 @@ async def test_body_closes_when_bounded_read_fails(object_store: S3ObjectStore) 
 async def test_valid_exact_audio_and_excerpt_limits_are_accepted(keyring: ExcerptKeyring) -> None:
     decode_calls: list[tuple[Any, ...]] = []
 
-    def decode(*args: Any, **_kwargs: Any) -> bytes:
+    def decode(*args: Any, **_kwargs: Any) -> tuple[str, ...]:
         decode_calls.append(args)
-        return b"synthetic-audio"
+        return ("synthetic-decoder",)
 
     excerpt_service = service(decode_interval=decode, keyring=keyring)
     result = await derive(
@@ -401,9 +422,9 @@ async def test_unknown_invalid_or_overlong_audio_is_rejected_before_interval_dec
 ) -> None:
     decode_calls: list[tuple[Any, ...]] = []
 
-    def decode(*args: Any, **_kwargs: Any) -> bytes:
+    def decode(*args: Any, **_kwargs: Any) -> tuple[str, ...]:
         decode_calls.append(args)
-        return b"synthetic-audio"
+        return ("synthetic-decoder",)
 
     excerpt_service = service(decode_interval=decode)
     with pytest.raises(Exception) as error:
@@ -421,9 +442,9 @@ async def test_unknown_invalid_or_overlong_audio_is_rejected_before_interval_dec
 async def test_overlong_candidate_is_skipped_not_truncated(keyring: ExcerptKeyring) -> None:
     decode_calls: list[tuple[Any, ...]] = []
 
-    def decode(*args: Any, **_kwargs: Any) -> bytes:
+    def decode(*args: Any, **_kwargs: Any) -> tuple[str, ...]:
         decode_calls.append(args)
-        return b"synthetic-audio"
+        return ("synthetic-decoder",)
 
     excerpt_service = service(decode_interval=decode, keyring=keyring)
     result = await derive(
@@ -440,9 +461,9 @@ async def test_overlong_candidate_is_skipped_not_truncated(keyring: ExcerptKeyri
 async def test_no_valid_candidate_returns_no_reference_or_partial_decode() -> None:
     decode_calls: list[tuple[Any, ...]] = []
 
-    def decode(*args: Any, **_kwargs: Any) -> bytes:
+    def decode(*args: Any, **_kwargs: Any) -> tuple[str, ...]:
         decode_calls.append(args)
-        return b"synthetic-partial-output"
+        return ("synthetic-decoder",)
 
     excerpt_service = service(decode_interval=decode)
     with pytest.raises(ValueError):
@@ -462,9 +483,9 @@ async def test_playback_is_awaited_and_returns_only_complete_persisted_excerpt(
     assert inspect.iscoroutinefunction(SpeakerExcerptService.play)
     read_calls: list[tuple[Any, ...]] = []
 
-    def read(*args: Any, **_kwargs: Any) -> bytes:
+    def read(*args: Any, **_kwargs: Any) -> tuple[str, ...]:
         read_calls.append(args)
-        return b"complete-synthetic-excerpt"
+        return ("synthetic-decoder",)
 
     excerpt_service = service(read_interval=read, keyring=keyring)
     excerpt = await derive(
@@ -482,7 +503,7 @@ async def test_playback_is_awaited_and_returns_only_complete_persisted_excerpt(
         review_item=item,
     )
 
-    assert result == b"complete-synthetic-excerpt"
+    assert result == b"managed-synthetic-excerpt"
     assert read_calls == [("synthetic/object", 100, 1_100)]
 
 
@@ -511,10 +532,10 @@ async def test_sync_decoder_does_not_block_loop_or_release_permit_before_worker_
     finish_worker = threading.Event()
     threading.Timer(0.2, finish_worker.set).start()
 
-    def blocking_decode(*_args: Any, **_kwargs: Any) -> bytes:
+    def blocking_decode(*_args: Any, **_kwargs: Any) -> tuple[str, ...]:
         worker_started.set()
         finish_worker.wait()
-        return b"late-synthetic-output"
+        return ("synthetic-decoder",)
 
     excerpt_service = service(decode_interval=blocking_decode)
     operation = asyncio.create_task(
@@ -557,15 +578,15 @@ async def test_one_nonblocking_two_permit_limit_is_shared_by_derive_and_play(
     entered: asyncio.Queue[str] = asyncio.Queue()
     release = asyncio.Event()
 
-    async def blocking_decode(*_args: Any, **_kwargs: Any) -> bytes:
+    async def blocking_decode(*_args: Any, **_kwargs: Any) -> tuple[str, ...]:
         entered.put_nowait("derive")
         await release.wait()
-        return b"synthetic-audio"
+        return ("synthetic-decoder",)
 
-    async def blocking_read(*_args: Any, **_kwargs: Any) -> bytes:
+    async def blocking_read(*_args: Any, **_kwargs: Any) -> tuple[str, ...]:
         entered.put_nowait("play")
         await release.wait()
-        return b"synthetic-audio"
+        return ("synthetic-decoder",)
 
     excerpt_service = service(
         decode_interval=blocking_decode,
@@ -614,12 +635,12 @@ async def test_one_deadline_is_shared_across_candidate_retries_and_result(
         _end_ms: int,
         *,
         deadline_monotonic: float,
-    ) -> bytes:
+    ) -> tuple[str, ...]:
         deadlines.append(deadline_monotonic)
         clock.now += 15.0
         if start_ms == 0:
             raise ValueError("synthetic candidate rejected")
-        return b"synthetic-audio"
+        return ("synthetic-decoder",)
 
     excerpt_service = service(decode_interval=decode, monotonic=lambda: clock.now, keyring=keyring)
     await derive(
@@ -642,24 +663,14 @@ async def test_timeout_cancels_decoder_and_waits_for_kill_discard_and_reap_befor
     assert inspect.iscoroutinefunction(SpeakerExcerptService.derive)
     monkeypatch.setattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS", 0.01, raising=False)
     events: list[str] = []
-    never_finish = asyncio.Event()
-    active_body = SyntheticBody(len(b"synthetic-source"))
-
-    async def decoder(*_args: Any, **_kwargs: Any) -> bytes:
-        events.append("decode_started")
-        try:
-            await never_finish.wait()
-        except asyncio.CancelledError:
-            active_body.close()
-            events.append("close_active_read")
-            events.append("kill_process_group")
-            events.append("discard_staged_output")
-            await asyncio.sleep(0)
-            events.append("reap_process")
-            raise
-        return b"synthetic-partial-output"
-
-    excerpt_service = service(decode_interval=decoder, keyring=keyring)
+    managed_decoder, _process = managed_decoder_for_test(
+        events, confirm_exit_on_kill=True, monotonic=time.monotonic
+    )
+    excerpt_service = service(
+        decode_interval=lambda *_args: ("synthetic-decoder",),
+        decoder=managed_decoder,
+        keyring=keyring,
+    )
     with pytest.raises((TimeoutError, ValueError, RuntimeError)):
         await derive(
             excerpt_service,
@@ -668,13 +679,12 @@ async def test_timeout_cancels_decoder_and_waits_for_kill_discard_and_reap_befor
         )
 
     assert events == [
-        "decode_started",
-        "close_active_read",
-        "kill_process_group",
-        "discard_staged_output",
-        "reap_process",
+        "spawned_process_group",
+        "communicate_started",
+        "killed_process_group",
+        "wait_started",
+        "wait_confirmed",
     ]
-    assert active_body.closed
 
 
 @pytest.mark.asyncio
@@ -684,21 +694,15 @@ async def test_unconfirmed_exit_holds_operation_and_rejects_new_work_until_reape
 ) -> None:
     assert inspect.iscoroutinefunction(SpeakerExcerptService.derive)
     monkeypatch.setattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS", 0.01, raising=False)
-    reap_confirmed = asyncio.Event()
     process_events: list[str] = []
-
-    async def unconfirmed_decoder(*_args: Any, **_kwargs: Any) -> bytes:
-        process_events.append("decode_started")
-        try:
-            await asyncio.Event().wait()
-        except asyncio.CancelledError:
-            process_events.extend(("kill_process_group", "discard_staged_output", "reap_pending"))
-            await reap_confirmed.wait()
-            process_events.append("reap_confirmed")
-            raise
-        raise AssertionError("synthetic decoder unexpectedly completed")
-
-    excerpt_service = service(decode_interval=unconfirmed_decoder, keyring=keyring)
+    managed_decoder, process = managed_decoder_for_test(
+        process_events, confirm_exit_on_kill=False, monotonic=time.monotonic
+    )
+    excerpt_service = service(
+        decode_interval=lambda *_args: ("synthetic-decoder",),
+        decoder=managed_decoder,
+        keyring=keyring,
+    )
     operation = asyncio.create_task(
         derive(excerpt_service, duration_ms=MAX_AUDIO_DURATION_MS, candidates=[Candidate(0, 1_000)])
     )
@@ -706,10 +710,10 @@ async def test_unconfirmed_exit_holds_operation_and_rejects_new_work_until_reape
 
     assert not operation.done(), "the service must not release a permit while process exit is unconfirmed"
     assert process_events == [
-        "decode_started",
-        "kill_process_group",
-        "discard_staged_output",
-        "reap_pending",
+        "spawned_process_group",
+        "communicate_started",
+        "killed_process_group",
+        "wait_started",
     ]
     with pytest.raises((RuntimeError, ValueError, TimeoutError)):
         await asyncio.wait_for(
@@ -717,10 +721,10 @@ async def test_unconfirmed_exit_holds_operation_and_rejects_new_work_until_reape
             timeout=0.05,
         )
 
-    reap_confirmed.set()
+    process.exited.set()
     with pytest.raises((TimeoutError, ValueError, RuntimeError)):
         await operation
-    assert process_events[-1] == "reap_confirmed"
+    assert process_events[-1] == "wait_confirmed"
 
 
 @pytest.mark.asyncio
@@ -774,7 +778,10 @@ class SyntheticChildProcess:
 # T-19 seam: the production managed decoder accepts a synthetic process spawner
 # and kill-group adapter so tests exercise its lifecycle orchestration without OS media.
 def managed_decoder_for_test(
-    events: list[str], *, confirm_exit_on_kill: bool
+    events: list[str],
+    *,
+    confirm_exit_on_kill: bool,
+    monotonic: Callable[[], float] = lambda: 0.0,
 ) -> tuple[Any, SyntheticChildProcess]:
     decoder_type = getattr(speaker_excerpt_service, "ManagedDecoderProcess", None)
     assert callable(decoder_type), (
@@ -798,7 +805,7 @@ def managed_decoder_for_test(
     decoder = decoder_type(
         spawn_process=spawn_process,
         kill_process_group=kill_process_group,
-        monotonic=lambda: 0.0,
+        monotonic=monotonic,
     )
     return decoder, process
 
@@ -916,31 +923,30 @@ async def test_repeated_cancellation_cannot_interrupt_decoder_reap() -> None:
 
 @pytest.mark.asyncio
 async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
+    monkeypatch: pytest.MonkeyPatch,
     keyring: ExcerptKeyring,
 ) -> None:
+    monkeypatch.setattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS", 0.01, raising=False)
     events: list[str] = []
-    managed_decoder, process = managed_decoder_for_test(events, confirm_exit_on_kill=False)
+    managed_decoder, process = managed_decoder_for_test(
+        events, confirm_exit_on_kill=False, monotonic=time.monotonic
+    )
     decode_calls: list[int] = []
 
-    async def decode_interval(
+    def decode_interval(
         _object_key: str,
         start_ms: int,
         _end_ms: int,
         **_kwargs: Any,
-    ) -> bytes:
+    ) -> tuple[str, ...]:
         decode_calls.append(start_ms)
-        if start_ms == 0:
-            return cast(
-                bytes,
-                await managed_decoder.run(
-                    ("synthetic-decoder",),
-                    input_bytes=b"synthetic-source",
-                    deadline_monotonic=0.01,
-                ),
-            )
-        return b"synthetic-complete-output"
+        return ("synthetic-decoder",)
 
-    excerpt_service = service(decode_interval=decode_interval, keyring=keyring)
+    excerpt_service = service(
+        decode_interval=decode_interval,
+        decoder=managed_decoder,
+        keyring=keyring,
+    )
     first_request = asyncio.create_task(
         derive(
             excerpt_service,
@@ -973,6 +979,7 @@ async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
     with pytest.raises((TimeoutError, ValueError, RuntimeError)):
         await first_request
     assert "wait_confirmed" in events
+    excerpt_service._decoder = synthetic_managed_decoder()
 
     await derive(
         excerpt_service,

@@ -13,11 +13,12 @@ import asyncio
 import base64
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from app.infra.models import SpeakerReview, SpeakerReviewItem
+from app.infra.object_store import ObjectStore
 from app.meetings.speaker_excerpt_service import SpeakerExcerptService
 
 
@@ -57,11 +58,68 @@ def _encoded_test_key(byte: int) -> str:
     return base64.urlsafe_b64encode(bytes([byte]) * 32).decode("ascii").rstrip("=")
 
 
+class FakeBoundedStore:
+    async def get_bounded(
+        self, _object_key: str, _max_bytes: int, deadline_monotonic: float
+    ) -> bytes:
+        return b"synthetic-source"
+
+
+class FakeDecoderProcess:
+    returncode: int | None = None
+
+    def __init__(self, media: FakeMedia, command: tuple[str, ...]) -> None:
+        self.media = media
+        self.command = command
+        self.pid = 1
+
+    async def communicate(self, **kwargs: Any) -> tuple[bytes, bytes]:
+        assert kwargs["input"] == b"synthetic-source"
+        _, mode, object_key, start_text, end_text = self.command
+        start_ms, end_ms = int(start_text), int(end_text)
+        if mode == "decode":
+            result = self.media.decoded.get((start_ms, end_ms))
+            if result is None:
+                raise ValueError("synthetic decode failure")
+        else:
+            if self.media.fail_read:
+                raise OSError("synthetic playback failure")
+            result = b"synthetic-audio"
+        self.returncode = 0
+        return result, b""
+
+    async def wait(self) -> int:
+        return 0
+
+
+def _new_service(media: FakeMedia) -> SpeakerExcerptService:
+    from app.meetings.speaker_excerpt_service import ManagedDecoderProcess
+
+    async def spawn(*command: str, start_new_session: bool) -> FakeDecoderProcess:
+        assert start_new_session
+        return FakeDecoderProcess(media, command)
+
+    def decode_command(object_key: str, start_ms: int, end_ms: int) -> tuple[str, ...]:
+        media.decode_calls.append((object_key, start_ms, end_ms))
+        return ("synthetic-decoder", "decode", object_key, str(start_ms), str(end_ms))
+
+    def read_command(object_key: str, start_ms: int, end_ms: int) -> tuple[str, ...]:
+        media.read_calls.append((object_key, start_ms, end_ms))
+        return ("synthetic-decoder", "read", object_key, str(start_ms), str(end_ms))
+
+    return SpeakerExcerptService(
+        object_store=cast(ObjectStore, FakeBoundedStore()),
+        decoder=ManagedDecoderProcess(spawn_process=spawn, kill_process_group=lambda *_: None),
+        decode_interval=decode_command,
+        read_interval=read_command,
+    )
+
+
 def _service(media: FakeMedia) -> SpeakerExcerptService:
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "test-v1")
         monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", f"test-v1:{_encoded_test_key(1)}")
-        return SpeakerExcerptService(decode_interval=media.decode, read_interval=media.read)
+        return _new_service(media)
 
 
 def _candidates() -> list[Candidate]:
@@ -308,7 +366,7 @@ def test_excerpt_keys_are_required_outside_the_jwt_secret(monkeypatch: pytest.Mo
     monkeypatch.delenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", raising=False)
 
     with pytest.raises(RuntimeError, match="SPEAKER_EXCERPT_KEYRING"):
-        SpeakerExcerptService(decode_interval=lambda *_: b"", read_interval=lambda *_: b"")
+        _new_service(FakeMedia())
 
 
 @pytest.mark.asyncio
@@ -319,7 +377,7 @@ async def test_versioned_excerpt_keyring_can_rotate_while_resolving_existing_ref
     media = FakeMedia({(4_000, 5_500): b"synthetic-speech"})
     monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", f"key-v1:{_encoded_test_key(1)}")
     monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "key-v1")
-    before_rotation = SpeakerExcerptService(decode_interval=media.decode, read_interval=media.read)
+    before_rotation = _new_service(media)
     excerpt = await _derive(before_rotation)
 
     monkeypatch.setenv(
@@ -327,7 +385,7 @@ async def test_versioned_excerpt_keyring_can_rotate_while_resolving_existing_ref
         f"key-v1:{_encoded_test_key(1)},key-v2:{_encoded_test_key(2)}",
     )
     monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "key-v2")
-    after_rotation = SpeakerExcerptService(decode_interval=media.decode, read_interval=media.read)
+    after_rotation = _new_service(media)
 
     assert excerpt.reference.startswith("v1.key-v1.")
     assert after_rotation.resolve(
