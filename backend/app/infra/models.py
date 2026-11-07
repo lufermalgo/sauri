@@ -2,7 +2,17 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infra.database import Base
@@ -227,6 +237,11 @@ class Diarization(Base):
     __table_args__ = (
         UniqueConstraint(
             "meeting_id", "processing_revision", name="uq_diarization_meeting_revision"
+        ),
+        CheckConstraint(
+            "diarization_state IN "
+            "('pending', 'in_progress', 'completed', 'failed', 'not_reconstructible')",
+            name="ck_diarizations_state_valid",
         ),
     )
 
