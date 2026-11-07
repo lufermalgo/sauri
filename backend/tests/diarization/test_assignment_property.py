@@ -246,6 +246,32 @@ def test_property_9_tie_break_by_lower_sequence(
             assert assignments_by_turn[turn.id].sequence == lowest_sequence
 
 
+def test_property_9_positive_tie_uses_lowest_sequence_independent_of_input_order() -> None:
+    """A positive-overlap tie selects the lowest sequence even if listed second."""
+    turn = Turn(id="positive-tie", start_ms=100, end_ms=200, sequence=1)
+    segments = [
+        SpeakerSegment(raw_label="SPEAKER_00", start_ms=100, end_ms=200),
+        SpeakerSegment(raw_label="SPEAKER_01", start_ms=100, end_ms=200),
+    ]
+    lowest_sequence = Speaker(
+        raw_label="SPEAKER_00", label="Speaker 1", sequence=1
+    )
+    higher_sequence = Speaker(
+        raw_label="SPEAKER_01", label="Speaker 2", sequence=2
+    )
+
+    result = assign_turns([turn], segments, [higher_sequence, lowest_sequence])
+
+    assert result == [(turn.id, lowest_sequence, 100)]
+
+
+def test_property_9_no_evidence_returns_no_assignments() -> None:
+    """Turns without diarization segments or speakers remain unassigned."""
+    turn = Turn(id="no-evidence", start_ms=100, end_ms=200, sequence=1)
+
+    assert assign_turns([turn], [], []) == []
+
+
 # ---------------------------------------------------------------------------
 # Property 10: Preservation of the Transcript's SpeechTurns
 # Feature: speaker-identification, Property 10: Preservation of the Transcript's SpeechTurns
