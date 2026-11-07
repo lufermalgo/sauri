@@ -62,23 +62,27 @@ async def test_migration_003_creates_three_tables(async_engine: AsyncEngine) -> 
 
 @pytest.mark.asyncio
 async def test_migration_003_unique_constraints(async_engine: AsyncEngine) -> None:
-    """uq_diarization_meeting_id and uq_speaker_assignment_turn_id are defined."""
+    """The current ORM schema defines generation-scoped unique constraints."""
 
     def _unique_constraints(
         sync_conn: Connection,
-    ) -> tuple[set[str | None], set[str | None]]:
+    ) -> tuple[set[str | None], dict[str | None, tuple[str, ...]]]:
         insp = inspect(sync_conn)
         diar_uqs = {uc["name"] for uc in insp.get_unique_constraints("diarizations")}
         assignment_uqs = {
-            uc["name"] for uc in insp.get_unique_constraints("speaker_assignments")
+            uc["name"]: tuple(uc["column_names"])
+            for uc in insp.get_unique_constraints("speaker_assignments")
         }
         return diar_uqs, assignment_uqs
 
     async with async_engine.connect() as conn:
         diar_uqs, assignment_uqs = await conn.run_sync(_unique_constraints)
 
-    assert "uq_diarization_meeting_id" in diar_uqs
-    assert "uq_speaker_assignment_turn_id" in assignment_uqs
+    assert "uq_diarization_meeting_revision" in diar_uqs
+    assert assignment_uqs["uq_speaker_assignment_diarization_turn"] == (
+        "diarization_id",
+        "turn_id",
+    )
 
 
 # ---------------------------------------------------------------------------
