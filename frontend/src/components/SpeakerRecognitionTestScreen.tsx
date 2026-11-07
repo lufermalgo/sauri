@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { uploadRecording } from "../api";
-import type { RecordingUploadData } from "../api";
+import { getMeeting, getSpeakerReview, getTranscript, uploadRecording } from "../api";
+import type { MeetingTranscript, RecordingUploadData, SpeakerReview } from "../api";
 
 interface EbmlElement {
   id: number;
@@ -11,6 +11,7 @@ interface EbmlElement {
 const MAX_WEBM_TRACKS_BYTES = 64 * 1024;
 const MAX_WEBM_ELEMENT_READS = 256;
 const EBML_HEADER = [0x1a, 0x45, 0xdf, 0xa3];
+const PROCESSING_POLL_INTERVAL_MS = 2000;
 
 interface EbmlReadBudget {
   remaining: number;
@@ -134,6 +135,13 @@ function hasWebmSignature(signature: Uint8Array): boolean {
   return EBML_HEADER.every((byte, index) => signature[index] === byte);
 }
 
+function formatTimestamp(milliseconds: number): string {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 interface SelectedRecording {
   file: File;
   objectUrl: string;
@@ -146,6 +154,9 @@ export function SpeakerRecognitionTestScreen() {
   const [recording, setRecording] = useState<SelectedRecording | null>(null);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "failed" | "uploaded">("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [meetingProcessState, setMeetingProcessState] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<MeetingTranscript | null>(null);
+  const [speakerReview, setSpeakerReview] = useState<SpeakerReview | null>(null);
   const [diagnostic, setDiagnostic] = useState({
     validation: "not checked",
     request: "not sent",
@@ -158,6 +169,48 @@ export function SpeakerRecognitionTestScreen() {
   useEffect(() => () => {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
   }, []);
+
+  const selectedMeetingId = recording?.meetingId;
+
+  useEffect(() => {
+    if (uploadState !== "uploaded" || !selectedMeetingId) return;
+    const meetingId = selectedMeetingId;
+
+    let active = true;
+    let timeout: number | undefined;
+
+    async function observeProcessing() {
+      try {
+        const meeting = await getMeeting(meetingId);
+        if (!active) return;
+        setMeetingProcessState(meeting.processState);
+
+        if (meeting.processState === "completed") {
+          const [completedTranscript, completedReview] = await Promise.all([
+            getTranscript(meetingId),
+            getSpeakerReview(meetingId),
+          ]);
+          if (active) {
+            setTranscript(completedTranscript);
+            setSpeakerReview(completedReview);
+          }
+          return;
+        }
+
+        if (meeting.processState !== "failed") {
+          timeout = window.setTimeout(observeProcessing, PROCESSING_POLL_INTERVAL_MS);
+        }
+      } catch {
+        if (active) timeout = window.setTimeout(observeProcessing, PROCESSING_POLL_INTERVAL_MS);
+      }
+    }
+
+    void observeProcessing();
+    return () => {
+      active = false;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [selectedMeetingId, uploadState]);
 
   function releaseObjectUrl(objectUrl: string) {
     if (objectUrlRef.current === objectUrl) {
@@ -180,6 +233,9 @@ export function SpeakerRecognitionTestScreen() {
     });
     setUploadState("idle");
     setUploadError(null);
+    setMeetingProcessState(null);
+    setTranscript(null);
+    setSpeakerReview(null);
     setDiagnostic({
       validation: "not checked",
       request: "not sent",
@@ -312,7 +368,36 @@ export function SpeakerRecognitionTestScreen() {
       )}
       {uploadState === "failed" && <p role="status">Upload failed. You can retry.</p>}
       {uploadError && <p role="alert">{uploadError}</p>}
-      {uploadState === "uploaded" && <p role="status">Upload received.</p>}
+      {uploadState === "uploaded" && !transcript && (
+        <p role="status">
+          {meetingProcessState === "failed"
+            ? "Processing failed."
+            : `Processing${meetingProcessState ? `: ${meetingProcessState}` : "…"}`}
+        </p>
+      )}
+      {transcript && speakerReview && (
+        <>
+          <section aria-labelledby="test-transcript-heading">
+            <h3 id="test-transcript-heading">Transcript</h3>
+            <ol>
+              {transcript.segments.map((segment) => (
+                <li key={segment.id}>
+                  {segment.startMs !== null && <time>{formatTimestamp(segment.startMs)}</time>}
+                  {segment.speakerLabel && <strong>{segment.speakerLabel}</strong>}
+                  <p>{segment.text}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
+          <section aria-labelledby="test-speaker-review-heading">
+            <h3 id="test-speaker-review-heading">Speaker review</h3>
+            <p>{speakerReview.status === "complete" ? "Review complete" : "Review pending"}</p>
+            <ul>
+              {speakerReview.items.map((item) => <li key={item.speakerId}>{item.currentLabel}</li>)}
+            </ul>
+          </section>
+        </>
+      )}
     </section>
   );
 }
