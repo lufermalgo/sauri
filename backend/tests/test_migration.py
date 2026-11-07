@@ -535,7 +535,7 @@ def _migration_script() -> ScriptDirectory:
     return ScriptDirectory.from_config(config)
 
 
-def test_published_009_revision_ids_and_immediate_parent_are_preserved() -> None:
+def test_published_migration_revision_ids_and_immediate_parent_are_preserved() -> None:
     script = _migration_script()
 
     for filename, revision in (
