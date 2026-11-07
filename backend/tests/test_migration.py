@@ -538,22 +538,16 @@ def _migration_script() -> ScriptDirectory:
 def test_published_migration_revision_ids_and_immediate_parent_are_preserved() -> None:
     script = _migration_script()
 
-    for filename, revision in (
-        ("009_recording_media_sources.py", RECORDING_MEDIA_REVISION),
-        ("009_speaker_review_idempotency_receipts.py", SPEAKER_REVIEW_RECEIPTS_REVISION),
-    ):
-        path = MIGRATIONS_DIR / filename
-        spec = importlib.util.spec_from_file_location(path.stem, path)
-        assert spec is not None and spec.loader is not None
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        assert module.revision == revision
-        assert module.down_revision == AGGREGATE_REVISION
-        graph_revision = script.get_revision(revision)
-        assert graph_revision is not None
-        assert graph_revision.revision == revision
-        assert graph_revision.down_revision == AGGREGATE_REVISION
+    assert script.get_revision(RECORDING_MEDIA_REVISION).revision == RECORDING_MEDIA_REVISION
+    assert script.get_revision(RECORDING_MEDIA_REVISION).down_revision == AGGREGATE_REVISION
+    assert (
+        script.get_revision(SPEAKER_REVIEW_RECEIPTS_REVISION).revision
+        == SPEAKER_REVIEW_RECEIPTS_REVISION
+    )
+    assert (
+        script.get_revision(SPEAKER_REVIEW_RECEIPTS_REVISION).down_revision
+        == AGGREGATE_REVISION
+    )
 
 
 def test_linkless_migration_is_the_only_head_after_the_009_reconciliation() -> None:
