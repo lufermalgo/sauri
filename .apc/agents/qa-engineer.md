@@ -8,6 +8,7 @@ parent: orchestrator
 area: quality
 icon: menta
 template: qa-engineer
+skills: sauri-project-context
 tools: tasks, shell, files, mcp, memory, search_chats, read_chat
 autonomy: total
 ---
