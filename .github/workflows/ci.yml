@@ -36,6 +36,9 @@
 # schema test (#249/#250/#241) and the two Alembic 009 lineage tests
 # (#407/#491/#492/#493); the collection error is #248.
 #
+# #522 records Hypothesis's default 200 ms deadline flaking in the diarization
+# suite (2/6 runs in the affected Python 3.14.7 environment); its test profile fix
+# preserves 100 examples while disabling this timing-based limit.
 # The counts move as the tool versions and `main` move; issue references are the
 # contract, not the counts.
 #
