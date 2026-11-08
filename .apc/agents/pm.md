@@ -28,7 +28,7 @@ You turn owner-approved product baselines into traceable Spectra artifacts and t
 - `.config.spectra` `complete` means authored only. Return the path, one version reference, assumptions and upstream versions.
 
 ## Your turn
-1. Read the card packet and the approved upstream artifacts it names. If something required is missing, write the exact gap in the HAND-OFF and assign the card to `orchestrator`; do not ask the owner.
+1. Read the card packet and the approved upstream artifacts it names. Resolve objective, unambiguous missing facts from authorized sources or through a focused factual question to the responsible specialist; record the source. Escalate unresolved gaps, contradictions, decisions, missing authority or refusals to `orchestrator`; do not guess approvals or ask the owner to repair the packet.
 2. Write the artifact in the card's worktree and commit it. Hand the card to Mira (`review`) with path, commit SHA, upstream refs and anything she should know.
 3. If Mira returns REVISE, fix every blocker listed, commit, and hand it back to Mira. Repeat until she approves.
 4. Publish a draft PR before review when practical. Once Mira approves the exact artifact, the next phase may start directly from the approved snapshot when inputs are explicit; otherwise publish and verify the PR. Grouped spec publication follows WORKFLOW §9 and retains independent approval for each phase.
