@@ -295,8 +295,8 @@ Each approved product module maps to a Spectra spec and a GitHub milestone:
 | Spectra artifact | GitHub artifact |
 |---|---|
 | Spec slug | Milestone |
-| Atomic task from `tasks.md` | Issue, label `task` |
-| Property test task | Issue, labels `task`, `test`, `pbt` |
+| Delivery unit of one or more eligible tasks from `tasks.md` | One issue and card; map each task to them, label `task` |
+| Delivery unit containing property tests | Labels `task`, `test`, `pbt` on its issue |
 | Bug found during execution | Issue, label `bug` |
 
 * After Mira approves the exact `tasks.md`, Zoya groups only small closely related tasks with the same owner, real dependencies and review gates into a delivery unit, or leaves them separate. Each unit gets an issue and board card; map every task to its issue and card in `tasks.md`, with individual acceptance evidence and dependencies. Do not regroup existing approved plans or alter scope without the applicable approval. A draft PR may be opened before QA/security; record its link and mark it ready only after applicable review and hand-off. Tests are never optional.
