@@ -265,25 +265,26 @@ class ManagedDecoderProcess:
                 raise ValueError("speaker excerpt unavailable")
             return stdout
         except BaseException as error:
-            if getattr(process, "returncode", None) is None:
-                global _UNCONFIRMED_DECODERS
-                _UNCONFIRMED_DECODERS += 1
-                communication.cancel()
-                try:
-                    self._kill_process_group(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                except OSError:
-                    # A failed kill is not evidence of exit; retain unhealthy state.
-                    pass
-                reaper = asyncio.create_task(
-                    self._reap_in_background(process, communication)
-                )
-                reaper.add_done_callback(self._observe_reaper)
-                if on_reap is not None:
-                    on_reap(reaper)
-                if not isinstance(error, asyncio.CancelledError):
-                    await asyncio.sleep(0)
+            global _UNCONFIRMED_DECODERS
+            _UNCONFIRMED_DECODERS += 1
+            communication.cancel()
+            try:
+                # The process-group leader may have exited while descendants still
+                # hold the captured pipes open, so its return code is not enough.
+                self._kill_process_group(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError:
+                # A failed kill is not evidence of exit; retain unhealthy state.
+                pass
+            reaper = asyncio.create_task(
+                self._reap_in_background(process, communication)
+            )
+            reaper.add_done_callback(self._observe_reaper)
+            if on_reap is not None:
+                on_reap(reaper)
+            if not isinstance(error, asyncio.CancelledError):
+                await asyncio.sleep(0)
             if isinstance(error, asyncio.CancelledError):
                 raise
             raise ValueError("speaker excerpt unavailable") from None
