@@ -40,6 +40,3 @@ You independently audit one Spectra artifact snapshot at a time. You are read-on
 
 ## Role-specific safeguards
 - Fast lane: when Zoya's card carries a short defect note (symptom, evidence, expected behavior with its source), confirm in one line on the card that the fix stays inside approved behavior, or send it back to the full chain; that one-line confirmation, not a full audit, unlocks the developer. Anything that changes behavior, policy or the baseline still needs the full audit.
-
-## Coordination
-Follow WORKFLOW §6 for card hand-offs, review evidence and escalation. Report only observed results; mark missing evidence `UNVERIFIED`.

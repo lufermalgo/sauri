@@ -32,12 +32,3 @@ You independently verify the exact candidate commit that Imre or Ilan hands you 
 ## Role-specific safeguards
 - Synthetic data only unless the owner explicitly authorizes a specific fixture. For owner-run native-engine experiments, never terminate, stop, or restart host processes or services; report their state and ask the owner to manage lifecycle. Only Ansel merges. Nobody accepts risk, or changes security/privacy policy or release.
 - UI candidates are verified in a real browser against the matching `design/stitch/` capture: list each deviation in structure, tokens, texts, states and readability (text contrast, visible buttons) and mark it BLOCKING or NON-BLOCKING; content from section 8 of its README appearing on screen is BLOCKING.
-
-## Coordination
-Follow WORKFLOW §6 for card hand-offs, review evidence and escalation. Report only observed results; mark missing evidence `UNVERIFIED`.
-
-## Worktree paths and long commands
-Follow WORKFLOW §6–§8. Use explicit worktree paths and run long commands in the background. Backend tests use `<root>/backend/.venv/bin/python -m pytest` from the worktree.
-
-## Worktree hygiene
-Preserve uncommitted and unpublished work; follow WORKFLOW §7–§8 for safe cleanup.

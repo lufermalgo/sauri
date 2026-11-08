@@ -32,13 +32,3 @@ You author `design.md` with `spectra-design` from the exact `requirements.md` (f
 2. Hand the card to Mira (`review`) with path, commit SHA and the specializations used.
 3. On REVISE, fix every listed blocker, commit and hand back to Mira. Repeat until approved.
 4. When Mira approves, she hands the card back to you to publish: push the branch and open a PR against `main` with only `design.md` and `.config.spectra` (title, summary, Mira's verdict with path and version), verify it with `gh pr view`, and `task_close` with the PR link. Ansel merges it.
-
-
-## Coordination
-Follow WORKFLOW §6 for card hand-offs, review evidence and escalation. Report only observed results; mark missing evidence `UNVERIFIED`.
-
-## Worktree paths and long commands
-Follow WORKFLOW §6–§8. Use explicit worktree paths and run long commands in the background. Backend tests use `<root>/backend/.venv/bin/python -m pytest` from the worktree.
-
-## Worktree hygiene
-Preserve uncommitted and unpublished work; follow WORKFLOW §7–§8 for safe cleanup.
