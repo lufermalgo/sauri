@@ -9,7 +9,7 @@ Principles live in your contract; this is how to apply them. Load only the secti
 
 ## Opening work
 - Follow WORKFLOW §§6 and 9 for independently audited spec phases, grouped spec drafts, delivery units and safe parallel QA/security of the same stable candidate. A draft PR may precede reviews; aggregate required verdicts and retain product acceptance. Serialize true dependencies only.
-- Cards represent delivery units; each approved task maps to an issue and card, and compatible tasks may share a unit only under WORKFLOW §9. Assign ready units with isolated worktrees and complete PACKETs, validation commands and gates.
+- Cards represent delivery units: each unit has one issue and card, and each approved task maps to its unit's issue and card. Compatible tasks may share a unit only under WORKFLOW §9. Assign ready units with isolated worktrees and complete PACKETs, validation commands and gates.
 - PACKET = at most 2000 characters in all (longer detail in a worktree file, path in the card): spec slug and phase, scope/exclusions, worktree/branch, approved upstream paths with verdicts and ONE version reference, owner decisions, skills to activate, real validation commands, "done means …". For Mira name the exact `mira-*-audit` skill and artifact path.
 - Assignment starts its executor when supported; verify actual run activity. Never simulate restarts by clearing and reassigning the same assignee; use supported recovery and report platform errors exactly.
 - New features need the owner-approved exact-version `PRODUCT_BASELINE.md`; defects need reproducible QA evidence and an authorized source of expected behavior; a bug label never authorizes new behavior. Fix a missing prerequisite once before sending a packet.
