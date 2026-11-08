@@ -1173,6 +1173,81 @@ async def test_timeout_reaps_descendant_held_stdout_before_releasing_permit() ->
 
 
 @pytest.mark.asyncio
+async def test_failed_group_kill_keeps_worker_unhealthy_and_permit_after_leader_exit() -> None:
+    stdout_eof = asyncio.Event()
+    kill_failed = asyncio.Event()
+    reapers: list[asyncio.Task[Any]] = []
+
+    class ExitedLeader:
+        pid = 943
+        returncode: int | None = 0
+        stdin = SyntheticInput()
+        stdout = None
+
+        def __init__(self) -> None:
+            self.stdout = self
+
+        async def read(self, _size: int) -> bytes:
+            await stdout_eof.wait()
+            return b""
+
+        async def wait(self) -> int:
+            return 0
+
+    process = ExitedLeader()
+
+    async def spawn_process(*_command: str, start_new_session: bool) -> Any:
+        assert start_new_session
+        return process
+
+    def kill_process_group(_pid: int, _sig: signal.Signals) -> None:
+        kill_failed.set()
+        raise PermissionError("synthetic process-group permission failure")
+
+    decoder = speaker_excerpt_service.ManagedDecoderProcess(
+        spawn_process=spawn_process,
+        kill_process_group=kill_process_group,
+    )
+    initial_health = speaker_excerpt_service._UNCONFIRMED_DECODERS
+    initial_permits = speaker_excerpt_service._PROCESS_PERMITS._value
+    await speaker_excerpt_service._PROCESS_PERMITS.acquire()
+    lease = speaker_excerpt_service._OperationLease(time.monotonic() + 0.01)
+
+    def record_reaper(task: asyncio.Task[Any]) -> None:
+        reapers.append(task)
+        lease.defer_release_until(task)
+
+    try:
+        with pytest.raises(ValueError, match="speaker excerpt unavailable"):
+            await decoder.run(
+                ("synthetic-decoder",),
+                input_bytes=b"synthetic-source",
+                deadline_monotonic=lease.deadline_monotonic,
+                on_reap=record_reaper,
+            )
+        lease.release()
+        assert kill_failed.is_set()
+        assert len(reapers) == 1
+
+        stdout_eof.set()
+        await reapers[0]
+
+        expected_health = initial_health + 1
+        expected_permits = initial_permits - 1
+        assert expected_health == speaker_excerpt_service._UNCONFIRMED_DECODERS
+        assert speaker_excerpt_service._PROCESS_PERMITS._value == expected_permits
+    finally:
+        stdout_eof.set()
+        for reaper in reapers:
+            if not reaper.done():
+                with suppress(BaseException):
+                    await reaper
+        speaker_excerpt_service._UNCONFIRMED_DECODERS = initial_health
+        if speaker_excerpt_service._PROCESS_PERMITS._value < initial_permits:
+            speaker_excerpt_service._PROCESS_PERMITS.release()
+
+
+@pytest.mark.asyncio
 async def test_managed_decoder_hard_kills_and_reaps_before_discarding_timed_out_output() -> None:
     events: list[str] = []
     decoder, _process = managed_decoder_for_test(events, confirm_exit_on_kill=True)
