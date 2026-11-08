@@ -124,6 +124,19 @@ async def _spawn_decoder_process(
 _PROCESS_PERMITS = asyncio.Semaphore(2)
 _UNCONFIRMED_DECODERS = 0
 MAX_DECODER_OUTPUT_BYTES = 20 * 1024 * 1024
+PROCESS_GROUP_CONFIRMATION_TIMEOUT_SECONDS = 1.0
+PROCESS_GROUP_POLL_INTERVAL_SECONDS = 0.01
+
+
+def _process_group_exists(process_group_id: int) -> bool | None:
+    """Return False only when the OS confirms the process group is gone."""
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return None
+    return True
 
 
 class _OperationLease:
@@ -160,11 +173,33 @@ class ManagedDecoderProcess:
         *,
         spawn_process: Callable[..., Awaitable[Any]] = _spawn_decoder_process,
         kill_process_group: Callable[[int, signal.Signals], None] = os.killpg,
+        process_group_exists: Callable[[int], bool | None] = _process_group_exists,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._spawn_process = spawn_process
         self._kill_process_group = kill_process_group
+        self._process_group_exists = process_group_exists
         self._monotonic = monotonic
+
+    async def _confirm_process_group_termination(self, process_group_id: int) -> bool:
+        confirmation_deadline = (
+            self._monotonic() + PROCESS_GROUP_CONFIRMATION_TIMEOUT_SECONDS
+        )
+        while True:
+            try:
+                group_exists = self._process_group_exists(process_group_id)
+            except ProcessLookupError:
+                return True
+            except OSError:
+                return False
+            if group_exists is False:
+                return True
+            if group_exists is None:
+                return False
+            remaining = confirmation_deadline - self._monotonic()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(PROCESS_GROUP_POLL_INTERVAL_SECONDS, remaining))
 
     async def _reap_in_background(
         self,
@@ -172,6 +207,7 @@ class ManagedDecoderProcess:
         input_task: asyncio.Task[None],
         output_task: asyncio.Task[tuple[bytes, bool]],
         *,
+        group_termination_requested: bool,
         group_termination_confirmed: bool,
     ) -> bool:
         """Retain worker health until group termination and child cleanup are confirmed."""
@@ -180,7 +216,10 @@ class ManagedDecoderProcess:
             await input_task
         await output_task
         await process.wait()
-        if not group_termination_confirmed:
+        if not group_termination_confirmed and (
+            not group_termination_requested
+            or not await self._confirm_process_group_termination(process.pid)
+        ):
             return False
         _UNCONFIRMED_DECODERS -= 1
         return True
@@ -293,23 +332,25 @@ class ManagedDecoderProcess:
             global _UNCONFIRMED_DECODERS
             _UNCONFIRMED_DECODERS += 1
             input_task.cancel()
-            group_termination_confirmed = True
+            group_termination_requested = False
+            group_termination_confirmed = False
             try:
-                # The process-group leader may have exited while descendants still
-                # hold the captured pipes open, so its return code is not enough.
+                # The leader may exit while descendants remain. A successful signal
+                # request is not proof that the entire process group has disappeared.
                 self._kill_process_group(process.pid, signal.SIGKILL)
+                group_termination_requested = True
             except ProcessLookupError:
                 # A missing group is confirmation that there are no descendants.
-                pass
+                group_termination_confirmed = True
             except OSError:
-                # A failed kill is not evidence of group exit. Keep the worker and
-                # operation lease unhealthy even if the leader and pipes later end.
-                group_termination_confirmed = False
+                # A failed kill is not evidence of group exit; keep the lease held.
+                pass
             reaper = asyncio.create_task(
                 self._reap_in_background(
                     process,
                     input_task,
                     output_task,
+                    group_termination_requested=group_termination_requested,
                     group_termination_confirmed=group_termination_confirmed,
                 )
             )

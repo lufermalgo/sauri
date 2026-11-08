@@ -132,7 +132,11 @@ def _new_service(media: FakeMedia) -> SpeakerExcerptService:
 
     return SpeakerExcerptService(
         object_store=cast(ObjectStore, FakeBoundedStore(media)),
-        decoder=ManagedDecoderProcess(spawn_process=spawn, kill_process_group=lambda *_: None),
+        decoder=ManagedDecoderProcess(
+            spawn_process=spawn,
+            kill_process_group=lambda *_: None,
+            process_group_exists=lambda _pid: False,
+        ),
         decode_interval=decode_command,
         read_interval=read_command,
         probe_audio=lambda: ("synthetic-decoder", "probe"),
