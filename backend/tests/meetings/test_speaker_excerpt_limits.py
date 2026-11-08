@@ -754,7 +754,7 @@ async def test_one_deadline_is_shared_across_probe_candidates_and_result(
         input_bytes: bytes,
         deadline_monotonic: float,
         max_output_bytes: int = speaker_excerpt_service.MAX_DECODER_OUTPUT_BYTES,
-        on_reap: Callable[[asyncio.Task[None]], None] | None = None,
+        on_reap: Callable[[asyncio.Task[bool]], None] | None = None,
     ) -> bytes:
         if command != ("synthetic-probe",):
             deadlines.append(deadline_monotonic)

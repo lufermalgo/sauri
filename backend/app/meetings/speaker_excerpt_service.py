@@ -134,11 +134,11 @@ class _OperationLease:
         self._deferred = False
         self._released = False
 
-    def defer_release_until(self, reaper: asyncio.Task[None]) -> None:
+    def defer_release_until(self, reaper: asyncio.Task[bool]) -> None:
         self._deferred = True
 
-        def release_when_reaped(task: asyncio.Task[None]) -> None:
-            if task.cancelled() or task.exception() is not None:
+        def release_when_reaped(task: asyncio.Task[bool]) -> None:
+            if task.cancelled() or task.exception() is not None or not task.result():
                 return
             if not self._released:
                 self._released = True
@@ -171,14 +171,19 @@ class ManagedDecoderProcess:
         process: Any,
         input_task: asyncio.Task[None],
         output_task: asyncio.Task[tuple[bytes, bool]],
-    ) -> None:
-        """Retain worker health until pipe EOF and leader exit are confirmed."""
+        *,
+        group_termination_confirmed: bool,
+    ) -> bool:
+        """Retain worker health until group termination and child cleanup are confirmed."""
         global _UNCONFIRMED_DECODERS
         with suppress(asyncio.CancelledError):
             await input_task
         await output_task
         await process.wait()
+        if not group_termination_confirmed:
+            return False
         _UNCONFIRMED_DECODERS -= 1
+        return True
 
     def _communicate_bounded(
         self, process: Any, input_bytes: bytes, max_output_bytes: int
@@ -234,7 +239,7 @@ class ManagedDecoderProcess:
         input_bytes: bytes,
         deadline_monotonic: float,
         max_output_bytes: int = MAX_DECODER_OUTPUT_BYTES,
-        on_reap: Callable[[asyncio.Task[None]], None] | None = None,
+        on_reap: Callable[[asyncio.Task[bool]], None] | None = None,
     ) -> bytes:
         """Return complete stdout only after the child exits successfully."""
         if (
@@ -288,17 +293,25 @@ class ManagedDecoderProcess:
             global _UNCONFIRMED_DECODERS
             _UNCONFIRMED_DECODERS += 1
             input_task.cancel()
+            group_termination_confirmed = True
             try:
                 # The process-group leader may have exited while descendants still
                 # hold the captured pipes open, so its return code is not enough.
                 self._kill_process_group(process.pid, signal.SIGKILL)
             except ProcessLookupError:
+                # A missing group is confirmation that there are no descendants.
                 pass
             except OSError:
-                # A failed kill is not evidence of exit; retain unhealthy state.
-                pass
+                # A failed kill is not evidence of group exit. Keep the worker and
+                # operation lease unhealthy even if the leader and pipes later end.
+                group_termination_confirmed = False
             reaper = asyncio.create_task(
-                self._reap_in_background(process, input_task, output_task)
+                self._reap_in_background(
+                    process,
+                    input_task,
+                    output_task,
+                    group_termination_confirmed=group_termination_confirmed,
+                )
             )
             reaper.add_done_callback(self._observe_reaper)
             if on_reap is not None:
@@ -310,7 +323,7 @@ class ManagedDecoderProcess:
             raise ValueError("speaker excerpt unavailable") from None
 
     @staticmethod
-    def _observe_reaper(task: asyncio.Task[None]) -> None:
+    def _observe_reaper(task: asyncio.Task[bool]) -> None:
         if not task.cancelled():
             with suppress(BaseException):
                 task.exception()
