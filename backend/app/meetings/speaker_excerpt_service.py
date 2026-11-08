@@ -167,60 +167,65 @@ class ManagedDecoderProcess:
         self._monotonic = monotonic
 
     async def _reap_in_background(
-        self, process: Any, communication: asyncio.Task[Any]
+        self,
+        process: Any,
+        input_task: asyncio.Task[None],
+        output_task: asyncio.Task[tuple[bytes, bool]],
     ) -> None:
-        """Keep the decoder unhealthy until communication and exit are confirmed."""
+        """Retain worker health until pipe EOF and leader exit are confirmed."""
         global _UNCONFIRMED_DECODERS
-        with suppress(BaseException):
-            await communication
+        with suppress(asyncio.CancelledError):
+            await input_task
+        await output_task
         await process.wait()
         _UNCONFIRMED_DECODERS -= 1
 
-    async def _communicate_bounded(
+    def _communicate_bounded(
         self, process: Any, input_bytes: bytes, max_output_bytes: int
-    ) -> bytes:
-        """Feed stdin while draining stdout to EOF with a strict memory cap."""
-        if process.stdin is None or process.stdout is None:
-            raise ValueError("speaker excerpt unavailable")
+    ) -> tuple[asyncio.Task[None], asyncio.Task[tuple[bytes, bool]]]:
+        """Start stdin feeding and bounded stdout draining as separately reaped tasks."""
 
         async def feed_input() -> None:
-            process.stdin.write(input_bytes)
-            await process.stdin.drain()
-            process.stdin.close()
-            wait_closed = getattr(process.stdin, "wait_closed", None)
-            if wait_closed is not None:
-                await wait_closed()
+            if process.stdin is None:
+                raise ValueError("speaker excerpt unavailable")
+            try:
+                process.stdin.write(input_bytes)
+                await process.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                return
+            finally:
+                with suppress(BrokenPipeError, ConnectionResetError):
+                    process.stdin.close()
+                    wait_closed = getattr(process.stdin, "wait_closed", None)
+                    if wait_closed is not None:
+                        await wait_closed()
 
-        async def read_output() -> bytes:
+        async def read_output() -> tuple[bytes, bool]:
+            if process.stdout is None:
+                raise ValueError("speaker excerpt unavailable")
             chunks: list[bytes] = []
             total = 0
             exceeded_limit = False
             while True:
-                chunk = await process.stdout.read(64 * 1024)
+                read_size = 64 * 1024
+                if not exceeded_limit:
+                    read_size = min(read_size, max_output_bytes + 1 - total)
+                chunk = await process.stdout.read(read_size)
                 if not isinstance(chunk, bytes):
                     raise ValueError("speaker excerpt unavailable")
                 if not chunk:
                     break
+                if exceeded_limit:
+                    continue
                 total += len(chunk)
                 if total > max_output_bytes:
                     exceeded_limit = True
-                elif not exceeded_limit:
+                    chunks.clear()
+                else:
                     chunks.append(chunk)
-            if exceeded_limit:
-                raise ValueError("speaker excerpt unavailable")
-            return b"".join(chunks)
+            return b"".join(chunks), exceeded_limit
 
-        input_task = asyncio.create_task(feed_input())
-        output_task = asyncio.create_task(read_output())
-        try:
-            await asyncio.gather(input_task, output_task)
-            return output_task.result()
-        except BaseException:
-            input_task.cancel()
-            output_task.cancel()
-            with suppress(BaseException):
-                await asyncio.gather(input_task, output_task)
-            raise
+        return asyncio.create_task(feed_input()), asyncio.create_task(read_output())
 
     async def run(
         self,
@@ -250,14 +255,29 @@ class ManagedDecoderProcess:
             )
         except TimeoutError:
             raise ValueError("speaker excerpt unavailable") from None
-        communication = asyncio.create_task(
-            self._communicate_bounded(process, input_bytes, max_output_bytes)
+        input_task, output_task = self._communicate_bounded(
+            process, input_bytes, max_output_bytes
         )
         try:
             remaining = deadline_monotonic - self._monotonic()
             if remaining <= 0:
                 raise TimeoutError
-            stdout = await asyncio.wait_for(communication, timeout=remaining)
+            done, _pending = await asyncio.wait(
+                {input_task, output_task},
+                timeout=remaining,
+                return_when=asyncio.FIRST_EXCEPTION,
+            )
+            for completed in done:
+                if not completed.cancelled():
+                    exception = completed.exception()
+                    if exception is not None:
+                        raise exception
+            if input_task not in done or output_task not in done:
+                raise TimeoutError
+            input_task.result()
+            stdout, exceeded_output_cap = output_task.result()
+            if exceeded_output_cap:
+                raise ValueError("speaker excerpt unavailable")
             return_code = await asyncio.wait_for(
                 process.wait(), timeout=max(0.0, deadline_monotonic - self._monotonic())
             )
@@ -267,7 +287,7 @@ class ManagedDecoderProcess:
         except BaseException as error:
             global _UNCONFIRMED_DECODERS
             _UNCONFIRMED_DECODERS += 1
-            communication.cancel()
+            input_task.cancel()
             try:
                 # The process-group leader may have exited while descendants still
                 # hold the captured pipes open, so its return code is not enough.
@@ -278,7 +298,7 @@ class ManagedDecoderProcess:
                 # A failed kill is not evidence of exit; retain unhealthy state.
                 pass
             reaper = asyncio.create_task(
-                self._reap_in_background(process, communication)
+                self._reap_in_background(process, input_task, output_task)
             )
             reaper.add_done_callback(self._observe_reaper)
             if on_reap is not None:

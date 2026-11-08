@@ -820,6 +820,7 @@ async def test_timeout_cancels_decoder_and_waits_for_kill_discard_and_reap_befor
         "spawned_process_group",
         "communicate_started",
         "killed_process_group",
+        "communicate_finished",
         "wait_started",
         "wait_confirmed",
     ]
@@ -853,8 +854,8 @@ async def test_unconfirmed_exit_holds_operation_and_rejects_new_work_until_reape
         "spawned_process_group",
         "communicate_started",
         "killed_process_group",
-        "wait_started",
     ]
+    assert "wait_started" not in process_events
     assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 1
     assert speaker_excerpt_service._PROCESS_PERMITS._value == 1
     with pytest.raises((RuntimeError, ValueError, TimeoutError)):
@@ -871,7 +872,11 @@ async def test_unconfirmed_exit_holds_operation_and_rejects_new_work_until_reape
         ):
             break
         await asyncio.sleep(0)
-    assert process_events[-1] == "wait_confirmed"
+    assert process_events[-3:] == [
+        "communicate_finished",
+        "wait_started",
+        "wait_confirmed",
+    ]
     assert speaker_excerpt_service._PROCESS_PERMITS._value == 2
 
 
@@ -904,7 +909,7 @@ async def test_timed_out_request_returns_while_reaper_retains_permit_and_rejects
     keyring: ExcerptKeyring,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS", 0.05, raising=False)
+    monkeypatch.setattr(SpeakerExcerptService, "MAX_OPERATION_SECONDS", 0.2, raising=False)
     events: list[str] = []
     managed_decoder, process = managed_decoder_for_test(
         events, confirm_exit_on_kill=False, monotonic=time.monotonic
@@ -923,7 +928,7 @@ async def test_timed_out_request_returns_while_reaper_retains_permit_and_rejects
                 break
             await asyncio.sleep(0.005)
         assert "communicate_started" in events
-        done, _pending = await asyncio.wait({request}, timeout=0.2)
+        done, _pending = await asyncio.wait({request}, timeout=0.3)
         assert request in done, "deadline response must not wait for the background reaper"
         with pytest.raises(ValueError, match="speaker excerpt unavailable"):
             await request
@@ -1092,39 +1097,79 @@ async def test_managed_decoder_spawn_is_bounded_by_deadline() -> None:
 
 
 @pytest.mark.asyncio
-async def test_timeout_kills_descendants_when_leader_exited_but_stdout_stays_open() -> None:
-    events: list[str] = []
-    process = SyntheticChildProcess(events)
-    process.returncode = 0
-    reapers: list[asyncio.Task[None]] = []
+async def test_timeout_reaps_descendant_held_stdout_before_releasing_permit() -> None:
+    pipe_closed = asyncio.Event()
+    kill_called = asyncio.Event()
+    leader_reaped = asyncio.Event()
+    class ExitedLeaderWithInheritedStdout:
+        pid = 842
+        returncode: int | None = 0
+        stdin = SyntheticInput()
+        stdout = None
+
+        def __init__(self) -> None:
+            self.stdout = self
+            self.output_finished = False
+
+        async def read(self, _size: int) -> bytes:
+            await pipe_closed.wait()
+            if self.output_finished:
+                return b""
+            self.output_finished = True
+            return b""
+
+        async def communicate(self, **kwargs: Any) -> tuple[bytes, bytes]:
+            assert kwargs["input"] == b"synthetic-source"
+            await pipe_closed.wait()
+            return b"", b""
+
+        async def wait(self) -> int:
+            leader_reaped.set()
+            return 0
+
+    process = ExitedLeaderWithInheritedStdout()
 
     async def spawn_process(*_command: str, start_new_session: bool) -> Any:
-        assert start_new_session
         return process
 
     def kill_process_group(pid: int, sig: signal.Signals) -> None:
         assert pid == process.pid
         assert sig == signal.SIGKILL
-        events.append("killed_process_group")
-        process.exited.set()
+        kill_called.set()
 
     decoder = speaker_excerpt_service.ManagedDecoderProcess(
         spawn_process=spawn_process,
         kill_process_group=kill_process_group,
-        monotonic=lambda: 0.0,
     )
-    with pytest.raises(ValueError, match="speaker excerpt unavailable"):
-        await decoder.run(
-            ("synthetic-decoder",),
-            input_bytes=b"synthetic-source",
-            deadline_monotonic=0.02,
-            on_reap=reapers.append,
-        )
+    await speaker_excerpt_service._PROCESS_PERMITS.acquire()
+    lease = speaker_excerpt_service._OperationLease(time.monotonic() + 0.05)
+    try:
+        with pytest.raises(ValueError, match="speaker excerpt unavailable"):
+            await decoder.run(
+                ("synthetic-decoder",),
+                input_bytes=b"synthetic-source",
+                deadline_monotonic=lease.deadline_monotonic,
+                on_reap=lease.defer_release_until,
+            )
+        lease.release()
+        assert kill_called.is_set(), "timeout must kill descendants even after leader exit"
+        assert not leader_reaped.is_set(), "reaper must wait for descendant-held stdout to close"
+        assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 1
+        assert speaker_excerpt_service._PROCESS_PERMITS._value == 1
+    finally:
+        pipe_closed.set()
+        lease.release()
 
-    assert events.count("killed_process_group") == 1
-    assert len(reapers) == 1
-    await reapers[0]
-    assert "wait_confirmed" in events
+    for _ in range(100):
+        if (
+            speaker_excerpt_service._UNCONFIRMED_DECODERS == 0
+            and speaker_excerpt_service._PROCESS_PERMITS._value == 2
+        ):
+            break
+        await asyncio.sleep(0.005)
+    assert leader_reaped.is_set()
+    assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 0
+    assert speaker_excerpt_service._PROCESS_PERMITS._value == 2
 
 
 @pytest.mark.asyncio
@@ -1140,7 +1185,8 @@ async def test_managed_decoder_hard_kills_and_reaps_before_discarding_timed_out_
         )
 
     assert events[:2] == ["spawned_process_group", "communicate_started"]
-    assert events.index("killed_process_group") < events.index("wait_started")
+    assert events.index("killed_process_group") < events.index("communicate_finished")
+    assert events.index("communicate_finished") < events.index("wait_started")
     assert events.index("wait_started") < events.index("wait_confirmed")
     assert "synthetic-partial-output" not in str(error.value)
     assert "private-decoder-diagnostic" not in str(error.value)
@@ -1166,15 +1212,15 @@ async def test_decoder_returns_on_timeout_and_reaps_in_background_without_releas
         "spawned_process_group",
         "communicate_started",
         "killed_process_group",
-        "wait_started",
     ]
     assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 1
 
     process.exited.set()
-    for _ in range(10):
+    for _ in range(100):
         if speaker_excerpt_service._UNCONFIRMED_DECODERS == 0:
             break
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.005)
+    assert events.index("communicate_finished") < events.index("wait_started")
     assert events.index("wait_started") < events.index("wait_confirmed")
     assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 0
 
@@ -1190,24 +1236,25 @@ async def test_repeated_cancellation_cannot_interrupt_decoder_reap() -> None:
             deadline_monotonic=100.0,
         )
     )
-    await asyncio.sleep(0)
-    operation.cancel()
-    for _ in range(10):
-        if "wait_started" in events:
+    for _ in range(100):
+        if "communicate_started" in events:
             break
-        await asyncio.sleep(0)
-    assert "wait_started" in events
+        await asyncio.sleep(0.001)
+    assert "communicate_started" in events
     operation.cancel()
 
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(operation, timeout=0.1)
+    operation.cancel()
     assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 1
+    assert "wait_started" not in events
     process.exited.set()
-    for _ in range(10):
+    for _ in range(100):
         if speaker_excerpt_service._UNCONFIRMED_DECODERS == 0:
             break
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.001)
     assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 0
+    assert events.index("communicate_finished") < events.index("wait_started")
     assert "wait_confirmed" in events
 
 
@@ -1247,9 +1294,12 @@ async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
     assert first_request.done(), "deadline must return without waiting for process reap"
     with pytest.raises((TimeoutError, ValueError, RuntimeError)):
         await first_request
-    assert "killed_process_group" in events
-    assert "wait_started" in events
-    assert "wait_confirmed" not in events
+    assert events == [
+        "spawned_process_group",
+        "communicate_started",
+        "killed_process_group",
+    ]
+    assert "wait_started" not in events
     assert speaker_excerpt_service._UNCONFIRMED_DECODERS == 1
     assert speaker_excerpt_service._PROCESS_PERMITS._value == 1
 
@@ -1269,12 +1319,13 @@ async def test_service_holds_permit_until_managed_decoder_exit_is_confirmed(
     assert "wait_confirmed" not in events
 
     process.exited.set()
-    for _ in range(10):
+    for _ in range(100):
         if (
             speaker_excerpt_service._UNCONFIRMED_DECODERS == 0
             and speaker_excerpt_service._PROCESS_PERMITS._value == 2
         ):
             break
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.005)
+    assert events.index("communicate_finished") < events.index("wait_started")
     assert "wait_confirmed" in events
     assert speaker_excerpt_service._PROCESS_PERMITS._value == 2
