@@ -153,7 +153,7 @@ async def record_transition(
 
 async def register_meeting(
     session: AsyncSession,
-    input: dict[str, Any],
+    meeting_data: dict[str, Any],
     created_by: str,
 ) -> Meeting:
     """Creates a new Meeting in state 'queued' from a validated input.
@@ -178,16 +178,16 @@ async def register_meeting(
     # Determine the input type and validate with Pydantic
     model: MeetingInput
     try:
-        if "calendar_invite_id" in input:
-            model = CalendarMeetingInput(**input)
+        if "calendar_invite_id" in meeting_data:
+            model = CalendarMeetingInput(**meeting_data)
             origin = "calendar_invite"
-        elif input.get("type") == "manual":
+        elif meeting_data.get("type") == "manual":
             # Exclude the 'type' field for Pydantic validation
-            validation_data = {k: v for k, v in input.items() if k != "type"}
+            validation_data = {k: v for k, v in meeting_data.items() if k != "type"}
             model = ManualMeetingInput(**validation_data)
             origin = "manual"
         else:
-            model = LinkMeetingInput(**input)
+            model = LinkMeetingInput(**meeting_data)
             origin = "link"
     except (ValidationError, TypeError) as exc:
         raise ValueError(f"Invalid input: {exc}") from exc

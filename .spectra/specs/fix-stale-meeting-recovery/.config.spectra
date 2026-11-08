@@ -1,0 +1,12 @@
+{
+  "specId": "4e7dbfb4-e2ca-48ad-9da7-7068df58ca1f",
+  "specType": "bugfix",
+  "workflowType": "requirements-first",
+  "created": "2026-10-31",
+  "idea": "Some meetings remain in Queued or Transcribing without completing; define a safe, operator-initiated recovery path.",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "complete"
+  }
+}

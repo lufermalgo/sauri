@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Blocks pushes that would land directly on main. Part of the branch-isolation
-# policy in AGENTS.md §6-7 (server-side branch protection isn't available on the
+# policy in docs/engineering/WORKFLOW.md §7 (server-side branch protection isn't available on the
 # GitHub Free plan for a private repo, so this is the enforcement of record).
 #
 # Installed via `core.hooksPath .githooks` (see AGENTS.md / Makefile `make setup`).

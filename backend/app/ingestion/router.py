@@ -9,7 +9,9 @@ Requirements: 2.2, 6.5, 9.1, 9.2
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import uuid
 from typing import Any
 
@@ -19,18 +21,31 @@ from pydantic import ValidationError
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
+from app.infra.models import Meeting
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.ingestion.schemas import IngestionData
-from app.ingestion.service import process_ingestion
+from app.ingestion.service import preflight_ingestion, process_ingestion, resolve_upload_title
 from app.meetings.service import record_transition
+from app.retention.cleanup import (
+    drain_pending_object_deletions,
+    persist_pending_object_deletions,
+)
 
 router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
+logger = logging.getLogger(__name__)
 
 _AUDIO_FILE = File(...)
 _VIDEO_FILE = File(None)
 _INGESTION_DATA_FORM = Form(...)
 _AUTHENTICATED_USER = Depends(get_current_user)
+
+
+def _cleanup_scope_hash(user_id: str, meeting_id: str, idempotency_key: str) -> str:
+    scope = json.dumps(
+        [user_id, meeting_id, idempotency_key], separators=(",", ":")
+    )
+    return hashlib.sha256(scope.encode()).hexdigest()
 
 
 def _get_object_store() -> ObjectStore:
@@ -66,6 +81,7 @@ async def upload_recording(
     try:
         data_dict = json.loads(data)
         ingestion_data = IngestionData(**data_dict)
+        ingestion_data.title = resolve_upload_title(ingestion_data.title, audio.filename)
     except (json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -83,66 +99,166 @@ async def upload_recording(
             detail="Video upload does not match the declared video_presence",
         )
 
-    # Get infrastructure
+    # Check ownership and exact retries before writing any media object.
+    preflight_engine = create_engine()
+    preflight_session_factory = create_session_factory(preflight_engine)
+    existing_recording = None
+    prior_state: str | None = None
+    try:
+        async with preflight_session_factory() as session:
+            existing_recording = await preflight_ingestion(
+                session, ingestion_data, user.id
+            )
+            if existing_recording is not None:
+                await drain_pending_object_deletions(
+                    session,
+                    _get_object_store(),
+                    _cleanup_scope_hash(
+                        user.id,
+                        ingestion_data.meeting_id,
+                        ingestion_data.idempotency_key,
+                    ),
+                    raise_on_error=True,
+                )
+                meeting = await session.get(Meeting, ingestion_data.meeting_id)
+                if meeting is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Meeting not found",
+                    )
+                prior_state = meeting.process_state
+    finally:
+        await preflight_engine.dispose()
+
+    if existing_recording is not None:
+        return {
+            "recording_id": existing_recording.id,
+            "state": prior_state,
+        }
+
+    # Get infrastructure only after preflight passes.
     object_store = _get_object_store()
     queue = _get_queue()
 
-    # c. Store audio in the ObjectStore
-    audio_content = await audio.read()
-    audio_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/audio"
-    audio_ref = await object_store.save(
-        key=audio_key,
-        content=audio_content,
-        content_type=audio.content_type or "audio/webm",
+    cleanup_scope_hash = _cleanup_scope_hash(
+        user.id, ingestion_data.meeting_id, ingestion_data.idempotency_key
     )
-
-    # d. Store video (optional)
+    staged_refs: list[str | None] = []
     video_ref: str | None = None
-    if video is not None:
-        video_content = await video.read()
-        video_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/video"
-        video_ref = await object_store.save(
-            key=video_key,
-            content=video_content,
-            content_type=video.content_type or "video/webm",
+    try:
+        # c. Store audio in the ObjectStore
+        audio_content = await audio.read()
+        audio_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/audio"
+        audio_ref = await object_store.save(
+            audio_key,
+            audio_content,
+            audio.content_type or "audio/webm",
         )
+        staged_refs.append(audio_ref)
 
-    # e. Process ingestion (create SessionRecording, idempotency, notice)
+        # d. Store video (optional)
+        if video is not None:
+            video_content = await video.read()
+            video_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/video"
+            video_ref = await object_store.save(
+                video_key,
+                video_content,
+                video.content_type or "video/webm",
+            )
+            staged_refs.append(video_ref)
+    except Exception:
+        cleanup_engine: Any = None
+        try:
+            cleanup_engine = create_engine()
+            cleanup_session_factory = create_session_factory(cleanup_engine)
+            async with cleanup_session_factory() as cleanup_session:
+                await persist_pending_object_deletions(
+                    cleanup_session, cleanup_scope_hash, staged_refs
+                )
+                await drain_pending_object_deletions(
+                    cleanup_session, object_store, cleanup_scope_hash
+                )
+        except Exception:
+            logger.exception("Could not durably clean partially staged ingestion objects")
+        finally:
+            if cleanup_engine is not None:
+                try:
+                    await cleanup_engine.dispose()
+                except Exception:
+                    logger.exception("Could not dispose partial-ingestion cleanup engine")
+        raise
+
+    # e. Process ingestion (create SessionRecording, handles idempotency, notice)
     engine = create_engine()
     session_factory = create_session_factory(engine)
-    async with session_factory() as session, session.begin():
-        recording, is_new = await process_ingestion(
-            session=session,
-            data=ingestion_data,
-            audio_ref=audio_ref,
-            video_ref=video_ref,
-            created_by=user.id,
-        )
-
-        # If this is an idempotent retry (duplicate key), return without
-        # transitioning or enqueuing again (Req. 2.3, 4.1, 4.2).
-        if not is_new:
-            await engine.dispose()
-            return {
-                "recording_id": recording.id,
-                "state": "idempotent_duplicate",
-            }
-
-        # f. Transition Meeting to "transcribing"
-        from app.infra.models import Meeting
-
-        meeting = await session.get(Meeting, ingestion_data.meeting_id)
-        if meeting is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Meeting not found: {ingestion_data.meeting_id}",
+    try:
+        async with session_factory() as session, session.begin():
+            recording, is_new = await process_ingestion(
+                session=session,
+                data=ingestion_data,
+                audio_ref=audio_ref,
+                video_ref=video_ref,
+                created_by=user.id,
             )
 
-        transition_result = await record_transition(
-            session=session,
-            meeting=meeting,
-            event="recording_uploaded",
-        )
+            if is_new:
+                # f. Transition Meeting to "transcribing"
+                meeting = await session.get(Meeting, ingestion_data.meeting_id)
+                if meeting is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Meeting not found: {ingestion_data.meeting_id}",
+                    )
+
+                transition_result = await record_transition(
+                    session=session,
+                    meeting=meeting,
+                    event="recording_uploaded",
+                )
+            else:
+                meeting = await session.get(Meeting, ingestion_data.meeting_id)
+                if meeting is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Meeting not found",
+                    )
+                prior_state = meeting.process_state
+    except Exception:
+        try:
+            async with session_factory() as cleanup_session:
+                await persist_pending_object_deletions(
+                    cleanup_session,
+                    cleanup_scope_hash,
+                    [audio_ref, video_ref],
+                )
+                await drain_pending_object_deletions(
+                    cleanup_session, object_store, cleanup_scope_hash
+                )
+        except Exception:
+            logger.exception("Could not durably clean failed ingestion objects")
+        finally:
+            await engine.dispose()
+        raise
+
+    # If another request committed the same idempotency key during storage,
+    # clean only this attempt's uncommitted refs and return the persisted result.
+    if not is_new:
+        try:
+            async with session_factory() as cleanup_session:
+                await persist_pending_object_deletions(
+                    cleanup_session,
+                    cleanup_scope_hash,
+                    [audio_ref, video_ref],
+                )
+                await drain_pending_object_deletions(
+                    cleanup_session,
+                    object_store,
+                    cleanup_scope_hash,
+                    raise_on_error=True,
+                )
+        finally:
+            await engine.dispose()
+        return {"recording_id": recording.id, "state": prior_state}
 
     # g. Enqueue the transcription job (only if the recording is new)
     await queue.connect()
@@ -151,6 +267,8 @@ async def upload_recording(
             topic="transcribe",
             message={
                 "meeting_id": ingestion_data.meeting_id,
+                "owner_id": user.id,
+                "recording_id": recording.id,
                 "audio_ref": audio_ref,
             },
         )

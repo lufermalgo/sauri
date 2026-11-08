@@ -2,7 +2,17 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infra.database import Base
@@ -18,7 +28,7 @@ class Meeting(Base):
     __tablename__ = "meetings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meet_link: Mapped[str] = mapped_column(String(512), nullable=False)
+    meet_link: Mapped[str | None] = mapped_column(String(512), nullable=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     origin: Mapped[str] = mapped_column(String(64), nullable=False)  # link | calendar_invite | manual
     calendar_invite_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -73,7 +83,7 @@ class SessionRecording(Base):
     idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
     capture_origin: Mapped[str] = mapped_column(
         String(64), nullable=False
-    )  # chrome_extension | server_bot
+    )  # chrome_extension | server_bot | web_upload
     audio_ref: Mapped[str] = mapped_column(String(1024), nullable=False)
     video_ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -112,6 +122,23 @@ class RecordingMediaSource(Base):
     quality_label: Mapped[str] = mapped_column(String(64), nullable=False)
 
     recording: Mapped[SessionRecording] = relationship(back_populates="media_sources")
+
+
+class PendingObjectDeletion(Base):
+    """Durable cleanup task for a staged object not referenced by a recording."""
+
+    __tablename__ = "pending_object_deletions"
+    __table_args__ = (
+        UniqueConstraint(
+            "cleanup_scope_hash",
+            "object_ref",
+            name="uq_pending_object_deletion_scope_ref",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cleanup_scope_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    object_ref: Mapped[str] = mapped_column(String(2048), nullable=False)
 
 
 # ---------------------------------------------------------------------------
@@ -204,10 +231,19 @@ class AccessLog(Base):
 
 
 class Diarization(Base):
-    """Diarization result associated 1:1 with a Meeting (Req. 8.1, 8.4, 9.3, 9.4, 10.5)."""
+    """Diarization result for one processing generation associated with a Meeting."""
 
     __tablename__ = "diarizations"
-    __table_args__ = (UniqueConstraint("meeting_id", name="uq_diarization_meeting_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "meeting_id", "processing_revision", name="uq_diarization_meeting_revision"
+        ),
+        CheckConstraint(
+            "diarization_state IN "
+            "('pending', 'in_progress', 'completed', 'failed', 'not_reconstructible')",
+            name="ck_diarizations_state_valid",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     meeting_id: Mapped[str] = mapped_column(
@@ -216,8 +252,16 @@ class Diarization(Base):
     transcript_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("transcripts.id"), nullable=False
     )
-    provider: Mapped[str] = mapped_column(String(128), nullable=False)
-    speaker_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    speaker_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    processing_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    is_legacy: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     diarization_state: Mapped[str] = mapped_column(
         String(32), nullable=False
     )  # pending | in_progress | completed | failed
@@ -267,7 +311,11 @@ class SpeakerAssignment(Base):
     """Assignment of a SpeechTurn to a Speaker (Req. 7.1)."""
 
     __tablename__ = "speaker_assignments"
-    __table_args__ = (UniqueConstraint("turn_id", name="uq_speaker_assignment_turn_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "diarization_id", "turn_id", name="uq_speaker_assignment_diarization_turn"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     diarization_id: Mapped[str] = mapped_column(
@@ -279,6 +327,7 @@ class SpeakerAssignment(Base):
     speaker_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("speakers.id", ondelete="CASCADE"), nullable=False
     )
+    overlap_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     diarization: Mapped["Diarization"] = relationship(
         "Diarization", back_populates="assignments"
