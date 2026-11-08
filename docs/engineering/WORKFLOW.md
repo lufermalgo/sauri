@@ -1,12 +1,12 @@
-<!-- sauri-workflow v1.5 -->
-# Sauri engineering workflow (v1.5)
+<!-- sauri-workflow v1.6 -->
+# Sauri engineering workflow (v1.6)
 
 Single source of truth for how work on Sauri is done, by agents or humans. `AGENTS.md` says what the project is and how its code is organized; this file says how work flows. `AGENTS.md` defines project-wide rules, this file defines shared process, and agent contracts define role-specific duties. Routine prompts trigger a pass and provide context; they do not expand authority. Escalate unresolved conflicts to Ansel.
 
-**History.** v1.5 (2026-11-08, issue #793): align TDD task boundaries and remove duplicated process guidance. v1.4 (2026-11-07, issue #753): complete packets, no impossible checks, who may hand a card to Ansel (§6). v1.3 (2026-11-07, issue #726): no handoff file or skill (§6), wake-up step 9. v1.2 (2026-11-07, issue #726): approvals carry across a clean merge of `main` (§8). v1.1 (2026-11-07, issue #721): how the team talks to Fer (§3) and cards in review (§6). v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
+**History.** v1.6 (2026-11-08, issue #795): streamline hand-offs, retries, grouping and parallel review without removing gates. v1.5 (2026-11-08, issue #793): align TDD task boundaries and remove duplicated process guidance. v1.4 (2026-11-07, issue #753): complete packets, no impossible checks, who may hand a card to Ansel (§6). v1.3 (2026-11-07, issue #726): no handoff file or skill (§6), wake-up step 9. v1.2 (2026-11-07, issue #726): approvals carry across a clean merge of `main` (§8). v1.1 (2026-11-07, issue #721): how the team talks to Fer (§3) and cards in review (§6). v1.0 (2026-11-07, issue #699): created by Fer's order. Sections 2 and 4–9 moved verbatim from `AGENTS.md` (old §2, §3, §4+§12, §5, §6–§8, §9, §13); §1, §3, §8 merge and cleanup, and §10 are new. Approved specs that cite old `AGENTS.md` section numbers are historical; map old §3→§4, §4→§6, §5→§5, §6–§8→§7, §9→§8, §12→§6, §13→§9.
 
 ## 1. Principles
-1. **One task = one issue = one branch = one worktree = one PR.** Small and reversible.
+1. **One delivery unit = one issue, branch, isolated worktree and PR.** Closely related small tasks may share a unit under §9; maintain per-task acceptance and traceability. Keep units small and reversible.
 2. **Fer decides product, privacy, spending and changes to security policy; specialists decide technique; Ansel resolves technical disagreements.** Technical work within approved scope does not need another owner approval. Do not assume authorization for spending, deployment or actions outside the approved scope.
 3. **The simplest solution that fully satisfies the approved requirements.** See §3.
 4. **Evidence over claims.** Report what was run and observed; anything not run is `UNVERIFIED`. A green check is not proof by itself.
@@ -91,7 +91,7 @@ Every behavior change follows strict TDD. When a RED test is intentionally expec
 * Never say "done" without confirming acceptance criteria pass.
 * If tests can't run automatically, document exactly what to verify manually.
 * Bug reports: diagnose root cause before touching code. Never patch symptoms.
-* Test failure limit: 3 failed attempts → document the blocker in that task and report it plainly; do not pause unrelated dependency-ready work. Ask the human only if the next step needs their decision or action.
+* Retry based on progress, not an arbitrary count. Continue when each attempt adds evidence or narrows the cause. If the same failure repeats without new information, progress stalls, a decision or permission is needed, record evidence and escalate; never bypass a refusal. Continue unrelated ready work.
 * If the project has no test framework yet, state that clearly and recommend the smallest useful future test strategy. Do not invent a test framework unless explicitly asked.
 * **No mocks in production code.** The application must be 100% real functionality. Mocks, stubs, and fakes are ONLY acceptable inside test files (`tests/`) to simulate external I/O (HTTP responses, message brokers, databases) when the real infrastructure is not available during test execution. Production code (`app/`, services, workers) must never contain mock objects, conditional test paths, or fake implementations. Every implementation must be the real, deployable version.
 * Behavior changes require test consideration. Behavior changes include:
@@ -134,8 +134,8 @@ Validation must use the project’s actual commands and conventions. Do not assu
 
 ### Language-specific validation
 
-* If the project uses Rust, the configured Rust validation command must pass before opening any PR that touches Rust. This is typically `cargo check`, but the repository’s actual workflow takes precedence.
-* If the project uses TypeScript, the configured project typecheck command must pass before opening any PR that touches TypeScript. Do not assume raw `tsc --noEmit` unless the project defines it.
+* If the project uses Rust, the configured Rust validation command must pass before marking ready any PR that touches Rust. This is typically `cargo check`, but the repository’s actual workflow takes precedence.
+* If the project uses TypeScript, the configured project typecheck command must pass before marking ready any PR that touches TypeScript. Do not assume raw `tsc --noEmit` unless the project defines it.
 * If the project uses another language or framework, inspect the repository’s scripts, documentation, configuration files, or CI workflow before choosing a validation command.
 
 ## 6. Hand-offs and coordination
@@ -150,9 +150,9 @@ Validation must use the project’s actual commands and conventions. Do not assu
 - Use the assigned worktree and exact artifact paths; read relevant files before editing, stage explicit paths, and preserve other work and reviewed candidates. Use synthetic data unless the owner explicitly authorizes a specific fixture. Do not change product scope, policy, release or risk authority.
 - In APX, use `load_skill` for the skills required by the card. Assigning a card starts its executor; do not duplicate the execution by delegation or chat. Verify actual run state before claiming it started. If an assignment fails, tell Ansel; do not blindly retry or bypass the platform.
 - The card carries the hand-off: PACKET identifies scope, artifacts, worktree and upstream approvals; HAND-OFF records work done, evidence, verdicts, blockers and the next actor. Keep essential context within the first 2,000 characters. A consultation returns its findings without transferring execution. Verify transfer and closure; a status change alone is not proof of a run.
-- Specs move from Zoya to Mira, then Brisa to Mira, then Zoya to Mira. Approved artifacts are published by their authors. Implementation moves from Imre or Ilan to Nia, then Zev only when required, and back to the developer for the PR. Ansel coordinates exceptions and merges.
+- Publish a draft PR for the candidate before review when practical, without claiming approval or readiness. Specs move from Zoya to Mira, then Brisa to Mira, then Zoya to Mira. After approval the next named agent may start directly from the exact approved artifact when scope and inputs are explicit; the existing draft PR need not return to the author merely for publication. For implementation Nia and, when required, Zev may independently review the same stable candidate in parallel if neither depends on the other; otherwise sequence the dependent review. Use separate review assignments or supported consultation and durable verdicts without assigning one card to two executors. Route findings to the assigned author. Aggregate required verdicts against the same candidate; revalidate only materially affected reviews after changes. Ansel coordinates exceptions and merges.
 - **A card goes straight to the next agent of its chain.** It goes to Ansel only at the end of the chain (the PR is open and waits for merge), for a blocker, or for a decision. Closing a card or handing it to Ansel for partial progress costs a full turn and is not allowed.
-- **Ansel sends the card complete.** Before assigning, Ansel verifies the repository facts and writes them into the PACKET: exact worktree path, branch, artifact path, and the commit, blob or PR head the work must start from. A card without them is bounced by its executor, which wastes two turns.
+- **Make the card actionable.** Before assignment, include known scope, worktree, branch, artifact and approved source version. An executor may independently verify and record a missing objective, unambiguous fact using authorized tools, or ask the relevant agent a focused factual question without transferring execution. Escalate ambiguity, unavailable evidence, decisions, missing authority or refused access; never guess an approval or version, or bypass permissions.
 - **No card asks an agent for a check its tools cannot do.** Mira reads files, cards and skills only: Git and GitHub facts (a PR head, a blob binding, CI) are verified by Ansel or Nia, and the evidence goes into the PACKET for Mira to read.
 - Reviewers report all findings together as BLOCKING or NON-BLOCKING. Only blockers hold approval; later passes check fixes and related regressions. Record the verdict, evidence and reviewed candidate reference for the merge check. If a blocker recurs or progress stalls, consult Ansel. Author self-checks use the applicable audit rubric.
 - Technical questions go to Ansel with the decision, evidence, options and recommendation. Product or owner decisions also go through Ansel; do not ask Fer to diagnose. Ansel consults Teo for platform limitations. Do not repeat an identical failure without new information.
@@ -269,11 +269,11 @@ Types:
 
 * Every change requires a PR — no direct pushes to `main`.
 * PRs always target `main` directly.
-* One issue = one branch = one PR → merge to `main`.
+* One delivery unit = one issue, one branch and one PR → merge to `main`; multiple related tasks may share the unit under §9.
 * Reference the issue: `Closes #id`.
 * If the PR depends on another: `Depends on: #id`.
-* If the project uses Rust, the configured Rust validation command must pass before opening a Rust PR.
-* If the project uses TypeScript, the configured project typecheck command must pass before opening a TypeScript PR.
+* If the project uses Rust, the configured Rust validation command must pass before marking a Rust PR ready.
+* If the project uses TypeScript, the configured project typecheck command must pass before marking a TypeScript PR ready.
 * Stage specific files — never `git add .` blindly.
 * At task completion, APX reviews every tracked modification and untracked file in the active worktree, assigns each a disposition (this PR, another PR, or pending with reason and next step), and reports the complete inventory; never silently omit a path.
 
@@ -299,9 +299,9 @@ Each approved product module maps to a Spectra spec and a GitHub milestone:
 | Property test task | Issue, labels `task`, `test`, `pbt` |
 | Bug found during execution | Issue, label `bug` |
 
-* Only after Mira approves the exact `tasks.md`, Zoya creates, for every required task, one issue in the milestone and one board card (one task = one issue = one card) and records `Issue #n · Card task_x` in `tasks.md`; the implementer adds the PR number when opening the PR after QA (and security) pass and closes the card. Tests are never optional and never labeled `optional`.
-* Every approved spec artifact and every implemented issue ends in its own PR by its author; a security finding that needs a spec change or separate code gets its own `security` issue, card and PR. Publish reviewed candidates before hand-offs. Synchronize branches safely under §7. After merge, remove the worktree and branch only when safe; Ansel is the only agent who merges.
-* Each issue is implemented in its own worktree and PR (`Closes #id`); the milestone closes when all its issues are closed, no open `bug` blocks acceptance, property tests pass with ≥100 examples, and user-visible work has `PRODUCT_ACCEPTED`.
+* After Mira approves the exact `tasks.md`, Zoya groups only small closely related tasks with the same owner, real dependencies and review gates into a delivery unit, or leaves them separate. Each unit gets an issue and board card; map every task to its issue and card in `tasks.md`, with individual acceptance evidence and dependencies. Do not regroup existing approved plans or alter scope without the applicable approval. A draft PR may be opened before QA/security; record its link and close only after applicable review and hand-off. Tests are never optional.
+* A small spec may group related requirements, design and tasks in one draft PR; each phase still requires Mira’s independent approval of the exact artifact snapshot before the next phase, and each verdict and version is recorded separately. A finding requiring separate scope gets a tracked issue and appropriate PR. Publish review candidates before hand-offs. Synchronize safely under §7; only Ansel merges and cleanup must preserve work.
+* Each delivery unit uses its own isolated worktree and PR (`Closes #id`); the milestone closes when all its issues are closed, no open `bug` blocks acceptance, property tests pass with ≥100 examples, and user-visible work has `PRODUCT_ACCEPTED`.
 * Tests are required and follow §4. Keep an intentionally failing RED test and the implementation it unlocks in the same feature task/issue/branch/worktree/PR. A separate test-preparation issue is permitted only when independently completable with passing checks. If test infrastructure is missing, the first task sets it up; tests blocked by external limits are documented as blocked, not skipped.
 
 ## 10. Orchestrator wake-up
