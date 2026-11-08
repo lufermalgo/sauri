@@ -219,51 +219,34 @@ async def _seed_existing_meeting_artifacts(engine: AsyncEngine) -> None:
         )
 
 
+async def _snapshot_existing_meeting_artifacts(
+    engine: AsyncEngine,
+) -> dict[str, dict[str, object]]:
+    async with engine.connect() as connection:
+        snapshots: dict[str, dict[str, object]] = {}
+        for table_name, row_id in (
+            ("meetings", "synthetic-meeting"),
+            ("state_history", "synthetic-history"),
+            ("session_recordings", "synthetic-recording"),
+        ):
+            result = await connection.execute(
+                text(f"SELECT * FROM {table_name} WHERE id = :row_id"),
+                {"row_id": row_id},
+            )
+            snapshots[table_name] = dict(result.mappings().one())
+    return snapshots
+
+
 @pytest.mark.asyncio
 async def test_recovery_migration_rollback_preserves_existing_meeting_artifacts(
     async_engine: AsyncEngine,
 ) -> None:
     migration = _recovery_migration()
     await _seed_existing_meeting_artifacts(async_engine)
+    before_migration = await _snapshot_existing_meeting_artifacts(async_engine)
 
     await _run_migration(async_engine, migration, "upgrade")
     await _run_migration(async_engine, migration, "downgrade")
 
-    async with async_engine.connect() as connection:
-        meeting = (
-            await connection.execute(
-                text(
-                    "SELECT id, process_state, created_by FROM meetings "
-                    "WHERE id = 'synthetic-meeting'"
-                )
-            )
-        ).all()
-        history = (
-            await connection.execute(
-                text(
-                    "SELECT id, meeting_id, state, failure_cause FROM state_history "
-                    "WHERE id = 'synthetic-history'"
-                )
-            )
-        ).all()
-        recordings = (
-            await connection.execute(
-                text(
-                    "SELECT id, meeting_id, audio_ref, video_ref "
-                    "FROM session_recordings WHERE id = 'synthetic-recording'"
-                )
-            )
-        ).all()
-
-    assert meeting == [("synthetic-meeting", "completed", "synthetic-user")]
-    assert history == [
-        ("synthetic-history", "synthetic-meeting", "completed", None)
-    ]
-    assert recordings == [
-        (
-            "synthetic-recording",
-            "synthetic-meeting",
-            "synthetic/audio.webm",
-            None,
-        )
-    ]
+    after_migration = await _snapshot_existing_meeting_artifacts(async_engine)
+    assert after_migration == before_migration
