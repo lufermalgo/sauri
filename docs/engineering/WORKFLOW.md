@@ -41,7 +41,7 @@ Specs live in `.spectra/specs/[slug]/` with `.config.spectra` (`specType`: featu
 
 * Only Mira's `APPROVED` on the submitted snapshot advances a spec phase; the verdict stays valid while that artifact is unchanged. Audits iterate until approved and list every blocker at once.
 * Each agent's contract in `.apc/agents/` defines its steps and who follows it; work is handed on by reassigning the APX task card. The contract defines role-specific hand-offs and must follow the shared process.
-* Design, tasks and implementation use only the skills named on the card. Independent ready tasks run in parallel in separate worktrees; blocked tasks never stall unrelated ready ones.
+* Design, tasks and implementation use only the skills named on the card. Independent ready delivery units run in parallel in separate worktrees; tasks grouped in one delivery unit share its worktree and must coordinate changes. Blocked work never stalls unrelated ready work.
 
 ### No-silent-stop status
 
@@ -299,7 +299,7 @@ Each approved product module maps to a Spectra spec and a GitHub milestone:
 | Property test task | Issue, labels `task`, `test`, `pbt` |
 | Bug found during execution | Issue, label `bug` |
 
-* After Mira approves the exact `tasks.md`, Zoya groups only small closely related tasks with the same owner, real dependencies and review gates into a delivery unit, or leaves them separate. Each unit gets an issue and board card; map every task to its issue and card in `tasks.md`, with individual acceptance evidence and dependencies. Do not regroup existing approved plans or alter scope without the applicable approval. A draft PR may be opened before QA/security; record its link and close only after applicable review and hand-off. Tests are never optional.
+* After Mira approves the exact `tasks.md`, Zoya groups only small closely related tasks with the same owner, real dependencies and review gates into a delivery unit, or leaves them separate. Each unit gets an issue and board card; map every task to its issue and card in `tasks.md`, with individual acceptance evidence and dependencies. Do not regroup existing approved plans or alter scope without the applicable approval. A draft PR may be opened before QA/security; record its link and mark it ready only after applicable review and hand-off. Tests are never optional.
 * A small spec may group related requirements, design and tasks in one draft PR; each phase still requires Mira’s independent approval of the exact artifact snapshot before the next phase, and each verdict and version is recorded separately. A finding requiring separate scope gets a tracked issue and appropriate PR. Publish review candidates before hand-offs. Synchronize safely under §7; only Ansel merges and cleanup must preserve work.
 * Each delivery unit uses its own isolated worktree and PR (`Closes #id`); the milestone closes when all its issues are closed, no open `bug` blocks acceptance, property tests pass with ≥100 examples, and user-visible work has `PRODUCT_ACCEPTED`.
 * Tests are required and follow §4. Keep an intentionally failing RED test and the implementation it unlocks in the same feature task/issue/branch/worktree/PR. A separate test-preparation issue is permitted only when independently completable with passing checks. If test infrastructure is missing, the first task sets it up; tests blocked by external limits are documented as blocked, not skipped.
