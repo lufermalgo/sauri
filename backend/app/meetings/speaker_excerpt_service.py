@@ -7,6 +7,7 @@ import base64
 import binascii
 import inspect
 import json
+import math
 import os
 import re
 import secrets
@@ -16,7 +17,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -115,13 +116,40 @@ async def _spawn_decoder_process(
         *command,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
         start_new_session=start_new_session,
     )
 
 
 _PROCESS_PERMITS = asyncio.Semaphore(2)
 _UNCONFIRMED_DECODERS = 0
+MAX_DECODER_OUTPUT_BYTES = 20 * 1024 * 1024
+
+
+class _OperationLease:
+    """Own one process-wide permit until all associated work is confirmed done."""
+
+    def __init__(self, deadline_monotonic: float) -> None:
+        self.deadline_monotonic = deadline_monotonic
+        self._deferred = False
+        self._released = False
+
+    def defer_release_until(self, reaper: asyncio.Task[None]) -> None:
+        self._deferred = True
+
+        def release_when_reaped(task: asyncio.Task[None]) -> None:
+            if task.cancelled() or task.exception() is not None:
+                return
+            if not self._released:
+                self._released = True
+                _PROCESS_PERMITS.release()
+
+        reaper.add_done_callback(release_when_reaped)
+
+    def release(self) -> None:
+        if not self._deferred and not self._released:
+            self._released = True
+            _PROCESS_PERMITS.release()
 
 
 class ManagedDecoderProcess:
@@ -138,15 +166,79 @@ class ManagedDecoderProcess:
         self._kill_process_group = kill_process_group
         self._monotonic = monotonic
 
+    async def _reap_in_background(
+        self, process: Any, communication: asyncio.Task[Any]
+    ) -> None:
+        """Keep the decoder unhealthy until communication and exit are confirmed."""
+        global _UNCONFIRMED_DECODERS
+        with suppress(BaseException):
+            await communication
+        await process.wait()
+        _UNCONFIRMED_DECODERS -= 1
+
+    async def _communicate_bounded(
+        self, process: Any, input_bytes: bytes, max_output_bytes: int
+    ) -> bytes:
+        """Feed stdin while draining stdout to EOF with a strict memory cap."""
+        if process.stdin is None or process.stdout is None:
+            raise ValueError("speaker excerpt unavailable")
+
+        async def feed_input() -> None:
+            process.stdin.write(input_bytes)
+            await process.stdin.drain()
+            process.stdin.close()
+            wait_closed = getattr(process.stdin, "wait_closed", None)
+            if wait_closed is not None:
+                await wait_closed()
+
+        async def read_output() -> bytes:
+            chunks: list[bytes] = []
+            total = 0
+            exceeded_limit = False
+            while True:
+                chunk = await process.stdout.read(64 * 1024)
+                if not isinstance(chunk, bytes):
+                    raise ValueError("speaker excerpt unavailable")
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_output_bytes:
+                    exceeded_limit = True
+                elif not exceeded_limit:
+                    chunks.append(chunk)
+            if exceeded_limit:
+                raise ValueError("speaker excerpt unavailable")
+            return b"".join(chunks)
+
+        input_task = asyncio.create_task(feed_input())
+        output_task = asyncio.create_task(read_output())
+        try:
+            await asyncio.gather(input_task, output_task)
+            return output_task.result()
+        except BaseException:
+            input_task.cancel()
+            output_task.cancel()
+            with suppress(BaseException):
+                await asyncio.gather(input_task, output_task)
+            raise
+
     async def run(
         self,
         command: tuple[str, ...],
         *,
         input_bytes: bytes,
         deadline_monotonic: float,
+        max_output_bytes: int = MAX_DECODER_OUTPUT_BYTES,
+        on_reap: Callable[[asyncio.Task[None]], None] | None = None,
     ) -> bytes:
         """Return complete stdout only after the child exits successfully."""
-        if not command or self._monotonic() >= deadline_monotonic:
+        if (
+            not command
+            or isinstance(max_output_bytes, bool)
+            or not isinstance(max_output_bytes, int)
+            or max_output_bytes <= 0
+            or self._monotonic() >= deadline_monotonic
+        ):
             raise ValueError("speaker excerpt unavailable")
         remaining = deadline_monotonic - self._monotonic()
         if remaining <= 0:
@@ -158,25 +250,25 @@ class ManagedDecoderProcess:
             )
         except TimeoutError:
             raise ValueError("speaker excerpt unavailable") from None
-        communication = asyncio.create_task(process.communicate(input=input_bytes))
+        communication = asyncio.create_task(
+            self._communicate_bounded(process, input_bytes, max_output_bytes)
+        )
         try:
             remaining = deadline_monotonic - self._monotonic()
             if remaining <= 0:
                 raise TimeoutError
-            stdout, _stderr = await asyncio.wait_for(communication, timeout=remaining)
+            stdout = await asyncio.wait_for(communication, timeout=remaining)
             return_code = await asyncio.wait_for(
                 process.wait(), timeout=max(0.0, deadline_monotonic - self._monotonic())
             )
             if return_code != 0 or self._monotonic() > deadline_monotonic:
                 raise ValueError("speaker excerpt unavailable")
-            return cast(bytes, stdout)
+            return stdout
         except BaseException as error:
             if getattr(process, "returncode", None) is None:
                 global _UNCONFIRMED_DECODERS
                 _UNCONFIRMED_DECODERS += 1
                 communication.cancel()
-                with suppress(BaseException):
-                    await communication
                 try:
                     self._kill_process_group(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
@@ -184,26 +276,23 @@ class ManagedDecoderProcess:
                 except OSError:
                     # A failed kill is not evidence of exit; retain unhealthy state.
                     pass
-                reap_task = asyncio.create_task(process.wait())
-                cancelled_again = False
-                while not reap_task.done():
-                    try:
-                        await asyncio.shield(reap_task)
-                    except asyncio.CancelledError:
-                        cancelled_again = True
-                    except BaseException:
-                        break
-                if (
-                    reap_task.done()
-                    and not reap_task.cancelled()
-                    and reap_task.exception() is None
-                ):
-                    _UNCONFIRMED_DECODERS -= 1
-                if cancelled_again:
-                    raise asyncio.CancelledError from None
+                reaper = asyncio.create_task(
+                    self._reap_in_background(process, communication)
+                )
+                reaper.add_done_callback(self._observe_reaper)
+                if on_reap is not None:
+                    on_reap(reaper)
+                if not isinstance(error, asyncio.CancelledError):
+                    await asyncio.sleep(0)
             if isinstance(error, asyncio.CancelledError):
                 raise
             raise ValueError("speaker excerpt unavailable") from None
+
+    @staticmethod
+    def _observe_reaper(task: asyncio.Task[None]) -> None:
+        if not task.cancelled():
+            with suppress(BaseException):
+                task.exception()
 
 
 class SpeakerExcerptService:
@@ -229,6 +318,7 @@ class SpeakerExcerptService:
         decoder: ManagedDecoderProcess,
         decode_interval: Callable[..., Any],
         read_interval: Callable[..., Any],
+        probe_audio: Callable[..., Any],
         keyring: ExcerptKeyring | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -236,15 +326,16 @@ class SpeakerExcerptService:
         self._decoder = decoder
         self._decode_interval = decode_interval
         self._read_interval = read_interval
+        self._probe_audio = probe_audio
         self._keyring = keyring or ExcerptKeyring.from_environment()
         self._monotonic = monotonic
         self._unhealthy = False
 
-    async def _acquire(self) -> float:
+    async def _acquire(self) -> _OperationLease:
         if self._unhealthy or _UNCONFIRMED_DECODERS > 0 or _PROCESS_PERMITS.locked():
             raise ValueError("speaker excerpt unavailable")
         await _PROCESS_PERMITS.acquire()
-        return self._monotonic() + self.MAX_OPERATION_SECONDS
+        return _OperationLease(self._monotonic() + self.MAX_OPERATION_SECONDS)
 
     async def _wait_for_worker(self, task: asyncio.Task[Any]) -> bool:
         """Wait for worker cleanup despite repeated request cancellation."""
@@ -332,18 +423,51 @@ class SpeakerExcerptService:
             raise ValueError("speaker excerpt unavailable")
         return source
 
+    async def _probe_duration(
+        self, source: bytes, lease: _OperationLease
+    ) -> int:
+        """Probe actual source duration in a managed child before candidate decode."""
+        command = await self._invoke(
+            self._probe_audio,
+            deadline_monotonic=lease.deadline_monotonic,
+        )
+        if (
+            not isinstance(command, Sequence)
+            or isinstance(command, (str, bytes))
+            or not command
+            or any(not isinstance(part, str) or not part for part in command)
+        ):
+            raise ValueError("speaker excerpt unavailable")
+        result = await self._decoder.run(
+            tuple(command),
+            input_bytes=source,
+            deadline_monotonic=lease.deadline_monotonic,
+            max_output_bytes=128,
+            on_reap=lease.defer_release_until,
+        )
+        try:
+            duration_seconds = float(result.decode("ascii").strip())
+        except (UnicodeDecodeError, ValueError):
+            raise ValueError("speaker excerpt unavailable") from None
+        if (
+            not math.isfinite(duration_seconds)
+            or duration_seconds <= 0
+            or duration_seconds > self.MAX_AUDIO_DURATION_MS / 1000
+        ):
+            raise ValueError("speaker excerpt unavailable")
+        return math.ceil(duration_seconds * 1000)
+
     async def _decode_with_managed_process(
         self,
         command_builder: Callable[..., Any],
-        object_key: str,
         start_ms: int,
         end_ms: int,
         source: bytes,
-        deadline_monotonic: float,
+        lease: _OperationLease,
     ) -> bytes:
+        deadline_monotonic = lease.deadline_monotonic
         command = await self._invoke(
             command_builder,
-            object_key,
             start_ms,
             end_ms,
             deadline_monotonic=deadline_monotonic,
@@ -359,6 +483,7 @@ class SpeakerExcerptService:
             tuple(command),
             input_bytes=source,
             deadline_monotonic=deadline_monotonic,
+            on_reap=lease.defer_release_until,
         )
 
     async def derive(
@@ -380,8 +505,11 @@ class SpeakerExcerptService:
         ):
             raise ValueError("speaker excerpt unavailable")
 
-        deadline = await self._acquire()
+        lease = await self._acquire()
+        deadline = lease.deadline_monotonic
         try:
+            source = await self._read_source(object_key, deadline)
+            actual_duration_ms = await self._probe_duration(source, lease)
             ordered = sorted(
                 candidates,
                 key=lambda candidate: (
@@ -399,29 +527,29 @@ class SpeakerExcerptService:
                 and candidate.start_ms >= 0
                 and candidate.end_ms > candidate.start_ms
                 and candidate.end_ms - candidate.start_ms <= self.MAX_EXCERPT_DURATION_MS
-                and candidate.end_ms <= audio_duration_ms
+                and candidate.end_ms <= actual_duration_ms
                 and candidate.vad_window_count > 0
                 and candidate.vad_positive_windows > 0
                 and candidate.vad_positive_windows <= candidate.vad_window_count
             ]
             if not eligible:
                 raise ValueError("speaker excerpt unavailable")
-            source = await self._read_source(object_key, deadline)
             for candidate in eligible:
                 if self._monotonic() >= deadline:
                     raise TimeoutError("speaker excerpt unavailable")
                 try:
                     decoded = await self._decode_with_managed_process(
                         self._decode_interval,
-                        object_key,
                         candidate.start_ms,
                         candidate.end_ms,
                         source,
-                        deadline,
+                        lease,
                     )
                 except asyncio.CancelledError:
                     raise
                 except Exception:
+                    if _UNCONFIRMED_DECODERS > 0:
+                        raise ValueError("speaker excerpt unavailable") from None
                     continue
                 if not decoded:
                     continue
@@ -454,7 +582,7 @@ class SpeakerExcerptService:
         except Exception:
             raise ValueError("speaker excerpt unavailable") from None
         finally:
-            _PROCESS_PERMITS.release()
+            lease.release()
 
     def resolve(
         self,
@@ -536,16 +664,19 @@ class SpeakerExcerptService:
         )
         if start_ms < 0 or end_ms <= start_ms or end_ms - start_ms > self.MAX_EXCERPT_DURATION_MS:
             raise ValueError("speaker excerpt unavailable")
-        deadline = await self._acquire()
+        lease = await self._acquire()
+        deadline = lease.deadline_monotonic
         try:
             source = await self._read_source(object_key, deadline)
+            actual_duration_ms = await self._probe_duration(source, lease)
+            if end_ms > actual_duration_ms:
+                raise ValueError("speaker excerpt unavailable")
             result = await self._decode_with_managed_process(
                 self._read_interval,
-                object_key,
                 start_ms,
                 end_ms,
                 source,
-                deadline,
+                lease,
             )
             if not isinstance(result, bytes) or not result or self._monotonic() >= deadline:
                 raise ValueError("speaker excerpt unavailable")
@@ -555,4 +686,4 @@ class SpeakerExcerptService:
         except Exception:
             raise ValueError("speaker excerpt unavailable") from None
         finally:
-            _PROCESS_PERMITS.release()
+            lease.release()

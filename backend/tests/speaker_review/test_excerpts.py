@@ -36,22 +36,10 @@ class FakeMedia:
 
     def __init__(self, decoded: dict[tuple[int, int], bytes] | None = None) -> None:
         self.decoded = decoded or {}
-        self.decode_calls: list[tuple[str, int, int]] = []
-        self.read_calls: list[tuple[str, int, int]] = []
+        self.decode_calls: list[tuple[int, int]] = []
+        self.read_calls: list[tuple[int, int]] = []
+        self.source_read_calls: list[tuple[str, int]] = []
         self.fail_read = False
-
-    def decode(self, object_key: str, start_ms: int, end_ms: int) -> bytes:
-        self.decode_calls.append((object_key, start_ms, end_ms))
-        result = self.decoded.get((start_ms, end_ms))
-        if result is None:
-            raise ValueError("synthetic decode failure")
-        return result
-
-    def read(self, object_key: str, start_ms: int, end_ms: int) -> bytes:
-        self.read_calls.append((object_key, start_ms, end_ms))
-        if self.fail_read:
-            raise OSError("synthetic playback failure")
-        return b"synthetic-audio"
 
 
 def _encoded_test_key(byte: int) -> str:
@@ -59,10 +47,40 @@ def _encoded_test_key(byte: int) -> str:
 
 
 class FakeBoundedStore:
+    def __init__(self, media: FakeMedia) -> None:
+        self.media = media
+
     async def get_bounded(
-        self, _object_key: str, _max_bytes: int, deadline_monotonic: float
+        self, object_key: str, max_bytes: int, deadline_monotonic: float
     ) -> bytes:
+        assert deadline_monotonic > 0
+        self.media.source_read_calls.append((object_key, max_bytes))
         return b"synthetic-source"
+
+
+class FakeInput:
+    def write(self, _data: bytes) -> None:
+        pass
+
+    async def drain(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+    async def wait_closed(self) -> None:
+        pass
+
+
+class FakeOutput:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        self.offset = 0
+
+    async def read(self, size: int) -> bytes:
+        chunk = self.data[self.offset : self.offset + size]
+        self.offset += len(chunk)
+        return chunk
 
 
 class FakeDecoderProcess:
@@ -72,24 +90,29 @@ class FakeDecoderProcess:
         self.media = media
         self.command = command
         self.pid = 1
+        self.exit_code = 0
+        self.stdin = FakeInput()
+        if command[1] == "probe":
+            result = b"10.0"
+        else:
+            _, mode, start_text, end_text = command
+            start_ms, end_ms = int(start_text), int(end_text)
+            if mode == "decode":
+                result = self.media.decoded.get((start_ms, end_ms)) or b""
+            elif self.media.fail_read:
+                result = b""
+                self.exit_code = 1
+            else:
+                result = b"synthetic-audio"
+        self.stdout = FakeOutput(result)
 
     async def communicate(self, **kwargs: Any) -> tuple[bytes, bytes]:
         assert kwargs["input"] == b"synthetic-source"
-        _, mode, object_key, start_text, end_text = self.command
-        start_ms, end_ms = int(start_text), int(end_text)
-        if mode == "decode":
-            result = self.media.decoded.get((start_ms, end_ms))
-            if result is None:
-                raise ValueError("synthetic decode failure")
-        else:
-            if self.media.fail_read:
-                raise OSError("synthetic playback failure")
-            result = b"synthetic-audio"
-        self.returncode = 0
-        return result, b""
+        return self.stdout.data, b""
 
     async def wait(self) -> int:
-        return 0
+        self.returncode = self.exit_code
+        return self.exit_code
 
 
 def _new_service(media: FakeMedia) -> SpeakerExcerptService:
@@ -99,19 +122,20 @@ def _new_service(media: FakeMedia) -> SpeakerExcerptService:
         assert start_new_session
         return FakeDecoderProcess(media, command)
 
-    def decode_command(object_key: str, start_ms: int, end_ms: int) -> tuple[str, ...]:
-        media.decode_calls.append((object_key, start_ms, end_ms))
-        return ("synthetic-decoder", "decode", object_key, str(start_ms), str(end_ms))
+    def decode_command(start_ms: int, end_ms: int) -> tuple[str, ...]:
+        media.decode_calls.append((start_ms, end_ms))
+        return ("synthetic-decoder", "decode", str(start_ms), str(end_ms))
 
-    def read_command(object_key: str, start_ms: int, end_ms: int) -> tuple[str, ...]:
-        media.read_calls.append((object_key, start_ms, end_ms))
-        return ("synthetic-decoder", "read", object_key, str(start_ms), str(end_ms))
+    def read_command(start_ms: int, end_ms: int) -> tuple[str, ...]:
+        media.read_calls.append((start_ms, end_ms))
+        return ("synthetic-decoder", "read", str(start_ms), str(end_ms))
 
     return SpeakerExcerptService(
-        object_store=cast(ObjectStore, FakeBoundedStore()),
+        object_store=cast(ObjectStore, FakeBoundedStore(media)),
         decoder=ManagedDecoderProcess(spawn_process=spawn, kill_process_group=lambda *_: None),
         decode_interval=decode_command,
         read_interval=read_command,
+        probe_audio=lambda: ("synthetic-decoder", "probe"),
     )
 
 
@@ -163,9 +187,8 @@ async def test_candidate_selection_uses_duration_then_vad_then_earliest_start() 
     excerpt = await _derive(_service(media))
 
     assert (excerpt.start_ms, excerpt.end_ms) == (4_000, 5_500)
-    assert media.decode_calls == [
-        ("private-bucket/private-recording.wav", 4_000, 5_500),
-    ]
+    assert media.decode_calls == [(4_000, 5_500)]
+    assert media.source_read_calls == [("private-bucket/private-recording.wav", 20 * 1024 * 1024)]
 
 
 @pytest.mark.asyncio
@@ -184,10 +207,7 @@ async def test_invalid_candidates_are_rejected_before_excerpt_is_ready() -> None
     excerpt = await _derive(_service(media), candidates=candidates)
 
     assert (excerpt.start_ms, excerpt.end_ms) == (6_000, 7_500)
-    assert media.decode_calls == [
-        ("private-bucket/private-recording.wav", 8_000, 10_000),
-        ("private-bucket/private-recording.wav", 6_000, 7_500),
-    ]
+    assert media.decode_calls == [(8_000, 10_000), (6_000, 7_500)]
 
 
 @pytest.mark.asyncio
@@ -278,8 +298,10 @@ async def test_playback_failure_does_not_substitute_or_complete_review_item() ->
             review_item=item,
         )
 
-    assert media.read_calls == [
-        ("private-bucket/private-recording.wav", 4_000, 5_500),
+    assert media.read_calls == [(4_000, 5_500)]
+    assert media.source_read_calls == [
+        ("private-bucket/private-recording.wav", 20 * 1024 * 1024),
+        ("private-bucket/private-recording.wav", 20 * 1024 * 1024),
     ]
     assert item.disposition is None
     assert review.status == "pending"
@@ -323,8 +345,10 @@ async def test_excerpt_reference_is_persisted_and_playback_uses_only_the_item_re
         revision_id=7,
         review_item=item,
     ) == b"synthetic-audio"
-    assert media.read_calls == [
-        ("private-bucket/private-recording.wav", 4_000, 5_500),
+    assert media.read_calls == [(4_000, 5_500)]
+    assert media.source_read_calls == [
+        ("private-bucket/private-recording.wav", 20 * 1024 * 1024),
+        ("private-bucket/private-recording.wav", 20 * 1024 * 1024),
     ]
 
 
