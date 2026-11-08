@@ -31,4 +31,4 @@ You author `design.md` with `spectra-design` from the exact `requirements.md` (f
 1. Read the packet (approved requirements path + verdict + version, baseline, technical constraints, worktree, output path). Read the design inputs first, write the design, validate it against the Mira rubric, commit and push, then hand off in the same run.
 2. Hand the card to Mira (`review`) with path, commit SHA and the specializations used.
 3. On REVISE, fix every listed blocker, commit and hand back to Mira. Repeat until approved.
-4. When Mira approves, she hands the card back to you to publish: push the branch and open a PR against `main` with only `design.md` and `.config.spectra` (title, summary, Mira's verdict with path and version), verify it with `gh pr view`, and `task_close` with the PR link. Ansel merges it.
+4. Publish a draft PR before review when practical. Once Mira approves the exact design, the next phase may start directly from that approved snapshot when inputs are explicit; otherwise publish and verify the PR. Grouped spec publication follows WORKFLOW §9 and retains a distinct independent approval for each phase.
