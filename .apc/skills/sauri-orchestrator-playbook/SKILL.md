@@ -8,14 +8,14 @@ description: Ansel's situation playbook for Sauri - opening work and card packet
 Principles live in your contract; this is how to apply them. Load only the section you need.
 
 ## Opening work
-- Flow: `requirements.md` (feature) or `bugfix.md` (defect) by Zoya, never one in place of the other → design (Brisa) → tasks (Zoya) → issues and cards (Zoya), each audited by Mira on the SAME card until APPROVED; then per issue Imre or Ilan → Nia → Zev (when security applies) → the assigned developer opens the PR. Cyrus accepts user-visible work. How many implementation cards run at once is set by the watchdog: its `[ready]` block lists exactly the cards to assign (each in its own worktree, in parallel); assign them all in the same wake. Serialize only real dependencies.
-- Implementation cards already exist (one task = one issue = one card). Assign the ready ones; complete the PACKET (worktree/branch from `_tools/new-worktree.sh`, gates `qa`, `security: yes | N/A (reason)`, `acceptance: yes | N/A`; GREEN cards carry the verified RED evidence). For other work create the card with `task_create(assignee=<author>)`: assignment starts the author.
+- Follow WORKFLOW §§6 and 9 for independently audited spec phases, grouped spec drafts, delivery units and safe parallel QA/security of the same stable candidate. A draft PR may precede reviews; aggregate required verdicts and retain product acceptance. Serialize true dependencies only.
+- Cards represent delivery units; each approved task maps to an issue and card, and compatible tasks may share a unit only under WORKFLOW §9. Assign ready units with isolated worktrees and complete PACKETs, validation commands and gates.
 - PACKET = at most 2000 characters in all (longer detail in a worktree file, path in the card): spec slug and phase, scope/exclusions, worktree/branch, approved upstream paths with verdicts and ONE version reference, owner decisions, skills to activate, real validation commands, "done means …". For Mira name the exact `mira-*-audit` skill and artifact path.
-- A card starts its assignee only when the assignee CHANGES. To start or restart someone who already holds it, `task_update(assignee=null)` then assign the same agent in the same turn; afterwards confirm with `task_list`.
+- Assignment starts its executor when supported; verify actual run activity. Never simulate restarts by clearing and reassigning the same assignee; use supported recovery and report platform errors exactly.
 - New features need the owner-approved exact-version `PRODUCT_BASELINE.md`; defects need reproducible QA evidence and an authorized source of expected behavior; a bug label never authorizes new behavior. Fix a missing prerequisite once before sending a packet.
 
 ## A card comes back to you
-Settle it in one pass of about six tool calls: read the HAND-OFF, verify only the single fact it needs, rule (a decision, not an investigation), update PACKET/HAND-OFF, reassign. Do not re-read the board. The third return for the same reason closes the loop: accept, descope or ask the owner, and say which.
+Resolve returns using evidence and WORKFLOW §6. Continue when attempts add evidence or narrow the cause; if progress stalls, escalate with evidence and options. Never force acceptance or descope by a fixed number of returns.
 
 ## Owner flags (`awaits_owner`)
 - Flag only when EVERY option changes approved scope, policy, privacy, risk or cost. If one option keeps approved scope intact, take it, proceed, and mention it at your next milestone message. Descoping or amending approved requirements is the owner's; completing them is yours.
@@ -33,12 +33,12 @@ A card in `review` with open subtasks is an umbrella: leave it alone while child
 For APX itself (a tool or permission missing for an agent, provider limit, APX error), `delegate` to Teo (`roby`): exact error, card and agent blocked, what you tried, the change you propose. He may adjust agent settings within what the owner delegated; anything else he asks the owner, and an APX defect he reports to the owner with a draft. Meanwhile continue independent cards. Ordinary project problems are yours or the owner's, never Teo's.
 
 ## Sweep on every wake
-Nothing else wakes you or the team: agents run only when a card changes owner or someone messages them, and a run cut off by a provider limit, a restart or the 6-minute deadline leaves its card in `doing` with no run. So every wake, before anything else:
-1. `task_list` the cards in `doing` and `review`, and `list_agents` for who is running. A card is stalled when its last activity is older than 10 minutes and its assignee is not shown as running; if `list_agents` does not show run state, use the card's last activity alone and say so in your reply. An agent free for more than 10 minutes while holding an open card is stalled too.
-2. Restart every stalled card in this same turn, all of them: `task_update(assignee=null)` then assign the same agent, then confirm with `task_list`. Give a card whose last run was cut off a smaller scope and say so in the PACKET. Do not wait for a second report and do not restart one agent per wake.
-3. In an answering turn (the owner or the owner's assistant messaged you) `task_update` with an assignee fails with "you are answering": do not retry. List every stalled card in your reply as `agent — card — one-line order`, so the owner's assistant starts each by direct chat, and restart them yourself at your next wake that is not an answering turn.
-4. Keep every agent busy: when a free agent holds no open card, open the next ready card for it in the lane that needs it (see "Lanes, fast lane and your own load").
-5. Only then handle the report items, once each. The owner's assistant may relay the watchdog report; it never replaces this sweep, and you do not wait for it.
+Check task and execution evidence on each wake; board state or age alone does not establish an executor is stalled:
+1. Inspect cards, execution sessions and relevant evidence. Distinguish actual execution from board status; where run state is inaccessible, mark it unverified.
+2. For a verified stalled card, inspect its cause and use supported recovery. Never clear and reassign the same assignee to simulate a restart; record exact platform errors.
+3. If assignment is refused in an answering turn, do not retry or bypass it. Return the card, responsible agent and required supported operation for an authorized context.
+4. Assign actionable approved work to available specialists when supported; do not invent work merely to occupy agents.
+5. Continue independent ready work and handle remaining report items.
 
 ## Lanes, fast lane and your own load
 - Two lanes are active at any time: CORE (upload, transcript turns per speaker, automatic diarization, summary) and UI (screens from `design/stitch/`). Specs, QA and security work serve those two lanes. Everything else (lint-fix per-file cards, platform spikes, speculative specs) stays in `backlog` unless a lane card depends on it or CI is blocked. Each lane always has an owner running; a lane never waits on the other unless a card names the dependency.
