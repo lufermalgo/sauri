@@ -181,10 +181,17 @@ class ManagedDecoderProcess:
         self._process_group_exists = process_group_exists
         self._monotonic = monotonic
 
-    async def _confirm_process_group_termination(self, process_group_id: int) -> bool:
+    async def _confirm_process_group_termination(
+        self,
+        process_group_id: int,
+        *,
+        deadline_monotonic: float | None = None,
+    ) -> bool:
         confirmation_deadline = (
             self._monotonic() + PROCESS_GROUP_CONFIRMATION_TIMEOUT_SECONDS
         )
+        if deadline_monotonic is not None:
+            confirmation_deadline = min(confirmation_deadline, deadline_monotonic)
         while True:
             try:
                 group_exists = self._process_group_exists(process_group_id)
@@ -326,6 +333,11 @@ class ManagedDecoderProcess:
                 process.wait(), timeout=max(0.0, deadline_monotonic - self._monotonic())
             )
             if return_code != 0 or self._monotonic() > deadline_monotonic:
+                raise ValueError("speaker excerpt unavailable")
+            if not await self._confirm_process_group_termination(
+                process.pid,
+                deadline_monotonic=deadline_monotonic,
+            ):
                 raise ValueError("speaker excerpt unavailable")
             return stdout
         except BaseException as error:

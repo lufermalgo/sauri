@@ -223,6 +223,7 @@ def synthetic_managed_decoder(
     return speaker_excerpt_service.ManagedDecoderProcess(
         spawn_process=spawn,
         kill_process_group=lambda _pid, _signal: None,
+        process_group_exists=lambda _pid: False,
         monotonic=monotonic,
     )
 
@@ -239,7 +240,10 @@ async def test_service_routes_derive_and_play_through_bounded_store_and_managed_
         output = b"30.0" if command == ("synthetic-probe",) else b"managed-synthetic-excerpt"
         return CompletedDecoderProcess(output)
 
-    decoder = speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn)
+    decoder = speaker_excerpt_service.ManagedDecoderProcess(
+        spawn_process=spawn,
+        process_group_exists=lambda _pid: False,
+    )
     excerpt_service = service(
         decode_interval=lambda *_args: ("synthetic-decoder",),
         read_interval=lambda *_args: ("synthetic-decoder",),
@@ -292,7 +296,10 @@ async def test_play_rejects_source_over_limit_before_managed_decode(
         decode_interval=lambda *_args: ("synthetic-decoder",),
         read_interval=lambda *_args: ("synthetic-decoder",),
         object_store=storage,
-        decoder=speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn),
+        decoder=speaker_excerpt_service.ManagedDecoderProcess(
+            spawn_process=spawn,
+            process_group_exists=lambda _pid: False,
+        ),
         keyring=keyring,
     )
     excerpt = await derive(
@@ -475,7 +482,10 @@ async def test_derive_rejects_unverified_or_overlong_source_duration_before_inte
         return decode_interval(start, end)
 
     excerpt_service = service(
-        decoder=speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn),
+        decoder=speaker_excerpt_service.ManagedDecoderProcess(
+            spawn_process=spawn,
+            process_group_exists=lambda _pid: False,
+        ),
         decode_interval=legacy_compatible_decode,
         probe_audio=lambda: ("synthetic-probe",),
         keyring=keyring,
@@ -645,7 +655,10 @@ async def test_decoder_work_runs_in_child_without_blocking_the_event_loop(
 
     excerpt_service = service(
         decode_interval=lambda *_args: ("synthetic-decoder",),
-        decoder=speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn),
+        decoder=speaker_excerpt_service.ManagedDecoderProcess(
+            spawn_process=spawn,
+            process_group_exists=lambda _pid: False,
+        ),
     )
     operation = asyncio.create_task(
         derive(
@@ -706,7 +719,10 @@ async def test_one_nonblocking_two_permit_limit_is_shared_by_derive_and_play(
     excerpt_service = service(
         decode_interval=lambda *_args: ("synthetic-blocking", "derive"),
         read_interval=lambda *_args: ("synthetic-blocking", "play"),
-        decoder=speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn),
+        decoder=speaker_excerpt_service.ManagedDecoderProcess(
+            spawn_process=spawn,
+            process_group_exists=lambda _pid: False,
+        ),
         keyring=keyring,
     )
     excerpt = await derive(
@@ -894,7 +910,10 @@ async def test_decoder_rejects_stdout_over_explicit_output_cap() -> None:
         spawned.append(process)
         return process
 
-    decoder = speaker_excerpt_service.ManagedDecoderProcess(spawn_process=spawn)
+    decoder = speaker_excerpt_service.ManagedDecoderProcess(
+        spawn_process=spawn,
+        process_group_exists=lambda _pid: False,
+    )
     with pytest.raises(ValueError, match="speaker excerpt unavailable"):
         await decoder.run(
             ("synthetic-decoder",),
@@ -1058,6 +1077,36 @@ def managed_decoder_for_test(
         monotonic=monotonic,
     )
     return decoder, process
+
+
+@pytest.mark.asyncio
+async def test_managed_decoder_confirms_process_group_exit_after_success() -> None:
+    checked_groups: list[int] = []
+
+    async def spawn_process(*_command: str, start_new_session: bool) -> Any:
+        assert start_new_session
+        return CompletedDecoderProcess(b"synthetic-success")
+
+    def process_group_exists(process_group_id: int) -> bool:
+        checked_groups.append(process_group_id)
+        return False
+
+    decoder = speaker_excerpt_service.ManagedDecoderProcess(
+        spawn_process=spawn_process,
+        process_group_exists=process_group_exists,
+        monotonic=lambda: 0.0,
+    )
+
+    result = await decoder.run(
+        ("synthetic-decoder",),
+        input_bytes=b"synthetic-source",
+        deadline_monotonic=1.0,
+    )
+
+    assert result == b"synthetic-success"
+    assert checked_groups == [CompletedDecoderProcess.pid], (
+        "successful output must not return until process-group exit is confirmed"
+    )
 
 
 @pytest.mark.asyncio
