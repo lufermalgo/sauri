@@ -61,7 +61,8 @@ issue close or an unavailable GitHub result does not satisfy it.
 
 The controller admits up to two approved deliveries in manifest order, skipping
 unready entries. Agent and resource reservations are project-wide. Unclassified
-live project runs pause new dispatch because their resources are unknown. Ansel
+live project runs pause new dispatch because their resources are unknown. A live
+coordinator reserves only the declared resources of its delivery. Ansel
 can receive a returned review or closure for one delivery while another runs.
 Wait-only cycles and unchanged reports do not call the model.
 

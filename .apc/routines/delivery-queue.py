@@ -212,12 +212,13 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False, merged_issue
             active.remove(root)
             for job in entry["jobs"]:
                 attempts.pop(job["card"], None)
-    if state.get("active") != active:
-        state["active"] = active
+    changed_active = state.get("active") != active
+    state["active"] = active
+    if changed_active:
         persist(state)
 
     def unclassified():
-        return any(run["card"] not in jobs for run in active_runs)
+        return any(run["card"] not in jobs and run["card"] not in entries for run in active_runs)
 
     def root_reason(entry):
         root = entry["root"]
@@ -237,6 +238,13 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False, merged_issue
             return reason
         card = job["card"]
         live_cards = {run["card"] for run in active_runs}
+        live_roots = live_cards & entries.keys()
+        if cards[card]["parent_id"] in live_roots:
+            return "delivery coordinator has a live run"
+        # A coordinator may touch any declared resource in its own delivery.
+        if any(set(job["resources"]).intersection(other["resources"])
+               for root in live_roots for other in entries[root]["jobs"]):
+            return "resource reserved by a live delivery coordinator"
         for other_id in (attempts.keys() | live_cards | planned) - {card}:
             if other_id not in jobs:
                 continue

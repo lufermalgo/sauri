@@ -94,10 +94,29 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(self.called, [self.y, self.z])
         self.assertEqual(self.state["attempts"][self.x], {"result": "uncertain"})
 
+    def test_second_root_admitted_later_is_persisted_before_dispatch(self):
+        self.cards[self.z]["proposed"] = 1
+        self.tick()
+        self.assertEqual(self.state["active"], [self.a])
+        self.cards[self.z]["proposed"] = 0
+        self.tick()
+        self.assertEqual(self.saved[-1]["active"], [self.a, self.b])
+        self.assertIn(self.z, self.saved[-1]["attempts"])
+
     def test_blocked_active_root_does_not_stop_independent_root(self):
         self.state.update(active=self.a, attempts={})
         self.cards[self.a]["awaits_owner"] = 1
         self.assertIn("QUEUE BLOCKED: keep active " + self.a, self.tick())
+        self.assertEqual(self.called, [self.z])
+
+    def test_live_coordinator_reserves_its_resources_not_the_whole_project(self):
+        self.state.update(active=[self.a], attempts={})
+        self.runs.append(self.run_record(self.a, "coordinator", "working"))
+        self.items[1]["jobs"][0]["resources"] = ["frontend"]
+        self.tick()
+        self.assertFalse(self.called)
+        self.items[1]["jobs"][0]["resources"] = ["docs"]
+        self.tick()
         self.assertEqual(self.called, [self.z])
 
     def test_review_wakes_with_another_root_live(self):
@@ -209,7 +228,9 @@ class QueueTest(unittest.TestCase):
         self.cards[self.a]["state"] = "dropped"
         self.runs.append(self.run_record(self.a, "reviewer", "working"))
         self.cards[self.z]["status"] = "todo"
-        self.assertIn("unclassified", self.tick())
+        self.items[1]["jobs"][0]["resources"] = ["frontend"]
+        self.tick()
+        self.assertIn(self.a, self.state["active"])
         self.assertNotIn(self.z, self.called)
         self.runs[-1].update(state="completed", ended_at="now")
         self.tick()
