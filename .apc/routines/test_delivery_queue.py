@@ -64,7 +64,7 @@ class QueueTest(unittest.TestCase):
                 run.update(state="completed", ended_at="now")
 
     def test_parallel_then_automatic_rollover_and_exhaustion(self):
-        self.assertIn("QUEUE ACTIVE: " + self.a, self.tick())
+        self.assertIn("QUEUE WAIT: " + self.a, self.tick())
         self.assertEqual(self.called, [self.x, self.y])
         self.assertIn("submitted", self.tick())
         self.assertEqual(self.called, [self.x, self.y])
@@ -72,7 +72,7 @@ class QueueTest(unittest.TestCase):
         self.assertIn("verify the approved acceptance gates", self.tick())
         self.assertEqual(self.called, [self.x, self.y])
         self.complete(self.a)
-        self.assertIn("QUEUE ACTIVE: " + self.b, self.tick())
+        self.assertIn("QUEUE WAIT: " + self.b, self.tick())
         self.assertEqual(self.called, [self.x, self.y, self.z])
         self.complete(self.z, self.b)
         self.assertIn("no approved delivery is ready", self.tick())

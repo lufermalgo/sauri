@@ -58,3 +58,7 @@ Optional job gates "requires_merges" and "completion_merges" are arrays of GitHu
 issue numbers. Configure --gh /absolute/path/to/gh --repo OWNER/REPO for them.
 A gate needs both a closed issue and its linked PR merged into main; a manual
 issue close or an unavailable GitHub result does not satisfy it.
+
+While scoped or other project runs are live, the controller still records its
+decision in state but emits no model input. Only a review or changed blocker
+should wake Ansel.

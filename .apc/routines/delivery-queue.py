@@ -204,7 +204,7 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False, merged_issue
             root = None
     if not root:
         if active_runs:
-            return ["QUEUE BLOCKED: live project runs must finish before another delivery is admitted."]
+            return ["QUEUE WAIT: live project runs must finish before another delivery is admitted."]
         reasons = []
         for entry in queue:
             key = entry["root"]
@@ -233,7 +233,7 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False, merged_issue
     if common(root):
         return [f"QUEUE BLOCKED: keep active {root}; {common(root)}. No rollover."]
     if any(run["card"] not in ids for run in active_runs):
-        return [f"QUEUE BLOCKED: keep active {root}; an unrelated or unlinked project run is live."]
+        return [f"QUEUE WAIT: keep active {root}; an unrelated or unlinked project run is live."]
     if any(cards.get(job["card"], {}).get("parent_id") != root for job in entry["jobs"]):
         return [f"QUEUE BLOCKED: keep active {root}; a declared job is not a child of this delivery."]
     declared_jobs = {job["card"] for job in entry["jobs"]}
@@ -310,6 +310,8 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False, merged_issue
         if not any(cards.get(job["card"], {}).get("status") == "review" for job in entry["jobs"]):
             lines[0] = f"QUEUE BLOCKED: active {root} has no live or dispatchable job."
         lines.append("No live job. Ansel: review returned work or report the recorded blockers.")
+    if any(live(run) and run["card"] in ids for run in runs):
+        lines[0] = f"QUEUE WAIT: {root}; scoped execution is live."
     return lines
 
 
@@ -344,7 +346,8 @@ def main():
             if args.dry or state.get("last_report") != report:
                 state["last_report"] = report
                 persist(state)
-                print(report)
+                if args.dry or not report.startswith("QUEUE WAIT:"):
+                    print(report)
     except (OSError, ValueError, TypeError, KeyError, AttributeError, sqlite3.Error) as exc:
         print(f"QUEUE BLOCKED: invalid configuration or unavailable APX state ({type(exc).__name__}). Do not dispatch.")
 
