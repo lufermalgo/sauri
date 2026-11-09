@@ -12,12 +12,13 @@ Wakes (any one prints):
              waiting on the owner (at most every DISPATCH_MIN minutes)
   [hourly]   a full review at least every FULL_MIN minutes
 Read-only on APX's database. State: <home>/work/orch-state/<project>.json.
-Usage: orchestrator-state.py <project_id> <agent_prefix> <orchestrator_agent_id> <owner/repo> [--dry]
+Usage: orchestrator-state.py <project_id> <agent_prefix> <orchestrator_agent_id> <owner/repo> [--dry] [--focus=task_ID]
 Env for tests: ORCH_DB, ORCH_NOW (ISO), ORCH_STATE_DIR, ORCH_NO_GH=1.
 """
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -41,6 +42,55 @@ def iso(d):
     return d.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
+def focus_pass(q, project, orch, task, state_file, dry):
+    # The scope is supplied by the operator, not inferred from an idle agent or a PR title.
+    if not re.fullmatch(r"task_[a-f0-9]+", task):
+        raise SystemExit("invalid focus card id")
+    rows = q(
+        "select id,status,state,assignee,reviewer,proposed,awaits_owner,title,thread_id "
+        "from tasks where project_id=? and (id=? or parent_id=?) order by id",
+        (project, task, task),
+    )
+    root = next((row for row in rows if row[0] == task), None)
+    if root is None:
+        raise SystemExit("focus card not found in this project")
+    if root[2] != "open":
+        return
+    ids = [row[0] for row in rows]
+    slots = ",".join("?" for _ in ids)
+    runs = q(
+        f"select t.task_id,r.id,r.agent_id,r.state,r.ended_at from runs r "
+        f"join threads t on t.id=r.thread_id where t.project_id=? "
+        f"and t.task_id in ({slots}) and r.trigger!='routine' "
+        f"order by r.started_at desc,r.id desc",
+        (project, *ids),
+    )
+    if any(run[3] in ("working", "queued", "waiting", "scheduled") and run[4] is None for run in runs):
+        return
+    latest = {}
+    for run in runs:
+        latest.setdefault(run[0], run[1:4])
+    event = q(
+        f"select coalesce(max(n),0) from task_events where task_id in ({slots}) and by!=?",
+        (*ids, orch),
+    )[0][0]
+    signal = hashlib.sha256(json.dumps([rows, latest, event]).encode()).hexdigest()
+    try:
+        with open(state_file) as f:
+            if json.load(f).get("signal") == signal:
+                return
+    except (OSError, ValueError, AttributeError):
+        pass
+    print(f"FOCUS: {task}; authorized scope is only this delivery and named prerequisites.")
+    for tid, status, state, assignee, reviewer, prop, waits, title, _ in rows[:MAX_CARDS]:
+        print(f"{tid} | {status}/{state} | {assignee or '-'} | reviewer={reviewer or '-'} "
+              f"| proposal={prop} owner={waits} | {str(title)[:90]} | latest run={latest.get(tid)}")
+    if not dry:
+        with open(state_file + ".tmp", "w") as f:
+            json.dump({"signal": signal}, f)
+        os.replace(state_file + ".tmp", state_file)
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry" in sys.argv
@@ -55,6 +105,11 @@ def main():
     last = st.get("last_wake") or iso(t - timedelta(hours=1))
     con = sqlite3.connect("file:" + DB + "?mode=ro", uri=True, timeout=5)
     q = lambda sql, p=(): con.execute(sql, p).fetchall()
+
+    focus = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--focus=")), None)
+    if focus is not None:
+        focus_pass(q, project, orch, focus, os.path.join(STATE_DIR, project + ".focus.json"), dry)
+        return
 
     agents = {a: (n, r) for a, n, r in q("select id, name, role from agents where project_id=? and coalesce(archived,0)=0", (project,))}
     specialists = [a for a in agents if a != orch]

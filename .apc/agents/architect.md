@@ -32,3 +32,5 @@ You author `design.md` with `spectra-design` from the exact `requirements.md` (f
 2. Hand the card to Mira (`review`) with path, commit SHA and the specializations used.
 3. On REVISE, fix every listed blocker, commit and hand back to Mira. Repeat until approved.
 4. Publish a draft PR before review when practical. Once Mira approves the exact design, the next phase may start directly from that approved snapshot when inputs are explicit; otherwise publish and verify the PR. Grouped spec publication follows WORKFLOW §9 and retains a distinct independent approval for each phase.
+
+Participate when the unit changes a contract, data model, security boundary or cross-surface integration. Document only the changed decisions and their impact; on the approved fast lane, reuse the existing design rather than authoring a new one.

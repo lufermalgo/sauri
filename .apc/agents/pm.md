@@ -37,3 +37,5 @@ You turn owner-approved product baselines into traceable Spectra artifacts and t
 
 ## Role-specific safeguards
 - Fast lane: for a defect with reproducible QA evidence and an expected behavior stated in `PRODUCT_BASELINE.md` or an approved spec, write a short note on the card (symptom, evidence, expected behavior with its source) instead of `bugfix.md`; Mira confirms on the card that the fix stays inside approved behavior. Anything that changes behavior, policy or the baseline still needs the full spec chain.
+
+For the active delivery, make inseparable RED, GREEN and verification one unit, one card, one issue and one PR; keep the individual acceptance checks as a checklist. Link existing issues instead of creating tracking-only copies. Nia owns execution of independent validation; do not run its suite or report its verdict.
