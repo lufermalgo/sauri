@@ -79,7 +79,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-17 — RED: Specify complete guarded service behavior through the existing route
 
-**Tracking:** Issue #771 · Card `task_70f9cb0897cc4a76`
+**Tracking:** Issue #771 · Canonical shared delivery card `task_70f9cb0897cc4a76` (T-17 RED + T-18 GREEN). Shared implementation branch/worktree: `bugfix/issue-771-stale-recovery-service` / `.worktrees/bugfix-issue-771-stale-recovery-service`.
 
 **Files / RED test seams:** `backend/tests/meetings/test_recovery_service.py` (new), invoking the now-existing FastAPI `POST /api/v1/meetings/{meeting_id}/recover` and the real `backend/app/meetings/recovery_service.py:MeetingRecoveryService.recover(meeting_id, actor_id, idempotency_key)` through its route/service boundary.
 
@@ -91,7 +91,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-18 — GREEN: Implement guarded meeting recovery service
 
-**Tracking:** Issue #772 · Card `task_5c2f095a8a914b16`
+**Tracking:** Issue #771 · Canonical shared delivery card `task_70f9cb0897cc4a76` (T-17 RED + T-18 GREEN; former #772 / `task_5c2f095a8a914b16` consolidated as duplicate). Shared implementation branch/worktree: `bugfix/issue-771-stale-recovery-service` / `.worktrees/bugfix-issue-771-stale-recovery-service`.
 
 **Files:** `backend/app/meetings/recovery_service.py`; `backend/app/meetings/state_machine.py` only if the existing event vocabulary lacks the specifically named recovery transition; the minimal required repository/service modules; `backend/tests/meetings/test_recovery_service.py`.
 
