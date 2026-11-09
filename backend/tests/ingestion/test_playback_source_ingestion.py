@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from io import BytesIO
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -306,6 +307,7 @@ async def test_upload_binds_transcription_job_to_authenticated_owner_and_recordi
     monkeypatch.setattr(
         router, "record_transition", AsyncMock(return_value=SimpleNamespace(successful=True))
     )
+    monkeypatch.setattr(router, "create_processing_generation", AsyncMock(return_value=1))
 
     result = await router.upload_recording(
         audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic audio")),
@@ -320,12 +322,16 @@ async def test_upload_binds_transcription_job_to_authenticated_owner_and_recordi
     )
 
     assert result["recording_id"] == recording_id
-    queue.publish.assert_awaited_once_with(
-        topic="transcribe",
-        message={
-            "meeting_id": meeting_id,
-            "owner_id": owner_id,
-            "recording_id": recording_id,
-            "audio_ref": "synthetic/audio-object",
-        },
-    )
+    queue.publish.assert_awaited_once()
+    topic = queue.publish.await_args.kwargs["topic"]
+    message = queue.publish.await_args.kwargs["message"]
+    assert topic == "transcribe"
+    assert message == {
+        "meeting_id": meeting_id,
+        "owner_id": owner_id,
+        "recording_id": recording_id,
+        "audio_ref": "synthetic/audio-object",
+        "generation": 1,
+        "job_id": message["job_id"],
+    }
+    assert uuid.UUID(message["job_id"])

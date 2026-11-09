@@ -23,6 +23,7 @@ from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
 from app.infra.models import Meeting
 from app.infra.object_store import ObjectStore, create_object_store
+from app.infra.processing_claims import create_processing_generation
 from app.infra.queue import JobQueue, create_job_queue
 from app.ingestion.schemas import IngestionData
 from app.ingestion.service import preflight_ingestion, process_ingestion, resolve_upload_title
@@ -191,6 +192,8 @@ async def upload_recording(
     # e. Process ingestion (create SessionRecording, handles idempotency, notice)
     engine = create_engine()
     session_factory = create_session_factory(engine)
+    processing_generation: int | None = None
+    job_id = str(uuid.uuid4())
     try:
         async with session_factory() as session, session.begin():
             recording, is_new = await process_ingestion(
@@ -215,6 +218,10 @@ async def upload_recording(
                     meeting=meeting,
                     event="recording_uploaded",
                 )
+                if transition_result.successful:
+                    processing_generation = await create_processing_generation(
+                        session, ingestion_data.meeting_id
+                    )
             else:
                 meeting = await session.get(Meeting, ingestion_data.meeting_id)
                 if meeting is None:
@@ -260,20 +267,23 @@ async def upload_recording(
             await engine.dispose()
         return {"recording_id": recording.id, "state": prior_state}
 
-    # g. Enqueue the transcription job (only if the recording is new)
-    await queue.connect()
-    try:
-        await queue.publish(
-            topic="transcribe",
-            message={
-                "meeting_id": ingestion_data.meeting_id,
-                "owner_id": user.id,
-                "recording_id": recording.id,
-                "audio_ref": audio_ref,
-            },
-        )
-    finally:
-        await queue.disconnect()
+    # g. Enqueue only after the state transition and durable generation commit.
+    if processing_generation is not None:
+        await queue.connect()
+        try:
+            await queue.publish(
+                topic="transcribe",
+                message={
+                    "meeting_id": ingestion_data.meeting_id,
+                    "owner_id": user.id,
+                    "recording_id": recording.id,
+                    "audio_ref": audio_ref,
+                    "generation": processing_generation,
+                    "job_id": job_id,
+                },
+            )
+        finally:
+            await queue.disconnect()
 
     # Close the engine
     await engine.dispose()
