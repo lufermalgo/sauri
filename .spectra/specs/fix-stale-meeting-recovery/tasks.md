@@ -121,7 +121,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-7 — RED: Specify recovery outbox delivery at worker startup
 
-**Tracking:** Issue #773 · Card `task_a7e3ad6bcc2b49e6`
+**Tracking:** T-7 RED + T-8 GREEN delivery unit · Issue #773 · Card `task_a7e3ad6bcc2b49e6`
 
 **Files / RED test seams:** `backend/tests/infra/test_recovery_outbox.py` (new); existing `backend/app/worker.py:main()` startup boundary with injected isolated queue/session factories and controlled stop event; use a persisted synthetic operation/outbox row produced through `MeetingRecoveryService.recover`.
 
@@ -133,7 +133,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-8 — GREEN: Wire startup to deliver only committed outbox records
 
-**Tracking:** Issue #774 · Card `task_d517db56175e4f54`
+**Tracking:** T-7 RED + T-8 GREEN delivery unit · Issue #773 · Card `task_a7e3ad6bcc2b49e6`
 
 **Files:** `backend/app/infra/recovery_outbox.py` (new); `backend/app/worker.py:main()` existing startup boundary; `backend/app/infra/queue.py:JobQueue.publish`; `backend/app/infra/queue_rabbitmq.py:RabbitMQJobQueue.publish`; `backend/tests/infra/test_recovery_outbox.py`.
 
