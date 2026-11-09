@@ -44,6 +44,11 @@ def upgrade() -> None:
             "actor_id", "meeting_id", "idempotency_key",
             name="uq_recovery_operation_idempotency_scope",
         ),
+        sa.CheckConstraint(
+            "preservation_counts IS NULL OR "
+            "CAST(preservation_counts AS TEXT) = '{}'",
+            name="ck_recovery_operation_empty_preservation_counts",
+        ),
     )
     op.create_index(
         "ix_meeting_recovery_operations_meeting_id",
@@ -66,6 +71,10 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("operation_id", name="uq_recovery_outbox_operation_id"),
+        sa.CheckConstraint(
+            "CAST(job_identifiers AS TEXT) = '{}'",
+            name="ck_recovery_outbox_empty_job_identifiers",
+        ),
     )
     op.create_table(
         "manual_recovery_pilot_gate",

@@ -456,6 +456,11 @@ class MeetingRecoveryOperation(Base):
             "actor_id", "meeting_id", "idempotency_key",
             name="uq_recovery_operation_idempotency_scope",
         ),
+        CheckConstraint(
+            "preservation_counts IS NULL OR "
+            "CAST(preservation_counts AS TEXT) = '{}'",
+            name="ck_recovery_operation_empty_preservation_counts",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -488,6 +493,10 @@ class MeetingRecoveryOutbox(Base):
     __tablename__ = "meeting_recovery_outbox"
     __table_args__ = (
         UniqueConstraint("operation_id", name="uq_recovery_outbox_operation_id"),
+        CheckConstraint(
+            "CAST(job_identifiers AS TEXT) = '{}'",
+            name="ck_recovery_outbox_empty_job_identifiers",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
