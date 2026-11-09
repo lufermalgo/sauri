@@ -14,10 +14,12 @@ from app.infra.models import (
     Diarization,
     Meeting,
     MeetingProcessingClaim,
+    MeetingRecoveryOperation,
     SessionRecording,
     SpeechTurn,
     Transcript,
 )
+from app.infra.processing_claims import claim_worker_generation, verify_worker_generation
 
 
 def _engine() -> AsyncMock:
@@ -31,7 +33,8 @@ def _engine() -> AsyncMock:
 
 async def _seed(session_factory: async_sessionmaker[AsyncSession], *, generation: int = 8,
                 claim_id: str | None = None, claim_kind: str | None = None,
-                expires_at: datetime | None = None) -> tuple[str, str, str]:
+                expires_at: datetime | None = None, include_claim: bool = True
+                ) -> tuple[str, str, str]:
     meeting_id, recording_id, owner_id, transcript_id = (
         str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     )
@@ -54,10 +57,11 @@ async def _seed(session_factory: async_sessionmaker[AsyncSession], *, generation
             id=str(uuid.uuid4()), transcript_id=transcript_id, text="synthetic", start_ms=0,
             end_ms=1, sequence=1,
         ))
-        session.add(MeetingProcessingClaim(
-            meeting_id=meeting_id, generation=generation, claim_id=claim_id,
-            claim_kind=claim_kind, claim_expires_at=expires_at,
-        ))
+        if include_claim:
+            session.add(MeetingProcessingClaim(
+                meeting_id=meeting_id, generation=generation, claim_id=claim_id,
+                claim_kind=claim_kind, claim_expires_at=expires_at,
+            ))
     return meeting_id, recording_id, owner_id
 
 
@@ -121,6 +125,42 @@ async def test_recovery_claim_wins_interleaving_and_worker_cannot_take_over(
         claim = await session.get(MeetingProcessingClaim, meeting_id)
         assert claim is not None and claim.claim_id == recovery_claim_id
         assert claim.claim_kind == "recovery"
+
+
+@pytest.mark.asyncio
+async def test_recovery_delivery_without_durable_claim_fails_closed(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    meeting_id, recording_id, owner_id = await _seed(session_factory, include_claim=False)
+    operation_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    async with session_factory() as session, session.begin():
+        session.add(MeetingRecoveryOperation(
+            id=operation_id, meeting_id=meeting_id, actor_id=owner_id,
+            idempotency_key="b" * 64, processing_generation=8, status="dispatch_pending",
+            reason_code=None, preservation_snapshot_digest=None, preservation_counts={},
+            created_at=now, updated_at=now,
+        ))
+
+    engine = _engine()
+    with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
+        await _process_diarization({
+            "meeting_id": meeting_id, "owner_id": owner_id, "recording_id": recording_id,
+            "generation": 8, "job_id": str(uuid.uuid4()), "operation_id": operation_id,
+        }, session_factory)
+
+    engine.diarize.assert_not_awaited()
+    async with session_factory() as session:
+        assert await session.get(MeetingProcessingClaim, meeting_id) is None
+        assert not await claim_worker_generation(
+            session, meeting_id=meeting_id, generation=8, job_id="retry", kind="diarization",
+            operation_id=operation_id,
+        )
+        assert not await verify_worker_generation(
+            session, meeting_id=meeting_id, generation=8, job_id="retry", kind="diarization",
+            operation_id=operation_id,
+        )
+        assert (await session.execute(select(Diarization))).scalars().all() == []
 
 
 @pytest.mark.asyncio

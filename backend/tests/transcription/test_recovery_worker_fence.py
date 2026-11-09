@@ -11,17 +11,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.infra.models import (
     Meeting,
     MeetingProcessingClaim,
+    MeetingRecoveryOperation,
     SessionRecording,
     SpeechTurn,
     Transcript,
 )
+from app.infra.processing_claims import claim_worker_generation, verify_worker_generation
 from app.transcription.asr_engine import ASRCapabilities, TranscriptionResult, TranscriptionSegment
 from app.transcription.worker import _process_transcription
 
 
 async def _seed(session_factory: async_sessionmaker[AsyncSession], *, generation: int = 4,
                 claim_id: str | None = None, claim_kind: str | None = None,
-                expires_at: datetime | None = None) -> tuple[str, str, str]:
+                expires_at: datetime | None = None, include_claim: bool = True
+                ) -> tuple[str, str, str]:
     meeting_id, recording_id, owner_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(Meeting(
@@ -34,10 +37,11 @@ async def _seed(session_factory: async_sessionmaker[AsyncSession], *, generation
             capture_origin="chrome_extension", audio_ref="synthetic/audio", video_ref=None,
             duration_seconds=1, interrupted=False, expires_at=None, finished_at=datetime.now(UTC),
         ))
-        session.add(MeetingProcessingClaim(
-            meeting_id=meeting_id, generation=generation, claim_id=claim_id,
-            claim_kind=claim_kind, claim_expires_at=expires_at,
-        ))
+        if include_claim:
+            session.add(MeetingProcessingClaim(
+                meeting_id=meeting_id, generation=generation, claim_id=claim_id,
+                claim_kind=claim_kind, claim_expires_at=expires_at,
+            ))
     return meeting_id, recording_id, owner_id
 
 
@@ -169,6 +173,51 @@ async def test_recovery_claim_first_blocks_delayed_transcription_delivery(
         assert claim is not None and claim.claim_id == recovery_operation_id
         assert claim.claim_kind == "recovery"
         assert (await session.execute(select(Transcript))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_recovery_delivery_without_durable_claim_fails_closed(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    meeting_id, recording_id, owner_id = await _seed(session_factory, include_claim=False)
+    operation_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+    async with session_factory() as session, session.begin():
+        session.add(MeetingRecoveryOperation(
+            id=operation_id, meeting_id=meeting_id, actor_id=owner_id,
+            idempotency_key="a" * 64, processing_generation=4, status="dispatch_pending",
+            reason_code=None, preservation_snapshot_digest=None, preservation_counts={},
+            created_at=now, updated_at=now,
+        ))
+
+    engine = AsyncMock()
+    engine.transcribe.return_value = TranscriptionResult(
+        segments=[TranscriptionSegment(text="sentinel", start_ms=0, end_ms=1)],
+        language="es-CO", supports_turns=True,
+    )
+    engine.capabilities = MagicMock(return_value=ASRCapabilities(supports_turns=True, is_local=True))
+    with patch("app.transcription.worker.create_asr_engine", return_value=engine):
+        await _process_transcription({
+            "meeting_id": meeting_id, "owner_id": owner_id, "recording_id": recording_id,
+            "audio_ref": "untrusted", "generation": 4, "job_id": str(uuid.uuid4()),
+            "operation_id": operation_id,
+        }, session_factory)
+
+    engine.transcribe.assert_not_awaited()
+    async with session_factory() as session:
+        assert await session.get(MeetingProcessingClaim, meeting_id) is None
+        assert not await claim_worker_generation(
+            session, meeting_id=meeting_id, generation=4, job_id="retry", kind="transcription",
+            operation_id=operation_id,
+        )
+        assert not await verify_worker_generation(
+            session, meeting_id=meeting_id, generation=4, job_id="retry", kind="transcription",
+            operation_id=operation_id,
+        )
+        assert (await session.execute(select(Transcript))).scalars().all() == []
+        assert (await session.execute(select(SpeechTurn))).scalars().all() == []
+        meeting = await session.get(Meeting, meeting_id)
+        assert meeting is not None and meeting.process_state == "transcribing"
 
 
 @pytest.mark.asyncio
