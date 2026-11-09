@@ -426,6 +426,123 @@ class SpeakerReviewIdempotencyReceipt(Base):
 
 
 # ---------------------------------------------------------------------------
+# Manual meeting recovery persistence
+# ---------------------------------------------------------------------------
+
+
+class MeetingProcessingClaim(Base):
+    """Durable per-meeting processing generation and exclusive claim identity."""
+
+    __tablename__ = "meeting_processing_claims"
+    __table_args__ = (UniqueConstraint("meeting_id", name="uq_processing_claim_meeting_id"),)
+
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), primary_key=True
+    )
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    claim_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    claim_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    claim_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class MeetingRecoveryOperation(Base):
+    """Content-free audit and idempotency record for one recovery operation."""
+
+    __tablename__ = "meeting_recovery_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_id", "meeting_id", "idempotency_key",
+            name="uq_recovery_operation_idempotency_scope",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id"), nullable=False
+    )
+    actor_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False
+    )
+    # Store a digest of the caller's key, never the request's raw value.
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    processing_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    preservation_snapshot_digest: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    preservation_counts: Mapped[dict[str, int] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class MeetingRecoveryOutbox(Base):
+    """Durable outbox envelope containing opaque job identifiers only."""
+
+    __tablename__ = "meeting_recovery_outbox"
+    __table_args__ = (
+        UniqueConstraint("operation_id", name="uq_recovery_outbox_operation_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("meeting_recovery_operations.id"),
+        nullable=False,
+    )
+    topic: Mapped[str] = mapped_column(String(128), nullable=False)
+    job_identifiers: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
+    processing_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    delivery_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class ManualRecoveryPilotGate(Base):
+    """Singleton persistence for the separately authorized recovery pilot."""
+
+    __tablename__ = "manual_recovery_pilot_gate"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_manual_recovery_pilot_gate_singleton"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="disabled")
+    allowed_meeting_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="SET NULL"), nullable=True
+    )
+    authorized_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    pilot_operation_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("meeting_recovery_operations.id"),
+        unique=True, nullable=True,
+    )
+    armed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    verification_actor_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verification_artifact_snapshot_match: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
 # User
 # ---------------------------------------------------------------------------
 

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from types import ModuleType
+
 import pytest
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.infra.database import Base
 from app.infra import models as _models  # noqa: F401 -- register ORM tables
+from app.infra.database import Base
 from tests.test_migration import (
     _load_published_migration,
     _migration_script,
@@ -85,7 +87,7 @@ async def test_recovery_schema_is_durable_scoped_and_content_free(
 
     tables = schema["tables"]
     assert isinstance(tables, set)
-    assert RECOVERY_TABLES <= tables, (
+    assert tables >= RECOVERY_TABLES, (
         "missing durable recovery schema tables: " f"{sorted(RECOVERY_TABLES - tables)}"
     )
 
@@ -161,10 +163,10 @@ async def test_recovery_schema_is_registered_in_orm_metadata(
 ) -> None:
     del async_engine  # the fixture creates all registered ORM tables
 
-    assert RECOVERY_TABLES <= set(Base.metadata.tables)
+    assert set(Base.metadata.tables) >= RECOVERY_TABLES
 
 
-def _recovery_migration():
+def _recovery_migration() -> ModuleType:
     script = _migration_script()
     heads = script.get_heads()
     assert RECOVERY_MIGRATION_REVISION in heads, (
@@ -250,3 +252,45 @@ async def test_recovery_migration_rollback_preserves_existing_meeting_artifacts(
 
     after_migration = await _snapshot_existing_meeting_artifacts(async_engine)
     assert after_migration == before_migration
+
+
+@pytest.mark.asyncio
+async def test_recovery_migration_refuses_to_drop_persisted_operation_history(
+    async_engine: AsyncEngine,
+) -> None:
+    migration = _recovery_migration()
+    await _seed_existing_meeting_artifacts(async_engine)
+    async with async_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO users "
+                "(id, email, name, password_hash, is_sales, created_at) "
+                "VALUES ('synthetic-user', 'synthetic@example.test', 'Synthetic', "
+                "'synthetic-hash', 1, '2026-01-01 00:00:00')"
+            )
+        )
+
+    await _run_migration(async_engine, migration, "upgrade")
+    async with async_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO meeting_recovery_operations "
+                "(id, meeting_id, actor_id, idempotency_key, processing_generation, "
+                "status, created_at, updated_at) VALUES "
+                "('synthetic-operation', 'synthetic-meeting', 'synthetic-user', "
+                "'synthetic-digest', 1, 'accepted', '2026-01-01 00:00:00', "
+                "'2026-01-01 00:00:00')"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="retain it"):
+        await _run_migration(async_engine, migration, "downgrade")
+
+    async with async_engine.connect() as connection:
+        operation_exists = await connection.scalar(
+            text(
+                "SELECT 1 FROM meeting_recovery_operations "
+                "WHERE id = 'synthetic-operation'"
+            )
+        )
+    assert operation_exists == 1
