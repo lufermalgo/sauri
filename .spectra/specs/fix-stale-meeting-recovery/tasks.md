@@ -17,15 +17,15 @@ All test fixtures and sentinel content must be synthetic. No task reads or copie
 |---|---|---|---|
 | 1 | T-1 → T-2 | durable recovery/outbox/claim/pilot persistence | RED test before migration/model implementation |
 | 2 | T-3 → T-4 | existing-app disabled-mode route precursor | T-2 for the persisted RED fixture and GREEN persistence boundary; route RED before safe fail-closed GREEN |
-| 3 | T-17 → T-18 | complete guarded service operation | T-4, T-2 and T-6; behavioral RED through existing route before full service GREEN |
-| 4 | T-5 → T-6 | shared durable worker fencing | T-2; worker RED before worker GREEN |
-| 5 | T-7 → T-8 | worker-startup delivery of committed outbox rows | T-18, T-2 and T-6; existing startup RED before dispatcher wiring |
+| 3 | T-17 → T-18 | complete guarded service operation | T-4, T-2 and T-5; behavioral RED through existing route before full service GREEN |
+| 4 | T-5 (single RED→GREEN delivery unit) | shared durable worker fencing | T-2; capture worker RED evidence before GREEN implementation in the same issue, card, branch, worktree and PR |
+| 5 | T-7 → T-8 | worker-startup delivery of committed outbox rows | T-18, T-2 and T-5; existing startup RED before dispatcher wiring |
 | 6 | T-19 → T-20 | ambiguous-ack retry and deduplication | T-8 and T-18; behavioral RED against existing dispatcher before retry GREEN |
 | 7 | T-9 → T-10 | fail-closed status for empty artifact sets | T-18; existing-app status RED before safe status GREEN |
 | 8 | T-21 → T-22 | complete nonempty all-field snapshot | T-10 and T-2; behavioral RED through existing status route before full snapshot GREEN |
-| 9 | T-11 → T-12 | explicit authenticated API, privacy and no-auto-trigger boundary | T-18, T-20, T-22 and T-6; full API RED before complete API GREEN |
+| 9 | T-11 → T-12 | explicit authenticated API, privacy and no-auto-trigger boundary | T-18, T-20, T-22 and T-5; full API RED before complete API GREEN |
 | 10 | T-13 → T-14 | one-meeting pilot lock and operator verification | T-12 and T-22; pilot RED before gate GREEN |
-| 11 | T-15 → T-16 | end-to-end synthetic recovery regression | T-6, T-20, T-22, T-14; integration RED before final verification GREEN |
+| 11 | T-15 → T-16 | end-to-end synthetic recovery regression | T-5, T-20, T-22, T-14; integration RED before final verification GREEN |
 
 ## Delivery-unit mapping (WORKFLOW §9)
 
@@ -93,7 +93,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** Expected behavioral result/state assertion failures: `python -m pytest tests/meetings/test_recovery_service.py -q`.
 
-**Dependencies:** T-4, T-2, and T-6.
+**Dependencies:** T-4, T-2, and T-5.
 
 ## T-18 — GREEN: Implement guarded meeting recovery service
 
@@ -105,31 +105,19 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** T-17 behavioral assertions pass; every ineligible case leaves meeting, recording, artifacts, queue, and operation state unchanged: `python -m pytest tests/meetings/test_recovery_service.py -q`.
 
-**Dependencies:** T-17, T-2, and T-6.
+**Dependencies:** T-17, T-2, and T-5.
 
-## T-5 — RED: Specify durable worker claim and generation fencing
+## T-5 — RED→GREEN: Specify and enforce durable worker claims and generation fencing
 
-**Tracking:** Issue #769 · Card `task_13bcde619dd94d19`
+**Tracking:** Proposed single delivery unit: Issue #769 · Card `task_13bcde619dd94d19`. The previously separate T-6 / #770 / `task_163e4732f5c14075` is superseded by this grouping only if Mira approves this amended tasks.md; Ansel must reconcile that issue/card before dispatch.
 
-**Files:** `backend/tests/transcription/test_recovery_worker_fence.py` and `backend/tests/diarization/test_recovery_worker_fence.py` (new); seams `app.transcription.worker._process_transcription` and `app.diarization.worker._process_diarization`.
+**Files:** Tests: `backend/tests/transcription/test_recovery_worker_fence.py` and `backend/tests/diarization/test_recovery_worker_fence.py` (new). Production: `backend/app/transcription/worker.py`; `backend/app/diarization/worker.py`; normal job producers in the corresponding existing modules. Test seams: `app.transcription.worker._process_transcription` and `app.diarization.worker._process_diarization`.
 
-**Action:** Add failing synthetic interleaving tests for worker-claim-first and recovery-claim-first, stale/missing/mismatched generation, delayed legacy delivery, duplicate delivery, expired/uncertain claim, and worker restart. Assert a rejected job invokes no engine and causes no state/artifact write; a valid claim permits only one side-effecting execution for its generation.
+**Action:** First add synthetic interleaving tests for worker-claim-first and recovery-claim-first, stale/missing/mismatched generation, delayed legacy delivery, duplicate delivery, expired/uncertain claim, and worker restart. Run them before implementation and retain evidence of expected behavioral fence failures (not setup/import failures). Then make both workers and their normal producers participate in the shared durable claim/generation protocol. Validate job, meeting, recording and owner binding before transition, engine call or artifact write; reject legacy jobs lacking verifiable generation for recovery-sensitive meetings; safely acknowledge stale/duplicate deliveries. Preserve ordinary processing behavior outside recovery and never infer idleness from broker counts or lease expiry alone. Re-run the same tests after implementation.
 
-**Done evidence / validation:** Expected fence failures (not setup/import failures) from both modules: `python -m pytest tests/transcription/test_recovery_worker_fence.py tests/diarization/test_recovery_worker_fence.py -q`.
+**Done evidence / validation:** Preserve the pre-implementation RED output showing expected fence assertion failures from both test modules, then pass all RED→GREEN interleavings with engine-call, state-write and artifact-write assertions: `python -m pytest tests/transcription/test_recovery_worker_fence.py tests/diarization/test_recovery_worker_fence.py -q` from `backend/`. The security gate is met only if stale, duplicate, and uncertain claims are rejected without engine calls or artifact writes.
 
 **Dependencies:** T-2.
-
-## T-6 — GREEN: Fence transcription and diarization workers
-
-**Tracking:** Issue #770 · Card `task_163e4732f5c14075`
-
-**Files:** `backend/app/transcription/worker.py`; `backend/app/diarization/worker.py`; normal job producers in the corresponding existing modules; paired worker tests.
-
-**Action:** Make both workers and their normal producers participate in the shared durable claim/generation protocol. Validate job, meeting, recording and owner binding before transition, engine call or artifact write; reject legacy jobs lacking verifiable generation for recovery-sensitive meetings; safely acknowledge stale/duplicate deliveries. Preserve existing normal processing behavior outside recovery and never infer idleness from broker counts or lease expiry alone.
-
-**Done evidence / validation:** All T-5 interleavings pass, with engine-call and DB-write assertions: `python -m pytest tests/transcription/test_recovery_worker_fence.py tests/diarization/test_recovery_worker_fence.py -q`.
-
-**Dependencies:** T-5 and T-2.
 
 ## T-7 — RED: Specify recovery outbox delivery at worker startup
 
@@ -141,7 +129,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** Expected startup publish/state assertion failures: `python -m pytest tests/infra/test_recovery_outbox.py -q`.
 
-**Dependencies:** T-18, T-2, and T-6.
+**Dependencies:** T-18, T-2, and T-5.
 
 ## T-8 — GREEN: Wire startup to deliver only committed outbox records
 
@@ -153,7 +141,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** T-7 startup and rollback assertions pass: `python -m pytest tests/infra/test_recovery_outbox.py -q`.
 
-**Dependencies:** T-7, T-2, T-18, and T-6.
+**Dependencies:** T-7, T-2, T-18, and T-5.
 
 ## T-19 — RED: Specify stable outbox retry after ambiguous acknowledgement
 
@@ -237,7 +225,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** Expected missing-route/guard assertions fail without environment/setup errors: `python -m pytest tests/meetings/test_manual_recovery_routes.py tests/ingestion/test_idempotency_property.py -q`.
 
-**Dependencies:** T-18, T-20, T-22, and T-6.
+**Dependencies:** T-18, T-20, T-22, and T-5.
 
 ## T-12 — GREEN: Add explicit owner-authenticated recovery route
 
@@ -249,7 +237,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** T-11 endpoint, authorization, privacy and ordinary-flow regression assertions pass: `python -m pytest tests/meetings/test_manual_recovery_routes.py tests/ingestion/test_idempotency_property.py -q`.
 
-**Dependencies:** T-11, T-18, T-20, T-22, and T-6.
+**Dependencies:** T-11, T-18, T-20, T-22, and T-5.
 
 ## T-13 — RED: Specify single-pilot gate and operator verification
 
@@ -285,7 +273,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** Expected end-to-end recovery contract failures (not test-environment setup failures): `python -m pytest tests/integration/test_manual_recovery_pipeline.py -q`.
 
-**Dependencies:** T-6, T-20, T-22, and T-14.
+**Dependencies:** T-5, T-20, T-22, and T-14.
 
 ## T-16 — GREEN: Verify integrated guarded recovery without widening triggers
 
@@ -297,7 +285,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 **Done evidence / validation:** T-15 passes; run the focused recovery and ingestion regression sets: `python -m pytest tests/integration/test_manual_recovery_pipeline.py tests/meetings/test_recovery_service.py tests/meetings/test_manual_recovery_routes.py tests/meetings/test_recovery_pilot_gate.py tests/meetings/test_recovery_preservation.py tests/infra/test_manual_recovery_persistence.py tests/infra/test_recovery_outbox.py tests/transcription/test_recovery_worker_fence.py tests/diarization/test_recovery_worker_fence.py tests/ingestion/test_idempotency_property.py -q`.
 
-**Dependencies:** T-15, T-6, T-20, T-22, and T-14.
+**Dependencies:** T-15, T-5, T-20, T-22, and T-14.
 
 ## Constraints and deferred gate
 
