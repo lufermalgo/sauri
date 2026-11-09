@@ -29,9 +29,10 @@ All test fixtures and sentinel content must be synthetic. No task reads or copie
 
 ## Delivery-unit mapping (WORKFLOW §9)
 
+- T-3 (RED) and T-4 (GREEN) share one delivery unit: Issue #767 · Card `task_23336cbd897c4cbb` · branch `bugfix/issue-767-stale-recovery-t-3` · worktree `.worktrees/bugfix-issue-767-stale-recovery-t-3` · one PR. T-4 remains a distinct task and retains its own acceptance evidence and dependency on T-3 and T-2.
 - T-17 (RED) and T-18 (GREEN) share one delivery unit: Issue #771 · Card `task_70f9cb0897cc4a76`.
 - T-9 (RED) and T-10 (GREEN) share one delivery unit: Issue #777 · Card `task_e9315846d41a4199`.
-- The task IDs, individual acceptance evidence, validation commands, and dependency edges remain distinct below. The former GREEN-side issue/card references #772 and #778 are not separate delivery units; issue/card reconciliation follows Mira's approval of this mapping.
+- The task IDs, individual acceptance evidence, validation commands, and dependency edges remain distinct below. The former GREEN-side issue/card references #768, #772 and #778 are not separate delivery units; issue/card reconciliation follows Mira's approval of this mapping.
 
 RED tasks must demonstrate the specified behavioral failure at the relevant stage and retain its exact output in issue/PR evidence. For staged boundaries, the first RED targets an existing app/startup boundary; its safe GREEN adds only the narrow fail-closed behavior, then a subsequent RED targets that now-existing boundary before its full GREEN. No RED may pass only because a module/callable is absent; no GREEN may accept recovery before eligibility, fencing, pilot, and content-safety prerequisites exist. Each GREEN task makes its paired tests pass. Listed prerequisites are the only DAG edges; tasks within separate branches may proceed in parallel when dependencies are met. The commands below run from `backend/` in the project worktree: `python -m pytest <listed test path> -q` (backend's configured pytest command; no live services unless a test explicitly uses the project's existing isolated integration fixture).
 
@@ -61,7 +62,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-3 — RED: Specify the safe disabled-mode recovery route precursor
 
-**Tracking:** Issue #767 · Card `task_23336cbd897c4cbb`
+**Tracking:** Issue #767 · Card `task_23336cbd897c4cbb` · shared delivery unit with T-4; branch `bugfix/issue-767-stale-recovery-t-3`, worktree `.worktrees/bugfix-issue-767-stale-recovery-t-3`, one PR.
 
 **Files / RED test seams:** `backend/tests/meetings/test_manual_recovery_routes.py` (new); existing FastAPI app test client invoking `POST /api/v1/meetings/{meeting_id}/recover` with an authenticated owner-scoped synthetic meeting; existing app factory/route registration seam as used by the repository's API tests.
 
@@ -73,7 +74,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-4 — GREEN: Add only the fail-closed disabled-mode route/service boundary
 
-**Tracking:** Issue #768 · Card `task_9d47966f3aa84405`
+**Tracking:** Same delivery unit as T-3: Issue #767 · Card `task_23336cbd897c4cbb`; this GREEN task retains its distinct acceptance evidence and dependency on T-3 and T-2.
 
 **Files:** `backend/app/meetings/router.py` (`POST /api/v1/meetings/{meeting_id}/recover`); `backend/app/meetings/recovery_service.py` (new `MeetingRecoveryService.recover(meeting_id, actor_id, idempotency_key)`, initial safe boundary); existing owner authorization dependencies; `backend/tests/meetings/test_manual_recovery_routes.py`.
 
