@@ -22,6 +22,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
+from app.infra.processing_claims import (
+    advance_processing_generation,
+    claim_worker_generation,
+    verify_worker_binding,
+    verify_worker_generation,
+)
 from app.infra.queue import JobQueue
 from app.meetings.service import record_transition
 from app.transcription.asr_engine import TranscriptionOptions
@@ -51,11 +57,12 @@ async def _process_transcription(
     owner_id = message.get("owner_id")
     recording_id = message.get("recording_id")
     audio_ref = message.get("audio_ref")
+    generation = message.get("generation")
+    job_id = message.get("job_id")
+    operation_id = message.get("operation_id")
 
     if not meeting_id or not isinstance(meeting_id, str) or not meeting_id.strip():
-        logger.warning(
-            "Message discarded: meeting_id missing or empty. message=%s", message
-        )
+        logger.warning("Message discarded: reason=missing_meeting_id")
         return
 
     if not owner_id or not isinstance(owner_id, str) or not owner_id.strip():
@@ -67,9 +74,7 @@ async def _process_transcription(
         return
 
     if not audio_ref or not isinstance(audio_ref, str) or not audio_ref.strip():
-        logger.warning(
-            "Message discarded: audio_ref missing or empty. message=%s", message
-        )
+        logger.warning("Message discarded: reason=missing_audio_ref")
         return
 
     # Bind the job to the persisted meeting owner and its exact recording.
@@ -96,6 +101,14 @@ async def _process_transcription(
         logger.warning("Message discarded: queue recording does not match meeting recording.")
         return
 
+    async with session_factory() as session, session.begin():
+        if not await claim_worker_generation(
+            session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+            kind="transcription", operation_id=operation_id,
+        ):
+            logger.info("Transcription delivery acknowledged without claim; reason=fenced")
+            return
+
     logger.info("Processing transcription for meeting_id=%s", meeting_id)
     recording_audio_ref = recording.audio_ref
     audio_duration_seconds = recording.duration_seconds
@@ -103,8 +116,17 @@ async def _process_transcription(
     # Initial transition recording -> transcribing (Req. 8.1)
     async with session_factory() as session, session.begin():
         meeting = await session.get(Meeting, meeting_id)
-        if meeting is None:
-            logger.error("Meeting not found: %s", meeting_id)
+        if (
+            meeting is None
+            or not await verify_worker_binding(
+                session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id
+            )
+            or not await verify_worker_generation(
+                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                kind="transcription", operation_id=operation_id,
+            )
+        ):
+            logger.info("Transcription transition skipped; reason=fenced")
             return
         if meeting.process_state == "recording":
             await record_transition(session, meeting, "recording_uploaded")
@@ -122,7 +144,16 @@ async def _process_transcription(
         elapsed_seconds = time.monotonic() - started_at
         async with session_factory() as session, session.begin():
             meeting = await session.get(Meeting, meeting_id)
-            if meeting is not None:
+            if (
+                meeting is not None
+                and await verify_worker_binding(
+                    session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id
+                )
+                and await verify_worker_generation(
+                    session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                    kind="transcription", operation_id=operation_id,
+                )
+            ):
                 await record_transition(session, meeting, "engine_failed")
         logger.error(
             "Transcription timed out for meeting_id=%s; audio_duration_seconds=%s; "
@@ -145,8 +176,17 @@ async def _process_transcription(
     async with session_factory() as session, session.begin():
         # Re-fetch meeting within the transaction for state transitions
         meeting = await session.get(Meeting, meeting_id)
-        if meeting is None:
-            logger.error("Meeting not found: %s", meeting_id)
+        if (
+            meeting is None
+            or not await verify_worker_binding(
+                session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id
+            )
+            or not await verify_worker_generation(
+                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                kind="transcription", operation_id=operation_id,
+            )
+        ):
+            logger.info("Transcription artifact write skipped; reason=fenced")
             return
 
         if result.segments:
@@ -216,14 +256,24 @@ async def _process_transcription(
     # committed (Req. 1.2 of the speaker-identification feature). Doesn't
     # alter the Meeting's ProcessState (Req. 9.5).
     if queue is not None and transcript_created:
-        await queue.publish(
-            "diarize",
-            {
-                "meeting_id": meeting_id,
-                "owner_id": owner_id,
-                "recording_id": recording_id,
-            },
-        )
+        diarization_job: dict[str, Any] = {
+            "meeting_id": meeting_id,
+            "owner_id": owner_id,
+            "recording_id": recording_id,
+        }
+        if isinstance(generation, int) and not isinstance(generation, bool):
+            diarization_job_id = str(uuid.uuid4())
+            async with session_factory() as session, session.begin():
+                next_generation = await advance_processing_generation(
+                    session, meeting_id, generation
+                )
+            if next_generation is None:
+                logger.info("Diarization delivery skipped; reason=generation_not_advanced")
+                return
+            diarization_job.update(
+                {"generation": next_generation, "job_id": diarization_job_id}
+            )
+        await queue.publish("diarize", diarization_job)
         logger.info(
             "Diarization_Message enqueued for meeting_id=%s (topic 'diarize')",
             meeting_id,

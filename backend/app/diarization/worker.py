@@ -36,6 +36,11 @@ from app.infra.models import (
     Speaker,
     SpeakerAssignment,
 )
+from app.infra.processing_claims import (
+    claim_worker_generation,
+    verify_worker_binding,
+    verify_worker_generation,
+)
 from app.infra.queue import JobQueue
 from app.transcription.repository import TranscriptRepository
 
@@ -56,11 +61,11 @@ async def _process_diarization(
     meeting_id = message.get("meeting_id")
     owner_id = message.get("owner_id")
     recording_id = message.get("recording_id")
+    generation = message.get("generation")
+    job_id = message.get("job_id")
+    operation_id = message.get("operation_id")
     if not meeting_id or not isinstance(meeting_id, str) or not meeting_id.strip():
-        logger.warning(
-            "Diarization message discarded: meeting_id missing or invalid. message=%s",
-            message,
-        )
+        logger.warning("Diarization message discarded: reason=missing_meeting_id")
         return
     if not owner_id or not isinstance(owner_id, str) or not owner_id.strip():
         logger.warning("Diarization message discarded: owner_id missing or invalid.")
@@ -91,6 +96,14 @@ async def _process_diarization(
     if recording is None or recording.id != recording_id:
         logger.warning("Diarization discarded: queue recording does not match meeting recording.")
         return
+
+    async with session_factory() as session, session.begin():
+        if not await claim_worker_generation(
+            session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+            kind="diarization", operation_id=operation_id,
+        ):
+            logger.info("Diarization delivery acknowledged without claim; reason=fenced")
+            return
 
     # --- Load Transcript + turns (Req. 1.6) ---
     transcript_repo = TranscriptRepository(session_factory)
@@ -175,6 +188,17 @@ async def _process_diarization(
     # --- Persist in a single transaction (Req. 8.2) ---
     repo = DiarizationRepository(session_factory)
     async with session_factory() as session, session.begin():
+        if (
+            not await verify_worker_binding(
+                session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id
+            )
+            or not await verify_worker_generation(
+                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                kind="diarization", operation_id=operation_id,
+            )
+        ):
+            logger.info("Diarization artifact write skipped; reason=fenced")
+            return
         await repo.create(session, diarization, orm_speakers, orm_assignments)
 
     logger.info(
