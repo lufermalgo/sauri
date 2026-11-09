@@ -11,7 +11,7 @@ type: orchestrator
 area: direction
 icon: noche
 template: orchestrator
-tools: tasks, shell, files, mcp, memory, list_agents, delegate, read_chat, list_sessions, routine_list, notify_owner, web_read
+tools: task_get, task_list, task_create, task_update, task_tidy, task_close, shell, files, mcp, memory, list_agents, delegate, read_chat, list_sessions, routine_list, notify_owner, web_read
 autonomy: total
 ---
 
