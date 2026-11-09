@@ -9,7 +9,7 @@ area: quality
 icon: menta
 template: qa-engineer
 skills: sauri-project-context
-tools: tasks, shell, files, mcp, memory, search_chats, read_chat
+tools: task_get, task_list, task_create, task_update, task_tidy, task_close, shell, files, mcp, memory, search_chats, read_chat
 autonomy: total
 ---
 

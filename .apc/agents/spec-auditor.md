@@ -9,7 +9,7 @@ area: quality
 parent: orchestrator
 type: specialist
 icon: brasa
-tools: file_read, tasks, load_skill
+tools: file_read, task_get, task_list, task_create, task_update, task_tidy, task_close, load_skill
 autonomy: total
 ---
 

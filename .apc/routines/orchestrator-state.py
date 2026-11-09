@@ -58,10 +58,12 @@ def focus_pass(q, project, orch, task, state_file, dry):
         return
     ids = [row[0] for row in rows]
     slots = ",".join("?" for _ in ids)
+    # Review and mention consultations use context.consult.task instead of thread.task_id.
+    linked = "coalesce(t.task_id,json_extract(case when json_valid(t.context) then t.context else '{}' end,'$.consult.task'))"
     runs = q(
-        f"select t.task_id,r.id,r.agent_id,r.state,r.ended_at from runs r "
+        f"select {linked},r.id,r.agent_id,r.state,r.ended_at from runs r "
         f"join threads t on t.id=r.thread_id where t.project_id=? "
-        f"and t.task_id in ({slots}) and r.trigger!='routine' "
+        f"and {linked} in ({slots}) and r.trigger!='routine' "
         f"order by r.started_at desc,r.id desc",
         (project, *ids),
     )

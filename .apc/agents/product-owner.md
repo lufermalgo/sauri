@@ -7,7 +7,7 @@ description: Partners with the owner to define Sauri's user experience, product 
 skills: sauri-project-context
 area: product
 parent: orchestrator
-tools: tasks, shell, files, mcp, memory, search_chats, read_chat, web_read, web_search
+tools: task_get, task_list, task_create, task_update, task_tidy, task_close, shell, files, mcp, memory, search_chats, read_chat, web_read, web_search
 autonomy: total
 type: specialist
 icon: faro

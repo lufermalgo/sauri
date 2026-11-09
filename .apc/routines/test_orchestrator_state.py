@@ -19,14 +19,14 @@ class FocusTest(unittest.TestCase):
         self.addCleanup(self.db.close)
         self.db.executescript("""
             create table tasks(id,status,state,assignee,reviewer,proposed,awaits_owner,title,thread_id,project_id,parent_id);
-            create table threads(id,task_id,project_id);
+            create table threads(id,task_id,project_id,context);
             create table runs(id,thread_id,agent_id,state,ended_at,trigger,started_at);
             create table task_events(n integer,task_id,by);
             insert into tasks values
                 ('task_ab','doing','open','nia',null,0,0,'canonical','th1','sauri',null),
                 ('task_ac','todo','open',null,null,0,0,'unrelated','th2','sauri',null),
                 ('task_ad','todo','open',null,null,0,0,'prerequisite','th3','sauri','task_ab');
-            insert into threads values ('th1','task_ab','sauri'),('th2','task_ac','sauri'),('th3','task_ad','sauri');
+            insert into threads values ('th1','task_ab','sauri','{}'),('th2','task_ac','sauri','{}'),('th3','task_ad','sauri','{}');
         """)
 
     def run_focus(self, dry=False):
@@ -49,6 +49,14 @@ class FocusTest(unittest.TestCase):
 
     def test_wait_until_live_execution_finishes(self):
         self.db.execute("insert into runs values ('run1','th3','nia','working',null,'a2a','2026-11-09')")
+        self.assertEqual(self.run_focus(), "")
+        self.db.execute("update runs set state='completed', ended_at='2026-11-09' where id='run1'")
+        self.assertIn("run1", self.run_focus())
+
+    def test_wait_for_review_consult_even_without_thread_task_id(self):
+        self.db.execute("insert into threads values ('review',null,'sauri',?)",
+                        ('{"consult":{"task":"task_ab","review":true}}',))
+        self.db.execute("insert into runs values ('run1','review','ansel','working',null,'system','2026-11-09')")
         self.assertEqual(self.run_focus(), "")
         self.db.execute("update runs set state='completed', ended_at='2026-11-09' where id='run1'")
         self.assertIn("run1", self.run_focus())
