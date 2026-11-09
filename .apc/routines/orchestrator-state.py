@@ -68,7 +68,7 @@ def main():
         )
         if a != orch
     }
-    free = [a for a in specialists if a not in busy and a != prefix + "product-owner"]
+    free = [a for a in specialists if a not in busy and agents[a][1] != "product-owner"]
 
     counts = dict(
         q("select status, count(*) from tasks where project_id=? and state='open' group by 1", (project,))
@@ -80,9 +80,19 @@ def main():
         "select count(*) from tasks where project_id=? and state='open' and status='review' and (reviewer is null or reviewer='')",
         (project,),
     )
+    # Dispatch only cards that are open, unassigned and actionable now. Proposals and
+    # cards waiting on Fer stay visible in their separate queues, not as assignable work.
     n_unassigned = one(
-        "select count(*) from tasks where project_id=? and state='open' and assignee is null and status in ('todo','backlog')",
+        "select count(*) from tasks where project_id=? and state='open' and assignee is null "
+        "and status in ('todo','backlog') and coalesce(proposed,0)=0 and coalesce(awaits_owner,0)=0",
         (project,),
+    )
+    ready_cards = q(
+        "select id, status, priority, substr(title,1,70) from tasks where project_id=? and state='open' "
+        "and assignee is null and status in ('todo','backlog') and coalesce(proposed,0)=0 "
+        "and coalesce(awaits_owner,0)=0 order by case priority when 'urgent' then 0 when 'high' then 1 "
+        "when 'normal' then 2 else 3 end, activity_at desc limit ?",
+        (project, MAX_CARDS + 1),
     )
     pend = [r[0] for r in q("select id from pending_inputs where state='pending' and agent_id like ?", (prefix + "%",))]
 
@@ -136,7 +146,10 @@ def main():
         f"the PRs; open only the cards you will move. Woken because: {', '.join(reasons)}."
     ]
     nm = lambda a: agents[a][0] if a in agents else a.replace(prefix, "")
-    L.append("Team: " + "; ".join([f"{nm(a)} BUSY ({busy[a][:40]})" for a in busy] + [f"{nm(a)} FREE" for a in free]))
+    L.append("Team: " + "; ".join(
+        [f"{agents[a][0]} [{a}] ({agents[a][1] or 'role unknown'}) BUSY ({busy[a][:40]})" for a in busy]
+        + [f"{agents[a][0]} [{a}] ({agents[a][1] or 'role unknown'}) FREE" for a in free]
+    ))
     L.append(
         "Open cards: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
         + f" | unassigned in todo/backlog: {n_unassigned} | proposals: {n_prop} | waiting on the owner: {n_owner}"
@@ -171,7 +184,8 @@ def main():
     add("proposal", q(base + " and proposed=1 order by activity_at desc limit 4", (project,)))
     add("waiting on the owner", q(base + " and awaits_owner=1 order by activity_at desc limit 3", (project,)))
     add("review without reviewer", q(base + " and status='review' and (reviewer is null or reviewer='') order by activity_at asc limit 4", (project,)))
-    add("ready, unassigned", q(base + " and assignee is null and status='todo' order by activity_at desc limit 4", (project,)))
+    add("ready, unassigned", q(base + " and assignee is null and status in ('todo','backlog') "
+        "and coalesce(proposed,0)=0 and coalesce(awaits_owner,0)=0 order by activity_at desc limit 4", (project,)))
     if picked:
         L.append("Cards to act on (open only the ones you will move):")
         for label, tid, status, assignee, prop, owner, reviewer, title, desc in picked:
@@ -182,8 +196,14 @@ def main():
             tail = handoff_tail(desc)
             if tail:
                 L.append(f"      {tail}")
+    if ready_cards:
+        L.append("Assignable backlog/todo (open, unassigned, not proposed, not waiting on owner):")
+        for tid, status, priority, title in ready_cards[:MAX_CARDS]:
+            L.append(f"  - {tid} | {status} | {priority or 'normal'} | {title}")
+        if len(ready_cards) > MAX_CARDS:
+            L.append(f"  - … {len(ready_cards) - MAX_CARDS} more eligible card(s) omitted")
     out = "\n".join(L)
-    print(out[:6000])
+    print(out[:7500])
     if dry:
         return
     st.update(last_wake=iso(t), pr_sig=pr_sig if not pr_note else st.get("pr_sig"), pending=pend)
