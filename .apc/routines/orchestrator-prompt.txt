@@ -13,7 +13,7 @@ Follow the orchestration pass in docs/engineering/WORKFLOW.md §10:
 - Merge qualifying PRs only after confirming no conflicts, all existing CI checks succeeded, and the current changes match the reviewed candidate or material changes have been revalidated. Clean up worktrees when safe.
 - Continue independent work while waiting. Record decisions, blockers and their owners on the relevant cards.
 
-Inspect current details when needed; avoid redundant queries. Do not create work merely to occupy an agent, bypass permissions, or claim unverified outcomes.
+Treat the summary as incomplete when identifiers, hand-offs, eligibility details or current status are missing; inspect only the relevant card/session/PR before acting. Avoid redundant queries. Do not create work merely to occupy an agent, bypass permissions, or claim unverified outcomes.
 
 Communicate with Fer about decisions reserved in WORKFLOW §3 or an unresolved blocker needing his attention. Use short, nontechnical Spanish focused on user impact.
 
