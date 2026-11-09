@@ -50,6 +50,9 @@ def load_queue(path):
                 not isinstance(r, str) or not r.strip() for r in job["resources"]
             ):
                 raise ValueError(f"job {job['card']} needs an agent and explicit resource locks")
+            for name in ("requires_merges", "completion_merges"):
+                if any(type(n) is not int or n <= 0 for n in job.get(name, [])):
+                    raise ValueError(f"invalid GitHub issue gate: {job['card']}")
             if job.get("from") is not None and not AGENT.fullmatch(job["from"]):
                 raise ValueError(f"invalid current assignee for {job['card']}")
     return data
@@ -94,12 +97,45 @@ def live(run):
     return run["ended_at"] is None and run["state"] not in TERMINAL
 
 
+
+class GitHub:
+    def __init__(self, gh, repo):
+        self.gh, self.repo, self.cache = gh, repo, {}
+
+    def merged_issue(self, issue):
+        if issue not in self.cache:
+            self.cache[issue] = self._verify(issue)
+        return self.cache[issue]
+
+    def _verify(self, issue):
+        if not self.gh or not self.repo:
+            return False
+        def view(kind, number, fields):
+            return json.loads(subprocess.check_output(
+                [self.gh, "-R", self.repo, kind, "view", str(number), "--json", fields],
+                stderr=subprocess.DEVNULL, text=True, timeout=12))
+        try:
+            info = view("issue", issue, "state,closedByPullRequestsReferences")
+            if info["state"] != "CLOSED":
+                return False
+            for link in info["closedByPullRequestsReferences"]:
+                repo = link["repository"]
+                if f"{repo['owner']['login']}/{repo['name']}".lower() != self.repo.lower():
+                    continue
+                pr = view("pr", link["number"], "state,baseRefName,mergeCommit")
+                if pr["state"] == "MERGED" and pr["baseRefName"] == "main" and pr["mergeCommit"]:
+                    return True
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError):
+            return False
+        return False
+
+
 def dispatch_cli(apx, card, agent):
     return subprocess.run([apx, "tasks", "edit", card, "--agent", agent],
                           capture_output=True, text=True, timeout=15)
 
 
-def tick(queue, state, snapshot, dispatch, persist, now, dry=False):
+def tick(queue, state, snapshot, dispatch, persist, now, dry=False, merged_issue=lambda _n: False):
     if dry:
         state = json.loads(json.dumps(state))
         persist = lambda _state: None
@@ -126,8 +162,11 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False):
     def scoped(entry):
         return {entry["root"], *(job["card"] for job in entry["jobs"])}
 
+    def job_done(job):
+        return done(job["card"]) and all(merged_issue(n) for n in job.get("completion_merges", []))
+
     def finished(entry):
-        return done(entry["root"]) and all(done(job["card"]) for job in entry["jobs"])
+        return done(entry["root"]) and all(job_done(job) for job in entry["jobs"])
 
     def ready(job, attempts):
         card, agent = job["card"], job["agent"]
@@ -145,6 +184,9 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False):
             return "agent missing or archived"
         if any(not done(d) for d in job.get("requires", [])):
             return "prerequisites not done: " + ",".join(d for d in job["requires"] if not done(d))
+        missing = [n for n in job.get("requires_merges", []) if not merged_issue(n)]
+        if missing:
+            return "merge into main not verified for " + ",".join(f"#{n}" for n in missing)
         if card in attempts:
             return "already attempted; do not retry automatically"
         if any(run["card"] == card or run["agent_id"] == agent for run in active_runs):
@@ -201,13 +243,14 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False):
     locked, workers, lines = set(), set(), [f"QUEUE ACTIVE: {root}"]
     for job in entry["jobs"]:
         card = job["card"]
-        if not done(card) and (card in attempts or any(run["card"] == card for run in active_runs)):
+        if not job_done(job) and (card in attempts or any(run["card"] == card for run in active_runs)):
             locked.update(job["resources"])
             workers.add(job["agent"])
     for job in entry["jobs"]:
         card, agent = job["card"], job["agent"]
         if done(card):
-            lines.append(f"{card}: done")
+            note = "done" if job_done(job) else "board done; required GitHub merge not verified"
+            lines.append(f"{card}: {note}")
             continue
         if card in attempts:
             record = attempts[card]
@@ -256,7 +299,7 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False):
         persist(state)
         record = attempts[card]
         lines.append(f"{card}: {record.get('run', record['result'])}")
-    if all(done(job["card"]) for job in entry["jobs"]):
+    if all(job_done(job) for job in entry["jobs"]):
         if any(live(run) and run["card"] in ids for run in runs):
             return [f"QUEUE WAIT: active {root}; a scoped run still needs to finish."]
         lines.append("All declared jobs done. Ansel: verify the approved acceptance gates and close the root only with evidence.")
@@ -277,6 +320,8 @@ def main():
     parser.add_argument("--db", type=Path, default=Path.home()/".apx/v2/apx.db")
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--apx", required=True)
+    parser.add_argument("--gh")
+    parser.add_argument("--repo")
     parser.add_argument("--dry", action="store_true")
     args = parser.parse_args()
     try:
@@ -293,7 +338,8 @@ def main():
             persist = (lambda _s: None) if args.dry else lambda s: save_state(args.state, s)
             lines = tick(queue, state, board.snapshot,
                          lambda card, agent: dispatch_cli(args.apx, card, agent),
-                         persist, datetime.now(timezone.utc), args.dry)
+                         persist, datetime.now(timezone.utc), args.dry,
+                         GitHub(args.gh, args.repo).merged_issue)
             report = "\n".join(lines)[:7500]
             if args.dry or state.get("last_report") != report:
                 state["last_report"] = report

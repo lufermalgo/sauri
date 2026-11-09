@@ -53,3 +53,8 @@ prompt on the one project routine. Never use different state files for concurren
 controllers of the same project. An empty manifest safely reports no ready work.
 A lost/uncertain dispatch needs a verified run or explicit operator
 reconciliation; do not delete state to retry.
+
+Optional job gates "requires_merges" and "completion_merges" are arrays of GitHub
+issue numbers. Configure --gh /absolute/path/to/gh --repo OWNER/REPO for them.
+A gate needs both a closed issue and its linked PR merged into main; a manual
+issue close or an unavailable GitHub result does not satisfy it.

@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from contextlib import closing
 from datetime import datetime, timezone
 
 spec = importlib.util.spec_from_file_location("delivery_queue", pathlib.Path(__file__).with_name("delivery-queue.py"))
@@ -32,6 +34,7 @@ class QueueTest(unittest.TestCase):
             job(self.x, "agent-a", ["frontend"]), job(self.y, "agent-b", ["backend"])]},
             {"root": self.b, "approval": "reviewed b", "jobs": [job(self.z, "agent-c", ["docs"])]}]
         self.state, self.runs, self.called, self.saved = {}, [], [], []
+        self.merged = set()
         self.agents = {"agent-a", "agent-b", "agent-c"}
 
     def snapshot(self):
@@ -51,7 +54,7 @@ class QueueTest(unittest.TestCase):
     def tick(self, dry=False, dispatch=None):
         return "\n".join(queue.tick(self.items, self.state, self.snapshot, dispatch or self.dispatch,
                                     lambda s: self.saved.append(json.loads(json.dumps(s))),
-                                    datetime.now(timezone.utc), dry))
+                                    datetime.now(timezone.utc), dry, self.merged.__contains__))
 
     def complete(self, *cards):
         for card in cards:
@@ -120,6 +123,17 @@ class QueueTest(unittest.TestCase):
         self.assertEqual(self.called, [self.x, self.y])
         self.assertNotIn(self.z, self.called)
 
+    def test_apx_done_without_github_merge_does_not_unlock_dependent_or_rollover(self):
+        self.items[0]["jobs"][0]["completion_merges"] = [557]
+        self.items[0]["jobs"][1].update(requires=[self.x], requires_merges=[557])
+        self.tick()
+        self.complete(self.x)
+        self.assertIn("#557", self.tick())
+        self.assertEqual(self.called, [self.x])
+        self.merged.add(557)
+        self.tick()
+        self.assertEqual(self.called, [self.x, self.y])
+
     def test_changed_packet_is_never_dispatched(self):
         self.cards[self.x]["description"] = "different scope"
         self.assertIn("approved SHA-256", self.tick())
@@ -155,7 +169,7 @@ class CommandTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             folder = pathlib.Path(folder)
             db = folder / "apx.db"
-            with sqlite3.connect(db) as con:
+            with closing(sqlite3.connect(db)) as con:
                 con.executescript("""
                   create table tasks(id,project_id,state,status,assignee,proposed,awaits_owner,start_at,parent_id,description);
                   create table agents(id,project_id,archived);
@@ -173,3 +187,16 @@ class CommandTest(unittest.TestCase):
             self.assertFalse(state.exists())
             self.assertIn("no approved delivery is ready", invoke())
             self.assertEqual(invoke(), "")
+
+
+class GitHubTest(unittest.TestCase):
+    def test_closed_issue_without_merged_main_pr_is_not_evidence(self):
+        issue = {"state":"CLOSED", "closedByPullRequestsReferences":[
+            {"number":8,"repository":{"name":"sauri","owner":{"login":"example"}}}]}
+        for pr, result in [({"state":"MERGED","baseRefName":"staging","mergeCommit":{"oid":"1"}},False),
+                           ({"state":"MERGED","baseRefName":"main","mergeCommit":{"oid":"1"}},True)]:
+            with patch.object(queue.subprocess, "check_output", side_effect=[json.dumps(issue), json.dumps(pr)]) as gh:
+                verifier=queue.GitHub("/gh","example/sauri")
+                self.assertEqual(verifier.merged_issue(7),result)
+                self.assertEqual(verifier.merged_issue(7),result)
+                self.assertEqual(gh.call_count,2)
