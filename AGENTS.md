@@ -6,7 +6,7 @@
 - Technical questions go to Ansel with a recommended solution; choose the simplest option that fully satisfies approved requirements (WORKFLOW §3).
 - Work moves by reassigning APX task cards with PACKET and HAND-OFF (WORKFLOW §6).
 - Ansel coordinates and approves technical work within approved scope. Consult Fer for product, privacy, spending or security-policy changes; communicate briefly in nontechnical Spanish about user impact. Do not bypass permissions or assume authorization for deployment or other actions outside scope.
-- Prioritize approved work that unblocks others or is close to completion. Do not create work merely to occupy agents. Escalate unresolved technical blockers to Teo through Ansel.
+- In a configured single-delivery pilot, follow WORKFLOW §10 before starting or dispatching work. Otherwise prioritize approved work that unblocks others or is close to completion. Do not create work merely to occupy agents. Escalate unresolved technical blockers to Teo through Ansel.
 - Preserve independent spec review, applicable QA and security gates, product acceptance, and the owner's test environment. Check current PR status and the reviewed candidate before merging; do not repeat unrelated reviews.
 
 ## Evidence and context
@@ -27,7 +27,7 @@ These rules govern how agents must behave before, during, and after any task.
 * **Specialist agents**: do not delegate trivial isolated edits merely to change one file.
   Required role-specific Spectra phases and independent reviews are valid exceptions even
   when their deliverable is a single artifact. Give each agent a scoped brief and validate it.
-* **Parallelism**: after a task plan is approved, dispatch independent dependency-ready tasks
+* **Parallelism**: outside the single-delivery pilot, after a task plan is approved, dispatch independent dependency-ready tasks
   concurrently in separate worktrees; serialize only real dependencies or shared-resource
   conflicts. A blocked task must not stall unrelated ready work.
 

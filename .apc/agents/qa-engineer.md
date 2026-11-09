@@ -32,3 +32,5 @@ You independently verify the exact candidate commit that Imre or Ilan hands you 
 ## Role-specific safeguards
 - Synthetic data only unless the owner explicitly authorizes a specific fixture. For owner-run native-engine experiments, never terminate, stop, or restart host processes or services; report their state and ask the owner to manage lifecycle. Only Ansel merges. Nobody accepts risk, or changes security/privacy policy or release.
 - UI candidates are verified in a real browser against the matching `design/stitch/` capture: list each deviation in structure, tokens, texts, states and readability (text contrast, visible buttons) and mark it BLOCKING or NON-BLOCKING; content from section 8 of its README appearing on screen is BLOCKING.
+
+Before the active delivery is implemented, verify the isolated environment can boot, the fixture exists and the browser can reach the real API. If unavailable, record BLOCKED with exact failure, owner and resume condition. On the candidate, test the actual route end to end against the real backend when required by the approved criteria; do not substitute mocks for that result.
