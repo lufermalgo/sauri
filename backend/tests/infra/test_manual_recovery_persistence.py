@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from types import ModuleType
+
 import pytest
+from sqlalchemy import insert, text, update
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import text
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.infra.database import Base
 from app.infra import models as _models  # noqa: F401 -- register ORM tables
+from app.infra.database import Base
+from app.infra.models import MeetingRecoveryOperation, MeetingRecoveryOutbox
 from tests.test_migration import (
     _load_published_migration,
     _migration_script,
@@ -67,12 +72,20 @@ def _schema_contract(connection: Connection) -> dict[str, object]:
         table_name: set(inspector.get_pk_constraint(table_name)["constrained_columns"])
         for table_name in recovery_tables
     }
+    check_constraints = {
+        table_name: {
+            constraint["name"]
+            for constraint in inspector.get_check_constraints(table_name)
+        }
+        for table_name in recovery_tables
+    }
     return {
         "tables": tables,
         "columns": columns,
         "unique_constraints": unique_constraints,
         "foreign_keys": foreign_keys,
         "primary_keys": primary_keys,
+        "check_constraints": check_constraints,
     }
 
 
@@ -85,7 +98,7 @@ async def test_recovery_schema_is_durable_scoped_and_content_free(
 
     tables = schema["tables"]
     assert isinstance(tables, set)
-    assert RECOVERY_TABLES <= tables, (
+    assert tables >= RECOVERY_TABLES, (
         "missing durable recovery schema tables: " f"{sorted(RECOVERY_TABLES - tables)}"
     )
 
@@ -144,6 +157,15 @@ async def test_recovery_schema_is_durable_scoped_and_content_free(
     assert isinstance(primary_keys, dict)
     assert primary_keys["manual_recovery_pilot_gate"] == {"id"}
 
+    check_constraints = schema["check_constraints"]
+    assert isinstance(check_constraints, dict)
+    assert "ck_recovery_operation_empty_preservation_counts" in check_constraints[
+        "meeting_recovery_operations"
+    ]
+    assert "ck_recovery_outbox_empty_job_identifiers" in check_constraints[
+        "meeting_recovery_outbox"
+    ]
+
     # Creating the recovery schema must retain pre-existing meeting/artifact tables.
     assert {
         "meetings",
@@ -161,10 +183,106 @@ async def test_recovery_schema_is_registered_in_orm_metadata(
 ) -> None:
     del async_engine  # the fixture creates all registered ORM tables
 
-    assert RECOVERY_TABLES <= set(Base.metadata.tables)
+    assert set(Base.metadata.tables) >= RECOVERY_TABLES
 
 
-def _recovery_migration():
+@pytest.mark.asyncio
+async def test_recovery_json_fields_reject_arbitrary_persisted_values(
+    async_engine: AsyncEngine,
+) -> None:
+    async with async_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO meetings "
+                "(id, origin, process_state, created_by, created_at) "
+                "VALUES ('synthetic-meeting', 'link', 'queued', 'synthetic-user', "
+                "'2026-01-01 00:00:00')"
+            )
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO users "
+                "(id, email, name, password_hash, is_sales, created_at) "
+                "VALUES ('synthetic-user', 'synthetic@example.test', 'Synthetic', "
+                "'synthetic-hash', 1, '2026-01-01 00:00:00')"
+            )
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO meeting_recovery_operations "
+                "(id, meeting_id, actor_id, idempotency_key, processing_generation, "
+                "status, created_at, updated_at) VALUES "
+                "('synthetic-operation', 'synthetic-meeting', 'synthetic-user', "
+                "'synthetic-digest', 1, 'accepted', '2026-01-01 00:00:00', "
+                "'2026-01-01 00:00:00')"
+            )
+        )
+
+    async with async_engine.begin() as connection:
+        with pytest.raises(IntegrityError):
+            await connection.execute(
+                update(MeetingRecoveryOperation)
+                .where(MeetingRecoveryOperation.id == "synthetic-operation")
+                .values(preservation_counts={"notes": "synthetic-content-sentinel"})
+            )
+
+    async with async_engine.begin() as connection:
+        with pytest.raises(IntegrityError):
+            await connection.execute(
+                insert(MeetingRecoveryOutbox).values(
+                    id="synthetic-outbox",
+                    operation_id="synthetic-operation",
+                    topic="transcribe",
+                    job_identifiers={"payload": "synthetic-content-sentinel"},
+                    processing_generation=1,
+                    created_at=datetime(2026, 1, 1),
+                )
+            )
+
+
+@pytest.mark.asyncio
+async def test_recovery_json_fields_allow_only_null_or_empty_values(
+    async_engine: AsyncEngine,
+) -> None:
+    async with async_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO meetings "
+                "(id, origin, process_state, created_by, created_at) "
+                "VALUES ('synthetic-meeting', 'link', 'queued', 'synthetic-user', "
+                "'2026-01-01 00:00:00')"
+            )
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO users "
+                "(id, email, name, password_hash, is_sales, created_at) "
+                "VALUES ('synthetic-user', 'synthetic@example.test', 'Synthetic', "
+                "'synthetic-hash', 1, '2026-01-01 00:00:00')"
+            )
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO meeting_recovery_operations "
+                "(id, meeting_id, actor_id, idempotency_key, processing_generation, "
+                "status, preservation_counts, created_at, updated_at) VALUES "
+                "('synthetic-operation', 'synthetic-meeting', 'synthetic-user', "
+                "'synthetic-digest', 1, 'accepted', '{}', '2026-01-01 00:00:00', "
+                "'2026-01-01 00:00:00')"
+            )
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO meeting_recovery_outbox "
+                "(id, operation_id, topic, job_identifiers, processing_generation, "
+                "created_at) VALUES "
+                "('synthetic-outbox', 'synthetic-operation', 'transcribe', '{}', 1, "
+                "'2026-01-01 00:00:00')"
+            )
+        )
+
+
+def _recovery_migration() -> ModuleType:
     script = _migration_script()
     heads = script.get_heads()
     assert RECOVERY_MIGRATION_REVISION in heads, (
@@ -250,3 +368,66 @@ async def test_recovery_migration_rollback_preserves_existing_meeting_artifacts(
 
     after_migration = await _snapshot_existing_meeting_artifacts(async_engine)
     assert after_migration == before_migration
+
+
+@pytest.mark.asyncio
+async def test_recovery_migration_refuses_to_drop_persisted_operation_history(
+    async_engine: AsyncEngine,
+) -> None:
+    migration = _recovery_migration()
+    await _seed_existing_meeting_artifacts(async_engine)
+    async with async_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO users "
+                "(id, email, name, password_hash, is_sales, created_at) "
+                "VALUES ('synthetic-user', 'synthetic@example.test', 'Synthetic', "
+                "'synthetic-hash', 1, '2026-01-01 00:00:00')"
+            )
+        )
+
+    await _run_migration(async_engine, migration, "upgrade")
+    async with async_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO meeting_recovery_operations "
+                "(id, meeting_id, actor_id, idempotency_key, processing_generation, "
+                "status, created_at, updated_at) VALUES "
+                "('synthetic-operation', 'synthetic-meeting', 'synthetic-user', "
+                "'synthetic-digest', 1, 'accepted', '2026-01-01 00:00:00', "
+                "'2026-01-01 00:00:00')"
+            )
+        )
+
+    async with async_engine.begin() as connection:
+        with pytest.raises(IntegrityError):
+            await connection.execute(
+                update(MeetingRecoveryOperation)
+                .where(MeetingRecoveryOperation.id == "synthetic-operation")
+                .values(preservation_counts={"content": "synthetic-content-sentinel"})
+            )
+
+    async with async_engine.begin() as connection:
+        with pytest.raises(IntegrityError):
+            await connection.execute(
+                insert(MeetingRecoveryOutbox).values(
+                    id="synthetic-outbox",
+                    operation_id="synthetic-operation",
+                    topic="transcribe",
+                    job_identifiers={"payload": "synthetic-content-sentinel"},
+                    processing_generation=1,
+                    created_at=datetime(2026, 1, 1),
+                )
+            )
+
+    with pytest.raises(RuntimeError, match="retain it"):
+        await _run_migration(async_engine, migration, "downgrade")
+
+    async with async_engine.connect() as connection:
+        operation_exists = await connection.scalar(
+            text(
+                "SELECT 1 FROM meeting_recovery_operations "
+                "WHERE id = 'synthetic-operation'"
+            )
+        )
+    assert operation_exists == 1
