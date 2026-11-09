@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select one approved delivery and dispatch only its explicitly ready, independent jobs."""
+"""Dispatch independent, explicitly approved jobs across at most two active deliveries."""
 import argparse
 import fcntl
 import hashlib
@@ -15,6 +15,7 @@ from pathlib import Path
 TASK = re.compile(r"task_[0-9a-f]+")
 AGENT = re.compile(r"[A-Za-z0-9_-]+")
 # A run may be submitted (before the worker starts) or a consultation without task_id.
+MAX_ACTIVE = 2
 TERMINAL = {"completed", "failed", "canceled"}
 
 
@@ -193,126 +194,154 @@ def tick(queue, state, snapshot, dispatch, persist, now, dry=False, merged_issue
             return "card or agent already has a live run"
         return None
 
-    root = state.get("active")
-    if root and root not in entries:
-        return [f"QUEUE BLOCKED: active delivery {root} was removed from the manifest; restore or resolve it."]
-    if root:
-        entry = entries[root]
-        if not any(run["card"] in scoped(entry) for run in active_runs) and (
-            finished(entry) or cards.get(root, {}).get("state") == "dropped"
-        ):
-            root = None
-    if not root:
-        if active_runs:
-            return ["QUEUE WAIT: live project runs must finish before another delivery is admitted."]
-        reasons = []
-        for entry in queue:
-            key = entry["root"]
-            if finished(entry) or cards.get(key, {}).get("state") == "dropped":
-                continue
-            issue = common(key)
-            if any(cards.get(j["card"], {}).get("parent_id") != key for j in entry["jobs"]):
-                issue = "a declared job is not a child of this delivery"
-            unmet = [d for d in entry.get("requires", []) if not done(d)]
-            candidates = [(j, ready(j, {})) for j in entry["jobs"]]
-            if not issue and not unmet and any(not reason for _, reason in candidates):
-                root = key
-                state.update(active=root, attempts={})
-                persist(state)
-                break
-            details = issue or (("unmet delivery prerequisites " + ",".join(unmet)) if unmet else
-                                 "; ".join(f"{j['card']}: {reason}" for j, reason in candidates))
-            reasons.append(f"{key}: {details}")
-        if not root:
-            state.update(active=None, attempts={})
-            return ["QUEUE BLOCKED: no approved delivery is ready."] + (reasons or ["No pending approved entries."])
-
-    entry = entries[root]
-    ids = scoped(entry)
+    active = state.get("active") or []
+    if isinstance(active, str):  # Preserve the deployed single-root state and attempts.
+        active = [active]
+    if not isinstance(active, list) or len(set(active)) != len(active) or len(active) > MAX_ACTIVE:
+        raise ValueError("invalid active deliveries")
     attempts = state.setdefault("attempts", {})
-    if common(root):
-        return [f"QUEUE BLOCKED: keep active {root}; {common(root)}. No rollover."]
-    if any(run["card"] not in ids for run in active_runs):
-        return [f"QUEUE WAIT: keep active {root}; an unrelated or unlinked project run is live."]
-    if any(cards.get(job["card"], {}).get("parent_id") != root for job in entry["jobs"]):
-        return [f"QUEUE BLOCKED: keep active {root}; a declared job is not a child of this delivery."]
-    declared_jobs = {job["card"] for job in entry["jobs"]}
-    if any(run["card"] not in declared_jobs for run in active_runs):
-        return [f"QUEUE WAIT: active {root}; its coordinator or an unclassified scoped run is live."]
+    jobs = {job["card"]: job for entry in queue for job in entry["jobs"]}
+    if set(active) - entries.keys() or attempts.keys() - jobs.keys():
+        return ["QUEUE BLOCKED: an active delivery or recorded attempt was removed from the manifest; restore or resolve it."]
 
-    locked, workers, lines = set(), set(), [f"QUEUE ACTIVE: {root}"]
-    for job in entry["jobs"]:
+    active = list(active)
+    for root in list(active):
+        entry = entries[root]
+        if (not any(run["card"] in scoped(entry) for run in active_runs)
+                and (finished(entry) or cards.get(root, {}).get("state") == "dropped")):
+            active.remove(root)
+            for job in entry["jobs"]:
+                attempts.pop(job["card"], None)
+    if state.get("active") != active:
+        state["active"] = active
+        persist(state)
+
+    def unclassified():
+        return any(run["card"] not in jobs for run in active_runs)
+
+    def root_reason(entry):
+        root = entry["root"]
+        if reason := common(root):
+            return reason
+        if any(cards.get(j["card"], {}).get("parent_id") != root for j in entry["jobs"]):
+            return "a declared job is not a child of this delivery"
+        unmet = [d for d in entry.get("requires", []) if not done(d)]
+        if unmet:
+            return "unmet delivery prerequisites " + ",".join(unmet)
+        return None
+
+    planned = set()
+
+    def job_reason(job):
+        if reason := ready(job, attempts):
+            return reason
         card = job["card"]
-        if not job_done(job) and (card in attempts or any(run["card"] == card for run in active_runs)):
-            locked.update(job["resources"])
-            workers.add(job["agent"])
-    for job in entry["jobs"]:
-        card, agent = job["card"], job["agent"]
-        if done(card):
-            note = "done" if job_done(job) else "board done; required GitHub merge not verified"
-            lines.append(f"{card}: {note}")
+        live_cards = {run["card"] for run in active_runs}
+        for other_id in (attempts.keys() | live_cards | planned) - {card}:
+            if other_id not in jobs:
+                continue
+            other = jobs[other_id]
+            # Even a completed card retains its locks while a linked run is live.
+            if other_id not in live_cards and other_id not in planned and job_done(other):
+                continue
+            if set(job["resources"]).intersection(other["resources"]):
+                return "resource already reserved"
+            # A verified, ended run frees its specialist, but not an unfinished write scope.
+            record = attempts.get(other_id, {})
+            ended = any(run["id"] == record.get("run") and not live(run) for run in runs)
+            if job["agent"] == other["agent"] and (other_id in live_cards or other_id in planned or not ended):
+                return "agent already reserved"
+        return None
+
+    if unclassified():
+        return ["QUEUE WAIT: unclassified live project runs must finish before dispatch."]
+
+    actions, blockers, waits, pending = [], [], [], []
+    for entry in queue:
+        root = entry["root"]
+        issue = root_reason(entry)
+        if root not in active:
+            if finished(entry) or cards.get(root, {}).get("state") == "dropped":
+                continue
+            if len(active) >= MAX_ACTIVE:
+                continue
+            reasons = [(job["card"], job_reason(job)) for job in entry["jobs"]] if not issue else []
+            if issue or all(reason for _, reason in reasons):
+                pending.append(f"{root}: " + (issue or "; ".join(f"{c}: {r}" for c, r in reasons)))
+                continue
+            active.append(root)
+            persist(state)
+
+        if issue:
+            blockers.append(f"QUEUE BLOCKED: keep active {root}; {issue}. No rollover for this delivery.")
             continue
-        if card in attempts:
-            record = attempts[card]
-            observed = next((run for run in runs if run["id"] == record.get("run")), None)
-            status = (f"run {observed['id']} {observed['state']}" if observed else record["result"])
-            row = cards.get(card, {})
-            lines.append(f"{card}: {status}; card={row.get('status')}, owner={row.get('awaits_owner')}, proposal={row.get('proposed')}")
-            continue
-        reason = ready(job, attempts)
-        if reason or locked.intersection(job["resources"]) or agent in workers:
-            lines.append(f"{card}: {reason or 'resource or agent already reserved'}")
-            continue
-        if dry:
-            lines.append(f"{card}: would assign {agent}")
-            locked.update(job["resources"])
-            workers.add(agent)
-            continue
-        # Recheck immediately before writing. Persist the attempt before the external call.
-        cards, agents, runs = snapshot()
-        active_runs = [run for run in runs if live(run)]
-        other_resources = {r for other in entry["jobs"] for r in other["resources"]
-                           if other["card"] != card and any(run["card"] == other["card"] for run in active_runs)}
-        if (common(root) or ready(job, attempts) or other_resources.intersection(job["resources"])
-                or any(run["card"] not in declared_jobs for run in active_runs)):
-            lines.append(f"{card}: state changed before dispatch")
-            continue
-        old_runs = {run["id"] for run in runs if run["card"] == card}
-        attempts[card] = {"result": "dispatch attempted; verify in APX before any retry"}
-        persist(state)
-        locked.update(job["resources"])
-        workers.add(agent)
-        try:
-            result = dispatch(card, agent)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            attempts[card]["result"] = f"dispatch uncertain: {type(exc).__name__}"
-        else:
+
+        lines = []
+        for job in entry["jobs"]:
+            card, agent = job["card"], job["agent"]
+            if done(card):
+                note = "done" if job_done(job) else "board done; required GitHub merge not verified"
+                lines.append(f"{card}: {note}")
+                continue
+            if card in attempts:
+                record = attempts[card]
+                observed = next((run for run in runs if run["id"] == record.get("run")), None)
+                status = (f"run {observed['id']} {observed['state']}" if observed else record["result"])
+                row = cards.get(card, {})
+                lines.append(f"{card}: {status}; card={row.get('status')}, owner={row.get('awaits_owner')}, proposal={row.get('proposed')}")
+                continue
+            if reason := job_reason(job):
+                lines.append(f"{card}: {reason}")
+                continue
+            if dry:
+                lines.append(f"{card}: would assign {agent}")
+                planned.add(card)
+                continue
+
+            # Recheck cross-delivery reservations and readiness just before persisting the attempt.
             cards, agents, runs = snapshot()
-            matched = next((run for run in runs if run["card"] == card and
-                            run["agent_id"] == agent and run["id"] not in old_runs), None)
-            if result.returncode or cards.get(card, {}).get("assignee") != agent:
-                attempts[card]["result"] = f"assignment failed or did not stick (exit {result.returncode})"
-            elif matched:
-                attempts[card] = {"run": matched["id"], "result": "verified run"}
+            active_runs = [run for run in runs if live(run)]
+            if root_reason(entry) or job_reason(job) or unclassified():
+                lines.append(f"{card}: state changed before dispatch")
+                continue
+            old_runs = {run["id"] for run in runs if run["card"] == card}
+            attempts[card] = {"result": "dispatch attempted; verify in APX before any retry"}
+            persist(state)
+            try:
+                result = dispatch(card, agent)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                attempts[card]["result"] = f"dispatch uncertain: {type(exc).__name__}"
             else:
-                attempts[card]["result"] = "assignment reported but no matching new run observed"
-        persist(state)
-        record = attempts[card]
-        lines.append(f"{card}: {record.get('run', record['result'])}")
-    if all(job_done(job) for job in entry["jobs"]):
-        if any(live(run) and run["card"] in ids for run in runs):
-            return [f"QUEUE WAIT: active {root}; a scoped run still needs to finish."]
-        lines.append("All declared jobs done. Ansel: verify the approved acceptance gates and close the root only with evidence.")
-    elif not any(live(run) and run["card"] in ids for run in runs) and not (
-        dry and any("would assign" in line for line in lines)
-    ):
-        # A returned review is actionable for Ansel, not a readiness failure.
-        if not any(cards.get(job["card"], {}).get("status") == "review" for job in entry["jobs"]):
-            lines[0] = f"QUEUE BLOCKED: active {root} has no live or dispatchable job."
-        lines.append("No live job. Ansel: review returned work or report the recorded blockers.")
-    if any(live(run) and run["card"] in ids for run in runs):
-        lines[0] = f"QUEUE WAIT: {root}; scoped execution is live."
-    return lines
+                cards, agents, runs = snapshot()
+                active_runs = [run for run in runs if live(run)]
+                matched = next((run for run in runs if run["card"] == card and
+                                run["agent_id"] == agent and run["id"] not in old_runs), None)
+                if result.returncode or cards.get(card, {}).get("assignee") != agent:
+                    attempts[card]["result"] = f"assignment failed or did not stick (exit {result.returncode})"
+                elif matched:
+                    attempts[card] = {"run": matched["id"], "result": "verified run"}
+                else:
+                    attempts[card]["result"] = "assignment reported but no matching new run observed"
+            persist(state)
+            record = attempts[card]
+            lines.append(f"{card}: {record.get('run', record['result'])}")
+
+        scoped_live = {run["card"] for run in active_runs if run["card"] in scoped(entry)}
+        reviews = [job["card"] for job in entry["jobs"] if job["card"] not in scoped_live
+                   and cards.get(job["card"], {}).get("status") == "review" and not common(job["card"])]
+        if not scoped_live and all(job_done(job) for job in entry["jobs"]):
+            actions.extend([f"QUEUE ACTIVE: {root}", *lines,
+                            "All declared jobs done. Ansel: verify the approved acceptance gates and close the root only with evidence."])
+        elif reviews:
+            actions.extend([f"QUEUE ACTIVE: {root}", *lines, "Returned reviews: " + ", ".join(reviews)])
+        elif scoped_live or any(job["card"] in planned for job in entry["jobs"]):
+            waits.extend([f"QUEUE WAIT: {root}; scoped execution is live or planned.", *lines])
+        else:
+            blockers.extend([f"QUEUE BLOCKED: active {root} has no live or dispatchable job.", *lines])
+
+    if not active:
+        blockers.extend(["QUEUE BLOCKED: no approved delivery is ready.", *(pending or ["No pending approved entries."])])
+    return actions + blockers + (waits + pending if dry or not (actions or blockers) else [])
 
 
 def main():

@@ -59,6 +59,13 @@ issue numbers. Configure --gh /absolute/path/to/gh --repo OWNER/REPO for them.
 A gate needs both a closed issue and its linked PR merged into main; a manual
 issue close or an unavailable GitHub result does not satisfy it.
 
-While scoped or other project runs are live, the controller still records its
-decision in state but emits no model input. Only a review or changed blocker
-should wake Ansel.
+The controller admits up to two approved deliveries in manifest order, skipping
+unready entries. Agent and resource reservations are project-wide. Unclassified
+live project runs pause new dispatch because their resources are unknown. Ansel
+can receive a returned review or closure for one delivery while another runs.
+Wait-only cycles and unchanged reports do not call the model.
+
+The deployed single-root state is migrated on the first non-dry run without
+clearing its attempts. A rollback to the old controller must not reuse the new
+state blindly: stop the routine and reconcile all active roots and attempts
+against current APX runs first.
