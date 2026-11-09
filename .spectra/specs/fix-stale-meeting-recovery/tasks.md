@@ -27,6 +27,12 @@ All test fixtures and sentinel content must be synthetic. No task reads or copie
 | 10 | T-13 → T-14 | one-meeting pilot lock and operator verification | T-12 and T-22; pilot RED before gate GREEN |
 | 11 | T-15 → T-16 | end-to-end synthetic recovery regression | T-6, T-20, T-22, T-14; integration RED before final verification GREEN |
 
+## Delivery-unit mapping (WORKFLOW §9)
+
+- T-17 (RED) and T-18 (GREEN) share one delivery unit: Issue #771 · Card `task_70f9cb0897cc4a76`.
+- T-9 (RED) and T-10 (GREEN) share one delivery unit: Issue #777 · Card `task_e9315846d41a4199`.
+- The task IDs, individual acceptance evidence, validation commands, and dependency edges remain distinct below. The former GREEN-side issue/card references #772 and #778 are not separate delivery units; issue/card reconciliation follows Mira's approval of this mapping.
+
 RED tasks must demonstrate the specified behavioral failure at the relevant stage and retain its exact output in issue/PR evidence. For staged boundaries, the first RED targets an existing app/startup boundary; its safe GREEN adds only the narrow fail-closed behavior, then a subsequent RED targets that now-existing boundary before its full GREEN. No RED may pass only because a module/callable is absent; no GREEN may accept recovery before eligibility, fencing, pilot, and content-safety prerequisites exist. Each GREEN task makes its paired tests pass. Listed prerequisites are the only DAG edges; tasks within separate branches may proceed in parallel when dependencies are met. The commands below run from `backend/` in the project worktree: `python -m pytest <listed test path> -q` (backend's configured pytest command; no live services unless a test explicitly uses the project's existing isolated integration fixture).
 
 ## T-1 — RED: Specify durable recovery persistence constraints
@@ -187,7 +193,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-10 — GREEN: Add fail-closed status for empty artifact sets
 
-**Tracking:** Issue #778 · Card `task_dc598948fc9547e0`
+**Tracking:** Issue #777 · Card `task_e9315846d41a4199`
 
 **Files:** `backend/app/meetings/router.py` (`get_recovery_status_endpoint`, owner-only recovery status GET); the minimum status service/persistence boundary; `backend/tests/meetings/test_recovery_preservation.py`.
 
