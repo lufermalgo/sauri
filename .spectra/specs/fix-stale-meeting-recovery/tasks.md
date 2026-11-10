@@ -145,7 +145,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-19 — RED: Specify stable outbox retry after ambiguous acknowledgement
 
-**Tracking:** Issue #775 · Card `task_55ed068979cb4628`
+**Tracking:** Delivery unit T-19 + T-20 · Issue #775 · Card `task_55ed068979cb4628`
 
 **Files / RED test seams:** `backend/tests/infra/test_recovery_outbox.py`; existing `backend/app/infra/recovery_outbox.py:dispatch_pending_recoveries` and `backend/app/infra/queue_rabbitmq.py:RabbitMQJobQueue.publish`.
 
@@ -157,7 +157,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ## T-20 — GREEN: Complete durable outbox retry and deduplication
 
-**Tracking:** Issue #776 · Card `task_41997ab5f1cf455c`
+**Tracking:** Delivery unit T-19 + T-20 · Issue #775 · Card `task_55ed068979cb4628` (replaces #776 / `task_41997ab5f1cf455c`)
 
 **Files:** `backend/app/infra/recovery_outbox.py:dispatch_pending_recoveries`; `backend/app/infra/queue_rabbitmq.py:RabbitMQJobQueue.publish`; `backend/tests/infra/test_recovery_outbox.py`.
 
