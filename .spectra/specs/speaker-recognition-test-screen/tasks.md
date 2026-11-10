@@ -60,7 +60,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-4: GREEN — Mount the minimal upload-to-transcript screen
 
-**Tracking:** Issue #555 · Card task_e0ae0aa22694487d
+**Tracking:** Issue #555 · Card task_e0ae0aa22694487d · PR #741
 
 **Files:** `frontend/src/App.tsx`, `frontend/src/components/SpeakerRecognitionTestScreen.tsx`, `frontend/src/api.ts`, `frontend/src/components/SpeakerRecognitionTestScreen.test.tsx`.
 
