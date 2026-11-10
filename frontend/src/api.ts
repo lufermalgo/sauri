@@ -32,6 +32,7 @@ export interface TimedPassage {
   text: string;
   startMs: number | null;
   endMs: number | null;
+  speakerLabel?: string;
   sequence: number;
 }
 
@@ -40,6 +41,7 @@ interface TranscriptSegmentResponse {
   text: string;
   start_ms: number | null;
   end_ms: number | null;
+  speaker_label?: string;
   sequence: number;
 }
 
@@ -149,6 +151,25 @@ export async function registerMeeting(meetLink: string): Promise<Meeting> {
   return handleResponse<Meeting>(response);
 }
 
+export interface MeetingState {
+  meetingId: string;
+  processState: string;
+}
+
+interface MeetingStateResponse {
+  meeting_id: string;
+  process_state: string;
+}
+
+export async function getMeeting(meetingId: string): Promise<MeetingState> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}`,
+    { method: "GET", headers: getAuthHeaders() }
+  );
+  const meeting = await handleResponse<MeetingStateResponse>(response);
+  return { meetingId: meeting.meeting_id, processState: meeting.process_state };
+}
+
 export async function listMeetings(): Promise<MeetingListItem[]> {
   const response = await fetch(`${BASE_URL}/api/v1/meetings`, {
     method: "GET",
@@ -203,6 +224,7 @@ export async function getTranscript(meetingId: string): Promise<MeetingTranscrip
       sequence: segment.sequence,
       startMs: hasValidTiming ? segment.start_ms : null,
       endMs: hasValidTiming ? segment.end_ms : null,
+      ...(segment.speaker_label === undefined ? {} : { speakerLabel: segment.speaker_label }),
     };
   });
   const turns: SpeechTurn[] = segments.flatMap((segment) => {
@@ -253,6 +275,22 @@ export interface SpeakerReview {
   items: SpeakerReviewItem[];
 }
 
+interface SpeakerReviewItemResponse {
+  speaker_id: string;
+  current_label: string;
+  attribution_state: "recognized" | "uncertain";
+  disposition: "confirmed" | "named" | "corrected" | null;
+  excerpt_ref: string;
+  version: number;
+}
+
+interface SpeakerReviewResponse {
+  review_id: string;
+  revision_id: string | number;
+  status: "pending" | "complete";
+  items: SpeakerReviewItemResponse[];
+}
+
 export type SpeakerDisposition = "confirmed" | "named" | "corrected";
 
 export interface SpeakerDispositionRequest {
@@ -266,7 +304,20 @@ export async function getSpeakerReview(meetingId: string): Promise<SpeakerReview
     `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review`,
     { method: "GET", headers: getAuthHeaders() }
   );
-  return handleResponse<SpeakerReview>(response);
+  const review = await handleResponse<SpeakerReviewResponse>(response);
+  return {
+    reviewId: review.review_id,
+    revisionId: String(review.revision_id),
+    status: review.status,
+    items: review.items.map((item) => ({
+      speakerId: item.speaker_id,
+      currentLabel: item.current_label,
+      attributionState: item.attribution_state,
+      disposition: item.disposition,
+      excerptRef: item.excerpt_ref,
+      expectedVersion: item.version,
+    })),
+  };
 }
 
 export async function submitSpeakerDisposition(

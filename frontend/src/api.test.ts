@@ -297,6 +297,51 @@ describe("meeting playback API adapter", () => {
   });
 });
 
+describe("speaker review API adapter", () => {
+  it("normalizes the backend snake_case review response into the frontend model", async () => {
+    mockFetch({
+      review_id: "review-synthetic",
+      revision_id: 4,
+      status: "pending",
+      items: [{
+        speaker_id: "sp-8",
+        current_label: "Speaker 8",
+        attribution_state: "uncertain",
+        disposition: null,
+        excerpt_ref: "opaque-excerpt-synthetic",
+        version: 3,
+      }],
+    });
+
+    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toEqual({
+      reviewId: "review-synthetic",
+      revisionId: "4",
+      status: "pending",
+      items: [{
+        speakerId: "sp-8",
+        currentLabel: "Speaker 8",
+        attributionState: "uncertain",
+        disposition: null,
+        excerptRef: "opaque-excerpt-synthetic",
+        expectedVersion: 3,
+      }],
+    });
+  });
+
+  it("normalizes labels from the currently persisted minimal review response", async () => {
+    mockFetch({
+      review_id: "review-synthetic",
+      revision_id: "revision-synthetic",
+      status: "pending",
+      items: [{ speaker_id: "sp-8", current_label: "Speaker 8", disposition: null }],
+    });
+
+    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toMatchObject({
+      items: [{ speakerId: "sp-8", currentLabel: "Speaker 8", disposition: null }],
+    });
+  });
+});
+
 describe("speaker excerpt API adapter", () => {
   it("invalidates the session when an excerpt request returns 401", async () => {
     const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);

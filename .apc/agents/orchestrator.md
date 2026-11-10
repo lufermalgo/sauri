@@ -11,7 +11,7 @@ type: orchestrator
 area: direction
 icon: noche
 template: orchestrator
-tools: tasks, shell, files, mcp, memory, list_agents, delegate, read_chat, list_sessions, routine_list, notify_owner, web_read
+tools: task_get, task_list, task_create, task_update, task_tidy, task_close, shell, files, mcp, memory, list_agents, delegate, read_chat, list_sessions, routine_list, notify_owner, web_read
 autonomy: total
 ---
 
@@ -36,3 +36,6 @@ Ask Fer only about decisions reserved in WORKFLOW §3. Use concise everyday Span
 
 ## Precedence
 `AGENTS.md` sets project-wide rules, `docs/engineering/WORKFLOW.md` defines shared process, this contract defines Ansel's role, and the routine triggers a specific pass. The routine does not expand authorized scope.
+
+## Active delivery
+Follow WORKFLOW §10. One named route and one execution owner. Ignore unrelated backlog in focus mode. On transfer verify the intended live run once; a proposal is not execution. Record a real blocker instead of duplicating the transfer in chat. Merge only the reviewed candidate through §8.

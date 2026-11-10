@@ -10,6 +10,7 @@ vi.mock("../api", () => ({
   getMeeting: vi.fn(),
   getTranscript: vi.fn(),
   getSpeakerReview: vi.fn(),
+  getDiarization: vi.fn(),
 }));
 
 afterEach(() => {
@@ -217,31 +218,30 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     expect(retry[1].idempotency_key).toBe(first[1].idempotency_key);
   });
 
-  it("shows why upload is blocked when duration is unavailable and copies only bounded diagnostics", async () => {
+  it("does not expose diagnostic copying for a selected recording", () => {
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn().mockReturnValue("blob:synthetic-recording"),
+      revokeObjectURL: vi.fn(),
+    });
+    render(<SpeakerRecognitionTestScreen />);
+    selectSyntheticAudio();
+
+    expect(screen.queryByRole("button", { name: /copy diagnostic/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^upload$/i })).toBeVisible();
+  });
+
+  it("shows why upload is blocked when duration is unavailable", async () => {
     const uploadRecording = vi.mocked(api.uploadRecording);
     const createObjectURL = vi.fn().mockReturnValue("blob:synthetic-recording");
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
 
     render(<SpeakerRecognitionTestScreen />);
-    const file = selectSyntheticAudio();
+    selectSyntheticAudio();
     fireLoadedMetadata(Number.NaN);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
     expect((await screen.findByRole("alert")).textContent).toMatch(/duration.*unavailable|metadata.*duration/i);
-    fireEvent.click(screen.getByRole("button", { name: /copy diagnostic/i }));
-    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-
-    const diagnostic = writeText.mock.calls[0][0];
-    expect(diagnostic).toContain(file.name);
-    expect(diagnostic).toContain(file.type);
-    expect(diagnostic).toContain(String(file.size));
-    expect(diagnostic).toMatch(/duration.*unavailable/i);
-    expect(diagnostic).toMatch(/request.*not sent/i);
-    expect(diagnostic).toMatch(/httpStatus.*not available/i);
-    expect(diagnostic).not.toContain("synthetic file content");
-    expect(diagnostic).not.toMatch(/token|authorization|bearer|secret/i);
     expect(uploadRecording).not.toHaveBeenCalled();
   });
 
@@ -277,7 +277,6 @@ const transcript = {
       startMs: 1250,
       endMs: 2500,
       text: "La propuesta queda para el viernes.",
-      speakerLabel: "Speaker 2",
       sequence: 1,
     },
     {
@@ -285,11 +284,21 @@ const transcript = {
       startMs: 3750,
       endMs: 4750,
       text: "La firma sigue pendiente.",
-      speakerLabel: "Speaker 7",
       sequence: 2,
     },
   ],
   turns: [],
+};
+
+const diarization = {
+  speakers: [
+    { id: "speaker-test-2", label: "Speaker 2", sequence: 2 },
+    { id: "speaker-test-7", label: "Speaker 7", sequence: 7 },
+  ],
+  assignments: [
+    { turn_id: "segment-test-1", speaker_id: "speaker-test-2" },
+    { turn_id: "segment-test-2", speaker_id: "speaker-test-7" },
+  ],
 };
 
 const review = {
@@ -312,6 +321,7 @@ const apiMocks = api as unknown as {
   getMeeting: (meetingId: string) => Promise<{ id: string; processState: string }>;
   getTranscript: (meetingId: string) => Promise<typeof transcript>;
   getSpeakerReview: (meetingId: string) => Promise<typeof review>;
+  getDiarization: (meetingId: string) => Promise<typeof diarization>;
 };
 
 async function uploadSyntheticRecording(assertUploadControls?: () => void) {
@@ -336,6 +346,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
   it("shows persisted processing state before loading transcript or speaker review", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("processing"));
     const getTranscript = vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     const getSpeakerReview = vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
 
     const meetingId = await uploadSyntheticRecording();
@@ -350,6 +361,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
   it("loads transcript and persisted speaker review after processing completes", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
     const getTranscript = vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     const getSpeakerReview = vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
 
     const meetingId = await uploadSyntheticRecording();
@@ -360,9 +372,25 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
     expect(await screen.findByText(/pending/i)).toBeVisible();
   });
 
+  it("keeps the completed transcript visible while speaker review is not yet available", async () => {
+    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
+    vi.spyOn(apiMocks, "getSpeakerReview").mockRejectedValue(new Error("Error 404"));
+
+    await uploadSyntheticRecording();
+
+    const firstTurn = await screen.findByText("La propuesta queda para el viernes.");
+    const firstTurnRow = firstTurn.closest("li");
+    expect(firstTurnRow).not.toBeNull();
+    expect(within(firstTurnRow as HTMLElement).getByText("Speaker 2")).toBeVisible();
+    expect(screen.queryByText(/processing: completed/i)).not.toBeInTheDocument();
+  });
+
   it("preserves each segment's timestamp, exact text and unresolved backend speaker label as read-only content", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
 
     await uploadSyntheticRecording();
@@ -389,6 +417,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
   it("renders a persisted speaker-review item with its current backend label and pending state", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
 
     await uploadSyntheticRecording();
@@ -400,6 +429,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
   it("limits the completed screen to upload, transcript inspection and speaker review", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
 
     await uploadSyntheticRecording(() => {
