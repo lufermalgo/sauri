@@ -1,0 +1,8 @@
+{
+  "specId": "5a386a22-df43-4be8-bd7f-a3c54d9c73eb",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-11-12T19:43:00Z",
+  "idea": "mantengamos un orden del proyecto y una estructura",
+  "phases": { "requirements": "complete", "design": "pending", "tasks": "pending" }
+}
