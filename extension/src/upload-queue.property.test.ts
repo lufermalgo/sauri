@@ -9,11 +9,20 @@
  * (no duplicate job in the queue).
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from "vitest";
 import * as fc from "fast-check";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 
-import { enqueueUpload, getPendingAndFailedJobs, type EnqueueUploadInput } from "./upload-queue";
+import { enqueueUpload, getPendingAndFailedJobs, type EnqueueUploadInput, type UploadJob } from "./upload-queue";
+import { createCompletion } from "./recording-db";
+
+const { assembleBlob, clearSession } = vi.hoisted(() => ({
+  assembleBlob: vi.fn(async () => new Blob(["synthetic media"], { type: "video/webm" })),
+  clearSession: vi.fn(async () => undefined),
+}));
+vi.mock("./recording-db", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./recording-db")>(), assembleBlob, clearSession,
+}));
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
@@ -65,6 +74,165 @@ describe("Property 14 (client facet): upload queue idempotency", () => {
       ),
       { numRuns: 100 }
     );
+  });
+});
+
+// T1.3 (#612): uploadRecording/processUploadQueue are private to background.ts,
+// so exercise the real worker via its existing onStartup listener (no invented export).
+// The ingestion response contract is { recording_id, state }; meeting_id is
+// supplied by the request and must match the persisted completion record.
+type Identity = { sessionId: string; meetingId: string; recordingId: string };
+const arbIdentity: fc.Arbitrary<Identity> = fc.record({
+  sessionId: fc.uuid(), meetingId: fc.uuid(), recordingId: fc.uuid(),
+});
+const accepted = (recordingId: string) => new Response(
+  JSON.stringify({ recording_id: recordingId, state: "queued" }), { status: 200 },
+);
+
+async function storedUploadJob(): Promise<UploadJob | undefined> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open("sauri-upload-queue", 2);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("jobs", "readonly");
+    const req = tx.objectStore("jobs").getAll();
+    req.onsuccess = () => resolve((req.result as UploadJob[])[0]);
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => db.close();
+  });
+}
+
+async function awaitStatus(status: "pending" | "done", retryCount: number): Promise<UploadJob> {
+  let job: UploadJob | undefined;
+  await vi.waitFor(async () => {
+    job = await storedUploadJob();
+    expect(job).toMatchObject({ status, retryCount });
+  }, { interval: 5, timeout: 800 });
+  return job!;
+}
+
+async function awaitSettled(): Promise<UploadJob> {
+  let job: UploadJob | undefined;
+  await vi.waitFor(async () => {
+    job = await storedUploadJob();
+    expect(job?.status === "done" || job?.retryCount === 1).toBe(true);
+  }, { interval: 5, timeout: 800 });
+  return job!;
+}
+
+describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", () => {
+  let startup: (() => void) | undefined;
+  const nativeFetch = globalThis.fetch;
+
+  beforeAll(async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("chrome", {
+      action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
+      alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
+      runtime: {
+        onInstalled: { addListener: vi.fn() }, onMessage: { addListener: vi.fn() },
+        onStartup: { addListener: (listener: () => void) => { startup = listener; } },
+        getContexts: vi.fn(async () => []), getURL: (path: string) => path, sendMessage: vi.fn(),
+      },
+      sidePanel: { setPanelBehavior: vi.fn(async () => undefined) },
+      storage: { session: { get: vi.fn(async () => ({})) }, sync: { get: vi.fn(async () => ({})) } },
+      tabs: { onRemoved: { addListener: vi.fn() } },
+    });
+    await import("./background");
+    expect(startup).toBeTypeOf("function");
+  });
+  afterAll(() => {
+    globalThis.fetch = nativeFetch;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function enqueueFor(identity: Identity): Promise<void> {
+    globalThis.indexedDB = new IDBFactory();
+    globalThis.IDBKeyRange = IDBKeyRange;
+    clearSession.mockClear();
+    await createCompletion({
+      sessionId: identity.sessionId, meetingId: identity.meetingId,
+      provider: "meet", capturedTabId: 123, status: "upload_pending", updatedAt: 1,
+    });
+    await enqueueUpload({ sessionId: identity.sessionId, idempotencyKey: identity.sessionId, mimeType: "video/webm" });
+  }
+
+  it("settles a valid response only for the persisted meeting/session mapping (100 cases)", async () => {
+    await fc.assert(fc.asyncProperty(arbIdentity, async (identity) => {
+      await enqueueFor(identity);
+      const requests: Array<{ meeting_id: string; idempotency_key: string }> = [];
+      globalThis.fetch = vi.fn(async (_url, init) => {
+        requests.push(JSON.parse((init!.body as FormData).get("data") as string));
+        return accepted(identity.recordingId);
+      }) as typeof fetch;
+      startup!();
+      await awaitStatus("done", 0);
+      expect(clearSession).toHaveBeenCalledWith(identity.sessionId);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({ meeting_id: identity.meetingId, idempotency_key: identity.sessionId });
+    }), { numRuns: 100 });
+  });
+
+  it("keeps network errors retryable without clearing media (100 cases)", async () => {
+    await fc.assert(fc.asyncProperty(arbIdentity, fc.string({ minLength: 1, maxLength: 30 }), async (identity, reason) => {
+      await enqueueFor(identity);
+      globalThis.fetch = vi.fn(async () => { throw new TypeError(`synthetic network failure: ${reason}`); }) as typeof fetch;
+      startup!();
+      const job = await awaitStatus("pending", 1);
+      expect(job.sessionId).toBe(identity.sessionId);
+      expect(job.errorMessage).toContain("synthetic network failure");
+      expect(clearSession).not.toHaveBeenCalled();
+    }), { numRuns: 100 });
+  });
+
+  it("keeps non-2xx responses retryable without clearing media (100 cases)", async () => {
+    await fc.assert(fc.asyncProperty(arbIdentity, fc.constantFrom(400, 401, 403, 409, 429, 500, 503), async (identity, code) => {
+      await enqueueFor(identity);
+      globalThis.fetch = vi.fn(async () => new Response("rejected", { status: code })) as typeof fetch;
+      startup!();
+      const job = await awaitStatus("pending", 1);
+      expect(job.sessionId).toBe(identity.sessionId);
+      expect(clearSession).not.toHaveBeenCalled();
+    }), { numRuns: 100 });
+  });
+
+  it("never reports success for a 2xx response with invalid recording_id/state (100 cases)", async () => {
+    await fc.assert(fc.asyncProperty(arbIdentity, fc.constantFrom(
+      JSON.stringify({ accepted: true }), JSON.stringify({ recording_id: "", state: "queued" }),
+      JSON.stringify({ recording_id: "unrelated", state: "unknown" }), "not-json",
+    ), async (identity, body) => {
+      await enqueueFor(identity);
+      globalThis.fetch = vi.fn(async () => new Response(body, { status: 200 })) as typeof fetch;
+      startup!();
+      const job = await awaitSettled();
+      expect(job).toMatchObject({ status: "pending", retryCount: 1, sessionId: identity.sessionId });
+      expect(clearSession).not.toHaveBeenCalled();
+    }), { numRuns: 100 });
+  });
+
+  it("retries the same persisted meeting_id and session id before settling (100 cases)", async () => {
+    await fc.assert(fc.asyncProperty(arbIdentity, fc.constantFrom(408, 503), async (identity, firstStatus) => {
+      await enqueueFor(identity);
+      const attempts: Array<{ meeting_id: string; idempotency_key: string }> = [];
+      globalThis.fetch = vi.fn(async (_url, init) => {
+        attempts.push(JSON.parse((init!.body as FormData).get("data") as string));
+        return attempts.length === 1 ? new Response("retry", { status: firstStatus }) : accepted(identity.recordingId);
+      }) as typeof fetch;
+      startup!();
+      await awaitStatus("pending", 1);
+      startup!();
+      const job = await awaitStatus("done", 1);
+      expect(job.sessionId).toBe(identity.sessionId);
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0]).toMatchObject({ idempotency_key: identity.sessionId, meeting_id: identity.meetingId });
+      expect(attempts[1]).toMatchObject(attempts[0]);
+      expect(clearSession).toHaveBeenCalledTimes(1);
+    }), { numRuns: 100 });
   });
 });
 
