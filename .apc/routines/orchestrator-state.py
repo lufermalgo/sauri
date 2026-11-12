@@ -12,12 +12,13 @@ Wakes (any one prints):
              waiting on the owner (at most every DISPATCH_MIN minutes)
   [hourly]   a full review at least every FULL_MIN minutes
 Read-only on APX's database. State: <home>/work/orch-state/<project>.json.
-Usage: orchestrator-state.py <project_id> <agent_prefix> <orchestrator_agent_id> <owner/repo> [--dry]
+Usage: orchestrator-state.py <project_id> <agent_prefix> <orchestrator_agent_id> <owner/repo> [--dry] [--focus=task_ID]
 Env for tests: ORCH_DB, ORCH_NOW (ISO), ORCH_STATE_DIR, ORCH_NO_GH=1.
 """
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -29,6 +30,7 @@ FULL_MIN = 60
 DISPATCH_MIN = 30
 QUIET_MIN = 2  # a hand-off may still be in flight
 STALE_RUN_H = 6  # a run "working" for longer than this is not counted as busy
+MAX_CARDS = 12  # cards listed in the summary; the whole output stays under the 8,000-character step limit
 
 
 def now():
@@ -38,6 +40,57 @@ def now():
 
 def iso(d):
     return d.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def focus_pass(q, project, orch, task, state_file, dry):
+    # The scope is supplied by the operator, not inferred from an idle agent or a PR title.
+    if not re.fullmatch(r"task_[a-f0-9]+", task):
+        raise SystemExit("invalid focus card id")
+    rows = q(
+        "select id,status,state,assignee,reviewer,proposed,awaits_owner,title,thread_id "
+        "from tasks where project_id=? and (id=? or parent_id=?) order by id",
+        (project, task, task),
+    )
+    root = next((row for row in rows if row[0] == task), None)
+    if root is None:
+        raise SystemExit("focus card not found in this project")
+    if root[2] != "open":
+        return
+    ids = [row[0] for row in rows]
+    slots = ",".join("?" for _ in ids)
+    # Review and mention consultations use context.consult.task instead of thread.task_id.
+    linked = "coalesce(t.task_id,json_extract(case when json_valid(t.context) then t.context else '{}' end,'$.consult.task'))"
+    runs = q(
+        f"select {linked},r.id,r.agent_id,r.state,r.ended_at from runs r "
+        f"join threads t on t.id=r.thread_id where t.project_id=? "
+        f"and {linked} in ({slots}) and r.trigger!='routine' "
+        f"order by r.started_at desc,r.id desc",
+        (project, *ids),
+    )
+    if any(run[3] in ("working", "queued", "waiting", "scheduled") and run[4] is None for run in runs):
+        return
+    latest = {}
+    for run in runs:
+        latest.setdefault(run[0], run[1:4])
+    event = q(
+        f"select coalesce(max(n),0) from task_events where task_id in ({slots}) and by!=?",
+        (*ids, orch),
+    )[0][0]
+    signal = hashlib.sha256(json.dumps([rows, latest, event]).encode()).hexdigest()
+    try:
+        with open(state_file) as f:
+            if json.load(f).get("signal") == signal:
+                return
+    except (OSError, ValueError, AttributeError):
+        pass
+    print(f"FOCUS: {task}; authorized scope is only this delivery and named prerequisites.")
+    for tid, status, state, assignee, reviewer, prop, waits, title, _ in rows[:MAX_CARDS]:
+        print(f"{tid} | {status}/{state} | {assignee or '-'} | reviewer={reviewer or '-'} "
+              f"| proposal={prop} owner={waits} | {str(title)[:90]} | latest run={latest.get(tid)}")
+    if not dry:
+        with open(state_file + ".tmp", "w") as f:
+            json.dump({"signal": signal}, f)
+        os.replace(state_file + ".tmp", state_file)
 
 
 def main():
@@ -55,6 +108,11 @@ def main():
     con = sqlite3.connect("file:" + DB + "?mode=ro", uri=True, timeout=5)
     q = lambda sql, p=(): con.execute(sql, p).fetchall()
 
+    focus = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--focus=")), None)
+    if focus is not None:
+        focus_pass(q, project, orch, focus, os.path.join(STATE_DIR, project + ".focus.json"), dry)
+        return
+
     agents = {a: (n, r) for a, n, r in q("select id, name, role from agents where project_id=? and coalesce(archived,0)=0", (project,))}
     specialists = [a for a in agents if a != orch]
     busy = {
@@ -67,7 +125,7 @@ def main():
         )
         if a != orch
     }
-    free = [a for a in specialists if a not in busy and a != prefix + "product-owner"]
+    free = [a for a in specialists if a not in busy and agents[a][1] != "product-owner"]
 
     counts = dict(
         q("select status, count(*) from tasks where project_id=? and state='open' group by 1", (project,))
@@ -79,15 +137,25 @@ def main():
         "select count(*) from tasks where project_id=? and state='open' and status='review' and (reviewer is null or reviewer='')",
         (project,),
     )
+    # Dispatch only cards that are open, unassigned and actionable now. Proposals and
+    # cards waiting on Fer stay visible in their separate queues, not as assignable work.
     n_unassigned = one(
-        "select count(*) from tasks where project_id=? and state='open' and assignee is null and status in ('todo','backlog')",
+        "select count(*) from tasks where project_id=? and state='open' and assignee is null "
+        "and status in ('todo','backlog') and coalesce(proposed,0)=0 and coalesce(awaits_owner,0)=0",
         (project,),
+    )
+    ready_cards = q(
+        "select id, status, priority, substr(title,1,70) from tasks where project_id=? and state='open' "
+        "and assignee is null and status in ('todo','backlog') and coalesce(proposed,0)=0 "
+        "and coalesce(awaits_owner,0)=0 order by case priority when 'urgent' then 0 when 'high' then 1 "
+        "when 'normal' then 2 else 3 end, activity_at desc limit ?",
+        (project, MAX_CARDS + 1),
     )
     pend = [r[0] for r in q("select id from pending_inputs where state='pending' and agent_id like ?", (prefix + "%",))]
 
     # outside changes since the last wake
     ext_events = q(
-        "select e.by, substr(k.title,1,60), substr(e.data,1,90) from task_events e join tasks k on k.id=e.task_id "
+        "select e.by, substr(k.title,1,60), substr(e.data,1,90), k.id from task_events e join tasks k on k.id=e.task_id "
         "where k.project_id=? and e.at>? and e.by!=? and e.at<=? order by e.at limit 25",
         (project, last, orch, iso(t - timedelta(minutes=QUIET_MIN))),
     )
@@ -135,7 +203,10 @@ def main():
         f"the PRs; open only the cards you will move. Woken because: {', '.join(reasons)}."
     ]
     nm = lambda a: agents[a][0] if a in agents else a.replace(prefix, "")
-    L.append("Team: " + "; ".join([f"{nm(a)} BUSY ({busy[a][:40]})" for a in busy] + [f"{nm(a)} FREE" for a in free]))
+    L.append("Team: " + "; ".join(
+        [f"{agents[a][0]} [{a}] ({agents[a][1] or 'role unknown'}) BUSY ({busy[a][:40]})" for a in busy]
+        + [f"{agents[a][0]} [{a}] ({agents[a][1] or 'role unknown'}) FREE" for a in free]
+    ))
     L.append(
         "Open cards: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
         + f" | unassigned in todo/backlog: {n_unassigned} | proposals: {n_prop} | waiting on the owner: {n_owner}"
@@ -143,12 +214,51 @@ def main():
     )
     if ext_events or ended:
         L.append("Changes since the last wake:")
-        for by, title, data in ext_events[:12]:
+        for by, title, data, _tid in ext_events[:8]:
             L.append(f"  - {by.replace(prefix, '')} changed '{title}' {data[:60]}")
-        for a, title in ended[:10]:
+        for a, title in ended[:6]:
             L.append(f"  - {nm(a)} finished a run on '{title}'")
     if prs or pr_note:
         L.append("Open PRs: " + (pr_note or "; ".join(f"#{n} {ms.lower()} CI {ci} '{ti}'" for n, h, ms, ci, ti in prs[:14])))
+    # The cards to act on, with what the orchestrator needs to decide without opening each one.
+    def handoff_tail(desc):
+        d = desc or ""
+        i = d.rfind("HAND-OFF")
+        s = d[i:] if i >= 0 else d[-400:]
+        return " ".join(s.split())[:200]
+    picked, seen = [], set()
+    def add(label, rows):
+        for r in rows:
+            if r[0] in seen or len(picked) >= MAX_CARDS:
+                continue
+            seen.add(r[0]); picked.append((label,) + tuple(r))
+    cols = "id, status, coalesce(assignee,''), proposed, awaits_owner, coalesce(reviewer,''), substr(title,1,70), description"
+    base = f"select {cols} from tasks where project_id=? and state='open'"
+    changed_ids = list(dict.fromkeys(e[3] for e in ext_events))
+    if changed_ids:
+        add("changed", q(base + f" and id in ({','.join('?' * len(changed_ids))})", (project, *changed_ids)))
+    add("returned to you", q(base + " and assignee=? and status in ('todo','doing','review') order by activity_at desc limit 6", (project, orch)))
+    add("proposal", q(base + " and proposed=1 order by activity_at desc limit 4", (project,)))
+    add("waiting on the owner", q(base + " and awaits_owner=1 order by activity_at desc limit 3", (project,)))
+    add("review without reviewer", q(base + " and status='review' and (reviewer is null or reviewer='') order by activity_at asc limit 4", (project,)))
+    add("ready, unassigned", q(base + " and assignee is null and status in ('todo','backlog') "
+        "and coalesce(proposed,0)=0 and coalesce(awaits_owner,0)=0 order by activity_at desc limit 4", (project,)))
+    if picked:
+        L.append("Cards to act on (open only the ones you will move):")
+        for label, tid, status, assignee, prop, owner, reviewer, title, desc in picked:
+            flags = " ".join(f for f, on in (("proposed", prop), ("waits-owner", owner)) if on)
+            who = nm(assignee) if assignee else "unassigned"
+            rv = f" reviewer {nm(reviewer)}" if reviewer else ""
+            L.append(f"  - [{label}] {tid} | {status} | {who}{rv} {flags} | {title}")
+            tail = handoff_tail(desc)
+            if tail:
+                L.append(f"      {tail}")
+    if ready_cards:
+        L.append("Assignable backlog/todo (open, unassigned, not proposed, not waiting on owner):")
+        for tid, status, priority, title in ready_cards[:MAX_CARDS]:
+            L.append(f"  - {tid} | {status} | {priority or 'normal'} | {title}")
+        if len(ready_cards) > MAX_CARDS:
+            L.append(f"  - … {len(ready_cards) - MAX_CARDS} more eligible card(s) omitted")
     out = "\n".join(L)
     print(out[:7500])
     if dry:

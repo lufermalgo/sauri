@@ -1,29 +1,16 @@
 # AGENTS.md
 
 ## Critical workflow rules (single source: [docs/engineering/WORKFLOW.md](docs/engineering/WORKFLOW.md))
-- One task = one issue = one branch = one worktree = one PR; never work in the root checkout or on `main`.
+- Use one isolated branch and worktree per delivery unit; closely related tasks may share an issue and PR under WORKFLOW §9. Never work in the root checkout or on `main`.
 - Ansel is the only agent who merges; no cap on open PRs; after merge Ansel removes the worktree and branch when safe (WORKFLOW §8).
 - Technical questions go to Ansel with a recommended solution; choose the simplest option that fully satisfies approved requirements (WORKFLOW §3).
 - Work moves by reassigning APX task cards with PACKET and HAND-OFF (WORKFLOW §6).
 - Ansel coordinates and approves technical work within approved scope. Consult Fer for product, privacy, spending or security-policy changes; communicate briefly in nontechnical Spanish about user impact. Do not bypass permissions or assume authorization for deployment or other actions outside scope.
-- Prioritize approved work that unblocks others or is close to completion. Do not create work merely to occupy agents. Escalate unresolved technical blockers to Teo through Ansel.
+- In a configured single-delivery pilot, follow WORKFLOW §10 before starting or dispatching work. Otherwise prioritize approved work that unblocks others or is close to completion. Do not create work merely to occupy agents. Escalate unresolved technical blockers to Teo through Ansel.
 - Preserve independent spec review, applicable QA and security gates, product acceptance, and the owner's test environment. Check current PR status and the reviewed candidate before merging; do not repeat unrelated reviews.
 
-## Dialectical Rigor & Context Integrity Protocol
-
-### 1. Anti-Sycophancy & Lexical Ban
-- **Strict Lexical Ban:** Never open or frame a response with validation phrases such as "You're right," "Tienes razón," "Good point," "That makes sense," or "I agree."
-- **Fallible User Premise:** Treat every user observation, suggestion, or correction as a potentially incomplete, biased, or locally optimized hypothesis—never as an absolute directive that automatically overrides prior context.
-
-### 2. Full-Context Stress-Testing (Defend Against Recency Bias)
-- **Systemic Audit Before Concession:** When the user introduces a new constraint, critique, or pivot, DO NOT immediately pivot to accommodate it. First, cross-examine the user's input against the entire session history, architectural decisions, business goals, and previously established constraints.
-- **Explicit Trade-off Evaluation:** Before adopting any user suggestion, explicitly evaluate and state:
-  1. **What it solves locally:** The immediate merit of the user's observation.
-  2. **What it breaks globally:** Hidden regressions, technical debt, second-order risks, or contradictions with earlier decisions in the session.
-- **Hold Your Ground:** If the user's observation is flawed, shortsighted, or inferior to the existing approach when viewed against the full context, reject the premise directly and defend the stronger position with technical/strategic evidence.
-
-### 3. Qualified Integration (When the User IS Right)
-- **Analytical Delta Only:** If rigorous evaluation proves the user's observation is genuinely valid, do not flatter the user. State * strictly why* the new variable changes the structural calculus, identify which prior assumption is now invalidated, and immediately map out the ripple effects across the rest of the system.
+## Evidence and context
+Assess relevant evidence and risks, state material contradictions, and carry out authorized requests. Explain trade-offs when they matter; do not require a formal debate for routine changes.
 
 ## 1. Agent Operating Principles
 
@@ -34,13 +21,13 @@ These rules govern how agents must behave before, during, and after any task.
 * **Read before writing**: inspect existing code before modifying. Never write blind.
 * **Edit, don't rewrite**: targeted edits only. Full rewrites require explicit justification.
 * **No redundant reads**: never re-read a file already loaded unless it may have changed.
-* **Surgical reads**: only the file being edited, only the relevant lines. No project-wide scans.
+* **Focused reads**: read the context the task requires; broader scans are appropriate for audits, cross-cutting changes, or when needed to avoid missing dependencies.
 * **Focused diffs**: touch only what the task requires. Zero side edits.
 * **Lazy loading**: pull context just-in-time, never preemptively.
 * **Specialist agents**: do not delegate trivial isolated edits merely to change one file.
   Required role-specific Spectra phases and independent reviews are valid exceptions even
   when their deliverable is a single artifact. Give each agent a scoped brief and validate it.
-* **Parallelism**: after a task plan is approved, dispatch independent dependency-ready tasks
+* **Parallelism**: outside the single-delivery pilot, after a task plan is approved, dispatch independent dependency-ready tasks
   concurrently in separate worktrees; serialize only real dependencies or shared-resource
   conflicts. A blocked task must not stall unrelated ready work.
 
@@ -53,8 +40,8 @@ These rules govern how agents must behave before, during, and after any task.
 * Defensive only at system boundaries.
 * Surface cost, security, or compliance implications in one line. Never bury them.
 * Before presenting non-trivial work: ask "is there a more elegant way?"
-* If the project uses Rust, the configured Rust validation command must pass before opening any PR that touches Rust. This is typically `cargo check`, but do not assume it blindly if the project defines another validation workflow.
-* If the project uses TypeScript, the configured project typecheck command must pass before opening any PR that touches TypeScript. Do not assume raw `tsc --noEmit` unless the project defines it.
+* If the project uses Rust, the configured Rust validation command must pass before marking ready any PR that touches Rust. This is typically `cargo check`, but do not assume it blindly if the project defines another validation workflow.
+* If the project uses TypeScript, the configured project typecheck command must pass before marking ready any PR that touches TypeScript. Do not assume raw `tsc --noEmit` unless the project defines it.
 
 ---
 

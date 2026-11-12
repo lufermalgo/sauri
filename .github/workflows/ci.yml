@@ -36,6 +36,9 @@
 # schema test (#249/#250/#241) and the two Alembic 009 lineage tests
 # (#407/#491/#492/#493); the collection error is #248.
 #
+# #522 records Hypothesis's default 200 ms deadline flaking in the diarization
+# suite (2/6 runs in the affected Python 3.14.7 environment); its test profile fix
+# preserves 100 examples while disabling this timing-based limit.
 # The counts move as the tool versions and `main` move; issue references are the
 # contract, not the counts.
 #
@@ -75,6 +78,8 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
+      - name: Verify APX delivery and single-handoff contracts
+        run: python -m unittest discover -s .apc/routines -p "test_*.py"
       - name: Install backend dependencies
         run: python -m pip install -e "./backend[dev]"
       - name: Generate disposable object-store password
