@@ -191,7 +191,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 | Unidad | Issue | PR / commit | Estado real |
 |--------|-------|-------------|-------------|
-| Plan | #818 | Por publicar | Documento preparado; pendiente aprobación |
+| Plan | #818 | PR #825 (`docs/local-platform-tasks`) | Publicado; pendiente aprobación |
 | U1 | Al activar | — | No iniciada |
 | U2 | Al activar | — | No iniciada |
 | U3 | Al activar | — | No iniciada |
