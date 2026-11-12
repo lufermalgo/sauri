@@ -2,7 +2,7 @@
 
 ## Estado y autoridad
 
-Requisitos aprobados por merge #819 (`392a958`); diseño aprobado por merge #820 (`9632bcd0d2c975b323875bf3ee69cebd452e93fb`, 12-11-2026 23:27 UTC). Issue padre #818; APX `task_9e74a2d278d648ad`. Esta fase planifica implementación: ningún checkbox acredita código, integración ni aceptación de Fer. Pendiente revisión/aprobación del plan antes de implementar. Los merges permanecen reservados a Fer.
+Requisitos aprobados por merge #819 (`392a958`); diseño aprobado por merge #820 (`9632bcd0d2c975b323875bf3ee69cebd452e93fb`, 12-11-2026 23:27 UTC). Issue padre #818; APX `task_9e74a2d278d648ad`. Plan aprobado por Fer mediante merge #825 (`3161afaaf991679abc1a77366ad4ebbe7e4ec5b3`, 12-11-2026 23:47 UTC). Ningún checkbox acredita integración ni aceptación de Fer. Los merges permanecen reservados a Fer.
 
 Alcance: servir el portal construido con el núcleo Docker, conservar autenticación/API/S3 existentes, motores nativos y validación aislada con limpieza segura. No rediseñar UI, crear identidad nueva, modificar políticas, migrar datos, publicar en Internet ni descargar modelos. No ejecutar sobre el entorno personal del dueño.
 
@@ -24,7 +24,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 1.1: RED del contrato estático y proxy (P1, P3, P5)
 
-- [ ] Pendiente.
+- [x] RED observado por ausencia de `.dockerignore` y entrega Docker. Harness real en `_tools/test_portal_container.py`, #827; API doble explícita, no integración del backend.
 
 **Archivo:** `_tools/test_portal_container.py` (crear).
 **Acción:** Crear pruebas con librería estándar contra una imagen candidata y API de prueba explícita: `/` y ruta SPA válida entregan HTML construido, assets reales responden y asset inexistente devuelve 404; `/portal-health` responde local y `/api-health` reenvía `/health`; `/api/` conserva ruta/query/Authorization y códigos/cuerpos 401/403/404/422/500 sin fallback HTML 200. API no disponible produce 502/504, no éxito. Verificar configuración de buffering, límite de cuerpo y tiempos mediante `nginx -T`. Añadir inspección de runtime/dist y contexto excluido con una cadena privada sintética, nunca secretos reales. Dobles de API solo prueban el proxy y se etiquetan como tales.
@@ -33,7 +33,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 1.2: Construir y servir portal sin Vite (R1.1–1.3, R2.1–2.4)
 
-- [ ] Pendiente.
+- [x] Implementado y validado en rama #827: Node/Nginx con digests fijados, contexto default-deny, Compose loopback, proxy y health diferenciados. Cuatro pruebas Docker GREEN, `nginx -t/-T` e inspección de contexto/runtime. No integrado ni aceptado como producto.
 
 **Archivo:** `frontend/Dockerfile`, `frontend/nginx.conf`, `.dockerignore`, `docker-compose.yml`.
 **Acción:** Imagen multietapa Node 22 Alpine → Nginx stable Alpine; resolver digests reales y fijarlos antes de publicación. Usar contexto raíz, manifiestos de workspaces/lock, `npm ci`, fuentes frontend/shared-types y `VITE_API_BASE_URL='' npm run build --workspace frontend`; copiar solo dist/configuración al runtime. Excluir `.git`, `.worktrees`, `.apc`, `.env*`, node_modules, cachés, medios y QA del contexto sin excluir fuentes/manifiestos necesarios. Implementar `/portal-health`, `/api-health`, `/api/` sin URI final en proxy, `/assets/` con 404 y SPA con index no-cache. Mantener Authorization, HTTP/1.1, sin caché API ni directory listing, `client_max_body_size 0`, `proxy_request_buffering off`, connect 5s/read-send 3600s. Agregar servicio portal en sauri-net, depends_on api, publicación `127.0.0.1:${PORTAL_PORT:-5173}:80`, healthcheck estático cada 10s/timeout 3s/6 reintentos. No alterar servicios/volúmenes existentes ni `frontend/src/api.ts`; S3 conserva enlace firmado directo.
@@ -42,7 +42,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 1.3: Verificar build, tipos y límites de imagen (P1–P3, P5)
 
-- [ ] Pendiente.
+- [x] `npm ci`, frontend typecheck, 92 tests y build PASS; Compose config PASS con valores sintéticos. Suite Docker final: 4/4 PASS, limpieza verificada, 0 contenedores/volúmenes/cache al terminar (imagen base compartida del builder conservada). Navegador APX verificó login construido y recarga SPA; no autenticación backend ni reproducción. Avisos npm heredados: 10 en herramientas, 0 con `npm audit --omit=dev`. #827, pendiente publicación/integración.
 
 **Archivo:** `_tools/test_portal_container.py`, `frontend/package.json`, `package-lock.json` (lectura de comandos/lock; no cambio de dependencias previsto).
 **Acción:** Ejecutar `npm ci`, `npm run typecheck --workspace frontend`, `npm run test --workspace frontend`, `npm run build --workspace frontend`, pruebas 1.1 e inspección del build/contexto. Guardar digest, commit, comandos, diff y resultados sin variables privadas. Revisar composición efectiva para confirmar URLs nativas y controles existentes, no inferir GPU del nombre del servicio.
@@ -191,8 +191,8 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 | Unidad | Issue | PR / commit | Estado real |
 |--------|-------|-------------|-------------|
-| Plan | #818 | PR #825 (`docs/local-platform-tasks`) | Publicado; pendiente aprobación |
-| U1 | Al activar | — | No iniciada |
+| Plan | #818 | PR #825, merge `3161afa` | Aprobado e integrado |
+| U1 | #827 | `feat/local-platform-portal` | Implementación y validación; no integrado |
 | U2 | Al activar | — | No iniciada |
 | U3 | Al activar | — | No iniciada |
 | U4 | Al activar | — | No iniciada |
