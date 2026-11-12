@@ -4,5 +4,5 @@
   "workflowType": "requirements-first",
   "created": "2026-11-12T19:43:00Z",
   "idea": "mantengamos un orden del proyecto y una estructura",
-  "phases": { "requirements": "complete", "design": "complete", "tasks": "pending" }
+  "phases": { "requirements": "complete", "design": "complete", "tasks": "complete" }
 }
