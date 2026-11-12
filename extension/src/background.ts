@@ -10,7 +10,7 @@ import {
   markFailed,
 } from "./upload-queue";
 import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture } from "./recording-db";
-import type { CompletionTrigger } from "./core/recording-completion";
+import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from "./core/recording-completion";
 
 export {};
 
@@ -34,6 +34,7 @@ interface SauriState {
   micDeviceId?: string | null;
   notificationEmittedAt?: string;
   tabId?: number;
+  provider?: CaptureHandle["provider"];
 }
 
 const DEFAULT_STATE: SauriState = { status: "idle" };
@@ -216,6 +217,12 @@ chrome.runtime.onMessage.addListener(
     _sender,
     sendResponse
   ) => {
+    // Page scripts can report discovery, not act as a media owner or a
+    // capture control. A different provider tab must not mutate the capture.
+    if (_sender.tab && ["start-capture", "stop-capture", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode"].includes(message.type)) {
+      sendResponse({ ok: false, error: "Message requires an extension capture context" });
+      return false;
+    }
     switch (message.type) {
       case "meet-detected":
         handleMeetDetected(message.meetingTitle, message.url);
@@ -224,6 +231,12 @@ chrome.runtime.onMessage.addListener(
 
       case "meet-ended":
         handleMeetEnded();
+        sendResponse({ ok: true });
+        break;
+
+      case "teams-ended":
+        // A Teams capture handle can be supplied by an existing media owner,
+        // but page lifecycle notifications are never a completion trigger.
         sendResponse({ ok: true });
         break;
 
@@ -261,7 +274,7 @@ chrome.runtime.onMessage.addListener(
         break;
 
       case "notification-emitted":
-        handleNotificationEmitted(message.emittedAt);
+        handleNotificationEmitted(message.emittedAt, _sender.tab?.id);
         sendResponse({ ok: true });
         break;
 
@@ -370,6 +383,7 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
       ...currentState,
       status: "recording",
       sessionId,
+      provider: "meet",
       resolution: res,
       micDeviceId,
       tabId: tab.id,
@@ -402,14 +416,25 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
 
 async function completeRecording(sessionId: string, trigger: CompletionTrigger): Promise<void> {
   if (!await claimCompletion(sessionId, trigger)) return;
-  await chrome.runtime.sendMessage({ type: "stop-recording", sessionId });
+  await requestMediaFinalization(sessionId);
+}
+
+async function requestMediaFinalization(sessionId: string): Promise<void> {
+  const delivered = await chrome.runtime.sendMessage({ type: "stop-recording", sessionId });
+  if (!delivered?.ok) {
+    // The offscreen owner rejected this exact session; retain media and an
+    // observable non-successful error rather than treating dispatch as capture.
+    await settleCapture(sessionId, true);
+    console.warn("[sauri] Media owner could not finalize the capture:", sessionId);
+    return;
+  }
   console.log("[sauri] Stop capture requested");
 }
 
 async function resumeFinalizations(): Promise<void> {
   try {
     for (const record of await getPendingFinalizations()) {
-      await chrome.runtime.sendMessage({ type: "stop-recording", sessionId: record.sessionId });
+      await requestMediaFinalization(record.sessionId);
     }
   } catch (error) {
     // Leave the durable intent intact for the next worker/alarm retry.
@@ -420,9 +445,19 @@ async function resumeFinalizations(): Promise<void> {
 async function handleStopCapture(): Promise<void> {
   try {
     const state = await getState();
-    if (state.sessionId && state.status === "recording") {
-      if (await getCompletion(state.sessionId)) await completeRecording(state.sessionId, "stop");
-      else await chrome.runtime.sendMessage({ type: "stop-recording", sessionId: state.sessionId });
+    if (state.status !== "recording" || !state.sessionId || state.tabId === undefined) return;
+    const record = await getCapturingCompletion(state.tabId);
+    const projected: CaptureHandle = {
+      sessionId: state.sessionId,
+      capturedTabId: state.tabId,
+      // Pre-provider projections were Meet-only; never infer Teams from them.
+      provider: state.provider ?? "meet",
+    };
+    if (record) {
+      if (matchesCaptureHandle(record, projected)) await completeRecording(record.sessionId, "stop");
+    } else if (projected.provider === "meet" && !await getCompletion(state.sessionId)) {
+      // Preserve an actual v1 capture without inventing a durable Teams handle.
+      await chrome.runtime.sendMessage({ type: "stop-recording", sessionId: state.sessionId });
     }
   } catch (error) {
     console.error("[sauri] Could not finalize recording:", error);
@@ -495,9 +530,10 @@ async function hideConsentBanner(tabId?: number): Promise<void> {
   }
 }
 
-async function handleNotificationEmitted(emittedAt?: string): Promise<void> {
+async function handleNotificationEmitted(emittedAt?: string, senderTabId?: number): Promise<void> {
   if (!emittedAt) return;
   const currentState = await getState();
+  if (senderTabId !== undefined && (currentState.tabId !== senderTabId || currentState.provider === "teams")) return;
   await setState({ ...currentState, notificationEmittedAt: emittedAt });
   console.log(`[sauri] Notification emitted at: ${emittedAt}`);
 }
