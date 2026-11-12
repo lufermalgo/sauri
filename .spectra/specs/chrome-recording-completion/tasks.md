@@ -202,7 +202,7 @@ APX `task_d9a886135dae47b0`, PR #703, T1.1/#610 + T2.1/#619, R1.1–R1.5/R5.2. T
 
 ## Publication tracking
 
-Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (Mira APPROVED, 2026-10-31). This is the scoped #709 amendment candidate to T1.1/T2.1; the candidate awaits Mira's independent audit, and `.config.spectra` phase `complete` records authorship only. The plan continues to derive from approved requirements `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` and corrected design `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED). GitHub issues #610–#628 map the 19 tasks in milestone `chrome-recording-completion` (#17); this amendment does not create, renumber, or publish implementation tasks. Per Ansel's coordination decision, APX card creation is deferred until real responsible agents and dependency readiness are available; no card IDs are claimed here.
+Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (Mira APPROVED, 2026-10-31). This is the scoped #709 amendment candidate to T1.1/T2.1; the candidate awaits Mira's independent audit, and `.config.spectra` phase `complete` records authorship only. The plan continues to derive from approved requirements `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` and corrected design `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED). GitHub issues #610–#628 map the 19 tasks in milestone `chrome-recording-completion` (#17); this amendment does not create, renumber, or publish implementation tasks. Per Ansel's coordination decision, APX card creation was deferred until real responsible agents and dependency readiness were available; the T1.8 row below now records its subsequently assigned delivery and draft PR without claiming implementation or integration.
 
 | Task | GitHub issue | APX card |
 |---|---:|---|
@@ -213,7 +213,7 @@ Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (M
 | T1.5 | #614 | Pending — APX assignment resolution |
 | T1.6 | #615 | Pending — APX assignment resolution |
 | T1.7 | #616 | Pending — APX assignment resolution |
-| T1.8 | #617 | Pending — APX assignment resolution |
+| T1.8 | #617 | `task_dd6b09519f754272` — RED tests in draft PR #826 (`0a110ba`); reviewed, not merged or product-accepted |
 | T1.9 | #618 | Pending — APX assignment resolution |
 | T2.1 | #619 | Pending — APX assignment resolution |
 | T2.2 | #620 | Pending — APX assignment resolution |
