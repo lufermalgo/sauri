@@ -66,14 +66,21 @@ export async function getCompletion(sessionId: string): Promise<RecordingComplet
 }
 
 export async function getCapturingCompletion(tabId: number): Promise<RecordingCompletion | undefined> {
-  return completionTransaction("readonly", (store, result, fail) => {
+  const resolution = await completionTransaction<{ record?: RecordingCompletion; ambiguous: boolean }>("readwrite", (store, result) => {
     const request = store.index("capturedTabId").getAll(tabId);
     request.onsuccess = () => {
       const active = (request.result as RecordingCompletion[]).filter((record) => record.status === "capturing" && !record.captureError);
-      if (active.length > 1) fail(new Error("Ambiguous active recording for captured tab"));
-      else result(active[0]);
+      if (active.length > 1) {
+        // There is no safe winner, including when the UI projection is missing.
+        // Commit the error for every candidate atomically before reporting it;
+        // aborting here would roll back the feedback and a retry could pick another session.
+        for (const record of active) store.put({ ...record, captureError: true, updatedAt: Date.now() });
+        result({ ambiguous: true });
+      } else result({ record: active[0], ambiguous: false });
     };
   });
+  if (resolution.ambiguous) throw new Error("Ambiguous active recording for captured tab");
+  return resolution.record;
 }
 
 export async function claimCompletion(sessionId: string, trigger: CompletionTrigger): Promise<boolean> {

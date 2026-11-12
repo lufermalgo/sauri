@@ -4,6 +4,7 @@ import { PanelHeader } from "./components/PanelHeader";
 import { CaptureControls, type MicOption } from "./components/CaptureControls";
 import { NotesList } from "./components/NotesList";
 import { AuthView } from "./components/AuthView";
+import { RecordingCaptureError } from "./components/RecordingCaptureError";
 import { applyCaptureEvent } from "../core/capture";
 import { deriveViewState } from "../core/view";
 import {
@@ -19,6 +20,7 @@ import "../core/design/tokens.css";
 
 interface SauriBackgroundState {
   status: "idle" | "pending" | "recording";
+  sessionId?: string;
 }
 
 function mapCaptureState(status: SauriBackgroundState["status"]): CaptureState {
@@ -30,6 +32,7 @@ export function SidePanelApp() {
   const [sessionActive, setSessionActive] = useState<boolean | null>(null);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [elapsedTimeMs, setElapsedTimeMs] = useState(0);
+  const [recordingSessionId, setRecordingSessionId] = useState<string | undefined>();
   const [microphones, setMicrophones] = useState<MicOption[]>([]);
   const [selectedMicrophone, setSelectedMicrophone] = useState<MicOption | undefined>(undefined);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
@@ -52,13 +55,17 @@ export function SidePanelApp() {
   useEffect(() => {
     chrome.storage.session.get("sauriState").then((result) => {
       const state = result.sauriState as SauriBackgroundState | undefined;
-      if (state) setCaptureState(mapCaptureState(state.status));
+      if (state) {
+        setCaptureState(mapCaptureState(state.status));
+        setRecordingSessionId(state.sessionId);
+      }
     });
 
     const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
       if (areaName === "session" && changes.sauriState) {
         const state = changes.sauriState.newValue as SauriBackgroundState | undefined;
         setCaptureState(mapCaptureState(state?.status ?? "idle"));
+        setRecordingSessionId(state?.sessionId);
       }
     };
     chrome.storage.onChanged.addListener(listener);
@@ -223,6 +230,7 @@ export function SidePanelApp() {
         elapsedTimeMs={elapsedTimeMs}
         microphoneError={microphoneError}
       />
+      <RecordingCaptureError sessionId={recordingSessionId} />
       <NotesList
         state={notesViewState}
         notes={notesRequest.data ?? notesRequest.previous ?? []}
