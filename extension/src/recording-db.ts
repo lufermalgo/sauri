@@ -43,17 +43,79 @@ async function completionTransaction<T>(
   });
 }
 
+function requiredId(value: string): boolean {
+  return typeof value === "string" && value.trim().length > 0 && value === value.trim();
+}
+
 export async function createCompletion(record: RecordingCompletion): Promise<RecordingCompletion> {
+  if (!requiredId(record.sessionId) || !requiredId(record.meetingId) ||
+      (record.recordingId !== undefined && !requiredId(record.recordingId))) {
+    throw new Error("Invalid recording completion identity");
+  }
   return completionTransaction("readwrite", (store, result, fail) => {
     const request = store.get(record.sessionId);
     request.onsuccess = () => {
       const existing = request.result as RecordingCompletion | undefined;
-      if (existing && (existing.meetingId !== record.meetingId || existing.capturedTabId !== record.capturedTabId || existing.provider !== record.provider)) {
-        fail(new Error("Recording completion identity mismatch"));
+      if (existing) {
+        if (existing.meetingId !== record.meetingId || existing.capturedTabId !== record.capturedTabId ||
+            existing.provider !== record.provider || (record.recordingId !== undefined && existing.recordingId !== record.recordingId)) {
+          fail(new Error("Recording completion identity mismatch"));
+        } else result(existing);
         return;
       }
-      if (!existing) store.add(record);
-      result(existing ?? record);
+      // This read and the insert share the same readwrite transaction: concurrent
+      // sessions cannot reserve the same meeting before the first one commits.
+      const all = store.getAll();
+      all.onsuccess = () => {
+        if ((all.result as RecordingCompletion[]).some(saved =>
+          saved.meetingId === record.meetingId || (record.recordingId !== undefined && saved.recordingId === record.recordingId))) {
+          fail(new Error("Recording completion identity already assigned"));
+          return;
+        }
+        store.add(record);
+        result(record);
+      };
+    };
+  });
+}
+
+/** Persist the validated ingestion identity; a retry can only repeat the same mapping. */
+export async function bindRecordingId(sessionId: string, meetingId: string, recordingId: string): Promise<RecordingCompletion> {
+  if (!requiredId(sessionId) || !requiredId(meetingId) || !requiredId(recordingId)) {
+    throw new Error("Invalid recording identity response");
+  }
+  return completionTransaction("readwrite", (store, result, fail) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (!record || record.meetingId !== meetingId || (record.recordingId && record.recordingId !== recordingId)) {
+        fail(new Error("Recording identity response mismatch"));
+        return;
+      }
+      if (record.recordingId) { result(record); return; }
+      const all = store.getAll();
+      all.onsuccess = () => {
+        if ((all.result as RecordingCompletion[]).some(saved => saved.sessionId !== sessionId && saved.recordingId === recordingId)) {
+          fail(new Error("Recording identity response already assigned"));
+          return;
+        }
+        const updated = { ...record, recordingId, updatedAt: Date.now() };
+        store.put(updated);
+        result(updated);
+      };
+    };
+  });
+}
+
+/** The caller must independently verify processing and assets before persisting success. */
+export async function claimReviewLaunch(sessionId: string): Promise<boolean> {
+  return completionTransaction("readwrite", (store, result) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (!record || record.status !== "processing_succeeded" || !record.recordingId) { result(false); return; }
+      store.put({ ...record, status: "review_launch_pending", updatedAt: Date.now() });
+      result(true);
     };
   });
 }
