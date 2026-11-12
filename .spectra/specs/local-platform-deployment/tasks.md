@@ -42,7 +42,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 1.3: Verificar build, tipos y límites de imagen (P1–P3, P5)
 
-- [x] `npm ci`, frontend typecheck, 92 tests y build PASS; Compose config PASS con valores sintéticos. Suite Docker final: 4/4 PASS, limpieza verificada, 0 contenedores/volúmenes/cache al terminar (imagen base compartida del builder conservada). Navegador APX verificó login construido y recarga SPA; no autenticación backend ni reproducción. Avisos npm heredados: 10 en herramientas, 0 con `npm audit --omit=dev`. #827, pendiente publicación/integración.
+- [x] `npm ci`, frontend typecheck, 92 tests y build PASS; Compose config PASS con valores sintéticos. Suite Docker final: 4/4 PASS, limpieza verificada, 0 contenedores/volúmenes/cache al terminar (imagen base compartida del builder conservada). Navegador APX verificó login construido y recarga SPA; no autenticación backend ni reproducción. Avisos npm heredados: 10 en herramientas, 0 con `npm audit --omit=dev`. #827 / PR #829, publicado; pendiente CI remoto y merge de Fer.
 
 **Archivo:** `_tools/test_portal_container.py`, `frontend/package.json`, `package-lock.json` (lectura de comandos/lock; no cambio de dependencias previsto).
 **Acción:** Ejecutar `npm ci`, `npm run typecheck --workspace frontend`, `npm run test --workspace frontend`, `npm run build --workspace frontend`, pruebas 1.1 e inspección del build/contexto. Guardar digest, commit, comandos, diff y resultados sin variables privadas. Revisar composición efectiva para confirmar URLs nativas y controles existentes, no inferir GPU del nombre del servicio.
@@ -192,7 +192,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 | Unidad | Issue | PR / commit | Estado real |
 |--------|-------|-------------|-------------|
 | Plan | #818 | PR #825, merge `3161afa` | Aprobado e integrado |
-| U1 | #827 | `feat/local-platform-portal` | Implementación y validación; no integrado |
+| U1 | #827 | PR #829; implementación `87f16f2` | Publicado y validado localmente; CI/merge pendientes |
 | U2 | Al activar | — | No iniciada |
 | U3 | Al activar | — | No iniciada |
 | U4 | Al activar | — | No iniciada |
