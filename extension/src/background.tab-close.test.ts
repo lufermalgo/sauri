@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
-import { createCompletion, getCompletion, settleCapture } from "./recording-db";
+import { createCompletion, getCompletion, getChunksBySession, storeChunk, settleCapture } from "./recording-db";
 
 type Provider = "meet" | "teams";
 type Handle = { provider: Provider; capturedTabId: number; sessionId: string };
@@ -120,11 +120,31 @@ describe.each(providers)("%s captured-tab completion adapter", provider => {
   it("an unresolved active handle never finalizes the projected or another session", async () => {
     const ambiguous: Handle = { provider, capturedTabId: active.capturedTabId, sessionId: `ambiguous-${provider}` };
     const h = await loadBackgroundWithHandles([active, other, ambiguous], active);
+    await storeChunk(active.sessionId, new Blob(["synthetic-media"]));
     await h.close(active.capturedTabId);
     expect(h.stops()).toEqual([]);
     expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
     expect(await getCompletion(ambiguous.sessionId)).toMatchObject({ ...ambiguous, status: "capturing" });
     // The unresolved adapter must leave an observable, non-successful error for the panel.
     expect(await getCompletion(active.sessionId)).toMatchObject({ captureError: true });
+    expect(await getCompletion(ambiguous.sessionId)).toMatchObject({ captureError: true });
+    // A retry/worker restart must not pick the other ambiguous candidate.
+    await h.restartWithoutProjection();
+    await h.close(active.capturedTabId);
+    expect(h.stops()).toEqual([]);
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing", captureError: true });
+    expect(await getChunksBySession(active.sessionId)).toHaveLength(1);
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+  });
+
+  it("persists ambiguity without a projected session, including concurrent close events", async () => {
+    const ambiguous: Handle = { ...active, sessionId: `unprojected-${provider}` };
+    const h = await loadBackgroundWithHandles([active, ambiguous, other]);
+    await Promise.all([h.close(active.capturedTabId), h.close(active.capturedTabId)]);
+    expect(h.stops()).toEqual([]);
+    for (const handle of [active, ambiguous]) {
+      expect(await getCompletion(handle.sessionId)).toMatchObject({ ...handle, captureError: true, status: "capturing" });
+    }
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
   });
 });
