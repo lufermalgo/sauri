@@ -5,7 +5,9 @@ const { assembleBlob, clearSession } = vi.hoisted(() => ({
   assembleBlob: vi.fn(async () => new Blob(["synthetic recording"])),
   clearSession: vi.fn(async () => undefined),
 }));
-vi.mock("./recording-db", () => ({ assembleBlob, clearSession }));
+vi.mock("./recording-db", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./recording-db")>(), assembleBlob, clearSession,
+}));
 
 interface ChromeMessageListener {
   (message: { type: string; size?: number; mimeType?: string; sessionId?: string }, sender: unknown, sendResponse: (response: unknown) => void): void;

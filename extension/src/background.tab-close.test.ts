@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { IDBFactory } from "fake-indexeddb";
+import { createCompletion } from "./recording-db";
+
 type TabRemovedListener = (tabId: number, removeInfo: { windowId: number; isWindowClosing: boolean }) => void;
 
 async function loadBackgroundWithRecording(tabId: number) {
   vi.resetModules();
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  await createCompletion({ sessionId: "session-active", provider: "meet", meetingId: "synthetic-meeting", capturedTabId: tabId, status: "capturing", updatedAt: 1 });
   let tabRemovedListener: TabRemovedListener | undefined;
   const sendMessage = vi.fn();
 
@@ -60,7 +65,7 @@ describe("Meet tab close capture lifecycle", () => {
     expect(tabRemovedListener).toBeDefined();
     await tabRemovedListener!(41, { windowId: 5, isWindowClosing: false });
 
-    expect(sendMessage).toHaveBeenCalledWith({ type: "stop-recording" });
+    expect(sendMessage).toHaveBeenCalledWith({ type: "stop-recording", sessionId: "session-active" });
   });
 
   it("does not stop capture when an unrelated tab closes", async () => {
@@ -69,6 +74,6 @@ describe("Meet tab close capture lifecycle", () => {
     expect(tabRemovedListener).toBeDefined();
     await tabRemovedListener!(99, { windowId: 5, isWindowClosing: false });
 
-    expect(sendMessage).not.toHaveBeenCalledWith({ type: "stop-recording" });
+    expect(sendMessage).not.toHaveBeenCalledWith({ type: "stop-recording", sessionId: "session-active" });
   });
 });

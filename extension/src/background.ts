@@ -9,7 +9,8 @@ import {
   markDone,
   markFailed,
 } from "./upload-queue";
-import { assembleBlob, clearSession } from "./recording-db";
+import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture } from "./recording-db";
+import type { CompletionTrigger } from "./core/recording-completion";
 
 export {};
 
@@ -161,7 +162,8 @@ chrome.action.onClicked.addListener(async (tab) => {
 // --- Initialization ---
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await setState(DEFAULT_STATE);
+  // Updates must not detach a still-live legacy offscreen capture.
+  await setState(await getState());
   await configureSidePanel();
   console.log("[sauri] Extension installed, state initialized to idle");
 });
@@ -169,9 +171,19 @@ chrome.runtime.onInstalled.addListener(async () => {
 configureSidePanel();
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const state = await getState();
-  if (state.status === "recording" && state.tabId === tabId) {
-    await handleStopCapture();
+  try {
+    const record = await getCapturingCompletion(tabId);
+    if (record) await completeRecording(record.sessionId, "captured-tab-close");
+    else {
+      // A live v1 capture has a session binding but no preallocated meeting ID.
+      // Preserve that identity; never synthesize a completion row for legacy media.
+      const state = await getState();
+      if (state.status === "recording" && state.tabId === tabId && state.sessionId && !await getCompletion(state.sessionId)) {
+        await chrome.runtime.sendMessage({ type: "stop-recording", sessionId: state.sessionId });
+      }
+    }
+  } catch (error) {
+    console.error("[sauri] Could not finalize captured tab:", error);
   }
 });
 
@@ -180,6 +192,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 (async () => {
   const state = await getState();
   console.log("[sauri] Service worker started, current state:", state.status);
+  await resumeFinalizations();
 })();
 
 // --- Message handling ---
@@ -220,9 +233,11 @@ chrome.runtime.onMessage.addListener(
         break;
 
       case "stop-capture":
-        handleStopCapture();
-        sendResponse({ ok: true });
-        break;
+        void (async () => {
+          await handleStopCapture();
+          sendResponse({ ok: true });
+        })();
+        return true;
 
       case "recording-stopped":
         handleRecordingStopped(message.size!, message.mimeType!, message.sessionId);
@@ -236,7 +251,7 @@ chrome.runtime.onMessage.addListener(
 
       case "recording-error":
         console.error("[sauri] Recording error from offscreen:", message.error);
-        handleRecordingError();
+        void handleRecordingError(message.sessionId);
         sendResponse({ ok: true });
         break;
 
@@ -263,6 +278,7 @@ async function handleMeetDetected(
   meetingTitle?: string,
   url?: string
 ): Promise<void> {
+  if ((await getState()).status === "recording") return;
   const newState: SauriState = {
     status: "pending",
     meetingUrl: url,
@@ -275,12 +291,17 @@ async function handleMeetDetected(
 }
 
 async function handleMeetEnded(): Promise<void> {
+  const state = await getState();
+  // A page discovery signal is not permission to stop or detach a capture.
+  if (state.status === "recording") return;
   await setState(DEFAULT_STATE);
   console.log("[sauri] Meet ended — status: idle");
 }
 
 async function handleStartCapture(resolution?: Resolution, micDeviceId?: string | null): Promise<void> {
+  let startingSessionId: string | undefined;
   try {
+    if ((await getState()).status === "recording") return;
     // Default resolution to 720p if not provided
     const res: Resolution = resolution ?? { width: 1280, height: 720 };
 
@@ -311,6 +332,7 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
 
     // Generate a unique sessionId for this recording session
     const sessionId = crypto.randomUUID();
+    startingSessionId = sessionId;
 
     // Ensure offscreen document exists
     await ensureOffscreenDocument();
@@ -333,13 +355,13 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
       console.warn("[sauri] Could not refresh meeting title:", error);
     }
 
-    chrome.runtime.sendMessage({
-      type: "start-recording",
-      streamId,
+    await createCompletion({
       sessionId,
-      resolution: res,
-      captureMode,
-      micDeviceId: micDeviceId ?? null,
+      provider: "meet",
+      capturedTabId: tab.id,
+      meetingId: crypto.randomUUID(),
+      status: "capturing",
+      updatedAt: Date.now(),
     });
 
     // Update state to recording with sessionId, resolution, micDeviceId, and the
@@ -353,6 +375,13 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
       tabId: tab.id,
       meetingTitle,
     });
+    const started = await chrome.runtime.sendMessage({
+      type: "start-recording", streamId, sessionId, resolution: res,
+      captureMode, micDeviceId: micDeviceId ?? null,
+    });
+    if (!started?.ok) throw new Error("Offscreen did not start capture");
+    const activeCapture = await getCompletion(sessionId);
+    if (activeCapture?.status !== "capturing" || activeCapture.captureError) return;
     console.log(`[sauri] Capture started — status: recording, sessionId: ${sessionId}, resolution: ${res.width}x${res.height}, mode: ${captureMode}, mic: ${micDeviceId ?? "none"}`);
 
     // Send consent banner to the content script in the active tab. Best-effort:
@@ -367,13 +396,37 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
     chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
   } catch (error) {
     console.error("[sauri] Failed to start capture:", error);
+    if (startingSessionId) await handleRecordingError(startingSessionId);
+  }
+}
+
+async function completeRecording(sessionId: string, trigger: CompletionTrigger): Promise<void> {
+  if (!await claimCompletion(sessionId, trigger)) return;
+  await chrome.runtime.sendMessage({ type: "stop-recording", sessionId });
+  console.log("[sauri] Stop capture requested");
+}
+
+async function resumeFinalizations(): Promise<void> {
+  try {
+    for (const record of await getPendingFinalizations()) {
+      await chrome.runtime.sendMessage({ type: "stop-recording", sessionId: record.sessionId });
+    }
+  } catch (error) {
+    // Leave the durable intent intact for the next worker/alarm retry.
+    console.warn("[sauri] Finalization delivery pending:", error);
   }
 }
 
 async function handleStopCapture(): Promise<void> {
-  // Send stop-recording message to offscreen document
-  chrome.runtime.sendMessage({ type: "stop-recording" });
-  console.log("[sauri] Stop capture requested");
+  try {
+    const state = await getState();
+    if (state.sessionId && state.status === "recording") {
+      if (await getCompletion(state.sessionId)) await completeRecording(state.sessionId, "stop");
+      else await chrome.runtime.sendMessage({ type: "stop-recording", sessionId: state.sessionId });
+    }
+  } catch (error) {
+    console.error("[sauri] Could not finalize recording:", error);
+  }
 }
 
 async function handleRecordingStopped(
@@ -383,37 +436,46 @@ async function handleRecordingStopped(
 ): Promise<void> {
   console.log(`[sauri] Recording complete: ${size} bytes (session: ${sessionId ?? "unknown"})`);
 
-  // Clear REC badge
-  chrome.action.setBadgeText({ text: "" });
+  if (!sessionId) return; // Never invent identity for an unbound completion.
+  if ((await getCompletion(sessionId))?.captureError) return;
+  await settleCapture(sessionId);
 
   // Get notificationEmittedAt from state for upload payload
   const currentState = await getState();
-  const notificationEmittedAt = currentState.notificationEmittedAt;
+  const ownsProjection = currentState.sessionId === sessionId;
+  const notificationEmittedAt = ownsProjection ? currentState.notificationEmittedAt : undefined;
 
-  await hideConsentBanner(currentState.tabId);
+  if (ownsProjection) {
+    chrome.action.setBadgeText({ text: "" });
+    await hideConsentBanner(currentState.tabId);
+  }
 
   // Enqueue upload job — the queue handles retries with the same idempotencyKey
-  const sid = sessionId ?? crypto.randomUUID();
+  const sid = sessionId;
   await enqueueUpload({
     sessionId: sid,
     idempotencyKey: sid, // sessionId = idempotencyKey ensures idempotent retries
     mimeType,
     notificationEmittedAt,
-    title: currentState.meetingTitle,
-    meetLink: currentState.meetingUrl,
-    videoPresence: currentState.videoPresence ?? "absent",
+    title: ownsProjection ? currentState.meetingTitle : undefined,
+    meetLink: ownsProjection ? currentState.meetingUrl : undefined,
+    videoPresence: ownsProjection ? currentState.videoPresence ?? "absent" : "absent",
   });
   console.log(`[sauri] Upload job enqueued for session: ${sid}`);
 
   // Trigger immediate processing attempt
   await processUploadQueue();
 
-  // Update state to idle
-  await setState(DEFAULT_STATE);
+  // An old completion must not clear a newer capture's controls.
+  if ((await getState()).sessionId === sessionId) await setState(DEFAULT_STATE);
   console.log("[sauri] State reset to idle");
 }
 
-async function handleRecordingError(): Promise<void> {
+async function handleRecordingError(sessionId?: string): Promise<void> {
+  const state = await getState();
+  const failedSession = sessionId ?? state.sessionId;
+  if (failedSession) await settleCapture(failedSession, true);
+  if (sessionId && state.sessionId !== sessionId) return;
   // Clear REC badge
   chrome.action.setBadgeText({ text: "" });
 
@@ -499,6 +561,7 @@ chrome.alarms.create(UPLOAD_ALARM_NAME, { periodInMinutes: 1 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === UPLOAD_ALARM_NAME) {
+    void resumeFinalizations();
     processUploadQueue();
   }
 });
