@@ -9,6 +9,9 @@
 - In a configured single-delivery pilot, follow WORKFLOW §10 before starting or dispatching work. Otherwise prioritize approved work that unblocks others or is close to completion. Do not create work merely to occupy agents. Escalate unresolved technical blockers to Teo through Ansel.
 - Preserve independent spec review, applicable QA and security gates, product acceptance, and the owner's test environment. Check current PR status and the reviewed candidate before merging; do not repeat unrelated reviews.
 
+## Architecture source of truth
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for deployment boundaries and the active specification map. Update it and the affected spec in the same delivery when architecture changes, recording the reason, alternatives, data/deployment impact and verification evidence. Documentation does not replace phase approvals, implementation or product acceptance.
+
 ## Evidence and context
 Assess relevant evidence and risks, state material contradictions, and carry out authorized requests. Explain trade-offs when they matter; do not require a formal debate for routine changes.
 
