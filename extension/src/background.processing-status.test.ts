@@ -31,6 +31,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
   await storeChunk(sessionId, new Blob(["synthetic media"], { type: "video/webm" }));
 
   const fetched: string[] = [];
+  const createTab = vi.fn();
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
     fetched.push(url);
@@ -68,15 +69,22 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
       session: { get: vi.fn(async () => ({ sauriState: state })), set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = value.sauriState; }) },
       sync: { get: vi.fn(async () => ({})) },
     },
-    tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined), create: vi.fn() },
+    tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined), create: createTab },
   });
   await import("./background");
   await new Promise<void>((resolve) => listener!({ type: "stop-capture" }, {}, () => resolve()));
   expect(sent).toHaveBeenCalledWith({ type: "stop-recording", sessionId });
   listener!({ type: "recording-stopped", sessionId, size: 15, mimeType: "video/webm" }, {}, vi.fn());
-  // Do not open the queue DB before enqueueUpload creates its object store.
-  await vi.waitFor(() => expect(fetched).toContain("http://localhost:8000/api/v1/ingestion/upload"), { timeout: 2000, interval: 5 });
-  // Listener dispatches upload asynchronously; wait for the real queue transaction.
+  // Only matching mappings must POST. A conflict may be rejected before sending a request.
+  if (scenario.sameRecording) {
+    await vi.waitFor(() => expect(fetched).toContain("http://localhost:8000/api/v1/ingestion/upload"), { timeout: 2000, interval: 5 });
+  }
+  // Do not create an empty queue DB before enqueueUpload creates its object store.
+  await vi.waitFor(async () => expect((await indexedDB.databases()).some(db => db.name === "sauri-upload-queue")).toBe(true),
+    { timeout: 2000, interval: 5 });
+  // Wait for the real queue transaction, including a settled retry/failure on identity mismatch.
+  // A rejected ingestion must never be forced into "done" just to make setup pass.
+  let job: { status: string; retryCount: number } | undefined;
   await vi.waitFor(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("sauri-upload-queue", 2);
@@ -84,16 +92,19 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
       request.onerror = () => reject(request.error);
     });
     try {
-      const jobs = await new Promise<Array<{ status: string }>>((resolve, reject) => {
+      const jobs = await new Promise<Array<{ status: string; retryCount: number }>>((resolve, reject) => {
         const request = db.transaction("jobs", "readonly").objectStore("jobs").getAll();
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
       expect(jobs).toHaveLength(1);
-      expect(jobs[0].status).toBe("done");
+      job = jobs[0];
+      expect(job.status === "done" || job.status === "failed" ||
+        (job.status === "pending" && job.retryCount > 0)).toBe(true);
     } finally { db.close(); }
   }, { timeout: 2000, interval: 5 });
-  return { completion: await getCompletion(sessionId), fetched, meetingId, recordingId };
+  return { completion: await getCompletion(sessionId), fetched, meetingId, recordingId,
+    persistedRecordingId: scenario.sameRecording ? undefined : otherRecordingId, job: job!, createTab };
 }
 
 beforeEach(() => {
@@ -119,23 +130,39 @@ it("checks the same meeting's status and never marks incomplete or mismatched as
   let violations = 0;
   let counterexample = "";
   for (const [index, scenario] of cases.entries()) {
-    const { completion, fetched, meetingId } = await runScenario(scenario);
-    if (!fetched.includes(statusUrl(meetingId)) || completion?.status === "processing_succeeded") {
+    const { completion, fetched, meetingId, persistedRecordingId, job, createTab } = await runScenario(scenario);
+    const wrongRecording = !scenario.sameRecording;
+    const wrongMapping = wrongRecording
+      ? job.status === "done" || completion?.recordingId !== persistedRecordingId || fetched.some(url => url !== "http://localhost:8000/api/v1/ingestion/upload")
+      : !fetched.includes(statusUrl(meetingId));
+    if (wrongMapping || completion?.meetingId !== meetingId ||
+        completion?.status === "processing_succeeded" || createTab.mock.calls.length !== 0) {
       violations++;
-      if (!counterexample) counterexample = `${index}: ${JSON.stringify(scenario)}; status=${completion?.status}; reads=${fetched.join(",")}`;
+      if (!counterexample) counterexample = `${index}: ${JSON.stringify(scenario)}; status=${completion?.status}; recording=${completion?.recordingId}; queue=${job.status}/${job.retryCount}; tabs=${createTab.mock.calls.length}; reads=${fetched.join(",")}`;
     }
   }
   expect(violations, `Checked ${cases.length} cases; counterexample: ${counterexample}`).toBe(0);
 }, 60000);
 
+it("rejects a conflicting persisted recording before reading protected assets or launching review", async () => {
+  const { completion, fetched, meetingId, persistedRecordingId, job, createTab } =
+    await runScenario({ ...ready, sameRecording: false });
+  expect(job.status).not.toBe("done");
+  expect(job.status === "failed" || job.retryCount > 0).toBe(true);
+  expect(completion).toMatchObject({ meetingId, recordingId: persistedRecordingId });
+  expect(completion?.status).not.toBe("processing_succeeded");
+  expect(fetched.every(url => url === "http://localhost:8000/api/v1/ingestion/upload")).toBe(true);
+  expect(createTab).not.toHaveBeenCalled();
+});
+
 it("marks success only after checking completed status, transcript and playable video for the same mapping (100 generated IDs)", async () => {
   let violations = 0;
   let counterexample = "";
   for (const [index, sessionId] of fc.sample(fc.uuid(), 100).entries()) {
-    const { completion, fetched, meetingId, recordingId } = await runScenario(ready, sessionId);
+    const { completion, fetched, meetingId, recordingId, job } = await runScenario(ready, sessionId);
     const required = [statusUrl(meetingId), `${statusUrl(meetingId)}/transcript`, `${statusUrl(meetingId)}/playback`];
-    if (completion?.status !== "processing_succeeded" || completion.meetingId !== meetingId ||
-        completion.recordingId !== recordingId || required.some(url => !fetched.includes(url))) {
+    if (job.status !== "done" || completion?.status !== "processing_succeeded" || completion.meetingId !== meetingId ||
+        completion.sessionId !== sessionId || completion.recordingId !== recordingId || required.some(url => !fetched.includes(url))) {
       violations++;
       if (!counterexample) counterexample = `${index}: meeting=${meetingId}; status=${completion?.status}; reads=${fetched.join(",")}`;
     }
