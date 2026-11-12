@@ -14,7 +14,7 @@ import * as fc from "fast-check";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 
 import { enqueueUpload, getPendingAndFailedJobs, type EnqueueUploadInput, type UploadJob } from "./upload-queue";
-import { createCompletion } from "./recording-db";
+import { createCompletion, getCompletion } from "./recording-db";
 
 const { assembleBlob, clearSession } = vi.hoisted(() => ({
   assembleBlob: vi.fn(async () => new Blob(["synthetic media"], { type: "video/webm" })),
@@ -175,6 +175,49 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
       expect(clearSession).toHaveBeenCalledWith(identity.sessionId);
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({ meeting_id: identity.meetingId, idempotency_key: identity.sessionId });
+    }), { numRuns: 100 });
+  });
+
+  it("persists the accepted recordingId for recovery of the same recording (100 cases)", async () => {
+    await fc.assert(fc.asyncProperty(arbIdentity, async (identity) => {
+      await enqueueFor(identity);
+      globalThis.fetch = vi.fn(async () => accepted(identity.recordingId)) as typeof fetch;
+      startup!();
+      await awaitStatus("done", 0);
+      expect(await getCompletion(identity.sessionId)).toMatchObject({
+        sessionId: identity.sessionId, meetingId: identity.meetingId, recordingId: identity.recordingId,
+      });
+    }), { numRuns: 100 });
+  });
+
+  it("rejects a response that would replace an already bound recordingId (100 cases)", async () => {
+    await fc.assert(fc.asyncProperty(arbIdentity, fc.uuid(), async (identity, differentRecordingId) => {
+      fc.pre(differentRecordingId !== identity.recordingId);
+      await enqueueFor(identity);
+      // Use the real durable fixture, not a mock of the production binding API.
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const req = indexedDB.open("sauri-recordings", 2);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("completion_records", "readwrite");
+        tx.objectStore("completion_records").put({
+          sessionId: identity.sessionId, meetingId: identity.meetingId, recordingId: identity.recordingId,
+          provider: "meet", capturedTabId: 123, status: "upload_pending", updatedAt: 1,
+        });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+      });
+      globalThis.fetch = vi.fn(async () => accepted(differentRecordingId)) as typeof fetch;
+      startup!();
+      const job = await awaitSettled();
+      const durable = await getCompletion(identity.sessionId);
+      // Check preservation even when the subsequent queue-result assertion fails.
+      expect(durable?.recordingId).toBe(identity.recordingId);
+      expect(durable?.meetingId).toBe(identity.meetingId);
+      expect(job).toMatchObject({ status: "pending", retryCount: 1, sessionId: identity.sessionId });
+      expect(clearSession).not.toHaveBeenCalled();
     }), { numRuns: 100 });
   });
 
