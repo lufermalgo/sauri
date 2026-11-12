@@ -1,10 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
 import * as fc from "fast-check";
+import { IDBFactory } from "fake-indexeddb";
+import { createCompletion } from "./recording-db";
 
 type Event = "stop" | "close" | "meeting-ended";
 
 async function harness(sessionId: string, tabId: number) {
   vi.resetModules();
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  await createCompletion({ sessionId, provider: "meet", meetingId: `meeting-${sessionId}`, capturedTabId: tabId, status: "capturing", updatedAt: 1 });
   let state: Record<string, unknown> = { status: "recording", sessionId, tabId };
   let onRemoved: (id: number, info: object) => unknown;
   let onMessage: (message: object, sender: object, reply: () => void) => unknown;
@@ -33,10 +37,15 @@ async function harness(sessionId: string, tabId: number) {
   await import("./background");
   return {
     state: () => state,
+    async restartWithoutProjection() {
+      state = { status: "idle" };
+      vi.resetModules();
+      await import("./background");
+    },
     stops: () => sendMessage.mock.calls.filter(([message]) => (message as unknown as { type: string })?.type === "stop-recording").length,
     async event(event: Event) {
       if (event === "close") await onRemoved(tabId, { windowId: 1, isWindowClosing: false });
-      else onMessage({ type: event === "stop" ? "stop-capture" : "meet-ended" }, {}, () => {});
+      else await new Promise<void>((resolve) => { onMessage({ type: event === "stop" ? "stop-capture" : "meet-ended" }, {}, resolve); });
       // Existing listeners start async handlers without returning their promise.
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     },
@@ -50,6 +59,26 @@ it.each(["stop", "close"] as const)("%s independently finalizes the active captu
   await fc.assert(fc.asyncProperty(identity, async ([session, tab]) => {
     const h = await harness(session, tab);
     await h.event(event);
+    expect(h.stops()).toBe(1);
+  }), { numRuns: 100 });
+});
+
+it("tab close finds the durable capture after worker reload without UI state", async () => {
+  await fc.assert(fc.asyncProperty(identity, async ([session, tab]) => {
+    const h = await harness(session, tab);
+    await h.restartWithoutProjection();
+    await h.event("close");
+    expect(h.stops()).toBe(1);
+    await h.restartWithoutProjection();
+    await h.event("close");
+    expect(h.stops()).toBe(1);
+  }), { numRuns: 100 });
+});
+
+it("concurrent Stop and tab close dispatch only one finalization", async () => {
+  await fc.assert(fc.asyncProperty(identity, async ([session, tab]) => {
+    const h = await harness(session, tab);
+    await Promise.all([h.event("stop"), h.event("close"), h.event("stop")]);
     expect(h.stops()).toBe(1);
   }), { numRuns: 100 });
 });

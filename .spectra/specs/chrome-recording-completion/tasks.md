@@ -173,6 +173,14 @@
 - No backend SQL schema migration or Compose change is expected. The extension IndexedDB v1→v2 migration is required by the approved design and covered by T1.2/T2.2.
 - The Teams completion adapter is in scope; a Teams media-capture pipeline is neither presumed to exist nor added by this plan. No visual redesign, consent, retention, or upload-defect remediation is included.
 
+## Delivery reconciliation — 2026-11-12
+
+APX parent `task_9e74a2d278d648ad` resumes the existing PR #703, not a new parallel implementation. The #709 amendment was approved and merged in PR #719 (unchanged approved artifact blob `4ba0841067fa9197c199bd261af336d3028cc3da`); historical pending wording below is provenance, not a renewed approval gate.
+
+T1.1/#610 and T2.1/#619 form one RED→GREEN delivery on the existing branch. The approved design requires durable transactional claims, so the capture-store prerequisite from T1.2/#611 and T2.2/#620 is included in this branch; those broader identity/review tasks remain open until all their criteria pass. No product scope or acceptance criterion is removed. Remaining upload/status/review wiring stays in its existing tasks.
+
+Executed listener RED at `c9bf45c`: 2 passed / 2 failed; Stop+tab-close emitted two stop messages, and meeting-ended replaced active recording state with idle. Each property is configured for 100 cases (failing properties stop and shrink at the first counterexample). Candidate GREEN adds durable capture records and claims; tests alone do not establish real capture/upload delivery. Before integration verify error/restart windows, obsolete capture records, full regression/typecheck/build, and browser behavior. No task is closed by this reconciliation.
+
 ## Publication tracking
 
 Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (Mira APPROVED, 2026-10-31). This is the scoped #709 amendment candidate to T1.1/T2.1; the candidate awaits Mira's independent audit, and `.config.spectra` phase `complete` records authorship only. The plan continues to derive from approved requirements `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` and corrected design `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED). GitHub issues #610–#628 map the 19 tasks in milestone `chrome-recording-completion` (#17); this amendment does not create, renumber, or publish implementation tasks. Per Ansel's coordination decision, APX card creation is deferred until real responsible agents and dependency readiness are available; no card IDs are claimed here.

@@ -2,9 +2,93 @@
 // Used by both offscreen.ts (write chunks) and background.ts (read/assemble/clear).
 // This module has NO side effects — all operations are explicit function calls.
 
+import { applyCompletionEvent, type CompletionTrigger } from "./core/recording-completion";
+
 export const DB_NAME = "sauri-recordings";
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
+export const COMPLETION_STORE = "completion_records";
 export const STORE_NAME = "chunks";
+
+export interface RecordingCompletion {
+  sessionId: string;
+  provider: "meet" | "teams";
+  meetingId: string;
+  recordingId?: string;
+  capturedTabId: number;
+  status: "capturing" | "finalizing" | "upload_pending" | "uploading" | "upload_succeeded" | "upload_failed" | "upload_outcome_unavailable" | "processing" | "processing_assets_unavailable" | "processing_failed" | "processing_succeeded" | "review_launch_pending" | "review_opened";
+  trigger?: "stop" | "captured_tab_closed";
+  reviewTabId?: number;
+  updatedAt: number;
+}
+
+/** Resolve only after commit, never after an individual successful write. */
+async function completionTransaction<T>(
+  mode: IDBTransactionMode,
+  operate: (store: IDBObjectStore, result: (value: T) => void, fail: (error: Error) => void) => void,
+): Promise<T> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(COMPLETION_STORE, mode);
+    let result: T;
+    let failure: Error | undefined;
+    tx.oncomplete = () => { db.close(); resolve(result); };
+    tx.onabort = tx.onerror = () => { db.close(); reject(failure ?? tx.error ?? new Error("Completion transaction failed")); };
+    try {
+      operate(tx.objectStore(COMPLETION_STORE), (value) => { result = value; }, (error) => { failure = error; tx.abort(); });
+    } catch (error) {
+      failure = error instanceof Error ? error : new Error("Completion transaction failed");
+      tx.abort();
+    }
+  });
+}
+
+export async function createCompletion(record: RecordingCompletion): Promise<RecordingCompletion> {
+  return completionTransaction("readwrite", (store, result, fail) => {
+    const request = store.get(record.sessionId);
+    request.onsuccess = () => {
+      const existing = request.result as RecordingCompletion | undefined;
+      if (existing && (existing.meetingId !== record.meetingId || existing.capturedTabId !== record.capturedTabId || existing.provider !== record.provider)) {
+        fail(new Error("Recording completion identity mismatch"));
+        return;
+      }
+      if (!existing) store.add(record);
+      result(existing ?? record);
+    };
+  });
+}
+
+export async function getCompletion(sessionId: string): Promise<RecordingCompletion | undefined> {
+  return completionTransaction("readonly", (store, result) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => result(request.result);
+  });
+}
+
+export async function getCapturingCompletion(tabId: number): Promise<RecordingCompletion | undefined> {
+  return completionTransaction("readonly", (store, result, fail) => {
+    const request = store.index("capturedTabId").getAll(tabId);
+    request.onsuccess = () => {
+      const active = (request.result as RecordingCompletion[]).filter((record) => record.status === "capturing");
+      if (active.length > 1) fail(new Error("Ambiguous active recording for captured tab"));
+      else result(active[0]);
+    };
+  });
+}
+
+export async function claimCompletion(sessionId: string, trigger: CompletionTrigger): Promise<boolean> {
+  return completionTransaction("readwrite", (store, result) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (!record) { result(false); return; }
+      const decision = applyCompletionEvent({ ...record, completionClaimed: record.status !== "capturing" }, trigger);
+      if (decision.shouldFinalize) {
+        store.put({ ...record, status: "finalizing", trigger: trigger === "stop" ? "stop" : "captured_tab_closed", updatedAt: Date.now() });
+      }
+      result(decision.shouldFinalize);
+    };
+  });
+}
 
 export interface ChunkRecord {
   sessionId: string;
@@ -15,6 +99,11 @@ export interface ChunkRecord {
 export function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    let blocked = false;
+    request.onblocked = () => {
+      blocked = true;
+      reject(new Error("Recording database upgrade blocked; close older extension contexts and retry"));
+    };
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
@@ -25,9 +114,18 @@ export function openDB(): Promise<IDBDatabase> {
         });
         store.createIndex("by_session", "sessionId", { unique: false });
       }
+      if (!db.objectStoreNames.contains(COMPLETION_STORE)) {
+        const completion = db.createObjectStore(COMPLETION_STORE, { keyPath: "sessionId" });
+        completion.createIndex("capturedTabId", "capturedTabId", { unique: false });
+      }
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      if (blocked) db.close();
+      else resolve(db);
+    };
     request.onerror = () => reject(request.error);
   });
 }

@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { IDBFactory } from "fake-indexeddb";
+import { createCompletion } from "./recording-db";
+
 type TabRemovedListener = (tabId: number, removeInfo: { windowId: number; isWindowClosing: boolean }) => void;
 
 async function loadBackgroundWithRecording(tabId: number) {
   vi.resetModules();
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  await createCompletion({ sessionId: "session-active", provider: "meet", meetingId: "synthetic-meeting", capturedTabId: tabId, status: "capturing", updatedAt: 1 });
   let tabRemovedListener: TabRemovedListener | undefined;
   const sendMessage = vi.fn();
 

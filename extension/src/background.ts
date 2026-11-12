@@ -9,7 +9,8 @@ import {
   markDone,
   markFailed,
 } from "./upload-queue";
-import { assembleBlob, clearSession } from "./recording-db";
+import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion } from "./recording-db";
+import type { CompletionTrigger } from "./core/recording-completion";
 
 export {};
 
@@ -169,9 +170,11 @@ chrome.runtime.onInstalled.addListener(async () => {
 configureSidePanel();
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const state = await getState();
-  if (state.status === "recording" && state.tabId === tabId) {
-    await handleStopCapture();
+  try {
+    const record = await getCapturingCompletion(tabId);
+    if (record) await completeRecording(record.sessionId, "captured-tab-close");
+  } catch (error) {
+    console.error("[sauri] Could not finalize captured tab:", error);
   }
 });
 
@@ -220,9 +223,11 @@ chrome.runtime.onMessage.addListener(
         break;
 
       case "stop-capture":
-        handleStopCapture();
-        sendResponse({ ok: true });
-        break;
+        void (async () => {
+          await handleStopCapture();
+          sendResponse({ ok: true });
+        })();
+        return true;
 
       case "recording-stopped":
         handleRecordingStopped(message.size!, message.mimeType!, message.sessionId);
@@ -275,6 +280,9 @@ async function handleMeetDetected(
 }
 
 async function handleMeetEnded(): Promise<void> {
+  const state = await getState();
+  // A page discovery signal is not permission to stop or detach a capture.
+  if (state.status === "recording") return;
   await setState(DEFAULT_STATE);
   console.log("[sauri] Meet ended — status: idle");
 }
@@ -333,6 +341,15 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
       console.warn("[sauri] Could not refresh meeting title:", error);
     }
 
+    await createCompletion({
+      sessionId,
+      provider: "meet",
+      capturedTabId: tab.id,
+      meetingId: crypto.randomUUID(),
+      status: "capturing",
+      updatedAt: Date.now(),
+    });
+
     chrome.runtime.sendMessage({
       type: "start-recording",
       streamId,
@@ -370,10 +387,21 @@ async function handleStartCapture(resolution?: Resolution, micDeviceId?: string 
   }
 }
 
-async function handleStopCapture(): Promise<void> {
-  // Send stop-recording message to offscreen document
-  chrome.runtime.sendMessage({ type: "stop-recording" });
+async function completeRecording(sessionId: string, trigger: CompletionTrigger): Promise<void> {
+  if (!await claimCompletion(sessionId, trigger)) return;
+  await chrome.runtime.sendMessage({ type: "stop-recording" });
   console.log("[sauri] Stop capture requested");
+}
+
+async function handleStopCapture(): Promise<void> {
+  try {
+    const state = await getState();
+    if (state.sessionId && state.status === "recording") {
+      await completeRecording(state.sessionId, "stop");
+    }
+  } catch (error) {
+    console.error("[sauri] Could not finalize recording:", error);
+  }
 }
 
 async function handleRecordingStopped(
