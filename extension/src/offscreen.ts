@@ -2,7 +2,7 @@
 // Captures Audio_Track + Video_Track via a tabCapture stream, chunked on a 5s timeslice.
 // Production: chunks persisted in IndexedDB, assembled by sessionId.
 
-import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME } from "./recording-db";
+import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME, settleCapture } from "./recording-db";
 import { videoPresenceFromStream } from "./core/capture";
 
 console.log("[sauri] Offscreen document loaded");
@@ -10,6 +10,7 @@ console.log("[sauri] Offscreen document loaded");
 let recorder: MediaRecorder | null = null;
 let audioCtx: AudioContext | null = null;
 let currentSessionId: string | null = null;
+let stopRequested = false;
 
 // --- Local IndexedDB helpers (not shared — only used in offscreen) ---
 
@@ -65,11 +66,17 @@ chrome.runtime.onMessage.addListener(
       const captureMode: CaptureMode = message.captureMode ?? "screen_audio";
       const resolution: Resolution = message.resolution ?? { width: 1280, height: 720 };
       const micDeviceId: string | null = message.micDeviceId ?? null;
-      startRecording(message.streamId, sessionId, captureMode, resolution, micDeviceId);
-      sendResponse({ ok: true, sessionId });
+      if (currentSessionId) {
+        sendResponse({ ok: false, error: "Capture already active" });
+        return false;
+      }
+      void (async () => {
+        const ok = await startRecording(message.streamId!, sessionId, captureMode, resolution, micDeviceId);
+        sendResponse({ ok, sessionId });
+      })();
+      return true;
     } else if (message.type === "stop-recording") {
-      stopRecording();
-      sendResponse({ ok: true });
+      sendResponse({ ok: stopRecording(message.sessionId) });
     } else if (message.type === "get-unfinished-sessions") {
       getUnfinishedSessions().then((sessions) => {
         sendResponse({ ok: true, sessions });
@@ -96,9 +103,19 @@ async function startRecording(
   captureMode: CaptureMode,
   resolution: Resolution,
   micDeviceId: string | null
-): Promise<void> {
+): Promise<boolean> {
+  const streams: MediaStream[] = [];
+  const cleanup = () => {
+    currentSessionId = null;
+    recorder = null;
+    if (audioCtx) { void audioCtx.close(); audioCtx = null; }
+    streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
+  };
+  let captureFailed = false;
   try {
     currentSessionId = sessionId;
+    stopRequested = false;
+    let chunkWrites: Promise<void> = Promise.resolve();
 
     // Build getUserMedia constraints based on capture mode
     const audioConstraint = {
@@ -125,6 +142,7 @@ async function startRecording(
 
     const tabStream =
       await navigator.mediaDevices.getUserMedia(mediaConstraints);
+    streams.push(tabStream);
     const videoPresence = videoPresenceFromStream(tabStream);
     chrome.runtime.sendMessage({ type: "capture-video-presence", videoPresence: videoPresence });
 
@@ -143,6 +161,7 @@ async function startRecording(
         audio: { deviceId: { exact: micDeviceId } },
       });
 
+      streams.push(micStream);
       const micSource = audioCtx.createMediaStreamSource(micStream);
       const mixDestination = audioCtx.createMediaStreamDestination();
 
@@ -190,12 +209,17 @@ async function startRecording(
     // Create MediaRecorder with the appropriate stream
     recorder = new MediaRecorder(recordingStream, { mimeType });
 
-    recorder.ondataavailable = async (event: BlobEvent) => {
-      if (event.data.size > 0 && currentSessionId) {
-        await storeChunk(currentSessionId, event.data);
-        console.log(
-          `[sauri] Chunk stored in IndexedDB: ${event.data.size} bytes (session: ${currentSessionId})`
-        );
+    recorder.ondataavailable = (event: BlobEvent) => {
+      if (event.data.size > 0) {
+        chunkWrites = chunkWrites.then(async () => {
+          try { await storeChunk(sessionId, event.data); }
+          catch {
+            captureFailed = true;
+            await settleCapture(sessionId, true);
+            void chrome.runtime.sendMessage({ type: "recording-error", sessionId, error: "Could not persist capture chunk" });
+            stopRecording(sessionId);
+          }
+        });
       }
     };
 
@@ -207,49 +231,54 @@ async function startRecording(
         return;
       }
 
-      const storedSessionId = currentSessionId;
+      try {
+        await chunkWrites;
+        if (captureFailed) return;
+        const blobs = await getChunksBySession(sessionId);
+        const blob = new Blob(blobs, { type: mimeType });
+        await settleCapture(sessionId);
 
-      // Read all chunks from IndexedDB for this session to calculate final size
-      const blobs = await getChunksBySession(storedSessionId);
-      const blob = new Blob(blobs, { type: mimeType });
-      console.log(
-        `[sauri] Final blob: ${blob.size} bytes from ${blobs.length} chunks`
-      );
-
-      // Send metadata-only message — no recording data transfer
-      chrome.runtime.sendMessage({
-        type: "recording-stopped",
-        sessionId: storedSessionId,
-        size: blob.size,
-        mimeType,
-      });
-
-      // Cleanup audio context and tracks
-      // NOTE: chunks are NOT cleared here — background handles cleanup after successful upload
-      currentSessionId = null;
-      if (audioCtx) {
-        audioCtx.close();
-        audioCtx = null;
+        // Metadata only. Chunks remain until the upload owner confirms success.
+        chrome.runtime.sendMessage({
+          type: "recording-stopped", sessionId, size: blob.size, mimeType,
+        });
+      } catch {
+        await settleCapture(sessionId, true);
+        void chrome.runtime.sendMessage({ type: "recording-error", sessionId, error: "Could not persist final media" });
+      } finally {
+        cleanup();
       }
-      tabStream.getTracks().forEach((track) => track.stop());
     };
 
     // Start recording with 5-second chunks
+    recorder.onerror = () => {
+      captureFailed = true;
+      void settleCapture(sessionId, true);
+      void chrome.runtime.sendMessage({ type: "recording-error", sessionId, error: "MediaRecorder failed" });
+      stopRecording(sessionId);
+    };
     recorder.start(5000);
+    if (stopRequested) stopRecording(sessionId);
     console.log("[sauri] Recording started (5s chunks, IndexedDB persistence)");
+    return true;
   } catch (error) {
     console.error("[sauri] Failed to start recording:", error);
-    currentSessionId = null;
+    cleanup();
+    await settleCapture(sessionId, true);
     chrome.runtime.sendMessage({
-      type: "recording-error",
+      type: "recording-error", sessionId,
       error: String(error),
     });
+    return false;
   }
 }
 
-function stopRecording(): void {
+function stopRecording(sessionId?: string): boolean {
+  if (!sessionId || sessionId !== currentSessionId) return false;
+  stopRequested = true;
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
     console.log("[sauri] Stopping recorder...");
   }
+  return true;
 }

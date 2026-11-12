@@ -16,6 +16,7 @@ export interface RecordingCompletion {
   recordingId?: string;
   capturedTabId: number;
   status: "capturing" | "finalizing" | "upload_pending" | "uploading" | "upload_succeeded" | "upload_failed" | "upload_outcome_unavailable" | "processing" | "processing_assets_unavailable" | "processing_failed" | "processing_succeeded" | "review_launch_pending" | "review_opened";
+  captureError?: boolean;
   trigger?: "stop" | "captured_tab_closed";
   reviewTabId?: number;
   updatedAt: number;
@@ -68,7 +69,7 @@ export async function getCapturingCompletion(tabId: number): Promise<RecordingCo
   return completionTransaction("readonly", (store, result, fail) => {
     const request = store.index("capturedTabId").getAll(tabId);
     request.onsuccess = () => {
-      const active = (request.result as RecordingCompletion[]).filter((record) => record.status === "capturing");
+      const active = (request.result as RecordingCompletion[]).filter((record) => record.status === "capturing" && !record.captureError);
       if (active.length > 1) fail(new Error("Ambiguous active recording for captured tab"));
       else result(active[0]);
     };
@@ -80,12 +81,34 @@ export async function claimCompletion(sessionId: string, trigger: CompletionTrig
     const request = store.get(sessionId);
     request.onsuccess = () => {
       const record = request.result as RecordingCompletion | undefined;
-      if (!record) { result(false); return; }
+      if (!record || record.captureError) { result(false); return; }
       const decision = applyCompletionEvent({ ...record, completionClaimed: record.status !== "capturing" }, trigger);
       if (decision.shouldFinalize) {
         store.put({ ...record, status: "finalizing", trigger: trigger === "stop" ? "stop" : "captured_tab_closed", updatedAt: Date.now() });
       }
       result(decision.shouldFinalize);
+    };
+  });
+}
+
+// Finalizing is a durable outbox: replay is safe because offscreen checks sessionId
+// and MediaRecorder state. Failed captures retain their chunks and identity.
+export async function getPendingFinalizations(): Promise<RecordingCompletion[]> {
+  return completionTransaction("readonly", (store, result) => {
+    const request = store.getAll();
+    request.onsuccess = () => result((request.result as RecordingCompletion[]).filter(r => r.status === "finalizing" && !r.captureError));
+  });
+}
+
+export async function settleCapture(sessionId: string, failed = false): Promise<void> {
+  return completionTransaction("readwrite", (store, result) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (record && (!record.captureError || failed) && (record.status === "capturing" || record.status === "finalizing")) {
+        store.put({ ...record, captureError: failed, status: failed ? record.status : "upload_pending", updatedAt: Date.now() });
+      }
+      result(undefined);
     };
   });
 }
@@ -141,9 +164,9 @@ export async function storeChunk(sessionId: string, blob: Blob): Promise<void> {
       timestamp: Date.now(),
     };
     const request = store.add(record);
-    request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
+    tx.onabort = tx.onerror = () => { db.close(); reject(tx.error ?? new Error("Chunk write failed")); };
+    tx.oncomplete = () => { db.close(); resolve(); };
   });
 }
 

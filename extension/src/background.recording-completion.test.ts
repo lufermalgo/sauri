@@ -1,18 +1,21 @@
 import { afterEach, expect, it, vi } from "vitest";
 import * as fc from "fast-check";
 import { IDBFactory } from "fake-indexeddb";
-import { createCompletion } from "./recording-db";
+import { createCompletion, settleCapture, getCompletion, claimCompletion } from "./recording-db";
 
 type Event = "stop" | "close" | "meeting-ended";
 
-async function harness(sessionId: string, tabId: number) {
+async function harness(sessionId: string, tabId: number, legacy = false) {
   vi.resetModules();
   vi.stubGlobal("indexedDB", new IDBFactory());
-  await createCompletion({ sessionId, provider: "meet", meetingId: `meeting-${sessionId}`, capturedTabId: tabId, status: "capturing", updatedAt: 1 });
+  if (!legacy) await createCompletion({ sessionId, provider: "meet", meetingId: `meeting-${sessionId}`, capturedTabId: tabId, status: "capturing", updatedAt: 1 });
   let state: Record<string, unknown> = { status: "recording", sessionId, tabId };
   let onRemoved: (id: number, info: object) => unknown;
   let onMessage: (message: object, sender: object, reply: () => void) => unknown;
-  const sendMessage = vi.fn(async (_message?: { type: string }) => undefined);
+  const sendMessage = vi.fn(async (message?: { type: string; sessionId?: string }) => {
+    if (message?.type === "stop-recording" && message.sessionId) await settleCapture(message.sessionId);
+    return { ok: true };
+  });
   vi.stubGlobal("chrome", {
     action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
@@ -37,10 +40,16 @@ async function harness(sessionId: string, tabId: number) {
   await import("./background");
   return {
     state: () => state,
+    sendMessage,
+    async message(message: object) {
+      onMessage(message, {}, () => {});
+      await new Promise(resolve => setTimeout(resolve, 15));
+    },
     async restartWithoutProjection() {
       state = { status: "idle" };
       vi.resetModules();
       await import("./background");
+      await new Promise(resolve => setTimeout(resolve, 15));
     },
     stops: () => sendMessage.mock.calls.filter(([message]) => (message as unknown as { type: string })?.type === "stop-recording").length,
     async event(event: Event) {
@@ -93,6 +102,40 @@ it("both trigger orders and duplicates converge on one finalization", async () =
     expect(h.stops()).toBe(1);
     expect(h.state().sessionId).toBe(session);
   }), { numRuns: 100 });
+});
+
+it.each(["stop", "close"] as const)("%s preserves a live legacy session without inventing a mapping", async event => {
+  const h = await harness("legacy", 41, true);
+  await h.event(event);
+  expect(h.sendMessage).toHaveBeenCalledWith({ type: "stop-recording", sessionId: "legacy" });
+  expect(await getCompletion("legacy")).toBeUndefined();
+});
+
+it("replays a committed intent after crash before dispatch, preserving identity", async () => {
+  const h = await harness("crash-session", 42);
+  await claimCompletion("crash-session", "stop");
+  expect(h.stops()).toBe(0);
+  await h.restartWithoutProjection();
+  expect(h.sendMessage).toHaveBeenCalledWith({ type: "stop-recording", sessionId: "crash-session" });
+  expect((await getCompletion("crash-session"))?.status).toBe("upload_pending");
+});
+
+it("retries delivery failure on worker restart without releasing the claim", async () => {
+  const h = await harness("retry-session", 43);
+  h.sendMessage.mockRejectedValueOnce(new Error("offscreen unavailable"));
+  await h.event("stop");
+  expect((await getCompletion("retry-session"))?.status).toBe("finalizing");
+  await h.restartWithoutProjection();
+  expect(h.stops()).toBe(2);
+  expect((await getCompletion("retry-session"))?.status).toBe("upload_pending");
+});
+
+it("capture failure retires the tab lookup without discarding identity", async () => {
+  const h = await harness("failed-session", 44);
+  await h.message({ type: "recording-error", sessionId: "failed-session" });
+  await h.event("close");
+  expect(h.stops()).toBe(0);
+  expect(await getCompletion("failed-session")).toMatchObject({ captureError: true, meetingId: "meeting-failed-session" });
 });
 
 it("meeting-ended preserves active identity and a later tab-close still finalizes", async () => {

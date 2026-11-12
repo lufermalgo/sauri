@@ -1,6 +1,6 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { openDB, DB_NAME, createCompletion, getCompletion, claimCompletion, getCapturingCompletion } from "./recording-db";
+import { openDB, DB_NAME, createCompletion, getCompletion, claimCompletion, getCapturingCompletion, settleCapture, getPendingFinalizations } from "./recording-db";
 import * as fc from "fast-check";
 
 beforeEach(() => { vi.stubGlobal("indexedDB", new IDBFactory()); });
@@ -55,6 +55,37 @@ it("fails closed on missing and ambiguous captures without guessing a session", 
   for (const sessionId of ["one", "two"]) await createCompletion({ sessionId, provider: "meet", meetingId: sessionId, capturedTabId: 11, status: "capturing", updatedAt: 1 });
   await expect(getCapturingCompletion(11)).rejects.toThrow("Ambiguous");
   expect((await getCompletion("one"))?.status).toBe("capturing");
+});
+
+it("retains failed capture identity without poisoning the next capture on that tab", async () => {
+  const record = { sessionId: "failed", provider: "meet" as const, capturedTabId: 11, meetingId: "first", status: "capturing" as const, updatedAt: 1 };
+  await createCompletion(record);
+  await settleCapture("failed", true);
+  await settleCapture("failed");
+  await createCompletion({ ...record, sessionId: "next", meetingId: "second" });
+  expect((await getCapturingCompletion(11))?.sessionId).toBe("next");
+  expect(await claimCompletion("failed", "stop")).toBe(false);
+  expect(await getPendingFinalizations()).toEqual([]);
+  expect(await getCompletion("failed")).toMatchObject({ meetingId: "first", captureError: true });
+});
+
+it("reports a blocked upgrade and preserves legacy chunks when retried", async () => {
+  const old = await new Promise<IDBDatabase>(resolve => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const store = request.result.createObjectStore("chunks", { keyPath: "id", autoIncrement: true });
+      store.createIndex("by_session", "sessionId");
+      store.add({ sessionId: "legacy", blob: "media", timestamp: 1 });
+    };
+    request.onsuccess = () => resolve(request.result);
+  });
+  await expect(openDB()).rejects.toThrow("upgrade blocked");
+  old.close();
+  const db = await openDB();
+  const request = db.transaction("chunks").objectStore("chunks").getAll();
+  const rows = await new Promise(resolve => { request.onsuccess = () => resolve(request.result); });
+  expect(rows).toEqual([{ id: 1, sessionId: "legacy", blob: "media", timestamp: 1 }]);
+  db.close();
 });
 
 it("closes its connection on versionchange so a later upgrade is not blocked", async () => {

@@ -9,6 +9,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { IDBFactory } from "fake-indexeddb";
+import { Blob as NodeBlob } from "node:buffer";
+import { createCompletion, getCompletion } from "./recording-db";
 
 type MessageListener = (
   message: Record<string, unknown>,
@@ -62,13 +65,14 @@ class FakeMediaRecorder {
   ) {
     FakeMediaRecorder.lastInstance = this;
   }
-  start = vi.fn();
-  stop = vi.fn();
+  start = vi.fn(() => { this.state = "recording"; });
+  stop = vi.fn(() => { this.state = "inactive"; });
 }
 
 async function loadOffscreenWithMocks(getUserMediaImpl: (constraints: unknown) => Promise<FakeMediaStream>) {
   vi.resetModules();
   registeredListener = undefined;
+  vi.stubGlobal("indexedDB", new IDBFactory());
 
   vi.stubGlobal("chrome", {
     runtime: {
@@ -99,6 +103,49 @@ describe("Offscreen document — A/V composition and capture", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("ignores unbound/foreign stops and stops the same recorder only once", async () => {
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio")]));
+    await new Promise(resolve => registeredListener!({ type: "start-recording", streamId: "stream", sessionId: "active" }, {}, resolve));
+    const recorder = FakeMediaRecorder.lastInstance!;
+    registeredListener!({ type: "stop-recording", sessionId: "other" }, {}, vi.fn());
+    registeredListener!({ type: "stop-recording" }, {}, vi.fn());
+    expect(recorder.stop).not.toHaveBeenCalled();
+    registeredListener!({ type: "stop-recording", sessionId: "active" }, {}, vi.fn());
+    registeredListener!({ type: "stop-recording", sessionId: "active" }, {}, vi.fn());
+    expect(recorder.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps stop intent while getUserMedia is still starting", async () => {
+    let release!: (stream: FakeMediaStream) => void;
+    await loadOffscreenWithMocks(() => new Promise(resolve => { release = resolve; }));
+    const started = new Promise(resolve => registeredListener!({ type: "start-recording", streamId: "stream", sessionId: "starting" }, {}, resolve));
+    registeredListener!({ type: "stop-recording", sessionId: "starting" }, {}, vi.fn());
+    release(new FakeMediaStream([new FakeTrack("audio")]));
+    await started;
+    expect(FakeMediaRecorder.lastInstance!.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the final chunk commit before publishing finalized metadata", async () => {
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio")]));
+    vi.stubGlobal("Blob", NodeBlob);
+    await createCompletion({ sessionId: "chunks", provider: "meet", meetingId: "meeting", capturedTabId: 7, status: "finalizing", updatedAt: 1 });
+    await new Promise(resolve => registeredListener!({ type: "start-recording", streamId: "stream", sessionId: "chunks" }, {}, resolve));
+    const recorder = FakeMediaRecorder.lastInstance!;
+    recorder.ondataavailable!({ data: new NodeBlob(["first"]) });
+    recorder.ondataavailable!({ data: new NodeBlob(["final"]) });
+    await recorder.onstop!();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "recording-stopped", sessionId: "chunks", size: 10, mimeType: "video/webm;codecs=vp8,opus" });
+    expect(await getCompletion("chunks")).toMatchObject({ status: "upload_pending", meetingId: "meeting" });
+  });
+
+  it("persists a failed start and leaves its identity available", async () => {
+    await loadOffscreenWithMocks(async () => { throw new Error("capture denied"); });
+    await createCompletion({ sessionId: "failed", provider: "meet", meetingId: "meeting", capturedTabId: 7, status: "capturing", updatedAt: 1 });
+    const reply = await new Promise(resolve => registeredListener!({ type: "start-recording", streamId: "stream", sessionId: "failed" }, {}, resolve));
+    expect(reply).toEqual({ ok: false, sessionId: "failed" });
+    expect(await getCompletion("failed")).toMatchObject({ captureError: true, meetingId: "meeting" });
   });
 
   it("screen_audio mode: requests video at the given resolution and uses a video mimeType", async () => {
