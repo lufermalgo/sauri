@@ -157,7 +157,9 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T11: RED — Specify summary worker idempotency and atomic outcome transitions (P8)
 
-**Tracking:** Issue #279 · Card task_4fb964f1c8d54d70
+**Tracking:** Issue #279 · current APX task `task_3776e17864d14913` (historical card `task_4fb964f1c8d54d70` retained for lineage).
+
+**Status (2026-11-13):** RED delivered, not integrated. Pre-implementation candidate `1688b76`; RED commit `7a7183b75d86049c957a624e6708aabf5186306b`. Six tests executed with real disposable PostgreSQL 16: all six fail explicitly because `app.summaries.worker` is absent, after successful schema/fixture creation. Evidence: `t11-red-evidence.md` in this spec. T12 must preserve this RED commit and pass these tests; T10 remains an additional T12 dependency. Queue and engine are synthetic contract doubles, not a real broker/provider validation. Fer retains integration.
 
 **Archivo:** `backend/tests/summaries/test_worker.py` (create/extend)
 **Test seam:** Exercise the consumer registered by `start_worker` in `backend/app/summaries/worker.py` and persistence in `backend/app/infra/models.py`: `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary`.
