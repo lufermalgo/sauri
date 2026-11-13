@@ -170,6 +170,38 @@ describe("summary presentation and durable status (T19 RED)", () => {
     expect(api.requestSummary).toHaveBeenCalledWith(meetingId, { templateId: personal.id });
   });
 
+  it("allows a new request after changing meetings while the previous submission is pending", async () => {
+    const otherMeetingId = "synthetic-other-meeting";
+    const otherSummary: MeetingSummary = { ...summary, meetingId: otherMeetingId, topic: "Other meeting topic" };
+    const otherRequest: SummaryRequestStatus = { eventId: "other-event", generation: 1, status: "pending" };
+    let resolveOld!: (value: SummaryRequestStatus) => void;
+    api.requestSummary.mockImplementationOnce(() => new Promise<SummaryRequestStatus>((resolve) => { resolveOld = resolve; }))
+      .mockResolvedValueOnce(otherRequest);
+    api.getSummary.mockImplementation((id: string) => Promise.resolve(id === meetingId ? summary : otherSummary));
+
+    const view = render(<SummarySection meetingId={meetingId} hasTranscript />);
+    await act(async () => {});
+    await request();
+    expect(api.requestSummary).toHaveBeenCalledWith(meetingId, {});
+    expect(screen.getByRole("button", { name: /request summary/i }).hasAttribute("disabled")).toBe(true);
+
+    await act(async () => { view.rerender(<SummarySection meetingId={otherMeetingId} hasTranscript />); });
+    expectContent(otherSummary);
+    expect(screen.queryByText(summary.topic, { exact: true })).toBeNull();
+    expect(screen.getByRole("button", { name: /request summary/i }).hasAttribute("disabled")).toBe(false);
+    await request();
+    expect(api.requestSummary).toHaveBeenCalledWith(otherMeetingId, {});
+    expect(screen.getByText("Summary pending.")).toBeDefined();
+
+    await act(async () => { resolveOld({ ...pending, status: "failed" }); });
+    expectContent(otherSummary);
+    expect(screen.getByText("Summary pending.")).toBeDefined();
+    expect(screen.queryByText(/generation failed/i)).toBeNull();
+    await poll();
+    expect(api.getSummaryRequest).toHaveBeenCalledWith(otherMeetingId, otherRequest.eventId);
+    expect(api.getSummaryRequest).not.toHaveBeenCalledWith(meetingId, pending.eventId);
+  });
+
   it("does not offer a request until a transcript exists", async () => {
     await openSection(false);
     expect(screen.queryByRole("button", { name: /request summary/i })).toBeNull();

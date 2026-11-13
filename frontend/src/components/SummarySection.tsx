@@ -26,6 +26,7 @@ export function SummarySection({ meetingId, hasTranscript }: Props) {
   useEffect(() => {
     const epoch = ++lifecycle.current;
     setLoading(true);
+    setSubmitting(false);
     setSummary(null);
     setRequest(null);
     setSummaryError(false);
