@@ -242,7 +242,14 @@ describe("T15 — revision-aware wire adapters", () => {
     })).resolves.toEqual({ ...adaptedReview, status: "complete", items: [] });
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/speaker-review/revisions/2/speakers/speaker-named"),
-      expect.objectContaining({ method: "PUT", body: JSON.stringify({ disposition, label: "Synthetic chosen name", expected_version: 3 }) }),
+      expect.objectContaining({ method: "PUT" }),
+    );
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    const body = JSON.parse(request.body as string);
+    expect(body).toEqual({ disposition, label: "Synthetic chosen name", expected_version: 3, idempotency_key: expect.any(String) });
+    expect(body.idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
+    expect(request.headers).toEqual(
+      expect.objectContaining({ "Idempotency-Key": body.idempotency_key }),
     );
   });
 });

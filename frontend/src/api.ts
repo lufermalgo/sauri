@@ -343,18 +343,20 @@ export async function submitSpeakerDisposition(
   speakerId: string,
   request: SpeakerDispositionRequest
 ): Promise<SpeakerReview> {
+  const idempotencyKey = crypto.randomUUID();
   const response = await fetch(
     `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review/revisions/${encodeURIComponent(revisionId)}/speakers/${encodeURIComponent(speakerId)}`,
     {
       method: "PUT",
       headers: {
         ...getAuthHeaders(),
-        "Idempotency-Key": crypto.randomUUID(),
+        "Idempotency-Key": idempotencyKey,
       },
       body: JSON.stringify({
         disposition: request.disposition,
         label: request.label,
         expected_version: request.expectedVersion,
+        idempotency_key: idempotencyKey,
       }),
     }
   );
