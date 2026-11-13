@@ -11,7 +11,8 @@ import {
   markFailed,
   type UploadJob,
 } from "./upload-queue";
-import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture, bindRecordingId, setUploadOutcome } from "./recording-db";
+import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture, bindRecordingId, setUploadOutcome, setProcessingStatus, getProcessingCompletions, type RecordingCompletion } from "./recording-db";
+import { resolveProcessingStatus } from "./core/processing-status";
 import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from "./core/recording-completion";
 
 export {};
@@ -199,6 +200,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   const state = await getState();
   console.log("[sauri] Service worker started, current state:", state.status);
   await resumeFinalizations();
+  await reconcilePendingProcessing();
 })();
 
 // --- Message handling ---
@@ -622,11 +624,51 @@ async function processUploadQueue(): Promise<void> {
   try {
     await setUploadOutcome(job.sessionId, job.meetingId!, "upload_succeeded");
     await clearSession(job.sessionId);
+    const record = await getCompletion(job.sessionId);
+    if (record) await reconcileProcessing(record);
   } catch (error) {
     // Accepted upload remains bound; never invent success if persistence is unavailable.
     console.warn("[sauri] Upload settlement unavailable:", error);
   }
   console.log(`[sauri] Upload job done: ${job.id}`);
+}
+
+// Only authenticated reads of the persisted meeting can establish processing success.
+async function reconcileProcessing(record: RecordingCompletion): Promise<void> {
+  if (!record.recordingId) return;
+  const stored = await chrome.storage.sync.get("authToken");
+  if (typeof stored.authToken !== "string" || !stored.authToken) {
+    await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing_status_unavailable");
+    return;
+  }
+  const base = `${BACKEND_URL}/api/v1/meetings/${encodeURIComponent(record.meetingId)}`;
+  const headers = { Authorization: `Bearer ${stored.authToken}` };
+  async function read(path: string): Promise<unknown> {
+    const response = await fetch(`${base}${path}`, { headers });
+    if (!response.ok) throw new Error(`Protected recording asset unavailable (${response.status})`);
+    return response.json();
+  }
+  let status: ReturnType<typeof resolveProcessingStatus>;
+  try {
+    const meeting = await read("");
+    status = resolveProcessingStatus(record, meeting);
+    if (status === "processing_assets_unavailable") {
+      // No protected asset is read for a mismatched or undocumented status.
+      const transcript = await read("/transcript");
+      const playback = await read("/playback");
+      status = resolveProcessingStatus(record, meeting, transcript, playback);
+    }
+    await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, status ?? "processing_status_unavailable");
+  } catch (error) {
+    await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId,
+      status === "processing_assets_unavailable" ? status : "processing_status_unavailable");
+    // Keep the last server-confirmed state; a 401/404 or network failure cannot imply success.
+    console.warn("[sauri] Processing status unavailable:", error);
+  }
+}
+
+async function reconcilePendingProcessing(): Promise<void> {
+  for (const record of await getProcessingCompletions()) await reconcileProcessing(record);
 }
 
 // --- Alarm-based retry (every 1 minute) ---
@@ -636,7 +678,8 @@ chrome.alarms.create(UPLOAD_ALARM_NAME, { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === UPLOAD_ALARM_NAME) {
     void resumeFinalizations();
-    processUploadQueue();
+    void processUploadQueue();
+    void reconcilePendingProcessing();
   }
 });
 
