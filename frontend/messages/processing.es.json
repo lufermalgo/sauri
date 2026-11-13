@@ -1,0 +1,28 @@
+{
+  "stages": {
+    "audio_preparation": "Preparación del audio",
+    "transcription": "Transcripción",
+    "diarization": "Diferenciación de hablantes",
+    "result_preparation": "Preparación del resultado"
+  },
+  "states": {
+    "unavailable": "Detalle no disponible",
+    "pending": "Pendiente",
+    "active": "En curso",
+    "completed": "Completada",
+    "failed": "Falló"
+  },
+  "region": "Estado del procesamiento",
+  "queryError": "No pudimos actualizar el estado. Esto no significa que el procesamiento haya fallado.",
+  "retryQuery": "Reintentar consulta",
+  "lastConfirmed": "Último estado confirmado (sin actualizar):",
+  "querying": "Consultando el estado del procesamiento…",
+  "failed": "El procesamiento falló. Consultá la etapa afectada.",
+  "ready": "Listo para revisar",
+  "active": "Procesamiento en curso. El motor no informa un porcentaje de avance.",
+  "pending": "Esperando procesamiento o actualización de las etapas confirmadas.",
+  "partial": "El contenido disponible puede ser parcial; todavía no está listo para revisar.",
+  "progress": "Procesamiento sin porcentaje disponible",
+  "unknownStage": "Etapa",
+  "humanReview": "La revisión humana y las atribuciones inciertas siguen pendientes cuando corresponda."
+}

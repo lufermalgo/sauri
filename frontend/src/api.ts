@@ -170,6 +170,35 @@ export async function getMeeting(meetingId: string): Promise<MeetingState> {
   return { meetingId: meeting.meeting_id, processState: meeting.process_state };
 }
 
+export interface ProcessingSnapshot {
+  meeting_id: string;
+  execution: { generation: number | null; transcript_id: string | null; diarization_revision: number | null };
+  stages: Array<{ key: string; state: "unavailable" | "pending" | "active" | "completed" | "failed" }>;
+  ready: boolean;
+  failed: boolean;
+}
+
+export async function getProcessing(meetingId: string, signal?: AbortSignal): Promise<ProcessingSnapshot> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/processing`,
+    { method: "GET", headers: getAuthHeaders(), signal }
+  );
+  const snapshot = await handleResponse<ProcessingSnapshot>(response);
+  if (
+    snapshot.meeting_id !== meetingId || !Array.isArray(snapshot.stages) ||
+    typeof snapshot.ready !== "boolean" || typeof snapshot.failed !== "boolean" ||
+    !snapshot.execution || snapshot.stages.some((stage) =>
+      !stage || typeof stage.key !== "string" ||
+      !["unavailable", "pending", "active", "completed", "failed"].includes(stage.state)) ||
+    (snapshot.ready && (snapshot.failed ||
+      !["transcription", "diarization"].every((key) =>
+        snapshot.stages.some((stage) => stage.key === key && stage.state === "completed"))))
+  ) {
+    throw new Error("Invalid processing response");
+  }
+  return snapshot;
+}
+
 export async function listMeetings(): Promise<MeetingListItem[]> {
   const response = await fetch(`${BASE_URL}/api/v1/meetings`, {
     method: "GET",

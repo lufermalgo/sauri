@@ -404,3 +404,32 @@ describe("meeting list API adapter", () => {
     }]);
   });
 });
+
+
+describe("processing API read contract", () => {
+  const snapshot = {
+    meeting_id: "meeting/1", ready: false, failed: false,
+    execution: { generation: 1, transcript_id: null, diarization_revision: null },
+    stages: [{ key: "transcription", state: "active" }, { key: "diarization", state: "pending" }],
+  };
+  it("encodes identity, authorizes a read and carries cancellation without creating work", async () => {
+    const fetchMock = mockFetch(snapshot);
+    const controller = new AbortController();
+    expect(await api.getProcessing("meeting/1", controller.signal)).toEqual(snapshot);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      expect.stringContaining("/meetings/meeting%2F1/processing"),
+      expect.objectContaining({ method: "GET", signal: controller.signal,
+        headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }),
+    ]);
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
+  });
+  it.each([
+    { ...snapshot, meeting_id: "another-meeting" },
+    { ...snapshot, ready: true },
+    { ...snapshot, ready: "true" },
+    { ...snapshot, stages: [{ key: "transcription", state: "almost-done" }] },
+  ])("rejects mismatched or misleading status at the HTTP boundary", async (invalid) => {
+    mockFetch(invalid);
+    await expect(api.getProcessing("meeting/1")).rejects.toThrow("Invalid processing response");
+  });
+});

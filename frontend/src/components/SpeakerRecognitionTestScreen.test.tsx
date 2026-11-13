@@ -7,7 +7,7 @@ import * as api from "../api";
 
 vi.mock("../api", () => ({
   uploadRecording: vi.fn(),
-  getMeeting: vi.fn(),
+  getProcessing: vi.fn(),
   getTranscript: vi.fn(),
   getSpeakerReview: vi.fn(),
   getDiarization: vi.fn(),
@@ -26,13 +26,13 @@ function createSyntheticWebm(trackType: 1 | 2) {
 
 function selectSyntheticAudio() {
   const file = new File([createSyntheticWebm(2)], "sample.webm", { type: "audio/webm" });
-  fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
   return file;
 }
 
 function selectSyntheticVideo() {
   const file = new File(["synthetic video"], "sample.mp4", { type: "video/mp4" });
-  fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
   return file;
 }
 
@@ -106,7 +106,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(8);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -135,7 +135,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(8);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -157,7 +157,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(8);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -172,7 +172,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(1);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -187,7 +187,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(8);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -259,9 +259,11 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
   });
 });
 
-const meeting = (processState: "processing" | "completed") => ({
-  id: "meeting-test-1",
-  processState,
+const meeting = (processState: "processing" | "completed"): api.ProcessingSnapshot => ({
+  meeting_id: "meeting-test-1",
+  execution: { generation: 1, transcript_id: "transcript-test-1", diarization_revision: 1 },
+  ready: processState === "completed", failed: false,
+  stages: [{ key: "transcription", state: processState === "completed" ? "completed" : "active" }],
 });
 
 const transcript = {
@@ -318,7 +320,7 @@ const review = {
 };
 
 const apiMocks = api as unknown as {
-  getMeeting: (meetingId: string) => Promise<{ id: string; processState: string }>;
+  getProcessing: typeof api.getProcessing;
   getTranscript: (meetingId: string) => Promise<typeof transcript>;
   getSpeakerReview: (meetingId: string) => Promise<typeof review>;
   getDiarization: (meetingId: string) => Promise<typeof diarization>;
@@ -344,22 +346,22 @@ async function uploadSyntheticRecording(assertUploadControls?: () => void) {
 
 describe("SpeakerRecognitionTestScreen processing and transcript inspection", () => {
   it("shows persisted processing state before loading transcript or speaker review", async () => {
-    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("processing"));
+    vi.spyOn(apiMocks, "getProcessing").mockImplementation(async (id) => ({ ...meeting("processing"), meeting_id: id }));
     const getTranscript = vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     const getSpeakerReview = vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
 
     const meetingId = await uploadSyntheticRecording();
 
-    expect(await screen.findByText(/processing/i)).toBeVisible();
-    expect(vi.mocked(apiMocks.getMeeting)).toHaveBeenCalledWith(meetingId);
+    expect(await screen.findByText(/Procesamiento en curso/i)).toBeVisible();
+    expect(vi.mocked(apiMocks.getProcessing)).toHaveBeenCalledWith(meetingId, expect.any(AbortSignal));
     expect(getTranscript).not.toHaveBeenCalled();
     expect(getSpeakerReview).not.toHaveBeenCalled();
     expect(screen.queryByText("La propuesta queda para el viernes.")).not.toBeInTheDocument();
   });
 
   it("loads transcript and persisted speaker review after processing completes", async () => {
-    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getProcessing").mockImplementation(async (id) => ({ ...meeting("completed"), meeting_id: id }));
     const getTranscript = vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     const getSpeakerReview = vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
@@ -373,7 +375,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
   });
 
   it("keeps the completed transcript visible while speaker review is not yet available", async () => {
-    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getProcessing").mockImplementation(async (id) => ({ ...meeting("completed"), meeting_id: id }));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     vi.spyOn(apiMocks, "getSpeakerReview").mockRejectedValue(new Error("Error 404"));
@@ -388,7 +390,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
   });
 
   it("preserves each segment's timestamp, exact text and unresolved backend speaker label as read-only content", async () => {
-    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getProcessing").mockImplementation(async (id) => ({ ...meeting("completed"), meeting_id: id }));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
@@ -415,7 +417,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
   });
 
   it("renders a persisted speaker-review item with its current backend label and pending state", async () => {
-    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getProcessing").mockImplementation(async (id) => ({ ...meeting("completed"), meeting_id: id }));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
@@ -427,7 +429,7 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
   });
 
   it("limits the completed screen to upload, transcript inspection and speaker review", async () => {
-    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getProcessing").mockImplementation(async (id) => ({ ...meeting("completed"), meeting_id: id }));
     vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
     vi.spyOn(apiMocks, "getDiarization").mockResolvedValue(diarization);
     vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
@@ -442,4 +444,24 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
     expect(screen.getByText(/speaker review/i)).toBeVisible();
     expect(screen.queryByText(/library|analytics|settings|meeting management/i)).not.toBeInTheDocument();
   });
+});
+
+
+it("never associates a late upload response with a newly selected recording", async () => {
+  let finish!: (result: api.RecordingUploadResult) => void;
+  const upload = vi.mocked(api.uploadRecording).mockReset();
+  upload.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const processing = vi.mocked(api.getProcessing).mockReset();
+  vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn().mockReturnValue("blob:test"), revokeObjectURL: vi.fn() });
+  render(<SpeakerRecognitionTestScreen />);
+  selectSyntheticAudio();
+  fireLoadedMetadata(5);
+  fireEvent.click(screen.getByRole("button", { name: /^upload$/i }));
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
+  selectSyntheticVideo();
+  finish({ recording_id: "old-recording", state: "transcribing" });
+  await waitFor(() => expect(screen.getByRole("button", { name: /^upload$/i })).toBeEnabled());
+  expect(processing).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Archivo recibido/)).toBeNull();
 });

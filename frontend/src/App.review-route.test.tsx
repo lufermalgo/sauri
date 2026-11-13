@@ -28,6 +28,11 @@ it("holds a direct meeting review behind portal login, then fetches only that me
     const path = String(input);
     if (path.endsWith("/auth/login")) return json({ access_token: "synthetic-token", token_type: "bearer", expires_in: 3600 });
     expect(init?.headers).toMatchObject({ Authorization: "Bearer synthetic-token" });
+    if (path.endsWith("/processing")) return json({
+      meeting_id: "meeting-614", ready: true, failed: false,
+      execution: { generation: 1, transcript_id: "transcript-614", diarization_revision: 1 },
+      stages: [{ key: "transcription", state: "completed" }, { key: "diarization", state: "completed" }],
+    });
     if (path.endsWith("/transcript")) return json({ transcript_id: "transcript-614", meeting_id: "meeting-614", language: "en", provider: "synthetic", supports_turns: true,
       created_at: "2026-01-01T00:00:00Z", segments: [{ id: "segment-614", text: "Synthetic private turn", start_ms: 0, end_ms: 1000, sequence: 0 }] });
     if (path.endsWith("/playback")) return json({ meeting_id: "meeting-614", video_presence: "muxed", duration_seconds: 1,

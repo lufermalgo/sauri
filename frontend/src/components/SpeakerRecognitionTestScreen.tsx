@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getDiarization, getMeeting, getSpeakerReview, getTranscript, uploadRecording } from "../api";
+import { getDiarization, getSpeakerReview, getTranscript, uploadRecording } from "../api";
+import { ProcessingIndicator } from "./ProcessingIndicator";
 import type { MeetingDiarization, MeetingTranscript, RecordingUploadData, SpeakerReview } from "../api";
 
 interface EbmlElement {
@@ -181,7 +182,6 @@ export function SpeakerRecognitionTestScreen() {
   const [recording, setRecording] = useState<SelectedRecording | null>(null);
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "failed" | "uploaded">("idle");
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [meetingProcessState, setMeetingProcessState] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<MeetingTranscript | null>(null);
   const [speakerDiarization, setSpeakerDiarization] = useState<MeetingDiarization | null>(null);
   const [speakerReview, setSpeakerReview] = useState<SpeakerReview | null>(null);
@@ -193,54 +193,36 @@ export function SpeakerRecognitionTestScreen() {
 
   const selectedMeetingId = recording?.meetingId;
 
-  useEffect(() => {
-    if (uploadState !== "uploaded" || !selectedMeetingId) return;
-    const meetingId = selectedMeetingId;
+  const currentMeetingId = useRef(selectedMeetingId);
+  currentMeetingId.current = selectedMeetingId;
+  useEffect(() => () => { currentMeetingId.current = undefined; }, []);
 
+  useEffect(() => {
+    if (!transcript || !selectedMeetingId) return;
     let active = true;
     let timeout: number | undefined;
-
     async function observeSpeakerReview() {
       try {
-        const completedReview = await getSpeakerReview(meetingId);
+        const completedReview = await getSpeakerReview(selectedMeetingId!);
         if (active) setSpeakerReview(completedReview);
       } catch {
         if (active) timeout = window.setTimeout(observeSpeakerReview, PROCESSING_POLL_INTERVAL_MS);
       }
     }
+    void observeSpeakerReview();
+    return () => { active = false; if (timeout !== undefined) window.clearTimeout(timeout); };
+  }, [transcript, selectedMeetingId]);
 
-    async function observeProcessing() {
-      try {
-        const meeting = await getMeeting(meetingId);
-        if (!active) return;
-        setMeetingProcessState(meeting.processState);
-
-        if (meeting.processState === "completed") {
-          const [completedTranscript, completedDiarization] = await Promise.all([
-            getTranscript(meetingId),
-            getDiarization(meetingId).catch(() => null),
-          ]);
-          if (!active) return;
-          setTranscript(completedTranscript);
-          setSpeakerDiarization(completedDiarization);
-          void observeSpeakerReview();
-          return;
-        }
-
-        if (meeting.processState !== "failed") {
-          timeout = window.setTimeout(observeProcessing, PROCESSING_POLL_INTERVAL_MS);
-        }
-      } catch {
-        if (active) timeout = window.setTimeout(observeProcessing, PROCESSING_POLL_INTERVAL_MS);
-      }
-    }
-
-    void observeProcessing();
-    return () => {
-      active = false;
-      if (timeout !== undefined) window.clearTimeout(timeout);
-    };
-  }, [selectedMeetingId, uploadState]);
+  async function loadReadyResult() {
+    if (!selectedMeetingId) return;
+    const meetingId = selectedMeetingId;
+    const [completedTranscript, completedDiarization] = await Promise.all([
+      getTranscript(meetingId), getDiarization(meetingId),
+    ]);
+    if (currentMeetingId.current !== meetingId) return;
+    setTranscript(completedTranscript);
+    setSpeakerDiarization(completedDiarization);
+  }
 
   function releaseObjectUrl(objectUrl: string) {
     if (objectUrlRef.current === objectUrl) {
@@ -263,7 +245,6 @@ export function SpeakerRecognitionTestScreen() {
     });
     setUploadState("idle");
     setUploadError(null);
-    setMeetingProcessState(null);
     setTranscript(null);
     setSpeakerDiarization(null);
     setSpeakerReview(null);
@@ -311,9 +292,11 @@ export function SpeakerRecognitionTestScreen() {
         video_presence: tracks ? (tracks.hasVideo ? "muxed" : "absent") : declaredVideo ? "muxed" : "absent",
       };
       await uploadRecording(recording.file, data);
+      if (currentMeetingId.current !== recording.meetingId) return;
       setUploadState("uploaded");
       releaseObjectUrl(recording.objectUrl);
     } catch (error) {
+      if (currentMeetingId.current !== recording.meetingId) return;
       const errorMessage = error instanceof Error ? error.message : "Upload failed. Check that the file type matches its audio/video tracks and try again.";
       setUploadState("failed");
       setUploadError(errorMessage);
@@ -359,12 +342,20 @@ export function SpeakerRecognitionTestScreen() {
       )}
       {uploadState === "failed" && <p role="status">Upload failed. You can retry.</p>}
       {uploadError && <p role="alert">{uploadError}</p>}
-      {uploadState === "uploaded" && !transcript && (
-        <p role="status">
-          {meetingProcessState === "failed"
-            ? "Processing failed."
-            : `Processing${meetingProcessState ? `: ${meetingProcessState}` : "…"}`}
-        </p>
+      {uploadState === "uploading" && <div>
+        <p role="status">Preparando o subiendo archivo. El transporte no informa un porcentaje de subida.</p>
+        <progress aria-label="Subida sin porcentaje disponible" />
+      </div>}
+      {uploadState === "uploaded" && selectedMeetingId && (
+        <>
+          <p>Archivo recibido. La subida no equivale a procesamiento terminado.</p>
+          <ProcessingIndicator
+            key={selectedMeetingId}
+            meetingId={selectedMeetingId}
+            onReady={loadReadyResult}
+            onPending={() => { setTranscript(null); setSpeakerDiarization(null); setSpeakerReview(null); }}
+          />
+        </>
       )}
       {displayedTranscript && (
         <>

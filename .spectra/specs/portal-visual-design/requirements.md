@@ -1,5 +1,9 @@
 # Requisitos — Portal web mínimo de Sauri
 
+## Estado de la ampliación — 2026-11-13
+
+Los Requisitos 1–6 conservan su aprobación y texto previos. El pedido explícito de Fer del 2026-11-13 de implementar ahora el indicador mínimo, transmitido por Ansel en `task_5d2838ff10c446ed`, autoriza la ejecución técnica acotada de Requisitos 7–11. No aprueba un rediseño visual completo. Las notas de propuesta y condición de cierre al pie se preservan como historia y quedan supersedidas solo para esta porción por esta autorización.
+
 ## Introducción
 
 El alcance aprobado de Sauri incluye un portal web para encontrar grabaciones, volver a una reunión y revisar sus medios y transcripción, además de un flujo separado para incorporar una grabación existente mediante carga manual. El portal también puede recibir tratamiento visual en la pantalla de acceso existente, pero ese trabajo no define autenticación nueva ni cambia políticas de acceso.
@@ -135,3 +139,101 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 - Fuente del alcance: baseline aprobado en #528 (commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`) y enmienda de carga manual aprobada por Fer para el snapshot exacto de #665 (commit `85b603ada14996842d913cfbbed4bcffe9fe54c5`, blob `2337a46b2ba78ef4364e23a86df9918db621c881`). La enmienda fue publicada en PR #665 y fusionada en `main` mediante el commit `7d5dd29edaae65256fab3d7b84564693f5603081`.
 - Referencia visual: `design/stitch/README.md` y seis recursos en `origin/main` `29002a98de8a3c9cd882e05887e221cfeed184bd`; solo inspiración no normativa. Su §8 enumera exclusiones y los §§0 y 10 niegan que la referencia autorice alcance o aceptación visual.
 - No se afirma aceptación de producto, implementación, conformidad visual ni estado runtime.
+
+## Enmienda propuesta: seguimiento real del procesamiento
+
+**Problema:** después de subir un video, un indicador genérico no permite distinguir espera, transcripción, diferenciación de hablantes, preparación del resultado o un fallo de consulta. El usuario necesita saber qué está ocurriendo sin interpretar registros técnicos.
+
+**Idea fuerza:** cada etapa visible corresponde a trabajo real confirmado para esa grabación; una animación, el paso del tiempo o el fin de la subida no prueban avance.
+
+**Alcance propuesto:** seguimiento de la carga manual en el portal existente, aplicable también a la pantalla mínima de prueba sin exigir el rediseño visual completo. Comprende etapas respaldadas por el core, su presentación, consulta posterior a la subida y manejo honesto de fallos de consulta/procesamiento.
+
+**Precedencia al aprobarse:** Requisitos 7–11 amplían únicamente el límite sobre progreso de procesamiento de Requisito 6.6. No cambian los otros límites de ese criterio, los Requisitos 1–6 restantes ni la matriz de fases anterior. La ampliación queda secuenciada después de la entrega core ya autorizada; no es condición previa para probar el video completo. Requisito 2 de `speaker-recognition-test-screen/requirements.md` sigue siendo la base de la pantalla mínima; esta enmienda detalla el seguimiento sin habilitar porcentajes de procesamiento ni tiempos objetivo.
+
+**Fuera de alcance:** nuevos motores, cambios del orden de ejecución por imitación de la referencia, reducción de ruido o mejora acústica adicional, corrección del algoritmo de atribución, reconocimiento de identidades nuevas, edición del texto, resúmenes o chat como condición de finalización, rediseño visual completo, reintento automático del procesamiento, cancelación, notificaciones externas y recuperación de una transferencia interrumpida. No se cambian privacidad, permisos, retención, facturación ni políticas de referencias de voz.
+
+Las capturas de Transkriptor aportadas por Fer son inspiración de comunicación, no evidencia de su arquitectura, precisión, etapas internas ni medición del porcentaje. No se incorporan sus afirmaciones de mejora de audio o calidad.
+
+### Glosario de la enmienda
+
+- **Seguimiento_De_Procesamiento**: información consultable en el portal y sustentada por el core para una grabación autorizada después de su recepción; no es el contador local de transferencia.
+- **Etapa_Real**: actividad de procesamiento cuyo inicio, finalización o fallo está confirmado para esa grabación y su ejecución vigente.
+- **Ejecucion_Vigente**: ejecución de procesamiento cuyos estados corresponden al resultado actual de la grabación; los estados de un intento anterior no completan etapas del intento actual.
+- **Resultado_Core_Disponible**: transcripción y atribución por hablantes procesadas, con párrafos y tiempos disponibles para consulta en el recorrido actual; las atribuciones inciertas siguen visiblemente sin resolver. No significa identidad confirmada, revisión humana terminada ni precisión acústica validada.
+
+### Requisito 7: Distinguir carga, espera y etapas reales
+
+**Historia de Usuario:** Como usuario que carga un video, quiero saber qué está haciendo Sauri, para distinguir una transferencia de la espera y del trabajo sobre el audio.
+
+#### Criterios de Aceptación
+
+1. WHEN ocurre Finalizacion_De_Carga, THE portal SHALL distinguir el progreso de transferencia de Seguimiento_De_Procesamiento sin presentar la recepción del archivo como resultado terminado.
+2. WHILE una grabación aceptada espera ejecución, THE portal SHALL mostrar que está esperando procesamiento sin marcar una Etapa_Real como activa antes de su inicio confirmado.
+3. THE Seguimiento_De_Procesamiento SHALL distinguir preparación del audio, transcripción, diferenciación de hablantes y preparación del resultado cuando esas actividades se ejecuten como Etapa_Real, sin exigir que constituyan procesos separados ni cambiar el orden técnico existente.
+4. WHEN se presenta una Etapa_Real, THE portal SHALL diferenciar pendiente, activa, completada o fallida según la información confirmada para Ejecucion_Vigente.
+5. IF una etapa no es informada para una grabación, THEN THE portal SHALL indicar que el detalle no está disponible en vez de deducirlo del tiempo transcurrido o marcarla como completada.
+
+### Requisito 8: Comunicar avance sin porcentajes inventados
+
+**Historia de Usuario:** Como usuario, quiero mensajes comprensibles y fieles, para no confundir actividad aparente con avance real.
+
+#### Criterios de Aceptación
+
+1. WHEN el transporte informa bytes transferidos y total del archivo, THE portal SHALL basar el porcentaje de subida en esa medición, sin usarlo como porcentaje del procesamiento.
+2. IF el transporte no permite medir el porcentaje de subida, THEN THE portal SHALL mostrar transferencia en curso sin porcentaje numérico ficticio.
+3. THE portal SHALL mostrar Seguimiento_De_Procesamiento mediante etapas y SHALL NOT mostrar porcentaje global de procesamiento, cuenta regresiva ni tiempo restante estimado en esta ampliación.
+4. THE portal SHALL usar textos en español comprensibles para una persona no técnica y una indicación textual del estado que no dependa exclusivamente de color o animación.
+5. THE portal SHALL NOT afirmar mejora del audio, calidad garantizada, personas identificadas por nombre o precisión validada a partir del mero avance de una Etapa_Real.
+
+### Requisito 9: Retomar el seguimiento sin duplicar la carga
+
+**Historia de Usuario:** Como usuario, quiero volver al estado confirmado de un archivo ya recibido, para no tener que subirlo de nuevo cuando recargo la pantalla o falla una consulta.
+
+#### Criterios de Aceptación
+
+1. WHEN el usuario abre de nuevo una reunión recibida a la que tiene acceso, THE portal SHALL consultar Seguimiento_De_Procesamiento vigente de esa reunión sin iniciar una carga ni ejecución nueva por esa consulta.
+2. WHEN el core confirma un cambio de etapa y una consulta posterior del portal termina correctamente, THE portal SHALL reflejar ese estado sin exigir una recarga manual de la página.
+3. FOR ALL estados mostrados, THE portal SHALL mantener su asociación con la grabación seleccionada y Ejecucion_Vigente, sin usar avances de otra grabación o intento anterior.
+4. IF falla la consulta del estado, THEN THE portal SHALL distinguir «No pudimos actualizar el estado» de un fallo del procesamiento y presentar cualquier estado conservado como último estado confirmado, no como confirmación actual.
+5. WHEN el usuario solicita reintentar una consulta fallida, THE portal SHALL volver a consultar sin volver a subir el archivo ni relanzar modelos.
+
+### Requisito 10: Mostrar finalización y errores con límites claros
+
+**Historia de Usuario:** Como usuario, quiero saber cuándo puedo revisar mi transcripción y cuándo ocurrió un problema, para no interpretar un resultado parcial como terminado.
+
+#### Criterios de Aceptación
+
+1. WHEN el core confirma Resultado_Core_Disponible para Ejecucion_Vigente, THE portal SHALL mostrar «Listo para revisar» y permitir acceder al resultado correspondiente.
+2. IF transcripción, atribución por hablantes o preparación de párrafos y tiempos siguen pendientes o fallaron, THEN THE portal SHALL NOT mostrar el resultado core como listo aunque la subida o una etapa anterior hayan terminado.
+3. WHEN el resultado queda listo, THE portal SHALL mantener las atribuciones inciertas y la revisión humana pendiente como condiciones distintas de la finalización técnica, sin declararlas resueltas.
+4. IF el core informa un fallo de procesamiento, THEN THE portal SHALL mostrar en español un mensaje del problema y la etapa afectada cuando esté confirmada, sin exponer secretos, rutas privadas, registros internos ni texto de la transcripción en el mensaje de estado.
+5. THE portal SHALL NOT ofrecer relanzar procesamiento ni presentar «Reintentar consulta» como reparación del fallo de un modelo; el reintento de transferencia de Requisito 6 conserva su alcance separado.
+
+### Requisito 11: Verificar seguimiento de extremo a extremo sin ampliar producto
+
+**Historia de Usuario:** Como responsable de la entrega, quiero comprobar que los mensajes corresponden al trabajo real, para no dar por válida una pantalla que solo simula progreso.
+
+#### Criterios de Aceptación
+
+1. THE validación automatizada SHALL cubrir espera, cambios de etapa, fallo de procesamiento, fallo y recuperación de consulta, reapertura de una reunión recibida y separación entre grabaciones e intentos mediante datos sintéticos.
+2. THE validación automatizada SHALL comprobar que terminar la transferencia o recibir un estado parcial no produce «Listo para revisar», y que el fallo de consulta no cambia el estado del procesamiento a fallido.
+3. BEFORE se declare implementada esta enmienda, THE validación de integración SHALL contrastar el seguimiento visible en el navegador APX con las etapas confirmadas del core durante una carga y un procesamiento reales autorizados, registrando evidencia y límites sin incorporar grabaciones privadas como fixtures ni publicarlas en el repositorio.
+4. THE implementación de esta enmienda SHALL conservar los permisos y límites vigentes, la separación de identidad por usuario y la política actual de no ofrecer «Copiar diagnóstico» en errores de carga manual.
+
+### Trazabilidad y estado de la enmienda
+
+| Elemento | Relación y estado |
+| --- | --- |
+| Solicitud de Fer, chat `th_0eb2f9523cf04772`, 2026-11-13 | Autorizó ampliar la spec; contenido de Requisitos 7–11 pendiente de revisión. |
+| `PRODUCT_BASELINE.md` §4.B y §4.D | Recorrido core y diferencia entre recepción y finalización; no se modifica el snapshot aprobado. |
+| `speaker-recognition-test-screen/requirements.md`, Requisito 2 | Seguimiento básico ya contemplado; la enmienda detalla etapas sin exigir rediseño. |
+| `portal-visual-design/design.md` | Diseño anterior preservado; el diseño de esta ampliación está pendiente de aprobación de sus requisitos. |
+| `fix-meeting-completion-state`, `fix-stale-meeting-recovery` | Estados y recuperación existentes; revisar sus contratos al diseñar, sin crear un segundo estado de negocio incompatible. |
+| `recording-speaker-review`, `fix-transcript-word-fragments`, `meeting-review-playback` | Responsables de revisión, párrafos y tiempos/reproducción; la enmienda no corrige ni reemplaza su implementación. |
+| Issues #618 y #626 | Estados veraces del panel de extensión; relacionados pero no sustituyen seguimiento por etapas en el portal. No se duplican ni se cierran por este documento. |
+| Issue #880 | Validación de alineación temporal ASR; no se resuelve con indicadores de avance. |
+| Tarea APX `task_5d2838ff10c446ed` | Encargo documental de esta enmienda; sin asignación de implementación ni issue técnico nuevo. |
+
+**Evidencia de partida:** revisión de `origin/main` `41ab5f4017b9a6547b42aef8630ff41999f0557e`, requisitos y diseño del portal, pantalla de prueba y workers. La separación de transcripción y diarización existente no prueba que el core publique cada una de las etapas requeridas. El diseño posterior debe contrastar el contrato disponible y definir las extensiones necesarias, no asumir endpoints, eventos ni persistencia ya implementados. Los PRs core abiertos no quedan aprobados ni integrados por este documento.
+
+**Condición de cierre de esta fase:** Fer revisa y aprueba el contenido de la enmienda; luego se actualiza el diseño mediante `spectra-design`, y posteriormente el backlog mediante `spectra-tasks`, sin reabrir aprobaciones anteriores ni iniciar implementación antes de la secuencia correspondiente.
