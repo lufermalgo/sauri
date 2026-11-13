@@ -55,7 +55,85 @@ beforeEach(() => {
   api.requestSummary.mockResolvedValue(pending);
   api.getSummaryRequest.mockResolvedValue({ ...pending, status: "running" });
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+/** T21/#289: assert capability/content only; no filename, extension, MIME or serialization policy. */
+describe("available-summary copy and download actions (T21 RED)", () => {
+  it("offers both actions when an artifact is available, including during a later pending generation", async () => {
+    api.getLatestSummaryRequest.mockResolvedValue(pending);
+    await openSection();
+    expect((screen.getByRole("button", { name: /copy|copiar/i }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: /download|descargar/i }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("does not offer enabled export actions when no successful artifact exists", async () => {
+    api.getSummary.mockRejectedValue(new Error("Error 404: Summary not available"));
+    await openSection();
+    for (const action of screen.queryAllByRole("button", { name: /copy|copiar|download|descargar/i })) {
+      expect((action as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
+  it("copies topic and every key point from the available artifact and confirms success", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    await openSection();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /copy|copiar/i })); });
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const copied = writeText.mock.calls[0][0] as string;
+    for (const content of [summary.topic, ...summary.keyPoints]) expect(copied).toContain(content);
+    expect(screen.getByText(/copied|copiado/i)).toBeDefined();
+    expect(api.requestSummary).not.toHaveBeenCalled();
+  });
+
+  it("reports clipboard rejection honestly and lets the user retry without losing the artifact", async () => {
+    const writeText = vi.fn().mockRejectedValueOnce(new Error("clipboard denied")).mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    await openSection();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /copy|copiar/i })); });
+    expect(screen.getByRole("alert").textContent).toMatch(/copy|clipboard|copiar|portapapeles/i);
+    expect(screen.queryByText(/copied|copiado/i)).toBeNull();
+    expectContent();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: /copy|copiar/i })); });
+    expect(writeText).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/copied|copiado/i)).toBeDefined();
+  });
+
+  it("starts a browser download preserving topic and key points without another API request", async () => {
+    vi.useRealTimers();
+    const blobs: Blob[] = [];
+    const clicks: HTMLAnchorElement[] = [];
+    const createObjectURL = vi.fn((blob: Blob) => { blobs.push(blob); return "blob:synthetic-summary"; });
+    const revokeObjectURL = vi.fn();
+    // Observe browser export boundaries, not a fixed representation or filename.
+    vi.stubGlobal("URL", Object.assign(class extends URL {}, { createObjectURL, revokeObjectURL }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clicks.push(this.cloneNode(true) as HTMLAnchorElement);
+    });
+    try {
+      await openSection();
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: /download|descargar/i })); });
+      expect(clicks).toHaveLength(1);
+      expect(clicks[0].hasAttribute("download")).toBe(true);
+      let exported: string;
+      if (clicks[0].href.startsWith("data:")) {
+        const [metadata, content] = clicks[0].href.split(",", 2);
+        exported = metadata.endsWith(";base64") ? atob(content) : decodeURIComponent(content);
+      } else {
+        expect(blobs).toHaveLength(1);
+        exported = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsText(blobs[0]);
+        });
+      }
+      for (const content of [summary.topic, ...summary.keyPoints]) expect(exported).toContain(content);
+      expect(api.getSummary).toHaveBeenCalledTimes(1);
+      expect(api.requestSummary).not.toHaveBeenCalled();
+    } finally { click.mockRestore(); }
+  });
+});
 
 describe("summary presentation and durable status (T19 RED)", () => {
   it("has its own accessible section with topic and ordered, unchanged key points", async () => {

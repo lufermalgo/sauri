@@ -294,6 +294,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T21: RED — Specify copy/download actions for available summaries (P2/P6)
 
+**Execution evidence (2026-11-13):** RED observed against T20 `ff5c938`: 18 tests collected, 4 expected failures for absent Copy/Download actions, 14 PASS, no collection errors/skips; frontend typecheck PASS. See [t21-red-evidence.md](t21-red-evidence.md). T22 must preserve this RED commit; serialization/format remains an explicit product gate, not inferred by the tests.
+
 **Tracking:** Issue #289 · Card task_671b8385c0e345fe
 
 **Archivo:** `frontend/src/components/SummarySection.test.tsx` (extend)
