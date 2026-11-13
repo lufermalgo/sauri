@@ -285,10 +285,11 @@ async def test_recovery_json_fields_allow_only_null_or_empty_values(
 def _recovery_migration() -> ModuleType:
     script = _migration_script()
     heads = script.get_heads()
-    assert RECOVERY_MIGRATION_REVISION in heads, (
-        "missing sequential recovery persistence migration; "
-        f"expected {RECOVERY_MIGRATION_REVISION!r} as a head, found {heads!r}"
+    assert heads == ["014_meeting_summaries_templates"], (
+        "expected one sequential summary head after recovery persistence; "
+        f"found {heads!r}"
     )
+    assert script.get_revision(heads[0]).down_revision == RECOVERY_MIGRATION_REVISION
 
     migration = _load_published_migration(RECOVERY_MIGRATION_FILENAME)
     assert migration.revision == RECOVERY_MIGRATION_REVISION

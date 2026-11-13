@@ -71,8 +71,12 @@ async def _source(session: AsyncSession, *, category: bool = False) -> tuple[str
             created_at=now,
         )
     )
+    # When FK enforcement is enabled, flush owners before their dependent rows;
+    # scalar FK ids alone do not give the ORM a unit-of-work relationship ordering.
+    await session.flush()
     if category_id is not None:
         session.add(TemplateCategory(id=category_id, owner_user_id=owner_id, name="Synthetic category", created_at=now))
+        await session.flush()
     session.add(
         SummaryTemplate(
             id=template_id,
@@ -262,16 +266,21 @@ def test_summary_schema_declares_exact_owner_event_and_transcript_links() -> Non
 
 
 @settings(max_examples=100, suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(summary_count=st.integers(min_value=1, max_value=6))
+@given(
+    summary_count=st.integers(min_value=1, max_value=6),
+    generation_start=st.integers(min_value=1, max_value=1000),
+)
 @pytest.mark.asyncio
-async def test_deleting_transcript_cascades_every_summary(db_session: AsyncSession, summary_count: int) -> None:
+async def test_deleting_transcript_cascades_every_summary(
+    db_session: AsyncSession, summary_count: int, generation_start: int
+) -> None:
     """The source transcript's deletion removes all successful generations (R6.1)."""
     # conftest's SQLite in-memory engine does not enable FK enforcement by default.
     # Set it before the first write and verify it; otherwise this test could pass/fail spuriously.
     await db_session.execute(text("PRAGMA foreign_keys=ON"))
     assert (await db_session.execute(text("PRAGMA foreign_keys"))).scalar_one() == 1
     _, meeting_id, transcript_id, template_id, _ = await _source(db_session)
-    for generation in range(1, summary_count + 1):
+    for generation in range(generation_start, generation_start + summary_count):
         db_session.add_all(
             _request_and_summary(
                 meeting_id=meeting_id,
