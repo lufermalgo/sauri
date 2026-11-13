@@ -25,7 +25,8 @@
       "implementation": "implemented-awaiting-runtime-validation",
       "task": "task_5d2838ff10c446ed",
       "authorization": "Fer 2026-11-13 via Ansel task_5d2838ff10c446ed; no full visual redesign",
-      "issue": 892
+      "issue": 892,
+      "pullRequest": "https://github.com/lufermalgo/sauri/pull/894"
     }
   ]
 }

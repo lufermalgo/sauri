@@ -50,6 +50,6 @@ Solo R7–11, #892, task_5d2838ff10c446ed. No sustituye tareas/aprobaciones de d
 - [x] 1.1–1.2: proyección y autorización implementadas; tests backend pasan.
 - [x] 2.1–2.2: polling reusable, estados separados y carga/reapertura conectados. Se conserva acceso al contenido parcial existente (no se declara listo), refrescado al confirmarse ejecución nueva; no se modifica playback.
 - [x] 3.1: 192 backend pertinentes pasan / 3 skips, 106 frontend pasan, typecheck/build y ruff/mypy de archivos modificados pasan; deuda global contrastada con base y documentada.
-- [~] 3.2: código/docs preparados para PR sin merge; prueba APX de procesamiento real y captura del indicador pendientes de coordinación de Ansel, login y conexión del candidato. No se declara aceptación ni validación visible.
+- [~] 3.2: PR borrador #894 publicado (código 8bb2c17), sin merge; prueba APX de procesamiento real y captura del indicador pendientes de coordinación de Ansel, login y conexión del candidato. No se declara aceptación ni validación visible.
 
 Dependencia detectada: lectura `/diarization` multirrevisión de #653; no se duplica ni se modifica atribución. Instrucciones y evidencia: `docs/engineering/portal-processing-indicator.md`.

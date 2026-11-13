@@ -2,7 +2,7 @@
 
 ## Alcance y estado de entrega
 
-Autorización: pedido explícito de Fer del 13/11/2026, transmitido por Ansel en `task_5d2838ff10c446ed`. Spec: `.spectra/specs/portal-visual-design`, solo R7–11. Implementación en rama `feature/portal-processing-indicator-20261113`, base `41ab5f4`. No autoriza rediseño completo. Integración reservada a Fer: no merge.
+Autorización: pedido explícito de Fer del 13/11/2026, transmitido por Ansel en `task_5d2838ff10c446ed`. Spec: `.spectra/specs/portal-visual-design`, solo R7–11. Implementación en rama `feature/portal-processing-indicator-20261113`, base `41ab5f4`. No autoriza rediseño completo. PR borrador: https://github.com/lufermalgo/sauri/pull/894, código `8bb2c17`. Integración reservada a Fer: no merge.
 
 Se preservó la enmienda documental original desde el worktree `docs-portal-processing-stages-20261113`, sin editar ese worktree. Diseño y tareas de esta porción están incorporados, manteniendo requisitos 1–6 y fases previas. La aceptación de producto y la validación del procesamiento real NO están completadas por los tests.
 
@@ -44,6 +44,8 @@ También se ejecutó el comando amplio `pytest --continue-on-collection-errors -
 - Nueve errores piden `SAURI_QA_POSTGRES_URL` aislado (algunos tests no tienen marker integration).
 
 Comparación con exportación completa de base `41ab5f4`, mismos comandos/entorno: **528 passed, los mismos 2 failed y 10 errors**, mismos skips/deselecciones. `ruff check .`: mismos 3 hallazgos de base; `mypy .`: mismos 82 errores en 8 archivos sin modificar. No se debilitó ningún control ni se cambió CI para esconderlos.
+
+CI publicado: https://github.com/lufermalgo/sauri/actions/runs/43472620108. Ambos jobs terminaron sin ejecutar pasos. Anotación literal: “The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings”. No hay logs de ejecución (`log not found`); no se cambió billing, se reintentó ni se eludió ese bloqueo.
 
 `git diff --check` pasa. No hay cambios Rust/extensión/modelos/migraciones.
 
