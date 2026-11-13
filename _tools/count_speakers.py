@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
 import hashlib
 import importlib.metadata
 import json
 import math
 import os
 import platform
+import re
+import resource
 import shutil
 import signal
 import socket
@@ -107,6 +110,62 @@ def run_command(args: list[str], timeout: int = 60) -> str:
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=timeout).stdout
 
 
+class ProcessMemoryInfo(ctypes.Structure):
+    """Darwin sys/resource.h rusage_info_v0 (flavor 0), queried only for self."""
+
+    _fields_ = [("ri_uuid", ctypes.c_uint8 * 16)] + [
+        (name, ctypes.c_uint64) for name in (
+            "ri_user_time", "ri_system_time", "ri_pkg_idle_wkups", "ri_interrupt_wkups",
+            "ri_pageins", "ri_wired_size", "ri_resident_size", "ri_phys_footprint",
+            "ri_proc_start_abstime", "ri_proc_exit_abstime",
+        )
+    ]
+
+
+def process_memory_sample() -> dict[str, Any]:
+    # getrusage's high-water RSS is bytes on Darwin, KiB on Linux. Not current RSS.
+    maximum = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    sample: dict[str, Any] = {
+        "process_rss_max_bytes": int(maximum * (1 if sys.platform == "darwin" else 1024)),
+        "process_rss_bytes": None, "process_physical_footprint_bytes": None,
+        "process_memory_source": "unavailable",
+    }
+    try:
+        if sys.platform != "darwin":
+            raise OSError("Darwin proc_pid_rusage unavailable on this platform")
+        info = ProcessMemoryInfo()
+        library = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+        query = library.proc_pid_rusage
+        query.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
+        query.restype = ctypes.c_int
+        if query(os.getpid(), 0, ctypes.byref(info)) != 0:
+            raise OSError(ctypes.get_errno(), "proc_pid_rusage failed for self")
+        sample.update(process_rss_bytes=int(info.ri_resident_size),
+                      process_physical_footprint_bytes=int(info.ri_phys_footprint),
+                      process_memory_source="proc_pid_rusage_v0")
+    except (OSError, AttributeError) as exc:
+        # Optional observability must not weaken or replace the pressure guard.
+        sample["process_memory_error"] = str(exc)
+        try:
+            sample["process_rss_bytes"] = int(run_command([
+                "ps", "-o", "rss=", "-p", str(os.getpid()),
+            ]).strip()) * 1024
+            sample["process_memory_source"] = "ps_rss_only"
+        except (OSError, ValueError, subprocess.SubprocessError) as fallback:
+            sample["process_rss_error"] = str(fallback)
+    return sample
+
+
+def swap_sample(text: str) -> dict[str, int]:
+    """Parse macOS sysctl swapusage, with explicit byte units (not RSS or RAM)."""
+    values = dict(re.findall(r"\b(total|used|free)\s*=\s*([0-9.]+[KMGT])", text))
+    scales = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4}
+    if set(values) != {"total", "used", "free"}:
+        raise ValueError("Unrecognized vm.swapusage output")
+    return {f"swap_{key}_bytes": int(float(value[:-1]) * scales[value[-1]])
+            for key, value in values.items()}
+
+
 def resource_sample() -> dict[str, Any]:
     pressure = int(run_command(["sysctl", "-n", "kern.memorystatus_vm_pressure_level"]).strip())
     processes = run_command(["ps", "-axo", "pid=,%cpu=,command="])
@@ -124,7 +183,20 @@ def resource_sample() -> dict[str, Any]:
         ))
         if engine and float(fields[1]) >= 10:
             competitors.append(int(fields[0]))
-    return {"memory_pressure_level": pressure, "active_competitor_pids": competitors}
+    sample: dict[str, Any] = {"memory_pressure_level": pressure,
+                              "active_competitor_pids": competitors, **process_memory_sample()}
+    try:
+        sample.update(swap_sample(run_command(["sysctl", "-n", "vm.swapusage"])))
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        sample.update(swap_total_bytes=None, swap_used_bytes=None, swap_free_bytes=None,
+                      swap_error=str(exc))
+    return sample
+
+
+def mps_sample(torch: Any) -> dict[str, int]:
+    return {"mps_driver_bytes": torch.mps.driver_allocated_memory(),
+            "mps_live_tensor_bytes": torch.mps.current_allocated_memory(),
+            "mps_recommended_max_bytes": torch.mps.recommended_max_memory()}
 
 
 class ResourceGuard:
@@ -135,6 +207,30 @@ class ResourceGuard:
         self.warning_since: float | None = None
         self.events: list[dict[str, Any]] = []
         self.started = time.monotonic()
+        self.stage = "preflight"
+        self.stage_started = self.started
+        self.stages: list[dict[str, Any]] = []
+
+    def context(self, now: float) -> dict[str, Any]:
+        return {"pid": os.getpid(), "observed_at_utc": datetime.now(UTC).isoformat(),
+                "elapsed_seconds": round(now - self.started, 3), "stage": self.stage,
+                "stage_elapsed_seconds": round(now - self.stage_started, 3)}
+
+    def set_stage(self, stage: str) -> None:
+        if stage == self.stage:
+            return
+        now = time.monotonic()
+        self.stage, self.stage_started = stage, now
+        event = {**self.context(now), **resource_sample(), "mps_observation_only": True}
+        torch = sys.modules.get("torch")
+        if torch is not None and torch.backends.mps.is_available():
+            event.update(mps_sample(torch))
+        event["collection_seconds"] = round(time.monotonic() - now, 3)
+        self.stages.append(event)
+        # Read-only boundary snapshots never update warning_since/last_check, flush
+        # MPS, or substitute for check(). No extra tensor/model/audio is retained.
+        print(json.dumps({"stage_transition": stage, "elapsed_seconds": event["elapsed_seconds"]}),
+              file=sys.stderr, flush=True)
 
     def check(self, initial: bool = False) -> None:
         now = time.monotonic()
@@ -149,9 +245,9 @@ class ResourceGuard:
             mps_memory["mps_driver_bytes_before_release"] = torch.mps.driver_allocated_memory()
             torch.mps.synchronize()
             torch.mps.empty_cache()
-            mps_memory["mps_driver_bytes"] = torch.mps.driver_allocated_memory()
-            mps_memory["mps_live_tensor_bytes"] = torch.mps.current_allocated_memory()
-        sample = {"elapsed_seconds": round(now - self.started, 3), **resource_sample(), **mps_memory}
+            mps_memory.update(mps_sample(torch))
+        sample = {**self.context(now), **resource_sample(), **mps_memory}
+        sample["collection_seconds"] = round(time.monotonic() - now, 3)
         self.events.append(sample)
         if sample["active_competitor_pids"]:
             raise RuntimeError(f"Competing inference active: PIDs {sample['active_competitor_pids']}")
@@ -164,6 +260,7 @@ class ResourceGuard:
             self.warning_since = None
 
     def hook(self, step: str, _artifact: Any, **kwargs: Any) -> None:
+        self.set_stage(step)
         self.check()
         completed = int(kwargs["completed"]) if kwargs.get("completed") is not None else None
         total = int(kwargs["total"]) if kwargs.get("total") is not None else None
@@ -174,6 +271,7 @@ class ResourceGuard:
 
 
 def infer(args: argparse.Namespace, work: Path, result: dict[str, Any], guard: ResourceGuard) -> int:
+    guard.set_stage("cache_copy_and_imports")
     enable_offline(work, args.cache)
     import torch
     import yaml
@@ -195,6 +293,7 @@ def infer(args: argparse.Namespace, work: Path, result: dict[str, Any], guard: R
     result["pipeline_constructor"] = config["pipeline"]
     result["parameters"] = configured_parameters(config["params"], args.clustering_threshold)
     # An existing local YAML plus copied dependency cache; no credentials required/read.
+    guard.set_stage("model_loading")
     pipeline = Pipeline.from_pretrained(config_path, use_auth_token=False)
     pipeline.instantiate(result["parameters"])
     result["batch_sizes_cached"] = {"segmentation": pipeline.segmentation_batch_size,
@@ -207,19 +306,24 @@ def infer(args: argparse.Namespace, work: Path, result: dict[str, Any], guard: R
     result["device_effective"] = str(pipeline.device)
     result["batch_sizes"] = {"segmentation": pipeline.segmentation_batch_size,
                              "embedding": pipeline.embedding_batch_size}
+    guard.set_stage("models_loaded")
     guard.check()
     wav_path = work / "decoded.wav"
+    guard.set_stage("audio_decode")
     run_command(["ffmpeg", "-nostdin", "-v", "error", "-i", str(args.audio), "-vn", "-ar", "16000",
                  "-ac", "1", "-c:a", "pcm_s16le", str(wav_path)], timeout=600)
     with wave.open(str(wav_path), "rb") as decoded:
         result["duration_seconds"] = decoded.getnframes() / decoded.getframerate()
         result["decoded_format"] = {"sample_rate": decoded.getframerate(), "channels": decoded.getnchannels(),
                                     "sample_width_bytes": decoded.getsampwidth()}
+    guard.set_stage("audio_decoded")
     guard.check()
     started = time.monotonic()
+    guard.set_stage("pipeline_audio_loading")
     # Entire recording in ONE invocation, global clustering, no num/min/max_speakers.
     annotation = pipeline(str(wav_path), hook=guard.hook)
     result["inference_seconds"] = round(time.monotonic() - started, 3)
+    guard.set_stage("pipeline_complete")
     return count_labels(annotation)
 
 
@@ -254,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     fingerprints: dict[str, str] | None = None
     try:
         guard.check(initial=True)
+        guard.set_stage("input_and_cache_hashing")
         original_hash = digest(args.audio)
         result["input_sha256"] = original_hash
         fingerprints = cache_fingerprints(args.cache)
@@ -267,6 +372,8 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         result["runtime_seconds"] = round(time.monotonic() - started, 3)
         result["resources"] = guard.events
+        result["stage_transitions"] = guard.stages
+        result["last_stage"] = guard.stage
         if original_hash is not None:
             result["input_unchanged"] = args.audio.is_file() and digest(args.audio) == original_hash
         if fingerprints is not None:
