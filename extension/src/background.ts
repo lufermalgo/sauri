@@ -247,8 +247,8 @@ chrome.runtime.onMessage.addListener(
 
       case "stop-capture":
         void (async () => {
-          await handleStopCapture();
-          sendResponse({ ok: true });
+          const stopped = await handleStopCapture();
+          sendResponse({ ok: stopped });
         })();
         return true;
 
@@ -442,10 +442,10 @@ async function resumeFinalizations(): Promise<void> {
   }
 }
 
-async function handleStopCapture(): Promise<void> {
+async function handleStopCapture(): Promise<boolean> {
   try {
     const state = await getState();
-    if (state.status !== "recording" || !state.sessionId || state.tabId === undefined) return;
+    if (state.status !== "recording" || !state.sessionId || state.tabId === undefined) return false;
     const record = await getCapturingCompletion(state.tabId);
     const projected: CaptureHandle = {
       sessionId: state.sessionId,
@@ -453,14 +453,24 @@ async function handleStopCapture(): Promise<void> {
       // Pre-provider projections were Meet-only; never infer Teams from them.
       provider: state.provider ?? "meet",
     };
-    if (record) {
-      if (matchesCaptureHandle(record, projected)) await completeRecording(record.sessionId, "stop");
-    } else if (projected.provider === "meet" && !await getCompletion(state.sessionId)) {
-      // Preserve an actual v1 capture without inventing a durable Teams handle.
-      await chrome.runtime.sendMessage({ type: "stop-recording", sessionId: state.sessionId });
+    if (record && matchesCaptureHandle(record, projected)) {
+      await completeRecording(record.sessionId, "stop");
+      return !(await getCompletion(record.sessionId))?.captureError;
     }
+    const projectedRecord = await getCompletion(state.sessionId);
+    if (projectedRecord) {
+      // Only the projected session may receive this error. Never mark the
+      // different handle found on this tab or finalize either capture.
+      await settleCapture(projectedRecord.sessionId, true);
+    } else if (!record && projected.provider === "meet") {
+      // Preserve an actual v1 capture without inventing a durable Teams handle.
+      const delivered = await chrome.runtime.sendMessage({ type: "stop-recording", sessionId: state.sessionId });
+      return delivered?.ok === true;
+    }
+    return false;
   } catch (error) {
     console.error("[sauri] Could not finalize recording:", error);
+    return false;
   }
 }
 

@@ -154,16 +154,30 @@ describe.each(providers)("%s captured-tab completion adapter", provider => {
 
   it("never trusts a stale projected tab/provider over the durable handle", async () => {
     const wrongTab = await loadBackgroundWithHandles([active, other], { ...active, capturedTabId: 888 });
-    await wrongTab.message("stop-capture");
+    expect(await wrongTab.message("stop-capture")).toMatchObject({ ok: false });
     expect(wrongTab.stops()).toEqual([]);
-    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing" });
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing", captureError: true });
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
 
     const wrongProvider = await loadBackgroundWithHandles([active, other], {
       ...active, provider: provider === "meet" ? "teams" : "meet",
     });
-    await wrongProvider.message("stop-capture");
+    expect(await wrongProvider.message("stop-capture")).toMatchObject({ ok: false });
     expect(wrongProvider.stops()).toEqual([]);
-    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing" });
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing", captureError: true });
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+  });
+
+  it("reports a stale projection onto another captured tab without poisoning its owner", async () => {
+    const h = await loadBackgroundWithHandles([active, other], { ...active, capturedTabId: other.capturedTabId });
+    await storeChunk(active.sessionId, new Blob(["retained-media"]));
+    expect(await h.message("stop-capture")).toMatchObject({ ok: false });
+    expect(h.stops()).toEqual([]);
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing", captureError: true });
+    expect(await getChunksBySession(active.sessionId)).toHaveLength(1);
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+    await h.close(other.capturedTabId);
+    expect(h.stops()).toEqual([other.sessionId]);
   });
 
   it("does not accept a foreign page's media-owner completion or failure", async () => {
@@ -209,9 +223,9 @@ describe.each(providers)("%s captured-tab completion adapter", provider => {
       async (sessionId, capturedTabId) => {
         const handle = { provider, sessionId, capturedTabId };
         const h = await loadBackgroundWithHandles([handle], { ...handle, capturedTabId: capturedTabId + 1 });
-        await h.message("stop-capture");
+        expect(await h.message("stop-capture")).toMatchObject({ ok: false });
         expect(h.stops()).toEqual([]);
-        expect(await getCompletion(sessionId)).toMatchObject({ ...handle, status: "capturing" });
+        expect(await getCompletion(sessionId)).toMatchObject({ ...handle, status: "capturing", captureError: true });
       },
     ), { numRuns: 100 });
   }, 30000);
