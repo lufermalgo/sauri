@@ -5,7 +5,7 @@ from typing import cast
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import Meeting, SummaryRequestOutbox, SummaryTemplate, Transcript, User
+from app.infra.models import Meeting, SpeechTurn, SummaryRequestOutbox, SummaryTemplate, Transcript, User
 
 
 async def owned_meeting_locked(session: AsyncSession, meeting_id: str, owner_id: str) -> Meeting | None:
@@ -51,3 +51,18 @@ async def request_for_owner(
     else:
         query = query.order_by(SummaryRequestOutbox.generation.desc()).limit(1)
     return cast(SummaryRequestOutbox | None, await session.scalar(query))
+
+
+async def locked_request(session: AsyncSession, event_id: str) -> SummaryRequestOutbox | None:
+    """Serialize state changes and idempotent commits for one event."""
+    return (await session.scalars(
+        select(SummaryRequestOutbox).where(SummaryRequestOutbox.event_id == event_id).with_for_update()
+    )).first()
+
+
+async def transcript_text(session: AsyncSession, transcript_id: str) -> str:
+    turns = (await session.scalars(
+        select(SpeechTurn.text).where(SpeechTurn.transcript_id == transcript_id)
+        .order_by(SpeechTurn.sequence)
+    )).all()
+    return "\n".join(turns)

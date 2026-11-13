@@ -171,7 +171,9 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T12: GREEN — Implement summary event worker and event idempotency
 
-**Tracking:** Issue #280 · Card task_d05f492a1c11477f
+**Tracking:** Issue #280 · historical card task_d05f492a1c11477f (APX get: not found); this candidate is tracked by its draft PR and this evidence, without a duplicate assigned execution.
+
+**Status (2026-11-13):** GREEN candidate in progress; T11 RED `7a7183b` and T10 correction `54f7d1c` preserved. Six T11 PostgreSQL cases and T9/T10 regression pass. The existing RabbitMQ adapter does not route exhausted `summarize` deliveries to the subscribed `summarize.failed` handler (nor accept the original topic's signature there), so terminal status is not production-verified; see `t12-green-evidence.md`. T14's engine factory is intentionally absent: worker startup fails closed until a local engine is configured. Do not merge or claim complete terminal delivery while this gap remains.
 
 **Archivo:** `backend/app/summaries/worker.py`; `backend/app/summaries/repository.py`; `backend/app/worker.py`
 **Acción:** Consume accepted outbox events using only the frozen template snapshot; atomically persist a successful structured summary, processed-event claim and request status. Make already-committed `event_id` deliveries a no-op; let generation errors propagate for queue retries, and mark terminal dead-letter requests failed without exposing provider exception details. Register in the existing worker process; do not trigger it on transcript commit.
