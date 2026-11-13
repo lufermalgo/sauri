@@ -251,7 +251,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 ### T-15: GREEN — gate readiness on durable pipeline stages and recover finalization
 
-**Tracking:** Issue #248 · Card task_04a1d8c47e0241bf
+**Tracking:** Issue #248 · Card task_04a1d8c47e0241bf · PR #884 (stacked on #854; published, not integrated; hosted CI jobs blocked by GitHub billing, not test failures).
 
 **Files:** `backend/app/transcription/`; `backend/app/diarization/`; `backend/app/infra/` queue/outbox and stage persistence modules.
 
