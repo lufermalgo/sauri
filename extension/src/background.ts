@@ -78,7 +78,7 @@ async function ensureOffscreenDocument(): Promise<void> {
 
 // --- Backend upload (PoC) ---
 
-const BACKEND_URL = "http://localhost:8000";
+const BACKEND_URL = import.meta.env.VITE_SAURI_BACKEND_URL ?? "http://localhost:8000";
 
 async function uploadRecording(job: UploadJob): Promise<void> {
   const { mimeType, sessionId, meetingId, notificationEmittedAt, title, meetLink } = job;
