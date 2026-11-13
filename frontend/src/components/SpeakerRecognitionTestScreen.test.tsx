@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { SpeakerRecognitionTestScreen } from "./SpeakerRecognitionTestScreen";
 import * as api from "../api";
@@ -26,13 +26,13 @@ function createSyntheticWebm(trackType: 1 | 2) {
 
 function selectSyntheticAudio() {
   const file = new File([createSyntheticWebm(2)], "sample.webm", { type: "audio/webm" });
-  fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
   return file;
 }
 
 function selectSyntheticVideo() {
   const file = new File(["synthetic video"], "sample.mp4", { type: "video/mp4" });
-  fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
   return file;
 }
 
@@ -81,7 +81,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    const input = screen.getByLabelText(/recording/i);
+    const input = screen.getByLabelText(/^recording$/i);
     expect((input as HTMLInputElement).accept).toContain("video/*");
     const file = selectSyntheticVideo();
     expect(document.querySelector("video")).not.toBeNull();
@@ -106,7 +106,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(8);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -135,7 +135,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(8);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -157,7 +157,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(8);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -172,7 +172,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(1);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -187,7 +187,7 @@ describe("SpeakerRecognitionTestScreen upload metadata", () => {
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
 
     render(<SpeakerRecognitionTestScreen />);
-    fireEvent.change(screen.getByLabelText(/recording/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/^recording$/i), { target: { files: [file] } });
     fireLoadedMetadata(8);
     fireEvent.click(screen.getByRole("button", { name: /upload/i }));
 
@@ -343,6 +343,49 @@ async function uploadSyntheticRecording(assertUploadControls?: () => void) {
 }
 
 describe("SpeakerRecognitionTestScreen processing and transcript inspection", () => {
+  it.each(["success", "failure"])("ignores a late upload %s after another recording is selected", async (outcome) => {
+    let resolveUpload!: (value: api.RecordingUploadResult) => void;
+    let rejectUpload!: (reason: Error) => void;
+    const pendingUpload = new Promise<api.RecordingUploadResult>((resolve, reject) => {
+      resolveUpload = resolve;
+      rejectUpload = reject;
+    });
+    const uploadRecording = vi.mocked(api.uploadRecording).mockReturnValue(pendingUpload);
+    const getMeeting = vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("processing"));
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn().mockReturnValue("blob:synthetic"), revokeObjectURL: vi.fn() });
+    render(<SpeakerRecognitionTestScreen />);
+    selectSyntheticAudio();
+    fireLoadedMetadata(12);
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    await waitFor(() => expect(uploadRecording).toHaveBeenCalledTimes(1));
+    selectSyntheticVideo();
+    fireLoadedMetadata(24);
+    await act(async () => {
+      if (outcome === "success") resolveUpload({ recording_id: "recording-a", state: "transcribing" });
+      else rejectUpload(new Error("Late failure for recording A"));
+      await pendingUpload.catch(() => undefined);
+    });
+    expect(screen.getByRole("button", { name: "Upload" })).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(getMeeting).not.toHaveBeenCalled();
+  });
+
+  it("stops observing a terminal unreconstructible generation and retains its transcript", async () => {
+    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    const getDiarization = vi.spyOn(apiMocks, "getDiarization").mockResolvedValue({
+      speakers: [], assignments: [], diarization_state: "not_reconstructible",
+    });
+    const getSpeakerReview = vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
+    await uploadSyntheticRecording();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Speaker separation is unavailable for this recording");
+    expect(screen.getByText("La propuesta queda para el viernes.")).toBeVisible();
+    expect(screen.queryByText("Separating speakers…")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open playback and speaker paragraphs" })).not.toBeInTheDocument();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2100)); });
+    expect(getDiarization).toHaveBeenCalledTimes(1);
+    expect(getSpeakerReview).not.toHaveBeenCalled();
+  });
   it("shows persisted processing state before loading transcript or speaker review", async () => {
     vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("processing"));
     const getTranscript = vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);

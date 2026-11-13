@@ -192,9 +192,11 @@ export function SpeakerRecognitionTestScreen() {
   const [speakerDiarization, setSpeakerDiarization] = useState<MeetingDiarization | null>(null);
   const [speakerReview, setSpeakerReview] = useState<SpeakerReview | null>(null);
   const objectUrlRef = useRef<string | null>(null);
+  const selectedMeetingIdRef = useRef<string | null>(null);
 
   useEffect(() => () => {
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    selectedMeetingIdRef.current = null;
   }, []);
 
   const selectedMeetingId = recording?.meetingId;
@@ -221,7 +223,7 @@ export function SpeakerRecognitionTestScreen() {
         if (!active) return;
         setSpeakerDiarization(result);
         const state = diarizationState(result);
-        if (state === "failed") return;
+        if (state === "failed" || state === "not_reconstructible") return;
         if (state !== "completed") {
           timeout = window.setTimeout(observeDiarization, PROCESSING_POLL_INTERVAL_MS);
           return;
@@ -273,10 +275,12 @@ export function SpeakerRecognitionTestScreen() {
     if (objectUrlRef.current) releaseObjectUrl(objectUrlRef.current);
     const objectUrl = URL.createObjectURL(file);
     objectUrlRef.current = objectUrl;
+    const meetingId = crypto.randomUUID();
+    selectedMeetingIdRef.current = meetingId;
     setRecording({
       file,
       objectUrl,
-      meetingId: crypto.randomUUID(),
+      meetingId,
       idempotencyKey: crypto.randomUUID(),
       durationSeconds: null,
     });
@@ -329,10 +333,13 @@ export function SpeakerRecognitionTestScreen() {
         capture_origin: "web_upload",
         video_presence: tracks ? (tracks.hasVideo ? "muxed" : "absent") : declaredVideo ? "muxed" : "absent",
       };
+      if (selectedMeetingIdRef.current !== recording.meetingId) return;
       await uploadRecording(recording.file, data);
+      if (selectedMeetingIdRef.current !== recording.meetingId) return;
       setUploadState("uploaded");
       releaseObjectUrl(recording.objectUrl);
     } catch (error) {
+      if (selectedMeetingIdRef.current !== recording.meetingId) return;
       const errorMessage = error instanceof Error ? error.message : "Upload failed. Check that the file type matches its audio/video tracks and try again.";
       setUploadState("failed");
       setUploadError(errorMessage);
@@ -340,7 +347,7 @@ export function SpeakerRecognitionTestScreen() {
   }
 
   const speakerState = diarizationState(speakerDiarization);
-  const speakerSeparationPending = !["completed", "failed"].includes(speakerState);
+  const speakerSeparationPending = !["completed", "failed", "not_reconstructible"].includes(speakerState);
 
   const displayedTranscript = transcript
     ? withSpeakerLabels(transcript, speakerDiarization, speakerReview)
@@ -398,6 +405,8 @@ export function SpeakerRecognitionTestScreen() {
               <p role="status">Separating speakers…</p>
             ) : speakerState === "failed" ? (
               <p role="alert">Speaker separation failed. The transcript is still available.</p>
+            ) : speakerState === "not_reconstructible" ? (
+              <p role="alert">Speaker separation is unavailable for this recording. The transcript is still available.</p>
             ) : (
               <a href={`?meetingId=${selectedMeetingId}`}>Open playback and speaker paragraphs</a>
             )}
