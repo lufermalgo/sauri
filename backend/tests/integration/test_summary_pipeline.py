@@ -567,3 +567,174 @@ async def test_request_to_persisted_content_uses_frozen_lineage(
         row = (await session.scalars(select(MeetingSummary).where(MeetingSummary.event_id == event_id))).one()
         assert (row.topic, json.loads(row.key_points_json)) == ("Identifiable topic", ["Identifiable point"])
         assert (row.template_id, row.template_version, row.generation) == (template_id, 1, 1)
+
+
+@pytest.mark.asyncio
+async def test_real_provider_lifecycle_default_duplicate_failure_and_transcript_deletion(
+    pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T25: exercise production adapters, not callback/provider replacements.
+
+    Opt in with SAURI_QA_OLLAMA_URL and SAURI_QA_OLLAMA_MODEL pointing at an
+    already-installed local model. No download or service startup is performed.
+    """
+    from sqlalchemy import delete
+
+    from app.infra.models import ProcessedSummaryEvent
+    from app.summaries.outbox import dispatch_pending
+    from app.summaries.worker import start_worker
+
+    broker = os.environ.get("SAURI_QA_RABBITMQ_URL")
+    endpoint = os.environ.get("SAURI_QA_OLLAMA_URL")
+    model = os.environ.get("SAURI_QA_OLLAMA_MODEL")
+    if not broker or not endpoint or not model:
+        pytest.skip("requires disposable RabbitMQ and explicitly configured installed local Ollama model")
+    monkeypatch.setenv("SUMMARIZATION_OLLAMA_URL", endpoint)
+    monkeypatch.setenv("SUMMARIZATION_OLLAMA_MODEL", model)
+    monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "synthetic-t25-signing-key-at-least-32-bytes")
+    monkeypatch.setenv("ASR_MAX_RETRIES", "1")
+    client, factory, owner, meeting, template = pg_request
+    headers = _headers(owner)
+    async with factory() as session, session.begin():
+        transcript = (await session.scalars(select(Transcript).where(Transcript.meeting_id == meeting))).one()
+        transcript_id = transcript.id
+        session.add(
+            SpeechTurn(
+                id=_id(),
+                transcript_id=transcript_id,
+                sequence=1,
+                text="Synthetic team agreed to release the new calendar on Friday. Ana will write the release notes.",
+                start_ms=0,
+                end_ms=1000,
+            )
+        )
+    initial = await client.get(f"/api/v1/meetings/{meeting}/summary", headers=headers)
+    assert initial.status_code == 404
+    default = await client.put("/api/v1/templates/default", json={"template_id": template}, headers=headers)
+    assert default.status_code == 204, default.text
+
+    deliveries: list[str] = []
+
+    class ObservedQueue(RabbitMQJobQueue):
+        """Observe completed real handlers without replacing persistence or transport."""
+
+        async def subscribe(self, topic: str, handler: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+            async def observed(message: dict[str, Any]) -> None:
+                await handler(message)
+                if topic == "summarize":
+                    deliveries.append(message["event_id"])
+
+            await super().subscribe(topic, observed)
+
+    queue = ObservedQueue(broker_url=broker)
+    await queue.connect()
+    try:
+        await start_worker(queue, factory)
+
+        async def wait_for(event_id: str, expected: str) -> None:
+            async with asyncio.timeout(120):
+                while True:
+                    response = await client.get(
+                        f"/api/v1/meetings/{meeting}/summary-requests/{event_id}",
+                        headers=headers,
+                    )
+                    assert response.status_code == 200, response.text
+                    status = response.json()["status"]
+                    if status == expected:
+                        return
+                    assert status in ("pending", "running"), response.text
+                    await asyncio.sleep(0.1)
+
+        events: list[str] = []
+        for generation, selection in enumerate(({"template_id": template}, {}), start=1):
+            accepted = await client.post(
+                f"/api/v1/meetings/{meeting}/summary-requests",
+                json=selection,
+                headers=headers,
+            )
+            assert accepted.status_code == 202, accepted.text
+            assert accepted.json()["generation"] == generation
+            assert accepted.json()["status"] == "pending"
+            event_id = accepted.json()["event_id"]
+            events.append(event_id)
+            # Change the live template AFTER acceptance. The event must retain its snapshot.
+            edited = await client.patch(
+                f"/api/v1/templates/{template}",
+                json={"instructions": f"Live revision {generation}"},
+                headers=headers,
+            )
+            assert edited.status_code == 200, edited.text
+            assert await dispatch_pending(factory, queue) == 1
+            await wait_for(event_id, "succeeded")
+            summary = await client.get(f"/api/v1/meetings/{meeting}/summary", headers=headers)
+            assert summary.status_code == 200, summary.text
+            assert summary.json()["generation"] == generation
+            assert summary.json()["topic"].strip()
+            assert summary.json()["key_points"]
+            assert summary.json()["template_id"] == template
+            assert summary.json()["template_version"] == generation
+
+        # Real signed broker redelivery must not produce another artifact.
+        async with factory() as session:
+            request = await session.get(SummaryRequestOutbox, events[-1])
+            assert request is not None
+            message = {
+                key: getattr(request, key)
+                for key in (
+                    "event_id",
+                    "meeting_id",
+                    "transcript_id",
+                    "generation",
+                    "template_id",
+                    "template_version",
+                    "instructions_snapshot",
+                )
+            }
+        await queue.publish("summarize", message)
+        # Await completion of the actual handler: an empty broker can still have an in-flight delivery.
+        async with asyncio.timeout(10):
+            while deliveries.count(events[-1]) < 2:
+                await asyncio.sleep(0.1)
+        async with factory() as session:
+            artifacts = (await session.scalars(select(MeetingSummary))).all()
+            processed = (await session.scalars(select(ProcessedSummaryEvent))).all()
+            assert len(artifacts) == len(processed) == 2
+        await queue.disconnect()
+
+        # A real provider error traverses bounded broker retries and terminal status.
+        # A nonexistent model does NOT request a download from Ollama's generate API.
+        monkeypatch.setenv("SUMMARIZATION_OLLAMA_MODEL", "sauri-t25-intentionally-uninstalled-model")
+        queue = ObservedQueue(broker_url=broker)
+        await queue.connect()
+        await start_worker(queue, factory)
+        accepted = await client.post(
+            f"/api/v1/meetings/{meeting}/summary-requests",
+            json={},
+            headers=headers,
+        )
+        assert accepted.status_code == 202, accepted.text
+        assert accepted.json()["generation"] == 3
+        assert await dispatch_pending(factory, queue) == 1
+        await wait_for(accepted.json()["event_id"], "failed")
+        current = await client.get(f"/api/v1/meetings/{meeting}/summary", headers=headers)
+        assert current.status_code == 200 and current.json()["generation"] == 2
+        latest = await client.get(f"/api/v1/meetings/{meeting}/summary-requests/latest", headers=headers)
+        assert latest.status_code == 200 and latest.json()["status"] == "failed"
+        async with factory() as session:
+            rows = (await session.scalars(select(SummaryRequestOutbox).order_by(SummaryRequestOutbox.generation))).all()
+            assert [row.instructions_snapshot for row in rows] == [
+                "Keep these exact words",
+                "Live revision 1",
+                "Live revision 2",
+            ]
+            assert [row.status for row in rows] == ["succeeded", "succeeded", "failed"]
+        await queue.disconnect()
+        async with factory() as session, session.begin():
+            await session.execute(delete(Transcript).where(Transcript.id == transcript_id))
+        async with factory() as session:
+            assert (await session.scalars(select(MeetingSummary))).all() == []
+        deleted = await client.get(f"/api/v1/meetings/{meeting}/summary", headers=headers)
+        assert deleted.status_code == 404
+    finally:
+        await queue.disconnect()

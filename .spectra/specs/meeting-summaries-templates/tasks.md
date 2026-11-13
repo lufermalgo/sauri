@@ -337,6 +337,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T25: RED — Specify end-to-end summary and template integration invariants (P1/P3/P5/P7/P8)
 
+**Execution evidence (2026-11-13):** Additional real-provider regression passes on accumulated predecessor `dcbf452`; pipeline 16 PASS and template/summary suites 39 PASS with no skips. Original RED gate is **not fulfilled**; T25/T26 remain pending approval of the narrowly proposed evidence amendment. See [t25-integration-evidence.md](t25-integration-evidence.md). No production code or acceptance criterion changed.
+
 **Tracking:** Issue #293 · Card task_b9d277de22d5429b
 
 **Archivo:** `backend/tests/integration/test_summary_pipeline.py` (extend)
