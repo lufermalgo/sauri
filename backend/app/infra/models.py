@@ -8,10 +8,12 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,9 +56,7 @@ class StateHistory(Base):
     __tablename__ = "state_history"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
-    )
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     state: Mapped[str] = mapped_column(String(64), nullable=False)
     failure_cause: Mapped[str | None] = mapped_column(String(64), nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -77,9 +77,7 @@ class SessionRecording(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
-    )
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
     capture_origin: Mapped[str] = mapped_column(
         String(64), nullable=False
@@ -90,9 +88,7 @@ class SessionRecording(Base):
     interrupted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    video_presence: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="unknown", server_default="unknown"
-    )
+    video_presence: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown", server_default="unknown")
 
     media_sources: Mapped[list["RecordingMediaSource"]] = relationship(
         back_populates="recording", cascade="all, delete-orphan"
@@ -103,11 +99,7 @@ class RecordingMediaSource(Base):
     """A private stored media object belonging to a session recording."""
 
     __tablename__ = "recording_media_sources"
-    __table_args__ = (
-        UniqueConstraint(
-            "recording_id", "kind", "object_ref", name="uq_recording_media_source_ref"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("recording_id", "kind", "object_ref", name="uq_recording_media_source_ref"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     recording_id: Mapped[str] = mapped_column(
@@ -142,6 +134,65 @@ class PendingObjectDeletion(Base):
 
 
 # ---------------------------------------------------------------------------
+# Exact processing revisions (recording-speaker-review T-17)
+# ---------------------------------------------------------------------------
+
+
+class ProcessingRevision(Base):
+    """An admitted processing attempt; its numeric revision is recording-scoped."""
+
+    __tablename__ = "processing_revisions"
+    __table_args__ = (
+        UniqueConstraint("recording_id", "revision", name="uq_processing_revision_number"),
+        UniqueConstraint("recording_id", "request_id", name="uq_processing_revision_request"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    recording_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("session_recordings.id", ondelete="CASCADE"), nullable=False
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    request_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    admitted_active_revision_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class RecordingProcessingState(Base):
+    """The active ready revision is independent of the sole in-flight candidate."""
+
+    __tablename__ = "recording_processing_states"
+
+    recording_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("session_recordings.id", ondelete="CASCADE"), primary_key=True
+    )
+    active_processing_revision_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("processing_revisions.id"), nullable=True
+    )
+    in_flight_revision_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("processing_revisions.id"), nullable=True
+    )
+    legacy_compatibility_revision_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("processing_revisions.id"), nullable=True
+    )
+
+
+class ProcessingRevisionOutbox(Base):
+    """Durable notification, dispatched only after admission commits (T-15)."""
+
+    __tablename__ = "processing_revision_outbox"
+    __table_args__ = (UniqueConstraint("processing_revision_id", "event_type", name="uq_revision_outbox_event"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    processing_revision_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("processing_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    delivery_status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ---------------------------------------------------------------------------
 # Transcript
 # ---------------------------------------------------------------------------
 
@@ -150,21 +201,29 @@ class Transcript(Base):
     """Spanish-language transcript generated from the recording (Req. 3)."""
 
     __tablename__ = "transcripts"
-    __table_args__ = (UniqueConstraint("meeting_id", name="uq_transcript_meeting_id"),)
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
+    __table_args__ = (
+        UniqueConstraint("meeting_id", "processing_revision_id", name="uq_transcript_meeting_revision"),
+        Index(
+            "uq_transcript_unversioned_meeting",
+            "meeting_id",
+            unique=True,
+            postgresql_where=text("processing_revision_id IS NULL"),
+            sqlite_where=text("processing_revision_id IS NULL"),
+        ),
     )
+
+    processing_revision_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("processing_revisions.id"), nullable=True
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     language: Mapped[str] = mapped_column(String(16), nullable=False, default="es-CO")
     provider: Mapped[str] = mapped_column(String(128), nullable=False)
     supports_turns: Mapped[bool] = mapped_column(Boolean, nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    turns: Mapped[list["SpeechTurn"]] = relationship(
-        "SpeechTurn", back_populates="transcript", lazy="select"
-    )
+    turns: Mapped[list["SpeechTurn"]] = relationship("SpeechTurn", back_populates="transcript", lazy="select")
 
 
 # ---------------------------------------------------------------------------
@@ -186,9 +245,7 @@ class SpeechTurn(Base):
     end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    transcript: Mapped["Transcript"] = relationship(
-        "Transcript", back_populates="turns"
-    )
+    transcript: Mapped["Transcript"] = relationship("Transcript", back_populates="turns")
 
 
 # ---------------------------------------------------------------------------
@@ -202,9 +259,7 @@ class RecordingNotice(Base):
     __tablename__ = "recording_notices"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
-    )
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -235,45 +290,32 @@ class Diarization(Base):
 
     __tablename__ = "diarizations"
     __table_args__ = (
-        UniqueConstraint(
-            "meeting_id", "processing_revision", name="uq_diarization_meeting_revision"
-        ),
+        UniqueConstraint("meeting_id", "processing_revision", name="uq_diarization_meeting_revision"),
+        UniqueConstraint("meeting_id", "processing_revision_id", name="uq_diarization_meeting_revision_id"),
         CheckConstraint(
-            "diarization_state IN "
-            "('pending', 'in_progress', 'completed', 'failed', 'not_reconstructible')",
+            "diarization_state IN ('pending', 'in_progress', 'completed', 'failed', 'not_reconstructible')",
             name="ck_diarizations_state_valid",
         ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meetings.id"), nullable=False
-    )
-    transcript_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("transcripts.id"), nullable=False
-    )
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id"), nullable=False)
+    transcript_id: Mapped[str] = mapped_column(String(36), ForeignKey("transcripts.id"), nullable=False)
     provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    speaker_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default="0"
+    speaker_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    processing_revision_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("processing_revisions.id"), nullable=True
     )
-    processing_revision: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default="1"
-    )
-    is_legacy: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
-    )
+    processing_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    is_legacy: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     diarization_state: Mapped[str] = mapped_column(
         String(32), nullable=False
     )  # pending | in_progress | completed | failed
-    failure_cause: Mapped[str | None] = mapped_column(
-        String(64), nullable=True
-    )  # engine_failure when failed
+    failure_cause: Mapped[str | None] = mapped_column(String(64), nullable=True)  # engine_failure when failed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    speakers: Mapped[list["Speaker"]] = relationship(
-        "Speaker", back_populates="diarization", lazy="select"
-    )
+    speakers: Mapped[list["Speaker"]] = relationship("Speaker", back_populates="diarization", lazy="select")
     assignments: Mapped[list["SpeakerAssignment"]] = relationship(
         "SpeakerAssignment", back_populates="diarization", lazy="select"
     )
@@ -297,9 +339,7 @@ class Speaker(Base):
     label: Mapped[str] = mapped_column(String(64), nullable=False)  # "Speaker N"
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)  # consecutive from 1
 
-    diarization: Mapped["Diarization"] = relationship(
-        "Diarization", back_populates="speakers"
-    )
+    diarization: Mapped["Diarization"] = relationship("Diarization", back_populates="speakers")
 
 
 # ---------------------------------------------------------------------------
@@ -311,27 +351,17 @@ class SpeakerAssignment(Base):
     """Assignment of a SpeechTurn to a Speaker (Req. 7.1)."""
 
     __tablename__ = "speaker_assignments"
-    __table_args__ = (
-        UniqueConstraint(
-            "diarization_id", "turn_id", name="uq_speaker_assignment_diarization_turn"
-        ),
-    )
+    __table_args__ = (UniqueConstraint("diarization_id", "turn_id", name="uq_speaker_assignment_diarization_turn"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     diarization_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("diarizations.id", ondelete="CASCADE"), nullable=False
     )
-    turn_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("speech_turns.id"), nullable=False
-    )
-    speaker_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("speakers.id", ondelete="CASCADE"), nullable=False
-    )
+    turn_id: Mapped[str] = mapped_column(String(36), ForeignKey("speech_turns.id"), nullable=False)
+    speaker_id: Mapped[str] = mapped_column(String(36), ForeignKey("speakers.id", ondelete="CASCADE"), nullable=False)
     overlap_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    diarization: Mapped["Diarization"] = relationship(
-        "Diarization", back_populates="assignments"
-    )
+    diarization: Mapped["Diarization"] = relationship("Diarization", back_populates="assignments")
     speaker: Mapped["Speaker"] = relationship("Speaker")
 
 
@@ -349,23 +379,17 @@ class SpeakerReview(Base):
     """
 
     __tablename__ = "speaker_reviews"
-    __table_args__ = (
-        UniqueConstraint("meeting_id", "processing_revision", name="uq_speaker_review_revision"),
-    )
+    __table_args__ = (UniqueConstraint("meeting_id", "processing_revision", name="uq_speaker_review_revision"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
-    )
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
     # Processing revision this aggregate belongs to; 1 for legacy recordings.
     processing_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     # Derived only: "pending" | "complete" (see app.meetings.speaker_review_state).
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    items: Mapped[list["SpeakerReviewItem"]] = relationship(
-        "SpeakerReviewItem", back_populates="review", lazy="select"
-    )
+    items: Mapped[list["SpeakerReviewItem"]] = relationship("SpeakerReviewItem", back_populates="review", lazy="select")
 
 
 # ---------------------------------------------------------------------------
@@ -384,9 +408,7 @@ class SpeakerReviewItem(Base):
     """
 
     __tablename__ = "speaker_review_items"
-    __table_args__ = (
-        UniqueConstraint("review_id", "speaker_key", name="uq_speaker_review_item_speaker"),
-    )
+    __table_args__ = (UniqueConstraint("review_id", "speaker_key", name="uq_speaker_review_item_speaker"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     review_id: Mapped[str] = mapped_column(
@@ -409,9 +431,7 @@ class SpeakerReviewIdempotencyReceipt(Base):
     """Persist the original response for one idempotent review write."""
 
     __tablename__ = "speaker_review_idempotency_receipts"
-    __table_args__ = (
-        UniqueConstraint("review_id", "idempotency_key", name="uq_review_idempotency_key"),
-    )
+    __table_args__ = (UniqueConstraint("review_id", "idempotency_key", name="uq_review_idempotency_key"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     review_id: Mapped[str] = mapped_column(
@@ -436,15 +456,11 @@ class MeetingProcessingClaim(Base):
     __tablename__ = "meeting_processing_claims"
     __table_args__ = (UniqueConstraint("meeting_id", name="uq_processing_claim_meeting_id"),)
 
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), primary_key=True
-    )
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), primary_key=True)
     generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     claim_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     claim_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    claim_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    claim_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class MeetingRecoveryOperation(Base):
@@ -453,38 +469,29 @@ class MeetingRecoveryOperation(Base):
     __tablename__ = "meeting_recovery_operations"
     __table_args__ = (
         UniqueConstraint(
-            "actor_id", "meeting_id", "idempotency_key",
+            "actor_id",
+            "meeting_id",
+            "idempotency_key",
             name="uq_recovery_operation_idempotency_scope",
         ),
         CheckConstraint(
-            "preservation_counts IS NULL OR "
-            "CAST(preservation_counts AS TEXT) = '{}'",
+            "preservation_counts IS NULL OR CAST(preservation_counts AS TEXT) = '{}'",
             name="ck_recovery_operation_empty_preservation_counts",
         ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meeting_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("meetings.id"), nullable=False
-    )
-    actor_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("users.id"), nullable=False
-    )
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id"), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     # Store a digest of the caller's key, never the request's raw value.
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
     processing_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    preservation_snapshot_digest: Mapped[str | None] = mapped_column(
-        String(64), nullable=True
-    )
+    preservation_snapshot_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     preservation_counts: Mapped[dict[str, int] | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class MeetingRecoveryOutbox(Base):
@@ -512,21 +519,15 @@ class MeetingRecoveryOutbox(Base):
         String(16), nullable=False, default="pending", server_default="pending"
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    next_attempt_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ManualRecoveryPilotGate(Base):
     """Singleton persistence for the separately authorized recovery pilot."""
 
     __tablename__ = "manual_recovery_pilot_gate"
-    __table_args__ = (
-        CheckConstraint("id = 1", name="ck_manual_recovery_pilot_gate_singleton"),
-    )
+    __table_args__ = (CheckConstraint("id = 1", name="ck_manual_recovery_pilot_gate_singleton"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="disabled")
@@ -537,8 +538,10 @@ class ManualRecoveryPilotGate(Base):
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     pilot_operation_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("meeting_recovery_operations.id"),
-        unique=True, nullable=True,
+        String(36),
+        ForeignKey("meeting_recovery_operations.id"),
+        unique=True,
+        nullable=True,
     )
     armed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -546,9 +549,7 @@ class ManualRecoveryPilotGate(Base):
         String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    verification_artifact_snapshot_match: Mapped[bool | None] = mapped_column(
-        Boolean, nullable=True
-    )
+    verification_artifact_snapshot_match: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 # ---------------------------------------------------------------------------

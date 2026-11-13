@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.infra.models import SpeechTurn, Transcript
+from app.meetings.processing_revision_service import visible_revision_id
 
 
 class TranscriptRepository:
@@ -32,13 +33,13 @@ class TranscriptRepository:
         await session.flush()
         return transcript
 
-    async def get_by_meeting(self, meeting_id: str) -> Transcript | None:
-        """Gets the transcript associated with a meeting along with its turns."""
+    async def get_by_meeting(self, meeting_id: str, *, processing_revision_id: str | None = None) -> Transcript | None:
+        """Read one exact revision; default to active or compatibility, never in-flight."""
         async with self._session_factory() as session:
-            stmt = (
-                select(Transcript)
-                .where(Transcript.meeting_id == meeting_id)
-                .options(selectinload(Transcript.turns))
-            )
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none()
+            visible = await visible_revision_id(session, meeting_id)
+            revision_id = processing_revision_id if processing_revision_id is not None else visible
+            stmt = select(Transcript).where(Transcript.meeting_id == meeting_id).options(selectinload(Transcript.turns))
+            if revision_id is not None:
+                stmt = stmt.where(Transcript.processing_revision_id == revision_id)
+            transcript: Transcript | None = await session.scalar(stmt)
+            return transcript

@@ -29,6 +29,7 @@ from app.infra.database import create_engine, create_session_factory
 from app.infra.models import (
     Diarization,
     Meeting,
+    RecordingProcessingState,
     SessionRecording,
     SpeechTurn,
     Transcript,
@@ -36,6 +37,7 @@ from app.infra.models import (
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.meetings import service as meeting_service
+from app.meetings.processing_revision_service import visible_revision_id
 from app.meetings.service import (
     delete_meeting,
     get_meeting,
@@ -134,11 +136,7 @@ async def list_meetings(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
-            stmt = (
-                select(Meeting)
-                .where(Meeting.created_by == user.id)
-                .order_by(Meeting.created_at.desc())
-            )
+            stmt = select(Meeting).where(Meeting.created_by == user.id).order_by(Meeting.created_at.desc())
             result = await session.execute(stmt)
             meetings = result.scalars().all()
             return [
@@ -171,9 +169,7 @@ async def rename_meeting_endpoint(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session, session.begin():
-            await _get_authorized_meeting(
-                session, meeting_id, user, f"PATCH /api/v1/meetings/{meeting_id}"
-            )
+            await _get_authorized_meeting(session, meeting_id, user, f"PATCH /api/v1/meetings/{meeting_id}")
             updated = await rename_meeting(session, meeting_id, rename_input.title)
             assert updated is not None
             return {"meeting_id": updated.id, "title": updated.title}
@@ -194,9 +190,7 @@ async def delete_meeting_endpoint(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session, session.begin():
-            await _get_authorized_meeting(
-                session, meeting_id, user, f"DELETE /api/v1/meetings/{meeting_id}"
-            )
+            await _get_authorized_meeting(session, meeting_id, user, f"DELETE /api/v1/meetings/{meeting_id}")
             object_store = _get_object_store()
             await delete_meeting(session, object_store, meeting_id)
     finally:
@@ -216,9 +210,7 @@ async def get_meeting_endpoint(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
-            await _get_authorized_meeting(
-                session, meeting_id, user, f"GET /api/v1/meetings/{meeting_id}"
-            )
+            await _get_authorized_meeting(session, meeting_id, user, f"GET /api/v1/meetings/{meeting_id}")
             result = await get_meeting(session, meeting_id)
             recording = await session.scalar(
                 select(SessionRecording.id).where(SessionRecording.meeting_id == meeting_id)
@@ -249,9 +241,7 @@ async def request_join_endpoint(
     queue: JobQueue | None = None
     try:
         async with session_factory() as session:
-            await _get_authorized_meeting(
-                session, meeting_id, user, f"POST /api/v1/meetings/{meeting_id}/request-join"
-            )
+            await _get_authorized_meeting(session, meeting_id, user, f"POST /api/v1/meetings/{meeting_id}/request-join")
         queue = _get_queue()
         await queue.connect()
         async with session_factory() as session, session.begin():
@@ -259,10 +249,7 @@ async def request_join_endpoint(
             if not result.successful:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Cannot request join: the meeting is in state "
-                        f"'{result.new_state}'"
-                    ),
+                    detail=(f"Cannot request join: the meeting is in state '{result.new_state}'"),
                 )
             return {
                 "meeting_id": meeting_id,
@@ -290,13 +277,21 @@ async def get_speaker_review(
                 user,
                 f"GET /api/v1/meetings/{meeting_id}/speaker-review",
             )
-            result = await SpeakerReviewService(session).get_active_review(
-                user.id, meeting_id
-            )
+            result = await SpeakerReviewService(session).get_active_review(user.id, meeting_id)
             if result is None:
+                state = await session.scalar(
+                    select(RecordingProcessingState)
+                    .join(
+                        SessionRecording,
+                        SessionRecording.id == RecordingProcessingState.recording_id,
+                    )
+                    .where(SessionRecording.meeting_id == meeting_id)
+                )
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Speaker review not found: {meeting_id}",
+                    status_code=(status.HTTP_409_CONFLICT if state else status.HTTP_404_NOT_FOUND),
+                    detail=f"Speaker review not ready: {meeting_id}"
+                    if state
+                    else f"Speaker review not found: {meeting_id}",
                 )
             return result
     finally:
@@ -321,9 +316,7 @@ async def get_playback_manifest(
             )
 
             recording_result = await session.execute(
-                select(SessionRecording).where(
-                    SessionRecording.meeting_id == meeting_id
-                )
+                select(SessionRecording).where(SessionRecording.meeting_id == meeting_id)
             )
             recording = recording_result.scalar_one_or_none()
             if recording is None:
@@ -332,9 +325,7 @@ async def get_playback_manifest(
                     detail=f"Playback not available for meeting: {meeting_id}",
                 )
 
-            inventory = await meeting_service.load_playback_source_inventory(
-                session, recording.id
-            )
+            inventory = await meeting_service.load_playback_source_inventory(session, recording.id)
             if inventory is None or inventory.audio_source is None:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -342,9 +333,7 @@ async def get_playback_manifest(
                 )
 
             object_store = _get_object_store()
-            audio_url = await object_store.temporary_read_url(
-                inventory.audio_source.object_ref, ttl_seconds=3600
-            )
+            audio_url = await object_store.temporary_read_url(inventory.audio_source.object_ref, ttl_seconds=3600)
             audio_source = {
                 "source_id": inventory.audio_source.id,
                 "url": audio_url,
@@ -362,9 +351,7 @@ async def get_playback_manifest(
                     video_sources.append(
                         {
                             "source_id": source.id,
-                            "url": await object_store.temporary_read_url(
-                                source.object_ref, ttl_seconds=3600
-                            ),
+                            "url": await object_store.temporary_read_url(source.object_ref, ttl_seconds=3600),
                             "mime_type": source.mime_type,
                             "quality_label": source.quality_label,
                             "width": source.width,
@@ -406,7 +393,10 @@ async def get_transcript(
             )
 
             # Get the transcript
+            revision_id = await visible_revision_id(session, meeting_id)
             stmt = select(Transcript).where(Transcript.meeting_id == meeting_id)
+            if revision_id is not None:
+                stmt = stmt.where(Transcript.processing_revision_id == revision_id)
             result = await session.execute(stmt)
             transcript = result.scalar_one_or_none()
 
@@ -418,9 +408,7 @@ async def get_transcript(
 
             # Get the turns/segments
             stmt_turns = (
-                select(SpeechTurn)
-                .where(SpeechTurn.transcript_id == transcript.id)
-                .order_by(SpeechTurn.sequence)
+                select(SpeechTurn).where(SpeechTurn.transcript_id == transcript.id).order_by(SpeechTurn.sequence)
             )
             result_turns = await session.execute(stmt_turns)
             turns = result_turns.scalars().all()
@@ -470,6 +458,7 @@ async def get_diarization(
                 f"GET /api/v1/meetings/{meeting_id}/diarization",
             )
 
+            revision_id = await visible_revision_id(session, meeting_id)
             stmt = (
                 select(Diarization)
                 .where(Diarization.meeting_id == meeting_id)
@@ -478,6 +467,8 @@ async def get_diarization(
                     selectinload(Diarization.assignments),
                 )
             )
+            if revision_id is not None:
+                stmt = stmt.where(Diarization.processing_revision_id == revision_id)
             result = await session.execute(stmt)
             diarization = result.scalar_one_or_none()
 
@@ -494,14 +485,8 @@ async def get_diarization(
                 "meeting_id": diarization.meeting_id,
                 "diarization_state": diarization.diarization_state,
                 "speaker_count": diarization.speaker_count,
-                "speakers": [
-                    {"id": s.id, "label": s.label, "sequence": s.sequence}
-                    for s in ordered_speakers
-                ],
-                "assignments": [
-                    {"turn_id": a.turn_id, "speaker_id": a.speaker_id}
-                    for a in diarization.assignments
-                ],
+                "speakers": [{"id": s.id, "label": s.label, "sequence": s.sequence} for s in ordered_speakers],
+                "assignments": [{"turn_id": a.turn_id, "speaker_id": a.speaker_id} for a in diarization.assignments],
             }
     finally:
         await engine.dispose()

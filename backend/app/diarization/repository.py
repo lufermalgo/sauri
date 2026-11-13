@@ -16,6 +16,7 @@ from app.infra.models import (
     SpeakerReviewItem,
 )
 from app.infra.queue import JobQueue
+from app.meetings.processing_revision_service import visible_revision_id
 
 
 class DiarizationRepository:
@@ -25,8 +26,13 @@ class DiarizationRepository:
         self._session_factory = session_factory
 
     async def reserve_next_revision(
-        self, session: AsyncSession, meeting_id: str, transcript_id: str,
-        *, audio_unavailable: bool = False, reuse_terminal: bool = False,
+        self,
+        session: AsyncSession,
+        meeting_id: str,
+        transcript_id: str,
+        *,
+        audio_unavailable: bool = False,
+        reuse_terminal: bool = False,
     ) -> Diarization:
         """Serialize revisions on the Meeting row, including when no attempt exists yet.
 
@@ -36,14 +42,14 @@ class DiarizationRepository:
         Explicit backfill calls use the default, so a completed generation can
         be followed by a new authorized revision.
         """
-        meeting = await session.scalar(
-            select(Meeting).where(Meeting.id == meeting_id).with_for_update()
-        )
+        meeting = await session.scalar(select(Meeting).where(Meeting.id == meeting_id).with_for_update())
         if meeting is None:
             raise ValueError("meeting not found")
         latest = await session.scalar(
-            select(Diarization).where(Diarization.meeting_id == meeting_id)
-            .order_by(Diarization.processing_revision.desc()).limit(1)
+            select(Diarization)
+            .where(Diarization.meeting_id == meeting_id)
+            .order_by(Diarization.processing_revision.desc())
+            .limit(1)
         )
         if latest is not None and latest.transcript_id != transcript_id:
             raise ValueError("transcript does not match existing diarization")
@@ -53,25 +59,31 @@ class DiarizationRepository:
                 latest.failure_cause = "audio_unavailable"
                 latest.updated_at = datetime.now(UTC)
             return latest
-        if latest is not None and (
-            reuse_terminal or latest.diarization_state == "not_reconstructible"
-        ):
+        if latest is not None and (reuse_terminal or latest.diarization_state == "not_reconstructible"):
             return latest
         now = datetime.now(UTC)
         attempt = Diarization(
-            id=str(uuid.uuid4()), meeting_id=meeting_id, transcript_id=transcript_id,
+            id=str(uuid.uuid4()),
+            meeting_id=meeting_id,
+            transcript_id=transcript_id,
             processing_revision=latest.processing_revision + 1 if latest else 1,
-            is_legacy=False, provider=None, speaker_count=0,
+            is_legacy=False,
+            provider=None,
+            speaker_count=0,
             diarization_state="not_reconstructible" if audio_unavailable else "pending",
             failure_cause="audio_unavailable" if audio_unavailable else None,
-            created_at=now, updated_at=now,
+            created_at=now,
+            updated_at=now,
         )
         session.add(attempt)
         await session.flush()  # Constraint is a second guard behind the meeting row lock.
         return attempt
 
     async def publish_pending_revision(
-        self, meeting_id: str, processing_revision: int, queue: JobQueue,
+        self,
+        meeting_id: str,
+        processing_revision: int,
+        queue: JobQueue,
     ) -> bool:
         """Publish a committed pending attempt; retrying publication is safe."""
         async with self._session_factory() as session:
@@ -84,40 +96,57 @@ class DiarizationRepository:
             )
         if pending is None:
             return False
-        await queue.publish("diarize", {
-            "meeting_id": meeting_id, "processing_revision": processing_revision,
-        })
+        await queue.publish(
+            "diarize",
+            {
+                "meeting_id": meeting_id,
+                "processing_revision": processing_revision,
+            },
+        )
         return True
 
     async def claim_revision(
-        self, session: AsyncSession, meeting_id: str, processing_revision: int,
+        self,
+        session: AsyncSession,
+        meeting_id: str,
+        processing_revision: int,
     ) -> bool:
         """Exactly one delivery may transition a pending generation to in_progress."""
         result = await session.execute(
-            update(Diarization).where(
+            update(Diarization)
+            .where(
                 Diarization.meeting_id == meeting_id,
                 Diarization.processing_revision == processing_revision,
                 Diarization.diarization_state == "pending",
-            ).values(diarization_state="in_progress", updated_at=datetime.now(UTC))
+            )
+            .values(diarization_state="in_progress", updated_at=datetime.now(UTC))
             .returning(Diarization.id)
         )
         return result.scalar_one_or_none() is not None
 
     async def fail_revision(
-        self, session: AsyncSession, meeting_id: str, processing_revision: int,
+        self,
+        session: AsyncSession,
+        meeting_id: str,
+        processing_revision: int,
     ) -> bool:
         result = await session.execute(
-            update(Diarization).where(
+            update(Diarization)
+            .where(
                 Diarization.meeting_id == meeting_id,
                 Diarization.processing_revision == processing_revision,
                 Diarization.diarization_state == "in_progress",
-            ).values(diarization_state="failed", failure_cause="engine_failure",
-                     updated_at=datetime.now(UTC)).returning(Diarization.id)
+            )
+            .values(diarization_state="failed", failure_cause="engine_failure", updated_at=datetime.now(UTC))
+            .returning(Diarization.id)
         )
         return result.scalar_one_or_none() is not None
 
     async def retry_failed_revision(
-        self, session: AsyncSession, meeting_id: str, processing_revision: int,
+        self,
+        session: AsyncSession,
+        meeting_id: str,
+        processing_revision: int,
     ) -> Diarization | None:
         """Explicit retry only: reset a retryable failure without allocating a revision.
 
@@ -125,10 +154,12 @@ class DiarizationRepository:
         before republishing the same meeting/revision pair.
         """
         attempt = await session.scalar(
-            select(Diarization).where(
+            select(Diarization)
+            .where(
                 Diarization.meeting_id == meeting_id,
                 Diarization.processing_revision == processing_revision,
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if attempt is None or attempt.diarization_state not in {"failed", "pending"}:
             return None
@@ -142,8 +173,13 @@ class DiarizationRepository:
         return attempt
 
     async def complete_revision(
-        self, session: AsyncSession, meeting_id: str, processing_revision: int,
-        provider: str, speakers: list[Speaker], assignments: list[SpeakerAssignment],
+        self,
+        session: AsyncSession,
+        meeting_id: str,
+        processing_revision: int,
+        provider: str,
+        speakers: list[Speaker],
+        assignments: list[SpeakerAssignment],
     ) -> Diarization:
         """Commit the generation, its new speaker keys, assignments and review together.
 
@@ -151,11 +187,13 @@ class DiarizationRepository:
         generation and its review are never overwritten by this operation.
         """
         attempt = await session.scalar(
-            select(Diarization).where(
+            select(Diarization)
+            .where(
                 Diarization.meeting_id == meeting_id,
                 Diarization.processing_revision == processing_revision,
                 Diarization.diarization_state == "in_progress",
-            ).with_for_update()
+            )
+            .with_for_update()
         )
         if attempt is None:
             raise ValueError("revision is not claimed")
@@ -168,17 +206,27 @@ class DiarizationRepository:
             assignment.diarization_id = attempt.id
             session.add(assignment)
         review = SpeakerReview(
-            id=str(uuid.uuid4()), meeting_id=meeting_id,
+            id=str(uuid.uuid4()),
+            meeting_id=meeting_id,
             processing_revision=processing_revision,
-            status="pending" if speakers else "complete", created_at=datetime.now(UTC),
+            status="pending" if speakers else "complete",
+            created_at=datetime.now(UTC),
         )
         session.add(review)
         for speaker in speakers:
-            session.add(SpeakerReviewItem(
-                id=str(uuid.uuid4()), review_id=review.id, speaker_key=speaker.id,
-                current_label=speaker.label, excerpt_ref=None, disposition=None,
-                chosen_label=None, attribution_state="uncertain", version=1,
-            ))
+            session.add(
+                SpeakerReviewItem(
+                    id=str(uuid.uuid4()),
+                    review_id=review.id,
+                    speaker_key=speaker.id,
+                    current_label=speaker.label,
+                    excerpt_ref=None,
+                    disposition=None,
+                    chosen_label=None,
+                    attribution_state="uncertain",
+                    version=1,
+                )
+            )
         attempt.diarization_state = "completed"
         attempt.failure_cause = None
         attempt.updated_at = datetime.now(UTC)
@@ -186,8 +234,11 @@ class DiarizationRepository:
         return attempt
 
     async def create(
-        self, session: AsyncSession, diarization: Diarization,
-        speakers: list[Speaker], assignments: list[SpeakerAssignment],
+        self,
+        session: AsyncSession,
+        diarization: Diarization,
+        speakers: list[Speaker],
+        assignments: list[SpeakerAssignment],
     ) -> Diarization:
         """Legacy direct-creation seam retained for existing repository callers."""
         session.add(diarization)
@@ -195,15 +246,23 @@ class DiarizationRepository:
         session.add_all(assignments)
         return diarization
 
-    async def get_by_meeting(self, meeting_id: str) -> Diarization | None:
-        """Return only the latest completed generation, with its own children."""
+    async def get_by_meeting(self, meeting_id: str, *, processing_revision_id: str | None = None) -> Diarization | None:
+        """Read only the requested exact revision or the visible completed generation."""
         async with self._session_factory() as session:
-            active: Diarization | None = await session.scalar(
-                select(Diarization).where(
-                    Diarization.meeting_id == meeting_id,
-                    Diarization.diarization_state == "completed",
-                ).order_by(Diarization.processing_revision.desc()).limit(1).options(
-                    selectinload(Diarization.speakers), selectinload(Diarization.assignments),
+            visible = await visible_revision_id(session, meeting_id)
+            revision_id = processing_revision_id if processing_revision_id is not None else visible
+            stmt = select(Diarization).where(
+                Diarization.meeting_id == meeting_id,
+                Diarization.diarization_state == "completed",
+            )
+            if revision_id is not None:
+                stmt = stmt.where(Diarization.processing_revision_id == revision_id)
+            else:
+                stmt = stmt.order_by(Diarization.processing_revision.desc())
+            result: Diarization | None = await session.scalar(
+                stmt.limit(1).options(
+                    selectinload(Diarization.speakers),
+                    selectinload(Diarization.assignments),
                 )
             )
-            return active
+            return result

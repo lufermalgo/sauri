@@ -43,9 +43,7 @@ _AUTHENTICATED_USER = Depends(get_current_user)
 
 
 def _cleanup_scope_hash(user_id: str, meeting_id: str, idempotency_key: str) -> str:
-    scope = json.dumps(
-        [user_id, meeting_id, idempotency_key], separators=(",", ":")
-    )
+    scope = json.dumps([user_id, meeting_id, idempotency_key], separators=(",", ":"))
     return hashlib.sha256(scope.encode()).hexdigest()
 
 
@@ -93,7 +91,8 @@ async def upload_recording(
     has_separate_video = video is not None
     if (
         (ingestion_data.video_presence == "separate") != has_separate_video
-        or ingestion_data.video_presence in {"muxed", "absent"} and has_separate_video
+        or ingestion_data.video_presence in {"muxed", "absent"}
+        and has_separate_video
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -107,9 +106,7 @@ async def upload_recording(
     prior_state: str | None = None
     try:
         async with preflight_session_factory() as session:
-            existing_recording = await preflight_ingestion(
-                session, ingestion_data, user.id
-            )
+            existing_recording = await preflight_ingestion(session, ingestion_data, user.id)
             if existing_recording is not None:
                 await drain_pending_object_deletions(
                     session,
@@ -141,11 +138,10 @@ async def upload_recording(
     object_store = _get_object_store()
     queue = _get_queue()
 
-    cleanup_scope_hash = _cleanup_scope_hash(
-        user.id, ingestion_data.meeting_id, ingestion_data.idempotency_key
-    )
+    cleanup_scope_hash = _cleanup_scope_hash(user.id, ingestion_data.meeting_id, ingestion_data.idempotency_key)
     staged_refs: list[str | None] = []
     video_ref: str | None = None
+    video_content: bytes | None = None
     try:
         # c. Store audio in the ObjectStore
         audio_content = await audio.read()
@@ -173,12 +169,8 @@ async def upload_recording(
             cleanup_engine = create_engine()
             cleanup_session_factory = create_session_factory(cleanup_engine)
             async with cleanup_session_factory() as cleanup_session:
-                await persist_pending_object_deletions(
-                    cleanup_session, cleanup_scope_hash, staged_refs
-                )
-                await drain_pending_object_deletions(
-                    cleanup_session, object_store, cleanup_scope_hash
-                )
+                await persist_pending_object_deletions(cleanup_session, cleanup_scope_hash, staged_refs)
+                await drain_pending_object_deletions(cleanup_session, object_store, cleanup_scope_hash)
         except Exception:
             logger.exception("Could not durably clean partially staged ingestion objects")
         finally:
@@ -196,13 +188,21 @@ async def upload_recording(
     job_id = str(uuid.uuid4())
     try:
         async with session_factory() as session, session.begin():
-            recording, is_new = await process_ingestion(
-                session=session,
-                data=ingestion_data,
-                audio_ref=audio_ref,
-                video_ref=video_ref,
-                created_by=user.id,
-            )
+            try:
+                recording, is_new = await process_ingestion(
+                    session=session,
+                    data=ingestion_data,
+                    audio_ref=audio_ref,
+                    video_ref=video_ref,
+                    created_by=user.id,
+                    request_fingerprint="sha256:"
+                    + hashlib.sha256(
+                        hashlib.sha256(audio_content).digest()
+                        + (hashlib.sha256(video_content).digest() if video_content is not None else b"")
+                    ).hexdigest(),
+                )
+            except ValueError as error:
+                raise HTTPException(status_code=409, detail="Processing admission conflict") from error
 
             if is_new:
                 # f. Transition Meeting to "transcribing"
@@ -219,9 +219,7 @@ async def upload_recording(
                     event="recording_uploaded",
                 )
                 if transition_result.successful:
-                    processing_generation = await create_processing_generation(
-                        session, ingestion_data.meeting_id
-                    )
+                    processing_generation = await create_processing_generation(session, ingestion_data.meeting_id)
             else:
                 meeting = await session.get(Meeting, ingestion_data.meeting_id)
                 if meeting is None:
@@ -238,9 +236,7 @@ async def upload_recording(
                     cleanup_scope_hash,
                     [audio_ref, video_ref],
                 )
-                await drain_pending_object_deletions(
-                    cleanup_session, object_store, cleanup_scope_hash
-                )
+                await drain_pending_object_deletions(cleanup_session, object_store, cleanup_scope_hash)
         except Exception:
             logger.exception("Could not durably clean failed ingestion objects")
         finally:

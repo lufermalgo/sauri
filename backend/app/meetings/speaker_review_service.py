@@ -10,11 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import (
     Meeting,
+    ProcessingRevision,
     SpeakerReview,
     SpeakerReviewIdempotencyReceipt,
     SpeakerReviewItem,
 )
 from app.meetings.disposition_idempotency import canonical_request_hash
+from app.meetings.processing_revision_service import lock_processing_state
 from app.meetings.speaker_review_state import VALID_DISPOSITIONS, is_complete, review_status
 
 
@@ -24,9 +26,7 @@ class SpeakerReviewService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get_active_review(
-        self, owner_id: str, meeting_id: str
-    ) -> dict[str, Any] | None:
+    async def get_active_review(self, owner_id: str, meeting_id: str) -> dict[str, Any] | None:
         """Return the owner's current review and only its undisposed items."""
         meeting = await self._session.scalar(
             select(Meeting).where(Meeting.id == meeting_id, Meeting.created_by == owner_id)
@@ -34,12 +34,28 @@ class SpeakerReviewService:
         if meeting is None:
             return None
 
-        review = await self._session.scalar(
-            select(SpeakerReview)
-            .where(SpeakerReview.meeting_id == meeting_id)
-            .order_by(SpeakerReview.processing_revision.desc())
-            .limit(1)
-        )
+        processing_state = await lock_processing_state(self._session, meeting_id, owner_id=owner_id)
+        if processing_state is not None:
+            if processing_state.active_processing_revision_id is None:
+                return None
+            active = await self._session.get(ProcessingRevision, processing_state.active_processing_revision_id)
+            if active is None:
+                return None
+            review = await self._session.scalar(
+                select(SpeakerReview).where(
+                    SpeakerReview.meeting_id == meeting_id,
+                    SpeakerReview.processing_revision == active.revision,
+                )
+            )
+        else:
+            # Pre-revision test/legacy aggregates without a recording retain their
+            # existing read behavior; recording-backed responses are always pinned.
+            review = await self._session.scalar(
+                select(SpeakerReview)
+                .where(SpeakerReview.meeting_id == meeting_id)
+                .order_by(SpeakerReview.processing_revision.desc())
+                .limit(1)
+            )
         if review is None:
             return None
 
@@ -90,6 +106,15 @@ class SpeakerReviewService:
             )
             if meeting is None:
                 return {"outcome": "not_found", "result": None}
+            processing_state = await lock_processing_state(self._session, meeting_id, owner_id=owner_id)
+            if processing_state is not None:
+                active = (
+                    await self._session.get(ProcessingRevision, processing_state.active_processing_revision_id)
+                    if processing_state.active_processing_revision_id
+                    else None
+                )
+                if active is None or str(active.revision) != revision_id:
+                    return {"outcome": "conflict_stale_revision", "result": None}
 
             review = await self._session.scalar(
                 select(SpeakerReview)
@@ -100,7 +125,7 @@ class SpeakerReviewService:
                 .with_for_update()
             )
             if review is None:
-                return {"outcome": "not_found", "result": None}
+                return {"outcome": "conflict_stale_revision", "result": None}
 
             item = await self._session.scalar(
                 select(SpeakerReviewItem)
@@ -145,9 +170,11 @@ class SpeakerReviewService:
                 item.chosen_label = normalized_label
             item.version += 1
             items = list(
-                (await self._session.scalars(
-                    select(SpeakerReviewItem).where(SpeakerReviewItem.review_id == review.id)
-                )).all()
+                (
+                    await self._session.scalars(
+                        select(SpeakerReviewItem).where(SpeakerReviewItem.review_id == review.id)
+                    )
+                ).all()
             )
             statuses = {row.speaker_key: row.disposition for row in items}
             review.status = "complete" if is_complete(statuses) else "pending"

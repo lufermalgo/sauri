@@ -7,6 +7,7 @@ but doesn't alter the flow.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import UTC, datetime
 
@@ -17,14 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import Meeting, RecordingMediaSource, RecordingNotice, SessionRecording
 from app.ingestion.schemas import IngestionData
+from app.meetings.processing_revision_service import ProcessingRevisionService
 
 
-async def _find_recording_by_key(
-    session: AsyncSession, idempotency_key: str
-) -> SessionRecording | None:
-    result = await session.execute(
-        select(SessionRecording).where(SessionRecording.idempotency_key == idempotency_key)
-    )
+async def _find_recording_by_key(session: AsyncSession, idempotency_key: str) -> SessionRecording | None:
+    result = await session.execute(select(SessionRecording).where(SessionRecording.idempotency_key == idempotency_key))
     return result.scalar_one_or_none()
 
 
@@ -45,9 +43,7 @@ async def _classify_existing_recording(
     return recording
 
 
-async def preflight_ingestion(
-    session: AsyncSession, data: IngestionData, created_by: str
-) -> SessionRecording | None:
+async def preflight_ingestion(session: AsyncSession, data: IngestionData, created_by: str) -> SessionRecording | None:
     """Check ownership and classify a retry before any media object is written."""
     meeting = await session.get(Meeting, data.meeting_id)
     if meeting is not None and meeting.created_by != created_by:
@@ -55,9 +51,7 @@ async def preflight_ingestion(
     recording = await _find_recording_by_key(session, data.idempotency_key)
     if recording is None:
         return None
-    return await _classify_existing_recording(
-        session, recording, meeting, data.meeting_id, created_by
-    )
+    return await _classify_existing_recording(session, recording, meeting, data.meeting_id, created_by)
 
 
 def resolve_upload_title(title: str | None, filename: str | None) -> str:
@@ -75,6 +69,7 @@ async def process_ingestion(
     audio_ref: str,
     video_ref: str | None,
     created_by: str,
+    request_fingerprint: str | None = None,
 ) -> tuple[SessionRecording, bool]:
     """Processes an ingestion from any capture source.
 
@@ -88,6 +83,13 @@ async def process_ingestion(
     # 1. Repeat ownership and idempotency checks after media storage to cover races.
     existing = await preflight_ingestion(session, data, created_by)
     if existing is not None:
+        if request_fingerprint is not None:
+            await ProcessingRevisionService(session).admit_candidate(
+                owner_id=created_by,
+                recording_id=existing.id,
+                request_id=data.idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
         return existing, False
 
     # 2. Ensure Meeting exists (auto-create upload-only meetings without a Meet link).
@@ -158,12 +160,18 @@ async def process_ingestion(
         if existing is None:
             raise
         meeting = await session.get(Meeting, data.meeting_id)
-        existing = await _classify_existing_recording(
-            session, existing, meeting, data.meeting_id, created_by
-        )
+        existing = await _classify_existing_recording(session, existing, meeting, data.meeting_id, created_by)
         return existing, False
 
     await session.refresh(recording)
+    # Admission and its outbox event share the caller's upload transaction. The
+    # dispatcher/finalizer belong to T-15; neither is faked by the upload path.
+    await ProcessingRevisionService(session).admit_candidate(
+        owner_id=created_by,
+        recording_id=recording.id,
+        request_id=data.idempotency_key,
+        request_fingerprint=request_fingerprint or ("sha256:" + hashlib.sha256(audio_ref.encode()).hexdigest()),
+    )
 
     # 5. Return the created recording (it's new).
     return recording, True
