@@ -36,7 +36,7 @@ def _id() -> str:
 def _dedicated_pg_url(raw: str) -> URL:
     parsed = make_url(raw)
     if parsed.drivername != "postgresql+asyncpg" or not re.fullmatch(
-        r"sauri_t9_[a-z0-9]+(?:_[a-z0-9]+)*", parsed.database or "",
+        r"sauri_t9_[a-zA-Z0-9_]+", parsed.database or "",
     ):
         raise ValueError("SAURI_QA_POSTGRES_URL must target a dedicated sauri_t9_ PostgreSQL database")
     return parsed
@@ -54,8 +54,9 @@ def test_refuse_unsafe_postgres_target_before_connecting(url: str) -> None:
         _dedicated_pg_url(url)
 
 
-def test_allow_dedicated_postgres_database_name() -> None:
-    assert _dedicated_pg_url("postgresql+asyncpg://localhost/sauri_t9_demo").database == "sauri_t9_demo"
+@pytest.mark.parametrize("name", ["sauri_t9_demo", "sauri_t9_QA_277"])
+def test_allow_dedicated_postgres_database_name(name: str) -> None:
+    assert _dedicated_pg_url(f"postgresql+asyncpg://localhost/{name}").database == name
 
 
 @pytest.fixture
@@ -138,11 +139,21 @@ async def test_non_sales_user_cannot_enqueue_or_publish(
     broker = os.environ.get("SAURI_QA_RABBITMQ_URL")
     if not broker:
         pytest.skip("requires disposable RabbitMQ URL in SAURI_QA_RABBITMQ_URL")
-    client, factory, _, meeting, template = pg_request
-    non_sales = _id()
+    client, factory, _, _, _ = pg_request
+    non_sales, meeting, transcript, template = (_id() for _ in range(4))
+    now = datetime.now(UTC)
     async with factory() as session, session.begin():
         session.add(User(id=non_sales, email=f"{non_sales}@example.test", name="Synthetic",
-                         password_hash="not-used", is_sales=False, created_at=datetime.now(UTC)))
+                         password_hash="not-used", is_sales=False, created_at=now))
+        session.add(Meeting(id=meeting, meet_link="https://meet.google.com/xyz-pqrs-tuv",
+                            origin="manual", calendar_invite_id=None, scheduled_start_time=None,
+                            process_state="completed", failure_cause=None, created_by=non_sales, created_at=now))
+        session.add(Transcript(id=transcript, meeting_id=meeting, language="es-CO",
+                               provider="synthetic", supports_turns=False, expires_at=None, created_at=now))
+        await session.flush()
+        session.add(SummaryTemplate(id=template, owner_user_id=non_sales, category_id=None,
+                                    name="Own synthetic template", version=1,
+                                    instructions="Only synthetic content", created_at=now, updated_at=now))
     response = await client.post(
         f"/api/v1/meetings/{meeting}/summary-requests",
         json={"template_id": template}, headers=_headers(non_sales, sales=False),
