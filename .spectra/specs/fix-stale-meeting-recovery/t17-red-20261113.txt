@@ -1,0 +1,1199 @@
+/private/var/folders/x6/96ywnlxd7kxfr4qns4c8_0hc0000gn/T/apx-scratch-d2296a21/th_85e282ac84d448a0/venv771/lib/python3.11/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FF.....FFFFFFFFFFFFFFFFF                                                 [100%]
+=================================== FAILURES ===================================
+_______________ test_accepts_one_atomic_fenced_operation[queued] _______________
+
+api_client = <httpx.AsyncClient object at 0x10c9ad310>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '253e70c2-5b44-425c-a2b3-7cd6f0ba6916', state = 'queued'
+
+    @pytest.mark.parametrize("state", ["queued", "transcribing"])
+    async def test_accepts_one_atomic_fenced_operation(
+        api_client: AsyncClient, api_db_url: str, candidate: str, state: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            meeting = await session.get(Meeting, candidate)
+            assert meeting
+            meeting.process_state = state
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body["status"] == "accepted"
+E       AssertionError: assert 'pilot_not_armed' == 'accepted'
+E         
+E         - accepted
+E         + pilot_not_armed
+
+tests/meetings/test_recovery_service.py:128: AssertionError
+____________ test_accepts_one_atomic_fenced_operation[transcribing] ____________
+
+api_client = <httpx.AsyncClient object at 0x10dd50810>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = 'fc455ca0-4ed7-4c2b-ae1a-54063739b7d2', state = 'transcribing'
+
+    @pytest.mark.parametrize("state", ["queued", "transcribing"])
+    async def test_accepts_one_atomic_fenced_operation(
+        api_client: AsyncClient, api_db_url: str, candidate: str, state: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            meeting = await session.get(Meeting, candidate)
+            assert meeting
+            meeting.process_state = state
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body["status"] == "accepted"
+E       AssertionError: assert 'pilot_not_armed' == 'accepted'
+E         
+E         - accepted
+E         + pilot_not_armed
+
+tests/meetings/test_recovery_service.py:128: AssertionError
+_______ test_rejects_without_any_database_write[used_gate-pilot_in_use] ________
+
+api_client = <httpx.AsyncClient object at 0x10ecb85d0>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '1cf5c6ca-f3be-486c-adc9-43e455bf7c58'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10eba2610>
+case = 'used_gate', reason = 'pilot_in_use'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'p...pilot_in_use'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'pilot_in_use'}
+E         {'status': 'pilot_not_armed'} != {'status': 'pilot_in_use'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+____ test_rejects_without_any_database_write[wrong_state-ineligible_state] _____
+
+api_client = <httpx.AsyncClient object at 0x10ee02c50>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '05c1d39e-c5b3-44bc-900d-f6d06c57ce2a'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ed3a850>
+case = 'wrong_state', reason = 'ineligible_state'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'i...igible_state'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'ineligible_state'}
+E         {'status': 'pilot_not_armed'} != {'status': 'ineligible_state'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[missing_recording-eligibility_unverified] _
+
+api_client = <httpx.AsyncClient object at 0x10ed37b90>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '3f88d71d-4d28-4978-9ea1-e0afd460cb43'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10edb0c50>
+case = 'missing_recording', reason = 'eligibility_unverified'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'e...y_unverified'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'eligibility_unverified'}
+E         {'status': 'pilot_not_armed'} != {'status': 'eligibility_unverified'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[empty_audio-eligibility_unverified] __
+
+api_client = <httpx.AsyncClient object at 0x10ef23bd0>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '538d943f-f2a0-4c84-a49f-6ee8257eefcc'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10efa7510>
+case = 'empty_audio', reason = 'eligibility_unverified'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'e...y_unverified'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'eligibility_unverified'}
+E         {'status': 'pilot_not_armed'} != {'status': 'eligibility_unverified'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[expired_recording-eligibility_unverified] _
+
+api_client = <httpx.AsyncClient object at 0x10ef07d10>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = 'f61accc8-08e8-4f51-bab5-153284d9e578'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ef86e90>
+case = 'expired_recording', reason = 'eligibility_unverified'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'e...y_unverified'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'eligibility_unverified'}
+E         {'status': 'pilot_not_armed'} != {'status': 'eligibility_unverified'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+___ test_rejects_without_any_database_write[transcript-ineligible_artifacts] ___
+
+api_client = <httpx.AsyncClient object at 0x10edad750>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = 'ea169cf3-d2b3-432f-8152-83eacc7d0f7b'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee8b4d0>
+case = 'transcript', reason = 'ineligible_artifacts'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'i...le_artifacts'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'ineligible_artifacts'}
+E         {'status': 'pilot_not_armed'} != {'status': 'ineligible_artifacts'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[missing_fence-eligibility_unverified] _
+
+api_client = <httpx.AsyncClient object at 0x10ecbbc10>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = 'd4ecf7d9-5932-441e-883d-9a4bb504ead4'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ee8a210>
+case = 'missing_fence', reason = 'eligibility_unverified'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'e...y_unverified'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'eligibility_unverified'}
+E         {'status': 'pilot_not_armed'} != {'status': 'eligibility_unverified'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[active_claim-active_or_pending_work] _
+
+api_client = <httpx.AsyncClient object at 0x10eb3a910>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '227db8df-c9e7-476b-a98c-dc25b99164ee'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10eae8d10>
+case = 'active_claim', reason = 'active_or_pending_work'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'a...pending_work'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'active_or_pending_work'}
+E         {'status': 'pilot_not_armed'} != {'status': 'active_or_pending_work'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[expired_claim-active_or_pending_work] _
+
+api_client = <httpx.AsyncClient object at 0x10eefcb10>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '355babf7-d88e-47bf-933f-d9a7a477ce40'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ed8d6d0>
+case = 'expired_claim', reason = 'active_or_pending_work'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'a...pending_work'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'active_or_pending_work'}
+E         {'status': 'pilot_not_armed'} != {'status': 'active_or_pending_work'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[partial_claim-active_or_pending_work] _
+
+api_client = <httpx.AsyncClient object at 0x10ec61e90>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = 'e910ad9d-5659-4d10-b057-14c31bc58eed'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ec23090>
+case = 'partial_claim', reason = 'active_or_pending_work'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'a...pending_work'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'active_or_pending_work'}
+E         {'status': 'pilot_not_armed'} != {'status': 'active_or_pending_work'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[object_missing-eligibility_unverified] _
+
+api_client = <httpx.AsyncClient object at 0x10ebfbc50>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '5a6c0f1b-64c4-4c50-a519-99f88ec90354'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ec23290>
+case = 'object_missing', reason = 'eligibility_unverified'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'e...y_unverified'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'eligibility_unverified'}
+E         {'status': 'pilot_not_armed'} != {'status': 'eligibility_unverified'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[object_unknown-eligibility_unverified] _
+
+api_client = <httpx.AsyncClient object at 0x10f1a8990>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '44b3ce0f-e425-4aa5-8b4e-38d5851f4e49'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f0eb650>
+case = 'object_unknown', reason = 'eligibility_unverified'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'e...y_unverified'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'eligibility_unverified'}
+E         {'status': 'pilot_not_armed'} != {'status': 'eligibility_unverified'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_ test_rejects_without_any_database_write[object_error-eligibility_unverified] _
+
+api_client = <httpx.AsyncClient object at 0x10f0ed950>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '9d6da10e-588d-42c0-b41e-1a1fd23a421c'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10f0ea5d0>
+case = 'object_error', reason = 'eligibility_unverified'
+
+    @pytest.mark.parametrize(("case", "reason"), [
+        ("disabled", "pilot_not_armed"), ("wrong_allowlist", "pilot_not_armed"),
+        ("missing_allowlist", "pilot_not_armed"), ("missing_gate", "pilot_not_armed"),
+        ("wrong_gate", "pilot_not_armed"), ("used_gate", "pilot_in_use"),
+        ("wrong_state", "ineligible_state"), ("missing_recording", "eligibility_unverified"),
+        ("empty_audio", "eligibility_unverified"), ("expired_recording", "eligibility_unverified"),
+        ("transcript", "ineligible_artifacts"), ("missing_fence", "eligibility_unverified"),
+        ("active_claim", "active_or_pending_work"), ("expired_claim", "active_or_pending_work"),
+        ("partial_claim", "active_or_pending_work"), ("object_missing", "eligibility_unverified"),
+        ("object_unknown", "eligibility_unverified"), ("object_error", "eligibility_unverified"),
+    ])
+    async def test_rejects_without_any_database_write(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+        case: str, reason: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with factory() as session, session.begin():
+            gate = await session.get(ManualRecoveryPilotGate, 1)
+            claim = await session.get(MeetingProcessingClaim, candidate)
+            recording = (await session.scalars(select(SessionRecording))).one()
+            meeting = await session.get(Meeting, candidate)
+            assert gate and claim and meeting
+            if case == "disabled":
+                monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+            elif case == "wrong_allowlist":
+                monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", str(uuid.uuid4()))
+            elif case == "missing_allowlist":
+                monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID")
+            elif case == "missing_gate":
+                await session.delete(gate)
+            elif case == "wrong_gate":
+                gate.allowed_meeting_id = None
+            elif case == "used_gate":
+                gate.status = "awaiting_verification"
+            elif case == "wrong_state":
+                meeting.process_state = "completed"
+            elif case == "missing_recording":
+                await session.delete(recording)
+            elif case == "empty_audio":
+                recording.audio_ref = " "
+            elif case == "expired_recording":
+                recording.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+            elif case == "transcript":
+                session.add(Transcript(id=str(uuid.uuid4()), meeting_id=candidate, language="es",
+                                       provider="synthetic", supports_turns=False, created_at=datetime.now(UTC)))
+            elif case == "missing_fence":
+                await session.delete(claim)
+            elif case in {"active_claim", "expired_claim"}:
+                claim.claim_id = str(uuid.uuid4())
+                claim.claim_kind = "transcription"
+                if case == "expired_claim":
+                    claim.claim_expires_at = datetime.now(UTC) - timedelta(days=1)
+            elif case == "partial_claim":
+                claim.claim_kind = "diarization"
+            elif case.startswith("object_"):
+                store = router._get_object_store()
+                if case == "object_error":
+                    store.inspect.side_effect = RuntimeError("private-storage-error")
+                else:
+                    store.inspect.return_value = "missing" if case == "object_missing" else None
+        before = await snapshot(api_db_url)
+        body = await post(api_client, candidate)
+>       assert body == {"status": reason, "reason_code": reason}
+E       AssertionError: assert {'status': 'p...ot_not_armed'} == {'status': 'e...y_unverified'}
+E         
+E         Differing items:
+E         {'reason_code': 'pilot_not_armed'} != {'reason_code': 'eligibility_unverified'}
+E         {'status': 'pilot_not_armed'} != {'status': 'eligibility_unverified'}
+E         Use -v to get more diff
+
+tests/meetings/test_recovery_service.py:217: AssertionError
+_________ test_same_key_is_stable_and_distinct_key_cannot_consume_gate _________
+
+api_client = <httpx.AsyncClient object at 0x10eb4e7d0>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '803c5860-fdb9-4f74-964c-2d528cd1b762'
+
+    async def test_same_key_is_stable_and_distinct_key_cannot_consume_gate(
+        api_client: AsyncClient, api_db_url: str, candidate: str,
+    ) -> None:
+        first = await post(api_client, candidate)
+>       assert first["status"] == "accepted"
+E       AssertionError: assert 'pilot_not_armed' == 'accepted'
+E         
+E         - accepted
+E         + pilot_not_armed
+
+tests/meetings/test_recovery_service.py:226: AssertionError
+_________________ test_concurrent_requests_and_delayed_worker __________________
+
+api_client = <httpx.AsyncClient object at 0x10ed0f090>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = 'b58332a6-820f-436b-a7b8-e5344638366e'
+
+    async def test_concurrent_requests_and_delayed_worker(
+        api_client: AsyncClient, api_db_url: str, candidate: str,
+    ) -> None:
+        results = await asyncio.gather(post(api_client, candidate), post(api_client, candidate))
+>       assert sum(item["status"] == "accepted" for item in results) == 1
+E       assert 0 == 1
+E        +  where 0 = sum(<generator object test_concurrent_requests_and_delayed_worker.<locals>.<genexpr> at 0x10ee55a40>)
+
+tests/meetings/test_recovery_service.py:240: AssertionError
+_________________ test_worker_holding_fence_prevents_recovery __________________
+
+api_client = <httpx.AsyncClient object at 0x10ed212d0>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '2965d5c2-1525-46b4-9aaf-0d714445f849'
+
+    async def test_worker_holding_fence_prevents_recovery(
+        api_client: AsyncClient, api_db_url: str, candidate: str,
+    ) -> None:
+        engine = create_async_engine(api_db_url)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        before = await snapshot(api_db_url)
+        async with factory() as session, session.begin():
+            await session.scalar(select(MeetingProcessingClaim).where(
+                MeetingProcessingClaim.meeting_id == candidate).with_for_update())
+            body = await asyncio.wait_for(post(api_client, candidate), timeout=5)
+>           assert body["status"] == "eligibility_unverified"
+E           AssertionError: assert 'pilot_not_armed' == 'eligibility_unverified'
+E             
+E             - eligibility_unverified
+E             + pilot_not_armed
+
+tests/meetings/test_recovery_service.py:264: AssertionError
+____ test_transaction_failure_rolls_back_gate_generation_history_and_outbox ____
+
+api_client = <httpx.AsyncClient object at 0x10ec7fa90>
+api_db_url = 'postgresql+asyncpg://synthetic:synthetic@127.0.0.1:53497/recovery_771'
+candidate = '5f96b1a6-82af-442b-a85e-06f55671323f'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ecd1150>
+
+    async def test_transaction_failure_rolls_back_gate_generation_history_and_outbox(
+        api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        before = await snapshot(api_db_url)
+        original = AsyncSession.flush
+    
+        async def fail_flush(self: AsyncSession, objects: object = None) -> None:
+            await original(self)
+            if any(isinstance(value, MeetingRecoveryOperation) for value in self.identity_map.values()):
+                raise OperationalError("synthetic failure", {}, RuntimeError("synthetic"))
+    
+        monkeypatch.setattr(AsyncSession, "flush", fail_flush)
+        body = await post(api_client, candidate)
+>       assert body["status"] == "eligibility_unverified"
+E       AssertionError: assert 'pilot_not_armed' == 'eligibility_unverified'
+E         
+E         - eligibility_unverified
+E         + pilot_not_armed
+
+tests/meetings/test_recovery_service.py:282: AssertionError
+=========================== short test summary info ============================
+FAILED tests/meetings/test_recovery_service.py::test_accepts_one_atomic_fenced_operation[queued]
+FAILED tests/meetings/test_recovery_service.py::test_accepts_one_atomic_fenced_operation[transcribing]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[used_gate-pilot_in_use]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[wrong_state-ineligible_state]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[missing_recording-eligibility_unverified]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[empty_audio-eligibility_unverified]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[expired_recording-eligibility_unverified]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[transcript-ineligible_artifacts]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[missing_fence-eligibility_unverified]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[active_claim-active_or_pending_work]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[expired_claim-active_or_pending_work]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[partial_claim-active_or_pending_work]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[object_missing-eligibility_unverified]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[object_unknown-eligibility_unverified]
+FAILED tests/meetings/test_recovery_service.py::test_rejects_without_any_database_write[object_error-eligibility_unverified]
+FAILED tests/meetings/test_recovery_service.py::test_same_key_is_stable_and_distinct_key_cannot_consume_gate
+FAILED tests/meetings/test_recovery_service.py::test_concurrent_requests_and_delayed_worker
+FAILED tests/meetings/test_recovery_service.py::test_worker_holding_fence_prevents_recovery
+FAILED tests/meetings/test_recovery_service.py::test_transaction_failure_rolls_back_gate_generation_history_and_outbox
+19 failed, 5 passed in 5.86s
