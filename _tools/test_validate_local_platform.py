@@ -200,6 +200,24 @@ class ValidationLifecycleTests(unittest.TestCase):
             self.assertEqual(saved['validation'], {'outcome': 'failed', 'stage': 'starting'})
             self.assertNotIn('private synthetic key', path.read_text())
 
+    def test_connections_failure_is_not_health_success_and_still_cleans(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'inventory.json'
+            inventory = self.inventory() | {'ports': {'portal': 15173}, 'checks': []}
+            path.write_text(json.dumps(inventory))
+            with patch.object(self.module, 'metrics'), patch.object(self.module, 'start'), \
+                 patch.object(self.module, 'record_resources'), \
+                 patch.object(self.module.urllib.request, 'urlopen') as urlopen, \
+                 patch.object(self.module, 'connections', side_effect=RuntimeError('connection failure')) as connections, \
+                 patch.object(self.module, 'cleanup') as cleanup:
+                urlopen.return_value.__enter__.return_value.status = 200
+                with self.assertRaises(RuntimeError):
+                    self.module.check(path, check_connections=True)
+                connections.assert_called_once()
+                cleanup.assert_called_once_with(path)
+            saved = json.loads(path.read_text())
+            self.assertEqual(saved['validation'], {'outcome': 'failed', 'stage': 'real-connections'})
+
     def test_missing_secrets_fail_before_start_but_still_cleanup(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / 'inventory.json'
