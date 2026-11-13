@@ -100,6 +100,48 @@ export interface Transcript {
   createdAt: string;
 }
 
+/** Current successful structured summary artifact for a meeting. */
+export interface MeetingSummary {
+  summaryId: string;
+  meetingId: string;
+  templateId: string;
+  templateName: string;
+  templateVersion: number;
+  topic: string;
+  keyPoints: string[];
+  generation: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Durable lifecycle state of one accepted summary request. */
+export interface SummaryRequestStatus {
+  eventId: string;
+  generation: number;
+  status: "pending" | "running" | "succeeded" | "failed";
+}
+
+/** User-owned summary template; instructions are opaque and preserved unchanged. */
+export interface SummaryTemplate {
+  id: string;
+  name: string;
+  ownerId: string;
+  categoryId?: string;
+  version: number;
+  instructions: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Optional owner-scoped grouping for personal templates. */
+export interface TemplateCategory {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: string;
+}
+
 /** Timed speech segment within a Transcript. */
 export interface SpeechTurn {
   id: string;
