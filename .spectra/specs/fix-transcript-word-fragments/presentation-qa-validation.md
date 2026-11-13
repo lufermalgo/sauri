@@ -55,7 +55,7 @@ npm run typecheck
 npm run build --workspace frontend
 ```
 
-- Regresión backend amplia: **333 passed, 1 skipped** antes de los dos últimos casos añadidos (A/B/A y fallo auxiliar); suite focal final: **23 passed**. No cambié assertions previas para ocultar fallos: la prueba ASR ahora exige el padre completo **y** todas las words/tiempos exactos del envelope.
+- Regresión backend amplia final: **335 passed, 1 skipped**; suite focal final: **23 passed**. Suite adicional `tests/diar_engine`: **23 passed**. Código ensayado y publicado: `38a6fe6f6ddb02a43d908a4415b126a3329d2396`; la actualización posterior solo registra esta evidencia documental. No cambié assertions previas para ocultar fallos: la prueba ASR ahora exige el padre completo **y** todas las words/tiempos exactos del envelope.
 - Frontend completo tras corregir el hallazgo adicional: **134 passed, 12 archivos**. La regresión focal de agrupado quedó GREEN y la suite completa pasó de nuevo. JSDOM advierte que `HTMLMediaElement.pause` no está implementado; sus assertions pasan, no equivale a reproducción real.
 - `npm run typecheck` global PASS en extensión/frontend/shared-types; build frontend PASS.
 - Mypy de los 10 archivos nuevos/modificados listados: PASS. `mypy .`: **82 errores en 8 archivos**, misma deuda previamente contrastada con base #882; no es PASS global. Ruff de todos los Python cambiados PASS; `git diff --check` PASS.
