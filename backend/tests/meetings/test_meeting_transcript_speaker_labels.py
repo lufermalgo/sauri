@@ -214,6 +214,17 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
                     attribution_state="attributed",
                     version=2,
                 ),
+                # A stale item can reuse an active key; key-only lookups must not win.
+                SpeakerReviewItem(
+                    id=str(uuid.uuid4()),
+                    review_id=old_review_id,
+                    speaker_key=speaker_ids[0],
+                    current_label="Stale colliding label",
+                    disposition="named",
+                    chosen_label="Stale colliding label",
+                    attribution_state="attributed",
+                    version=2,
+                ),
                 SpeakerReviewItem(
                     id=str(uuid.uuid4()),
                     review_id=active_review_id,
@@ -228,7 +239,7 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
                     id=str(uuid.uuid4()),
                     review_id=active_review_id,
                     speaker_key=speaker_ids[1],
-                    current_label="Speaker 2",
+                    current_label="Speaker 2 (review pending)",
                     disposition=None,
                     chosen_label=None,
                     attribution_state="uncertain",
@@ -265,5 +276,5 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
         "Bob named",
         "Alice corrected",
         "Speaker 4",
-        "Speaker 2",
+        "Speaker 2 (review pending)",
     ]
