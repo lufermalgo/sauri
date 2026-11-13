@@ -22,9 +22,17 @@ vi.mock("../api", () => ({
   getDiarization: vi.fn(),
   getSpeakerReview: vi.fn(),
   submitSpeakerDisposition: vi.fn(),
+  getSummary: vi.fn().mockResolvedValue(null),
+  getLatestSummaryRequest: vi.fn().mockResolvedValue(null),
+  listTemplates: vi.fn().mockResolvedValue([]),
+  getSummaryRequest: vi.fn(),
+  requestSummary: vi.fn(),
 }));
 
 beforeEach(() => {
+  vi.spyOn(api, "getSummary").mockResolvedValue(null);
+  vi.spyOn(api, "getLatestSummaryRequest").mockResolvedValue(null);
+  vi.spyOn(api, "listTemplates").mockResolvedValue([]);
   vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(
     null as unknown as Awaited<ReturnType<typeof api.getPlaybackManifest>>,
   );

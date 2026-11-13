@@ -247,7 +247,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T17: RED — Specify shared summary/template/status API contracts
 
-**Tracking:** Issue #285 · Card task_5419615ead9a41b7
+**Tracking:** Issue #285 · Card task_a16f69284c3042c0 (historical card task_5419615ead9a41b7 unavailable)
+**Status:** RED verified before T18, 2026-11-13. Pre-implementation base `baea619b0703488286bda3ddc5ab268a73b97d9e`; `npm run test --workspace=@sauri/shared-types` exits 1: one smoke test passes, the contract test fails with four missing exported members (`MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, `TemplateCategory`) and four failed exact-type assertions. No setup errors. `src/index.test.ts` compiles a virtual TypeScript consumer through the existing Vitest harness, because transpilation alone erases type-only imports and cannot validate absent interfaces. Synthetic, exact design §6 types; no generation/provider behavior tested.
 
 **Archivo:** `packages/shared-types/<test-location-confirmed-by-T17a>`; import seam: `packages/shared-types/src/index.ts` exports
 **Acción:** Add contract tests for the approved `MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, and `TemplateCategory` field names, including camel-case UI contracts and status union values. Use only the test location and command confirmed by T17a.
@@ -258,7 +259,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T18: GREEN — Add shared summary and template TypeScript contracts
 
-**Tracking:** Issue #286 · Card task_8c8c8278a7a7465e
+**Tracking:** Issue #286 · Card task_a16f69284c3042c0 (historical card task_8c8c8278a7a7465e)
+**Status:** GREEN implemented, not integrated or product-accepted. Candidate preserves RED commit `70b5548`; four exported interfaces match design §6 exactly. `npm run test --workspace=@sauri/shared-types`: 2 passed; root `npm run typecheck`: extension, frontend and shared-types passed; `git diff --check`: passed. Fer retains integration; issues #285/#286 remain open until integration. This does not implement summary generation, API, or user-facing controls.
 
 **Archivo:** `packages/shared-types/src/index.ts`
 **Acción:** Add the four interfaces exactly as designed, including `SummaryRequestStatus` lifecycle union and optional category id; preserve existing exports and do not add fields/semantics not specified.
@@ -269,7 +271,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T19: RED — Specify summary presentation, content preservation, empty/polling states (P2/P5)
 
-**Tracking:** Issue #287 · Card task_7218af0f45084aa5
+**Tracking:** Issue #287 · Card task_4a96167967b147c2 (current execution; historical card task_7218af0f45084aa5)
+**Status:** RED committed `e1f3a5f` before implementation, from T16+T18 candidate `791ba67`: 10 collected/10 expected failures because SummarySection is absent. Frontend typecheck PASS; no production stub or component. Handoff: `t19-red-evidence.md`. T20 must preserve this RED commit. Not integrated; Fer retains merge.
 
 **Archivo:** `frontend/src/components/SummarySection.test.tsx` (create)
 **Acción:** Add component tests for a distinct summary section, topic and ordered key points, neutral 404 empty state only when no request is pending/running, resuming latest request on mount, post-request polling, refresh on success, preserving an older summary on terminal failure, and retrying status after a network error. Assert displayed/copyable content but not unspecified serialization.

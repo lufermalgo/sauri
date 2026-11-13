@@ -4,6 +4,9 @@ import type {
   MeetingListItem,
   Transcript,
   SpeechTurn,
+  MeetingSummary,
+  SummaryRequestStatus,
+  SummaryTemplate,
 } from "@sauri/shared-types";
 
 export interface PlaybackSource {
@@ -95,6 +98,86 @@ async function handleResponse<T>(response: Response): Promise<T> {
     throw new Error(`Error ${response.status}`);
   }
   return response.json() as Promise<T>;
+}
+
+interface SummaryResponse {
+  summary_id: string;
+  meeting_id: string;
+  template_id: string;
+  template_name: string;
+  template_version: number;
+  topic: string;
+  key_points: string[];
+  generation: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface StatusResponse {
+  event_id: string;
+  generation: number;
+  status: SummaryRequestStatus["status"];
+}
+
+interface TemplateResponse {
+  id: string;
+  name: string;
+  owner_user_id: string;
+  category_id?: string | null;
+  version: number;
+  instructions: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+const statusFromApi = (value: StatusResponse): SummaryRequestStatus => ({
+  eventId: value.event_id, generation: value.generation, status: value.status,
+});
+
+export async function getSummary(meetingId: string): Promise<MeetingSummary | null> {
+  const response = await fetch(`${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/summary`,
+    { method: "GET", headers: getAuthHeaders() });
+  if (response.status === 404) return null;
+  const value = await handleResponse<SummaryResponse>(response);
+  return {
+    summaryId: value.summary_id, meetingId: value.meeting_id,
+    templateId: value.template_id, templateName: value.template_name,
+    templateVersion: value.template_version, topic: value.topic,
+    keyPoints: value.key_points, generation: value.generation,
+    createdAt: value.created_at, updatedAt: value.updated_at,
+  };
+}
+
+export async function requestSummary(meetingId: string, selection: { templateId?: string } = {}): Promise<SummaryRequestStatus> {
+  const response = await fetch(`${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/summary-requests`, {
+    method: "POST", headers: getAuthHeaders(),
+    body: JSON.stringify(selection.templateId ? { template_id: selection.templateId } : {}),
+  });
+  return statusFromApi(await handleResponse<StatusResponse>(response));
+}
+
+export async function getLatestSummaryRequest(meetingId: string): Promise<SummaryRequestStatus | null> {
+  const response = await fetch(`${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/summary-requests/latest`,
+    { method: "GET", headers: getAuthHeaders() });
+  if (response.status === 404) return null;
+  return statusFromApi(await handleResponse<StatusResponse>(response));
+}
+
+export async function getSummaryRequest(meetingId: string, eventId: string): Promise<SummaryRequestStatus> {
+  const response = await fetch(`${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/summary-requests/${encodeURIComponent(eventId)}`,
+    { method: "GET", headers: getAuthHeaders() });
+  return statusFromApi(await handleResponse<StatusResponse>(response));
+}
+
+export async function listTemplates(): Promise<SummaryTemplate[]> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates`, { method: "GET", headers: getAuthHeaders() });
+  return (await handleResponse<TemplateResponse[]>(response)).map((value) => ({
+    id: value.id, name: value.name, ownerId: value.owner_user_id,
+    ...(value.category_id == null ? {} : { categoryId: value.category_id }),
+    version: value.version, instructions: value.instructions, isDefault: value.is_default,
+    createdAt: value.created_at, updatedAt: value.updated_at,
+  }));
 }
 
 export interface LoginResponse {
