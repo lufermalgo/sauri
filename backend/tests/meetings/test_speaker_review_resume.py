@@ -92,11 +92,18 @@ async def test_pending_review_reload_returns_only_undisposed_items(
         "revision_id": 1,
         "status": "pending",
         "remaining_speaker_ids": ["speaker-2"],
+        "labels_by_speaker_id": {
+            "speaker-1": "Synthetic Alice",
+            "speaker-2": "Speaker 2",
+        },
         "items": [
             {
                 "speaker_id": "speaker-2",
                 "current_label": "Speaker 2",
+                "attribution_state": "uncertain",
                 "disposition": None,
+                "excerpt_ref": None,
+                "expected_version": 1,
             }
         ],
     }
@@ -118,6 +125,10 @@ async def test_completed_review_reload_returns_no_outstanding_items(
         "revision_id": 1,
         "status": "complete",
         "remaining_speaker_ids": [],
+        "labels_by_speaker_id": {
+            "speaker-1": "Synthetic Alice",
+            "speaker-2": "Speaker 2",
+        },
         "items": [],
     }
 
@@ -138,6 +149,7 @@ async def test_empty_review_status_uses_approved_derived_completion_rule(
         "revision_id": 1,
         "status": "complete",
         "remaining_speaker_ids": [],
+        "labels_by_speaker_id": {},
         "items": [],
     }
 
