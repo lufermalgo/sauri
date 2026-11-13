@@ -63,3 +63,15 @@ WHEN text or timing is absent or invalid for an entry, THEN the system SHALL CON
 5. Given transcript timing with gaps or overlapping intervals, the fix SHALL preserve the original timing relationships and SHALL NOT fabricate continuous timing or bridge the intervals. No numeric silence-gap threshold is prescribed.
 6. Given playback at a passage boundary or activation of a passage control, highlighting and playback start SHALL continue to use the correct passage timing; the fix SHALL NOT regress approved playback requirements 2 and 3.
 7. Tests SHALL use synthetic transcript content only. Neither the reported 2,919 fragments nor the offline estimate of roughly 75 turns in 61 minutes is a numeric acceptance threshold.
+
+## Enmienda 2026-11-13 — escucha de hablantes sobre grabación original (#652/#653, #893)
+
+**Defecto observado:** Fer reportó 404 al pulsar el audio del hablante (`GET .../speaker-review/revisions/1/speakers/{id}/excerpt`). Esa ruta de clips no está disponible en la plataforma instalada; #893 agrega una ruta pero no satisface la decisión posterior del dueño. No se afirma que la grabación original falte ni que sea una falla de almacenamiento.
+
+**Decisión del dueño:** NO generar ni persistir clips derivados por hablante. La escucha para identificar/renombrar debe partir de intervalos significativos de habla extendida en la grabación original. No se establece un mínimo exacto de segundos. El eventual uso para entrenamiento/reconocimiento entre sesiones queda fuera de este fix y no autoriza conservar clips.
+
+**Esperado:** WHEN una revisión y diarización coinciden en la generación activa, THEN la UI SHALL elegir la intervención continua atribuida más larga, reproducir del medio original únicamente su intervalo y parar al terminar; SHALL evitar cambios de hablante y huecos largos. WHEN solo hay intervenciones breves o ninguna con tiempos/atribución fiables, THEN SHALL informar la limitación sin inventar voces ni muestras. WHEN las generaciones no coinciden o no hay medio disponible, THEN SHALL no reproducir una voz no verificada.
+
+**Sin cambios:** WHEN se navega el transcript o se renombra un hablante, THEN SHALL CONTINUE TO conservar seeks de playback, permisos de propietario, aislamiento por generación, etiquetas inciertas y revisión de disposiciones. Los controles de lectura del original ya autorizan el manifiesto temporal; no se agrega una ruta de audio anónima. Las especificaciones históricas de clips permanecen como registro, pero no autorizan su generación/persistencia para este recorrido después de esta decisión.
+
+**Aceptación:** prueba sintética de elección de tramo continuo más largo, cap de duración, gap/cambio/overlap, aviso de tramo breve, click reproduce el original sin GET `/excerpt` y detención en límite; recorrido real con sesión autorizada pendiente de verificación acústica. Sin descarga ni reprocesamiento de reuniones para este fix.

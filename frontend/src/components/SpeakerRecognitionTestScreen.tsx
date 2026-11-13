@@ -160,16 +160,14 @@ function withSpeakerLabels(
   const labelBySpeakerId = new Map(
     diarization?.speakers.map((speaker) => [speaker.id, speaker.label]) ?? [],
   );
-  const reviewedLabelBySpeakerId = new Map(
-    review?.items.map((item) => [item.speakerId, item.currentLabel]) ?? [],
-  );
+  const reviewedLabelBySpeakerId = review?.labelsBySpeakerId ?? {};
 
   return {
     ...transcript,
     segments: transcript.segments.map((segment) => {
       const speakerId = speakerIdByTurnId.get(segment.id);
       const speakerLabel = speakerId
-        ? reviewedLabelBySpeakerId.get(speakerId) ?? segment.speakerLabel ?? labelBySpeakerId.get(speakerId)
+        ? reviewedLabelBySpeakerId[speakerId] ?? segment.speakerLabel ?? labelBySpeakerId.get(speakerId)
         : segment.speakerLabel;
       return speakerLabel ? { ...segment, speakerLabel } : segment;
     }),

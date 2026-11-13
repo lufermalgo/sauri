@@ -59,6 +59,7 @@ export class PlaybackController {
   private readonly sources: readonly MediaSourceOption[];
   private readonly listeners: Array<[string, EventListener]> = [];
   private offsetMs: number | null;
+  private intervalEndMs: number | null = null;
   private state: PlaybackState;
 
   constructor(options: PlaybackControllerOptions) {
@@ -92,7 +93,12 @@ export class PlaybackController {
 
     for (const event of ["timeupdate", "seeked", "loadedmetadata", "durationchange", "play", "pause", "ended", "ratechange", "volumechange"]) {
       this.listen(this.audio, event, () => {
-        if (event === "timeupdate" || event === "seeked") this.synchronizeVideo();
+        if (event === "timeupdate" || event === "seeked") {
+          this.synchronizeVideo();
+          if (this.intervalEndMs !== null && this.toMilliseconds(this.audio.currentTime) >= this.intervalEndMs) {
+            this.pause();
+          }
+        }
         if (event === "ended") this.video?.pause();
         this.refreshState();
       });
@@ -108,6 +114,7 @@ export class PlaybackController {
 
   seekTo(timeMs: number): void {
     if (!Number.isFinite(timeMs)) return;
+    this.intervalEndMs = null;
     this.audio.currentTime = Math.max(0, timeMs) / 1000;
     this.synchronizeVideo();
     this.refreshState();
@@ -118,7 +125,15 @@ export class PlaybackController {
     await this.resume();
   }
 
+  async playInterval(startMs: number, endMs: number): Promise<void> {
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs < 0 || endMs <= startMs) return;
+    this.seekTo(startMs);
+    this.intervalEndMs = endMs;
+    await this.resume();
+  }
+
   pause(): void {
+    this.intervalEndMs = null;
     this.audio.pause();
     this.video?.pause();
     this.refreshState();

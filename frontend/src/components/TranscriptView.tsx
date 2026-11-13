@@ -4,12 +4,12 @@ import {
   getPlaybackManifest,
   getSpeakerReview,
   getTranscript,
-  playSpeakerExcerpt,
   submitSpeakerDisposition,
 } from "../api";
 import type { MeetingDiarization, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
 import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
+import { representativeSpeakerInterval } from "../speaker-review-interval";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -34,6 +34,10 @@ function speakerColor(diarization: MeetingDiarization | null, speakerId: string 
 
 export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const seekToRef = useRef<((timeMs: number) => void) | undefined>(undefined);
+  const playIntervalRef = useRef<((startMs: number, endMs: number) => Promise<void>) | undefined>(undefined);
+  const registerPlayInterval = useCallback((play: ((startMs: number, endMs: number) => Promise<void>) | undefined) => {
+    playIntervalRef.current = play;
+  }, []);
   const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
     seekToRef.current = seekTo;
   }, []);
@@ -140,13 +144,26 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     }
   }
 
-  async function playExcerpt(speakerId: string) {
-    if (!review) return;
+  async function playRepresentativeInterval(speakerId: string) {
+    if (!review || !diarization || !data) return;
     setReviewError(null);
+    if (diarization.processing_revision == null || String(diarization.processing_revision) !== review.revisionId) {
+      setReviewError("Review and diarization belong to different generations. Reload the recording.");
+      return;
+    }
+    const interval = representativeSpeakerInterval(data.turns, playableAssignments, speakerId);
+    if (!interval) {
+      setReviewError("No attributed, playable speech interval is available for this speaker.");
+      return;
+    }
+    if (!playIntervalRef.current) {
+      setReviewError("The original recording is unavailable for playback.");
+      return;
+    }
     try {
-      await playSpeakerExcerpt(meetingId, review.revisionId, speakerId);
+      await playIntervalRef.current(interval.startMs, interval.endMs);
     } catch (err) {
-      setReviewError(err instanceof Error ? err.message : "Failed to play speaker excerpt");
+      setReviewError(err instanceof Error ? err.message : "Could not play the original recording.");
     }
   }
 
@@ -156,15 +173,14 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
 
   const notReconstructible = diarization?.latest_attempt?.diarization_state === "not_reconstructible";
   const speakersById = new Map(diarization?.speakers.map((speaker) => [speaker.id, speaker]) ?? []);
-  const speakerIdByTurnId = new Map(
-    !notReconstructible && diarization?.processing_revision != null
-      ? diarization.assignments
-        .filter((assignment) => typeof assignment.overlap_ms === "number"
-          && Number.isFinite(assignment.overlap_ms) && assignment.overlap_ms > 0
-          && speakersById.has(assignment.speaker_id))
-        .map((assignment) => [assignment.turn_id, assignment.speaker_id] as const)
-      : [],
-  );
+  const playableAssignments = !notReconstructible && diarization?.processing_revision != null
+    ? diarization.assignments.filter((assignment) => typeof assignment.overlap_ms === "number"
+      && Number.isFinite(assignment.overlap_ms) && assignment.overlap_ms > 0
+      && speakersById.has(assignment.speaker_id))
+    : [];
+  const speakerIdByTurnId = new Map(playableAssignments.map(
+    (assignment) => [assignment.turn_id, assignment.speaker_id] as const,
+  ));
   const activeReview = review && String(diarization?.processing_revision) === review.revisionId
     ? review : null;
 
@@ -210,6 +226,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         error={playbackError}
         onRefreshManifest={() => getPlaybackManifest(meetingId)}
         onSeekToReady={registerSeekTo}
+        onPlayIntervalReady={registerPlayInterval}
       />
       <h2>Transcript</h2>
       <p>
@@ -264,16 +281,22 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
               ? item.currentLabel || `Speaker ${index + 1}`
               : item.currentLabel;
             const busy = submittingSpeakerId === item.speakerId || item.expectedVersion === undefined;
+            const interval = diarization?.processing_revision != null &&
+              String(diarization.processing_revision) === activeReview.revisionId
+              ? representativeSpeakerInterval(data.turns, playableAssignments, item.speakerId)
+              : null;
             return (
               <article key={item.speakerId}>
                 <h4>{label}</h4>
                 <button
                   type="button"
-                  onClick={() => void playExcerpt(item.speakerId)}
-                  disabled={busy}
+                  onClick={() => void playRepresentativeInterval(item.speakerId)}
+                  disabled={busy || !interval || !playbackManifest || playbackLoading || Boolean(playbackError)}
                 >
-                  Play excerpt for {label}
+                  Listen to {label}'s speech
                 </button>
+                {interval?.short && <p role="status">Only a short speech interval is available; it may not be enough to identify this voice.</p>}
+                {!interval && <p role="status">No attributable interval is available to listen to in this generation.</p>}
                 {item.disposition === null && (
                   <div>
                     <button

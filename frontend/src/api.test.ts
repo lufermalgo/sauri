@@ -354,13 +354,14 @@ describe("speaker review API adapter", () => {
       review_id: "review-synthetic",
       revision_id: 4,
       status: "pending",
+      labels_by_speaker_id: { "sp-8": "Speaker 8", "sp-done": "Ana" },
       items: [{
         speaker_id: "sp-8",
         current_label: "Speaker 8",
         attribution_state: "uncertain",
         disposition: null,
         excerpt_ref: "opaque-excerpt-synthetic",
-        version: 3,
+        expected_version: 3,
       }],
     });
 
@@ -368,6 +369,7 @@ describe("speaker review API adapter", () => {
       reviewId: "review-synthetic",
       revisionId: "4",
       status: "pending",
+      labelsBySpeakerId: { "sp-8": "Speaker 8", "sp-done": "Ana" },
       items: [{
         speakerId: "sp-8",
         currentLabel: "Speaker 8",
@@ -379,40 +381,20 @@ describe("speaker review API adapter", () => {
     });
   });
 
-  it("normalizes labels from the currently persisted minimal review response", async () => {
-    mockFetch({
-      review_id: "review-synthetic",
-      revision_id: "revision-synthetic",
-      status: "pending",
-      items: [{ speaker_id: "sp-8", current_label: "Speaker 8", disposition: null }],
+  it("adapts the PUT snapshot too, retaining named speakers outside pending items", async () => {
+    const fetchMock = mockFetch({
+      review_id: "review-synthetic", revision_id: 4, status: "pending",
+      labels_by_speaker_id: { "sp-8": "Ana", "sp-9": "Speaker 9" },
+      items: [{ speaker_id: "sp-9", current_label: "Speaker 9", attribution_state: "uncertain",
+        disposition: null, excerpt_ref: null, expected_version: 2 }],
     });
-
-    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toMatchObject({
-      items: [{ speakerId: "sp-8", currentLabel: "Speaker 8", disposition: null }],
+    const result = await api.submitSpeakerDisposition("meeting-synthetic", "4", "sp-8", {
+      disposition: "named", label: "Ana", expectedVersion: 1,
     });
-  });
-});
-
-describe("speaker excerpt API adapter", () => {
-  it("invalidates the session when an excerpt request returns 401", async () => {
-    const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);
-    const removeItem = vi.fn();
-    const dispatchEvent = vi.spyOn(window, "dispatchEvent");
-    vi.stubGlobal("localStorage", {
-      getItem: vi.fn().mockReturnValue("synthetic-token"),
-      setItem: vi.fn(),
-      removeItem,
-    });
-
-    await expect(api.playSpeakerExcerpt("meeting-1", "revision-1", "speaker-1"))
-      .rejects.toThrow("Error 401");
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(removeItem).toHaveBeenCalledOnce();
-    expect(removeItem).toHaveBeenCalledWith("sauri_token");
-    expect(dispatchEvent).toHaveBeenCalledOnce();
-    expect(dispatchEvent.mock.calls[0][0]).toBeInstanceOf(Event);
-    expect(dispatchEvent.mock.calls[0][0].type).toBe("sauri:unauthorized");
+    expect(result).toMatchObject({ labelsBySpeakerId: { "sp-8": "Ana", "sp-9": "Speaker 9" },
+      items: [{ speakerId: "sp-9", expectedVersion: 2, excerptRef: null }] });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/revisions/4/speakers/sp-8"),
+      expect.objectContaining({ method: "PUT" }));
   });
 });
 

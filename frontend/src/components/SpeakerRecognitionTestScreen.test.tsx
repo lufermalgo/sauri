@@ -307,6 +307,7 @@ const review = {
   reviewId: "review-test-1",
   revisionId: "revision-test-1",
   status: "pending",
+  labelsBySpeakerId: { "speaker-test-8": "Speaker 8" },
   items: [
     {
       speakerId: "speaker-test-8",
