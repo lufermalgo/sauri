@@ -161,7 +161,7 @@ describe("TranscriptView — renders the transcript view", () => {
     const seekButton = await screen.findByRole("button", { name: "Play turn at 00:00" });
     fireEvent.click(seekButton);
 
-    expect(screen.getByTestId("playback-audio")).toHaveProperty("currentTime", 0.5);
+    expect(screen.getByTestId("playback-media")).toHaveProperty("currentTime", 0.5);
   });
 
   it("shows the speaker-identification state when diarization is not found", async () => {
@@ -263,7 +263,7 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
-    const player = await screen.findByTestId("playback-audio");
+    const player = await screen.findByTestId("playback-media");
     const transcriptHeading = await screen.findByRole("heading", { name: "Transcript" });
     expect(
       player.compareDocumentPosition(transcriptHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
