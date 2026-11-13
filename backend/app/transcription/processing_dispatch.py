@@ -64,14 +64,15 @@ async def recover_unfinished(
     """
     count = 0
     async with session_factory() as session:
-        states = (
-            await session.scalars(
-                select(RecordingProcessingState)
-                .where(RecordingProcessingState.in_flight_revision_id.is_not(None))
-                .limit(limit)
-            )
-        ).all()
-        for state in states:
+        # Stream the entire in-flight set in bounded batches; selecting just
+        # the first `limit` rows would starve later recordings indefinitely.
+        states = await session.stream_scalars(
+            select(RecordingProcessingState)
+            .where(RecordingProcessingState.in_flight_revision_id.is_not(None))
+            .order_by(RecordingProcessingState.recording_id)
+            .execution_options(yield_per=limit)
+        )
+        async for state in states:
             revision = await session.get(ProcessingRevision, state.in_flight_revision_id)
             if revision is None:
                 continue

@@ -152,3 +152,58 @@ async def test_expired_claim_is_republished_with_original_event_id(session_facto
         )
     assert await recover_unfinished(session_factory, queue) == 1
     assert queue.publish.await_args.args[1] == first
+
+
+async def test_recovery_scans_all_inflight_rows_beyond_one_batch(session_factory):
+    now = datetime.now(UTC)
+    async with session_factory() as session, session.begin():
+        for index in range(34):
+            session.add(
+                Meeting(
+                    id=f"batch-meeting-{index}",
+                    origin="manual",
+                    process_state="transcribing",
+                    created_by="owner",
+                    created_at=now,
+                )
+            )
+        await session.flush()
+        for index in range(34):
+            session.add(
+                SessionRecording(
+                    id=f"batch-recording-{index}",
+                    meeting_id=f"batch-meeting-{index}",
+                    audio_ref=f"batch-{index}.wav",
+                    idempotency_key=f"batch-key-{index}",
+                    capture_origin="web_upload",
+                    duration_seconds=10,
+                    finished_at=now,
+                )
+            )
+        await session.flush()
+        for index in range(34):
+            session.add(
+                ProcessingRevision(
+                    id=f"batch-revision-{index}", recording_id=f"batch-recording-{index}", revision=1, created_at=now
+                )
+            )
+        await session.flush()
+        for index in range(34):
+            session.add(
+                RecordingProcessingState(
+                    recording_id=f"batch-recording-{index}", in_flight_revision_id=f"batch-revision-{index}"
+                )
+            )
+            session.add(
+                ProcessingRevisionOutbox(
+                    id=f"batch-event-{index}",
+                    recording_id=f"batch-recording-{index}",
+                    processing_revision_id=f"batch-revision-{index}",
+                    event_type="processing_revision_admitted",
+                    delivery_status="delivered",
+                    created_at=now,
+                )
+            )
+    queue = AsyncMock()
+    assert await recover_unfinished(session_factory, queue, limit=8) == 34
+    assert len({call.args[1]["event_id"] for call in queue.publish.await_args_list}) == 34
