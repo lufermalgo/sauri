@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -27,6 +28,7 @@ from app.diarization.diarization_engine import DiarizationOptions
 from app.diarization.factory import create_diarization_engine
 from app.diarization.labeling import label_speakers
 from app.diarization.repository import DiarizationRepository
+from app.diarization.reprocess_legacy import expired
 from app.infra.models import (
     Diarization,
     Meeting,
@@ -34,6 +36,7 @@ from app.infra.models import (
     Speaker,
     SpeakerAssignment,
 )
+from app.infra.object_store import create_object_store
 from app.infra.processing_claims import (
     claim_worker_generation,
     verify_worker_binding,
@@ -148,10 +151,47 @@ async def _process_diarization(
                 logger.warning("Diarization discarded: unreserved revision")
                 return
             attempt = reserved
-    async with session_factory() as session, session.begin():
-        if not await repo.claim_revision(session, meeting_id, revision):
-            logger.info("Diarization delivery acknowledged without claim; reason=revision_not_pending")
-            return
+    if message.get("processing_revision") is not None:
+        # A queue message is not an audio capability. Rebind its persisted exact
+        # object under the meeting lock, and fail closed before engine creation.
+        async with session_factory() as session, session.begin():
+            await session.scalar(select(Meeting).where(Meeting.id == meeting_id).with_for_update())
+            current = await session.scalar(select(Diarization).where(
+                Diarization.meeting_id == meeting_id,
+                Diarization.processing_revision == revision,
+                Diarization.transcript_id == transcript.id,
+                Diarization.diarization_state == "pending",
+            ))
+            current_transcript = await session.get(type(transcript), transcript.id)
+            current_recording = await session.scalar(select(SessionRecording).where(
+                SessionRecording.meeting_id == meeting_id,
+            ))
+            if current is None or current_transcript is None or expired(
+                current_transcript.expires_at, datetime.now(UTC)
+            ) or current_recording is None or current_recording.id != recording_id or not current_recording.audio_ref:
+                logger.info("Diarization revision skipped; reason=ineligible_or_not_pending")
+                return
+            unavailable = expired(current_recording.expires_at, datetime.now(UTC))
+            if not unavailable:
+                availability = await create_object_store().inspect(current_recording.audio_ref)
+                if availability not in {"available", "missing"}:
+                    raise ValueError("object availability response is invalid")
+                unavailable = availability == "missing"
+            if unavailable:
+                await repo.reserve_next_revision(
+                    session, meeting_id, transcript.id, audio_unavailable=True,
+                )
+                logger.info("Diarization revision terminal; reason=audio_unavailable")
+                return
+            # Use the revalidated reference, never an alternative from the message.
+            recording = current_recording
+            if not await repo.claim_revision(session, meeting_id, revision):
+                return
+    else:
+        async with session_factory() as session, session.begin():
+            if not await repo.claim_revision(session, meeting_id, revision):
+                logger.info("Diarization delivery acknowledged without claim; reason=revision_not_pending")
+                return
 
     try:
         engine = create_diarization_engine()

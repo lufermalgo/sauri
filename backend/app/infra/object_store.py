@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from typing import Literal
+
+ObjectAvailability = Literal["available", "missing"]
 
 
 class ObjectStore(ABC):
@@ -43,6 +46,10 @@ class ObjectStore(ABC):
         never fall back to :meth:`get` for security-sensitive bounded media.
         """
         raise NotImplementedError("bounded reads are not supported by this object store")
+
+    async def inspect(self, reference: str) -> ObjectAvailability:
+        """Check the exact object without downloading it; unknown failures must propagate."""
+        raise NotImplementedError("object availability inspection is not supported")
 
     @abstractmethod
     async def delete(self, reference: str) -> None:
