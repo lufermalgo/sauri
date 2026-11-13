@@ -247,7 +247,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T17: RED — Specify shared summary/template/status API contracts
 
-**Tracking:** Issue #285 · Card task_5419615ead9a41b7
+**Tracking:** Issue #285 · Card task_a16f69284c3042c0 (historical card task_5419615ead9a41b7 unavailable)
+**Status:** RED verified before T18, 2026-11-13. Pre-implementation base `baea619b0703488286bda3ddc5ab268a73b97d9e`; `npm run test --workspace=@sauri/shared-types` exits 1: one smoke test passes, the contract test fails with four missing exported members (`MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, `TemplateCategory`) and four failed exact-type assertions. No setup errors. `src/index.test.ts` compiles a virtual TypeScript consumer through the existing Vitest harness, because transpilation alone erases type-only imports and cannot validate absent interfaces. Synthetic, exact design §6 types; no generation/provider behavior tested.
 
 **Archivo:** `packages/shared-types/<test-location-confirmed-by-T17a>`; import seam: `packages/shared-types/src/index.ts` exports
 **Acción:** Add contract tests for the approved `MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, and `TemplateCategory` field names, including camel-case UI contracts and status union values. Use only the test location and command confirmed by T17a.
@@ -258,7 +259,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T18: GREEN — Add shared summary and template TypeScript contracts
 
-**Tracking:** Issue #286 · Card task_8c8c8278a7a7465e
+**Tracking:** Issue #286 · Card task_a16f69284c3042c0 (historical card task_8c8c8278a7a7465e)
+**Status:** GREEN implemented, not integrated or product-accepted. Candidate preserves RED commit `70b5548`; four exported interfaces match design §6 exactly. `npm run test --workspace=@sauri/shared-types`: 2 passed; root `npm run typecheck`: extension, frontend and shared-types passed; `git diff --check`: passed. Fer retains integration; issues #285/#286 remain open until integration. This does not implement summary generation, API, or user-facing controls.
 
 **Archivo:** `packages/shared-types/src/index.ts`
 **Acción:** Add the four interfaces exactly as designed, including `SummaryRequestStatus` lifecycle union and optional category id; preserve existing exports and do not add fields/semantics not specified.
