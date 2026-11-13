@@ -6,6 +6,8 @@ Unidad aprobada #767/T3+T4, spec `fix-stale-meeting-recovery`; continúa RED his
 
 Se implementan el POST autenticado y owner-only y `MeetingRecoveryService.recover(meeting_id, actor_id, idempotency_key)`. El resultado real es siempre `pilot_not_armed`; ni siquiera configurar modo pilot y un ID coincidente puede aceptar trabajo en esta etapa. Es el precursor fail-closed expresamente aprobado en T4, no una simulación de recuperación exitosa. No hay productor, operación, cambio de meeting ni consumo de gate. Clave de idempotencia obligatoria de 1–128 caracteres. El contrato completo de aceptación efectiva y su suite API corresponden a T18 y T11/T12; no se declaran completados.
 
+Publicado PR **#913** draft sobre main, código `ec44bb1`, remoto verificado y sin conflictos. Al primer control `gh pr view`/`gh run list`/APIcheck-runs no mostraron runs ni checks; **no es CI verde**, tampoco evidencia nueva para atribuir la ausencia a billing. El bloqueo de billing previamente confirmado en otros PRs no se elude. Aviso directo Telegram Ansel intentado: **NO ENTREGADO** por notice budget; no se reintentó.
+
 **No integrado ni desplegado. Fer conserva merge.** No recuperación efectiva, piloto, frontend, modelos, inferencias, datos del dueño ni cambios de runtime. No se reabren aprobaciones ni se modifican requisitos/diseño.
 
 ## RED → GREEN observado

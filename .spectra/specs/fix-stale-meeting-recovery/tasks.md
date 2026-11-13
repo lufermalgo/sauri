@@ -86,7 +86,7 @@ RED tasks must demonstrate the specified behavioral failure at the relevant stag
 
 ### Estado T3/T4 — 2026-11-13
 
-Ansel retomó la unidad #767, preservó RED `d424f68` y reprodujo 2 fallos conductuales antes de implementar. Precursor owner-only deshabilitado implementado: nunca acepta ni despacha recuperación, incluso con configuración pilot. GREEN original 2 PASS; cobertura ampliada y regresión auth/ingestión/meetings **182 PASS** con S3 sintético real temporal eliminado al cierre. Ruff/mypy de los tres paths PASS; no se declara validación global, recuperación completa ni piloto. Evidencia: `validation-t3-t4-20261113.md`. Tarjeta histórica no accesible; continuidad `task_a5ef66a09de14cc4`. Pendiente publicación/verificación de checks; **Fer conserva integración**, no desplegado.
+Ansel retomó la unidad #767, preservó RED `d424f68` y reprodujo 2 fallos conductuales antes de implementar. Precursor owner-only deshabilitado implementado: nunca acepta ni despacha recuperación, incluso con configuración pilot. GREEN original 2 PASS; cobertura ampliada y regresión auth/ingestión/meetings **182 PASS** con S3 sintético real temporal eliminado al cierre. Ruff/mypy de los tres paths PASS; no se declara validación global, recuperación completa ni piloto. Evidencia: `validation-t3-t4-20261113.md`. Tarjeta histórica no accesible; continuidad `task_a5ef66a09de14cc4`. Publicado PR #913, código `ec44bb1`, remoto verificado; checks todavía ausentes al primer control (no es PASS ni se atribuye un motivo sin evidencia). **Fer conserva integración**, no desplegado.
 
 ## T-17 — RED: Specify complete guarded service behavior through the existing route
 
