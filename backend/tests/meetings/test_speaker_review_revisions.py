@@ -18,6 +18,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from alembic.config import Config
@@ -79,7 +80,7 @@ async def legacy_engine(
     async with postgres_engine.begin() as connection:
         await connection.execute(text("DROP SCHEMA public CASCADE"))
         await connection.execute(text("CREATE SCHEMA public"))
-    monkeypatch.setenv("DATABASE_URL", str(postgres_engine.url))
+    monkeypatch.setenv("DATABASE_URL", postgres_engine.url.render_as_string(hide_password=False))
     config = Config(str(BACKEND_ROOT / "alembic.ini"))
     await asyncio.to_thread(command.upgrade, config, "013_manual_recovery_persistence")
     return postgres_engine
@@ -290,7 +291,7 @@ def test_revision_qualified_review_routes_are_registered() -> None:
 
 @pytest.fixture
 async def api_db_url(postgres_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch) -> str:
-    url = str(postgres_engine.url)
+    url = postgres_engine.url.render_as_string(hide_password=False)
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("APP_ENV", "test")
     return url
@@ -794,6 +795,130 @@ async def test_pending_active_review_rejects_new_candidate_without_displacing_re
     assert active["remaining_speaker_ids"] == ["speaker-1"]
 
 
+def _pipeline(engine: AsyncEngine) -> tuple[Any, AsyncMock]:
+    """Exercise the design's finalizer with persisted stages and synthetic collaborators."""
+    try:
+        module = importlib.import_module("app.transcription.processing_pipeline")
+    except ModuleNotFoundError as error:
+        if error.name != "app.transcription.processing_pipeline":
+            raise
+        pytest.fail("T-15 contract absent: ProcessingPipeline.finalize/get_review", pytrace=False)
+    pipeline_type = getattr(module, "ProcessingPipeline", None)
+    assert pipeline_type is not None
+    matcher = AsyncMock()
+    matcher.match = AsyncMock(return_value={"state": "uncertain"})
+    validator = AsyncMock(return_value={"speaker-synthetic-1": "synthetic://validated-speaker-1-0-1000"})
+    pipeline = pipeline_type(
+        async_sessionmaker(engine, expire_on_commit=False),
+        transcription_provider=AsyncMock(return_value={"text": "synthetic speech"}),
+        diarization_provider=AsyncMock(return_value={"speakers": ["speaker-synthetic-1"]}),
+        speaker_identity_matcher=matcher,
+        excerpt_validator=validator,
+    )
+    return pipeline, validator
+
+
+async def _complete_candidate_stages(pipeline: Any, revision_id: str) -> None:
+    """Set up durable completed outputs through the approved processing boundary."""
+    assert await pipeline.process_stage(revision_id, "transcription") is not None
+    assert await pipeline.process_stage(revision_id, "diarization") is not None
+
+
+@pytest.mark.asyncio
+async def test_exact_current_candidate_finalization_activates_and_clears_atomically(
+    legacy_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
+) -> None:
+    await _seed_legacy_stage_rows(postgres_engine)
+    await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    legacy_id = (await _revisions(postgres_engine, "meeting-complete"))[0].id
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        await _admission_service()(session).admit_candidate(
+            owner_id=OWNER_ID,
+            recording_id="meeting-complete",
+            request_id="ready-candidate",
+            request_fingerprint="sha256:ready",
+        )
+    candidate_id = (await _state(postgres_engine, "meeting-complete")).in_flight_revision_id
+    assert candidate_id is not None and candidate_id != legacy_id
+    pipeline, validator = _pipeline(postgres_engine)
+    assert await pipeline.finalize(candidate_id) is None  # stages have not completed
+    assert (await _state(postgres_engine, "meeting-complete")).in_flight_revision_id == candidate_id
+    await _complete_candidate_stages(pipeline, candidate_id)
+    async with postgres_engine.connect() as connection:
+        stages = (
+            await connection.execute(
+                text(
+                    "SELECT (SELECT count(*) FROM transcripts WHERE processing_revision_id=:revision), "
+                    "(SELECT count(*) FROM diarizations WHERE processing_revision_id=:revision)"
+                ),
+                {"revision": candidate_id},
+            )
+        ).one()
+    assert tuple(stages) == (1, 1)  # completed stages are real persisted rows
+    assert (await _state(postgres_engine, "meeting-complete")).active_processing_revision_id is None
+
+    review = await pipeline.finalize(candidate_id)
+    state = await _state(postgres_engine, "meeting-complete")
+    assert review is not None
+    assert review["processing_revision_id"] == candidate_id
+    assert review["excerpts"] == {"speaker-synthetic-1": "synthetic://validated-speaker-1-0-1000"}
+    validator.assert_awaited_once()
+    assert state.active_processing_revision_id == candidate_id
+    assert state.in_flight_revision_id is None
+    assert await pipeline.get_review("meeting-complete") == review
+    assert await pipeline.finalize(candidate_id) == review  # no second aggregate
+    async with postgres_engine.connect() as connection:
+        rows = (
+            await connection.execute(
+                text(
+                    "SELECT r.id, i.excerpt_ref FROM speaker_reviews r "
+                    "JOIN speaker_review_items i ON i.review_id=r.id "
+                    "WHERE r.meeting_id='meeting-complete' AND r.processing_revision=2"
+                )
+            )
+        ).all()
+    assert len(rows) == 1 and rows[0].excerpt_ref == "synthetic://validated-speaker-1-0-1000"
+
+
+@pytest.mark.asyncio
+async def test_non_current_candidate_cannot_activate_or_clear_current_inflight(
+    legacy_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
+) -> None:
+    await _seed_legacy_stage_rows(postgres_engine)
+    await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        await _admission_service()(session).admit_candidate(
+            owner_id=OWNER_ID,
+            recording_id="meeting-complete",
+            request_id="current-candidate",
+            request_fingerprint="sha256:current",
+        )
+    current = (await _state(postgres_engine, "meeting-complete")).in_flight_revision_id
+    legacy = (await _revisions(postgres_engine, "meeting-complete"))[0].id
+    assert current is not None and current != legacy
+    pipeline, validator = _pipeline(postgres_engine)
+    await _complete_candidate_stages(pipeline, current)
+    before = await _state(postgres_engine, "meeting-complete")
+    assert await pipeline.finalize(legacy) is None
+    validator.assert_not_awaited()
+    assert await _state(postgres_engine, "meeting-complete") == before
+    async with postgres_engine.connect() as connection:
+        count = (
+            await connection.execute(text("SELECT count(*) FROM speaker_reviews WHERE meeting_id='meeting-complete'"))
+        ).scalar_one()
+    assert count == 0
+    assert await pipeline.finalize(current) is not None
+    activated = await _state(postgres_engine, "meeting-complete")
+    assert activated.active_processing_revision_id == current
+    assert activated.in_flight_revision_id is None
+    assert await pipeline.finalize(legacy) is None
+    assert await _state(postgres_engine, "meeting-complete") == activated
+
+
 @pytest.mark.asyncio
 async def test_get_first_holds_shared_state_lock_and_pending_review_blocks_admission(
     legacy_engine: AsyncEngine,
@@ -802,28 +927,30 @@ async def test_get_first_holds_shared_state_lock_and_pending_review_blocks_admis
     await _seed_legacy_stage_rows(postgres_engine)
     await _run_migration(postgres_engine, _revision_migration(), "upgrade")
     legacy_id = (await _revisions(postgres_engine, "meeting-complete"))[0].id
+    assert (await _state(postgres_engine, "meeting-complete")).active_processing_revision_id is None
+    # A real legacy speaker interval, inside the synthetic 10-second recording,
+    # supplies the excerpt validator with same-speaker, in-bounds speech.
     async with postgres_engine.begin() as connection:
         await connection.execute(
             text(
-                "UPDATE recording_processing_states SET active_processing_revision_id=:revision "
-                "WHERE recording_id='meeting-complete'"
-            ),
-            {"revision": legacy_id},
-        )
-        await connection.execute(
-            text(
-                "INSERT INTO speaker_reviews (id, meeting_id, processing_revision, status, created_at) "
-                "VALUES ('read-first-review', 'meeting-complete', 1, 'pending', :now)"
-            ),
-            {"now": datetime.now(UTC)},
-        )
-        await connection.execute(
-            text(
-                "INSERT INTO speaker_review_items (id, review_id, speaker_key, current_label, "
-                "attribution_state, version) VALUES "
-                "('read-first-item', 'read-first-review', 'speaker-1', 'Speaker 1', 'uncertain', 1)"
+                "INSERT INTO speech_turns (id, transcript_id, text, start_ms, end_ms, sequence) "
+                "VALUES ('legacy-turn', 'transcript-meeting-complete', 'synthetic speech', 0, 1000, 1)"
             )
         )
+        await connection.execute(
+            text(
+                "INSERT INTO speakers (id, diarization_id, raw_label, label, sequence) "
+                "VALUES ('speaker-synthetic-1', 'diarization-complete', 'SPEAKER_00', 'Speaker 1', 1)"
+            )
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO speaker_assignments (id, diarization_id, turn_id, speaker_id, overlap_ms) "
+                "VALUES ('legacy-assignment', 'diarization-complete', 'legacy-turn', "
+                "'speaker-synthetic-1', 1000)"
+            )
+        )
+    pipeline, validator = _pipeline(postgres_engine)
     factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
     started = asyncio.Event()
     release = asyncio.Event()
@@ -831,12 +958,18 @@ async def test_get_first_holds_shared_state_lock_and_pending_review_blocks_admis
     service = _admission_service()
 
     async def read_first() -> None:
+        # This call must create the review and switch the active pointer under
+        # the same state lock used by admission, not just read a pre-seeded review.
+        review = await pipeline.get_review("meeting-complete")
+        assert review is not None and review["processing_revision_id"] == legacy_id
+        assert review["excerpts"] == {"speaker-synthetic-1": "synthetic://validated-speaker-1-0-1000"}
+        validator.assert_awaited_once()
+        state = await _state(postgres_engine, "meeting-complete")
+        assert state.active_processing_revision_id == legacy_id
+        assert state.in_flight_revision_id is None
         async with factory() as session, session.begin():
-            result = await SpeakerReviewService(session).get_active_review(
-                OWNER_ID,
-                "meeting-complete",
-            )
-            assert result is not None and result["review_id"] == "read-first-review"
+            result = await SpeakerReviewService(session).get_active_review(OWNER_ID, "meeting-complete")
+            assert result is not None and result["review_id"] == review["review_id"]
             started.set()
             await asyncio.wait_for(release.wait(), 5)
 
@@ -868,3 +1001,16 @@ async def test_get_first_holds_shared_state_lock_and_pending_review_blocks_admis
     assert outcome is None or getattr(outcome, "outcome", None) == "conflict"
     assert len(await _revisions(postgres_engine, "meeting-complete")) == 1
     assert (await _state(postgres_engine, "meeting-complete")).active_processing_revision_id == legacy_id
+    async with postgres_engine.connect() as connection:
+        rows = (
+            await connection.execute(
+                text(
+                    "SELECT r.status, i.speaker_key, i.excerpt_ref FROM speaker_reviews r "
+                    "JOIN speaker_review_items i ON i.review_id=r.id "
+                    "WHERE r.meeting_id='meeting-complete' AND r.processing_revision=1"
+                )
+            )
+        ).all()
+    assert [tuple(row) for row in rows] == [
+        ("pending", "speaker-synthetic-1", "synthetic://validated-speaker-1-0-1000")
+    ]
