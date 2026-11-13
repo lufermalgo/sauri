@@ -71,6 +71,7 @@ async def test_authentication_and_sales_gate_apply_to_all_template_routes(
         ("patch", f"{BASE}/{uuid4()}", {"instructions": "Nope"}),
         ("get", f"{BASE}/categories", None),
         ("post", f"{BASE}/categories", {"name": "Not saved"}),
+        ("put", f"{BASE}/default", {"template_id": str(uuid4())}),
     )
     for method, path, payload in endpoints:
         unauthenticated = await client.request(method.upper(), path, json=payload)

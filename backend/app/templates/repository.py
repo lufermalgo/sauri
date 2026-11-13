@@ -2,7 +2,7 @@
 
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import SummaryTemplate, TemplateCategory, User
@@ -36,3 +36,9 @@ async def get_category(session: AsyncSession, owner_id: str, category_id: str) -
 
 async def get_default_id(session: AsyncSession, owner_id: str) -> str | None:
     return await session.scalar(select(User.default_summary_template_id).where(User.id == owner_id))
+
+
+async def set_default_id(session: AsyncSession, owner_id: str, template_id: str) -> None:
+    await session.execute(
+        update(User).where(User.id == owner_id).values(default_summary_template_id=template_id)
+    )

@@ -15,6 +15,10 @@ class TemplateUpdate(BaseModel):
     category_id: str | None = None
 
 
+class DefaultTemplateSelection(BaseModel):
+    template_id: str
+
+
 class TemplateOut(BaseModel):
     id: str
     name: str

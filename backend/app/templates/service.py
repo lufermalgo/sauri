@@ -33,6 +33,13 @@ async def validate_category(session: AsyncSession, owner_id: str, category_id: s
         raise HTTPException(status_code=422, detail="Invalid category_id")
 
 
+async def set_default_template(session: AsyncSession, owner_id: str, template_id: str) -> None:
+    if await repository.get_template(session, owner_id, template_id) is None:
+        # The same response for foreign and missing IDs avoids disclosing ownership.
+        raise HTTPException(status_code=422, detail="Invalid template_id")
+    await repository.set_default_id(session, owner_id, template_id)
+
+
 async def create_template(session: AsyncSession, owner_id: str, data: TemplateCreate) -> SummaryTemplate:
     await validate_category(session, owner_id, data.category_id)
     now = datetime.now(UTC)

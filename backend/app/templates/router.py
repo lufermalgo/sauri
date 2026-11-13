@@ -10,7 +10,14 @@ from app.auth.authorization import require_sales
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
 from app.templates import repository, service
-from app.templates.schemas import CategoryCreate, CategoryOut, TemplateCreate, TemplateOut, TemplateUpdate
+from app.templates.schemas import (
+    CategoryCreate,
+    CategoryOut,
+    DefaultTemplateSelection,
+    TemplateCreate,
+    TemplateOut,
+    TemplateUpdate,
+)
 
 router = APIRouter(prefix="/api/v1/templates", tags=["templates"])
 
@@ -55,6 +62,12 @@ async def create_category(data: CategoryCreate, session: Session, user: Authoriz
         row = await service.create_category(session, user.id, data)
     await session.refresh(row)
     return service.category_out(row)
+
+
+@router.put("/default", status_code=status.HTTP_204_NO_CONTENT)
+async def set_default_template(data: DefaultTemplateSelection, session: Session, user: AuthorizedUser) -> None:
+    async with session.begin():
+        await service.set_default_template(session, user.id, data.template_id)
 
 
 @router.get("/{template_id}")
