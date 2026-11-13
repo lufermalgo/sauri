@@ -17,16 +17,18 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import ValidationError
+from sqlalchemy import select
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
-from app.infra.models import Meeting
+from app.infra.models import Meeting, ProcessingRevision
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.processing_claims import create_processing_generation
 from app.infra.queue import JobQueue, create_job_queue
 from app.ingestion.schemas import IngestionData
 from app.ingestion.service import preflight_ingestion, process_ingestion, resolve_upload_title
+from app.meetings.processing_revision_service import ProcessingRevisionService
 from app.meetings.service import record_transition
 from app.retention.cleanup import (
     drain_pending_object_deletions,
@@ -45,6 +47,17 @@ _AUTHENTICATED_USER = Depends(get_current_user)
 def _cleanup_scope_hash(user_id: str, meeting_id: str, idempotency_key: str) -> str:
     scope = json.dumps([user_id, meeting_id, idempotency_key], separators=(",", ":"))
     return hashlib.sha256(scope.encode()).hexdigest()
+
+
+def _request_fingerprint(audio_content: bytes, video_content: bytes | None) -> str:
+    """A stable content fingerprint independent of freshly generated object refs."""
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            hashlib.sha256(audio_content).digest()
+            + (hashlib.sha256(video_content).digest() if video_content is not None else b"")
+        ).hexdigest()
+    )
 
 
 def _get_object_store() -> ObjectStore:
@@ -108,6 +121,27 @@ async def upload_recording(
         async with preflight_session_factory() as session:
             existing_recording = await preflight_ingestion(session, ingestion_data, user.id)
             if existing_recording is not None:
+                prior_revision = await session.scalar(
+                    select(ProcessingRevision.id).where(
+                        ProcessingRevision.recording_id == existing_recording.id,
+                        ProcessingRevision.request_id == ingestion_data.idempotency_key,
+                    )
+                )
+                if prior_revision is not None:
+                    # A preflight retry must not bypass the admission fingerprint
+                    # just because it avoids staging a duplicate media object.
+                    fingerprint = _request_fingerprint(
+                        await audio.read(), await video.read() if video is not None else None
+                    )
+                    try:
+                        await ProcessingRevisionService(session).admit_candidate(
+                            owner_id=user.id,
+                            recording_id=existing_recording.id,
+                            request_id=ingestion_data.idempotency_key,
+                            request_fingerprint=fingerprint,
+                        )
+                    except ValueError as error:
+                        raise HTTPException(status_code=409, detail="Processing admission conflict") from error
                 await drain_pending_object_deletions(
                     session,
                     _get_object_store(),
@@ -195,11 +229,7 @@ async def upload_recording(
                     audio_ref=audio_ref,
                     video_ref=video_ref,
                     created_by=user.id,
-                    request_fingerprint="sha256:"
-                    + hashlib.sha256(
-                        hashlib.sha256(audio_content).digest()
-                        + (hashlib.sha256(video_content).digest() if video_content is not None else b"")
-                    ).hexdigest(),
+                    request_fingerprint=_request_fingerprint(audio_content, video_content),
                 )
             except ValueError as error:
                 raise HTTPException(status_code=409, detail="Processing admission conflict") from error

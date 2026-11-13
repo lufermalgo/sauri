@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from io import BytesIO
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from fastapi import HTTPException, UploadFile
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.auth.schemas import AuthenticatedUser
 from app.infra.models import (
     ProcessingRevision,
     ProcessingRevisionOutbox,
@@ -16,6 +20,7 @@ from app.infra.models import (
     SpeakerReview,
     SpeakerReviewItem,
 )
+from app.ingestion import router as ingestion_router
 from app.ingestion.schemas import IngestionData
 from app.ingestion.service import process_ingestion
 from app.meetings.processing_revision_service import ProcessingRevisionService
@@ -69,6 +74,47 @@ async def test_ingestion_admission_replay_and_conflict_share_upload_transaction(
         )
     assert (await db_session.scalars(select(ProcessingRevisionOutbox))).all() == [event]
     assert state.in_flight_revision_id == revision.id
+
+
+@pytest.mark.asyncio
+async def test_upload_preflight_rejects_changed_content_without_staging(
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = _data()
+    original = b"synthetic original audio"
+    async with session_factory() as session, session.begin():
+        recording, _ = await process_ingestion(
+            session,
+            data,
+            "synthetic://audio",
+            None,
+            "synthetic-owner",
+            ingestion_router._request_fingerprint(original, None),
+        )
+    monkeypatch.setattr(ingestion_router, "create_engine", Mock(return_value=Mock(dispose=AsyncMock())))
+    monkeypatch.setattr(ingestion_router, "create_session_factory", Mock(return_value=session_factory))
+    store = Mock()
+    monkeypatch.setattr(ingestion_router, "_get_object_store", Mock(return_value=store))
+    user = AuthenticatedUser(id="synthetic-owner", email="owner@sauri.local", name="Synthetic", is_sales=True)
+    payload = data.model_dump_json()
+    with pytest.raises(HTTPException) as error:
+        await ingestion_router.upload_recording(
+            audio=UploadFile(filename="original.webm", file=BytesIO(b"different content")),
+            video=None,
+            data=payload,
+            user=user,
+        )
+    assert error.value.status_code == 409
+    store.save.assert_not_called()
+    replay = await ingestion_router.upload_recording(
+        audio=UploadFile(filename="original.webm", file=BytesIO(original)),
+        video=None,
+        data=payload,
+        user=user,
+    )
+    assert replay["recording_id"] == recording.id
+    store.save.assert_not_called()
 
 
 @pytest.mark.asyncio
