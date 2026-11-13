@@ -368,6 +368,9 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
 
     expect(await screen.findByText("La propuesta queda para el viernes.")).toBeVisible();
     expect(getTranscript).toHaveBeenCalledWith(meetingId);
+    expect(screen.getByRole("link", { name: "Open playback and speaker paragraphs" }))
+      .toHaveAttribute("href", `?meetingId=${meetingId}`);
+    expect(document.querySelector("audio, video")).toHaveAttribute("hidden");
     expect(getSpeakerReview).toHaveBeenCalledWith(meetingId);
     expect(await screen.findByText(/pending/i)).toBeVisible();
   });

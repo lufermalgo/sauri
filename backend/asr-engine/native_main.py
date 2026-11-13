@@ -179,6 +179,11 @@ async def transcribe(
             audio_path,
             path_or_hf_repo=MODEL_ID,
             language=_language_code(request.language),
+            # Align against speech instead of retaining decoder-only boundaries;
+            # do not carry text across windows and reinforce repetitions in silence.
+            word_timestamps=True,
+            condition_on_previous_text=False,
+            hallucination_silence_threshold=2.0,
             verbose=False,
         )
         segments = [

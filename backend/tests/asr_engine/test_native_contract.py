@@ -44,6 +44,9 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
         observed_path.append(path)
         assert kwargs["path_or_hf_repo"] == "mlx-community/whisper-large-v3-turbo"
         assert kwargs["language"] == "es"
+        assert kwargs["word_timestamps"] is True
+        assert kwargs["condition_on_previous_text"] is False
+        assert kwargs["hallucination_silence_threshold"] == 2.0
         return {
             "language": "es",
             "segments": [

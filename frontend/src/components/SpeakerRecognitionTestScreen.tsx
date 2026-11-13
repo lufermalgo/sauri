@@ -339,6 +339,7 @@ export function SpeakerRecognitionTestScreen() {
         <video
           src={recording.objectUrl}
           preload="metadata"
+          hidden
           onLoadedMetadata={handleMetadata}
           onError={() => releaseObjectUrl(recording.objectUrl)}
           aria-label="Selected recording metadata"
@@ -347,6 +348,7 @@ export function SpeakerRecognitionTestScreen() {
         <audio
           src={recording.objectUrl}
           preload="metadata"
+          hidden
           onLoadedMetadata={handleMetadata}
           onError={() => releaseObjectUrl(recording.objectUrl)}
           aria-label="Selected recording metadata"
@@ -370,6 +372,7 @@ export function SpeakerRecognitionTestScreen() {
         <>
           <section aria-labelledby="test-transcript-heading">
             <h3 id="test-transcript-heading">Transcript</h3>
+            <a href={`?meetingId=${selectedMeetingId}`}>Open playback and speaker paragraphs</a>
             <ol>
               {displayedTranscript.segments.map((segment) => (
                 <li key={segment.id}>
