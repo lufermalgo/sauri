@@ -5,8 +5,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ComponentType } from "react";
 import type { SummaryTemplate, TemplateCategory } from "@sauri/shared-types";
+import { TemplateSettingsView } from "./TemplateSettingsView";
 
 const api = vi.hoisted(() => ({
   listTemplates: vi.fn(), createTemplate: vi.fn(), updateTemplate: vi.fn(),
@@ -30,13 +30,8 @@ function template(overrides: Partial<SummaryTemplate> = {}): SummaryTemplate {
 const first = template();
 const second = template({ id: "tpl-two", name: "Follow-up", isDefault: false, categoryId: category.id });
 
-// Import inside the test lifecycle so missing production code is an observable
-// RED assertion (all tests collect), without a production stub or TS suppression.
-// T24 replaces this with a static import once the component exists.
 async function openSettings() {
-  const modulePath = new URL("./TemplateSettingsView.tsx", import.meta.url).pathname;
-  const module: { TemplateSettingsView: ComponentType } = await import(/* @vite-ignore */ modulePath);
-  render(<module.TemplateSettingsView />);
+  render(<TemplateSettingsView />);
   await screen.findByText(first.name);
 }
 

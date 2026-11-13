@@ -328,7 +328,7 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T24: GREEN — Implement web template settings view and API integration
 
-**Tracking:** Issue #292 · Card task_66a4a20054504d35
+**Tracking:** Issue #292 · Execution card task_f5429fa9aa154341 (historical task_66a4a20054504d35 is unavailable in APX; no second executor was assigned)
 
 **Archivo:** `frontend/src/api.ts`; `frontend/src/components/TemplateSettingsView.tsx`; `frontend/src/App.tsx`
 **Acción:** Implement only the settings-specific API calls in `frontend/src/api.ts` (`createTemplate`, `updateTemplate`, `listCategories`, `createCategory`, and `setDefaultTemplate`), reusing T20's `listTemplates`; implement the settings view including create/edit, optional category, category creation, default identification/selection, and navigation entry in `App.tsx`. Instructions remain an opaque string and PATCH category field-presence semantics are preserved. Consume the default setter's 204 response without JSON parsing.
