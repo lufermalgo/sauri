@@ -26,8 +26,8 @@ def _id() -> str:
     return str(uuid4())
 
 
-def _headers(user: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_token(user, f'{user}@example.test', 'Synthetic', True)}"}
+def _headers(user: str, *, sales: bool = True) -> dict[str, str]:
+    return {"Authorization": f"Bearer {create_token(user, f'{user}@example.test', 'Synthetic', sales)}"}
 
 
 @pytest.fixture
@@ -156,8 +156,13 @@ async def test_foreign_template_and_meeting_cannot_enqueue_or_disclose(
     assert not_owner.status_code == 404, not_owner.text
     no_auth = await client.post(path, json={"template_id": foreign})
     assert no_auth.status_code == 401, no_auth.text
+    non_sales = await client.post(path, json={"template_id": foreign}, headers=_headers(owner, sales=False))
+    assert non_sales.status_code == 403, non_sales.text
     async with factory() as session:
         assert (await session.scalars(select(SummaryRequestOutbox))).all() == []
+        template = await session.get(SummaryTemplate, foreign)
+        assert template is not None
+        assert (template.owner_user_id, template.instructions) == (other, "Private foreign instructions")
 
 
 @pytest.mark.asyncio

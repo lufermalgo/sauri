@@ -104,6 +104,42 @@ async def test_transcript_commit_alone_never_creates_summary_request(
 
 
 @pytest.mark.asyncio
+async def test_denied_selection_has_no_durable_event_and_never_publishes(
+    pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
+) -> None:
+    broker = os.environ.get("SAURI_QA_RABBITMQ_URL")
+    if not broker:
+        pytest.skip("requires disposable RabbitMQ URL in SAURI_QA_RABBITMQ_URL")
+    client, factory, owner, meeting, _ = pg_request
+    foreign_owner, foreign_template = _id(), _id()
+    now = datetime.now(UTC)
+    async with factory() as session, session.begin():
+        session.add(User(id=foreign_owner, email=f"{foreign_owner}@example.test", name="Synthetic",
+                         password_hash="not-used", is_sales=True, created_at=now))
+        await session.flush()
+        session.add(SummaryTemplate(id=foreign_template, owner_user_id=foreign_owner,
+                                    category_id=None, name="Private", version=1,
+                                    instructions="Never disclose", created_at=now, updated_at=now))
+    path = f"/api/v1/meetings/{meeting}/summary-requests"
+    foreign = await client.post(path, json={"template_id": foreign_template}, headers=_headers(owner))
+    assert foreign.status_code == 422, foreign.text
+    assert "Never disclose" not in foreign.text
+    # A valid template does not override the meeting's ownership boundary.
+    other_meeting = await client.post(path, json={"template_id": foreign_template},
+                                      headers=_headers(foreign_owner))
+    assert other_meeting.status_code == 404, other_meeting.text
+    async with factory() as session:
+        assert (await session.scalars(select(SummaryRequestOutbox))).all() == []
+    connection = await aio_pika.connect_robust(broker)
+    try:
+        channel = await connection.channel()
+        queue = await channel.declare_queue("summarize", durable=True)
+        assert await queue.get(fail=False, timeout=1) is None
+    finally:
+        await connection.close()
+
+
+@pytest.mark.asyncio
 async def test_committed_request_survives_failed_publication_and_recovery_confirmation(
     pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
     monkeypatch: pytest.MonkeyPatch,
