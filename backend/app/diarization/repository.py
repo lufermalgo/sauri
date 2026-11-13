@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from app.diarization.presentation import PreparedResult, validate_prepared
 from app.infra.models import (
     Diarization,
     Meeting,
@@ -14,6 +15,7 @@ from app.infra.models import (
     SpeakerAssignment,
     SpeakerReview,
     SpeakerReviewItem,
+    SpeechTurn,
 )
 from app.infra.queue import JobQueue
 
@@ -159,6 +161,21 @@ class DiarizationRepository:
         )
         if attempt is None:
             raise ValueError("revision is not claimed")
+        if attempt.prepared_result is not None:
+            prepared = PreparedResult.model_validate(attempt.prepared_result)
+            sources = list((await session.scalars(select(SpeechTurn).where(
+                SpeechTurn.transcript_id == attempt.transcript_id
+            ).order_by(SpeechTurn.sequence))).all())
+            validate_prepared(prepared, sources,
+                                transcript_id=attempt.transcript_id, diarization_id=attempt.id,
+                                revision=processing_revision)
+            if (provider != prepared.provider
+                or [s.id for s in speakers] != [s.id for s in prepared.speakers]
+                or [(a.turn_id, a.speaker_id, a.overlap_ms) for a in assignments]
+                   != [(a.turn_id, a.speaker_id, a.overlap_ms) for a in prepared.assignments]):
+                raise ValueError("prepared result mismatch")
+            attempt.presentation = prepared.presentation.model_dump()
+            attempt.prepared_result = None
         attempt.provider = provider
         attempt.speaker_count = len(speakers)
         for speaker in speakers:

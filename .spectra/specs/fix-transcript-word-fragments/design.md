@@ -241,7 +241,15 @@ Usar exclusivamente reuniones, audio_refs, textos, nombres y segmentos sintétic
 
 ## Delta de diseño #880 — Admisión acústica y atribución granular
 
-### Actualización ejecutiva y técnica 2026-11-13 19:17Z
+### Continuación implementada para integración QA — 2026-11-13
+
+La orden correctiva posterior de Ansel autoriza completar código, no solo diseño; el estado documental histórico de abajo no es el límite vigente. Fuentes completas más envelope de palabras efímero reemplazan las filas por palabra de la primera pieza. La proyección final usa rangos exactos Unicode/intervalos originales e incertidumbre por padre completo; la vista agrupa corridas de voz también entre fuentes y mantiene playback separado de la fila agrupada. La preparación pareada usa motores locales existentes y la revisión/claim/handoff ya establecidos; el job de diarización materializa salida final, speakers y review atómicamente, sin coordinador/finalizador nuevo ni persistencia de words/scores.
+
+**Refinamiento de persistencia:** en vez de tres tablas nuevas, `014_final_presentation` añade `prepared_result` y `presentation` JSON nullable a la misma revisión. Sus FKs/retención eliminan ambos con el origen; validación estricta del servicio comprueba referencias de fuente/revisión/speaker, partición y tiempos antes de activar/exponer. No hay texto duplicado, timeline acústica cruda, API de escritura ni retención extendida. Las referencias internas JSON se validan en aplicación, no mediante FKs por pieza; se elige esta alternativa menor para una salida final inmutable, sin subsistema nuevo. El contrato opt-in `presentation_version=2` y el fallback conservador siguen los controles propuestos abajo.
+
+Evidencia, archivos, comandos y contrato mínimo de instalación sobre #899: `presentation-qa-validation.md`; tareas A6.1–A6.5. Nahuel publica código para integración QA sin merge. Ansel conserva instalación combinada, escucha/calificación real y prueba final con Fer; no se presenta esta entrega como producto integrado/aceptado.
+
+### Actualización ejecutiva y técnica 2026-11-13 19:17Z (primera pieza, histórica)
 
 Ansel comunicó autorización posterior de Fer para implementar y validar ambos defectos, sin merge ni sustitución unilateral de servicios vivos. Reemplaza el límite documental anterior; no convierte #898 ni la variante siguiente en aceptación funcional.
 

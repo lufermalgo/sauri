@@ -262,6 +262,9 @@ class Diarization(Base):
     is_legacy: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Final prepared output only, never raw words/scores or acoustic timelines.
+    prepared_result: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    presentation: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     diarization_state: Mapped[str] = mapped_column(
         String(32), nullable=False
     )  # pending | in_progress | completed | failed

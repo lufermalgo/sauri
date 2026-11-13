@@ -28,6 +28,7 @@ from app.diarization.assignment import assign_turns
 from app.diarization.diarization_engine import DiarizationOptions
 from app.diarization.factory import create_diarization_engine
 from app.diarization.labeling import label_speakers
+from app.diarization.presentation import PreparedResult, validate_prepared
 from app.diarization.repository import DiarizationRepository
 from app.diarization.reprocess_legacy import expired
 from app.infra.models import (
@@ -195,28 +196,38 @@ async def _process_diarization(
                 return
 
     try:
-        engine = create_diarization_engine()
-        result = await engine.diarize(
-            recording.audio_ref, DiarizationOptions(duration_ms=recording.duration_seconds * 1000)
-        )
-        domain_speakers = label_speakers(result.segments)
-        domain_assignments = assign_turns(
-            list(transcript.turns), result.segments, domain_speakers,
-            require_exclusive=os.environ.get("DIARIZATION_EXCLUSIVE_ASSIGNMENTS", "0") == "1",
-        )
-        speaker_id_by_label: dict[str, str] = {}
-        orm_speakers: list[Speaker] = []
-        for speaker in domain_speakers:
-            speaker_id = str(uuid.uuid4())
-            speaker_id_by_label[speaker.raw_label] = speaker_id
-            orm_speakers.append(Speaker(
-                id=speaker_id, diarization_id=attempt.id, raw_label=speaker.raw_label,
-                label=speaker.label, sequence=speaker.sequence,
-            ))
-        orm_assignments = [SpeakerAssignment(
-            id=str(uuid.uuid4()), diarization_id=attempt.id, turn_id=turn_id,
-            speaker_id=speaker_id_by_label[speaker.raw_label], overlap_ms=overlap_ms,
-        ) for turn_id, speaker, overlap_ms in domain_assignments]
+        if attempt.prepared_result is not None:
+            prepared = PreparedResult.model_validate(attempt.prepared_result)
+            validate_prepared(prepared, list(transcript.turns),
+                                transcript_id=transcript.id, diarization_id=attempt.id, revision=revision)
+            orm_speakers = [Speaker(diarization_id=attempt.id, **s.model_dump()) for s in prepared.speakers]
+            orm_assignments = [SpeakerAssignment(diarization_id=attempt.id, **a.model_dump())
+                               for a in prepared.assignments]
+            provider = prepared.provider
+        else:
+            engine = create_diarization_engine()
+            result = await engine.diarize(
+                recording.audio_ref, DiarizationOptions(duration_ms=recording.duration_seconds * 1000)
+            )
+            domain_speakers = label_speakers(result.segments)
+            domain_assignments = assign_turns(
+                list(transcript.turns), result.segments, domain_speakers,
+                require_exclusive=os.environ.get("DIARIZATION_EXCLUSIVE_ASSIGNMENTS", "0") == "1",
+            )
+            speaker_id_by_label: dict[str, str] = {}
+            orm_speakers = []
+            for speaker in domain_speakers:
+                speaker_id = str(uuid.uuid4())
+                speaker_id_by_label[speaker.raw_label] = speaker_id
+                orm_speakers.append(Speaker(
+                    id=speaker_id, diarization_id=attempt.id, raw_label=speaker.raw_label,
+                    label=speaker.label, sequence=speaker.sequence,
+                ))
+            orm_assignments = [SpeakerAssignment(
+                id=str(uuid.uuid4()), diarization_id=attempt.id, turn_id=turn_id,
+                speaker_id=speaker_id_by_label[speaker.raw_label], overlap_ms=overlap_ms,
+            ) for turn_id, speaker, overlap_ms in domain_assignments]
+            provider = engine.capabilities().provider_name
 
         async with session_factory() as session, session.begin():
             if (
@@ -231,7 +242,7 @@ async def _process_diarization(
                 logger.info("Diarization artifact write skipped; reason=fenced")
                 return
             await repo.complete_revision(
-                session, meeting_id, revision, engine.capabilities().provider_name,
+                session, meeting_id, revision, provider,
                 orm_speakers, orm_assignments,
             )
     except Exception:

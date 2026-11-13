@@ -41,11 +41,39 @@ Continúa la misma unidad y tarjeta `task_e54417ff1e164f69`, criterios #897, dis
 **Criterio de Completado:** controles sintéticos y validación humana informados por separado; ningún resultado de TTS se presenta como aceptación de video real. Variante permanece opt-in hasta pasar la calificación.
 **Dependencias:** A2/A3/A4. P-R1/P-R2/P-R11.
 
-### A6 — Completar presentación/fallback y candidato instalable aceptado [ ]
-**Archivos:** `backend/app/infra/models.py`, API de diarización/transcript, `frontend/src/transcript-turns.ts`, pruebas API/frontend especificadas en `design.md`.
-**Acción:** completar procedencia/piezas finales sin filas por palabra inciertas, aislamiento/retención y playback; revisar alternativa de contrato antes de migrar. Validar en navegador APX el candidato integrado aislado, coordinar con Ansel antes de reemplazar vivo. No implementar una segunda versión de #248 ni crear clips.
-**Criterio de Completado:** AC-R3/AC-R4/AC-R6/AC-R7 completos y prueba humana reproducible autorizada; suites/typecheck pertinentes pasan, sin declarar listo por menor conteo. Publicación/merge/aceptación separados.
-**Dependencias:** A4/A5 y contrato final revisado. P-R3–P-R11.
+### A6 — Completar presentación/fallback [x código QA; integración/calificación pendientes]
+
+La orden posterior de Ansel separa la entrega de código de su instalación/calificación real. No se limita a documentos ni espera otro permiso técnico. La entrega de Nahuel es PR actualizado para integración QA, sin merge; A5 y A6.5 siguen a cargo de Ansel.
+
+#### A6.1 — Fuente padre y evidencia efímera [x]
+**Archivos:** `backend/asr-engine/native_main.py`, `backend/app/transcription/asr_engine.py`, `backend/app/transcription/local_provider.py`, `backend/tests/asr_engine/test_native_acoustic_alignment.py`.
+**Acción:** devolver fuentes completas y alignment interno opcional; validar reconstrucción/orden/límites sin persistir words. Conservar fallback completo, permisos y cleanup.
+**Criterio de Completado:** prueba exige un padre más todas las words exactas; no monotonicidad conserva fuente y overlap monotónico sigue válido.
+**Dependencias:** A2/A3. P-R2/P-R3/P-R5/P-R8/P-R10.
+
+#### A6.2 — Proyección final y activación atómica [x]
+**Archivos:** `backend/app/diarization/presentation.py`, `backend/app/transcription/worker.py`, `backend/app/diarization/worker.py`, `backend/app/diarization/repository.py`, `backend/app/infra/models.py`, `backend/alembic/versions/014_final_transcript_presentation.py`.
+**Acción:** preparar salida final referida a padres/revisión en memoria y entregar bundle final mediante revisión existente. Usar columnas JSON de la misma revisión con validación estricta, sin texto duplicado/words/scores. Fallback entero ante incertidumbre; conservar clusters. Materializar proyección/speakers/review juntos sin nueva inferencia, coordinador ni finalizador.
+**Criterio de Completado:** `backend/tests/diarization/test_prepared_presentation_worker.py` y `backend/tests/integration/test_final_presentation.py` pasan en SQLite/PostgreSQL real, incluyendo rollback tras flush, retry/redelivery, autorización y expiración; migración upgrade/downgrade/upgrade PASS.
+**Dependencias:** A6.1. P-R3/P-R4/P-R6/P-R7/P-R8/P-R10.
+
+#### A6.3 — API opt-in y presentación conservadora [x]
+**Archivos:** `backend/app/meetings/router.py`, `frontend/src/api.ts`, `frontend/src/transcript-turns.ts`, `frontend/src/components/TranscriptView.tsx`, `frontend/src/transcript-projection.test.ts`.
+**Acción:** exponer solo resultado final con `presentation_version=2`; validar IDs/revisión/partición completa/codepoints e intervalos. Rechazo completo sin assignments v1 si proyección inválida. Agrupar corridas de voz entre fuentes sin unir gaps ni A/B/A, conservar nombres de review de misma revisión y seek por intervalo.
+**Criterio de Completado:** RED conductual dos padres/misma voz produce 2 filas; GREEN produce 1 fila y 2 intervalos separados. Suite frontend/typecheck global/build PASS y recorrido APX sintético con labels/seek observados.
+**Dependencias:** A6.2. P-R3/P-R4/P-R5/P-R7/P-R9.
+
+#### A6.4 — Regresiones y publicación [x al publicar candidato]
+**Archivos:** `backend/tests/diarization/test_presentation.py`, `backend/tests/diarization/test_prepared_presentation_worker.py`, `backend/tests/integration/test_final_presentation.py`, `frontend/src/transcript-projection.test.ts`, `presentation-qa-validation.md` en esta spec.
+**Acción:** ejecutar suites backend/frontend, mypy/Ruff del proyecto y diffcheck; documentar fallos ambientales/deuda previa sin ocultarlos. Revisar límites de privacidad y publicar commit en #900, no merge.
+**Criterio de Completado:** evidencia y SHA remoto coherentes; typecheck TS PASS; ningún error nuevo de mypy en módulos cambiados; límites S3/CI/calificación explícitos.
+**Dependencias:** A4/A6.3. P-R8/P-R10/P-R11.
+
+#### A6.5 — Instalación combinada y calificación del original [ ] Ansel
+**Archivos/seam:** `presentation-qa-validation.md`, `acoustic-original-window-validation.md`, runtime QA #899/#248.
+**Acción:** integrar contratos sin sobrescribir indicador/playback/nombres/resumen; aplicar migración solo QA y ensayar original autorizado, acceso S3/CORS/estados, incertidumbre y etiquetas en portal.
+**Criterio de Completado:** candidato combinado instalado y probado por Ansel; aceptación de Fer separada. No afirmar listo el producto por fixtures o menor conteo de filas.
+**Dependencias:** A5/A6.4. P-R1–P-R11.
 
 ## Trazabilidad y alcance
 

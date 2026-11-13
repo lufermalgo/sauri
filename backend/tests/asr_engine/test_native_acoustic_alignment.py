@@ -59,12 +59,12 @@ async def test_word_boundaries_survive_before_first_persistence(
         ],
         [(2000, 3000)],
     )
-    assert [(s.text, s.start_ms, s.end_ms) for s in result] == [
-        ("Hola.", 2000, 2600),
-        (" Good", 2600, 2800),
-        (" day.", 2800, 3000),
+    # Parent remains the source; exact words travel only in the internal envelope.
+    assert [(s.text, s.start_ms, s.end_ms) for s in result] == [("Hola. Good day.", 2000, 3000)]
+    assert [(w.text, w.start_ms, w.end_ms) for w in result[0].alignment] == [
+        ("Hola.", 2000, 2600), (" Good", 2600, 2800), (" day.", 2800, 3000),
     ]
-    assert "".join(s.text for s in result) == "Hola. Good day."
+    assert "".join(w.text for w in result[0].alignment) == result[0].text
 
 
 @pytest.mark.asyncio
@@ -158,3 +158,37 @@ async def test_invalid_words_fall_back_to_whole_source(
         [(2000, 3000)],
     )
     assert [(s.text, s.start_ms, s.end_ms) for s in result] == [("Hola.", 2000, 3000)]
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [
+        ((1.0, 1.5), (0.1, 0.3)),  # Reversed word starts.
+        ((0.0, 1.5), (0.5, 1.0)),  # Nested word ends.
+    ],
+)
+def test_non_monotonic_words_preserve_the_entire_source(
+    first: tuple[float, float], second: tuple[float, float]
+) -> None:
+    source = native.Segment(text="One two.", start_ms=0, end_ms=2000)
+    segment = {
+        "words": [
+            {"word": "One", "start": first[0], "end": first[1]},
+            {"word": " two.", "start": second[0], "end": second[1]},
+        ]
+    }
+    assert native._aligned_segments(segment, source) == [source]
+
+
+def test_monotonic_overlapping_words_keep_the_original_overlap() -> None:
+    source = native.Segment(text="One two.", start_ms=0, end_ms=2000)
+    segment = {
+        "words": [
+            {"word": "One", "start": 0.0, "end": 1.0},
+            {"word": " two.", "start": 0.5, "end": 1.5},
+        ]
+    }
+    assert [(s.text, s.start_ms, s.end_ms) for s in native._aligned_segments(segment, source)] == [
+        ("One", 0, 1000),
+        (" two.", 500, 1500),
+    ]

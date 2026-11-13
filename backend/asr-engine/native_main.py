@@ -80,10 +80,17 @@ class TranscribeRequest(BaseModel):
     language: str = "es-CO"
 
 
+class WordInterval(BaseModel):
+    text: str
+    start_ms: int
+    end_ms: int
+
+
 class Segment(BaseModel):
     text: str
     start_ms: int
     end_ms: int
+    alignment: list[WordInterval] | None = None
 
 
 class TranscribeResponse(BaseModel):
@@ -231,6 +238,11 @@ def _aligned_segments(segment: dict[str, Any], source: Segment) -> list[Segment]
             start_ms, end_ms = int(start * 1000), int(end * 1000)
             if not source.start_ms <= start_ms < end_ms <= source.end_ms:
                 return [source]
+            # Preserve real overlaps, but never publish reversed word ordering.
+            # Invalid optional alignment falls back as a whole, without sorting
+            # words, moving boundaries or losing text from the admitted source.
+            if aligned and (start_ms < aligned[-1].start_ms or end_ms < aligned[-1].end_ms):
+                return [source]
             aligned.append(Segment(text=text, start_ms=start_ms, end_ms=end_ms))
         return aligned
     except (KeyError, TypeError, ValueError, OverflowError):
@@ -259,11 +271,23 @@ def _admit_segments(
         ):
             continue
         # Alignment is part of the QA mode; the legacy response stays unchanged.
-        segments.extend(_aligned_segments(segment, source) if regions is not None else [source])
+        if regions is not None:
+            aligned = _aligned_segments(segment, source)
+            if aligned != [source]:
+                source.alignment = [WordInterval(text=word.text, start_ms=word.start_ms, end_ms=word.end_ms)
+                                    for word in aligned]
+            elif isinstance(segment.get("words"), list) and len(segment["words"]) == 1:
+                # The single aligned word can equal its parent; still validate it.
+                word = segment["words"][0]
+                if (word.get("word", "").strip() == source.text
+                    and word.get("start") == source.start_ms / 1000
+                    and word.get("end") == source.end_ms / 1000):
+                    source.alignment = [WordInterval(text=source.text, start_ms=source.start_ms, end_ms=source.end_ms)]
+        segments.append(source)
     return segments
 
 
-@app.post("/transcribe", response_model=TranscribeResponse)
+@app.post("/transcribe", response_model=TranscribeResponse, response_model_exclude_none=True)
 async def transcribe(
     request: TranscribeRequest,
     _authorized: None = Depends(_require_engine_token),

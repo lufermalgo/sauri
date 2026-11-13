@@ -60,7 +60,25 @@ export type MeetingTranscript = Transcript & {
   turns: SpeechTurn[];
 };
 
+export interface FinalProjection {
+  version: 2;
+  transcript_id: string;
+  diarization_id: string;
+  processing_revision: number;
+  policy_version: string;
+  pieces: Array<{
+    source_turn_id: string;
+    char_start: number;
+    char_end: number;
+    speaker_id: string | null;
+    intervals: Array<{ start_ms: number; end_ms: number }>;
+  }>;
+}
+
 export interface MeetingDiarization {
+  diarization_id?: string;
+  transcript_id?: string;
+  presentation?: FinalProjection | null;
   diarization_state?: string | null;
   speakers: Array<{ id: string; label: string; sequence: number }>;
   processing_revision?: number | null;
@@ -260,7 +278,7 @@ export async function getTranscript(meetingId: string): Promise<MeetingTranscrip
 
 export async function getDiarization(meetingId: string): Promise<MeetingDiarization> {
   const response = await fetch(
-    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/diarization`,
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/diarization?presentation_version=2`,
     { method: "GET", headers: getAuthHeaders() }
   );
   return handleResponse<MeetingDiarization>(response);

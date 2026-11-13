@@ -2,7 +2,11 @@
 
 Encargo actualizado de Ansel por autorización correctiva de Fer, misma tarjeta `task_e54417ff1e164f69`. Base #882 `7e8d296`; criterios #897 y diseño #898 incorporados como documentos, sin merge de PRs. No reemplazo de servicios vivos, nuevas grabaciones del dueño, consultas privadas, reprocesamiento persistido ni cambios de datos.
 
-## Estado real
+## Continuación posterior
+
+La pieza de procedencia/proyección/fallback quedó implementada para integración QA; ver `presentation-qa-validation.md` y tareas A6.1–A6.5. Ansel aportó además evidencia read-only del original en `acoustic-original-window-validation.md`. Los límites y conteos de la primera pieza que siguen se conservan como históricos, no como estado vigente de los faltantes. Instalación combinada/calificación y aceptación continúan separadas del PR de código.
+
+## Estado real de la primera pieza (histórico)
 
 **Avance parcial, no listo para prueba integral del dueño ni aceptación.** Flags QA apagados por defecto. Faltan calificación con voz humana autorizada, conservación completa de procedencia padre/proyección/fallback, recorrido de presentación/playback y candidato integrado instalable validado. La emisión por palabra puede seguir fragmentando los casos sin atribución: no se presenta como solución total.
 
