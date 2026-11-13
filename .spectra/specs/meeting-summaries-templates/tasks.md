@@ -316,7 +316,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T23: RED — Specify web template settings experience
 
-**Tracking:** Issue #291 · Card task_1bc73c1cd5944767
+**Tracking:** Issue #291 · current APX task `task_08379f9f7e7445bd` (historical card `task_1bc73c1cd5944767` unavailable)
+**Status (2026-11-13):** RED prepared on T8 `68e81cd` + T18 `722287a` (combined base `31e1400`), not integrated. Seven component tests collect and fail because `TemplateSettingsView.tsx` is absent, before any settings implementation. Frontend typecheck passes; existing frontend regression is 11 files / 94 tests passing with this new RED file explicitly excluded (not a full-suite PASS). See `t23-red-evidence.md`. T24 still depends on T20; this test delivery does not authorize bypassing that dependency or Fer's merge gate.
 
 **Archivo:** `frontend/src/components/TemplateSettingsView.test.tsx` (create)
 **Acción:** Add component tests for listing personal templates, marking the personal default, creating multiple templates with opaque instructions, editing an owned template, optional category assignment and category creation, and setting an owned template as default. Do not assert a template grammar or any seed template.
@@ -327,7 +328,7 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T24: GREEN — Implement web template settings view and API integration
 
-**Tracking:** Issue #292 · Card task_66a4a20054504d35
+**Tracking:** Issue #292 · Execution card task_f5429fa9aa154341 (historical task_66a4a20054504d35 is unavailable in APX; no second executor was assigned)
 
 **Archivo:** `frontend/src/api.ts`; `frontend/src/components/TemplateSettingsView.tsx`; `frontend/src/App.tsx`
 **Acción:** Implement only the settings-specific API calls in `frontend/src/api.ts` (`createTemplate`, `updateTemplate`, `listCategories`, `createCategory`, and `setDefaultTemplate`), reusing T20's `listTemplates`; implement the settings view including create/edit, optional category, category creation, default identification/selection, and navigation entry in `App.tsx`. Instructions remain an opaque string and PATCH category field-presence semantics are preserved. Consume the default setter's 204 response without JSON parsing.

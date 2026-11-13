@@ -6,8 +6,9 @@ import { TranscriptView } from "./components/TranscriptView";
 import { SpeakerRecognitionTestScreen } from "./components/SpeakerRecognitionTestScreen";
 import { ProcessingIndicator } from "./components/ProcessingIndicator";
 import { SpeakerTestLogin } from "./components/SpeakerTestLogin";
+import { TemplateSettingsView } from "./components/TemplateSettingsView";
 
-type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" };
+type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" } | { type: "template-settings" };
 
 export function App() {
   // Only the meeting key is carried across tabs. Protected media and transcript
@@ -70,6 +71,9 @@ export function App() {
           <button type="button" onClick={() => setView({ type: "speaker-test" })}>
             Open speaker recognition test
           </button>
+          <button type="button" onClick={() => setView({ type: "template-settings" })}>
+            Summary template settings
+          </button>
           <MeetingList
             refreshKey={refreshKey}
             onSelectMeeting={handleSelectMeeting}
@@ -90,6 +94,13 @@ export function App() {
           meetingId={view.meetingId}
           onBack={() => { setReadyExecution(null); setView({ type: "list" }); }}
         />
+        </>
+      )}
+
+      {view.type === "template-settings" && (
+        <>
+          <button type="button" onClick={() => setView({ type: "list" })}>Back to meetings</button>
+          <TemplateSettingsView />
         </>
       )}
 

@@ -7,6 +7,7 @@ import type {
   MeetingSummary,
   SummaryRequestStatus,
   SummaryTemplate,
+  TemplateCategory,
 } from "@sauri/shared-types";
 
 export interface PlaybackSource {
@@ -178,6 +179,82 @@ export async function listTemplates(): Promise<SummaryTemplate[]> {
     version: value.version, instructions: value.instructions, isDefault: value.is_default,
     createdAt: value.created_at, updatedAt: value.updated_at,
   }));
+}
+
+export interface TemplateInput {
+  name: string;
+  instructions: string;
+  categoryId?: string | null;
+}
+
+export type TemplateChanges = Partial<TemplateInput>;
+
+function templateFromApi(value: TemplateResponse): SummaryTemplate {
+  return {
+    id: value.id, name: value.name, ownerId: value.owner_user_id,
+    ...(value.category_id == null ? {} : { categoryId: value.category_id }),
+    version: value.version, instructions: value.instructions, isDefault: value.is_default,
+    createdAt: value.created_at, updatedAt: value.updated_at,
+  };
+}
+
+function templatePayload(value: TemplateChanges): Record<string, string | null> {
+  return {
+    ...(value.name === undefined ? {} : { name: value.name }),
+    ...(value.instructions === undefined ? {} : { instructions: value.instructions }),
+    ...(value.categoryId === undefined ? {} : { category_id: value.categoryId }),
+  };
+}
+
+export async function createTemplate(input: TemplateInput): Promise<SummaryTemplate> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates`, {
+    method: "POST", headers: getAuthHeaders(), body: JSON.stringify(templatePayload(input)),
+  });
+  return templateFromApi(await handleResponse<TemplateResponse>(response));
+}
+
+export async function updateTemplate(id: string, changes: TemplateChanges): Promise<SummaryTemplate> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates/${encodeURIComponent(id)}`, {
+    method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(templatePayload(changes)),
+  });
+  return templateFromApi(await handleResponse<TemplateResponse>(response));
+}
+
+interface CategoryResponse {
+  id: string;
+  name: string;
+  owner_user_id: string;
+  created_at: string;
+}
+
+function categoryFromApi(value: CategoryResponse): TemplateCategory {
+  return { id: value.id, name: value.name, ownerId: value.owner_user_id, createdAt: value.created_at };
+}
+
+export async function listCategories(): Promise<TemplateCategory[]> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates/categories`, {
+    method: "GET", headers: getAuthHeaders(),
+  });
+  return (await handleResponse<CategoryResponse[]>(response)).map(categoryFromApi);
+}
+
+export async function createCategory(name: string): Promise<TemplateCategory> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates/categories`, {
+    method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ name }),
+  });
+  return categoryFromApi(await handleResponse<CategoryResponse>(response));
+}
+
+export async function setDefaultTemplate(id: string): Promise<void> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates/default`, {
+    method: "PUT", headers: getAuthHeaders(), body: JSON.stringify({ template_id: id }),
+  });
+  // The setter returns 204 with no body; don't call handleResponse/json here.
+  if (response.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    window.dispatchEvent(new Event("sauri:unauthorized"));
+  }
+  if (!response.ok) throw new Error(`Error ${response.status}`);
 }
 
 export interface LoginResponse {
