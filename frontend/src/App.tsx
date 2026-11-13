@@ -5,6 +5,10 @@ import { MeetingList } from "./components/MeetingList";
 import { TranscriptView } from "./components/TranscriptView";
 import { SpeakerRecognitionTestScreen } from "./components/SpeakerRecognitionTestScreen";
 import { SpeakerTestLogin } from "./components/SpeakerTestLogin";
+import { MeetingPlaybackView } from "./components/MeetingPlaybackView";
+import { trialManifest, trialPassages } from "./test-fixtures/meeting-review-playback";
+
+const TRIAL_PATH = "/_trial/meeting-review-playback";
 
 type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" };
 
@@ -44,10 +48,22 @@ export function App() {
     setView({ type: "list" });
   }
 
+  // This route is deliberately outside the authenticated meeting path and only
+  // available in Vite development. Production tree-shaking removes it and its link.
+  if (import.meta.env.DEV && window.location.pathname === TRIAL_PATH) {
+    return (
+      <main style={{ maxWidth: "800px", margin: "0 auto", padding: "1rem" }}>
+        <a href="/">Back to sauri</a>
+        <MeetingPlaybackView manifest={trialManifest} passages={trialPassages} loading={false} error={null} />
+      </main>
+    );
+  }
+
   if (!authenticated) {
     return (
       <main style={{ maxWidth: "800px", margin: "0 auto", padding: "1rem" }}>
         <h1>sauri</h1>
+        {import.meta.env.DEV && <p><a href={TRIAL_PATH}>Try synthetic meeting playback</a></p>}
         <p>Commercial meeting intelligence platform</p>
         <hr />
         <SpeakerTestLogin onLogin={() => setAuthenticated(true)} />
@@ -58,6 +74,7 @@ export function App() {
   return (
     <main style={{ maxWidth: "800px", margin: "0 auto", padding: "1rem" }}>
       <h1>sauri</h1>
+      {import.meta.env.DEV && <p><a href={TRIAL_PATH}>Try synthetic meeting playback</a></p>}
       <p>Commercial meeting intelligence platform</p>
       <button type="button" onClick={handleLogout}>Log out</button>
       <hr />

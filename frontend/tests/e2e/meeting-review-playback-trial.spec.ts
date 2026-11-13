@@ -33,10 +33,10 @@ test("trial playback uses the real WAV and seeks to the second transcript passag
 
   const startTime = await media.evaluate((element: HTMLMediaElement) => element.currentTime);
   await page.getByRole("button", { name: "Play or resume playback" }).click();
-  await expect.poll(() => media.evaluate((element: HTMLMediaElement) => ({
+  await expect.poll(() => media.evaluate((element: HTMLMediaElement, initialTime: number) => ({
     paused: element.paused,
-    advanced: element.currentTime - startTime >= 0.5,
-  })), { timeout: 5_000, message: "Play must unpause and advance at least 500 ms within five seconds" })
+    advanced: element.currentTime - initialTime >= 0.5,
+  }), startTime), { timeout: 5_000, message: "Play must unpause and advance at least 500 ms within five seconds" })
     .toEqual({ paused: false, advanced: true });
 
   // Pause with the visible control so the passage action must seek and start playback again.
