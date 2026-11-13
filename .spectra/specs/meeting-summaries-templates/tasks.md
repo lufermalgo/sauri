@@ -220,7 +220,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T16: GREEN — Implement summary read and request-status API
 
-**Tracking:** Issue #284 · Card task_c83508cfb0c54e80
+**Tracking:** Issue #284 · Card task_b0754ce57aa24b38 (current execution; historical card task_c83508cfb0c54e80)
+**Status:** T16 GREEN candidate; not integrated. T15 RED `73df389` and T12 `9589adf` preserved. PostgreSQL/RabbitMQ: API + worker/queue 25 PASS; outbox pipeline 14 PASS, no skips. Project mypy app + API test 72 files PASS; Ruff/format/diff PASS. See `t16-green-evidence.md` for exact commands, inherited broader pipeline-test typing gap and runtime-provider limits. Fer retains integration.
 
 **Archivo:** `backend/app/summaries/router.py`; `backend/app/summaries/service.py`; `backend/app/summaries/repository.py`; `backend/app/main.py`
 **Acción:** Implement GET current-summary, latest request status, and event-specific status routes with the designed ownership and `require_sales` checks. Return the highest-generation successful summary, 404 if none; latest status selects highest accepted generation. Register `/summary-requests/latest` before `/{event_id}` and expose no provider exception details.
