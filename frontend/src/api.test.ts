@@ -196,6 +196,57 @@ describe("speaker diarization API adapter", () => {
   });
 });
 
+describe("T15 — revision-aware wire adapters", () => {
+  it("retains the active generation, measured overlaps and independent latest attempt", async () => {
+    const wire = {
+      processing_revision: 2,
+      speakers: [{ id: "speaker-2", label: "Speaker 1", sequence: 1 }],
+      assignments: [
+        { turn_id: "source-1", speaker_id: "speaker-2", overlap_ms: 400 },
+        { turn_id: "source-2", speaker_id: "speaker-2", overlap_ms: null },
+      ],
+      latest_attempt: { processing_revision: 3, diarization_state: "not_reconstructible", failure_cause: "audio_unavailable" },
+    };
+    mockFetch(wire);
+    await expect(api.getDiarization("meeting-1")).resolves.toEqual(wire);
+  });
+
+  const wireReview = {
+    review_id: "review-2",
+    revision_id: 2,
+    status: "pending",
+    labels_by_speaker_id: { "speaker-named": "Synthetic chosen name", "speaker-pending": "Speaker 2" },
+    items: [{ speaker_id: "speaker-pending", current_label: "Speaker 2", attribution_state: "uncertain", disposition: null, excerpt_ref: null, expected_version: 4 }],
+  };
+  const adaptedReview = {
+    reviewId: "review-2",
+    revisionId: "2",
+    status: "pending",
+    labelsBySpeakerId: { "speaker-named": "Synthetic chosen name", "speaker-pending": "Speaker 2" },
+    items: [{ speakerId: "speaker-pending", currentLabel: "Speaker 2", attributionState: "uncertain", disposition: null, excerptRef: null, expectedVersion: 4 }],
+  };
+
+  it("maps GET review metadata, pending items and labels for speakers no longer pending", async () => {
+    const fetchMock = mockFetch(wireReview);
+    await expect(api.getSpeakerReview("meeting / synthetic")).resolves.toEqual(adaptedReview);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/meetings/meeting%20%2F%20synthetic/speaker-review"),
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }),
+    );
+  });
+
+  it.each(["named", "corrected"] as const)("maps the complete PUT %s snapshot even when the item disappears", async (disposition) => {
+    const fetchMock = mockFetch({ ...wireReview, status: "complete", items: [] });
+    await expect(api.submitSpeakerDisposition("meeting-1", "2", "speaker-named", {
+      disposition, label: "Synthetic chosen name", expectedVersion: 3,
+    })).resolves.toEqual({ ...adaptedReview, status: "complete", items: [] });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/speaker-review/revisions/2/speakers/speaker-named"),
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ disposition, label: "Synthetic chosen name", expected_version: 3 }) }),
+    );
+  });
+});
+
 describe("meeting playback API adapter", () => {
   it("returns the typed manifest modes and authoritative source metadata without inference", async () => {
     expect(typeof manifestMethod.getPlaybackManifest).toBe("function");
@@ -402,5 +453,34 @@ describe("meeting list API adapter", () => {
       createdAt: "2026-10-28T17:45:00Z",
       title: "Synthetic processed meeting",
     }]);
+  });
+});
+
+
+describe("processing API read contract", () => {
+  const snapshot = {
+    meeting_id: "meeting/1", ready: false, failed: false,
+    execution: { generation: 1, transcript_id: null, diarization_revision: null },
+    stages: [{ key: "transcription", state: "active" }, { key: "diarization", state: "pending" }],
+  };
+  it("encodes identity, authorizes a read and carries cancellation without creating work", async () => {
+    const fetchMock = mockFetch(snapshot);
+    const controller = new AbortController();
+    expect(await api.getProcessing("meeting/1", controller.signal)).toEqual(snapshot);
+    expect(fetchMock.mock.calls[0]).toEqual([
+      expect.stringContaining("/meetings/meeting%2F1/processing"),
+      expect.objectContaining({ method: "GET", signal: controller.signal,
+        headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }),
+    ]);
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined();
+  });
+  it.each([
+    { ...snapshot, meeting_id: "another-meeting" },
+    { ...snapshot, ready: true },
+    { ...snapshot, ready: "true" },
+    { ...snapshot, stages: [{ key: "transcription", state: "almost-done" }] },
+  ])("rejects mismatched or misleading status at the HTTP boundary", async (invalid) => {
+    mockFetch(invalid);
+    await expect(api.getProcessing("meeting/1")).rejects.toThrow("Invalid processing response");
   });
 });

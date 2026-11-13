@@ -1,5 +1,7 @@
 # Documento de Diseño — Portal web mínimo de Sauri
 
+> Estado documental, 2026-11-13: este diseño conserva su alcance anterior. La enmienda de seguimiento por etapas (Requisitos 7–11 de `requirements.md`) está pendiente de aprobación de requisitos y aún no tiene diseño. Este archivo no autoriza implementarla ni prueba que el core ya exponga las etapas. Los límites anteriores sobre progreso se mantienen para la versión previa; su actualización se resolverá mediante `spectra-design` después de aprobar la enmienda.
+
 ## Resumen
 
 Este diseño cubre Fase 1; Fase 2 está secuenciada, no excluida, conforme a la tabla de fases de los requisitos aprobados. La Fase 1 abarca login visual, biblioteca básica, carga manual y revisión de reunión, incluyendo pestañas Chat (solo composición) y Notes/Summary. El disparador de producto para apertura es detener la captura o finalizar la sesión de Google Meet; la apertura automática requiere trabajo dependiente de extensión. No se inventa comportamiento/API allí donde falten contratos; esas brechas deben resolverse antes de implementación.
@@ -196,3 +198,56 @@ No hay cambio de política de autenticación, permisos, privacidad o retención.
 **Extensión (tarea dependiente):** probar detención de captura y fin de sesión de Google Meet como disparadores de apertura; propagar el `meeting_id` confirmado por respuesta y navegar solo tras éxito. No asumir que `meet-ended` hoy abre portal ni exigir garantías de retención/reintento no definidas por baseline. Usar fixtures sintéticos y APIs Chrome controladas en tests.
 
 **Comandos configurados:** `npm run test`, `npm run typecheck`, `npm run build` desde `frontend/`; `npm run test`, `npm run typecheck`, `npm run build` y `npm run test:e2e` desde `extension/` para cambios de captura; backend sigue sus comandos configurados en `backend/`. En esta enmienda documental no se ejecutan pruebas de implementación.
+
+
+## Enmienda ejecutable — seguimiento mínimo real (2026-11-13, #892)
+
+### Resumen y autorización
+Pedido explícito de Fer, transmitido por Ansel en task_5d2838ff10c446ed: ejecutar R7–11 sin rediseño. El diseño previo y sus aprobaciones no se reabren. Esta sección supersede la nota histórica inicial solo para seguimiento mínimo.
+1. Agregar lectura autenticada GET `/api/v1/meetings/{meeting_id}/processing`.
+2. Derivar etapas de claims durables, transcript y revisión vigente de diarización bajo lock de reunión; no mutar estados ni publicar trabajos.
+3. Componente `ProcessingIndicator.tsx` con polling secuencial cada 2000 ms, último estado confirmado y reintento de consulta.
+4. Usarlo en pantalla de prueba y al reabrir una reunión; cargar resultado solo al confirmar ready.
+5. Conservar fetch para subida: no expone bytes, por lo tanto texto indeterminado explícito sin porcentaje (R8.2).
+
+### Decisiones y alternativas
+**Proyección de estados persistidos, no segundo pipeline.** `Meeting.process_state=completed` solo prueba ASR, no diarización. `MeetingProcessingClaim` confirma inicio del worker ASR; `Diarization` distingue pending/in_progress/completed/failed. Se toma únicamente la revisión más reciente del transcript actual. Alternativa descartada: derivar hablantes de `transcribing` o de cronómetro.
+**Detalle no disponible explícito para preparación de audio y preparación de resultado.** MLX/Whisper y pyannote publican una respuesta HTTP final, sin telemetría de decodificación ni porcentaje. La conversión ffmpeg está dentro del servicio pyannote; la asignación/persistencia está dentro de su worker. No se agregan hooks no confirmados ni motores nuevos. Alternativa descartada: fingir etapas independientes activas; instrumentación intrusiva de motores queda fuera del mínimo.
+**No declarar listo ante recuperación activa ni artefactos parciales.** Bloquear ready con claim recovery, meeting no completed, diarización no completed o tiempos faltantes/inválidos. Los párrafos son los turnos persistidos del core; esta entrega no cambia agrupación/atribución. Alternativa descartada: marcar listo al completar upload o ASR.
+**Estado local por reunión y cleanup de polling.** No persistir tokens ni medios en URL/storage adicional. Reapertura usa ID existente desde biblioteca/deep link. Alternativa descartada: relanzar upload al reabrir.
+
+### Arquitectura
+```mermaid
+graph TD
+  P[ProcessingIndicator] --> A[GET processing autorizado]
+  A --> M[Meeting y claim]
+  A --> T[Transcript y turnos]
+  A --> D[Última revisión de diarización del transcript]
+  P --> V[Pantalla de prueba y reunión existente]
+```
+```mermaid
+sequenceDiagram
+  participant P as Portal
+  participant A as API
+  participant DB as Persistencia core
+  P->>A: GET processing con JWT
+  A->>DB: Autorizar y consultar reunión/claim/transcript/revisión
+  DB-->>A: Estado confirmado
+  A-->>P: etapas, ready, failed, ejecución
+  Note over P,A: Polling cada 2000 ms sin crear trabajos
+```
+
+### Componentes, interfaces y modelos
+`backend/app/meetings/processing.py` proyecta snapshot. Respuesta: `{meeting_id, execution: {generation: number|null, transcript_id: string|null, diarization_revision: number|null}, stages: [{key, state}], ready: boolean, failed: boolean}`. Keys: `audio_preparation`, `transcription`, `diarization`, `result_preparation`. States: `unavailable`, `pending`, `active`, `completed`, `failed`. No referencias de objetos, secretos, causas internas ni texto de transcript.
+`frontend/messages/processing.es.json`: recurso de textos localizados separado de identificadores de código (el checker de idioma escanea literales como identificadores). Sin desactivar ni cambiar hooks. `frontend/src/api.ts`: getProcessing; `components/ProcessingIndicator.tsx`: etiquetas españolas, progress sin value cuando hay actividad, mensaje de detalle no disponible, listo no significa revisión humana completa. Fallo de consulta conserva snapshot como último confirmado y no ejecuta callback ready.
+
+### Propiedades de correctitud
+P1: ready implica meeting completed, transcript con turnos temporizados válidos y última diarización del mismo transcript completed, sin recovery activo.
+P2: un estado viejo de otra revisión/transcript no completa la ejecución vigente; ASR completed no completa hablantes.
+P3: GET no encola ni cambia job; no-owner/no-sales/no-token no obtienen estado.
+P4: errores de consulta no se convierten en failed; polling no se solapa ni publica tras desmontaje/cambio de reunión.
+P5: no porcentaje global, ETA ni subida numérica sin bytes; solo confirmación ready actual habilita resultado.
+
+### Manejo de errores y testing
+Consulta rechazada: mensaje español genérico, reintento GET y último estado marcado histórico; job failed: etapa y mensaje genérico sin traceback. Campos no informados: detalle no disponible, jamás completados por tiempo.
+Pruebas backend SQLite de proyección, transiciones, revisión vigente y autorización; regresiones de workers existentes. Frontend Vitest para polling, fallos, cambio de reunión y estados parciales; `npm run typecheck`, `npm run test`, `npm run build`. Integración real APX coordinada con Ansel, no sustituida por mocks ni cambio de runtime del dueño.

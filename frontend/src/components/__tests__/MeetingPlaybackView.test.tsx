@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PlaybackManifest, TimedPassage } from "../../api";
 import { MeetingPlaybackView } from "../MeetingPlaybackView";
+import { createPlaybackIntervals, groupTranscriptTurns } from "../../transcript-turns";
+import type { SourceTranscriptSegment } from "../../transcript-turns";
 
 const AUDIO_URL = "https://media.example.test/synthetic-audio.webm?signature=synthetic";
 const MUXED_URL = "https://media.example.test/synthetic-muxed.webm?signature=synthetic";
@@ -75,6 +77,80 @@ afterEach(() => {
   cleanup();
   HTMLMediaElement.prototype.play = originalPlay;
   HTMLMediaElement.prototype.pause = originalPause;
+});
+
+// T17: feed real grouping/interval seams, not a hand-written grouped DOM.
+// The extra presentationTurns input is the proposed T18 render seam; the
+// existing passages prop continues to contain ONLY original source intervals.
+function renderGroupedPlayback(sources: SourceTranscriptSegment[] = [
+  { id: "source-a", text: "Synthetic first", startMs: 0, endMs: 100, sequence: 1 },
+  { id: "source-b", text: "synthetic second", startMs: 200, endMs: 300, sequence: 2 },
+]) {
+  const presentationTurns = groupTranscriptTurns(sources, new Map(sources.map(({ id }) => [id, "speaker-a"])));
+  const intervals = createPlaybackIntervals(sources, presentationTurns);
+  const props = { manifest: manifest(), passages: intervals, presentationTurns, loading: false, error: null };
+  render(<MeetingPlaybackView {...props} />);
+  return { presentationTurns, intervals };
+}
+
+function groupedPlaybackRow() {
+  return screen.getByText("Synthetic first synthetic second").closest("li");
+}
+
+describe("T17 grouped playback source fidelity", () => {
+  it("renders one grouped row from two exact original source intervals", () => {
+    const { intervals, presentationTurns } = renderGroupedPlayback();
+    expect(presentationTurns).toHaveLength(1);
+    expect(intervals.map(({ id, startMs, endMs, presentationTurnId }) => ({ id, startMs, endMs, presentationTurnId }))).toEqual([
+      { id: "source-a", startMs: 0, endMs: 100, presentationTurnId: "source-a" },
+      { id: "source-b", startMs: 200, endMs: 300, presentationTurnId: "source-a" },
+    ]);
+    expect(groupedPlaybackRow()).not.toBeNull();
+    expect(screen.getByRole("list", { name: "Transcript passages" }).querySelectorAll("li")).toHaveLength(1);
+  });
+
+  it("highlights the same presentation row in both subintervals but not at the gap or exclusive end", () => {
+    renderGroupedPlayback();
+    const audio = mediaElement();
+    for (const seconds of [0.05, 0.25]) {
+      setMediaTime(audio, seconds);
+      expect(groupedPlaybackRow()).toHaveAttribute("aria-current", "true");
+    }
+    for (const seconds of [0.1, 0.15, 0.3]) {
+      setMediaTime(audio, seconds);
+      expect(groupedPlaybackRow()).not.toHaveAttribute("aria-current", "true");
+      expect(screen.queryByTestId("active-playback-passage")).toBeNull();
+    }
+  });
+
+  it("plays a grouped row from its first source even after seeking into the second", async () => {
+    const play = vi.fn().mockResolvedValue(undefined);
+    HTMLMediaElement.prototype.play = play;
+    renderGroupedPlayback();
+    const audio = mediaElement();
+    // jsdom does not load media: supply valid metadata before enabling play.
+    Object.defineProperty(audio, "duration", { configurable: true, value: 0.3 });
+    fireEvent.loadedMetadata(audio);
+    setMediaTime(audio, 0.25);
+    fireEvent.click(screen.getByRole("button", { name: "Play Synthetic first synthetic second" }));
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    expect(audio.currentTime).toBe(0);
+  });
+
+  it("preserves an overlapping source and gives untimed text no invented play control", () => {
+    const { intervals } = renderGroupedPlayback([
+      { id: "source-a", text: "Synthetic first", startMs: 0, endMs: 100, sequence: 1 },
+      { id: "source-b", text: "synthetic second", startMs: 50, endMs: 300, sequence: 2 },
+      { id: "untimed", text: "Synthetic untimed", startMs: null, endMs: null, sequence: 3 },
+      { id: "empty", text: "", startMs: 400, endMs: 500, sequence: 4 },
+    ]);
+    expect(intervals.map(({ startMs, endMs }) => [startMs, endMs])).toEqual([[0, 100], [50, 300], [400, 500]]);
+    setMediaTime(mediaElement(), 0.075);
+    expect(groupedPlaybackRow()).toHaveAttribute("aria-current", "true");
+    expect(screen.getByText("Synthetic untimed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play Synthetic untimed" })).toBeNull();
+    expect(screen.queryByText(/undefined|NaN/)).toBeNull();
+  });
 });
 
 describe("MeetingPlaybackView", () => {

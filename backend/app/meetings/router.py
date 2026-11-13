@@ -36,6 +36,7 @@ from app.infra.models import (
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.meetings import service as meeting_service
+from app.meetings.processing import processing_snapshot
 from app.meetings.service import (
     delete_meeting,
     get_meeting,
@@ -250,6 +251,29 @@ async def get_meeting_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+    finally:
+        await engine.dispose()
+
+
+@router.get("/{meeting_id}/processing")
+async def get_processing_endpoint(
+    meeting_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Read confirmed processing without starting or retrying any job."""
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session, session.begin():
+            await _get_authorized_meeting(
+                session, meeting_id, user, f"GET /api/v1/meetings/{meeting_id}/processing"
+            )
+            meeting = await session.scalar(
+                select(Meeting).where(Meeting.id == meeting_id).with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            assert meeting is not None
+            return await processing_snapshot(session, meeting)
     finally:
         await engine.dispose()
 

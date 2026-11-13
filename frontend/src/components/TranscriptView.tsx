@@ -9,7 +9,7 @@ import {
 } from "../api";
 import type { MeetingDiarization, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
-import { groupTranscriptTurns } from "../transcript-turns";
+import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -116,7 +116,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   ) {
     if (!review) return;
     const item = review.items.find((candidate) => candidate.speakerId === speakerId);
-    if (!item) return;
+    if (!item || item.expectedVersion === undefined) return;
     const request: SpeakerDispositionRequest = {
       disposition,
       expectedVersion: item.expectedVersion,
@@ -154,39 +154,58 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   if (error) return <p role="alert" style={{ color: "red" }}>{error}</p>;
   if (!data) return <p>Transcript not found.</p>;
 
+  const notReconstructible = diarization?.latest_attempt?.diarization_state === "not_reconstructible";
+  const speakersById = new Map(diarization?.speakers.map((speaker) => [speaker.id, speaker]) ?? []);
+  const speakerIdByTurnId = new Map(
+    !notReconstructible && diarization?.processing_revision != null
+      ? diarization.assignments
+        .filter((assignment) => typeof assignment.overlap_ms === "number"
+          && Number.isFinite(assignment.overlap_ms) && assignment.overlap_ms > 0
+          && speakersById.has(assignment.speaker_id))
+        .map((assignment) => [assignment.turn_id, assignment.speaker_id] as const)
+      : [],
+  );
+  const activeReview = review && String(diarization?.processing_revision) === review.revisionId
+    ? review : null;
+
   function speakerPresentation(turnId: string) {
-    const speakerId = diarization?.assignments.find((assignment) => assignment.turn_id === turnId)?.speaker_id;
-    const speaker = diarization?.speakers.find((candidate) => candidate.id === speakerId);
-    const reviewedLabel = review?.items.find((item) => item.speakerId === speakerId)?.currentLabel.trim();
+    const speakerId = speakerIdByTurnId.get(turnId);
+    const speaker = speakerId ? speakersById.get(speakerId) : undefined;
+    const reviewedLabel = speakerId ? activeReview?.labelsBySpeakerId?.[speakerId]?.trim() : undefined;
     return {
       label: reviewedLabel || speaker?.label || "Speaker N",
       color: speakerColor(diarization, speakerId),
     };
   }
 
-  const playbackPassages = data.segments.map((passage) => {
-    const speaker = speakerPresentation(passage.id);
-    return { ...passage, speakerLabel: speaker.label, speakerColor: speaker.color };
-  });
-  const sourceTurnById = new Map(data.turns.map((turn) => [turn.id, turn]));
+  // Preserve untimed source text too; it cannot form a time-linked group.
+  const sourceTurns = data.segments.length > 0 ? data.segments : data.turns;
+  const sourceTurnById = new Map(sourceTurns.map((turn) => [turn.id, turn]));
   const presentationTurns = groupTranscriptTurns(
-    data.turns.map((turn) => ({
+    sourceTurns.map((turn) => ({
       id: turn.id,
       text: turn.text,
       startMs: turn.startMs,
       endMs: turn.endMs,
       sequence: turn.sequence,
     })),
-    new Map(diarization?.assignments.map(({ turn_id, speaker_id }) => [turn_id, speaker_id]) ?? []),
+    speakerIdByTurnId,
   );
+  const playbackPassages = createPlaybackIntervals(sourceTurns, presentationTurns);
+  const playbackTurns = presentationTurns.map((turn) => {
+    const speaker = speakerPresentation(turn.id);
+    return { ...turn, speakerLabel: speaker.label, speakerColor: speaker.color };
+  });
 
   return (
     <section>
       <button onClick={onBack}>← Back to list</button>
+      {notReconstructible && <p role="status">No se puede reconstruir la atribución: el audio original no está disponible. Se conservan los fragmentos fuente.</p>} {/* spanish-sample-data: user-facing terminal explanation */}
       {diarizationNotFound && <p role="status">Identificando hablantes</p>} {/* spanish-sample-data */}
       <MeetingPlaybackView
         manifest={playbackManifest}
         passages={playbackPassages}
+        presentationTurns={playbackTurns}
         loading={playbackLoading}
         error={playbackError}
         onRefreshManifest={() => getPlaybackManifest(meetingId)}
@@ -204,9 +223,10 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           {presentationTurns.map((turn) => {
             const speaker = speakerPresentation(turn.id);
             const lastSource = sourceTurnById.get(turn.sourceIds.at(-1) ?? "");
-            const timestamp = lastSource && turn.sourceIds.length === 1
-              ? `[${formatTimestamp(turn.timestampMs ?? 0)} – ${formatTimestamp(lastSource.endMs)}]`
-              : `[${formatTimestamp(turn.timestampMs ?? 0)}]`;
+            const timestamp = turn.timestampMs === null ? "Sin marca de tiempo"
+              : lastSource?.endMs != null && turn.sourceIds.length === 1
+                ? `[${formatTimestamp(turn.timestampMs)} – ${formatTimestamp(lastSource.endMs)}]`
+                : `[${formatTimestamp(turn.timestampMs)}]`;
             return (
               <li key={turn.id}>
                 <span style={{ color: "#6b7280", marginRight: "0.5rem" }}>
@@ -235,15 +255,15 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         </ol>
       )}
       {reviewError && <p role="alert" style={{ color: "red" }}>{reviewError}</p>}
-      {review && (
+      {activeReview && (
         <section aria-labelledby="speaker-review-heading">
           <h3 id="speaker-review-heading">Speaker review</h3>
-          <p role="status">Review {review.status}</p>
-          {review.items.map((item, index) => {
+          <p role="status">Review {activeReview.status}</p>
+          {activeReview.items.map((item, index) => {
             const label = item.attributionState === "uncertain"
               ? item.currentLabel || `Speaker ${index + 1}`
               : item.currentLabel;
-            const busy = submittingSpeakerId === item.speakerId;
+            const busy = submittingSpeakerId === item.speakerId || item.expectedVersion === undefined;
             return (
               <article key={item.speakerId}>
                 <h4>{label}</h4>

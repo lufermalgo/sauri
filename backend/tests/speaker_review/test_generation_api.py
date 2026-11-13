@@ -384,3 +384,21 @@ async def test_put_rejects_derived_completion_and_missing_speaker(api_client: As
     unknown = await api_client.put(f"{root}/revisions/1/speakers/unknown", json=payload, headers=_auth())
     assert unknown.status_code == 404
     assert (await api_client.get(root, headers=_auth())).json()["status"] == "pending"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("latest", ["pending", "in_progress", "failed", "not_reconstructible", "completed"])
+async def test_processing_and_result_agree_on_current_attempt_without_losing_active_attribution(
+    api_client: AsyncClient, api_db_url: str, latest: str,
+) -> None:
+    data = await _seed(api_db_url, ["completed", "completed", latest])
+    path = f"/api/v1/meetings/{data['meeting']}"
+    status = await api_client.get(f"{path}/processing", headers=_auth())
+    result = await api_client.get(f"{path}/diarization", headers=_auth())
+    assert status.status_code == result.status_code == 200
+    assert status.json()["execution"]["diarization_revision"] == 3
+    assert result.json()["latest_attempt"]["processing_revision"] == 3
+    assert status.json()["ready"] == (latest == "completed")
+    assert result.json()["processing_revision"] == (3 if latest == "completed" else 2)
+    assert "PRIVATE_ENGINE_LABEL" not in status.text
+    assert "Synthetic words" not in status.text

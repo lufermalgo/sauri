@@ -4,6 +4,7 @@ import { RegisterForm } from "./components/RegisterForm";
 import { MeetingList } from "./components/MeetingList";
 import { TranscriptView } from "./components/TranscriptView";
 import { SpeakerRecognitionTestScreen } from "./components/SpeakerRecognitionTestScreen";
+import { ProcessingIndicator } from "./components/ProcessingIndicator";
 import { SpeakerTestLogin } from "./components/SpeakerTestLogin";
 
 type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" };
@@ -16,6 +17,7 @@ export function App() {
     return meetingId ? { type: "transcript", meetingId } : { type: "list" };
   });
   const [refreshKey, setRefreshKey] = useState(0);
+  const [readyExecution, setReadyExecution] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(localStorage.getItem("sauri_token"))
   );
@@ -76,10 +78,19 @@ export function App() {
       )}
 
       {view.type === "transcript" && (
-        <TranscriptView
+        <>
+        <ProcessingIndicator
+          key={view.meetingId}
           meetingId={view.meetingId}
-          onBack={() => setView({ type: "list" })}
+          onReady={async (snapshot) => { setReadyExecution(JSON.stringify(snapshot.execution)); }}
+          onPending={() => setReadyExecution(null)}
         />
+        <TranscriptView
+          key={`${view.meetingId}:${readyExecution}`}
+          meetingId={view.meetingId}
+          onBack={() => { setReadyExecution(null); setView({ type: "list" }); }}
+        />
+        </>
       )}
 
       {view.type === "speaker-test" && (
