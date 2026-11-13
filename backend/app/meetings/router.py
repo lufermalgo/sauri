@@ -14,10 +14,10 @@ Requirements: 4.5, 7.1, 7.2, 8.3, 8.4
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -80,6 +80,25 @@ async def _get_authorized_meeting(
             detail="Meeting not found",
         )
     return meeting
+
+
+class DispositionInput(BaseModel):
+    """Only caller-controlled fields; completion is derived by the service."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    disposition: str
+    label: str | None = Field(default=None, max_length=64)
+    expected_version: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_label(self) -> DispositionInput:
+        if self.disposition not in {"named", "corrected", "confirmed"}:
+            raise ValueError("Invalid disposition")
+        if self.disposition in {"named", "corrected"} and not (self.label or "").strip():
+            raise ValueError("A label is required for named or corrected dispositions")
+        return self
 
 
 class RenameInput(BaseModel):
@@ -278,6 +297,7 @@ async def request_join_endpoint(
 async def get_speaker_review(
     meeting_id: str,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    revision_id: int | None = None,
 ) -> dict[str, Any]:
     """Reload the authenticated owner's persisted speaker-review state."""
     engine = create_engine()
@@ -290,15 +310,51 @@ async def get_speaker_review(
                 user,
                 f"GET /api/v1/meetings/{meeting_id}/speaker-review",
             )
-            result = await SpeakerReviewService(session).get_active_review(
-                user.id, meeting_id
-            )
+            result = await SpeakerReviewService(session).get_active_review(user.id, meeting_id, revision_id)
             if result is None:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Speaker review not found: {meeting_id}",
                 )
             return result
+    finally:
+        await engine.dispose()
+
+
+@router.put("/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}")
+async def put_speaker_disposition(
+    meeting_id: str,
+    revision_id: int,
+    speaker_id: str,
+    payload: DispositionInput,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Persist an explicit decision and return the receipt-backed review snapshot."""
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session, session.begin():
+            await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}",
+            )
+            outcome = await SpeakerReviewService(session).record_disposition(
+                user.id,
+                meeting_id,
+                str(revision_id),
+                speaker_id,
+                payload.model_dump(exclude_none=True),
+                payload.expected_version,
+            )
+            if outcome["outcome"] == "not_found":
+                raise HTTPException(status_code=404, detail="Speaker review not found")
+            if outcome["outcome"].startswith("conflict_"):
+                raise HTTPException(status_code=409, detail="Speaker review conflict")
+            if outcome["outcome"] == "invalid_request":
+                raise HTTPException(status_code=422, detail="Invalid disposition")
+            return cast(dict[str, Any], outcome["result"])
     finally:
         await engine.dispose()
 
@@ -478,29 +534,34 @@ async def get_diarization(
                     selectinload(Diarization.assignments),
                 )
             )
-            result = await session.execute(stmt)
-            diarization = result.scalar_one_or_none()
+            result = await session.execute(stmt.order_by(Diarization.processing_revision.desc()))
+            generations = result.scalars().all()
 
-            if diarization is None:
+            if not generations:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Diarization not available for meeting: {meeting_id}",
                 )
 
-            ordered_speakers = sorted(diarization.speakers, key=lambda s: s.sequence)
+            latest = generations[0]
+            diarization = next((d for d in generations if d.diarization_state == "completed"), None)
+            ordered_speakers = sorted(diarization.speakers, key=lambda s: s.sequence) if diarization else []
 
             return {
-                "diarization_id": diarization.id,
-                "meeting_id": diarization.meeting_id,
-                "diarization_state": diarization.diarization_state,
-                "speaker_count": diarization.speaker_count,
-                "speakers": [
-                    {"id": s.id, "label": s.label, "sequence": s.sequence}
-                    for s in ordered_speakers
-                ],
+                "diarization_id": diarization.id if diarization else None,
+                "meeting_id": meeting_id,
+                "diarization_state": diarization.diarization_state if diarization else None,
+                "speaker_count": diarization.speaker_count if diarization else 0,
+                "processing_revision": diarization.processing_revision if diarization else None,
+                "latest_attempt": {
+                    "processing_revision": latest.processing_revision,
+                    "diarization_state": latest.diarization_state,
+                    "failure_cause": latest.failure_cause,
+                },
+                "speakers": [{"id": s.id, "label": s.label, "sequence": s.sequence} for s in ordered_speakers],
                 "assignments": [
-                    {"turn_id": a.turn_id, "speaker_id": a.speaker_id}
-                    for a in diarization.assignments
+                    {"turn_id": a.turn_id, "speaker_id": a.speaker_id, "overlap_ms": a.overlap_ms}
+                    for a in (diarization.assignments if diarization else [])
                 ],
             }
     finally:

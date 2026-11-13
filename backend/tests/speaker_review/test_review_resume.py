@@ -39,10 +39,9 @@ async def api_client(api_db_url: str) -> AsyncGenerator[AsyncClient, None]:
     """Create an in-process client using the isolated database fixture."""
     from app.main import app
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
+
 
 OWNER_ID = "speaker-review-owner"
 OTHER_OWNER_ID = "speaker-review-other-owner"
@@ -112,9 +111,7 @@ async def _persist_pending_review(api_db_url: str) -> tuple[str, str]:
     return meeting_id, review_id
 
 
-async def test_pending_review_reload_returns_only_undisposed_items(
-    api_client: AsyncClient, api_db_url: str
-) -> None:
+async def test_pending_review_reload_returns_only_undisposed_items(api_client: AsyncClient, api_db_url: str) -> None:
     """Leaving and reloading preserves the saved item and resumes the outstanding one."""
     meeting_id, review_id = await _persist_pending_review(api_db_url)
 
@@ -129,18 +126,20 @@ async def test_pending_review_reload_returns_only_undisposed_items(
     assert body["revision_id"] == 1
     assert body["status"] == "pending"
     assert body["remaining_speaker_ids"] == ["speaker-two"]
+    assert body["labels_by_speaker_id"] == {"speaker-one": "Synthetic Alice", "speaker-two": "Speaker 2"}
     assert body["items"] == [
         {
             "speaker_id": "speaker-two",
             "current_label": "Speaker 2",
+            "attribution_state": "uncertain",
             "disposition": None,
+            "excerpt_ref": None,
+            "expected_version": 1,
         }
     ]
 
     engine = create_async_engine(api_db_url, echo=False)
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with session_factory() as session:
         saved_item = await session.scalar(
             select(SpeakerReviewItem).where(
@@ -154,9 +153,7 @@ async def test_pending_review_reload_returns_only_undisposed_items(
     assert saved_item.chosen_label == "Synthetic Alice"
 
 
-async def test_completed_review_reload_does_not_request_review_again(
-    api_client: AsyncClient, api_db_url: str
-) -> None:
+async def test_completed_review_reload_does_not_request_review_again(api_client: AsyncClient, api_db_url: str) -> None:
     """Once every item is disposed, reload returns completion and no remaining items."""
     meeting_id, review_id = await _persist_pending_review(api_db_url)
     engine = create_async_engine(api_db_url, echo=False)
@@ -194,9 +191,7 @@ async def test_completed_review_reload_does_not_request_review_again(
     assert body["items"] == []
 
 
-async def test_review_reload_is_scoped_to_meeting_owner(
-    api_client: AsyncClient, api_db_url: str
-) -> None:
+async def test_review_reload_is_scoped_to_meeting_owner(api_client: AsyncClient, api_db_url: str) -> None:
     """A different authenticated owner cannot retrieve persisted review data."""
     meeting_id, _ = await _persist_pending_review(api_db_url)
 

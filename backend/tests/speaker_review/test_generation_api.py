@@ -343,3 +343,44 @@ async def test_t13_put_keeps_owner_and_auth_boundaries(api_client: AsyncClient, 
     assert other_owner.status_code == 404
     owner = await api_client.get(f"/api/v1/meetings/{data['meeting']}/speaker-review", headers=_auth())
     assert owner.json()["remaining_speaker_ids"] == [speaker]
+
+
+@pytest.mark.asyncio
+async def test_revision_write_isolated_and_stale_or_reused_key_conflicts(
+    api_client: AsyncClient, api_db_url: str
+) -> None:
+    data = await _seed(api_db_url, ["completed", "completed"])
+    first, second = data["generations"]
+    root = f"/api/v1/meetings/{data['meeting']}/speaker-review"
+    path = f"{root}/revisions/1/speakers/{first['speaker']}"
+    payload = {
+        "disposition": "named",
+        "label": "Synthetic Alice",
+        "expected_version": 1,
+        "idempotency_key": "generation-1",
+    }
+    applied = await api_client.put(path, json=payload, headers=_auth())
+    assert applied.status_code == 200
+    assert applied.json()["labels_by_speaker_id"] == {first["speaker"]: "Synthetic Alice"}
+
+    conflict = await api_client.put(path, json={**payload, "label": "Synthetic Mallory"}, headers=_auth())
+    assert conflict.status_code == 409
+    stale = await api_client.put(path, json={**payload, "idempotency_key": "different-key"}, headers=_auth())
+    assert stale.status_code == 409
+    active = await api_client.get(root, headers=_auth())
+    historical = await api_client.get(root, params={"revision_id": 1}, headers=_auth())
+    assert active.json()["labels_by_speaker_id"] == {second["speaker"]: "Speaker 1"}
+    assert historical.json()["labels_by_speaker_id"] == {first["speaker"]: "Synthetic Alice"}
+
+
+@pytest.mark.asyncio
+async def test_put_rejects_derived_completion_and_missing_speaker(api_client: AsyncClient, api_db_url: str) -> None:
+    data = await _seed(api_db_url, ["completed"])
+    root = f"/api/v1/meetings/{data['meeting']}/speaker-review"
+    path = f"{root}/revisions/1/speakers/{data['generations'][0]['speaker']}"
+    payload = {"disposition": "confirmed", "expected_version": 1, "idempotency_key": "completion-is-derived"}
+    rejected = await api_client.put(path, json={**payload, "status": "complete"}, headers=_auth())
+    assert rejected.status_code == 422
+    unknown = await api_client.put(f"{root}/revisions/1/speakers/unknown", json=payload, headers=_auth())
+    assert unknown.status_code == 404
+    assert (await api_client.get(root, headers=_auth())).json()["status"] == "pending"

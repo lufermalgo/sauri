@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import (
+    Diarization,
     Meeting,
     SpeakerReview,
     SpeakerReviewIdempotencyReceipt,
@@ -25,24 +26,40 @@ class SpeakerReviewService:
         self._session = session
 
     async def get_active_review(
-        self, owner_id: str, meeting_id: str
+        self, owner_id: str, meeting_id: str, revision_id: int | None = None
     ) -> dict[str, Any] | None:
-        """Return the owner's current review and only its undisposed items."""
+        """Return a historical review, or the last completed generation's review."""
         meeting = await self._session.scalar(
             select(Meeting).where(Meeting.id == meeting_id, Meeting.created_by == owner_id)
         )
         if meeting is None:
             return None
 
-        review = await self._session.scalar(
-            select(SpeakerReview)
-            .where(SpeakerReview.meeting_id == meeting_id)
-            .order_by(SpeakerReview.processing_revision.desc())
-            .limit(1)
-        )
+        if revision_id is None:
+            revision_id = await self._session.scalar(
+                select(Diarization.processing_revision)
+                .where(Diarization.meeting_id == meeting_id, Diarization.diarization_state == "completed")
+                .order_by(Diarization.processing_revision.desc())
+                .limit(1)
+            )
+            if revision_id is None:
+                # Existing review-only records predate persisted diarization generations.
+                has_generation = await self._session.scalar(
+                    select(Diarization.id).where(Diarization.meeting_id == meeting_id).limit(1)
+                )
+                if has_generation is not None:
+                    return None
+
+        statement = select(SpeakerReview).where(SpeakerReview.meeting_id == meeting_id)
+        if revision_id is not None:
+            statement = statement.where(SpeakerReview.processing_revision == revision_id)
+        review = await self._session.scalar(statement.order_by(SpeakerReview.processing_revision.desc()).limit(1))
         if review is None:
             return None
+        return await self._snapshot(review)
 
+    async def _snapshot(self, review: SpeakerReview) -> dict[str, Any]:
+        """Resolve labels from every item while presenting only pending ones."""
         items = list(
             (
                 await self._session.scalars(
@@ -52,18 +69,21 @@ class SpeakerReviewService:
                 )
             ).all()
         )
-        state = {item.speaker_key: item.disposition for item in items}
         outstanding = [item for item in items if item.disposition is None]
         return {
             "review_id": review.id,
             "revision_id": review.processing_revision,
-            "status": review_status(state),
+            "status": review_status({item.speaker_key: item.disposition for item in items}),
             "remaining_speaker_ids": [item.speaker_key for item in outstanding],
+            "labels_by_speaker_id": {item.speaker_key: item.chosen_label or item.current_label for item in items},
             "items": [
                 {
                     "speaker_id": item.speaker_key,
                     "current_label": item.current_label,
+                    "attribution_state": item.attribution_state,
                     "disposition": item.disposition,
+                    "excerpt_ref": item.excerpt_ref,
+                    "expected_version": item.version,
                 }
                 for item in outstanding
             ],
@@ -145,22 +165,15 @@ class SpeakerReviewService:
                 item.chosen_label = normalized_label
             item.version += 1
             items = list(
-                (await self._session.scalars(
-                    select(SpeakerReviewItem).where(SpeakerReviewItem.review_id == review.id)
-                )).all()
+                (
+                    await self._session.scalars(
+                        select(SpeakerReviewItem).where(SpeakerReviewItem.review_id == review.id)
+                    )
+                ).all()
             )
             statuses = {row.speaker_key: row.disposition for row in items}
             review.status = "complete" if is_complete(statuses) else "pending"
-            result = {
-                "review_id": review.id,
-                "revision_id": review.processing_revision,
-                "speaker_id": item.speaker_key,
-                "disposition": item.disposition,
-                "chosen_label": item.chosen_label,
-                "version": item.version,
-                "status": review.status,
-                "remaining_speaker_ids": [row.speaker_key for row in items if row.disposition is None],
-            }
+            result = await self._snapshot(review)
             self._session.add(
                 SpeakerReviewIdempotencyReceipt(
                     id=str(uuid.uuid4()),

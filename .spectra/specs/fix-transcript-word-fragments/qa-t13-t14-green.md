@@ -1,0 +1,19 @@
+# T13/T14 #652/#653 — entrega API por generación
+
+Base de trabajo: RED `fcc046c`; integrada T12 `446abe2` y main `baea619` mediante merge `5e0dbe1`. Candidato y CI: ver SHA del PR #850. Sin merge a main; Ansel revisa y Fer integra.
+
+## Implementación
+
+- GET diarization selecciona última generación completada; informa último intento separado y expone `processing_revision` y `overlap_ms` nullable sin `raw_label` ni texto/audio.
+- GET review activa selecciona la misma revisión completada; lectura histórica `revision_id` queda autorizada. Labels completos provienen de todos los items de esa revisión; la lista contiene solo pendientes, con metadata wire requerida. Los registros anteriores que solo contienen review y ninguna diarización mantienen lectura compatible.
+- PUT autorizado escribe disposición/version y recibo idempotente con snapshot completo; replay no muta. Solicitudes de completion derivada, versiones vencidas o clave reutilizada se rechazan. Tests RED originales permanecen y se agregaron dos regresiones para aislamiento y conflictos.
+
+## Validación observada (worktree, `backend/`)
+
+- `/Users/lufermalgo/Proyectos/sauri/backend/.venv/bin/python -m pytest tests/meetings/test_diarization_endpoint.py tests/speaker_review --ignore=tests/speaker_review/test_processing_readiness.py tests/diarization/test_assignment_property.py tests/diarization/test_state_property.py tests/diarization/test_worker.py tests/diarization/test_repository.py tests/diarization/test_reprocess_legacy.py tests/diarization/test_migration.py tests/infra/test_object_store_availability.py -q`: **120 passed, 2 skipped** (QA PostgreSQL y S3 dedicados no provistos), cinco avisos de datetime/SQLite. Ruta real ejecutada: `/Users/lufermalgo/Proyectos/sauri/backend/.venv/bin/python` (Python 3.13).
+- `ruff check` de los cuatro archivos cambiados: **PASS**. `mypy app`: **PASS (61 archivos)**; `mypy` de los dos módulos cambiados: **PASS**; `git diff --check`: **PASS**.
+- `ruff check .`: 3 errores preexistentes fuera de la entrega (migración 009, auth/token, test_processing_readiness); `mypy .`: 82 errores en 8 archivos de tests ajenos, incluidos #248 y tests T11/T12. CI los ejecuta sin bloqueo según `.github/workflows/ci.yml`; no se alteró su configuración.
+
+## Bloqueo de condición de cierre
+
+El **comando exacto** exigido `python -m pytest tests/meetings/test_diarization_endpoint.py tests/speaker_review -q` falla en colección: `ModuleNotFoundError: app.transcription.processing_pipeline` desde `test_processing_readiness.py:15`, antes de ejecutar casos. La importación pertenece al RED de la spec independiente `recording-speaker-review`, T-15, issue #248, y no existe implementación en ninguna rama histórica de este archivo. Sus pruebas requieren además revisión admitida, leases, outbox y finalizer; el diseño vigente prohíbe implementar un seam falso o test-only. No corresponde esconder, omitir ni reescribir esos casos para declarar exit 0 en T13/T14. La subsuite acotada prueba los contratos nuevos pero **no satisface** el gate exacto de cierre. Recomendación: integrar GREEN real de #248 con fixtures acordes a su spec, luego reejecutar comando exacto y validar PR #850; si el gate se modifica, registrar aprobación explícita. Sin Docker, datos reales ni servicios personales.
