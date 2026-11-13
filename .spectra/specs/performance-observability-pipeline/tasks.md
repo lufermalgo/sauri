@@ -12,7 +12,7 @@ El merge `bd638ee` de #908 no llevó la entrega a main. Esta unidad adicional co
 
 - Preparación e implementación: verificadas; assignment, engine, oracle, benchmark y pruebas de uso conservados sin reimplementación.
 - Validación: 408 pruebas backend y 15 de integración pasan; Ruff/mypy focales pasan y full conserva deuda 3/82 sin diagnósticos nuevos. Recursos exclusivamente temporales.
-- T4: candidato verificado localmente; publicación/revisión y estado de checks se registran en `evidence.md`. No integrado, instalado ni aceptado por esta tarea.
+- T4: candidato verificado localmente y publicado como **PR #912 a main**, commit de código `e7e70a6`; completo para revisión de Ansel y sin conflictos Git. Estado de checks y límites en `evidence.md`: CI no certificado. No integrado, instalado ni aceptado por esta tarea.
 
 ## Resumen de Fases
 
