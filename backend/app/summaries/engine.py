@@ -3,11 +3,50 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import math
+import time
+from contextlib import suppress
+from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+_USAGE_COUNTS = ("prompt_eval_count", "eval_count")
+_USAGE_DURATIONS = ("total_duration", "load_duration", "prompt_eval_duration", "eval_duration")
+
+
+def _record_generation(started: float, outcome: str, envelope: object) -> None:
+    """Emit only allowlisted numeric usage, never provider content or exception messages."""
+    event: dict[str, object] = {
+        "schema_version": 1,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "operation": "summary.generate",
+        "provider": "ollama",
+        "outcome": outcome,
+        "duration_seconds": time.perf_counter() - started,
+    }
+    if isinstance(envelope, dict):
+        for name in _USAGE_COUNTS:
+            value = envelope.get(name)
+            if type(value) is int and 0 <= value <= 2**63 - 1:
+                event[name] = value
+        for name in _USAGE_DURATIONS:
+            value = envelope.get(name)
+            if (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and 0 <= value <= 2**63 - 1
+                and math.isfinite(value)
+            ):
+                event[f"{name}_seconds"] = value / 1_000_000_000
+    # Observability must not turn a successful artifact into a retry or mask a failure.
+    with suppress(Exception):
+        logger.info(json.dumps(event, allow_nan=False, separators=(",", ":")))
 
 
 class CanonicalSummary(BaseModel):
@@ -52,11 +91,27 @@ class OllamaSummarizationEngine:
         # Non-streaming Ollama sends no response while evaluating the transcript.
         # Bound the whole attempt as well as HTTP inactivity; keep connection failures fast.
         timeout = httpx.Timeout(self.timeout_seconds, connect=10.0)
-        async with asyncio.timeout(self.timeout_seconds):
-            if self._client is None:
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    response = await client.post(f"{self.url}/api/generate", json=request)
-            else:
-                response = await self._client.post(f"{self.url}/api/generate", json=request, timeout=timeout)
-        response.raise_for_status()
-        return CanonicalSummary.model_validate_json(response.json()["response"])
+        started = time.perf_counter()
+        envelope: object = None
+        outcome = "error"
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                if self._client is None:
+                    async with httpx.AsyncClient(timeout=timeout) as client:
+                        response = await client.post(f"{self.url}/api/generate", json=request)
+                else:
+                    response = await self._client.post(f"{self.url}/api/generate", json=request, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+            envelope = data
+            result = CanonicalSummary.model_validate_json(data["response"])
+            outcome = "succeeded"
+            return result
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except (TimeoutError, httpx.TimeoutException):
+            outcome = "timeout"
+            raise
+        finally:
+            _record_generation(started, outcome, envelope)
