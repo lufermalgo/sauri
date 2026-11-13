@@ -26,8 +26,10 @@ It's an in-house solution built incrementally, module by module.
 - **Backend**: Python / FastAPI / SQLAlchemy / PostgreSQL
 - **Chrome extension**: TypeScript / MV3 / React (Vite + CRXJS)
 - **Frontend web**: TypeScript / React (Vite)
-- **Local ASR engine**: faster-whisper (own container)
-- **Infrastructure**: Docker Compose (PostgreSQL, MinIO, RabbitMQ, ASR engine)
+- **Native audio engines (Mac)**: MLX Whisper and pyannote/MPS, outside Docker for Apple GPU acceleration
+- **Infrastructure**: Docker Compose (built Nginx portal, API, worker, PostgreSQL, S3-compatible RustFS, RabbitMQ); local deployment candidate tracked in #818 (publication, merge and product acceptance are separate)
+
+See [Architecture and specification map](docs/ARCHITECTURE.md) for the current deployment boundaries, evidence and remaining gaps. The roadmap above is historical, not delivery evidence or authorization for deferred features; [PRODUCT_BASELINE.md](PRODUCT_BASELINE.md) defines approved scope.
 
 ## Local development
 
@@ -37,10 +39,12 @@ It's an in-house solution built incrementally, module by module.
 - Node.js >= 20
 - Python >= 3.11
 
-### Start the backend
+### Start the local platform
+
+See [Local deployment and isolated validation](docs/LOCAL_DEPLOYMENT.md) for required private variables, the built portal at `http://127.0.0.1:5173`, QA cleanup and evidence boundaries. `make clean` deletes data and is not a startup or validation step.
 
 ```bash
-make up        # Start dependencies, verify bucket, migrate to head, then start API/worker
+make up        # Start dependencies, verify bucket, migrate, then start API/worker/portal and check HTTP
 make build     # Rebuild images, then run the same readiness sequence
 make down      # Stop everything
 make logs      # View logs
@@ -54,15 +58,15 @@ bring-up preserves named volumes and their objects. A one-shot, root-owned helpe
 verified runtime identity (`10001:10001`); RustFS itself continues running as its image-defined
 non-root user. No production deployment behavior is implied.
 
-### Native Mac GPU engine feasibility spike
+### Native Mac GPU engines
 
-This is an owner-authorized, local feasibility experiment on an Apple M3 Mac, not a production
-configuration or rollout. Keep the API, worker, PostgreSQL, MinIO, and RabbitMQ in Docker; run
-candidate engines on the host and configure their URLs with `ASR_LOCAL_URL` and
-`DIARIZATION_LOCAL_URL` (the Compose defaults use `host.docker.internal`). The host processes must
-implement the existing Sauri HTTP contracts (`POST /transcribe` and `POST /diarize`); this
-repository does not provide native MLX, whisper.cpp, or MPS HTTP adapters. Compose configuration
-alone therefore does not make native inference runnable or demonstrate API/worker integration.
+Fer confirmed the local deployment direction on 2026-11-12: keep the API, worker, PostgreSQL,
+S3 storage and RabbitMQ in Docker; run audio engines on the Mac for Apple GPU acceleration.
+This is not evidence of production readiness or a verified end-to-end rollout. Configure their
+URLs with `ASR_LOCAL_URL` and `DIARIZATION_LOCAL_URL` (Compose defaults use
+`host.docker.internal`). Native MLX and MPS HTTP adapters exist in this repository and implement
+`POST /transcribe` and `POST /diarize`. Compose configuration alone does not demonstrate
+native inference, GPU execution or API/worker integration.
 
 Install the host-native engine dependencies with `make engines-install`, then start the local
 ASR and diarization servers with `make engines-up`. The lifecycle command provisions missing engine
@@ -76,8 +80,8 @@ engines-up`, then `docker compose build worker && docker compose up -d worker`.
 
 The host-native adapters are implemented in `backend/asr-engine/native_main.py` (MLX Whisper) and
 `backend/diar-engine/native_main.py` (pyannote on MPS); both implement the existing HTTP contracts.
-They are started on loopback by `make engines-up`, outside Compose. This remains a local feasibility
-experiment, not a production configuration or rollout. Reuse the existing shared caches: MLX and
+They are started on loopback by `make engines-up`, outside Compose. The deployment direction is
+confirmed; verified native inference and production readiness remain separate acceptance checks. Reuse the existing shared caches: MLX and
 Hugging Face models (including pyannote) under `~/.cache/huggingface`, and the whisper.cpp GGML turbo
 model under `~/.apx/v2/models`. Download any genuinely missing model only once into its shared cache;
 never place model-sized files in this repository or copy existing model files. A repository-local `models/`

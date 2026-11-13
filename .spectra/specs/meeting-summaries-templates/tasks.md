@@ -39,10 +39,10 @@
 
 **Tracking:** Issue #270 · Card task_76551eb8a88047d8
 
-**Archivo:** `backend/app/infra/models.py`; `backend/alembic/versions/012_meeting_summaries_templates.py`
-**Acción:** Implement the design's `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary` models, nullable `User.default_summary_template_id`, constraints and FKs; add revision `012_meeting_summaries_templates` with `down_revision = "011_linkless_cleanup"`. Preserve the existing 007→008→009 branches→010 merge→011 lineage; do not attach this migration to 007 or either 009 branch. In `upgrade()`, create `template_categories`, `summary_templates`, `summary_request_outbox`, `processed_summary_events`, and `meeting_summaries` in the design's dependency order; add the nullable user-default column before its named `summary_templates(id) ON DELETE SET NULL` FK, and preserve transcript/meeting `ON DELETE CASCADE` plus multiple summary generations. Do not seed templates/defaults. In `downgrade()`, drop the named user-default FK and column first, then `meeting_summaries`, `processed_summary_events`, `summary_request_outbox`, `summary_templates`, and `template_categories`; this rollback is destructive to feature data and stops at 011.
+**Archivo:** `backend/app/infra/models.py`; `backend/alembic/versions/014_meeting_summaries_templates.py`; `backend/tests/summaries/test_summary_migration.py` (nuevo test aislado de migración PostgreSQL 16)
+**Acción:** Implement the design's `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary` models, nullable `User.default_summary_template_id`, constraints and FKs; add revision `014_meeting_summaries_templates` with `down_revision = "013_manual_recovery_persistence"`. Preserve the published 007→008→009 branches→010 merge→011→012_diarization_generations→013_manual_recovery_persistence lineage; do not fork or re-parent those revisions. Recheck the sole head before T2 implementation: if it differs from 013, reconcile again before creating the migration. In `upgrade()`, create `template_categories`, `summary_templates`, `summary_request_outbox`, `processed_summary_events`, and `meeting_summaries` in the design's dependency order; add the nullable user-default column before its named `summary_templates(id) ON DELETE SET NULL` FK, and preserve transcript/meeting `ON DELETE CASCADE` plus multiple summary generations. Do not seed templates/defaults. In `downgrade()`, drop the named user-default FK and column first, then `meeting_summaries`, `processed_summary_events`, `summary_request_outbox`, `summary_templates`, and `template_categories`; this rollback destroys only feature data and stops at 013, preserving existing 012/013 artifacts.
 
-**Criterio de Completado:** T1's RED test passes and `cd backend && pytest tests/summaries/test_summary_models_property.py -q` succeeds; the repository's configured PostgreSQL migration test fixture exercises upgrade from the supported 011 head to 012 and downgrade back to 011.
+**Criterio de Completado:** T1's RED test (PR #857, `9f84187`) is included in the GREEN candidate and `cd backend && pytest tests/summaries/test_summary_models_property.py -q` succeeds; `cd backend && pytest tests/summaries/test_summary_migration.py -q` must use the established `SAURI_MIGRATION_TEST_ADMIN_URL` disposable-database pattern to verify 013→014→013 on PostgreSQL 16, including preservation of 012/013 data and schema (a skip without the isolated admin URL does not satisfy T2). The current repository's migration tests cover older revisions, not future 014; do not claim their passing validates 014.
 
 **Dependencias:** T1 (mandatory RED→GREEN)
 
@@ -116,6 +116,19 @@
 **Criterio de Completado:** T7's RED cases pass: `cd backend && pytest tests/templates/test_templates_api.py -q`.
 
 **Dependencias:** T7 (mandatory RED→GREEN), T4, T6
+
+### Delivery status — T1/T2 and T5–T8 (not product acceptance)
+
+| Task | Issue | Delivered implementation evidence | State |
+|---|---|---|---|
+| T1 RED | #269 | PR #857, `9f84187`; included in the accumulated candidate | Implemented; review complete; not integrated |
+| T2 GREEN | #270 | PR #860, `a6bdae8` and `35cc362`; PostgreSQL 16 migration 013→014→013 | Implemented; review complete; not integrated |
+| T5 RED | #273 | PR #862, `6a7147a` | Implemented; review complete; not integrated |
+| T6 GREEN | #274 | PR #864, `a1486af` | Implemented; review complete; not integrated |
+| T7 RED | #275 | PR #865, `e61ce31` | Implemented; review complete; not integrated |
+| T8 GREEN | #276 | PR #866, `ca2e0ca`; accumulated candidate to `main` | Implemented; review complete; not integrated |
+
+The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as supporting documentation; it does not authorize a new requirements or design phase. The existing APX T2 card `task_6e122ca9e8d6410c` tracks this accumulated delivery; do not create a second accumulator. PR #866 is the single proposed merge candidate for the dependency chain; the earlier PRs remain open as review evidence, not separate merge requests. Fer owns integration and product acceptance remains separate. CI's non-blocking global backend suite does not pass fully (#248); the candidate's focused tests and disposable PostgreSQL/S3 validation are recorded on #276.
 
 ## Fase 3: Summary Request, Outbox, Worker and API
 
@@ -227,7 +240,8 @@
 
 ### T17: RED — Specify shared summary/template/status API contracts
 
-**Tracking:** Issue #285 · Card task_5419615ead9a41b7
+**Tracking:** Issue #285 · Card task_a16f69284c3042c0 (historical card task_5419615ead9a41b7 unavailable)
+**Status:** RED verified before T18, 2026-11-13. Pre-implementation base `baea619b0703488286bda3ddc5ab268a73b97d9e`; `npm run test --workspace=@sauri/shared-types` exits 1: one smoke test passes, the contract test fails with four missing exported members (`MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, `TemplateCategory`) and four failed exact-type assertions. No setup errors. `src/index.test.ts` compiles a virtual TypeScript consumer through the existing Vitest harness, because transpilation alone erases type-only imports and cannot validate absent interfaces. Synthetic, exact design §6 types; no generation/provider behavior tested.
 
 **Archivo:** `packages/shared-types/<test-location-confirmed-by-T17a>`; import seam: `packages/shared-types/src/index.ts` exports
 **Acción:** Add contract tests for the approved `MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, and `TemplateCategory` field names, including camel-case UI contracts and status union values. Use only the test location and command confirmed by T17a.
@@ -238,7 +252,8 @@
 
 ### T18: GREEN — Add shared summary and template TypeScript contracts
 
-**Tracking:** Issue #286 · Card task_8c8c8278a7a7465e
+**Tracking:** Issue #286 · Card task_a16f69284c3042c0 (historical card task_8c8c8278a7a7465e)
+**Status:** GREEN implemented, not integrated or product-accepted. Candidate preserves RED commit `70b5548`; four exported interfaces match design §6 exactly. `npm run test --workspace=@sauri/shared-types`: 2 passed; root `npm run typecheck`: extension, frontend and shared-types passed; `git diff --check`: passed. Fer retains integration; issues #285/#286 remain open until integration. This does not implement summary generation, API, or user-facing controls.
 
 **Archivo:** `packages/shared-types/src/index.ts`
 **Acción:** Add the four interfaces exactly as designed, including `SummaryRequestStatus` lifecycle union and optional category id; preserve existing exports and do not add fields/semantics not specified.

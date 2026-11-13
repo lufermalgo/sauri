@@ -1,108 +1,141 @@
-import { spawn, ChildProcess } from "child_process";
-import { existsSync, openSync, writeFileSync } from "fs";
-import { dirname, resolve } from "path";
-import { fileURLToPath } from "url";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync, mkdtempSync, rmSync, openSync, closeSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
+import { createServer } from "node:net";
+import { fileURLToPath } from "node:url";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const BACKEND_DIR = resolve(__dirname, "../../../backend");
-// Worktrees created by _tools/new-worktree.sh don't get a local backend/.venv
-// (it's not symlinked, unlike node_modules) — fall back to $SAURI_VENV_PYTHON
-// or the primary checkout's venv for local development.
-const LOCAL_VENV_PYTHON = resolve(BACKEND_DIR, ".venv/bin/python");
-const VENV_PYTHON =
-  process.env.SAURI_VENV_PYTHON ??
-  (existsSync(LOCAL_VENV_PYTHON)
-    ? LOCAL_VENV_PYTHON
-    : resolve(BACKEND_DIR, "../../../sauri/backend/.venv/bin/python"));
-const PID_FILE = resolve(__dirname, ".backend-pid");
+const here = dirname(fileURLToPath(import.meta.url));
+const root = resolve(here, "../../..");
+const backend = resolve(root, "backend");
+const extension = resolve(root, "extension");
+const frontend = resolve(root, "frontend");
+const run = `sauri-e2e-${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+const names = ["postgres", "object", "queue"].map(service => `${run}-${service}`);
+const volumes = [`${run}-pg`, `${run}-objects`];
+const network = run;
+const temp = mkdtempSync(resolve(tmpdir(), "sauri-e2e-"));
+const children: ChildProcess[] = [];
 
-async function waitForHealth(url: string, attempts = 60): Promise<void> {
-  for (let i = 0; i < attempts; i++) {
+function docker(...args: string[]): string {
+  return execFileSync("docker", args, { encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+function availablePython(): string {
+  const candidates = [process.env.SAURI_VENV_PYTHON, resolve(backend, ".venv/bin/python"),
+    resolve(root, "../../backend/.venv/bin/python")];
+  for (const python of candidates) {
+    if (!python || !existsSync(python)) continue;
     try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 500));
+      execFileSync(python, ["-c", "import sys, fastapi, sqlalchemy, boto3; assert sys.prefix != sys.base_prefix"],
+        { timeout: 10_000 });
+      return python;
+    } catch { /* Try another valid virtualenv, never system Python. */ }
   }
-  throw new Error(`Backend at ${url} did not become healthy in time`);
+  throw new Error("Set SAURI_VENV_PYTHON to a backend venv with FastAPI, SQLAlchemy and boto3");
+}
+function mappedPort(name: string, port: number): number {
+  const mapping = docker("port", name, `${port}/tcp`).split("\n")[0];
+  const value = Number(mapping.slice(mapping.lastIndexOf(":") + 1));
+  if (!Number.isInteger(value) || value < 1) throw new Error(`Missing isolated port for ${name}:${port}`);
+  return value;
+}
+async function freePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("No local port");
+  await new Promise<void>(resolve => server.close(() => resolve()));
+  return address.port;
+}
+async function waitFor(url: string, attempts = 100): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try { if ((await fetch(url)).ok) return; } catch { /* Not ready yet. */ }
+    await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  throw new Error(`Isolated service unavailable at ${url}`);
+}
+async function waitForPython(python: string, env: NodeJS.ProcessEnv): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      execFileSync(python, ["-c", "import asyncio; from app.infra.database import create_engine; from sqlalchemy import text\nasync def check():\n e=create_engine()\n async with e.connect() as c: await c.execute(text('select 1'))\n await e.dispose()\nasyncio.run(check())"],
+        { cwd: backend, env, stdio: "pipe", timeout: 3000 });
+      return;
+    } catch { await new Promise(resolve => setTimeout(resolve, 400)); }
+  }
+  throw new Error("Isolated PostgreSQL did not become ready");
+}
+function stop(): void {
+  for (const child of children) child.kill("SIGTERM");
+  for (const name of names) { try { docker("rm", "-f", name); } catch { /* May not have started. */ } }
+  for (const volume of volumes) { try { docker("volume", "rm", volume); } catch { /* May not exist. */ } }
+  try { docker("network", "rm", network); } catch { /* May not exist. */ }
+  rmSync(temp, { recursive: true, force: true });
+  const leaked = [...names.map(name => ["container", name] as const),
+    ...volumes.map(name => ["volume", name] as const), ["network", network] as const]
+    .filter(([kind, name]) => {
+      try { docker(...(kind === "container" ? ["inspect", name] : [kind, "inspect", name])); return true; }
+      catch { return false; }
+    });
+  if (leaked.length) throw new Error(`Isolated Docker resources not removed: ${JSON.stringify(leaked)}`);
 }
 
-export default async function globalSetup(): Promise<void> {
-  const env = {
-    ...process.env,
-    DATABASE_URL: "postgresql+asyncpg://sauri:sauri_dev@localhost:5432/sauri",
-    OBJECT_STORE_ENDPOINT: "http://localhost:9000",
-    OBJECT_STORE_BUCKET: "sauri-recordings-e2e",
-    MINIO_ROOT_USER: "minioadmin",
-    MINIO_ROOT_PASSWORD: "minioadmin",
-    QUEUE_BROKER_URL: "amqp://guest:guest@localhost:5672/",
-    AUTH_DISABLED: "true",
-    ASR_PROVIDER: "local",
-    ASR_LOCAL_URL: "http://127.0.0.1:9/unused",
-  };
-
-  // Create the MinIO bucket and the DB schema before starting the API.
-  const setupScript = `
-import asyncio
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
-
-async def main():
-    import app.infra.models  # noqa: F401 — registers all tables on Base.metadata
-    from app.infra.database import Base
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    engine = create_async_engine("${env.DATABASE_URL}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await engine.dispose()
-
-    client = boto3.client(
-        "s3",
-        endpoint_url="${env.OBJECT_STORE_ENDPOINT}",
-        aws_access_key_id="${env.MINIO_ROOT_USER}",
-        aws_secret_access_key="${env.MINIO_ROOT_PASSWORD}",
-        config=Config(signature_version="s3v4"),
-    )
-    try:
-        client.create_bucket(Bucket="${env.OBJECT_STORE_BUCKET}")
-    except ClientError:
-        pass
-
-asyncio.run(main())
-`;
-
-  await new Promise<void>((resolvePromise, reject) => {
-    const proc = spawn(VENV_PYTHON, ["-c", setupScript], {
-      cwd: BACKEND_DIR,
-      env,
-    });
-    let stderr = "";
-    proc.stderr?.on("data", (d) => (stderr += d.toString()));
-    proc.on("exit", (code) => {
-      if (code === 0) resolvePromise();
-      else reject(new Error(`Setup script failed (${code}): ${stderr}`));
-    });
-  });
-
-  const logFile = resolve(__dirname, ".backend.log");
-  const logFd = openSync(logFile, "w");
-  const backend: ChildProcess = spawn(
-    VENV_PYTHON,
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
-    {
-      cwd: BACKEND_DIR,
-      env,
-      stdio: ["ignore", logFd, logFd],
-      detached: true,
-    }
-  );
-  backend.unref();
-
-  writeFileSync(PID_FILE, String(backend.pid));
-
-  await waitForHealth("http://127.0.0.1:8000/health");
+export default async function globalSetup(): Promise<() => void> {
+  try {
+    const python = availablePython();
+    docker("network", "create", network);
+    for (const volume of volumes) docker("volume", "create", volume);
+    docker("run", "-d", "--rm", "--name", names[0], "--network", network,
+      "-p", "127.0.0.1::5432", "-v", `${volumes[0]}:/var/lib/postgresql/data`,
+      "-e", "POSTGRES_DB=sauri_e2e", "-e", "POSTGRES_USER=e2e", "-e", "POSTGRES_PASSWORD=e2e_only", "postgres:16");
+    docker("run", "-d", "--rm", "--name", names[1], "--network", network,
+      "-p", "127.0.0.1::9000", "-v", `${volumes[1]}:/data`,
+      "-e", "MINIO_ROOT_USER=e2e_minio", "-e", "MINIO_ROOT_PASSWORD=e2e_secret_only",
+      "rustfs/rustfs@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b",
+      "server", "/data");
+    docker("run", "-d", "--rm", "--name", names[2], "--network", network,
+      "-p", "127.0.0.1::5672", "-e", "RABBITMQ_DEFAULT_USER=e2e", "-e", "RABBITMQ_DEFAULT_PASS=e2e_only", "rabbitmq:3-management");
+    const dbPort = mappedPort(names[0], 5432);
+    const objectPort = mappedPort(names[1], 9000);
+    const queuePort = mappedPort(names[2], 5672);
+    const backendPort = await freePort();
+    const frontendPort = await freePort();
+    const env = {
+      ...process.env, PYTHONPATH: backend, DATABASE_URL: `postgresql+asyncpg://e2e:e2e_only@127.0.0.1:${dbPort}/sauri_e2e`,
+      OBJECT_STORE_ENDPOINT: `http://127.0.0.1:${objectPort}`, OBJECT_STORE_BUCKET: `${run}-bucket`,
+      MINIO_ROOT_USER: "e2e_minio", MINIO_ROOT_PASSWORD: "e2e_secret_only",
+      QUEUE_BROKER_URL: `amqp://e2e:e2e_only@127.0.0.1:${queuePort}/`,
+      QUEUE_MESSAGE_SIGNING_KEY: randomBytes(32).toString("hex"), JWT_SECRET: randomBytes(32).toString("hex"),
+      SPEAKER_EXCERPT_ACTIVE_KEY_ID: "e2e", SPEAKER_EXCERPT_KEYRING: `e2e:${randomBytes(32).toString("base64url")}`,
+      AUTH_DISABLED: "false", APP_ENV: "test", ASR_PROVIDER: "local",
+      SAURI_E2E_RUN_ID: run, SAURI_E2E_PYTHON: python, SAURI_E2E_BACKEND_URL: `http://localhost:${backendPort}`,
+      SAURI_E2E_PORTAL_URL: `http://localhost:${frontendPort}`,
+    };
+    // Never inherit a developer's public object-store endpoint into signed media URLs.
+    delete env.OBJECT_STORE_PUBLIC_ENDPOINT;
+    await waitForPython(python, env);
+    // Seed only synthetic identities in the freshly created, uniquely named database.
+    execFileSync(python, [resolve(here, "fixture.py"), "init"], { cwd: backend, env, timeout: 30_000 });
+    const log = resolve(temp, "backend.log");
+    process.env.SAURI_E2E_BACKEND_LOG = log;
+    const logFd = openSync(log, "w");
+    const backendProcess = spawn(python, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
+      { cwd: backend, env, stdio: ["ignore", logFd, logFd] });
+    closeSync(logFd);
+    children.push(backendProcess);
+    await waitFor(`${env.SAURI_E2E_BACKEND_URL}/health`);
+    execFileSync("npm", ["run", "build"], { cwd: extension, env: {
+      ...env, SAURI_E2E_BUILD: "1", VITE_SAURI_BACKEND_URL: env.SAURI_E2E_BACKEND_URL, VITE_SAURI_PORTAL_URL: env.SAURI_E2E_PORTAL_URL,
+    }, stdio: "pipe", timeout: 120_000 });
+    const frontendProcess = spawn(resolve(root, "node_modules/.bin/vite"),
+      ["--host", "127.0.0.1", "--port", String(frontendPort), "--strictPort"],
+      { cwd: frontend, env: { ...env, VITE_API_BASE_URL: env.SAURI_E2E_BACKEND_URL } });
+    children.push(frontendProcess);
+    await waitFor(env.SAURI_E2E_PORTAL_URL);
+    for (const [key, value] of Object.entries(env)) if (key.startsWith("SAURI_E2E_") || key === "DATABASE_URL" || key === "PYTHONPATH") process.env[key] = value;
+    return stop;
+  } catch (error) {
+    stop();
+    throw error;
+  }
 }

@@ -9,7 +9,12 @@ import { SpeakerTestLogin } from "./components/SpeakerTestLogin";
 type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" };
 
 export function App() {
-  const [view, setView] = useState<View>({ type: "list" });
+  // Only the meeting key is carried across tabs. Protected media and transcript
+  // are fetched by the existing authorized API after portal authentication.
+  const [view, setView] = useState<View>(() => {
+    const meetingId = new URLSearchParams(window.location.search).get("meetingId");
+    return meetingId ? { type: "transcript", meetingId } : { type: "list" };
+  });
   const [refreshKey, setRefreshKey] = useState(0);
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(localStorage.getItem("sauri_token"))
@@ -18,7 +23,7 @@ export function App() {
   useEffect(() => {
     function handleUnauthorized() {
       setAuthenticated(false);
-      setView({ type: "list" });
+      // Retain the deep-link target so sign-in can resume this same review.
     }
 
     window.addEventListener("sauri:unauthorized", handleUnauthorized);

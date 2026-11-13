@@ -112,6 +112,7 @@
 **Acción:** On the existing `GET /api/v1/meetings/{meeting_id}` handler, enforce meeting ownership for the authenticated user using the existing meetings authorization boundary; return 404 for a non-owner without disclosing meeting status or recording fields, while preserving 401 for unauthenticated requests. Do not add a parallel route. In the extension status bridge, map documented `process_state` values; for `completed`, require the persisted `meetingId`, matching `recordingId`, protected transcript availability, and usable playback-manifest video before persisting `processing_succeeded`. Preserve unavailable/auth-required, failed, and non-ready states without inventing retry intervals or limits. Publish per-recording status for T2.8; do not implement a speculative UI component.
 **Criterio de Completado:** T1.4 passes with owner success, unauthenticated 401, and non-owner 404/no status disclosure; `cd backend && pytest tests/meetings/test_get_meeting_property.py` and `cd extension && npm run test -- src/background.processing-status.test.ts` pass; `cd extension && npm run typecheck` passes. The status bridge emits the matching durable per-recording state consumed by T2.8.
 **Dependencias:** T1.4, T2.2, T2.3 (provides the persisted `recordingId` bound to the meeting), `task_6a271652b2c34130` (protected transcript/playback asset contract).
+**Seguimiento de implementación:** #622 → PR #839 (`08bc8c3`, además de T1.4 #613 cherry-picked como `940dc02`/`ce4e8b2`); base original PR #834 ya integrado; PR #839 retargeted a main, pendiente de integración y validación de producto. Pruebas locales: backend 47, extensión 208, typecheck/build y ruff correctos; ninguna captura/lectura HTTP real.
 
 ### Tarea 2.5: Open one authenticated review destination only after verified success
 
@@ -173,28 +174,50 @@
 - No backend SQL schema migration or Compose change is expected. The extension IndexedDB v1→v2 migration is required by the approved design and covered by T1.2/T2.2.
 - The Teams completion adapter is in scope; a Teams media-capture pipeline is neither presumed to exist nor added by this plan. No visual redesign, consent, retention, or upload-defect remediation is included.
 
-## Publication tracking
+## Delivery reconciliation — 2026-11-12
 
-Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (Mira APPROVED, 2026-10-31). This is the scoped #709 amendment candidate to T1.1/T2.1; the candidate awaits Mira's independent audit, and `.config.spectra` phase `complete` records authorship only. The plan continues to derive from approved requirements `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` and corrected design `a477c0bde2ac3f140d04020af06afa05fb96c4f6` (Mira APPROVED). GitHub issues #610–#628 map the 19 tasks in milestone `chrome-recording-completion` (#17); this amendment does not create, renumber, or publish implementation tasks. Per Ansel's coordination decision, APX card creation is deferred until real responsible agents and dependency readiness are available; no card IDs are claimed here.
+APX parent `task_9e74a2d278d648ad` resumes the existing PR #703, not a new parallel implementation. The #709 amendment was approved and merged in PR #719 (unchanged approved artifact blob `4ba0841067fa9197c199bd261af336d3028cc3da`); historical pending wording below is provenance, not a renewed approval gate.
 
-| Task | GitHub issue | APX card |
-|---|---:|---|
-| T1.1 | #610 | Pending — APX assignment resolution |
-| T1.2 | #611 | Pending — APX assignment resolution |
-| T1.3 | #612 | Pending — APX assignment resolution |
-| T1.4 | #613 | Pending — APX assignment resolution |
-| T1.5 | #614 | Pending — APX assignment resolution |
-| T1.6 | #615 | Pending — APX assignment resolution |
-| T1.7 | #616 | Pending — APX assignment resolution |
-| T1.8 | #617 | Pending — APX assignment resolution |
-| T1.9 | #618 | Pending — APX assignment resolution |
-| T2.1 | #619 | Pending — APX assignment resolution |
-| T2.2 | #620 | Pending — APX assignment resolution |
-| T2.3 | #621 | Pending — APX assignment resolution |
-| T2.4 | #622 | Pending — APX assignment resolution |
-| T2.5 | #623 | Pending — APX assignment resolution |
-| T2.6 | #624 | Pending — APX assignment resolution |
-| T2.7 | #625 | Pending — APX assignment resolution |
-| T2.8 | #626 | Pending — APX assignment resolution |
-| T3.1 | #627 | Pending — APX assignment resolution |
-| T3.2 | #628 | Pending — APX assignment resolution |
+T1.1/#610 and T2.1/#619 form one RED→GREEN delivery on the existing branch. The approved design requires durable transactional claims, so the capture-store prerequisite from T1.2/#611 and T2.2/#620 is included in this branch; those broader identity/review tasks remain open until all their criteria pass. No product scope or acceptance criterion is removed. Remaining upload/status/review wiring stays in its existing tasks.
+
+Executed listener RED at `c9bf45c`: 2 passed / 2 failed; Stop+tab-close emitted two stop messages, and meeting-ended replaced active recording state with idle. Each property is configured for 100 cases (failing properties stop and shrink at the first counterexample). Candidate GREEN adds durable capture records and claims; tests alone do not establish real capture/upload delivery. Before integration verify error/restart windows, obsolete capture records, full regression/typecheck/build, and browser behavior. No task is closed by this reconciliation.
+
+## Bounded finalization candidate — 2026-11-12
+
+APX `task_d9a886135dae47b0`, PR #703, T1.1/#610 + T2.1/#619, R1.1–R1.5/R5.2. This is implementation evidence, not merge or product acceptance. T1.2/#611 and T2.2/#620 remain partial/open (full ingestion identity mapping and review claims are not delivered here).
+
+- The transactional `finalizing` record is now a durable delivery intent. Worker startup and the existing alarm replay it after a crash or rejected send; every stop carries its session ID. Replays may repeat transport messages, but offscreen stops only the matching recorder once. Tests distinguish delivery attempts from actual media finalization.
+- Offscreen refuses missing/foreign stop identities, retains a stop requested during capture initialization, waits for final chunk transaction commits, and marks finalized media `upload_pending`. Failed start/capture retains chunks and the original identity with a local `captureError` marker; failed captures are excluded from active-tab lookup and cannot poison a subsequent capture on that tab.
+- Live legacy session bindings can stop without synthesizing a meeting/completion identity. Additive v1 migration, blocked upgrade retry and versionchange preserve old chunks. Meeting-ended/discovery cannot detach an active session. Late completion/error for another session does not reset the current capture projection.
+- Validation: `cd extension && npm run test` — 161 passed in 34 files; `npm run typecheck` and `npm run build` passed. Existing generated listener/DB properties remain at 100 cases. Added crash-before-dispatch, rejected delivery/restart, failed capture, legacy Stop/close, foreign/duplicate offscreen stop, stop-during-start, committed final chunk and blocked migration coverage.
+- Browser smoke: unpacked production build loaded in an isolated Chromium profile; panel login rendered without page errors; a synthetic durable handle survived meeting-ended and real `tabs.onRemoved` persisted the same session/meeting finalization intent. This is **not** real Meet/Teams media capture or upload validation. Screenshot and runner retained with the APX task evidence.
+- Limits: full capture→upload→processing→review remains undelivered. Recovery after media is finalized but before upload enqueue belongs to the subsequent upload bridge; no full durable queue/recordingId/review claim completion is asserted. The repository's `test:e2e` setup writes to shared local PostgreSQL/MinIO and starts port 8000 with auth disabled, so it was not run against the owner's environment. Ansel retains candidate review, isolated integration validation and product acceptance; PR remains draft until those conditions are verified.
+
+## Scoped corrective delivery — PR #823 (historical snapshot, 2026-11-12)
+
+- Parent APX task: `task_9e74a2d278d648ad`. Continues T1.7 (#616) with the ambiguous-handle error portion of T2.7 (#625) and minimal Side Panel feedback from T2.8 (#626). Existing approved requirements/design/task plan apply; no new scope or approval is implied.
+- Ansel reproduced both behavioral RED failures, then corrected the durable resolver: multiple active candidates are marked `captureError` in one committed transaction before reporting ambiguity. No candidate is selected or stopped; identity, chunks and unrelated captures are retained. Repeated/concurrent close and worker restart cannot select a remaining ambiguous candidate.
+- The Side Panel reads the selected session's durable capture error on mount and while open, shows a non-successful alert, recovers it on reopen and hides it when switching to another session. It does not implement the rest of the outcome/retry/review UI.
+- Validation: 172 tests in 35 files pass, including both previous RED cases, concurrent/unprojected ambiguity, preserved media chunks and four durable feedback tests; extension typecheck/build and diff check pass. Browser check uses the production panel build over an isolated localhost fixture with synthetic Chrome state and real browser IndexedDB: error appears, survives reload and disappears for a different healthy session. This is not a real Chrome capture or extension-service-worker end-to-end check.
+- T2.7/T2.8 remain partial; #821 remains open and was not merged or copied. No complete upload/processing/review flow, actual Teams media capture, integration or product acceptance is claimed. Merge remains reserved; no task/issue is closed by this entry.
+
+## Publication and delivery tracking — verified 2026-11-13
+
+The approved requirements snapshot `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2` and design `a477c0bde2ac3f140d04020af06afa05fb96c4f6` remain unchanged. The 19 tasks map to GitHub issues #610–#628. The original plan and earlier dated candidate notes above are historical evidence, **not current PR states or acceptance**. APX cards below identify actual delivery assignments where found; an absent card ID is not a claim that work was not done. A merged PR establishes integration of its bounded change, not completion of every requirement or product acceptance. Unless marked otherwise, the GitHub issues remain open; their closure is not inferred from tests or merge. #627/#628 were closed by the subsequent #843 merge, which still does not imply product acceptance.
+
+| Task / issue | APX delivery | RED → GREEN / integrated evidence | Remaining status |
+|---|---|---|---|
+| T1.1 #610; T2.1 #619 | `task_d9a886135dae47b0` (parent `task_9e74a2d278d648ad`) | Listener RED `c9bf45c` 2 failed; durable completion GREEN [#703](https://github.com/lufermalgo/sauri/pull/703), merged `cb7510f`. | Bounded finalization integrated; full real capture/upload/review and acceptance not established by #703. Both issues open. |
+| T1.2 #611; T2.2 #620 | No separate APX ID confirmed; partial prerequisite in `task_d9a886135dae47b0`. | IndexedDB identity/claims RED then 165 extension tests GREEN [#821](https://github.com/lufermalgo/sauri/pull/821), merged `faf19c0`; #703 also supplies capture claims. | Ingestion/review consumers are delivered in later PRs; issues remain open, no global acceptance inferred. |
+| T1.3 #612 | `task_e99a95fb9bb44253` (bounded RED review) | [#822](https://github.com/lufermalgo/sauri/pull/822) RED `ab28744` closed **without merge** as duplicate; tests retained in GREEN [#834](https://github.com/lufermalgo/sauri/pull/834), merged `943404f` (203 extension tests). | Issue open; no independent #822 integration. |
+| T1.4 #613 | `task_250499cbc3a24f67` | RED [#824](https://github.com/lufermalgo/sauri/pull/824) closed without merge; tests cherry-picked into [#839](https://github.com/lufermalgo/sauri/pull/839), merged `902c69a` with GREEN owner/asset gate. | Issue open; no independent #824 integration or product acceptance. |
+| T1.5 #614; T2.5 #623; T2.6 #624 | `task_9c0f0794b9b6476c` | Review-launch RED 100-case properties then GREEN protected, single review route [#835](https://github.com/lufermalgo/sauri/pull/835), head `8187e92`, merged `bb24e51` (extension 214, frontend 94 tests). | Issues open; merge does not validate real Meet/Teams capture or acceptance. |
+| T1.6 #615 | `task_7f2207cae42545ac` | Existing authorization GREEN; mutation of owner check yielded 2 unauthorized 200s, 8 tests added [#831](https://github.com/lufermalgo/sauri/pull/831), merged `dd549c5`. | Issue closed; review assets still require authenticated/authorized access in complete journey. |
+| T1.7 #616; T2.7 #625 | `task_4cfdfe7cffea49dc` | Provider-handle/Stop RED → GREEN [#828](https://github.com/lufermalgo/sauri/pull/828), merged `9d3d532`; 192 extension tests. Correction of ambiguous resolver/feedback [#823](https://github.com/lufermalgo/sauri/pull/823) also merged `c1125ca`. | Issues open; Teams handles synthetic, no Teams capture pipeline. |
+| T1.8 #617 | `task_dd6b09519f754272` | RED [#826](https://github.com/lufermalgo/sauri/pull/826): missing meeting binding/duplicate enqueue; closed without merge as duplicate, tests retained in #834 GREEN. | Issue open; no independent #826 integration. |
+| T1.9 #618; T2.8 #626 | `task_3f4850ed89be4a22` | RED 20 failures in [#838](https://github.com/lufermalgo/sauri/pull/838), closed without merge; preserved in panel GREEN [#841](https://github.com/lufermalgo/sauri/pull/841), merged `1c5d051` (250 extension tests in post-merge revalidation). | Issues/APX review open; visual evidence synthetic, not real capture or acceptance. |
+| T2.3 #621 | `task_932ac7b879bd45ae` | Inherits T1.3/T1.8 RED; identity-bound upload GREEN #834, merged `943404f`, 203 extension tests. | Issue/APX review open; no real Chrome/server journey proven by this PR alone. |
+| T2.4 #622 | `task_e3eb102ac4ff47d8` | T1.4 RED retained; same-meeting owner-authorized status + protected assets GREEN #839, merged `902c69a`. | Issue closed, APX delivery done; full journey/acceptance separate. |
+| T3.1 #627; T3.2 #628 | `task_156962ff76f54d14` | [#843](https://github.com/lufermalgo/sauri/pull/843) head `dad91cc` includes #835/#840/#841 via `origin/main`; synthetic Meet/Teams E2E 5/5, extension 256/frontend 94 tests, both typechecks/builds, current-head CI SUCCESS and zero isolated E2E resources remaining; merged `fbe72b4`. | Issues #627/#628 closed with merge; synthetic media/provider/processing do not establish real capture/inference or owner acceptance. |
+
+**Integration boundary:** #703, #821, #823, #828, #831, #834, #835, #839, #841 and #843 are merged; #822, #824, #826 and #838 are closed RED duplicates whose tests landed through the GREEN PRs, not separate integrations. #843 was integrated at `fbe72b4` after current-head checks succeeded; issues #627/#628 are closed. This document neither closes other issues nor marks product acceptance. The integration suite uses real API/auth/DB/object storage/queue with synthetic capture/media/processing, not real Teams capture or inference. No requirements, design, or criteria were changed.

@@ -10,6 +10,7 @@ from app.auth.router import router as auth_router
 from app.ingestion.router import router as ingestion_router
 from app.meetings.router import router as meetings_router
 from app.meetings.speaker_excerpt_service import ExcerptKeyring
+from app.templates.router import router as templates_router
 
 
 def validate_speaker_excerpt_keyring() -> None:
@@ -44,6 +45,7 @@ app.add_middleware(
 app.include_router(ingestion_router)
 app.include_router(meetings_router)
 app.include_router(auth_router)
+app.include_router(templates_router)
 
 
 @app.get("/health")

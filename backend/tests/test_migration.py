@@ -527,6 +527,8 @@ AGGREGATE_REVISION = "008_speaker_review_aggregate"
 RECONCILIATION_REVISION = "010_speaker_excerpt_reference"
 LINKLESS_REVISION = "011_linkless_cleanup"
 DIARIZATION_GENERATIONS_REVISION = "012_diarization_generations"
+MANUAL_RECOVERY_REVISION = "013_manual_recovery_persistence"
+SUMMARY_TEMPLATES_REVISION = "014_meeting_summaries_templates"
 LEGACY_PREDECESSOR_REVISION = "007_rename_schema_to_english"
 LEGACY_PREDECESSOR_PARENT = "006_add_titulo_reunion"
 
@@ -566,15 +568,19 @@ def test_published_migration_revision_ids_and_immediate_parent_are_preserved() -
         assert graph_revision.down_revision == AGGREGATE_REVISION
 
 
-def test_diarization_generations_head_follows_linkless_cleanup_and_009_reconciliation() -> None:
+def test_summary_head_follows_manual_recovery_generations_and_009_reconciliation() -> None:
     script = _migration_script()
     heads = script.get_heads()
 
-    assert heads == [DIARIZATION_GENERATIONS_REVISION], (
-        "Alembic graph must have one diarization generations head; "
+    assert heads == [SUMMARY_TEMPLATES_REVISION], (
+        "Alembic graph must have one summary templates head; "
         f"found {heads!r}"
     )
-    generation_migration = script.get_revision(heads[0])
+    summary_migration = script.get_revision(heads[0])
+    assert summary_migration.down_revision == MANUAL_RECOVERY_REVISION
+    recovery_migration = script.get_revision(MANUAL_RECOVERY_REVISION)
+    assert recovery_migration.down_revision == DIARIZATION_GENERATIONS_REVISION
+    generation_migration = script.get_revision(DIARIZATION_GENERATIONS_REVISION)
     assert generation_migration.down_revision == LINKLESS_REVISION
 
     linkless_migration = script.get_revision(LINKLESS_REVISION)

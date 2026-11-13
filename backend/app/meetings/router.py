@@ -220,6 +220,11 @@ async def get_meeting_endpoint(
                 session, meeting_id, user, f"GET /api/v1/meetings/{meeting_id}"
             )
             result = await get_meeting(session, meeting_id)
+            recording = await session.scalar(
+                select(SessionRecording.id).where(SessionRecording.meeting_id == meeting_id)
+            )
+            if recording is not None:
+                result["recording_id"] = recording
             return result
     except ValueError as exc:
         raise HTTPException(

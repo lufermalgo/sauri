@@ -1,6 +1,23 @@
 name: sauri
 
 services:
+  # Built portal; API stays same-origin, signed media links remain direct S3.
+  portal:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "127.0.0.1:${PORTAL_PORT:-5173}:80"
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/portal-health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    networks:
+      - sauri-net
+
   # --- API (FastAPI) ---
   api:
     build:
