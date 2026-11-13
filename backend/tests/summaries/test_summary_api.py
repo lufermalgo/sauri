@@ -6,6 +6,9 @@ The missing route must fail as an HTTP assertion, not an import/collection error
 
 from __future__ import annotations
 
+import json
+import os
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,12 +16,13 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
 from app.infra.database import Base
-from app.infra.models import Meeting, SummaryRequestOutbox, SummaryTemplate, Transcript, User
+from app.infra.models import Meeting, MeetingSummary, SummaryRequestOutbox, SummaryTemplate, Transcript, User
 from app.main import app
 
 
@@ -32,10 +36,19 @@ def _headers(user: str, *, sales: bool = True) -> dict[str, str]:
 
 @pytest.fixture
 async def summary_api(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str, str, str]]:
     """Persist a completed synthetic transcript and two different owners' templates."""
-    url = f"sqlite+aiosqlite:///{tmp_path / 'requests.db'}"
+    url = os.environ.get("SAURI_QA_SUMMARY_READ_URL", f"sqlite+aiosqlite:///{tmp_path / 'requests.db'}")
+    disposable_pg = "SAURI_QA_SUMMARY_READ_URL" in os.environ
+    if disposable_pg:
+        parsed = make_url(url)
+        if parsed.drivername != "postgresql+asyncpg" or not re.fullmatch(
+            r"sauri_t15_[a-zA-Z0-9_]+",
+            parsed.database or "",
+        ):
+            raise ValueError("SAURI_QA_SUMMARY_READ_URL must target a dedicated sauri_t15_ PostgreSQL database")
     engine = create_async_engine(url)
     try:
         async with engine.begin() as connection:
@@ -45,28 +58,70 @@ async def summary_api(
         now = datetime.now(UTC)
         async with factory() as session, session.begin():
             for user in (owner, other):
-                session.add(User(id=user, email=f"{user}@example.test", name="Synthetic",
-                                 password_hash="test-only", is_sales=True, created_at=now))
-            session.add(Meeting(id=meeting_id, meet_link="https://meet.google.com/abc-defg-hij",
-                                origin="manual", calendar_invite_id=None, scheduled_start_time=None,
-                                process_state="completed", failure_cause=None, created_by=owner, created_at=now))
-            session.add(Transcript(id=transcript_id, meeting_id=meeting_id, language="es-CO",
-                                   provider="synthetic", supports_turns=False, expires_at=None, created_at=now))
+                session.add(
+                    User(
+                        id=user,
+                        email=f"{user}@example.test",
+                        name="Synthetic",
+                        password_hash="test-only",
+                        is_sales=True,
+                        created_at=now,
+                    )
+                )
+            session.add(
+                Meeting(
+                    id=meeting_id,
+                    meet_link="https://meet.google.com/abc-defg-hij",
+                    origin="manual",
+                    calendar_invite_id=None,
+                    scheduled_start_time=None,
+                    process_state="completed",
+                    failure_cause=None,
+                    created_by=owner,
+                    created_at=now,
+                )
+            )
+            session.add(
+                Transcript(
+                    id=transcript_id,
+                    meeting_id=meeting_id,
+                    language="es-CO",
+                    provider="synthetic",
+                    supports_turns=False,
+                    expires_at=None,
+                    created_at=now,
+                )
+            )
             await session.flush()
             for user, template, instructions in (
                 (owner, own_template, "  Exactly these opaque instructions.\n"),
                 (other, foreign_template, "Private foreign instructions"),
             ):
-                session.add(SummaryTemplate(id=template, owner_user_id=user, category_id=None,
-                                            name="Synthetic template", version=1, instructions=instructions,
-                                            created_at=now, updated_at=now))
+                session.add(
+                    SummaryTemplate(
+                        id=template,
+                        owner_user_id=user,
+                        category_id=None,
+                        name="Synthetic template",
+                        version=1,
+                        instructions=instructions,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
         monkeypatch.setenv("DATABASE_URL", url)
         monkeypatch.setenv("APP_ENV", "test")
         monkeypatch.delenv("AUTH_DISABLED", raising=False)
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             yield client, factory, owner, other, meeting_id, own_template, foreign_template
     finally:
-        await engine.dispose()
+        try:
+            if disposable_pg:
+                async with engine.begin() as connection:
+                    await connection.execute(text("DROP SCHEMA public CASCADE"))
+                    await connection.execute(text("CREATE SCHEMA public"))
+        finally:
+            await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -82,9 +137,14 @@ async def test_explicit_owned_request_freezes_version_instructions_and_increment
     async with factory() as session:
         snapshot = await session.get(SummaryRequestOutbox, event_id)
         assert snapshot is not None
-        assert (snapshot.meeting_id, snapshot.template_id, snapshot.template_version,
-                snapshot.instructions_snapshot, snapshot.generation, snapshot.status) == (
-                    meeting, own, 1, "  Exactly these opaque instructions.\n", 1, "pending")
+        assert (
+            snapshot.meeting_id,
+            snapshot.template_id,
+            snapshot.template_version,
+            snapshot.instructions_snapshot,
+            snapshot.generation,
+            snapshot.status,
+        ) == (meeting, own, 1, "  Exactly these opaque instructions.\n", 1, "pending")
         assert snapshot.delivered_at is None
     async with factory() as session, session.begin():
         template = await session.get(SummaryTemplate, own)
@@ -100,7 +160,9 @@ async def test_explicit_owned_request_freezes_version_instructions_and_increment
         updated = await session.get(SummaryRequestOutbox, second.json()["event_id"])
         assert original is not None and updated is not None
         assert (original.template_version, original.instructions_snapshot) == (
-            1, "  Exactly these opaque instructions.\n")
+            1,
+            "  Exactly these opaque instructions.\n",
+        )
         assert (updated.template_version, updated.instructions_snapshot) == (2, "Edited after acceptance")
 
 
@@ -119,14 +181,26 @@ async def test_implicit_request_resolves_current_personal_default_at_acceptance(
         snapshot = await session.get(SummaryRequestOutbox, response.json()["event_id"])
         assert snapshot is not None
         assert (snapshot.template_id, snapshot.template_version, snapshot.instructions_snapshot) == (
-            own, 1, "  Exactly these opaque instructions.\n")
+            own,
+            1,
+            "  Exactly these opaque instructions.\n",
+        )
     # A later default change applies to the next request, never to this event.
     replacement = _id()
     now = datetime.now(UTC)
     async with factory() as session, session.begin():
-        session.add(SummaryTemplate(id=replacement, owner_user_id=owner, category_id=None,
-                                    name="Replacement", version=1, instructions="New default instructions",
-                                    created_at=now, updated_at=now))
+        session.add(
+            SummaryTemplate(
+                id=replacement,
+                owner_user_id=owner,
+                category_id=None,
+                name="Replacement",
+                version=1,
+                instructions="New default instructions",
+                created_at=now,
+                updated_at=now,
+            )
+        )
         await session.flush()
         user = await session.get(User, owner)
         assert user is not None
@@ -137,10 +211,11 @@ async def test_implicit_request_resolves_current_personal_default_at_acceptance(
         snapshot = await session.get(SummaryRequestOutbox, response.json()["event_id"])
         next_snapshot = await session.get(SummaryRequestOutbox, later.json()["event_id"])
         assert snapshot is not None and next_snapshot is not None
-        assert (snapshot.template_id, snapshot.instructions_snapshot) == (
-            own, "  Exactly these opaque instructions.\n")
+        assert (snapshot.template_id, snapshot.instructions_snapshot) == (own, "  Exactly these opaque instructions.\n")
         assert (next_snapshot.template_id, next_snapshot.instructions_snapshot) == (
-            replacement, "New default instructions")
+            replacement,
+            "New default instructions",
+        )
     # This does NOT request a summary without a default: that outcome is gated.
     assert foreign not in (own, replacement)
 
@@ -160,10 +235,17 @@ async def test_foreign_template_and_meeting_cannot_enqueue_or_disclose(
     assert no_auth.status_code == 401, no_auth.text
     non_sales_user = _id()
     async with factory() as session, session.begin():
-        session.add(User(id=non_sales_user, email=f"{non_sales_user}@example.test", name="Synthetic",
-                         password_hash="test-only", is_sales=False, created_at=datetime.now(UTC)))
-    non_sales = await client.post(path, json={"template_id": foreign},
-                                  headers=_headers(non_sales_user, sales=False))
+        session.add(
+            User(
+                id=non_sales_user,
+                email=f"{non_sales_user}@example.test",
+                name="Synthetic",
+                password_hash="test-only",
+                is_sales=False,
+                created_at=datetime.now(UTC),
+            )
+        )
+    non_sales = await client.post(path, json={"template_id": foreign}, headers=_headers(non_sales_user, sales=False))
     assert non_sales.status_code == 403, non_sales.text
     async with factory() as session:
         assert (await session.scalars(select(SummaryRequestOutbox))).all() == []
@@ -192,7 +274,10 @@ async def test_request_status_latest_resumes_and_never_replaces_old_status(
     latest = await client.get(f"{path}/latest", headers=_headers(owner))
     assert latest.status_code == 200, latest.text
     assert {key: latest.json()[key] for key in ("event_id", "generation", "status")} == {
-        "event_id": accepted[1]["event_id"], "generation": 2, "status": "pending"}
+        "event_id": accepted[1]["event_id"],
+        "generation": 2,
+        "status": "pending",
+    }
     previous_response = await client.get(f"{path}/{accepted[0]['event_id']}", headers=_headers(owner))
     assert previous_response.status_code == 200, previous_response.text
     assert previous_response.json()["status"] == "succeeded"
@@ -211,3 +296,178 @@ async def test_request_status_latest_resumes_and_never_replaces_old_status(
     failed = await client.get(f"{path}/{accepted[1]['event_id']}", headers=_headers(owner))
     assert failed.status_code == 200 and failed.json()["status"] == "failed", failed.text
     assert "exception" not in failed.text.lower()
+
+
+ApiFixture = tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str, str, str]
+
+
+async def _persist_successes(fixture: ApiFixture) -> list[dict[str, object]]:
+    """Seed persisted worker outcomes, not a simulation of provider accuracy."""
+    client, factory, owner, _, meeting, template, _ = fixture
+    accepted: list[dict[str, object]] = []
+    for generation, state in enumerate(("succeeded", "succeeded", "pending", "failed"), start=1):
+        response = await client.post(
+            f"/api/v1/meetings/{meeting}/summary-requests",
+            json={"template_id": template},
+            headers=_headers(owner),
+        )
+        assert response.status_code == 202, response.text
+        body = response.json()
+        accepted.append(body)
+        async with factory() as session, session.begin():
+            row = await session.get(SummaryRequestOutbox, body["event_id"])
+            assert row is not None
+            row.status = state
+            if state == "succeeded":
+                now = datetime.now(UTC)
+                session.add(
+                    MeetingSummary(
+                        id=_id(),
+                        event_id=row.event_id,
+                        meeting_id=meeting,
+                        transcript_id=row.transcript_id,
+                        template_id=template,
+                        template_version=row.template_version,
+                        topic=f"Synthetic topic {generation}",
+                        key_points_json=json.dumps([f"Point {generation}"]),
+                        generation=generation,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+    return accepted
+
+
+@pytest.mark.asyncio
+async def test_current_summary_selects_highest_success_not_later_pending_or_failed(summary_api: ApiFixture) -> None:
+    client, _, owner, _, meeting, template, _ = summary_api
+    await _persist_successes(summary_api)
+    response = await client.get(f"/api/v1/meetings/{meeting}/summary", headers=_headers(owner))
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["meeting_id"], body["template_id"], body["template_version"], body["generation"]) == (
+        meeting,
+        template,
+        1,
+        2,
+    )
+    assert body["topic"] == "Synthetic topic 2"
+    assert body["key_points"] == ["Point 2"]
+    assert body["template_name"] == "Synthetic template"
+    assert body["summary_id"] and body["created_at"] and body["updated_at"]
+    assert "instructions" not in response.text and "instructions_snapshot" not in body
+
+
+@pytest.mark.asyncio
+async def test_current_summary_requires_auth_sales_and_meeting_ownership(summary_api: ApiFixture) -> None:
+    client, factory, owner, other, meeting, _, _ = summary_api
+    await _persist_successes(summary_api)
+    path = f"/api/v1/meetings/{meeting}/summary"
+    anonymous = await client.get(path)
+    assert anonymous.status_code == 401, anonymous.text
+    async with factory() as session, session.begin():
+        user = await session.get(User, other)
+        assert user is not None
+        user.is_sales = False
+    denied = await client.get(path, headers=_headers(other, sales=False))
+    assert denied.status_code == 403, denied.text
+    foreign = await client.get(path, headers=_headers(other))
+    assert foreign.status_code == 404, foreign.text
+    missing = await client.get(f"/api/v1/meetings/{_id()}/summary", headers=_headers(owner))
+    assert missing.status_code == 404, missing.text
+    for response in (anonymous, denied, foreign, missing):
+        assert "Synthetic topic" not in response.text and "Point 2" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_no_successful_summary_returns_404_even_with_a_pending_request(summary_api: ApiFixture) -> None:
+    client, _, owner, _, meeting, template, _ = summary_api
+    # A successful owner read in the same test prevents a missing route from
+    # satisfying the absence assertion vacuously.
+    await _persist_successes(summary_api)
+    present = await client.get(f"/api/v1/meetings/{meeting}/summary", headers=_headers(owner))
+    assert present.status_code == 200, present.text
+    _, factory, _, _, _, _, _ = summary_api
+    other_meeting, other_transcript = _id(), _id()
+    now = datetime.now(UTC)
+    async with factory() as session, session.begin():
+        session.add(
+            Meeting(
+                id=other_meeting,
+                meet_link="https://meet.google.com/abc-defg-hij",
+                origin="manual",
+                process_state="completed",
+                created_by=owner,
+                created_at=now,
+            )
+        )
+        await session.flush()
+        session.add(
+            Transcript(
+                id=other_transcript,
+                meeting_id=other_meeting,
+                language="es",
+                provider="synthetic",
+                supports_turns=False,
+                created_at=now,
+            )
+        )
+    path = f"/api/v1/meetings/{other_meeting}"
+    absent = await client.get(f"{path}/summary", headers=_headers(owner))
+    assert absent.status_code == 404, absent.text
+    accepted = await client.post(f"{path}/summary-requests", json={"template_id": template}, headers=_headers(owner))
+    assert accepted.status_code == 202, accepted.text
+    pending = await client.get(f"{path}/summary", headers=_headers(owner))
+    assert pending.status_code == 404, pending.text
+    assert "Synthetic topic" not in pending.text
+
+
+@pytest.mark.asyncio
+async def test_latest_summary_request_route_resolves_before_event_id(summary_api: ApiFixture) -> None:
+    client, _, owner, _, meeting, _, _ = summary_api
+    events = await _persist_successes(summary_api)
+    response = await client.get(f"/api/v1/meetings/{meeting}/summary-requests/latest", headers=_headers(owner))
+    assert response.status_code == 200, response.text
+    assert response.json() == {"event_id": events[-1]["event_id"], "generation": 4, "status": "failed"}
+
+
+@pytest.mark.asyncio
+async def test_status_routes_enforce_meeting_association_sales_and_owner(summary_api: ApiFixture) -> None:
+    client, factory, owner, other, meeting, _, _ = summary_api
+    events = await _persist_successes(summary_api)
+    path = f"/api/v1/meetings/{meeting}/summary-requests"
+    event = events[0]["event_id"]
+    own = await client.get(f"{path}/{event}", headers=_headers(owner))
+    assert own.status_code == 200, own.text
+    assert own.json() == {"event_id": event, "generation": 1, "status": "succeeded"}
+    for suffix in ("latest", str(event)):
+        no_auth = await client.get(f"{path}/{suffix}")
+        assert no_auth.status_code == 401, no_auth.text
+        foreign = await client.get(f"{path}/{suffix}", headers=_headers(other))
+        assert foreign.status_code == 404, foreign.text
+        missing = await client.get(f"/api/v1/meetings/{_id()}/summary-requests/{suffix}", headers=_headers(owner))
+        assert missing.status_code == 404, missing.text
+    # Existing event in a DIFFERENT, real meeting owned by the same caller.
+    second_meeting = _id()
+    async with factory() as session, session.begin():
+        session.add(
+            Meeting(
+                id=second_meeting,
+                meet_link="https://meet.google.com/abc-defg-hij",
+                origin="manual",
+                process_state="completed",
+                created_by=owner,
+                created_at=datetime.now(UTC),
+            )
+        )
+        user = await session.get(User, other)
+        assert user is not None
+        user.is_sales = False
+    mismatch = await client.get(
+        f"/api/v1/meetings/{second_meeting}/summary-requests/{event}",
+        headers=_headers(owner),
+    )
+    assert mismatch.status_code == 404, mismatch.text
+    for suffix in ("latest", str(event)):
+        denied = await client.get(f"{path}/{suffix}", headers=_headers(other, sales=False))
+        assert denied.status_code == 403, denied.text
