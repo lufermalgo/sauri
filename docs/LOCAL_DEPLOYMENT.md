@@ -1,6 +1,6 @@
 # Despliegue local y validación aislada
 
-Spec: `.spectra/specs/local-platform-deployment/`; issue padre #818; U1 #827/PR #829, U2 #830/PR #832, U3 #833/PR #836, U4 #837. Esta guía describe el candidato de esas ramas, no afirma que esté integrado en `main` ni aceptado por Fer.
+Spec: `.spectra/specs/local-platform-deployment/`; issue padre #818; U1 #827/PR #829, U2 #830/PR #832, U3 #833/PR #836, U4 #837. U1–U4 están integradas en `main` por Fer; #840 corresponde al merge `f7614d6` (13/11/2026 01:56 UTC). La revalidación integrada se registra abajo: integración no equivale a inferencia ni a aceptación de producto.
 
 ## Qué se ejecuta dónde
 
@@ -81,6 +81,16 @@ El navegador decodificó 294 frames de 1280×652, llegó a 10,288 s, `readyState
 ### Cierre de validación del candidato
 
 Código publicado `35137ad` repetido en ejecución nueva `957299eaaed9`: validación de conexiones reales PASS, tres pruebas S3 PASS, limpieza automática y repetida verified. La ejecución visual `e4ddeee1678f` también terminó exit 0 con limpieza verificada. Inspección externa por etiquetas de ambas ejecuciones y del primer intento: cero contenedores, redes y volúmenes propios. No equivale a afirmar que no existan recursos de otros trabajos. CI de `35137ad`: backend PASS (1m30s), web/extensión PASS (2m1s), run43347460781. La actualización posterior es exclusivamente documental; no cambia código probado. PR #840 listo para el merge reservado a Fer una vez terminen los controles de esa actualización; integración y aceptación siguen pendientes.
+
+### Revalidación integrada y corrección del diagnóstico de modelos — 13/11
+
+U1–U4 ya están integradas: #840 merge `f7614d6`. Las menciones anteriores a candidato/no integrado describen los controles previos, no el estado remoto actual. Sobre `bb24e51`, run QA `be619c597080`: 15 tests host, conexiones DB/S3/cola firmada, login API de dos usuarios, proxy/directo, propietario/tercero/anónimo, carga multipart y tres rangos/CORS/firma PASS; 3 pruebas S3 PASS. Frontend 94 tests/typecheck/build, extensión 256 tests/typecheck/build y backend 16 tests de autorización PASS. Cleanup automático y repetido, con inspección externa por etiqueta: cero contenedores, redes y volúmenes propios. No se tocó el entorno personal.
+
+El navegador APX mostró login tanto en el portal Docker como en la ruta de reunión; no se completó la sesión en esa ejecución. **La reproducción autenticada del integrado no quedó repetida**; se conserva como evidencia distinta el recorrido anterior del candidato #840. T5.3 permanece abierta.
+
+Sobre el merge posterior #843 `fbe72b4`: `npm ci`, typechecks de los tres workspaces, 256 tests de extensión y los 5 E2E configurados PASS. API y autorización reales; captura, medios y procesamiento sintéticos, sin acreditar captura Chrome ni inferencia. Inspección externa: cero recursos `sauri-e2e-*`. #844 `e718170` solo agrega documentación respecto a ese candidato; no se atribuyen las pruebas a un SHA distinto del ejecutado.
+
+**Corrección del bloqueo pyannote:** `LocalEntryNotFoundError` en Hugging Face no demuestra ausencia en toda la Mac. A pedido de Fer, el 13/11 02:45 UTC se encontró la configuración `speaker-diarization-3.1` y los pesos de sus modelos dependientes en la caché Torch local, descargados el 22/10. La conclusión anterior de modelo ausente queda retirada; no hace falta autorizar una descarga o enmienda por ese motivo. Falta verificar carga compatible e inferencia offline mediante los adaptadores existentes. La comprobación aislada está encargada a Nahuel; no habilita iniciar procesos personales, cambiar cachés ni descargar modelos. La inferencia integral y aceptación siguen no verificadas.
 
 ## Recuperación y espacio de disco
 
