@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import re
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ import aio_pika
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
@@ -31,6 +33,31 @@ def _id() -> str:
     return str(uuid4())
 
 
+def _dedicated_pg_url(raw: str) -> URL:
+    parsed = make_url(raw)
+    if parsed.drivername != "postgresql+asyncpg" or not re.fullmatch(
+        r"sauri_t9_[a-z0-9]+(?:_[a-z0-9]+)*", parsed.database or "",
+    ):
+        raise ValueError("SAURI_QA_POSTGRES_URL must target a dedicated sauri_t9_ PostgreSQL database")
+    return parsed
+
+
+@pytest.mark.parametrize("url", [
+    "postgresql+asyncpg://sauri_t9_user@localhost/production",
+    "postgresql+asyncpg://localhost.sauri_t9_internal/production",
+    "postgresql+asyncpg://localhost/production?sauri_t9_marker=yes",
+    "postgresql+asyncpg://localhost/sauri_t9_demo/other",
+    "sqlite+aiosqlite:///sauri_t9_demo",
+])
+def test_refuse_unsafe_postgres_target_before_connecting(url: str) -> None:
+    with pytest.raises(ValueError, match="dedicated sauri_t9_"):
+        _dedicated_pg_url(url)
+
+
+def test_allow_dedicated_postgres_database_name() -> None:
+    assert _dedicated_pg_url("postgresql+asyncpg://localhost/sauri_t9_demo").database == "sauri_t9_demo"
+
+
 @pytest.fixture
 async def pg_request(
     monkeypatch: pytest.MonkeyPatch,
@@ -39,47 +66,48 @@ async def pg_request(
     url = os.environ.get("SAURI_QA_POSTGRES_URL")
     if not url:
         pytest.skip("requires disposable PostgreSQL URL in SAURI_QA_POSTGRES_URL")
-    if "sauri_t9_" not in url:
-        pytest.fail("SAURI_QA_POSTGRES_URL must name a dedicated sauri_t9_ database")
-    engine = create_async_engine(url)
-    async with engine.begin() as connection:
-        # This dedicated test database can contain debris from an interrupted RED run.
-        await connection.execute(text("DROP SCHEMA public CASCADE"))
-        await connection.execute(text("CREATE SCHEMA public"))
-        await connection.run_sync(Base.metadata.create_all)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    owner, meeting, transcript, template = (_id() for _ in range(4))
-    now = datetime.now(UTC)
-    async with factory() as session, session.begin():
-        session.add(User(id=owner, email=f"{owner}@example.test", name="Synthetic",
-                         password_hash="not-used", is_sales=True, created_at=now))
-        session.add(Meeting(id=meeting, meet_link="https://meet.google.com/abc-defg-hij",
-                            origin="manual", calendar_invite_id=None, scheduled_start_time=None,
-                            process_state="completed", failure_cause=None, created_by=owner, created_at=now))
-        session.add(Transcript(id=transcript, meeting_id=meeting, language="es-CO",
-                               provider="synthetic", supports_turns=False, expires_at=None, created_at=now))
-        await session.flush()
-        session.add(SummaryTemplate(id=template, owner_user_id=owner, category_id=None,
-                                    name="Synthetic", version=1, instructions="Keep these exact words",
-                                    created_at=now, updated_at=now))
-    monkeypatch.setenv("DATABASE_URL", url)
-    monkeypatch.setenv("APP_ENV", "test")
-    monkeypatch.delenv("AUTH_DISABLED", raising=False)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        yield client, factory, owner, meeting, template
-    # Dedicated disposable database only: SQLAlchemy cannot emit DROP CONSTRAINT for
-    # the pre-existing unnamed use_alter=True user→template FK on PostgreSQL.
-    # Recreate its schema instead of weakening production models or leaving rows.
+    parsed = _dedicated_pg_url(url)
+    engine = create_async_engine(parsed)
     try:
         async with engine.begin() as connection:
+            # Only the validated dedicated test database can contain interrupted RED debris.
             await connection.execute(text("DROP SCHEMA public CASCADE"))
             await connection.execute(text("CREATE SCHEMA public"))
+            await connection.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        owner, meeting, transcript, template = (_id() for _ in range(4))
+        now = datetime.now(UTC)
+        async with factory() as session, session.begin():
+            session.add(User(id=owner, email=f"{owner}@example.test", name="Synthetic",
+                             password_hash="not-used", is_sales=True, created_at=now))
+            session.add(Meeting(id=meeting, meet_link="https://meet.google.com/abc-defg-hij",
+                                origin="manual", calendar_invite_id=None, scheduled_start_time=None,
+                                process_state="completed", failure_cause=None, created_by=owner, created_at=now))
+            session.add(Transcript(id=transcript, meeting_id=meeting, language="es-CO",
+                                   provider="synthetic", supports_turns=False, expires_at=None, created_at=now))
+            await session.flush()
+            session.add(SummaryTemplate(id=template, owner_user_id=owner, category_id=None,
+                                        name="Synthetic", version=1, instructions="Keep these exact words",
+                                        created_at=now, updated_at=now))
+        monkeypatch.setenv("DATABASE_URL", url)
+        monkeypatch.setenv("APP_ENV", "test")
+        monkeypatch.delenv("AUTH_DISABLED", raising=False)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            yield client, factory, owner, meeting, template
     finally:
-        await engine.dispose()
+        # Dedicated disposable database only: SQLAlchemy cannot emit DROP CONSTRAINT for
+        # the pre-existing unnamed use_alter=True user→template FK on PostgreSQL.
+        # Recreate its schema instead of weakening production models or leaving rows.
+        try:
+            async with engine.begin() as connection:
+                await connection.execute(text("DROP SCHEMA public CASCADE"))
+                await connection.execute(text("CREATE SCHEMA public"))
+        finally:
+            await engine.dispose()
 
 
-def _headers(owner: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {create_token(owner, f'{owner}@example.test', 'Synthetic', True)}"}
+def _headers(owner: str, *, sales: bool = True) -> dict[str, str]:
+    return {"Authorization": f"Bearer {create_token(owner, f'{owner}@example.test', 'Synthetic', sales)}"}
 
 
 @pytest.mark.asyncio
@@ -94,6 +122,36 @@ async def test_transcript_commit_alone_never_creates_summary_request(
     async with factory() as session:
         assert (await session.scalars(select(Transcript))).one()
         assert (await session.scalars(select(SummaryRequestOutbox))).all() == []
+    connection = await aio_pika.connect_robust(broker)
+    try:
+        channel = await connection.channel()
+        queue = await channel.declare_queue("summarize", durable=True)
+        assert await queue.get(fail=False, timeout=1) is None
+    finally:
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_non_sales_user_cannot_enqueue_or_publish(
+    pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
+) -> None:
+    broker = os.environ.get("SAURI_QA_RABBITMQ_URL")
+    if not broker:
+        pytest.skip("requires disposable RabbitMQ URL in SAURI_QA_RABBITMQ_URL")
+    client, factory, _, meeting, template = pg_request
+    non_sales = _id()
+    async with factory() as session, session.begin():
+        session.add(User(id=non_sales, email=f"{non_sales}@example.test", name="Synthetic",
+                         password_hash="not-used", is_sales=False, created_at=datetime.now(UTC)))
+    response = await client.post(
+        f"/api/v1/meetings/{meeting}/summary-requests",
+        json={"template_id": template}, headers=_headers(non_sales, sales=False),
+    )
+    assert response.status_code == 403, response.text
+    async with factory() as session:
+        assert (await session.scalars(select(SummaryRequestOutbox))).all() == []
+        user = await session.get(User, non_sales)
+        assert user is not None and user.is_sales is False
     connection = await aio_pika.connect_robust(broker)
     try:
         channel = await connection.channel()

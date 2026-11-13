@@ -37,34 +37,36 @@ async def summary_api(
     """Persist a completed synthetic transcript and two different owners' templates."""
     url = f"sqlite+aiosqlite:///{tmp_path / 'requests.db'}"
     engine = create_async_engine(url)
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    owner, other, meeting_id, transcript_id, own_template, foreign_template = (_id() for _ in range(6))
-    now = datetime.now(UTC)
-    async with factory() as session, session.begin():
-        for user in (owner, other):
-            session.add(User(id=user, email=f"{user}@example.test", name="Synthetic",
-                             password_hash="test-only", is_sales=True, created_at=now))
-        session.add(Meeting(id=meeting_id, meet_link="https://meet.google.com/abc-defg-hij",
-                            origin="manual", calendar_invite_id=None, scheduled_start_time=None,
-                            process_state="completed", failure_cause=None, created_by=owner, created_at=now))
-        session.add(Transcript(id=transcript_id, meeting_id=meeting_id, language="es-CO",
-                               provider="synthetic", supports_turns=False, expires_at=None, created_at=now))
-        await session.flush()
-        for user, template, instructions in (
-            (owner, own_template, "  Exactly these opaque instructions.\n"),
-            (other, foreign_template, "Private foreign instructions"),
-        ):
-            session.add(SummaryTemplate(id=template, owner_user_id=user, category_id=None,
-                                        name="Synthetic template", version=1, instructions=instructions,
-                                        created_at=now, updated_at=now))
-    monkeypatch.setenv("DATABASE_URL", url)
-    monkeypatch.setenv("APP_ENV", "test")
-    monkeypatch.delenv("AUTH_DISABLED", raising=False)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        yield client, factory, owner, other, meeting_id, own_template, foreign_template
-    await engine.dispose()
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        owner, other, meeting_id, transcript_id, own_template, foreign_template = (_id() for _ in range(6))
+        now = datetime.now(UTC)
+        async with factory() as session, session.begin():
+            for user in (owner, other):
+                session.add(User(id=user, email=f"{user}@example.test", name="Synthetic",
+                                 password_hash="test-only", is_sales=True, created_at=now))
+            session.add(Meeting(id=meeting_id, meet_link="https://meet.google.com/abc-defg-hij",
+                                origin="manual", calendar_invite_id=None, scheduled_start_time=None,
+                                process_state="completed", failure_cause=None, created_by=owner, created_at=now))
+            session.add(Transcript(id=transcript_id, meeting_id=meeting_id, language="es-CO",
+                                   provider="synthetic", supports_turns=False, expires_at=None, created_at=now))
+            await session.flush()
+            for user, template, instructions in (
+                (owner, own_template, "  Exactly these opaque instructions.\n"),
+                (other, foreign_template, "Private foreign instructions"),
+            ):
+                session.add(SummaryTemplate(id=template, owner_user_id=user, category_id=None,
+                                            name="Synthetic template", version=1, instructions=instructions,
+                                            created_at=now, updated_at=now))
+        monkeypatch.setenv("DATABASE_URL", url)
+        monkeypatch.setenv("APP_ENV", "test")
+        monkeypatch.delenv("AUTH_DISABLED", raising=False)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            yield client, factory, owner, other, meeting_id, own_template, foreign_template
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -156,13 +158,20 @@ async def test_foreign_template_and_meeting_cannot_enqueue_or_disclose(
     assert not_owner.status_code == 404, not_owner.text
     no_auth = await client.post(path, json={"template_id": foreign})
     assert no_auth.status_code == 401, no_auth.text
-    non_sales = await client.post(path, json={"template_id": foreign}, headers=_headers(owner, sales=False))
+    non_sales_user = _id()
+    async with factory() as session, session.begin():
+        session.add(User(id=non_sales_user, email=f"{non_sales_user}@example.test", name="Synthetic",
+                         password_hash="test-only", is_sales=False, created_at=datetime.now(UTC)))
+    non_sales = await client.post(path, json={"template_id": foreign},
+                                  headers=_headers(non_sales_user, sales=False))
     assert non_sales.status_code == 403, non_sales.text
     async with factory() as session:
         assert (await session.scalars(select(SummaryRequestOutbox))).all() == []
         template = await session.get(SummaryTemplate, foreign)
         assert template is not None
         assert (template.owner_user_id, template.instructions) == (other, "Private foreign instructions")
+        non_sales_record = await session.get(User, non_sales_user)
+        assert non_sales_record is not None and non_sales_record.is_sales is False
 
 
 @pytest.mark.asyncio
