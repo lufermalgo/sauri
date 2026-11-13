@@ -1,0 +1,187 @@
+# Secret-free CI for Sauri (issue #497).
+#
+# Policy:
+#   - A check that passes on `main` today is BLOCKING.
+#   - A check whose scope is known to be red on `main` is non-blocking
+#     (`continue-on-error: true`) and names the issue that owns the debt, so the
+#     failure stays visible in the run log and in the step status instead of
+#     blocking every pull request.
+#   - Promote a step back to blocking by removing its `continue-on-error` line in
+#     the same commit that makes that scope green.
+#
+# Known-red scopes and their tracking issues (measured on origin/main @ 58abc1e,
+# 2026-10-21, in the hosted CI runtime: Python 3.11.17, ruff 0.17.1, mypy 2.4.0,
+# pytest 9.1.1, Node 20.20.2, npm 10.8.2; hosted run 39686916157):
+#   backend ruff        -> #228  (lint baseline debt on main: 16 errors, 7 fixable)
+#   backend mypy        -> #228  (type baseline debt on main: 24 errors in 7 files;
+#                          137 source files checked)
+#   backend pytest      -> #248  (collection error: app.transcription.processing_pipeline
+#                          is the module T-6/T-15 still has to create; the RED test
+#                          that imports it is already on main)
+#                          #407, #491, #492, #493 (Alembic 009 lineage and width guards)
+#                          #249, #250, #241 (speaker-review PUT schema and routes)
+#                          #505  (live MinIO playback integration test: needs a
+#                          disposable object-store environment; the test itself was
+#                          implemented by closed #309)
+#   frontend vitest     -> #304  (typed playback and transcript API mapping)
+#                          #251  (per-speaker review in the transcript view)
+#   frontend tsc        -> #304  (Transcript.segments contract in @sauri/shared-types)
+#                          #189  (frontend test environment readiness)
+#
+# Current measurements, all read from hosted run 39686916157 on main @ 58abc1e:
+# ruff 16 errors (7 fixable, 1 unsafe fix); mypy 24 errors in 7 files (137 source
+# files checked); backend pytest 4 failed, 283 passed, 4 skipped, 1 error; frontend
+# vitest 10 failed, 21 passed; frontend tsc 6 errors. The four backend pytest
+# failures are the playback storage integration test (#505), the speaker-review PUT
+# schema test (#249/#250/#241) and the two Alembic 009 lineage tests
+# (#407/#491/#492/#493); the collection error is #248.
+#
+# #522 records Hypothesis's default 200 ms deadline flaking in the diarization
+# suite (2/6 runs in the affected Python 3.14.7 environment); its test profile fix
+# preserves 100 examples while disabling this timing-based limit.
+# The counts move as the tool versions and `main` move; issue references are the
+# contract, not the counts.
+#
+# `npm audit --omit=dev` reports 0 vulnerabilities; the advisories `npm ci`
+# prints are all in development dependencies.
+#
+# Green scopes kept blocking: extension vitest, extension tsc, extension build,
+# frontend build.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend lint and tests
+    runs-on: ubuntu-latest
+    env:
+      OBJECT_STORE_ENDPOINT: http://127.0.0.1:9000
+      OBJECT_STORE_BUCKET: sauri-playback-${{ github.run_id }}
+      MINIO_ROOT_USER: sauri-ci-${{ github.run_id }}
+      PLAYBACK_TEST_FRONTEND_ORIGIN: http://localhost:5173
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Verify APX delivery and single-handoff contracts
+        run: python -m unittest discover -s .apc/routines -p "test_*.py"
+      - name: Install backend dependencies
+        run: python -m pip install -e "./backend[dev]"
+      - name: Generate disposable object-store password
+        run: |
+          MINIO_ROOT_PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$MINIO_ROOT_PASSWORD"
+          echo "MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD" >> "$GITHUB_ENV"
+      - name: Start disposable S3-compatible object store
+        run: >-
+          docker run --detach --name sauri-ci-object-store --publish 127.0.0.1:9000:9000
+          --env MINIO_ROOT_USER
+          --env MINIO_ROOT_PASSWORD
+          rustfs/rustfs@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
+      - name: Wait for object store and configure the disposable bucket
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$OBJECT_STORE_ENDPOINT/minio/health/ready"; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "S3-compatible object store did not become ready" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          python - <<'PY'
+          import os
+
+          import boto3
+          from botocore.config import Config
+
+          client = boto3.client(
+              "s3",
+              endpoint_url=os.environ["OBJECT_STORE_ENDPOINT"],
+              aws_access_key_id=os.environ["MINIO_ROOT_USER"],
+              aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
+              config=Config(signature_version="s3v4"),
+          )
+          bucket = os.environ["OBJECT_STORE_BUCKET"]
+          client.create_bucket(Bucket=bucket)
+          client.put_bucket_cors(
+              Bucket=bucket,
+              CORSConfiguration={
+                  "CORSRules": [
+                      {
+                          "AllowedHeaders": ["range"],
+                          "AllowedMethods": ["GET"],
+                          "AllowedOrigins": [
+                              os.environ["PLAYBACK_TEST_FRONTEND_ORIGIN"]
+                          ],
+                          "ExposeHeaders": ["Content-Range", "Accept-Ranges"],
+                          "MaxAgeSeconds": 300,
+                      }
+                  ]
+              },
+          )
+          PY
+      - name: "Backend lint (ruff) - non-blocking, tracked by #228"
+        working-directory: backend
+        continue-on-error: true
+        run: ruff check .
+      - name: "Backend type check (mypy) - non-blocking, tracked by #228"
+        working-directory: backend
+        continue-on-error: true
+        run: mypy .
+      - name: "Live MinIO playback test (pytest) - issue #505"
+        working-directory: backend
+        run: >-
+          pytest
+          tests/meetings/test_playback_storage_integration.py::test_signed_playback_source_supports_range_and_frontend_cors
+          -q
+      - name: "Backend tests (pytest) - non-blocking, tracked by #248"
+        working-directory: backend
+        continue-on-error: true
+        run: pytest --continue-on-collection-errors
+
+  web-and-extension:
+    name: Web and extension checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: "Frontend tests (vitest) - non-blocking, tracked by #304"
+        continue-on-error: true
+        run: npm run test --workspace=sauri-frontend
+      - name: "Frontend type check (tsc) - non-blocking, tracked by #304"
+        continue-on-error: true
+        run: npm run typecheck --workspace=sauri-frontend
+      - name: "Frontend build (vite)"
+        run: npm run build --workspace=sauri-frontend
+      - name: "Extension tests (vitest)"
+        run: npm run test --workspace=sauri-extension
+      - name: "Extension type check (tsc)"
+        run: npm run typecheck --workspace=sauri-extension
+      - name: "Extension build (vite)"
+        run: npm run build --workspace=sauri-extension

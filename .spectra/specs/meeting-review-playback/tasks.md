@@ -11,8 +11,10 @@
 | 5 | RED: playback view, controls, and error behavior | T-9 | T-6, T-8 |
 | 6 | GREEN: meeting playback view | T-10 | T-9 |
 | 7 | Storage delivery integration contract | T-11 | T-4 |
+| 8 | Browser E2E test infrastructure and RED trial test | T-12, T-13 | T-12; T-10 → T-13 |
+| 9 | GREEN development-only trial fixture route | T-14 | T-13 |
 
-The dependency graph contains only mandatory RED-before-GREEN edges and real data/API prerequisites. T-1 and T-3 are independent. T-2 waits for T-1; T-4 waits for both T-2 (persisted source inventory) and T-3 (route contract tests). T-5 waits for T-4, while controller test task T-7 is independent of API mapping; T-6 and T-8 each wait only for their corresponding RED task. T-9 waits for T-6 and T-8. T-11 waits for T-4 and is otherwise independent of frontend work.
+The dependency graph contains only mandatory RED-before-GREEN edges and real data/API prerequisites. T-1 and T-3 are independent. T-2 waits for T-1; T-4 waits for both T-2 (persisted source inventory) and T-3 (route contract tests). T-5 waits for T-4, while controller test task T-7 is independent of API mapping; T-6 and T-8 each wait only for their corresponding RED task. T-9 waits for T-6 and T-8. T-11 waits for T-4 and is otherwise independent of frontend work. T-12 enables a frontend real-browser test runner; T-13 requires that runner and the view from T-10, then remains RED until T-14 adds the development-only trial route/link and fixture.
 
 ## Phase 1: RED — Persistence and API Contracts
 
@@ -22,7 +24,9 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Files:** `backend/tests/test_migration.py`; `backend/tests/ingestion/test_playback_source_ingestion.py` (new); `extension/src/core/capture.test.ts`.
 
-**Action:** Add synthetic RED tests for migration from revision `008_speaker_review_aggregate`: backfill exactly one `Original` audio source per existing `audio_ref`, one video source per non-null `video_ref`, initialize every legacy recording's `video_presence` to `unknown` regardless of MIME or refs, leave unavailable legacy MIME/offset null, preserve original refs through downgrade/re-upgrade, and reject duplicate `(recording_id, kind, object_ref)`. Add capture tests proving observed `MediaStream` video-track presence is reported before the existing interleaved single-object upload is constructed. Add ingestion tests requiring explicit metadata consistent with capture mode: `muxed` only for the single-object interleaved path with an observed video track; `absent` only when capture observed no video; `separate` only with a distinct video object and finite signed integer `video_offset_ms`; reject missing/inconsistent metadata with 422 before persistence or media storage. Do not use real recordings or infer presence from MIME, missing `video_ref`, or recording association.
+**Production seams under test:** The new migration under `backend/alembic/versions/` and `RecordingMediaSource`/`SessionRecording` in `backend/app/infra/models.py`; `IngestionData` in `backend/app/ingestion/schemas.py` and the validation/persistence path in `backend/app/ingestion/router.py` and `service.py`; the extension capture helper in `extension/src/core/capture.ts` and its single-object upload hand-off in `extension/src/background.ts`. Assert the capture helper observes `MediaStream` video tracks before constructing the upload and that the ingestion boundary rejects invalid presence/offset metadata before storage.
+
+**Action:** Add synthetic RED tests for migration from revision `008_speaker_review_aggregate`: backfill exactly one `RecordingMediaSource` audio row per existing `audio_ref`, one `RecordingMediaSource` video row per non-null `video_ref`, initialize every legacy recording's `video_presence` to `unknown` regardless of MIME or refs, leave unavailable legacy MIME/offset null, preserve original refs through downgrade/re-upgrade, and reject duplicate `(recording_id, kind, object_ref)`. Add capture tests proving observed `MediaStream` video-track presence is reported before the existing interleaved single-object upload is constructed. Add ingestion tests requiring explicit metadata consistent with capture mode: `muxed` only for the single-object interleaved path with an observed video track; `absent` only when capture observed no video; `separate` only with a distinct video object and finite signed integer `video_offset_ms`; reject missing/inconsistent metadata with 422 before persistence or media storage. Do not use real recordings or infer presence from MIME, missing `video_ref`, or recording association.
 
 **Acceptance evidence:** New migration/ingestion tests fail against the pre-feature persistence contract for the missing inventory, `video_presence` and offset validation; capture test fails because no explicit track-presence metadata is reported. Keep test results synthetic.
 
@@ -50,6 +54,8 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Files:** `backend/tests/meetings/test_playback_manifest.py`; `backend/tests/meetings/test_transcript_turn_id.py`
 
+**Production routes under test:** `backend/app/meetings/router.py` exposes `GET /api/v1/meetings/{meeting_id}/playback` (`get_playback_manifest`) and `GET /api/v1/meetings/{meeting_id}/transcript` (`get_transcript`). Exercise their authenticated meeting-ownership boundary and playback source signing through these HTTP routes, not an isolated test-only handler.
+
 **Action:** Add synthetic route tests for owner success, missing/invalid JWT (401), absent and non-owned meeting indistinguishable 404, no recording/playable source, one versus multiple video choices, and confirmation that every legacy row (`video_presence=unknown`), including null MIME and absent `video_ref`, is audio-only. Assert that only explicit persisted `muxed` evidence for the single-object capture mode returns `muxed_video_source`; `absent` returns no video sources; `separate` returns only rows with signed offsets. Verify signed positive/negative offsets, authorized signing with TTL 3600, no raw refs in responses, and transcript ownership/non-disclosure.
 
 **Acceptance evidence:** Tests fail before implementation for the absent playback manifest and/or missing transcript ownership check; unauthorized cases assert no signing and no transcript/object reference disclosure.
@@ -76,7 +82,9 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Tracking:** Task done · Issue #303 · Card `task_b51714b10bb6489e` · PR #484
 
-**Files:** Frontend API adapter tests for `frontend/src/api.ts`; transcript mapping tests in the existing frontend test structure.
+**Files:** `frontend/src/api.test.ts` (tests for `getPlaybackManifest` and `getTranscript`).
+
+**Production seam under test:** The authenticated HTTP adapter in `frontend/src/api.ts`, specifically `getPlaybackManifest(meetingId)` and `getTranscript(meetingId)` and their manifest/segment-to-timed-passage mapping. Do not move HTTP access into the playback view.
 
 **Action:** Add synthetic tests for typed `getPlaybackManifest(meetingId)` and `getTranscript(meetingId)` responses. Verify manifest mapping preserves `video_presence` (`muxed`, `separate`, `absent`, `unknown`), nullable `muxed_video_source`, and separate `video_sources` with signed offsets; MIME and missing video rows must not determine mode. Verify `segments` preserve sequence/text while mapping `start_ms`/`end_ms` to `TimedPassage.startMs`/`endMs`; invalid/missing timing retains text but produces no playback action. Handle errors without exposing object-store refs beyond signed URLs.
 
@@ -88,7 +96,7 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-6: Implement typed playback and transcript API mapping
 
-**Tracking:** Issue #304 · Card `task_8fb3bb8e18dc4583`
+**Tracking:** Task done · Issue #304 · Card `task_8fb3bb8e18dc4583` · PR #526
 
 **Files:** `frontend/src/api.ts` and its API type/test modules.
 
@@ -102,7 +110,9 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 **Tracking:** Issue #305 · Card `task_a03f9dcab3d24308`
 
-**Files:** `frontend/src/**/__tests__/PlaybackController.test.ts` (place in the established frontend test location).
+**Files:** `frontend/src/components/__tests__/PlaybackController.test.ts`.
+
+**Production seam under test:** `frontend/src/components/PlaybackController.ts`: exercise the design's `findPassageAt(passages, currentTimeMs)` entry point and the controller's media-event/state/control behavior (including passage actions that seek to `startMs` and play). The tests target the production module, not a test-only replacement.
 
 **Action:** Add tests for valid interval matching (half-open `[startMs,endMs)`), first supplied matching passage on overlap, gaps, invalid timing, empty input, seek/pause/resume/rate/volume/mute state, active passage changes and clear-on-no-match. Use synthetic controller inputs for each `video_presence` mode: `muxed` uses one media clock; `absent`/`unknown` (including legacy null MIME/no video rows) use audio only; `separate` uses paired media only when a signed offset is present. Cover paired audio/video alignment, signed offset formula, positive-offset wait, correction only above 250 ms, and audio as authoritative clock.
 
@@ -130,9 +140,11 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-9: Add failing meeting playback view tests
 
-**Tracking:** Issue #307 · Card `task_2eadd0c5aca84eda`
+**Tracking:** Issue #307 · Card `task_91e0bb5a24b14959`
 
-**Files:** `frontend/src/**/__tests__/MeetingPlaybackView.test.tsx` (place in the established frontend test location).
+**Files:** `frontend/src/components/__tests__/MeetingPlaybackView.test.tsx` (new).
+
+**Production seam under test:** Render `frontend/src/components/MeetingPlaybackView.tsx` with supplied meeting media and timed transcript data; exercise its native media element and accessible playback/passage controls through user events, and assert its integration with `PlaybackController.ts` for seek, play/pause, clock-driven highlighting and source selection. The view receives data rather than fetching directly; API mapping is covered by T-5/T-6.
 
 **Action:** Add synthetic component tests for seek, pause/resume, speed, volume, mute, passage play, and active-passage highlight/scroll behavior. Assert source selection exists only for multiple playable separate video options and preserves audio source and position. Test all modes: explicit `muxed` evidence renders the same single asset in one native video element with its own audio/timestamps; `absent` and every legacy `unknown` manifest (including null MIME and no `video_ref`/video rows) render audio-only and never infer muxed playback; `separate` uses authoritative audio plus muted video only when its offset is known. Also cover missing-offset legacy video exclusion, metadata-loading disabled controls, one URL refresh at saved time then accessible error/stop on failure, paired startup failures pausing both elements, and accessible empty/unavailable/error states. Assert no editing, library, notes, summary, metadata, or other excluded controls.
 
@@ -146,9 +158,12 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-10: Implement accessible meeting playback view
 
-**Tracking:** Issue #308 · Card `task_3af577f121a04340`
+**Tracking:** Task done · Issue #308 · Card `task_6a271652b2c34130` · PR #594
 
-**Files:** `frontend/src/components/MeetingPlaybackView.tsx` (new); existing meeting review route/view integration point.
+**Visibility follow-up:** Task done · Issue #680 · Card `task_e1f49584919a4ca9` · PR #682
+
+**Files:** `frontend/src/components/MeetingPlaybackView.tsx` (new); integrated at `frontend/src/App.tsx` transcript view route (existing `TranscriptView`, mounted on the meeting review path) and consumes `getPlaybackManifest`/`getTranscript` from `frontend/src/api.ts` plus `PlaybackController` from `frontend/src/components/PlaybackController.ts`.
+
 
 **Action:** Add the view around the playback controller and typed adapter data. Select the media mode strictly from persisted `video_presence`: explicit `muxed` plays the `muxed_video_source` in one native video element with its own audio/timestamps; `absent` and `unknown` (including legacy null-MIME rows and missing video refs) are audio-only; `separate` uses authoritative audio plus muted video only when signed offset is known. Provide accessible controls for seek, pause/resume, speed, volume, mute and conditional separate-video quality selection; render transcript/active passage from playback time; passage action seeks to `startMs` and requests play. Disable controls during unavailable metadata, retain text with invalid timing but no time-linked controls, and show accessible loading/empty/error states. Add no excluded feature.
 
@@ -171,3 +186,51 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 **Validation:** `cd backend && pytest tests/meetings/test_playback_storage_integration.py` with disposable S3-compatible storage configured.
 
 **Dependencies:** T-4
+
+## Phase 8: RED — Real-Browser Trial Readiness
+
+### T-12: Establish frontend Playwright E2E runner
+
+**Tracking:** Issue #500 · Card `task_ec09f84fb1ec4f00`.
+
+**Files:** `frontend/package.json`; frontend Playwright configuration under `frontend/`; root dependency lockfile.
+
+**Action:** Add a frontend-local Playwright runner configuration using the repository's existing `@playwright/test` convention, including a Vite development server `webServer` configuration. Configure `frontend/tests/e2e/` as the frontend E2E directory and expose the script used below. Keep this runner isolated to frontend browser tests; do not alter extension E2E configuration.
+
+**Acceptance evidence:** A temporary runner smoke test launches the Vite app and observes its root page; remove the smoke test when T-13 adds the feature-specific browser test.
+
+**Validation:** `npm run test:e2e --workspace frontend`.
+
+**Dependencies:** None
+
+### T-13: Add failing real-browser trial playback E2E test
+
+**Tracking:** Issue #501 · Card `task_c7bca3a1ade84745`.
+
+**Files:** `frontend/tests/e2e/meeting-review-playback-trial.spec.ts`; `frontend/src/App.tsx`; `frontend/src/components/MeetingPlaybackView.tsx`.
+
+**Production seam under test:** The Vite-development-only root link and `/_trial/meeting-review-playback` route in `frontend/src/App.tsx`, which mounts `MeetingPlaybackView` with the synthetic fixture. Navigate through that link to the exact route; T-13 remains RED until T-14 adds it, without bypassing the authenticated route for real meeting media.
+
+**Action:** Write a real-browser test that starts at `/`, follows the development-only trial link, and expects the trial view, actual fixture WAV with finite non-zero duration, and all three synthetic transcript passages. Use `data-testid="playback-media"` and visible Play/passage controls only; do not call `HTMLMediaElement.play()` or set `currentTime` in test code. Register listeners before clicks; assert Play unpauses and advances media time by at least 500 ms within 5 seconds, then assert the second passage action (`startMs=4000`) emits `seeked` within 250 ms of 4.000 s and subsequently `playing` while unpaused. This task must demonstrate RED before T-14 adds the fixture route/link.
+
+**Acceptance evidence:** The browser test runs and fails specifically because the development-only fixture route/link and WAV are not yet present; runner, browser, and app startup must succeed.
+
+**Validation:** `npm run test:e2e --workspace frontend`.
+
+**Dependencies:** T-10 (requires the rendered playback view and its visible media/passage controls); T-12 (requires the configured browser runner).
+
+## Phase 9: GREEN — Development-Only Trial Fixture
+
+### T-14: Add synthetic WAV, timed transcript, and Vite-only trial route
+
+**Tracking:** Issue #502 · Card `task_d6be0be2de424f71`.
+
+**Files:** `frontend/src/App.tsx`; `frontend/tests/e2e/meeting-review-playback-trial.spec.ts`; synthetic fixture asset and transcript module under `frontend/`.
+
+**Action:** Add a checked-in synthetic WAV with a matching three-passage timed transcript whose intervals cover the media timeline. In the existing app, mount `MeetingPlaybackView` at `/_trial/meeting-review-playback` only in Vite development mode and provide a development-only root link. Load fixture data directly for this trial path; do not change the normal authenticated API-backed route, add the path to meeting navigation, or expose route/link in production builds. Make the T-13 browser assertions pass through user-operated controls and real browser media events.
+
+**Acceptance evidence:** T-13 passes against the actual checked-in WAV and all three passages, exercising play progress and second-passage seek/play timing. After a production build, an automated bundle assertion confirms the development-only route target `/_trial/meeting-review-playback` is absent from `frontend/dist`, demonstrating that neither the route nor its linked entry point is shipped. Report this technical E2E result separately; it does not alter frozen product acceptance or participant criteria.
+
+**Validation:** `npm run test:e2e --workspace frontend`; `npm run build --workspace frontend && ! grep -R -Fq '/_trial/meeting-review-playback' frontend/dist`.
+
+**Dependencies:** T-13

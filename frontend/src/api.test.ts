@@ -6,6 +6,13 @@ const manifestMethod = api as typeof api & {
   getPlaybackManifest?: (meetingId: string) => Promise<PlaybackManifest>;
 };
 
+const diarizationMethod = api as typeof api & {
+  getDiarization?: (meetingId: string) => Promise<{
+    speakers: Array<{ id: string; label: string; sequence: number }>;
+    assignments: Array<{ turn_id: string; speaker_id: string }>;
+  }>;
+};
+
 interface PlaybackSource {
   source_id: string;
   url: string;
@@ -40,6 +47,7 @@ function mockFetch(body: unknown, status = 200) {
   vi.stubGlobal("localStorage", {
     getItem: vi.fn().mockReturnValue("synthetic-token"),
     setItem: vi.fn(),
+    removeItem: vi.fn(),
     clear: vi.fn(),
   });
   return fetchMock;
@@ -47,6 +55,145 @@ function mockFetch(body: unknown, status = 200) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+const uploadMethod = api as typeof api & {
+  uploadRecording?: (audio: File, data: Record<string, unknown>) => Promise<unknown>;
+};
+
+describe("authenticated multipart upload API adapter", () => {
+  it("sends the audio file and serialized metadata with bearer auth and a browser multipart boundary", async () => {
+    expect(typeof uploadMethod.uploadRecording).toBe("function");
+    const fetchMock = mockFetch({ recording_id: "recording-1", state: "transcribing" });
+    const audio = new File(["synthetic audio"], "sample.webm", { type: "audio/webm" });
+    const data = {
+      duration_seconds: 13,
+      meeting_id: "meeting-1",
+      idempotency_key: "retry-key-1",
+      capture_origin: "web_upload",
+      video_presence: "absent",
+    };
+
+    await uploadMethod.uploadRecording!(audio, data);
+
+    const [requestUrl, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(requestUrl).toContain("/api/v1/ingestion/upload");
+    expect(request.method).toBe("POST");
+    expect(request.headers).toEqual({ Authorization: "Bearer synthetic-token" });
+    expect(request.headers).not.toHaveProperty("Content-Type");
+    expect(request.body).toBeInstanceOf(FormData);
+    const formData = request.body as FormData;
+    expect(formData.get("audio")).toBe(audio);
+    expect(formData.get("data")).toBe(JSON.stringify(data));
+    expect(data).toMatchObject({ capture_origin: "web_upload", video_presence: "absent" });
+    expect(data).not.toHaveProperty("meet_link");
+    expect(data).not.toHaveProperty("title");
+  });
+
+  it("preserves meeting and idempotency identifiers for a retry", async () => {
+    expect(typeof uploadMethod.uploadRecording).toBe("function");
+    const fetchMock = mockFetch({ recording_id: "recording-1", state: "transcribing" });
+    const audio = new File(["synthetic audio"], "sample.webm", { type: "audio/webm" });
+    const data = { duration_seconds: 13, meeting_id: "meeting-1", idempotency_key: "retry-key-1" };
+
+    await uploadMethod.uploadRecording!(audio, data);
+    await uploadMethod.uploadRecording!(audio, data);
+
+    const bodies = fetchMock.mock.calls.map(([, request]) => request.body as FormData);
+    expect(bodies).toHaveLength(2);
+    expect(bodies.map((body) => JSON.parse(String(body.get("data"))))).toEqual([data, data]);
+  });
+});
+
+interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+const loginMethod = api as typeof api & {
+  login?: (email: string, password: string) => Promise<LoginResponse>;
+};
+
+describe("login API adapter", () => {
+  it("posts JSON credentials and decodes the login response without persisting it", async () => {
+    const loginResponse: LoginResponse = {
+      access_token: "synthetic-access-token",
+      token_type: "bearer",
+      expires_in: 3600,
+    };
+    const fetchMock = mockFetch(loginResponse);
+    const storageSetItem = vi.mocked(localStorage.setItem);
+
+    expect(typeof loginMethod.login).toBe("function");
+    await expect(loginMethod.login!("synthetic@example.invalid", "synthetic-password"))
+      .resolves.toEqual(loginResponse);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [requestUrl, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(requestUrl).toContain("/api/v1/auth/login");
+    expect(request.method).toBe("POST");
+    expect(request.headers).toEqual({ "Content-Type": "application/json" });
+    expect(request.body).toBe(JSON.stringify({
+      email: "synthetic@example.invalid",
+      password: "synthetic-password",
+    }));
+    expect(storageSetItem).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-success responses without persisting credentials or response data", async () => {
+    const loginResponse = {
+      access_token: "synthetic-access-token",
+      token_type: "bearer",
+      expires_in: 3600,
+    };
+    mockFetch(loginResponse, 401);
+    const storageSetItem = vi.mocked(localStorage.setItem);
+
+    expect(typeof loginMethod.login).toBe("function");
+    await expect(loginMethod.login!("synthetic@example.invalid", "synthetic-password"))
+      .rejects.toThrow("Error 401");
+
+    expect(storageSetItem).not.toHaveBeenCalled();
+    expect(storageSetItem).not.toHaveBeenCalledWith("sauri_token", expect.anything());
+    expect(storageSetItem).not.toHaveBeenCalledWith(expect.anything(), "synthetic-password");
+  });
+
+  it("rejects network failures without persisting credentials", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Network unavailable"));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(),
+      setItem: vi.fn(),
+      clear: vi.fn(),
+    });
+    const storageSetItem = vi.mocked(localStorage.setItem);
+
+    expect(typeof loginMethod.login).toBe("function");
+    await expect(loginMethod.login!("synthetic@example.invalid", "synthetic-password"))
+      .rejects.toThrow("Network unavailable");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(storageSetItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("speaker diarization API adapter", () => {
+  it("returns persisted turn-to-speaker assignments for the authenticated meeting", async () => {
+    expect(typeof diarizationMethod.getDiarization).toBe("function");
+    const fixture = {
+      speakers: [{ id: "speaker-synthetic", label: "Speaker 1", sequence: 1 }],
+      assignments: [{ turn_id: "turn-synthetic", speaker_id: "speaker-synthetic" }],
+    };
+    const fetchMock = mockFetch(fixture);
+
+    await expect(diarizationMethod.getDiarization!("meeting / synthetic")).resolves.toEqual(fixture);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/meetings/meeting%20%2F%20synthetic/diarization"),
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }),
+    );
+  });
 });
 
 describe("meeting playback API adapter", () => {
@@ -121,6 +268,24 @@ describe("meeting playback API adapter", () => {
     expect(transcript.segments[2].startMs).toBeNull();
     expect(transcript.segments[3].text).toBe("Intervalo inválido"); // spanish-sample-data
     expect(transcript.segments[3].endMs).toBeNull();
+    expect(transcript.turns).toEqual([
+      {
+        id: "segment-2",
+        transcriptId: "transcript-1",
+        text: "Segunda frase",
+        startMs: 1200,
+        endMs: 2200,
+        sequence: 2,
+      },
+      {
+        id: "segment-1",
+        transcriptId: "transcript-1",
+        text: "Primera frase",
+        startMs: 0,
+        endMs: 1100,
+        sequence: 1,
+      },
+    ]);
   });
 
   it("does not surface raw object-store references from failed API responses", async () => {
@@ -129,5 +294,113 @@ describe("meeting playback API adapter", () => {
 
     await expect(api.getTranscript("meeting-1")).rejects.toThrow();
     await expect(api.getTranscript("meeting-1")).rejects.not.toThrow(privateReference);
+  });
+});
+
+describe("speaker review API adapter", () => {
+  it("normalizes the backend snake_case review response into the frontend model", async () => {
+    mockFetch({
+      review_id: "review-synthetic",
+      revision_id: 4,
+      status: "pending",
+      items: [{
+        speaker_id: "sp-8",
+        current_label: "Speaker 8",
+        attribution_state: "uncertain",
+        disposition: null,
+        excerpt_ref: "opaque-excerpt-synthetic",
+        version: 3,
+      }],
+    });
+
+    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toEqual({
+      reviewId: "review-synthetic",
+      revisionId: "4",
+      status: "pending",
+      items: [{
+        speakerId: "sp-8",
+        currentLabel: "Speaker 8",
+        attributionState: "uncertain",
+        disposition: null,
+        excerptRef: "opaque-excerpt-synthetic",
+        expectedVersion: 3,
+      }],
+    });
+  });
+
+  it("normalizes labels from the currently persisted minimal review response", async () => {
+    mockFetch({
+      review_id: "review-synthetic",
+      revision_id: "revision-synthetic",
+      status: "pending",
+      items: [{ speaker_id: "sp-8", current_label: "Speaker 8", disposition: null }],
+    });
+
+    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toMatchObject({
+      items: [{ speakerId: "sp-8", currentLabel: "Speaker 8", disposition: null }],
+    });
+  });
+});
+
+describe("speaker excerpt API adapter", () => {
+  it("invalidates the session when an excerpt request returns 401", async () => {
+    const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);
+    const removeItem = vi.fn();
+    const dispatchEvent = vi.spyOn(window, "dispatchEvent");
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn().mockReturnValue("synthetic-token"),
+      setItem: vi.fn(),
+      removeItem,
+    });
+
+    await expect(api.playSpeakerExcerpt("meeting-1", "revision-1", "speaker-1"))
+      .rejects.toThrow("Error 401");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledOnce();
+    expect(removeItem).toHaveBeenCalledWith("sauri_token");
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+    expect(dispatchEvent.mock.calls[0][0]).toBeInstanceOf(Event);
+    expect(dispatchEvent.mock.calls[0][0].type).toBe("sauri:unauthorized");
+  });
+});
+
+describe("meeting list API adapter", () => {
+  it("clears the stored token when a protected request returns 401", async () => {
+    const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);
+    const removeItem = vi.fn();
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn().mockReturnValue("synthetic-token"),
+      setItem: vi.fn(),
+      removeItem,
+    });
+
+    await expect(api.listMeetings()).rejects.toThrow("Error 401");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledTimes(1);
+    expect(removeItem).toHaveBeenCalledWith("sauri_token");
+  });
+
+  it("maps the backend snake_case meeting payload into the shared UI type", async () => {
+    mockFetch([{
+      meeting_id: "fb02f350-0000-4000-8000-000000000001",
+      meet_link: null,
+      origin: "manual",
+      process_state: "completed",
+      failure_cause: null,
+      created_at: "2026-10-28T17:45:00Z",
+      title: "Synthetic processed meeting",
+    }]);
+
+    await expect(api.listMeetings()).resolves.toEqual([{
+      id: "fb02f350-0000-4000-8000-000000000001",
+      meetLink: null,
+      origin: "manual",
+      processState: "completed",
+      failureCause: null,
+      createdAt: "2026-10-28T17:45:00Z",
+      title: "Synthetic processed meeting",
+    }]);
   });
 });

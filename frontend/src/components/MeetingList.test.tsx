@@ -7,9 +7,9 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
-import { FailureCause, ProcessState, MeetingOrigin } from "@sauri/shared-types";
-import type { Meeting } from "@sauri/shared-types";
+import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
+import { ProcessState, MeetingOrigin } from "@sauri/shared-types";
+import type { MeetingListItem } from "@sauri/shared-types";
 
 import { MeetingList } from "./MeetingList";
 import * as api from "../api";
@@ -19,15 +19,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function meeting(overrides: Partial<Meeting> = {}): Meeting {
+function meeting(overrides: Partial<MeetingListItem> = {}): MeetingListItem {
   return {
     id: "r-1",
     meetLink: "https://meet.google.com/abc-defg-hij",
     origin: MeetingOrigin.Link,
     processState: ProcessState.Queued,
-    failureCause: undefined,
-    createdBy: "test-user",
-    createdAt: new Date().toISOString(),
+    failureCause: null,
+    createdAt: "2026-10-28T17:45:00Z",
+    title: "Synthetic meeting",
     ...overrides,
   };
 }
@@ -40,7 +40,6 @@ describe("MeetingList — renders the list with process states", () => {
       meeting({
         id: "r-3",
         processState: ProcessState.Failed,
-        failureCause: FailureCause.EngineFailure,
       }),
     ]);
 
@@ -48,23 +47,33 @@ describe("MeetingList — renders the list with process states", () => {
 
     await waitFor(() => screen.getByText("Meetings"));
 
-    expect(screen.getAllByText(ProcessState.Queued).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(ProcessState.Completed).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(ProcessState.Failed).length).toBeGreaterThan(0);
-    expect(screen.getByText(FailureCause.EngineFailure)).toBeDefined();
+    expect(screen.getByText("Queued")).toBeDefined();
+    expect(screen.getByText("Ready")).toBeDefined();
+    expect(screen.getByText("Failed")).toBeDefined();
   });
 
-  it("only shows the 'View transcript' button for completed meetings", async () => {
+  it("shows title, date, readable state, and an Open action for each meeting", async () => {
+    const onSelectMeeting = vi.fn();
+    const completedMeeting = meeting({
+      id: "r-2",
+      processState: ProcessState.Completed,
+      title: "Prueba sintetica completa",
+    });
     vi.spyOn(api, "listMeetings").mockResolvedValue([
       meeting({ id: "r-1", processState: ProcessState.Recording }),
-      meeting({ id: "r-2", processState: ProcessState.Completed }),
+      completedMeeting,
     ]);
 
-    render(<MeetingList refreshKey={0} onSelectMeeting={vi.fn()} />);
+    render(<MeetingList refreshKey={0} onSelectMeeting={onSelectMeeting} />);
     await waitFor(() => screen.getByText("Meetings"));
 
-    const buttons = screen.getAllByRole("button", { name: /View transcript/i });
-    expect(buttons).toHaveLength(1);
+    expect(screen.getByText("Prueba sintetica completa")).toBeDefined();
+    expect(screen.getAllByText(/Oct 28, 2026/).length).toBeGreaterThan(0);
+    expect(screen.getByText("Ready")).toBeDefined();
+    const buttons = screen.getAllByRole("button", { name: "Open" });
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1]);
+    expect(onSelectMeeting).toHaveBeenCalledWith(completedMeeting);
   });
 
   it("shows the empty-state message when there are no meetings", async () => {

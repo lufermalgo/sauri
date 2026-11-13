@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+
+<html lang="es"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_standard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Literata:ital,opsz,wght@0,7..72,400..700;1,7..72,400..700&amp;family=Nunito+Sans:ital,opsz,wght@0,6..12,300..800;1,6..12,300..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"secondary-container":"#f0e8db","on-surface":"#2e3230","surface-container":"#f0ece4","surface-container-high":"#eae6de","background":"#faf6f0","on-tertiary-fixed":"#221a05","on-secondary-fixed-variant":"#4a4538","on-tertiary":"#ffffff","surface-container-low":"#f5f1ea","surface-variant":"#e4e0d8","surface-container-highest":"#e4e0d8","on-error-container":"#690005","on-primary-fixed-variant":"#2a6038","secondary-fixed":"#f0e8db","outline":"#74796e","secondary-fixed-dim":"#d4ccbf","tertiary-container":"#c4a66a","on-background":"#2e3230","inverse-primary":"#8ecf9e","on-secondary-container":"#5e5548","tertiary-fixed-dim":"#dcc48e","on-primary":"#ffffff","outline-variant":"#c4c8bc","error":"#b83230","inverse-on-surface":"#f5f0e8","tertiary":"#705c30","primary-container":"#78a886","surface-container-lowest":"#ffffff","on-secondary-fixed":"#1e1a13","surface-dim":"#dbd7cf","on-tertiary-container":"#554020","primary-fixed-dim":"#8ecf9e","surface-bright":"#faf6f0","inverse-surface":"#2e3230","tertiary-fixed":"#f8e0a8","surface-tint":"#4a7c59","on-secondary":"#ffffff","on-primary-fixed":"#002110","secondary":"#6b6358","on-primary-container":"#d8f0de","surface":"#faf6f0","error-container":"#ffdad8","primary-fixed":"#c8e8d0","primary":"#4a7c59","on-tertiary-fixed-variant":"#554020","on-error":"#ffffff","on-surface-variant":"#4a4e4a"},"borderRadius":{"DEFAULT":"0.5rem","lg":"1rem","xl":"1.5rem","full":"9999px"},"spacing":{},"fontFamily":{"headline":["Literata"],"display":["Literata"],"body":["Nunito Sans"],"label":["Nunito Sans"]},"fontSize":{}}}}</script></head><body class="bg-surface font-body text-on-surface antialiased min-h-screen flex flex-col justify-between"><header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl shadow-[0_1px_8px_rgba(46,50,48,0.05)]"><div class="h-20 w-full max-w-7xl mx-auto px-6 lg:px-12 flex items-center justify-between gap-6"><div class="flex items-center gap-8"><div class="flex items-center gap-3 select-none"><div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-on-primary"><span class="material-symbols-outlined text-2xl">graphic_eq</span></div><div class="flex flex-col"><span class="font-headline text-2xl font-bold tracking-tight text-primary leading-none">Sauri</span><span class="text-[11px] font-label font-medium tracking-wider uppercase text-outline">Intelligence</span></div></div><nav class="hidden xl:flex items-center gap-1.5 p-1 bg-surface-container-low rounded-xl" data-active-classes="bg-primary-container text-on-primary-container font-semibold rounded-lg shadow-sm"><a aria-current="page" class="transition-all px-3.5 py-2 leading-snug bg-primary-container text-on-primary-container font-semibold rounded-lg shadow-sm" data-path="biblioteca-de-grabaciones" href="#">Biblioteca de grabaciones</a><a class="text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all px-3.5 py-2 rounded-lg leading-snug" data-path="revision-de-hablantes" href="#">Revisión de hablantes</a><a class="text-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all px-3.5 py-2 rounded-lg leading-snug" data-path="plantillas-de-resumen" href="#">Plantillas de resumen</a></nav></div><div class="flex items-center gap-4 flex-1 justify-end max-w-2xl"><div class="relative flex-1 max-w-xs hidden md:block"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-lg">search</span><input class="w-full pl-9 pr-4 py-2 text-xs font-body bg-surface-container rounded-lg text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all" placeholder="Buscar audios, notas o etiquetas..." type="text"/></div><div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-container-low text-xs font-label text-on-surface-variant"><span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span><span class="font-medium">Sincronizado</span></div><button class="flex items-center gap-2 bg-primary hover:bg-primary/90 text-on-primary px-4 py-2.5 rounded-xl font-label text-xs font-bold tracking-wide shadow-[0_2px_10px_rgba(74,124,89,0.2)] transition-all" type="button"><span class="material-symbols-outlined text-base">add</span><span>Subir grabación</span></button><div class="flex items-center gap-3 pl-2"><div class="hidden lg:flex flex-col text-right leading-tight"><span class="text-xs font-bold font-label text-on-surface">Fer</span><span class="text-[11px] text-outline font-medium">Summan • Admin</span></div><img alt="Profile" class="w-8 h-8 rounded-full object-cover shadow-sm ring-2 ring-primary/20" src="https://lh3.googleusercontent.com/aida/AEtjO1V7PWf0d2Cw4NQ6i59MHDL4DLb7AAhTw4Ax5Gf04rlMz4M-ckadtYq-RxZzHwimWSVCtBpIPkMAvU7JnNwfS_WCIygOU4EYmnHgw7WYz1YWduZJVpz9ydselyG3bY8pZSxS6i7mTFF7nNoyVf1YQxLCDGq3idbZ9ge5h6lc8838n4qCJojoxdrziReQmIK3EmCnzLc4nK0Va1GU5_Dymv1Kc8PO5bNJ7PjDKy-jKqvph-Wf8hCFlNcCEFk"/></div></div></div></header><main class="w-full pt-20 bg-surface flex-1"><div class="max-w-7xl mx-auto px-6 lg:px-12 py-8"><div class="flex flex-col w-full space-y-8">
+<!-- Page Header & Key Metrics -->
+<div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+<div class="space-y-2 max-w-2xl">
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container text-xs font-semibold tracking-wide uppercase font-label">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+        Espacio de Trabajo Summan
+      </div>
+<h1 class="font-headline text-3xl sm:text-4xl text-on-surface font-semibold tracking-tight">
+        Biblioteca de Grabaciones
+      </h1>
+<p class="text-sm sm:text-base text-on-surface-variant font-body leading-relaxed">
+        Historial centralizado de reuniones procesadas, estados de transcripción fonética y sincronización automática de minutas IA.
+      </p>
+</div>
+<!-- Top Action CTA -->
+<div class="flex items-center gap-3 self-start lg:self-auto shrink-0">
+<button class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface-container-high hover:bg-surface-variant text-on-surface text-sm font-semibold transition-colors" type="button">
+<span class="material-symbols-outlined text-lg">tune</span>
+<span>Filtros avanzados</span>
+</button>
+<button class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-sm font-bold shadow-md shadow-primary/20 transition-all hover:scale-[1.01] active:scale-[0.99]" type="button">
+<span class="material-symbols-outlined text-lg">mic</span>
+<span>+ Subir grabación manual</span>
+</button>
+</div>
+</div>
+<!-- Metric Badges / Overview Grid -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="text-xs uppercase font-bold tracking-wider font-label">Total Grabaciones</span>
+<span class="material-symbols-outlined text-lg text-primary">folder_open</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline text-3xl font-bold text-on-surface">42</span>
+<span class="text-xs text-primary font-medium font-label">+6 este mes</span>
+</div>
+<div class="w-full bg-surface-container rounded-full h-1.5 mt-3 overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 100%"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="text-xs uppercase font-bold tracking-wider font-label">Minutas Listas</span>
+<span class="material-symbols-outlined text-lg text-primary">check_circle</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline text-3xl font-bold text-on-surface">38</span>
+<span class="text-xs text-on-surface-variant font-medium font-label">90.5% del total</span>
+</div>
+<div class="w-full bg-surface-container rounded-full h-1.5 mt-3 overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 90.5%"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="text-xs uppercase font-bold tracking-wider font-label">En Procesamiento</span>
+<span class="material-symbols-outlined text-lg text-tertiary">memory</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline text-3xl font-bold text-tertiary">3</span>
+<span class="text-xs text-outline font-medium font-label">Whisper v3 active</span>
+</div>
+<div class="w-full bg-surface-container rounded-full h-1.5 mt-3 overflow-hidden">
+<div class="bg-tertiary h-full rounded-full" style="width: 35%"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm flex flex-col justify-between">
+<div class="flex items-center justify-between text-outline mb-2">
+<span class="text-xs uppercase font-bold tracking-wider font-label">Requiere Atención</span>
+<span class="material-symbols-outlined text-lg text-error">assignment_late</span>
+</div>
+<div class="flex items-baseline gap-2">
+<span class="font-headline text-3xl font-bold text-error">1</span>
+<span class="text-xs text-error font-medium font-label">Revisión requerida</span>
+</div>
+<div class="w-full bg-surface-container rounded-full h-1.5 mt-3 overflow-hidden">
+<div class="bg-error h-full rounded-full" style="width: 15%"></div>
+</div>
+</div>
+</div>
+<!-- Search & Multi-Filter Control Hub -->
+<div class="bg-surface-container-lowest p-5 sm:p-6 rounded-xl shadow-sm space-y-4">
+<div class="flex flex-col md:flex-row gap-3">
+<!-- Search Input -->
+<div class="relative flex-1">
+<span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-outline text-lg">search</span>
+<input class="w-full pl-10 pr-4 py-2.5 text-sm bg-surface-container-low rounded-xl text-on-surface placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/40 font-body transition-all" placeholder="Buscar por título, participante, cliente o palabras clave..." type="text"/>
+</div>
+<!-- Action Selectors -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low text-xs font-semibold text-on-surface px-3 py-2.5 rounded-xl pr-8 focus:outline-none cursor-pointer">
+<option>Cliente: Todos</option>
+<option>Grupo Éxito</option>
+<option>Bancolombia</option>
+<option>Nutresa</option>
+<option>Sura</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-outline pointer-events-none">expand_more</span>
+</div>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low text-xs font-semibold text-on-surface px-3 py-2.5 rounded-xl pr-8 focus:outline-none cursor-pointer">
+<option>Proyecto: Todos</option>
+<option>Modernización Retail 2025</option>
+<option>Arquitectura Cloud</option>
+<option>Migración SAP</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-outline pointer-events-none">expand_more</span>
+</div>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low text-xs font-semibold text-on-surface px-3 py-2.5 rounded-xl pr-8 focus:outline-none cursor-pointer">
+<option>Estado: Todos</option>
+<option>Lista</option>
+<option>Transcribiendo</option>
+<option>Identificando hablantes</option>
+<option>Subiendo</option>
+<option>Con error</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-outline pointer-events-none">expand_more</span>
+</div>
+<div class="relative">
+<select class="w-full appearance-none bg-surface-container-low text-xs font-semibold text-on-surface px-3 py-2.5 rounded-xl pr-8 focus:outline-none cursor-pointer">
+<option>Últimos 30 días</option>
+<option>Esta semana</option>
+<option>Mes anterior</option>
+<option>Todo el año 2025</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-outline pointer-events-none">calendar_today</span>
+</div>
+</div>
+</div>
+<!-- Active Filter Tags / Key Subjects -->
+<div class="flex items-center gap-2 flex-wrap pt-2">
+<span class="text-xs text-outline font-label uppercase font-bold mr-1">Temas clave:</span>
+<button class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-container text-on-secondary-container text-xs font-medium hover:bg-secondary-fixed-dim transition-colors" type="button">
+<span>#GenAI</span>
+<span class="material-symbols-outlined text-[13px] opacity-60 hover:opacity-100">close</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium hover:bg-surface-container-high transition-colors" type="button">
+<span>#DigitalTwin</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium hover:bg-surface-container-high transition-colors" type="button">
+<span>#CloudArchitecture</span>
+</button>
+<button class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-medium hover:bg-surface-container-high transition-colors" type="button">
+<span>#Finanzas</span>
+</button>
+<button class="text-xs font-bold text-primary hover:underline ml-auto font-label" type="button">
+        Limpiar filtros
+      </button>
+</div>
+</div>
+<!-- Bulk Action Bar -->
+<div class="flex items-center justify-between px-3 py-2 bg-surface-container-low rounded-xl text-xs text-on-surface-variant">
+<div class="flex items-center gap-3">
+<label class="inline-flex items-center gap-2 cursor-pointer">
+<input class="w-4 h-4 rounded text-primary accent-primary cursor-pointer" type="checkbox"/>
+<span class="font-bold text-on-surface font-label">Seleccionar todo (5 mostradas)</span>
+</label>
+<span class="text-outline">|</span>
+<button class="inline-flex items-center gap-1 hover:text-on-surface transition-colors font-medium" type="button">
+<span class="material-symbols-outlined text-sm">download</span> Descargar lote
+      </button>
+<button class="inline-flex items-center gap-1 hover:text-on-surface transition-colors font-medium" type="button">
+<span class="material-symbols-outlined text-sm">ios_share</span> Exportar CSV
+      </button>
+<button class="inline-flex items-center gap-1 text-outline hover:text-error transition-colors font-medium" type="button">
+<span class="material-symbols-outlined text-sm">archive</span> Archivar
+      </button>
+</div>
+<div class="hidden sm:flex items-center gap-2 text-outline font-label">
+<span>Ordenado por:</span>
+<span class="font-bold text-on-surface">Más recientes primero</span>
+</div>
+</div>
+<!-- Recordings List -->
+<div class="space-y-3.5">
+<!-- Item 1: Completed / Lista -->
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col lg:flex-row lg:items-center justify-between gap-5 group">
+<div class="flex items-start gap-4 flex-1 min-w-0">
+<input class="w-4 h-4 mt-2 rounded text-primary accent-primary cursor-pointer shrink-0" type="checkbox"/>
+<!-- Thumbnail & Source badge -->
+<div class="relative w-24 h-20 sm:w-28 sm:h-20 rounded-xl overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300" data-alt="Modern collaborative boardroom meeting with diverse Latin American executives and tech leads presenting enterprise software architectures on ultra-high resolution displays, cinematic daylight, earthy natural interior." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDLJUNKv7UNIqWlUDrPots5mqaztL_IxFAQfAMDaQAi-tcOKz5GFJqpJYtfIl9mJRhiX49GedLGtQvQzAMRrgSX5Ay_8VF3Q2fS-b6clq_AiOUV1FI2D65VnZbB3I96RcpOSx91djlD5pByhb2KBqUZpAELVVDRRLDvr46wPVoY8hIwXYLe4e-rHmVztIYJfe4Qu3wD0hKTYHF_XE3yJ4p43y6JnRQ5fXMhTs9-Dazq"/>
+<div class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-inverse-surface/80 backdrop-blur-sm text-[10px] text-inverse-on-surface font-semibold font-label">
+            45m 10s
+          </div>
+<div class="absolute top-1 left-1 w-5 h-5 rounded-full bg-surface-container-lowest/90 flex items-center justify-center text-primary shadow-sm" title="Google Meet">
+<span class="material-symbols-outlined text-[13px]">video_camera_front</span>
+</div>
+</div>
+<!-- Meeting Details -->
+<div class="flex-1 min-w-0 space-y-1.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline font-semibold text-base sm:text-lg text-on-surface hover:text-primary transition-colors cursor-pointer truncate">
+              Demo Comercial &amp; Arquitectura Cloud - Grupo Éxito
+            </span>
+<button class="text-outline hover:text-on-surface p-1 rounded-full hover:bg-surface-container transition-colors" title="Renombrar título y etiquetas" type="button">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+</div>
+<!-- Metadata row -->
+<div class="flex items-center gap-3 text-xs text-on-surface-variant flex-wrap font-body">
+<span class="inline-flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-sm text-outline">business</span> Grupo Éxito
+            </span>
+<span class="text-outline">•</span>
+<span>Modernización Retail 2025</span>
+<span class="text-outline">•</span>
+<span class="text-outline">24 Oct 2025, 10:30 AM</span>
+</div>
+<!-- Speakers & Template info -->
+<div class="flex items-center gap-4 text-xs pt-1 flex-wrap">
+<div class="flex items-center gap-1.5">
+<span class="text-outline font-label">Participantes:</span>
+<div class="flex -space-x-1.5">
+<div class="w-5 h-5 rounded-full bg-primary-container text-on-primary-container text-[10px] font-bold flex items-center justify-center ring-2 ring-surface-container-lowest">FS</div>
+<div class="w-5 h-5 rounded-full bg-secondary-container text-on-secondary-container text-[10px] font-bold flex items-center justify-center ring-2 ring-surface-container-lowest">CM</div>
+<div class="w-5 h-5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-bold flex items-center justify-center ring-2 ring-surface-container-lowest">AP</div>
+</div>
+<span class="text-outline text-[11px] ml-1">Fer (Summan), Carlos M., Andrea P.</span>
+</div>
+<div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px]">
+<span class="material-symbols-outlined text-xs text-tertiary">description</span>
+<span>Plantilla: Propuesta Comercial Estándar</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Status & Actions -->
+<div class="flex items-center justify-between lg:justify-end gap-3 shrink-0 pt-2 lg:pt-0 pl-10 lg:pl-0">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold font-label">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+          Lista
+        </span>
+<div class="flex items-center gap-1.5">
+<button class="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold transition-all shadow-sm flex items-center gap-1.5" type="button">
+<span>Abrir reunión</span>
+<span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="Descargar transcripción y video" type="button">
+<span class="material-symbols-outlined text-base">download</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="Copiar resumen ejecutivo" type="button">
+<span class="material-symbols-outlined text-base">content_copy</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-outline hover:text-on-surface transition-colors" title="Más opciones" type="button">
+<span class="material-symbols-outlined text-base">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 2: Requiere revisión de hablantes -->
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col lg:flex-row lg:items-center justify-between gap-5 group">
+<div class="flex items-start gap-4 flex-1 min-w-0">
+<input class="w-4 h-4 mt-2 rounded text-primary accent-primary cursor-pointer shrink-0" type="checkbox"/>
+<div class="relative w-24 h-20 sm:w-28 sm:h-20 rounded-xl overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300" data-alt="Atmospheric warm conference setting with banking analysts and cloud consultants discussing cloud data pipeline architectures, soft natural wood aesthetics, ambient terracotta lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAbMLBecXl0HeW0oaiuwYig01U1CMClZJQpUCDAhTWBmyJsMEE8oFV4vnjw-gUh-2EZNnkx4_SLnZS1Kgzi3S3-k60g3maKqhC_xD8MVwxUjDhnihV3UhIvFIGfkYc7lTkYCmttgcTY3qisRuHP_hcCvLQ6UESgW0ivP2tNRI_bfosIRD6YUYLrp9OeOA4cT8augzIJ36FBixrz4ceg4_vXr2v-feUylHSzLtGOyd2A"/>
+<div class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-inverse-surface/80 backdrop-blur-sm text-[10px] text-inverse-on-surface font-semibold font-label">
+            32m 40s
+          </div>
+<div class="absolute top-1 left-1 w-5 h-5 rounded-full bg-surface-container-lowest/90 flex items-center justify-center text-primary shadow-sm" title="Zoom">
+<span class="material-symbols-outlined text-[13px]">videocam</span>
+</div>
+</div>
+<div class="flex-1 min-w-0 space-y-1.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline font-semibold text-base sm:text-lg text-on-surface hover:text-primary transition-colors cursor-pointer truncate">
+              Kickoff Migración Data Lake - Bancolombia
+            </span>
+<button class="text-outline hover:text-on-surface p-1 rounded-full hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant flex-wrap font-body">
+<span class="inline-flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-sm text-outline">business</span> Bancolombia
+            </span>
+<span class="text-outline">•</span>
+<span>Arquitectura Cloud</span>
+<span class="text-outline">•</span>
+<span class="text-outline">23 Oct 2025, 03:00 PM</span>
+</div>
+<div class="flex items-center gap-3 text-xs pt-1 flex-wrap">
+<span class="text-tertiary font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">record_voice_over</span>
+              Voz de 2 ponentes no identificadas con certeza
+            </span>
+<span class="text-outline">•</span>
+<span class="text-outline text-[11px]">Modelo de diarización solicitó validación humana</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between lg:justify-end gap-3 shrink-0 pt-2 lg:pt-0 pl-10 lg:pl-0">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-xs font-bold font-label">
+<span class="w-2 h-2 rounded-full bg-tertiary"></span>
+          2 voces pendientes
+        </span>
+<div class="flex items-center gap-1.5">
+<button class="px-4 py-2 rounded-xl bg-tertiary hover:bg-tertiary/90 text-on-tertiary text-xs font-bold transition-all shadow-sm flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-sm">record_voice_over</span>
+<span>Revisar hablantes</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-outline hover:text-on-surface transition-colors" type="button">
+<span class="material-symbols-outlined text-base">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 3: Transcribiendo / Whisper Core -->
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col lg:flex-row lg:items-center justify-between gap-5 group">
+<div class="flex items-start gap-4 flex-1 min-w-0">
+<input class="w-4 h-4 mt-2 rounded text-primary accent-primary cursor-pointer shrink-0" type="checkbox"/>
+<div class="relative w-24 h-20 sm:w-28 sm:h-20 rounded-xl overflow-hidden shrink-0 bg-surface-container flex items-center justify-center">
+<div class="absolute inset-0 bg-surface-container-high flex flex-col items-center justify-center gap-1">
+<span class="material-symbols-outlined text-2xl text-primary animate-pulse">graphic_eq</span>
+<span class="text-[10px] font-bold text-outline font-label uppercase">En vivo</span>
+</div>
+<div class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-inverse-surface/80 backdrop-blur-sm text-[10px] text-inverse-on-surface font-semibold font-label">
+            18m 12s
+          </div>
+<div class="absolute top-1 left-1 w-5 h-5 rounded-full bg-surface-container-lowest/90 flex items-center justify-center text-primary shadow-sm" title="Microsoft Teams">
+<span class="material-symbols-outlined text-[13px]">groups</span>
+</div>
+</div>
+<div class="flex-1 min-w-0 space-y-2">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline font-semibold text-base sm:text-lg text-on-surface hover:text-primary transition-colors cursor-pointer truncate">
+              Sincronización Semanal de Sprints &amp; Entregables
+            </span>
+<button class="text-outline hover:text-on-surface p-1 rounded-full hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant flex-wrap font-body">
+<span class="inline-flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-sm text-outline">domain</span> Interno Summan
+            </span>
+<span class="text-outline">•</span>
+<span>Equipo Frontend &amp; IA</span>
+<span class="text-outline">•</span>
+<span class="text-primary font-bold">Hoy, 09:15 AM</span>
+</div>
+<!-- Realtime Progress Bar -->
+<div class="space-y-1 max-w-md">
+<div class="flex items-center justify-between text-[11px] font-label">
+<span class="text-on-surface-variant font-medium">Whisper Core v3 (Diarización &amp; Resumen)</span>
+<span class="text-primary font-bold">72%</span>
+</div>
+<div class="w-full bg-surface-container rounded-full h-2 overflow-hidden">
+<div class="bg-primary h-full rounded-full transition-all duration-500 ease-out" style="width: 72%"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between lg:justify-end gap-3 shrink-0 pt-2 lg:pt-0 pl-10 lg:pl-0">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-container text-on-primary-container text-xs font-bold font-label">
+<span class="w-2 h-2 rounded-full bg-primary animate-ping"></span>
+          Transcribiendo
+        </span>
+<div class="flex items-center gap-1.5">
+<button class="px-3.5 py-2 rounded-xl bg-surface-container-high hover:bg-surface-variant text-on-surface text-xs font-bold transition-all flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-sm">query_stats</span>
+<span>Ver diagnóstico en vivo</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-outline hover:text-on-surface transition-colors" type="button">
+<span class="material-symbols-outlined text-base">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 4: Error recuperable -->
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col lg:flex-row lg:items-center justify-between gap-5 group">
+<div class="flex items-start gap-4 flex-1 min-w-0">
+<input class="w-4 h-4 mt-2 rounded text-primary accent-primary cursor-pointer shrink-0" type="checkbox"/>
+<div class="relative w-24 h-20 sm:w-28 sm:h-20 rounded-xl overflow-hidden shrink-0 bg-surface-container flex items-center justify-center">
+<div class="absolute inset-0 bg-error/5 flex flex-col items-center justify-center gap-1">
+<span class="material-symbols-outlined text-2xl text-error">audio_file</span>
+<span class="text-[10px] font-bold text-error font-label">.WAV 48kHz</span>
+</div>
+<div class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-inverse-surface/80 backdrop-blur-sm text-[10px] text-inverse-on-surface font-semibold font-label">
+            58m 04s
+          </div>
+<div class="absolute top-1 left-1 w-5 h-5 rounded-full bg-surface-container-lowest/90 flex items-center justify-center text-error shadow-sm" title="Archivo de audio local">
+<span class="material-symbols-outlined text-[13px]">mic_external_on</span>
+</div>
+</div>
+<div class="flex-1 min-w-0 space-y-1.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline font-semibold text-base sm:text-lg text-on-surface hover:text-primary transition-colors cursor-pointer truncate">
+              Entrevista Requerimientos POS Almacenes
+            </span>
+<button class="text-outline hover:text-on-surface p-1 rounded-full hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant flex-wrap font-body">
+<span class="inline-flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-sm text-outline">business</span> Nutresa
+            </span>
+<span class="text-outline">•</span>
+<span>Cadena de Suministro</span>
+<span class="text-outline">•</span>
+<span class="text-outline">22 Oct 2025, 11:00 AM</span>
+</div>
+<div class="flex items-center gap-2 text-xs pt-1 text-error font-medium">
+<span class="material-symbols-outlined text-sm">error</span>
+<span>El audio presentó ruido de fondo y solapamiento severo en el minuto 24. No se perdió el archivo original.</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between lg:justify-end gap-3 shrink-0 pt-2 lg:pt-0 pl-10 lg:pl-0">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-error-container text-on-error-container text-xs font-bold font-label">
+<span class="w-2 h-2 rounded-full bg-error"></span>
+          Error de procesado
+        </span>
+<div class="flex items-center gap-1.5">
+<button class="px-4 py-2 rounded-xl bg-error hover:bg-error/90 text-on-error text-xs font-bold transition-all shadow-sm flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-sm">restart_alt</span>
+<span>Reintentar procesamiento</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-outline hover:text-on-surface transition-colors" type="button">
+<span class="material-symbols-outlined text-base">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Item 5: Completed / Lista -->
+<div class="bg-surface-container-lowest p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow flex flex-col lg:flex-row lg:items-center justify-between gap-5 group">
+<div class="flex items-start gap-4 flex-1 min-w-0">
+<input class="w-4 h-4 mt-2 rounded text-primary accent-primary cursor-pointer shrink-0" type="checkbox"/>
+<div class="relative w-24 h-20 sm:w-28 sm:h-20 rounded-xl overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover transition-transform group-hover:scale-105 duration-300" data-alt="Executive strategy meeting overlooking city view, digital product roadmap displayed on screens, warm ambient coffee shop colors, minimalist wooden furniture." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCPdUrCyjwyGesJj_WH3_dBDTpajUomhvsoQ_Ukdryz0S5V9loSbi2hKweiyptX39-hO-7lYDEgxMiCWiLvFnFrKDEdwIU2mD0SMyNmaMjnMpdZ48R-1dM_7g5ihihLA5cqUtxco4TJiVjRc0spjuDpRh8L24DKzs72LkNvemjkuPUcK9jvEvYi43PUrDO1BZHnpwtPZ2777FYamFhoQEI4bWW1TKRuUBZupDy84cUI"/>
+<div class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-inverse-surface/80 backdrop-blur-sm text-[10px] text-inverse-on-surface font-semibold font-label">
+            52m 15s
+          </div>
+<div class="absolute top-1 left-1 w-5 h-5 rounded-full bg-surface-container-lowest/90 flex items-center justify-center text-primary shadow-sm" title="Google Meet">
+<span class="material-symbols-outlined text-[13px]">video_camera_front</span>
+</div>
+</div>
+<div class="flex-1 min-w-0 space-y-1.5">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-headline font-semibold text-base sm:text-lg text-on-surface hover:text-primary transition-colors cursor-pointer truncate">
+              Presentación de Avance Q3 y Roadmap GenAI
+            </span>
+<button class="text-outline hover:text-on-surface p-1 rounded-full hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+</div>
+<div class="flex items-center gap-3 text-xs text-on-surface-variant flex-wrap font-body">
+<span class="inline-flex items-center gap-1 font-semibold text-on-surface">
+<span class="material-symbols-outlined text-sm text-outline">business</span> Sura
+            </span>
+<span class="text-outline">•</span>
+<span>Digital Twin Hub</span>
+<span class="text-outline">•</span>
+<span class="text-outline">20 Oct 2025, 04:30 PM</span>
+</div>
+<div class="flex items-center gap-4 text-xs pt-1 flex-wrap">
+<div class="flex items-center gap-1.5">
+<span class="text-outline font-label">Participantes:</span>
+<span class="text-on-surface-variant font-medium">Fer (Summan), Laura G., Mateo R., +2</span>
+</div>
+<div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px]">
+<span class="material-symbols-outlined text-xs text-primary">auto_stories</span>
+<span>Minuta y Compromisos enviados por correo</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between lg:justify-end gap-3 shrink-0 pt-2 lg:pt-0 pl-10 lg:pl-0">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold font-label">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+          Lista
+        </span>
+<div class="flex items-center gap-1.5">
+<button class="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold transition-all shadow-sm flex items-center gap-1.5" type="button">
+<span>Abrir reunión</span>
+<span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="Descargar archivos" type="button">
+<span class="material-symbols-outlined text-base">download</span>
+</button>
+<button class="p-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-outline hover:text-on-surface transition-colors" type="button">
+<span class="material-symbols-outlined text-base">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Pagination & Status Footer -->
+<div class="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-2 font-label text-xs text-on-surface-variant">
+<div class="flex items-center gap-2">
+<span class="font-medium">Mostrando</span>
+<span class="font-bold text-on-surface">1 - 5</span>
+<span>de</span>
+<span class="font-bold text-on-surface">42</span>
+<span>grabaciones registradas</span>
+</div>
+<!-- Paging controls -->
+<div class="flex items-center gap-1.5">
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-low text-outline hover:text-on-surface disabled:opacity-40 transition-colors flex items-center gap-1" disabled="" type="button">
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+<span>Anterior</span>
+</button>
+<div class="flex items-center gap-1">
+<button class="w-8 h-8 rounded-lg bg-primary text-on-primary font-bold" type="button">1</button>
+<button class="w-8 h-8 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-medium transition-colors" type="button">2</button>
+<button class="w-8 h-8 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-medium transition-colors" type="button">3</button>
+<span class="px-1 text-outline">...</span>
+<button class="w-8 h-8 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface font-medium transition-colors" type="button">9</button>
+</div>
+<button class="px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface transition-colors flex items-center gap-1 font-medium" type="button">
+<span>Siguiente</span>
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</div>
+</div>
+</div></div></main><footer class="w-full bg-surface-container-low py-8 shadow-[0_-1px_6px_rgba(46,50,48,0.03)]"><div class="max-w-7xl mx-auto px-6 lg:px-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-label text-on-surface-variant"><div class="flex items-center gap-3"><div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-primary"><span class="material-symbols-outlined text-xs">graphic_eq</span></div><span>© 2025 Sauri Voice Intelligence. Todos los derechos reservados.</span></div><div class="flex items-center gap-6 text-outline"><a class="hover:text-on-surface transition-colors" href="#">Privacidad y Ética</a><a class="hover:text-on-surface transition-colors" href="#">Documentación</a><a class="hover:text-on-surface transition-colors" href="#">Soporte</a></div></div></footer></body></html>

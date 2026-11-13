@@ -4,6 +4,7 @@ import { PanelHeader } from "./components/PanelHeader";
 import { CaptureControls, type MicOption } from "./components/CaptureControls";
 import { NotesList } from "./components/NotesList";
 import { AuthView } from "./components/AuthView";
+import { RecordingCompletionStatus } from "./components/RecordingCompletionStatus";
 import { applyCaptureEvent } from "../core/capture";
 import { deriveViewState } from "../core/view";
 import {
@@ -19,6 +20,7 @@ import "../core/design/tokens.css";
 
 interface SauriBackgroundState {
   status: "idle" | "pending" | "recording";
+  sessionId?: string;
 }
 
 function mapCaptureState(status: SauriBackgroundState["status"]): CaptureState {
@@ -30,6 +32,8 @@ export function SidePanelApp() {
   const [sessionActive, setSessionActive] = useState<boolean | null>(null);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [elapsedTimeMs, setElapsedTimeMs] = useState(0);
+  const [recordingSessionId, setRecordingSessionId] = useState<string | undefined>();
+  const [projectionReady, setProjectionReady] = useState(false);
   const [microphones, setMicrophones] = useState<MicOption[]>([]);
   const [selectedMicrophone, setSelectedMicrophone] = useState<MicOption | undefined>(undefined);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
@@ -50,19 +54,35 @@ export function SidePanelApp() {
   }, [loadSession]);
 
   useEffect(() => {
-    chrome.storage.session.get("sauriState").then((result) => {
-      const state = result.sauriState as SauriBackgroundState | undefined;
-      if (state) setCaptureState(mapCaptureState(state.status));
-    });
+    let cancelled = false;
+    let changed = false;
+    const loadProjection = async () => {
+      try {
+        const result = await chrome.storage.session.get("sauriState");
+        // A newer storage event wins over the initial asynchronous snapshot.
+        if (cancelled || changed) return;
+        const state = result.sauriState as SauriBackgroundState | undefined;
+        setCaptureState(mapCaptureState(state?.status ?? "idle"));
+        setRecordingSessionId(state?.sessionId);
+        setProjectionReady(true);
+      } catch {
+        // No volatile hint: the status component can recover the durable record.
+        if (!cancelled && !changed) setProjectionReady(true);
+      }
+    };
+    void loadProjection();
 
     const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
       if (areaName === "session" && changes.sauriState) {
+        changed = true;
         const state = changes.sauriState.newValue as SauriBackgroundState | undefined;
         setCaptureState(mapCaptureState(state?.status ?? "idle"));
+        setRecordingSessionId(state?.sessionId);
+        setProjectionReady(true);
       }
     };
     chrome.storage.onChanged.addListener(listener);
-    return () => chrome.storage.onChanged.removeListener(listener);
+    return () => { cancelled = true; chrome.storage.onChanged.removeListener(listener); };
   }, []);
 
   useEffect(() => {
@@ -223,6 +243,7 @@ export function SidePanelApp() {
         elapsedTimeMs={elapsedTimeMs}
         microphoneError={microphoneError}
       />
+      {projectionReady && <RecordingCompletionStatus sessionId={recordingSessionId} />}
       <NotesList
         state={notesViewState}
         notes={notesRequest.data ?? notesRequest.previous ?? []}

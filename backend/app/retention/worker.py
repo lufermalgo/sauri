@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import SessionRecording, Transcript
 from app.infra.object_store import ObjectStore
+from app.retention.cleanup import drain_pending_object_deletions
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,10 @@ async def run_retention_deletion(
     # e. Commit
     await session.commit()
 
-    # f. Cleanup log
+    # f. Recover staged objects whose previous cleanup attempt failed.
+    await drain_pending_object_deletions(session, object_store)
+
+    # g. Cleanup log
     total = deleted_recordings + deleted_transcripts
     if total > 0:
         logger.info(

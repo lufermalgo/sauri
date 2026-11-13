@@ -2,7 +2,17 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infra.database import Base
@@ -18,7 +28,7 @@ class Meeting(Base):
     __tablename__ = "meetings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    meet_link: Mapped[str] = mapped_column(String(512), nullable=False)
+    meet_link: Mapped[str | None] = mapped_column(String(512), nullable=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     origin: Mapped[str] = mapped_column(String(64), nullable=False)  # link | calendar_invite | manual
     calendar_invite_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -73,7 +83,7 @@ class SessionRecording(Base):
     idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
     capture_origin: Mapped[str] = mapped_column(
         String(64), nullable=False
-    )  # chrome_extension | server_bot
+    )  # chrome_extension | server_bot | web_upload
     audio_ref: Mapped[str] = mapped_column(String(1024), nullable=False)
     video_ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -112,6 +122,23 @@ class RecordingMediaSource(Base):
     quality_label: Mapped[str] = mapped_column(String(64), nullable=False)
 
     recording: Mapped[SessionRecording] = relationship(back_populates="media_sources")
+
+
+class PendingObjectDeletion(Base):
+    """Durable cleanup task for a staged object not referenced by a recording."""
+
+    __tablename__ = "pending_object_deletions"
+    __table_args__ = (
+        UniqueConstraint(
+            "cleanup_scope_hash",
+            "object_ref",
+            name="uq_pending_object_deletion_scope_ref",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    cleanup_scope_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    object_ref: Mapped[str] = mapped_column(String(2048), nullable=False)
 
 
 # ---------------------------------------------------------------------------
@@ -204,10 +231,19 @@ class AccessLog(Base):
 
 
 class Diarization(Base):
-    """Diarization result associated 1:1 with a Meeting (Req. 8.1, 8.4, 9.3, 9.4, 10.5)."""
+    """Diarization result for one processing generation associated with a Meeting."""
 
     __tablename__ = "diarizations"
-    __table_args__ = (UniqueConstraint("meeting_id", name="uq_diarization_meeting_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "meeting_id", "processing_revision", name="uq_diarization_meeting_revision"
+        ),
+        CheckConstraint(
+            "diarization_state IN "
+            "('pending', 'in_progress', 'completed', 'failed', 'not_reconstructible')",
+            name="ck_diarizations_state_valid",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     meeting_id: Mapped[str] = mapped_column(
@@ -216,8 +252,16 @@ class Diarization(Base):
     transcript_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("transcripts.id"), nullable=False
     )
-    provider: Mapped[str] = mapped_column(String(128), nullable=False)
-    speaker_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    speaker_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    processing_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    is_legacy: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     diarization_state: Mapped[str] = mapped_column(
         String(32), nullable=False
     )  # pending | in_progress | completed | failed
@@ -267,7 +311,11 @@ class SpeakerAssignment(Base):
     """Assignment of a SpeechTurn to a Speaker (Req. 7.1)."""
 
     __tablename__ = "speaker_assignments"
-    __table_args__ = (UniqueConstraint("turn_id", name="uq_speaker_assignment_turn_id"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "diarization_id", "turn_id", name="uq_speaker_assignment_diarization_turn"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     diarization_id: Mapped[str] = mapped_column(
@@ -279,6 +327,7 @@ class SpeakerAssignment(Base):
     speaker_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("speakers.id", ondelete="CASCADE"), nullable=False
     )
+    overlap_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     diarization: Mapped["Diarization"] = relationship(
         "Diarization", back_populates="assignments"
@@ -374,6 +423,132 @@ class SpeakerReviewIdempotencyReceipt(Base):
     idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     response: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Manual meeting recovery persistence
+# ---------------------------------------------------------------------------
+
+
+class MeetingProcessingClaim(Base):
+    """Durable per-meeting processing generation and exclusive claim identity."""
+
+    __tablename__ = "meeting_processing_claims"
+    __table_args__ = (UniqueConstraint("meeting_id", name="uq_processing_claim_meeting_id"),)
+
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), primary_key=True
+    )
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    claim_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    claim_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    claim_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class MeetingRecoveryOperation(Base):
+    """Content-free audit and idempotency record for one recovery operation."""
+
+    __tablename__ = "meeting_recovery_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_id", "meeting_id", "idempotency_key",
+            name="uq_recovery_operation_idempotency_scope",
+        ),
+        CheckConstraint(
+            "preservation_counts IS NULL OR "
+            "CAST(preservation_counts AS TEXT) = '{}'",
+            name="ck_recovery_operation_empty_preservation_counts",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id"), nullable=False
+    )
+    actor_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=False
+    )
+    # Store a digest of the caller's key, never the request's raw value.
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    processing_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    preservation_snapshot_digest: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    preservation_counts: Mapped[dict[str, int] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class MeetingRecoveryOutbox(Base):
+    """Durable outbox envelope containing opaque job identifiers only."""
+
+    __tablename__ = "meeting_recovery_outbox"
+    __table_args__ = (
+        UniqueConstraint("operation_id", name="uq_recovery_outbox_operation_id"),
+        CheckConstraint(
+            "CAST(job_identifiers AS TEXT) = '{}'",
+            name="ck_recovery_outbox_empty_job_identifiers",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("meeting_recovery_operations.id"),
+        nullable=False,
+    )
+    topic: Mapped[str] = mapped_column(String(128), nullable=False)
+    job_identifiers: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
+    processing_generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    delivery_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class ManualRecoveryPilotGate(Base):
+    """Singleton persistence for the separately authorized recovery pilot."""
+
+    __tablename__ = "manual_recovery_pilot_gate"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_manual_recovery_pilot_gate_singleton"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="disabled")
+    allowed_meeting_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="SET NULL"), nullable=True
+    )
+    authorized_by: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    pilot_operation_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("meeting_recovery_operations.id"),
+        unique=True, nullable=True,
+    )
+    armed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    verification_actor_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verification_artifact_snapshot_match: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True
+    )
 
 
 # ---------------------------------------------------------------------------

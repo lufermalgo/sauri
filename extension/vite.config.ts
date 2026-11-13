@@ -12,6 +12,7 @@ export default defineConfig({
         offscreen: resolve(__dirname, "src/offscreen.html"),
         detail: resolve(__dirname, "src/detail/index.html"),
         options: resolve(__dirname, "src/options/index.html"),
+        ...(process.env.SAURI_E2E_BUILD === "1" ? { e2eFixture: resolve(__dirname, "src/e2e/fixture.html") } : {}),
       },
     },
   },

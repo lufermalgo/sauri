@@ -6,19 +6,30 @@
  * Task: 15.5 — Validates: Requirements 9.1, 9.2, 4.5
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import "@testing-library/jest-dom/vitest";
 import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
 import type { Transcript, SpeechTurn } from "@sauri/shared-types";
+import type { TimedPassage } from "../api";
 
 import { TranscriptView } from "./TranscriptView";
 import * as api from "../api";
 
 vi.mock("../api", () => ({
   getTranscript: vi.fn(),
+  getPlaybackManifest: vi.fn(),
+  getDiarization: vi.fn(),
   getSpeakerReview: vi.fn(),
   playSpeakerExcerpt: vi.fn(),
   submitSpeakerDisposition: vi.fn(),
 }));
+
+beforeEach(() => {
+  vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(
+    null as unknown as Awaited<ReturnType<typeof api.getPlaybackManifest>>,
+  );
+  vi.spyOn(api, "getDiarization").mockResolvedValue({ speakers: [], assignments: [] });
+});
 
 afterEach(() => {
   cleanup();
@@ -27,7 +38,7 @@ afterEach(() => {
 
 function transcript(
   turns: SpeechTurn[]
-): Transcript & { turns: SpeechTurn[] } {
+): Transcript & { segments: TimedPassage[]; turns: SpeechTurn[] } {
   return {
     id: "t-1",
     meetingId: "r-1",
@@ -35,6 +46,7 @@ function transcript(
     provider: "local",
     supportsTurns: true,
     createdAt: new Date().toISOString(),
+    segments: [],
     turns,
   };
 }
@@ -71,6 +83,191 @@ describe("TranscriptView — renders the transcript view", () => {
     expect(screen.getByText("Hola")).toBeDefined(); // spanish-sample-data
     expect(screen.getByText("¿Cómo estás?")).toBeDefined(); // spanish-sample-data
     expect(screen.getByText(/00:00.*00:01/)).toBeDefined();
+  });
+
+  it("groups adjacent transcript fragments by their assigned speaker while preserving speaker changes", async () => {
+    const transcriptData = transcript([
+      turn({ id: "fragment-1", text: "Synthetic opening", startMs: 0, endMs: 500, sequence: 1 }),
+      turn({ id: "fragment-2", text: "continues here", startMs: 500, endMs: 900, sequence: 2 }),
+      turn({ id: "fragment-3", text: "Synthetic reply", startMs: 900, endMs: 1400, sequence: 3 }),
+    ]);
+    transcriptData.segments = transcriptData.turns.map((speechTurn) => ({
+      id: speechTurn.id,
+      text: speechTurn.text,
+      startMs: speechTurn.startMs,
+      endMs: speechTurn.endMs,
+      sequence: speechTurn.sequence,
+    }));
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcriptData);
+    const diarizationApi = api as unknown as {
+      getDiarization: ReturnType<typeof vi.fn>;
+    };
+    diarizationApi.getDiarization.mockResolvedValue({
+      speakers: [
+        { id: "speaker-a", label: "Speaker A", sequence: 1 },
+        { id: "speaker-b", label: "Speaker B", sequence: 2 },
+      ],
+      assignments: [
+        { turn_id: "fragment-1", speaker_id: "speaker-a" },
+        { turn_id: "fragment-2", speaker_id: "speaker-a" },
+        { turn_id: "fragment-3", speaker_id: "speaker-b" },
+      ],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("Synthetic opening continues here");
+    expect(rows[0].querySelector('[data-testid="transcript-speaker-label"]')?.textContent).toBe("Speaker A");
+    expect(rows[1].textContent).toContain("Synthetic reply");
+    expect(rows[1].querySelector('[data-testid="transcript-speaker-label"]')?.textContent).toBe("Speaker B");
+  });
+
+  it("seeks playback to the first source fragment when a grouped turn is activated", async () => {
+    const transcriptData = transcript([
+      turn({ id: "fragment-1", text: "Synthetic opening", startMs: 500, endMs: 900, sequence: 1 }),
+      turn({ id: "fragment-2", text: "continues here", startMs: 900, endMs: 1300, sequence: 2 }),
+    ]);
+    transcriptData.segments = transcriptData.turns.map((speechTurn) => ({
+      id: speechTurn.id,
+      text: speechTurn.text,
+      startMs: speechTurn.startMs,
+      endMs: speechTurn.endMs,
+      sequence: speechTurn.sequence,
+    }));
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcriptData);
+    const diarizationApi = api as unknown as {
+      getDiarization: ReturnType<typeof vi.fn>;
+    };
+    diarizationApi.getDiarization.mockResolvedValue({
+      speakers: [{ id: "speaker-a", label: "Speaker A", sequence: 1 }],
+      assignments: [
+        { turn_id: "fragment-1", speaker_id: "speaker-a" },
+        { turn_id: "fragment-2", speaker_id: "speaker-a" },
+      ],
+    });
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1",
+      duration_seconds: 10,
+      video_presence: "absent",
+      audio_source: { source_id: "audio-1", url: "https://media.example.test/audio.wav", mime_type: "audio/wav" },
+      muxed_video_source: null,
+      video_sources: [],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const seekButton = await screen.findByRole("button", { name: "Play turn at 00:00" });
+    fireEvent.click(seekButton);
+
+    expect(screen.getByTestId("playback-audio")).toHaveProperty("currentTime", 0.5);
+  });
+
+  it("shows the speaker-identification state when diarization is not found", async () => {
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
+    vi.spyOn(api, "getDiarization").mockRejectedValue(new Error("Error 404"));
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    expect(await screen.findByText("Identificando hablantes")).toBeVisible(); // spanish-sample-data
+  });
+
+  it("renders a speaker label on every transcript row, including unresolved rows", async () => {
+    const transcriptData = transcript([
+      turn({ id: "t1", text: "Synthetic first turn", sequence: 1 }),
+      turn({ id: "t2", text: "Synthetic second turn", sequence: 2 }),
+      turn({ id: "t3", text: "Synthetic unresolved turn", sequence: 3 }),
+    ]);
+    transcriptData.segments = transcriptData.turns.map((speechTurn) => ({
+      id: speechTurn.id,
+      text: speechTurn.text,
+      startMs: speechTurn.startMs,
+      endMs: speechTurn.endMs,
+      sequence: speechTurn.sequence,
+    }));
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcriptData);
+    const diarizationApi = api as unknown as {
+      getDiarization: ReturnType<typeof vi.fn>;
+    };
+    diarizationApi.getDiarization.mockResolvedValue({
+      speakers: [
+        { id: "speaker-a", label: "Speaker 1", sequence: 1 },
+        { id: "speaker-b", label: "Speaker 2", sequence: 2 },
+      ],
+      assignments: [
+        { turn_id: "t1", speaker_id: "speaker-a" },
+        { turn_id: "t2", speaker_id: "speaker-b" },
+      ],
+    });
+    vi.spyOn(api, "getSpeakerReview").mockResolvedValue({
+      reviewId: "review-synthetic",
+      revisionId: "revision-synthetic",
+      status: "complete",
+      items: [
+        { speakerId: "speaker-a", currentLabel: "Synthetic Person A", attributionState: "recognized", disposition: "named", excerptRef: "synthetic-a", expectedVersion: 1 },
+        { speakerId: "speaker-b", currentLabel: "Synthetic Person B", attributionState: "recognized", disposition: "named", excerptRef: "synthetic-b", expectedVersion: 1 },
+      ],
+    });
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1",
+      duration_seconds: 10,
+      video_presence: "absent",
+      audio_source: { source_id: "audio-1", url: "https://media.example.test/audio.wav", mime_type: "audio/wav" },
+      muxed_video_source: null,
+      video_sources: [],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
+    const secondLabels = screen.getAllByText("Synthetic Person B", { selector: '[data-testid="transcript-speaker-label"]' });
+    const unresolvedLabels = screen.getAllByText("Speaker N", { selector: '[data-testid="transcript-speaker-label"]' });
+    const passageDetails = screen.getByText("Playback passages (3)").closest("details");
+    const rawLabels = Array.from(passageDetails?.querySelectorAll('[data-testid="transcript-speaker-label"]') ?? []);
+    const groupedLabels = [...firstLabels, ...secondLabels, ...unresolvedLabels]
+      .filter((label) => !passageDetails?.contains(label));
+    expect(passageDetails).not.toHaveAttribute("open");
+    expect(rawLabels).toHaveLength(3);
+    expect(groupedLabels).toHaveLength(3);
+    groupedLabels.forEach((label) => expect(label).toBeVisible());
+    rawLabels.forEach((label) => expect(label).not.toBeVisible());
+    expect(firstLabels).toHaveLength(2);
+    expect(secondLabels).toHaveLength(2);
+    expect(unresolvedLabels).toHaveLength(2);
+    const firstStyle = firstLabels[0].getAttribute("style");
+    const secondStyle = secondLabels[0].getAttribute("style");
+    expect(firstStyle).toContain("color:");
+    expect(secondStyle).toContain("color:");
+    expect(secondStyle).not.toBe(firstStyle);
+    fireEvent.click(screen.getByText("Playback passages (3)"));
+    expect(passageDetails).toHaveAttribute("open");
+    rawLabels.forEach((label) => expect(label).toBeVisible());
+    groupedLabels.forEach((label) => expect(label).toBeVisible());
+  });
+
+  it("renders the playback player before the transcript passages", async () => {
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1",
+      duration_seconds: 10,
+      video_presence: "absent",
+      audio_source: {
+        source_id: "audio-1",
+        url: "https://media.example.test/audio.wav",
+        mime_type: "audio/wav",
+      },
+      muxed_video_source: null,
+      video_sources: [],
+    });
+
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+
+    const player = await screen.findByTestId("playback-audio");
+    const transcriptHeading = await screen.findByRole("heading", { name: "Transcript" });
+    expect(
+      player.compareDocumentPosition(transcriptHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("shows the empty-state message when there are no segments", async () => {
@@ -150,9 +347,9 @@ describe("TranscriptView — speaker review", () => {
     loadReview().mockResolvedValue(review());
     const { unmount } = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
     expect(await screen.findByText("Speaker 1")).toBeDefined();
-    expect(screen.getByRole("button", { name: /confirm/i })).toBeDefined();
-    expect(screen.getByRole("button", { name: /name/i })).toBeDefined();
-    expect(screen.getByRole("button", { name: /correct/i })).toBeDefined();
+    expect((await screen.findAllByRole("button", { name: /confirm/i })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("button", { name: /name/i })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("button", { name: /correct/i })).length).toBeGreaterThan(0);
     unmount();
 
     loadTranscript();
@@ -180,7 +377,13 @@ describe("TranscriptView — speaker review", () => {
       review().items[1],
     ] }));
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: new RegExp(action, "i") }));
+    await screen.findByText("Speaker 1");
+    if (action !== "Confirm") {
+      fireEvent.change(screen.getByRole("textbox", { name: /name for speaker 1/i }), {
+        target: { value: "Ana" },
+      });
+    }
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${action} Speaker 1$`, "i") }));
     await waitFor(() => expect(update).toHaveBeenCalledWith("r-1", "revision-1", "speaker-1", request));
     expect(screen.getByText("Known Speaker")).toBeDefined();
   });
@@ -197,9 +400,9 @@ describe("TranscriptView — speaker review", () => {
     expect(load).toHaveBeenCalledTimes(2);
 
     submit().mockRejectedValue(new Error("Request failed"));
-    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Request failed");
-    expect(screen.getByRole("button", { name: /confirm/i })).toBeDefined();
+    fireEvent.click(screen.getAllByRole("button", { name: /confirm/i })[0]);
+    expect((await screen.findByRole("alert")).textContent).toContain("Request failed");
+    expect(screen.getAllByRole("button", { name: /confirm/i })[0]).toBeDefined();
   });
 
   it("exposes review actions as keyboard-operable native buttons", async () => {

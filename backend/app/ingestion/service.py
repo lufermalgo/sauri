@@ -1,7 +1,7 @@
 """Ingestion service — processes the delivery of a SessionRecording from any origin.
 
 The pipeline is identical regardless of whether `capture_origin` is
-"chrome_extension" or "server_bot". The field is stored for traceability
+"chrome_extension", "server_bot", or "web_upload". The field is stored for traceability
 but doesn't alter the flow.
 """
 
@@ -10,11 +10,63 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import Meeting, RecordingMediaSource, RecordingNotice, SessionRecording
 from app.ingestion.schemas import IngestionData
+
+
+async def _find_recording_by_key(
+    session: AsyncSession, idempotency_key: str
+) -> SessionRecording | None:
+    result = await session.execute(
+        select(SessionRecording).where(SessionRecording.idempotency_key == idempotency_key)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _classify_existing_recording(
+    session: AsyncSession,
+    recording: SessionRecording,
+    meeting: Meeting | None,
+    meeting_id: str,
+    created_by: str,
+) -> SessionRecording:
+    existing_meeting = (
+        meeting if recording.meeting_id == meeting_id else await session.get(Meeting, recording.meeting_id)
+    )
+    if existing_meeting is None or existing_meeting.created_by != created_by:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    if recording.meeting_id != meeting_id:
+        raise HTTPException(status_code=409, detail="Idempotency key conflict")
+    return recording
+
+
+async def preflight_ingestion(
+    session: AsyncSession, data: IngestionData, created_by: str
+) -> SessionRecording | None:
+    """Check ownership and classify a retry before any media object is written."""
+    meeting = await session.get(Meeting, data.meeting_id)
+    if meeting is not None and meeting.created_by != created_by:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    recording = await _find_recording_by_key(session, data.idempotency_key)
+    if recording is None:
+        return None
+    return await _classify_existing_recording(
+        session, recording, meeting, data.meeting_id, created_by
+    )
+
+
+def resolve_upload_title(title: str | None, filename: str | None) -> str:
+    """Use an explicit title or a bounded filename basename for uploaded meetings."""
+    if title is not None and title.strip():
+        return title
+
+    basename = (filename or "").replace("\\", "/").rsplit("/", maxsplit=1)[-1].strip()
+    return (basename or "Untitled recording")[:512]
 
 
 async def process_ingestion(
@@ -33,22 +85,18 @@ async def process_ingestion(
     4. Records a RecordingNotice if notice_issued_at is present.
     5. Returns the tuple (SessionRecording, is_new).
     """
-    # 1. Idempotency — if the key already exists, return the existing recording.
-    stmt = select(SessionRecording).where(
-        SessionRecording.idempotency_key == data.idempotency_key
-    )
-    result = await session.execute(stmt)
-    existing = result.scalar_one_or_none()
+    # 1. Repeat ownership and idempotency checks after media storage to cover races.
+    existing = await preflight_ingestion(session, data, created_by)
     if existing is not None:
         return existing, False
 
-    # 2. Ensure Meeting exists (auto-create if not — MVP workaround for extension flow)
+    # 2. Ensure Meeting exists (auto-create upload-only meetings without a Meet link).
     now = datetime.now(UTC)
     meeting = await session.get(Meeting, data.meeting_id)
     if meeting is None:
         meeting = Meeting(
             id=data.meeting_id,
-            meet_link=data.meet_link or "https://meet.google.com/unknown",
+            meet_link=data.meet_link,
             title=data.title,
             origin="manual",
             process_state="recording",
@@ -102,7 +150,19 @@ async def process_ingestion(
         )
         session.add(notice)
 
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        existing = await _find_recording_by_key(session, data.idempotency_key)
+        if existing is None:
+            raise
+        meeting = await session.get(Meeting, data.meeting_id)
+        existing = await _classify_existing_recording(
+            session, existing, meeting, data.meeting_id, created_by
+        )
+        return existing, False
+
     await session.refresh(recording)
 
     # 5. Return the created recording (it's new).

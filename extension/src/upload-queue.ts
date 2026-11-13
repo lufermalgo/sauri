@@ -8,6 +8,7 @@ export type UploadJobStatus = "pending" | "processing" | "done" | "failed";
 export interface UploadJob {
   id: string;
   sessionId: string;
+  meetingId?: string; // absent only for legacy jobs; never synthesize a meeting on retry
   idempotencyKey: string;
   status: UploadJobStatus;
   retryCount: number;
@@ -24,7 +25,7 @@ export interface UploadJob {
 
 export type EnqueueUploadInput = Pick<
   UploadJob,
-  "sessionId" | "idempotencyKey" | "mimeType" | "notificationEmittedAt" | "title" | "meetLink" | "videoPresence"
+  "sessionId" | "meetingId" | "idempotencyKey" | "mimeType" | "notificationEmittedAt" | "title" | "meetLink" | "videoPresence"
 >;
 
 const DB_NAME = "sauri-upload-queue";
@@ -110,6 +111,7 @@ export async function enqueueUpload(input: EnqueueUploadInput): Promise<UploadJo
   const job: UploadJob = {
     id: crypto.randomUUID(),
     sessionId: input.sessionId,
+    meetingId: input.meetingId,
     idempotencyKey: input.idempotencyKey,
     status: "pending",
     retryCount: 0,
@@ -126,7 +128,17 @@ export async function enqueueUpload(input: EnqueueUploadInput): Promise<UploadJo
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const request = store.add(job);
-    request.onsuccess = () => resolve(job);
+    tx.oncomplete = () => { db.close(); resolve(job); };
+    tx.onabort = tx.onerror = () => { db.close(); reject(tx.error ?? request.error ?? new Error("Duplicate upload job")); };
+  });
+}
+
+export async function getUploadJob(idempotencyKey: string): Promise<UploadJob | undefined> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const request = tx.objectStore(STORE_NAME).index("idempotencyKey").get(idempotencyKey);
+    request.onsuccess = () => resolve(request.result as UploadJob | undefined);
     request.onerror = () => reject(request.error);
     tx.oncomplete = () => db.close();
   });
@@ -165,28 +177,23 @@ export async function getNextPendingJob(): Promise<UploadJob | null> {
 /**
  * Sets a job's status to 'processing'.
  */
-export async function markProcessing(jobId: string): Promise<void> {
+export async function markProcessing(jobId: string): Promise<boolean> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
     const getRequest = store.get(jobId);
-
+    let claimed = false;
     getRequest.onsuccess = () => {
       const job = getRequest.result as UploadJob | undefined;
-      if (!job) {
-        reject(new Error(`Job not found: ${jobId}`));
-        return;
-      }
+      if (job?.status !== "pending") return;
+      claimed = true;
       job.status = "processing";
       job.lastAttemptAt = Date.now();
       store.put(job);
     };
-    getRequest.onerror = () => reject(getRequest.error);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
+    tx.oncomplete = () => { db.close(); resolve(claimed); };
+    tx.onabort = tx.onerror = () => { db.close(); reject(tx.error ?? new Error("Upload claim failed")); };
   });
 }
 

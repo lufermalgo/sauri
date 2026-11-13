@@ -20,10 +20,12 @@ from app.infra.database import Base
 from app.infra.models import Meeting
 
 # ---------------------------------------------------------------------------
-# Hypothesis profile: min 100 examples for property-based tests
+# Hypothesis profile: retain 100 examples without a flaky wall-clock deadline.
+# Async database-backed properties vary with scheduler and I/O contention, so
+# Hypothesis's default 200 ms deadline is not a meaningful correctness limit.
 # ---------------------------------------------------------------------------
 
-hypothesis_settings.register_profile("sauri", max_examples=100)
+hypothesis_settings.register_profile("sauri", max_examples=100, deadline=None)
 hypothesis_settings.load_profile("sauri")
 
 
