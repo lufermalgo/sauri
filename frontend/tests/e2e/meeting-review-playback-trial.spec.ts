@@ -13,7 +13,8 @@ test("trial playback uses the real WAV and seeks to the second transcript passag
   await expect(page.getByRole("heading", { name: "Meeting playback" })).toBeVisible();
 
   const media = page.getByTestId("playback-media");
-  await expect(media).toBeVisible();
+  // Audio-only media has no native controls and need not occupy visible layout space.
+  await expect(media).toBeAttached();
   await expect.poll(() => media.evaluate((element: HTMLMediaElement) => element.readyState)).toBeGreaterThanOrEqual(1);
   const { duration, sourcePath } = await media.evaluate((element: HTMLMediaElement) => ({
     duration: element.duration,
