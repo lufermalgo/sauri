@@ -271,7 +271,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T19: RED — Specify summary presentation, content preservation, empty/polling states (P2/P5)
 
-**Tracking:** Issue #287 · Card task_7218af0f45084aa5
+**Tracking:** Issue #287 · Card task_4a96167967b147c2 (current execution; historical card task_7218af0f45084aa5)
+**Status:** RED committed `e1f3a5f` before implementation, from T16+T18 candidate `791ba67`: 10 collected/10 expected failures because SummarySection is absent. Frontend typecheck PASS; no production stub or component. Handoff: `t19-red-evidence.md`. T20 must preserve this RED commit. Not integrated; Fer retains merge.
 
 **Archivo:** `frontend/src/components/SummarySection.test.tsx` (create)
 **Acción:** Add component tests for a distinct summary section, topic and ordered key points, neutral 404 empty state only when no request is pending/running, resuming latest request on mount, post-request polling, refresh on success, preserving an older summary on terminal failure, and retrying status after a network error. Assert displayed/copyable content but not unspecified serialization.
