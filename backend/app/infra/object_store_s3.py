@@ -10,8 +10,9 @@ from typing import Any
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
-from app.infra.object_store import ObjectStore
+from app.infra.object_store import ObjectAvailability, ObjectStore
 
 
 class S3ObjectStore(ObjectStore):
@@ -66,6 +67,23 @@ class S3ObjectStore(ObjectStore):
             )
         )
         return key
+
+    async def inspect(self, reference: str) -> ObjectAvailability:
+        """Only an explicit NoSuchKey is evidence of an absent object.
+
+        S3 HEAD can return an unqualified 404 for an inaccessible/missing bucket;
+        neither that nor a network, permission or service error proves key absence.
+        """
+        try:
+            await asyncio.to_thread(
+                functools.partial(self._client.head_object, Bucket=self._bucket, Key=reference)
+            )
+        except ClientError as exc:
+            if (exc.response.get("Error", {}).get("Code") == "NoSuchKey"
+                    and exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404):
+                return "missing"
+            raise
+        return "available"
 
     async def get(self, reference: str) -> bytes:
         """Downloads the content of an object from the bucket."""
