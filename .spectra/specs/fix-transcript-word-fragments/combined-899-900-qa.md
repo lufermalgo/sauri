@@ -55,7 +55,7 @@ Proyecto conservado `sauri-local-qa-04d47768cad6`. API/worker `sauri-combined-ap
 
 Dump PostgreSQL predeploy privado (modo0600) en temp `combined-predeploy.dump`; no publicarlo. Antes/después se compararon cantidad + MD5 de JSON de todas las filas, excluyendo solo las dos columnas nuevas de diarizations. **Igualdad exacta** para: 9 meetings, 9 transcripts, 4002 speech_turns, 9 diarizations, 38 speakers, 3987 assignments, 9 reviews, 38 review_items, 9 recordings, 9 media_sources, 0 meeting_summaries y 1 summary_template. Esto prueba que el despliegue no sustituyó fuentes/resultados/revisiones existentes; no afirma que exista ya un resumen generado ni acredita bytes de objetos con un hash nuevo. Ningún comando de despliegue escribió al object store.
 
-Artefactos operativos privados en `/var/folders/x6/96ywnlxd7kxfr4qns4c8_0hc0000gn/T/apx-scratch-d2296a21/th_0eb2f9523cf04772/`: `deploy-combined.py`, `combined-899-900.override.yml`, Dockerfiles de imágenes, `combined-before-hashes.json`, `combined-after-hashes.json`. El contenedor PostgreSQL desechable propio se detiene al cierre, sin borrar almacenamiento del dueño.
+Artefactos operativos privados en `/var/folders/x6/96ywnlxd7kxfr4qns4c8_0hc0000gn/T/apx-scratch-d2296a21/th_0eb2f9523cf04772/`: `deploy-combined.py`, `combined-899-900.override.yml`, Dockerfiles de imágenes, `combined-before-hashes.json`, `combined-after-hashes.json`. El contenedor PostgreSQL desechable propio fue detenido tras la primera entrega; al finalizar la continuación #901 se eliminó junto con su volumen anónimo exclusivo (ver actualización abajo), sin borrar almacenamiento del dueño.
 
 ## Incidente de configuración detectado por Ansel y corregido
 
