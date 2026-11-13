@@ -2,6 +2,8 @@
 
 ## Resumen
 
+> **Lectura por alcance:** las secciones originales documentan el diseño previamente aprobado (AC1–AC7). El [delta de diseño #880](#delta-de-diseño-880--admisión-acústica-y-atribución-granular) al final precisa sus excepciones para ejecuciones nuevas: admisión acústica, atribución dentro de una fuente y resultados derivados versionados. No cambia las fuentes ni activa reprocesamiento histórico. El delta está escrito para revisión de Ansel e integración por Fer; no está implementado ni autoriza implementar. El estado `complete` de `.config.spectra` corresponde al alcance histórico y no acredita aprobación del delta.
+
 El pipeline confirma la granularidad que produce el defecto: cada segmento ASR se persiste como `SpeechTurn` y se representa por separado; ASR no entrega límites de turno ni identidad de hablante como evidencia fiable. El diseño conserva esas filas fuente y deriva la presentación agrupada solo de asignaciones de la diarización activa con solapamiento positivo. Las grabaciones nuevas y las históricas elegibles se procesan con diarización versionada; si la fuente de audio se confirma ausente o expirada mientras el transcript aún está dentro de su retención vigente, se conserva la presentación fragmentada y se expone `not_reconstructible`. Fer autorizó reprocesamiento histórico aislado por generación (opción B, `inp_918c917473da4aa7`) y esta excepción acotada (`inp_497cfae022564392`); ninguna cambia la política de retención. Trazabilidad: `bugfix.md` APPROVED en `9fed8e2b14a10bb25960011326e3ebf9e7af5b27` (blob `ddf34bb41dc5d9d9aa38c15c312e9cf24a4e7b05`), AC1–AC7; `PRODUCT_BASELINE.md` APPROVED en `4953b3b4b8a058fd4738342307cc50bfd66814f1` (blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446`), §4.C.4 y §4.B.5. El efecto futuro per-user de correcciones entre grabaciones distintas no se redefine aquí; la prohibición de copia automática se limita a regeneraciones de la misma grabación.
 
 1. Mantener `Transcript` y `SpeechTurn` fuente inmutables; registrar evidencia de solapamiento en las asignaciones y derivar turnos de presentación por corridas consecutivas del mismo `speaker_id`.
@@ -235,6 +237,287 @@ Usar exclusivamente reuniones, audio_refs, textos, nombres y segmentos sintétic
 7. **Vista y playback:** `frontend/src/components/TranscriptView.test.tsx` fixtures garantizan que no mezcla revisión 1 y 2; el label para el transcript viene solo de `review.labelsBySpeakerId` (wire field `labels_by_speaker_id`), nunca de `review.items`. Verifica que tras nombrar/corregir el item salga de la lista pendiente pero el label elegido persista sin volver a `Speaker N`, también tras reload; incertidumbre queda `Speaker N` y una review antigua no se expone en IDs nuevos. `frontend/src/api.test.ts` verifica que GET/PUT adapten el mapa y los items wire snake_case a camelCase y mantengan el mapa completo. Informa `not_reconstructible` sin agrupar ni ocultar fragmentos y mantiene transcript visible durante carga/fallo. `frontend/src/components/__tests__/MeetingPlaybackView.test.tsx` verifica una fila visual A para dos fuentes A, dos intervalos exactos en el controller, gap sin passage activo y Play desde el inicio del primer intervalo; `frontend/src/components/__tests__/PlaybackController.test.ts` conserva la propiedad de no hallar passage dentro de un gap.
 8. Desde `frontend/`, ejecutar `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/components/__tests__/MeetingPlaybackView.test.tsx src/components/__tests__/PlaybackController.test.ts src/api.test.ts` y `npm run typecheck`; desde `backend/`, ejecutar `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_assignment_property.py tests/diarization/test_state_property.py tests/diarization/test_worker.py tests/diarization/test_reprocess_legacy.py tests/diarization/test_migration.py tests/infra/test_object_store_availability.py tests/meetings/test_diarization_endpoint.py tests/speaker_review`. Ejecutar también `&lt;root>/backend/.venv/bin/python -m pytest tests/integration/test_diarization_reservation_concurrency.py` contra PostgreSQL para comprobar locks y constraints reales (no SQLite). Son comandos de validación futura, no resultados ya obtenidos.
 
-## Enmienda técnica 2026-11-13 — audio original, no clips (#893)
+---
 
-La decisión posterior de Fer sustituye el camino de escucha de muestras de los diseños históricos: `TranscriptView` usa `MeetingTranscript.turns` y asignaciones de la misma `processing_revision` que `SpeakerReview.revisionId` para elegir la intervención continua más larga. Pausas naturales ≤250 ms dentro del mismo hablante son admisibles; un gap mayor, cambio o turno sin atribución corta la cadena. Overlaps con hablantes vecinos se recortan, nunca se atribuyen a una sola voz sin evidencia. Se escuchan hasta 20 s desde el comienzo de la intervención; si el tramo disponible dura <5 s se muestra explícitamente la limitación (parámetros técnicos, no criterios de identidad impuestos por producto). Sin intervalo verificable, no habilitar escucha. `MeetingPlaybackView`/`PlaybackController` reproducen el manifiesto firmado del original y paran al fin seleccionado; seek manual cancela el límite. No hay nuevo objeto, ruta de audio ni persistencia de clip. El manifiesto conserva autorización del propietario y refresco existente. Esta enmienda no toca runtime de procesamiento ni aprueba generar clips en #248/#893: la ruta de #893 no integra esta solución y la eliminación de cualquier generación futura corresponde al seam dueño de ese runtime antes de integrarlo. Mantener historial de revisiones y otras especificaciones como evidencia, no como autorización para contradecir esta decisión.
+## Delta de diseño #880 — Admisión acústica y atribución granular
+
+### Continuación implementada para integración QA — 2026-11-13
+
+La orden correctiva posterior de Ansel autoriza completar código, no solo diseño; el estado documental histórico de abajo no es el límite vigente. Fuentes completas más envelope de palabras efímero reemplazan las filas por palabra de la primera pieza. La proyección final usa rangos exactos Unicode/intervalos originales e incertidumbre por padre completo; la vista agrupa corridas de voz también entre fuentes y mantiene playback separado de la fila agrupada. La preparación pareada usa motores locales existentes y la revisión/claim/handoff ya establecidos; el job de diarización materializa salida final, speakers y review atómicamente, sin coordinador/finalizador nuevo ni persistencia de words/scores.
+
+**Refinamiento de persistencia:** en vez de tres tablas nuevas, `014_final_presentation` añade `prepared_result` y `presentation` JSON nullable a la misma revisión. Sus FKs/retención eliminan ambos con el origen; validación estricta del servicio comprueba referencias de fuente/revisión/speaker, partición y tiempos antes de activar/exponer. No hay texto duplicado, timeline acústica cruda, API de escritura ni retención extendida. Las referencias internas JSON se validan en aplicación, no mediante FKs por pieza; se elige esta alternativa menor para una salida final inmutable, sin subsistema nuevo. El contrato opt-in `presentation_version=2` y el fallback conservador siguen los controles propuestos abajo.
+
+Evidencia, archivos, comandos y contrato mínimo de instalación sobre #899: `presentation-qa-validation.md`; tareas A6.1–A6.5. Nahuel publica código para integración QA sin merge. Ansel conserva instalación combinada, escucha/calificación real y prueba final con Fer; no se presenta esta entrega como producto integrado/aceptado.
+
+### Actualización ejecutiva y técnica 2026-11-13 19:17Z (primera pieza, histórica)
+
+Ansel comunicó autorización posterior de Fer para implementar y validar ambos defectos, sin merge ni sustitución unilateral de servicios vivos. Reemplaza el límite documental anterior; no convierte #898 ni la variante siguiente en aceptación funcional.
+
+**Primera pieza implementada para QA aislado:** `ASR_ACOUSTIC_VALIDATION=1` carga únicamente el checkpoint powerset `pyannote/segmentation-3.0` ya instalado, desde su ruta local; no descarga ni usa un modelo nuevo. `VoiceActivityDetection` reutiliza su decisión powerset fija de biblioteca y `min_duration_on=0`, `min_duration_off=0`: no recorta habla breve ni rellena gaps. Decodifica el original completo una vez en memoria, conserva offsets y pasa el mismo waveform a MLX. No crea archivos de clips. El modelo permanece cargado; waveforms, scores y anotaciones son locales a la llamada, sin persistencia ni logs.
+
+**Alternativa descartada con evidencia real de motores:** la conjunción propuesta con `no_speech_prob > 0.6` FALLÓ en ruido sintético real de 6 s: VAD no detectó voz, pero MLX produjo texto con score de no-habla cercano a cero. No se rebaja ni ajusta ese umbral; se elimina la dependencia del score decoder como detector de voz. La variante QA rechaza texto sin intersección con ninguna región de VAD **solo cuando existe cobertura válida del audio completo**; evidencia no disponible conserva la fuente. Esto usa un VAD neuronal real existente, no falta de assignment. Permanece sin calificación humana y puede perder habla que el VAD no detecte: no se habilita por defecto ni se certifica lista.
+
+Los límites de palabras válidas y reconstrucción textual exacta se devuelven como unidades fuente candidatas antes de su primera persistencia. Palabras inválidas/texto no reconstruible preservan el segmento completo. No hay nuevos campos HTTP, esquema o datos históricos modificados en esta primera pieza. `DIARIZATION_EXCLUSIVE_ASSIGNMENTS=1` permite atribuir esas unidades solo si tienen un candidato positivo, contando la unión de intervalos por cluster; empate/simultaneidad quedan sin atribución y se preservan todos los clusters. Ambos flags están apagados por defecto.
+
+**Límite explícito del avance:** emitir unidades por palabra no termina el contrato de presentación: los casos inciertos pueden quedar fragmentados y falta conservar la vinculación al segmento padre en una proyección final como la descrita abajo. No se presenta esta simplificación experimental como cumplimiento total de AC-R3/AC-R4/AC-R6. La proyección/agrupación/fallback y su contrato persistido siguen pendientes. La implementación no toca #248, no duplica su coordinador ni introduce staging nuevo. Se preservan las fuentes ya guardadas, la autorización y los estados existentes. La propuesta extensa de #898 sigue siendo referencia de las piezas faltantes, no evidencia de implementación.
+
+### Estado, autoridad y alcance
+
+**Fase 2 documental, propuesta para revisión; no implementación.** Autor: Nahuel. Tarjeta existente `task_e54417ff1e164f69`; issue [#880](https://github.com/lufermalgo/sauri/issues/880), candidato nativo [#882](https://github.com/lufermalgo/sauri/pull/882). Entrada aprobada por Fer e integrada mediante [#897](https://github.com/lufermalgo/sauri/pull/897), merge `ea1dd2acbe0de39e74d9f046816124037bedb465`. El rótulo «propuesta» del bugfix es el estado que tenía al publicarse; esta aprobación posterior permite diseñar E-R1–E-R5 y AC-R1–AC-R8, no ejecutar ni repetir la aprobación. Ansel revisa este diseño y Fer integra. `tasks.md` y `.config.spectra` permanecen sin cambios: el plan histórico no autoriza el delta ni se reabre su aprobación.
+
+Se reutilizan H1–H6 del bugfix, `native-alignment-validation.md` del candidato #882 y la investigación privada `speaker-alignment-research.md` ya entregada. No se copian datos privados ni se vuelve a consultar la grabación. El resumen pertenece a `recording-notes`, fuera de este diseño. No se agregan modelos, descargas, servicios, gastos, clips, embeddings, entrenamiento o reconocimiento entre reuniones. Tampoco se autorizan cargas, inferencias, cambios de runtime o despliegues.
+
+### Resumen del mecanismo y la solución
+
+La salida no vacía de MLX pasa a ser texto publicable sin una comprobación acústica independiente; las palabras/scores se pierden antes de la atribución y el diarizador asigna un segmento entero al ganador. Las tres opciones de #882 ya estaban activas: repetirlas no soluciona el nuevo caso. H5 descarta mezcla de revisiones en el ejemplo, no demuestra identidades ni actividad acústica real. No se conoce el score efectivo que dejó pasar las palabras denunciadas.
+
+La solución futura propuesta tiene cinco partes:
+
+1. Una sesión de procesamiento local reúne **en memoria** la salida ASR, la evidencia de segmentación ya calculada por pyannote y los intervalos del mismo original. No usa la ausencia de assignment como VAD.
+2. Una función pura de admisión produce `speech`, `non_speech` o `unavailable`. Solo una decisión de no-habla respaldada y calificada puede excluir texto de una salida **nueva**, antes de su primera persistencia. Incertidumbre conserva el segmento; nunca reescribe el histórico.
+3. Con palabras válidas y reconstrucción exacta del texto se derivan piezas de atribución por cambios comprobables de voz. Se preservan el segmento ASR admitido como fuente y el orden textual; no se interpola texto ni se producen filas visibles por palabra.
+4. Se conservan únicamente resultados finales necesarios para presentar/reproducir esas piezas, con referencias a fuentes y revisión. Los scores, palabras crudas y máscaras auxiliares no se guardan ni se exponen por la API de producto.
+5. Una calificación acústica separada, con ruido y habla breve real autorizados, decide si los recursos existentes son suficientes. Las pruebas inyectadas no son ese permiso ni un detector productivo. Si la variante no cumple, no se habilita ni se declara corregida.
+
+### Decisiones, compatibilidad y alternativas descartadas
+
+| Decisión | Motivo y alternativa descartada |
+|---|---|
+| **Reutilizar segmentación de pyannote 3.1 y resultados MLX de la misma ejecución.** | Es evidencia acústica adicional disponible sin modelo nuevo. El hook `segmentation` de `pyannote.audio 3.3.2` entrega ventanas/frames; `speaker_counting` y la anotación final ayudan a verificar cobertura. No se presume que el conteo final sea VAD perfecto. Se descartan un modelo VAD nuevo, cloud, RMS como detector único y blacklist de palabras. |
+| **Calificación previa obligatoria del adaptador acústico, sin umbrales nuevos arbitrarios.** | En MLX 0.4.3, `no_speech_threshold=0.6` es el default observado, no una precisión demostrada. Un logprob alto puede anularlo en el decoder. El diseño prueba una comprobación independiente sin ese override; no promete que vaya a resolver todo ruido. Se descartan suprimir automáticamente el prefijo, habla corta o cualquier ausencia de diarización. |
+| **Sesión efímera coordinada por worker, no una caché durable entre jobs.** | El pipeline actual confirma transcript y publica diarización después: sus dos jobs no pueden compartir palabras en memoria. La ruta nueva debe reunir ambas respuestas antes de publicar su resultado. Se descartan guardar JSON crudo en PostgreSQL/S3/RabbitMQ, extender TTL o poner audio/words en mensajes. |
+| **Fuentes admitidas inmutables más proyección final por rangos de texto.** | Una fuente puede contener A→B: el mapa actual `turn_id -> speaker_id` no puede expresarlo. Se propone una extensión versionada explícita, no hacer pasar dos assignments por el contrato antiguo ni modificar `SpeechTurn`. Se descartan partir texto proporcional al tiempo, duplicar texto fuente y conservar un documento de words crudas. |
+| **Fallback conservador para ambigüedad.** | Solape positivo no certifica exclusividad ni identidad. Empate o evidencia cruzada conservan `Speaker N` en la proyección granular. El desempate histórico por secuencia sigue existiendo para consumidores legacy, pero no prueba la voz de una palabra. Se descarta rellenar huecos o bajar el conteo de clusters. |
+| **Activación separada de los cambios documentales.** | Este diseño propone cambios internos, de esquema y una extensión HTTP opt-in; no los aplica. Consumidores existentes siguen en versión 1 y sin acceso a auxiliares. Se descarta cambiar silenciosamente el significado de `assignments` o activar el nuevo pipeline desde #882 sin plan/RED/revisión. |
+
+**Precedencia acotada sobre el diseño anterior:** «versionar diarización, no regenerar transcript» sigue aplicando al backfill histórico y al transcript existente. La admisión aquí se aplica solo antes de la primera publicación de una transcripción nueva; no habilita ASR histórico. La atribución granular futura puede coexistir con el assignment de segmento legacy, pero la vista v2 no lo usa para inventar límites o exclusividad. La agrupación por IDs de speaker, el aislamiento de generaciones y la conservación de subintervalos siguen vigentes.
+
+### Arquitectura y unidad de ejecución
+
+```mermaid
+graph TD
+    JOB[Job autorizado y generación reclamada] --> SESSION[Sesión efímera del worker]
+    SESSION --> ASR[MLX existente: segmentos y auxiliares internos]
+    SESSION --> DIAR[Pyannote existente: segmentación e intervalos internos]
+    ASR --> ADMIT[Admisión pura con evidencia validada]
+    DIAR --> ADMIT
+    ADMIT --> SOURCE[Fuentes nuevas admitidas e inmutables]
+    SOURCE --> ALIGN[Atribución granular o fallback honesto]
+    DIAR --> ALIGN
+    ALIGN --> STAGE[Commit ASR con bundle final preparado y outbox]
+    STAGE --> DIARSTAGE[Commit etapa diarización sin repetir proveedor]
+    DIARSTAGE --> TX[Finalizador: review y activación atómicas]
+    TX --> API[API autenticada v1 o proyección v2 opt-in]
+    API --> VIEW[Turnos agrupados y playback del original]
+    SESSION --> CLEAN[Liberar auxiliares y limpiar temporales en finally]
+```
+
+```mermaid
+sequenceDiagram
+    participant W as Worker con claim de generación
+    participant A as ASR nativo
+    participant D as Diarizador nativo
+    participant P as Política y alineación puras
+    participant DB as PostgreSQL
+    W->>A: audio_ref exacto y capability; evidence_version=1
+    A-->>W: segmentos y auxiliares efímeros validados
+    W->>D: mismo audio_ref y capability vigente; evidence_version=1
+    D-->>W: intervalos y cobertura acústica efímeros
+    W->>P: contexto local, offsets y evidencia de la misma sesión
+    P-->>W: fuentes admitidas, piezas finales y limitaciones internas
+    alt Respuestas válidas y fuente/claim aún vigentes
+        W->>DB: commit ASR con fuentes, bundle final preparado y outbox
+        W->>DB: claim y commit etapa diarización desde bundle; outbox
+        W->>DB: finalizador activa resultado y review atómicamente
+    else Respuesta inválida, fallo, expiración o claim obsoleto
+        W->>DB: transición de fallo/fence existente; sin publicación parcial
+    end
+    W->>W: finally libera evidencia y temporales
+```
+
+**Dependencia y cambio necesario de orquestación, no trabajo ya realizado:** el diseño de `recording-speaker-review` y T-15 [#248](https://github.com/lufermalgo/sauri/issues/248) ya especifican `backend/app/transcription/processing_pipeline.py`, claims con lease, commits separados ASR/diarización, outbox durable y finalizador. Ese módulo no está en la base documental `ea1dd2a`; no se implementa otro coordinador ni se duplica T-15. La implementación de este delta depende de reconciliar el candidato exacto de #248 y sus contratos/lineage antes de editar ese seam. No se reactivan referencias de voz ni creación de excerpts descritas históricamente: la decisión posterior de Fer de no crear derivados sigue prevaleciendo.
+
+La sesión efímera se integra como preparación de la etapa local ASR, coordinada desde `backend/app/transcription/worker.py`; reutiliza dueño/grabación/generación, claims y repositorios existentes. El claim durable y la reserva exacta de revisión preceden a inferencia; no hay transacción/lock abierto durante MLX o pyannote. Se preasignan claves de candidato de esa revisión, nunca se infiere «latest» al confirmar. En esta preparación se invoca cada motor una vez, con capability nueva y vigente para la misma referencia antes de cada llamada; no se alarga TTL.
+
+**Frontera durable que conserva commits separados:** después de admisión/alineación y revalidación del binding, el commit ASR guarda las fuentes admitidas y un **bundle de resultado final preparado** de esa revisión (speakers, assignments y piezas finales, sin evidencia cruda), junto con completion/outbox ASR. El job de etapa diarización reclama su lease y materializa ese bundle preparado sin otra llamada al proveedor; output/completion/outbox de diarización conservan su transacción separada. El finalizador existente crea review y activa el resultado solo con ambas etapas completas y bindings aún vigentes, de forma atómica. El bundle es staging de salida de producto y hereda expiración/borrado de la revisión, no es un archivo de words/scores/timeline crudo. Se elimina al consumirse o al borrar/cancelar el candidato según la limpieza durable ya definida; no tiene TTL o retención propia.
+
+Una doble entrega sin claim no infiere. Caída **antes** del primer commit pierde auxiliares y solo puede repetir preparación mediante el retry ya permitido; caída **después** consume el bundle final durable y no repite una etapa proveedor exitosa solo para reconstruir review. Outbox/finalizador recuperan sin pedir audio de nuevo. Este bundle y su consumo idempotente son extensiones necesarias de #248 que deben entrar en tareas/RED; no se reemplaza su barrera de readiness ni sus dos commits por una transacción monolítica.
+
+No se declara review-ready ni se cambia generación activa antes de finalizar. Si falla el diarizador durante preparación no se confirma una salida no comprobada como si hubiera pasado la política; se usa el fallo de motor existente y se preserva el resultado previo. El momento del primer commit ASR se retrasa hasta disponer de evidencia, pero los snapshots fuente ya persistidos, el contrato de lectura parcial y el finalizador mantienen sus reglas. Requiere tests de estado, cola, recuperación y polling, sin nuevas etiquetas/porcentajes ni rediseño del indicador. Backfill histórico, cloud y motores que no negocian auxiliares siguen por su ruta previa; no se declara que satisfacen AC-R1/AC-R3 sin calificación.
+
+### Componentes e interfaces internas propuestas
+
+Los siguientes tipos son **contratos de diseño**, no código agregado ni API publicada. Los nombres/rutas se incorporarán al inventario de tareas solo después de aprobar diseño. El worker asigna el contexto de sesión: una respuesta de motor no decide dueño, revisión activa ni fuente por sí misma.
+
+```typescript
+type AcousticState = "speech" | "non_speech" | "unavailable";
+interface WordEvidence {
+  text: string; // token tal como MLX lo devuelve; solo memoria
+  start_ms: number; end_ms: number;
+  probability: number | null;
+}
+interface ASRSegmentEvidence {
+  segment_index: number;
+  words: WordEvidence[] | null;
+  no_speech_prob: number | null;
+  avg_logprob: number | null;
+  compression_ratio: number | null;
+}
+interface SpeechSupport {
+  start_ms: number; end_ms: number; // cobertura real del original
+  state: "active" | "inactive" | "unknown";
+}
+interface EngineEvidenceHeader {
+  evidence_version: 1;
+  source_duration_ms: number;   // duración decodificada sin padding; no estimación de DB
+  engine_config_digest: string; // versiones, checkpoints y opciones; nunca secretos
+}
+```
+
+- `backend/asr-engine/native_main.py`: request opcional `evidence_version: 1`, ausente por defecto. Mantiene `segments` y `language` tal como hoy y añade `evidence: {header, segments: ASRSegmentEvidence[]}` **solo en ese modo interno**. Se conservan los tres flags existentes de #882; los scores corresponden al segmento/ventana que MLX realmente reporta, no a una probabilidad independiente por palabra. No se inventa un score para entradas ausentes ni se envían prompts/audio en el envelope.
+- `backend/diar-engine/native_main.py`: misma negociación opcional; conserva la respuesta actual por defecto. Añade un envelope con `header`, `support: SpeechSupport[]`, e intervalos de diarización de esa llamada. El hook lee resultados existentes, no vuelve a ejecutar segmentación ni modifica clustering, `num_speakers`, mínimos o máximos. La adaptación mantiene cobertura, bordes de frames y ventanas; una región no cubierta o conflictiva es `unknown`, no `inactive`.
+- `backend/app/transcription/local_provider.py`, `asr_engine.py` y `backend/app/diarization/local_provider.py`, `diarization_engine.py`: tipos internos opcionales con default ausente, sin obligar a otros proveedores a inventar evidencia. La negociación de versión desconocida falla como contrato interno inválido, no como lista de texto vacía. Los clientes que no solicitan el modo siguen con su contrato previo.
+- `backend/app/transcription/acoustic_acceptance.py`: `evaluate_admission(segment, evidence, support, context) -> AcousticState`; función pura, sin I/O, logging de payload ni mutación.
+- `backend/app/diarization/word_alignment.py`: `derive_pieces(source, words, speaker_intervals, context) -> FinalPiece[]`; función pura con validación exacta de texto, tiempos y revisión. El camino por segmento `assign_turns` conserva sus tests de compatibilidad.
+
+**Validación de envelope:** versión exactamente 1; índices enteros únicos dentro de `segments`; milisegundos enteros finitos en el dominio decodificado sin padding; probabilidades presentes finitas en `[0,1]`, logprob/ratio presentes finitos. Se preserva la conversión a milisegundos del proveedor, sin inventar precisión ni corregir bordes. Header y respuestas deben corresponder a la referencia solicitada y al contexto local de sesión; una duración solo estimada o inconsistente no certifica cobertura negativa. Un campo opcional ausente produce evidencia no disponible; un payload que viola su tipo/dominio es fallo de contrato, no silencio. Nunca se acepta una revisión o dueño elegido por el motor.
+
+**Límite del transporte:** este envelope circula únicamente entre worker y motores locales ya autenticados, con capability de la grabación exacta; no es un nuevo endpoint del portal. Nunca pasa por mensajes de cola, respuesta de reuniones, métricas o receipts. Debe verificarse que access logs y excepciones no serializan cuerpos ni `repr` de auxiliares. No se agregan permisos de red al motor ni destinos externos.
+
+### Admisión acústica: regla candidata y calificación
+
+**Evidencia disponible, no un oráculo:** en `pyannote.audio 3.3.2`, `pipelines/speaker_diarization.py::apply` ya llama a hooks `segmentation` y `speaker_counting`. La ruta powerset usa sus decisiones de segmentación; la otra binariza con la configuración cargada del pipeline. La extracción debe usar la rama efectiva y tiempos de `SlidingWindowFeature`, no aplicar un umbral común inventado a todos los modelos. No se cambian checkpoint, onset/offset, clustering ni `min_duration_off` para conseguir que pase un ejemplo.
+
+La política candidata se evalúa **por segmento nuevo completo**; no elimina palabras individuales dentro de un segmento mixto porque no existe score de no-habla independiente por palabra. Las palabras quedan disponibles para atribución, no se usan como blacklist.
+
+| Condición validada de la sesión | Decisión y efecto |
+|---|---|
+| Hay actividad acústica en la región relevante, o indicación acústica incompatible con no-habla. | `speech` o `unavailable` si hay contradicción; conservar texto y límites fuente válidos. No exigir duración mínima. |
+| Toda la región está cubierta por frames válidos del original; las ventanas acústicas aplicables son inactivas sin evidencia positiva contradictoria; MLX reporta `no_speech_prob > 0.6`; versión/configuración del extractor y política calificadas conjuntamente. | Candidato `non_speech`: excluir ese segmento de la **salida nueva admitida**, sin crear palabras/assignments por él. El logprob textual alto no anula por sí solo estas evidencias acústicas. `0.6` reutiliza el default documentado de MLX, no una cifra ajustada al ejemplo; debe contrastarse en la calificación antes de habilitarlo. |
+| Faltan auxiliares/scores/cobertura; bordes fuera de dominio; configuraciones no calificadas; evidencia acústica contradictoria o versión interna no compatible. | `unavailable`: conservar segmento fuente válido; no afirmar no-habla, no asignar nueva identidad por ese motivo. Error estructural de envelope y fallo de motor se distinguen de evidencia opcional ausente. |
+
+La actividad de una sola ventana válida basta para impedir un certificado negativo; no se hace voto mayoritario que pueda borrar una voz breve. Se conservan márgenes/cobertura que realmente produjo el extractor; no se amplían por un número de milisegundos improvisado. Decodificación sin audio válido, cobertura incompleta o diferencia entre duraciones no habilita `non_speech`. No tener speaker asignado nunca alimenta la decisión de no-habla. Los clusters que el diarizador devuelve se mantienen aunque no tengan texto tras la admisión; no son identidades personales.
+
+**Límite abierto de evidencia técnica:** esta conjunción es una política candidata concreta, no está validada acústicamente. No se sabe si los segmentos denunciados tenían `no_speech_prob > 0.6`; no se afirma que resolvería exactamente ese video. Si el extractor pierde habla breve o la regla no rechaza ruido verificado, no se habilita esa variante ni se declara AC-R1/AC-R2 cumplido. Se documenta el contraejemplo a Ansel sin bajar umbrales a ojo, añadir modelos o solicitar otra vez los criterios ya aprobados. La implementación/calificación requerirá encargo posterior; este PR no la inicia.
+
+**Sin-habla versus fallo:** el código vigente en `backend/app/transcription/worker.py` trata resultado sin segmentos como `engine_failed` y no crea `Transcript`; no existe en esta ruta un éxito vacío independiente. Si la admisión deja cero segmentos, se preserva ese comportamiento externo, sin falsear un `completed`. La función pura puede distinguir internamente `non_speech` de una excepción, pero no inventa un estado público `no_speech` ni una causa nueva. Cambiar esa semántica exigiría un delta explícito aparte; no es necesario para rechazar las palabras de N0 ni para esta fase.
+
+### Alineación, atribución honesta y conservación de texto
+
+1. Validar tiempos finitos de cada palabra: `0 <= start_ms < end_ms <= source_duration_ms`, dentro del segmento fuente y sin corrección mediante clipping. Se conservan los offsets absolutos al inicio del medio original. Si internamente se usa una ventana, `absolute_ms = window_origin_ms + relative_ms`; se suma una sola vez y se valida el origen. No concatenar intervalos de voz quitando silencios.
+2. Reconstruir texto de words **exactamente** frente al texto fuente admitido. Se permite únicamente identificar el recorte exterior `.strip()` ya aplicado por el adaptador; no normalizar acentos, traducir, eliminar puntuación o reconstruir por parecido. Si no hay correspondencia exacta, falta una palabra o un límite es inválido, se abandona la subdivisión de esa fuente entera: una pieza fallback conserva texto/tiempo fuente. No se aprovecha media lista para ocultar el resto.
+3. Representar rangos de texto como índices Unicode de puntos de código, semiabiertos `[char_start,char_end)`. Backend valida `0 <= start < end <= len(source.text)`. Frontend debe usar puntos de código (`Array.from(text)`), no offsets UTF-16 con `slice` directo. Espacios/puntuación se asignan a la pieza contigua según su posición original; la concatenación ordenada de rangos reconstruye exactamente el texto fuente, sin duplicaciones. No se añade un espacio entre dos piezas de la misma fuente; entre fuentes distintas continúa la regla de presentación previa.
+4. Para cada palabra válida, calcular candidatos por intersección con intervalos de speaker locales de la misma sesión. Hay atribución sustentada solo si hay un único candidato positivo y no hay evidencia simultánea de otro speaker en esa palabra. Cero candidatos, empate, simultaneidad o palabra que cruza A→B con soporte de ambos: `speaker_id=null` para esa palabra; no se elige el mayor para declarar exclusividad. Se mantiene el texto una vez y su orden. Intervalos duplicados del mismo cluster se unen como conjuntos antes de medir solape, para no contar dos veces.
+5. Formar piezas máximas de rangos contiguos con el mismo speaker sustentado dentro de una fuente; un rango incierto rompe una corrida. A/B/A permanece A/B/A. Para una pieza, conservar la **unión disjunta exacta de los intervalos contribuyentes**, fusionando solo los que se tocan o solapan; nunca el envolvente que tape un gap. Es un resultado de playback final, no una lista persistida de tokens o probabilidades. Nombres se resuelven después desde la review de la revisión activa.
+6. Fallback de D1: fuente completa sin subdivisión. Solo puede conservar atribución por segmento si la evidencia válida permite un único cluster positivo y sin otro candidato en esa fuente; con A y B presentes conserva `Speaker N`. Si faltan auxiliares, permanece sin atribución granular comprobada. No se presenta el desempate legacy como evidencia nueva. D5 empate o cero queda `Speaker N`, sin descartar texto.
+7. Agrupar piezas sustentadas consecutivas en turnos de presentación, no una fila por palabra. Mantener las piezas sin speaker separadas y todos los intervalos originales de playback. La fuente y sus tiempos originales siguen accesibles como fuente; los límites derivados no los sustituyen en almacenamiento.
+
+**D2 no fuerza una voz exclusiva:** sus intervalos B y A simultáneos pueden volver incierta una palabra. Se conserva A/B/A cuando hay soporte exclusivo para cada texto; cuando no, se conserva el orden y `Speaker N` donde corresponda. Ni ese fixture ni el número de clusters sirven para afirmar identidades acústicas.
+
+### Modelos de datos finales y cambios de contrato necesarios
+
+La tabla/forma siguiente es la **proyección final necesaria**, no almacenamiento de evidencia cruda. No duplica texto, audio o identidades y no tiene retención propia. Su existencia se propone para revisión de diseño: no se crea migración ni se asigna un número Alembic en este PR.
+
+```typescript
+interface FinalPiece {
+  id: string;                  // opaco; único dentro del resultado
+  source_turn_id: string;
+  char_start: number; char_end: number; // puntos de código, rango semiabierto
+  speaker_id: string | null;   // solo Speaker de esta diarización
+  intervals: { start_ms: number; end_ms: number }[]; // unión disjunta final
+  sequence: number;            // orden de fuente y luego de rango textual
+}
+interface FinalProjection {
+  version: 2;
+  transcript_id: string;
+  processing_revision: number;
+  policy_version: string;      // identificador técnico no sensible
+  pieces: FinalPiece[];
+}
+```
+
+- **Persistencia propuesta:** tres tablas aditivas en `backend/app/infra/models.py`: `transcript_presentations(id, diarization_id UNIQUE, transcript_id, version CHECK = 2, policy_version)`; `transcript_presentation_pieces(id, presentation_id, transcript_id, diarization_id, source_turn_id, char_start, char_end, speaker_id NULL, sequence)` con `UNIQUE(presentation_id, sequence)` y `CHECK(0 <= char_start AND char_start < char_end)`; `transcript_presentation_intervals(piece_id, sequence, start_ms, end_ms)` con PK `(piece_id, sequence)` y `CHECK(0 <= start_ms AND start_ms < end_ms)`. IDs usan el mismo tipo opaco de sus referencias actuales, no se cambia el tipo de `SpeechTurn`/`Speaker`. FKs compuestas y claves únicas de soporte aseguran que presentation/turn pertenecen al mismo transcript y speaker a la misma diarización; `speaker_id=NULL` no crea un speaker ficticio. Las FKs usan borrado en cascada desde resultado/fuente. Antes de confirmar, el servicio valida límites contra texto/duración, partición completa sin cruces de rangos y unión disjunta de intervalos; no se confía solo en un CHECK local para reglas entre filas. No se guarda `WordEvidence`, score, máscara, ventana cruda ni raw_label adicional. La secuencia de piezas, sus rangos y sus intervalos son salida final de presentación, como las asignaciones existentes; no una caché para repetir ASR o reconocer voces. El bundle preparado usa estos mismos campos finales y las claves preasignadas, asociado a la revisión reservada en el seam durable de #248; la etapa diarización materializa las tablas con esas claves sin cambiar su contenido. El plan posterior elegirá la siguiente migración Alembic válida y probará índices/FKs reales, sin backfill de palabras inventadas.
+- **Retención:** eliminación/expiración del transcript o del resultado propietario elimina en cascada sus piezas/intervalos; las consultas aplican la misma autorización y expiración del origen. No se conserva proyección huérfana ni se convierte en un nuevo medio de escucha. No se agrega job que extienda retención. Una proyección no disponible nunca se reconstruye accediendo a otro audio.
+- **Contrato HTTP propuesto:** `GET .../diarization?presentation_version=2` añade `presentation: FinalProjection | null`, sin cambiar `speakers`, `assignments`, `processing_revision` o `latest_attempt`. Sin ese parámetro devuelve exactamente v1. `GET .../transcript` y GET/PUT de review conservan formas, autorización y receipts. La extensión contiene solo referencias y límites finales necesarios para el transcript ya autorizado, nunca el envelope de motor, scores o intervalos crudos de pyannote. Un error de validación no se resuelve exponiendo auxiliares al navegador.
+- **Fallback de disponibilidad:** resultado sin proyección v2 —legacy o ejecución sin words utilizables— no inventa una proyección retrospectiva. La vista conserva la presentación v1 y sus limitaciones identificadas para ese resultado; no afirma que AC-R3 esté implementado allí. En una proyección v2 sí creada, cada fuente sin words tiene una pieza fallback explícita y conservadora.
+- **Frontend propuesto:** `frontend/src/api.ts` valida revisión y referencias; `transcript-turns.ts` recibe piezas como unidades con rangos, no modifica fuentes. Construye `PlaybackInterval[]` desde intervalos finales y conserva su vinculación con la pieza y fuente; `TranscriptView.tsx` usa solo labels de la misma revisión. Proyección incompatible o mezcla de IDs descarta la proyección completa y deja fuentes visibles sin nuevas identidades sustentadas; no mezcla medio resultado v2 con assignments v1. No hay pantalla nueva, edición, renombrado automático ni cambio de selección de escucha.
+
+Esta extensión y el cambio de orquestación son cambios reales necesarios a contratos técnicos del diseño previo; deben constar en tareas/RED y revisión antes de implementación. No se presentan como ya compatibles por el solo hecho de ser campos opcionales. No se publican auxiliares sensibles ni se amplía su retención: la API presenta solo la salida final bajo el mismo dueño, fuente y revisión.
+
+### Ciclo de vida: auxiliares efímeros frente a resultados retenidos
+
+| Dato | Dónde vive y cuándo termina | Prohibiciones/verificación |
+|---|---|---|
+| Audio original | Almacén y retención existentes; lectura autorizada de la referencia exacta. Temporal ya requerido por cada motor, eliminado en `finally` como hoy. | Sin copia persistente, fragmento, muestra ni URL nueva en logs/cola. No alterar cleanup. |
+| Words, scores, máscaras y cobertura acústica cruda | Solo memoria del motor y del worker durante esa sesión; envelope en respuesta interna, sin cache HTTP. Se liberan referencias en éxito, error, timeout, cancelación y fence. | Nada en DB, object store, mensajes RabbitMQ, receipts, snapshots, core dumps configurados por la app o trazas de excepciones. No afirmar borrado criptográfico de RAM administrada. |
+| Intervalos originales de diarización y raw labels de la sesión | Memoria para atribución; los raw labels ya admitidos por el modelo `Speaker` mantienen su uso previo local, no se añade retención de su timeline. | No conservar anotación completa ni usar labels para emparejar otra revisión. |
+| Texto/tiempos fuente admitidos, speakers, assignments/review y proyección final | Persistencia de producto con el mismo dueño, generación, expiración y borrado del origen. La proyección no guarda texto duplicado ni auxiliares crudos. | Fuentes históricas inmutables; sin ampliación de retención, reconocimiento o exportación de evidencia. |
+| Política/configuración calificadas | Código/configuración técnica versionada sin audio, texto, scores ni IDs privados; identificador no sensible en el resultado final. | No tokens, rutas privadas, referencias de objeto ni hash de contenido privado. |
+| Evidencia de validación | Fixtures sintéticos y agregados no sensibles en Git; observación acústica solo en memoria bajo encargo posterior. | No guardar muestras reales, capturas/transcripts privados, listas de palabras o métricas por persona. Sin telemetría sensible nueva. |
+
+Limpiar memoria significa no conservar referencias, caches o archivos de payload tras el alcance de la ejecución, no prometer que el runtime sobreescribe cada byte. Las pruebas deben interceptar escrituras/logs y probar que no se serializan auxiliares en ningún destino; el perfil de memoria y la liberación se comprueban aparte en una sesión autorizada. Los límites del proceso y timeouts vigentes siguen aplicándose. El costo de memoria crece con palabras e intervalos de una sesión; no se guardan tensores completos si basta la cobertura reducida y nunca se acumulan sesiones terminadas en una caché.
+
+### Propiedades de correctitud y trazabilidad
+
+| Propiedad | Invariante comprobable | Requisito / aceptación |
+|---|---|---|
+| P-R1 — admisión negativa respaldada | Solo `non_speech` con cobertura/configuración calificadas puede excluir un segmento nuevo; texto no vacío, score aislado o assignment ausente no bastan. Cambiar posición/vocabulario no cambia la decisión con la misma evidencia. | E-R1, AC-R1 |
+| P-R2 — habla breve y evidencia ausente | Con evidencia de habla se conservan texto y límites, incluso al inicio o breve. Auxiliares ausentes/contradictorios no se convierten en ruido confirmado. | E-R2/E-R4, AC-R2 |
+| P-R3 — conservación exacta | Para cada fuente admitida, los rangos finales ordenados particionan su texto sin pérdidas/duplicados y los snapshots de fuentes previas permanecen idénticos. | E-R3, R-R1, AC-R3 |
+| P-R4 — atribución sustentada | Cada pieza con speaker tiene evidencia positiva no ambigua de esa revisión; cero, empate, simultaneidad o mismatch textual no inventan speaker/división. | E-R3/E-R4, AC-R3/AC-R4 |
+| P-R5 — tiempo original | Todo intervalo final procede de tiempos válidos del original; unión no tapa gaps ni elimina overlaps. Se conserva A/B/A y cada seek apunta al intervalo correspondiente, sin envolvente artificial. | R-R2, AC1–AC7, AC-R4/AC-R6 |
+| P-R6 — detección no es identidad | Un cluster sin texto se conserva sin fabricar asignación ni persona; no se fija un conteo esperado. | E-R5, AC-R5 |
+| P-R7 — aislamiento atómico | La activación de proyección, speakers y review ocurre solo tras los commits de etapas completos; el transcript parcial respeta su contrato previo. Ninguna pieza/label mezcla revisión o transcript; fallos/fences conservan el resultado activo anterior. | R-R3, AC-R6 |
+| P-R8 — acceso, estados y limpieza | Cada llamada usa dueño/capability del objeto exacto; respuesta vacía conserva el estado externo vigente; fallos no se convierten en éxito. Ningún auxiliar queda persistido/logueado tras éxito, fallo o cancelación. | R-R4, AC-R7 |
+| P-R9 — histórico no reconstruible | Sin audio vigente no hay inferencia ni proyección reconstruida; fuentes y estado `not_reconstructible` siguen las reglas aprobadas. | R-R5, AC-R6 |
+| P-R10 — escucha sin derivados | Playback utiliza el original y selección significativa ya entregada; no se genera muestra persistente ni se define duración mínima. | R-R6, AC-R6 |
+| P-R11 — evidencia de calidad honesta | Informe separa unit/property/contrato de observación acústica autorizada y declara versión/limitaciones; CI o menos clusters no certifican precisión. | AC-R8, límites H1–H6 |
+
+Las cinco regresiones originales se mantienen: cambio de speaker (P-R4/P-R5), no unir A/B/A (P-R5), gaps/overlaps (P-R5), seek/highlight (P-R5/P-R10) y texto/timing inválido sin fabricación (P-R3/P-R4). No se sustituye ninguna por un recuento de filas.
+
+### Manejo de errores y fallback
+
+| Caso | Comportamiento diseñado |
+|---|---|
+| Words o score opcional ausentes, modelo sin auxiliares | `unavailable`, fuente válida conservada; sin subdivisión/identidad nueva no sustentada. No declarar validado AC-R1/AC-R3 para ese proveedor. |
+| Formato interno inválido, versión no negociada, tiempos no finitos o referencia distinta | Rechazar envelope como fallo de contrato; error privado y transición vigente, sin publicación parcial ni fallback que oculte el fallo. Datos opcionales ausentes no equivalen a envelope malformado. |
+| Una word inválida o texto no reconstruible, fuente válida | Invalidar subdivisión de esa fuente; pieza completa conservadora, texto y tiempos intactos. |
+| Región acústica sin cobertura o contradicción | No certificar no-habla. Conservar texto; atribución granular solo donde sea sustentada y completa para la fuente. |
+| Empate positivo o palabra con dos voces | Speaker N en la pieza; no copiar el ganador técnico legacy como voz exclusiva. |
+| Respuesta sin segmentos o todos excluidos | Sin transcript nuevo; estado externo `engine_failed` vigente, no éxito vacío ni estado de producto nuevo. |
+| Timeout/cancelación/error de motor | Cleanup existente y liberación de auxiliares; estado de fallo/fence y retry ya definidos, sin cache durable ni nueva repetición automática. |
+| Audio expirado/ausente o dueño/claim cambiado antes del commit | No confirmar candidato; conservar fuentes anteriores y usar terminal/fence que corresponda. Nunca buscar otra copia ni elevar permisos. |
+| Proyección HTTP ausente o inválida | Conservar fuentes visibles y fallback declarado; no mezclar reviews o combinar piezas parciales con assignments legacy. |
+
+### Estrategia de pruebas y calificación futura (no ejecutadas)
+
+**Pruebas deterministas RED→GREEN:** extender contratos nativos y de proveedor existentes; módulos puros nuevos de admisión/alineación; worker/repositorio con fallos y concurrencia; contrato HTTP v1/v2 y Vitest de adapter, agrupador y playback. Usar N0–N2/D0–D5 del bugfix como fixtures suministrados al seam puro, no como motor productivo. Agregar:
+
+- N0 con logprob textual alto y evidencia acústica negativa, y fuera del prefijo; N1 breve al inicio y tras ruido. Variante contradictoria y score ausente conserva texto. Ningún filtro léxico o temporal.
+- D0 produce rangos para A y B sin alterar fuente y conserva todas las palabras; D1 invalida toda subdivisión de la fuente. D2 preserva gaps/overlaps y nunca impone exclusividad en simultaneidad; D3 mantiene cluster sin texto; D5 empate/cero conserva texto y Speaker N.
+- Rangos Unicode con acentos, signos y caracteres fuera de BMP; tokens con espacios y puntuación; mismatch entre tokenización y texto; monotonicidad textual independiente del overlap temporal. Offsets relativos/absolutos y doble aplicación de origen detectada.
+- Dos entregas concurrentes, caída entre inferencia y commit, fuente expirada al confirmar, capability que vence entre llamadas, selección activa durante fallo: sin doble resultado, mezcla o publicación parcial. PostgreSQL real para locks/FK, no afirmar atomicidad solo con SQLite.
+- v1 sin cambios; v2 opt-in no contiene scores/words crudas; no usa etiquetas de otra revisión. Cascadas/expiración eliminan la proyección con su origen. Spies de DB, store, cola, logging y temporales prueban ausencia de payloads auxiliares en éxito/error/cancelación.
+- Regresión de `engine_failed` para salida vacía; autenticación/capability/cleanup ya cubiertos por #882/#887. No duplicar ese endurecimiento como otra solución.
+
+**Protocolo de calificación acústica, pendiente de encargo de ejecución:**
+
+1. Congelar versión/configuración de MLX/pyannote, política y extractor; declarar por adelantado casos, regiones evaluadas, separación de ajuste/prueba y criterio de paso. Conservar solo esos datos técnicos y resultados agregados no sensibles. No usar conteo de voces como verdad de referencia.
+2. Bajo autorización posterior, contrastar en memoria contra escucha independiente: ruido sin habla al principio/medio/final, habla breve real y al inicio, habla débil, ruido con habla, transiciones rápidas, simultaneidad y gaps. Se usa el original autorizado sin clips ni nuevas copias persistentes; no se guardan transcripciones de referencia privadas. Este PR no elige ni accede a medios reales.
+3. Medir separadamente falso texto admitido en no-habla, habla real omitida —incluidas intervenciones breves—, palabras conservadas, error de atribución temporal y casos sin atribución. Declarar limitaciones de referencia no persistente y no convertir un promedio en garantía universal.
+4. Criterio mínimo de habilitación para los casos predeclarados: no admitir las palabras verificadas como ruido y no perder las palabras reales breves verificadas; conservación exacta y offsets correctos; ninguna regresión de autorización/revisión/playback. Si no se logra, se registra fallo y la variante no se habilita. No se inventa un porcentaje de calidad global ni se ajusta contra el conjunto reservado.
+5. Revisión de Ansel sobre evidencia/candidato y decisión de integración por Fer; la aceptación de producto no se sustituye con tests. No se exige volver a aprobar E-R/AC-R ya aceptados. Nuevos modelos, privacidad o costos requieren decisión real separada, no una descarga experimental silenciosa.
+
+**Comandos previstos para la implementación posterior:** los comandos originales de esta spec siguen vigentes. Se agregarían `python -m pytest tests/transcription/test_acoustic_acceptance.py tests/diarization/test_word_alignment.py` y contratos/worker/migración/API en el inventario de `tasks.md`; los nuevos paths todavía no existen y no se afirma haberlos corrido. Deben pasar Ruff/mypy del proyecto y las suites afectadas sin excluir fallos; si cambia TypeScript, `npm run typecheck` y tests/build de frontend definidos en el repositorio. No se añade un alineador/modelo externo para hacer pasar esos comandos.
+
+**Checks de esta entrega documental:** diff y archivo único de diseño, metadata JSON existente válida, trazabilidad E-R/R-R/AC-R y fixtures completa, fences/diagramas/links internos revisados, ausencia de cambios de código/plan/runtime/datos. Estos checks no validan acústica ni ejecutan las suites anteriores. El PR informa el SHA remoto real y cualquier limitación de CI alojada.
+
+### Riesgos, límites y siguiente fase
+
+- **Falso negativo acústico sobre habla breve:** la segmentación existente no es un oráculo; ni el default 0.6 ni palabras bien alineadas certifican voz. Regla negativa conjunta, incertidumbre conservadora y calificación son necesarias. Si no alcanzan, el problema sigue abierto, no se reduce el alcance ni se elimina texto para aprobar.
+- **Unión de fases y memoria:** mantener auxiliares hasta diarización alarga la sesión ASR y el consumo por reunión. Usar solo cobertura reducida de hooks, sin repetir inferencia o guardar tensores fuera de sesión; medir tiempo/memoria en la validación autorizada. No subir concurrencias o límites como parte del documento.
+- **Proyección final versus auxiliares:** almacenar rangos e intervalos finales es necesario para reproducir una subdivisión sin retener words crudas. Requiere migración/contrato nuevos expresamente revisados, misma retención/cascadas y auditoría de sinks. No se disfraza JSON crudo como «resultado final».
+- **Calidad y simultaneidad:** atribución por palabra mejora granularidad, no corrige texto mal reconocido ni separa dos voces mezcladas. Un `Speaker N` adicional puede ser la salida honesta; menos incertidumbre o menos clusters no es objetivo por sí mismo.
+- **Histórico sin evidencia:** words y timeline descartados no pueden recuperarse del texto persistido; sin ejecución autorizada se conserva su fallback. Este diseño no autoriza generar esa evidencia ni corrige retrospectivamente el ejemplo.
+
+**Salida de fase:** PR documental de este diseño listo para revisión de Ansel, integración reservada a Fer; no cierre funcional de #880 y no modificación/merge de #882. Tras aprobación de diseño corresponde enmendar incrementalmente `tasks.md` con contratos, migración aditiva, unidad de orquestación, RED→GREEN, calificación y responsables, sin duplicar T1–T20 ya aprobadas. Esa fase y la implementación necesitan su encargo; no se activan por publicar este documento.

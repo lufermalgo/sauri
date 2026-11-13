@@ -262,6 +262,9 @@ class Diarization(Base):
     is_legacy: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Final prepared output only, never raw words/scores or acoustic timelines.
+    prepared_result: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    presentation: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     diarization_state: Mapped[str] = mapped_column(
         String(32), nullable=False
     )  # pending | in_progress | completed | failed
@@ -574,7 +577,8 @@ class User(Base):
     is_sales: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     default_summary_template_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("summary_templates.id", ondelete="SET NULL", use_alter=True), nullable=True
+        String(36), ForeignKey("summary_templates.id", ondelete="SET NULL", use_alter=True,
+                               name="fk_users_default_summary_template_id_summary_templates"), nullable=True
     )
 
 

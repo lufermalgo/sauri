@@ -12,6 +12,7 @@ Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from datetime import UTC, datetime
@@ -21,6 +22,12 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.diarization.assignment import assign_turns
+from app.diarization.diarization_engine import DiarizationOptions
+from app.diarization.factory import create_diarization_engine
+from app.diarization.labeling import label_speakers
+from app.diarization.presentation import prepare_result
+from app.diarization.repository import DiarizationRepository
 from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
 from app.infra.processing_claims import (
     advance_processing_generation,
@@ -171,8 +178,28 @@ async def _process_transcription(
         elapsed_seconds,
     )
 
+    # Both inference results live only in this call. The durable handoff below
+    # contains *final* output, never words/scores or raw acoustic timelines.
+    granular_result = None
+    granular_provider = None
+    if (result.segments and queue is not None
+        and os.environ.get("ASR_GRANULAR_PRESENTATION", "0") == "1"):
+        diar_engine = create_diarization_engine()
+        if not engine.capabilities().is_local or not diar_engine.capabilities().is_local:
+            raise ValueError("Granular presentation requires existing local engines")
+        try:
+            granular_result = await diar_engine.diarize(
+                recording_audio_ref, DiarizationOptions(duration_ms=audio_duration_seconds * 1000)
+            )
+            granular_provider = diar_engine.capabilities().provider_name
+        except (httpx.HTTPError, ValueError, RuntimeError):
+            # Auxiliary inference must not hide a valid ASR source. No words are
+            # persisted for a later retry; the ordinary stage keeps its contract.
+            logger.warning("Granular preparation unavailable; preserving parent sources")
+
     # 3. Evaluate the result and persist
     transcript_created = False
+    prepared_revision = None
     async with session_factory() as session, session.begin():
         # Re-fetch meeting within the transaction for state transitions
         meeting = await session.get(Meeting, meeting_id)
@@ -218,6 +245,18 @@ async def _process_transcription(
             repo = TranscriptRepository(session_factory)
             await repo.create(session, transcript, turns)
             transcript_created = True
+            if granular_result is not None and granular_provider is not None:
+                diar_repo = DiarizationRepository(session_factory)
+                attempt = await diar_repo.reserve_next_revision(session, meeting_id, transcript.id, reuse_terminal=True)
+                domain_speakers = label_speakers(granular_result.segments)
+                domain_assignments = assign_turns(turns, granular_result.segments, domain_speakers,
+                                                  require_exclusive=True)
+                prepared = prepare_result(
+                    turns, result.segments, granular_result.segments, domain_speakers, domain_assignments,
+                    granular_provider, transcript.id, attempt.id, attempt.processing_revision,
+                )
+                attempt.prepared_result = prepared.model_dump()
+                prepared_revision = attempt.processing_revision
 
             # Transition to "completed" (Req. 3.6)
             transition = await record_transition(
@@ -261,6 +300,8 @@ async def _process_transcription(
             "owner_id": owner_id,
             "recording_id": recording_id,
         }
+        if prepared_revision is not None:
+            diarization_job["processing_revision"] = prepared_revision
         if isinstance(generation, int) and not isinstance(generation, bool):
             diarization_job_id = str(uuid.uuid4())
             async with session_factory() as session, session.begin():

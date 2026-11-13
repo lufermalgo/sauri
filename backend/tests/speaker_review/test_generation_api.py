@@ -133,13 +133,15 @@ async def _seed(url: str, states: list[str]) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("latest", ["pending", "in_progress", "failed", "not_reconstructible", "completed"])
+@pytest.mark.parametrize("query", ["", "?presentation_version=2"])
 async def test_t13_latest_attempt_does_not_replace_completed_generation(
     api_client: AsyncClient,
     api_db_url: str,
     latest: str,
+    query: str,
 ) -> None:
     data = await _seed(api_db_url, ["completed", "completed", latest])
-    response = await api_client.get(f"/api/v1/meetings/{data['meeting']}/diarization", headers=_auth())
+    response = await api_client.get(f"/api/v1/meetings/{data['meeting']}/diarization{query}", headers=_auth())
     assert response.status_code == 200
     body = response.json()
     active = 3 if latest == "completed" else 2

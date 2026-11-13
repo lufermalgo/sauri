@@ -18,12 +18,22 @@ class TranscriptionOptions:
 
 
 @dataclass
+class WordInterval:
+    """Ephemeral alignment, never serialized to storage or a queue."""
+
+    text: str
+    start_ms: int
+    end_ms: int
+
+
+@dataclass
 class TranscriptionSegment:
     """Text segment with timestamps relative to the start of the audio."""
 
     text: str
     start_ms: int
     end_ms: int
+    words: list[WordInterval] = field(default_factory=list, repr=False)
 
 
 @dataclass

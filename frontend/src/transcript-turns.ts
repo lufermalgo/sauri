@@ -1,3 +1,5 @@
+import type { MeetingDiarization } from "./api";
+
 export interface SourceTranscriptSegment {
   id: string;
   text: string;
@@ -112,4 +114,68 @@ export function createPlaybackIntervals(
       text: segment.text,
       sequence: segment.sequence,
     }));
+}
+
+
+/** All-or-nothing validation: never combine v2 pieces with v1 identity guesses. */
+export function projectTranscript(
+  segments: SourceTranscriptSegment[], diarization: MeetingDiarization | null, transcriptId: string,
+): { turns: PresentationTurn[]; intervals: PlaybackInterval[] } | null {
+  const projection = diarization?.presentation;
+  if (projection == null) return null;
+  const fallback = () => {
+    const turns = groupTranscriptTurns(segments, new Map());
+    return { turns, intervals: createPlaybackIntervals(segments, turns) };
+  };
+  if (projection.version !== 2 || projection.policy_version !== "exclusive-source-v1"
+      || !Number.isInteger(projection.processing_revision) || projection.processing_revision < 1
+      || projection.transcript_id !== transcriptId
+      || projection.transcript_id !== diarization?.transcript_id
+      || projection.diarization_id !== diarization?.diarization_id
+      || projection.processing_revision !== diarization?.processing_revision
+      || !Array.isArray(projection.pieces)) return fallback();
+  const ordered = [...segments].sort((a, b) => a.sequence - b.sequence);
+  const byId = new Map(ordered.map((source, order) => [source.id, { source, order }]));
+  const offsets = new Map(ordered.map((source) => [source.id, 0]));
+  const speakerIds = new Set(diarization?.speakers.map((s) => s.id));
+  const turns: PresentationTurn[] = [];
+  const intervals: PlaybackInterval[] = [];
+  let lastOrder = -1;
+  for (const piece of projection.pieces) {
+    if (!piece || typeof piece !== "object") return fallback();
+    const entry = byId.get(piece.source_turn_id);
+    if (!entry || entry.order < lastOrder || !hasValidTiming(entry.source)
+        || !Number.isInteger(piece.char_start) || !Number.isInteger(piece.char_end)
+        || piece.char_start !== offsets.get(piece.source_turn_id)
+        || piece.char_end <= piece.char_start || piece.char_end > Array.from(entry.source.text).length
+        || (piece.speaker_id !== null && !speakerIds.has(piece.speaker_id))
+        || !Array.isArray(piece.intervals) || !piece.intervals.length) return fallback();
+    lastOrder = entry.order;
+    const id = `${entry.source.id}:${piece.char_start}:${piece.char_end}`;
+    const text = Array.from(entry.source.text).slice(piece.char_start, piece.char_end).join("");
+    const previousTurn = turns.at(-1);
+    const append = piece.speaker_id !== null && previousTurn?.speakerId === piece.speaker_id;
+    const presentationTurnId = append && previousTurn ? previousTurn.id : id;
+    let previousEnd = -1;
+    for (const [index, interval] of piece.intervals.entries()) {
+      if (!interval || !Number.isInteger(interval.start_ms) || !Number.isInteger(interval.end_ms)
+          || interval.start_ms < entry.source.startMs || interval.end_ms > entry.source.endMs
+          || interval.start_ms >= interval.end_ms || interval.start_ms <= previousEnd) return fallback();
+      previousEnd = interval.end_ms;
+      intervals.push({ id: `${id}:${index}`, presentationTurnId, text,
+        startMs: interval.start_ms, endMs: interval.end_ms, sequence: intervals.length + 1 });
+    }
+    offsets.set(piece.source_turn_id, piece.char_end);
+    if (append && previousTurn) {
+      const sameSource = previousTurn.sourceIds.at(-1) === entry.source.id;
+      previousTurn.text += sameSource ? text : ` ${text}`;
+      if (!sameSource) previousTurn.sourceIds.push(entry.source.id);
+    } else {
+      turns.push({ id, sourceIds: [entry.source.id], text, sequence: turns.length + 1,
+        timestampMs: piece.intervals[0].start_ms, speakerLabel: UNKNOWN_SPEAKER_LABEL,
+        ...(piece.speaker_id ? { speakerId: piece.speaker_id } : {}) });
+    }
+  }
+  if (ordered.some((source) => offsets.get(source.id) !== Array.from(source.text).length)) return fallback();
+  return { turns, intervals };
 }

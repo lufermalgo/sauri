@@ -19,6 +19,7 @@ from app.transcription.asr_engine import (
     TranscriptionOptions,
     TranscriptionResult,
     TranscriptionSegment,
+    WordInterval,
 )
 
 
@@ -101,6 +102,8 @@ class LocalProvider(ASREngine):
                 text=seg["text"],
                 start_ms=seg["start_ms"],
                 end_ms=seg["end_ms"],
+                words=[WordInterval(text=w["text"], start_ms=w["start_ms"], end_ms=w["end_ms"])
+                       for w in (seg.get("alignment") or [])],
             )
             for seg in data["segments"]
         ]

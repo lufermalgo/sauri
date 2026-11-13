@@ -14,9 +14,10 @@ Requirements: 4.5, 7.1, 7.2, 8.3, 8.4
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,7 @@ from sqlalchemy.orm import selectinload
 from app.auth.audit import record_access
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
+from app.diarization.presentation import FinalProjection, validate_projection
 from app.infra.database import create_engine, create_session_factory
 from app.infra.models import (
     Diarization,
@@ -533,6 +535,7 @@ async def get_transcript(
 async def get_diarization(
     meeting_id: str,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    presentation_version: Annotated[int | None, Query(ge=2, le=2)] = None,
 ) -> dict[str, Any]:
     """Gets the Diarization (speakers + assignments) of a meeting.
 
@@ -571,7 +574,25 @@ async def get_diarization(
             diarization = next((d for d in generations if d.diarization_state == "completed"), None)
             ordered_speakers = sorted(diarization.speakers, key=lambda s: s.sequence) if diarization else []
 
+            presentation = None
+            if presentation_version == 2 and diarization is not None and diarization.presentation is not None:
+                sources = list((await session.scalars(select(SpeechTurn).where(
+                    SpeechTurn.transcript_id == diarization.transcript_id
+                ).order_by(SpeechTurn.sequence))).all())
+                transcript = await session.get(Transcript, diarization.transcript_id)
+                if transcript is not None:
+                    from app.diarization.reprocess_legacy import expired
+                    if not expired(transcript.expires_at, datetime.now(UTC)):
+                        projection = FinalProjection.model_validate(diarization.presentation)
+                        validate_projection(projection, sources, {s.id for s in ordered_speakers},
+                                            transcript_id=diarization.transcript_id,
+                                            diarization_id=diarization.id, revision=diarization.processing_revision)
+                        presentation = projection.model_dump()
+
             return {
+                **({"presentation": presentation,
+                    "transcript_id": diarization.transcript_id if diarization else None}
+                   if presentation_version == 2 else {}),
                 "diarization_id": diarization.id if diarization else None,
                 "meeting_id": meeting_id,
                 "diarization_state": diarization.diarization_state if diarization else None,
