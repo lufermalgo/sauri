@@ -19,7 +19,7 @@ Referencias MeetMemo, ghostmeet y meetily revisadas en README, arquitectura y, p
 
 `OllamaSummarizationEngine` conserva contrato/payload/deadline y emite un evento JSON seguro con timestamp UTC, duración monotónica, outcome (`succeeded|error|timeout|cancelled`), proveedor y contadores numéricos permitidos del sobre Ollama. Convierte nanosegundos a segundos, preserva ausencias y rechaza bool/negativos/no finitos/tipos inválidos. No registra texto de reunión, instrucciones, respuesta, thinking, contexto, URL, modelo libre ni excepciones arbitrarias. No agrega llamadas al motor. Un fallo de logging no convierte un resultado válido en reintento.
 
-**Límite:** esto es instrumentación inicial de una etapa, no la observabilidad integral instalada. OTel, correlación distribuida, recursos CPU/RAM/I/O/Metal, paneles, cuotas y admisión global están diseñados y en backlog T6–T11, no desplegados.
+**Límite:** esto es instrumentación inicial de una etapa, no la observabilidad integral instalada. Las garantías de lista positiva probadas corresponden al nuevo evento del motor, no a una auditoría de todos los logs preexistentes/dependencias. OTel, correlación distribuida, sanitización transversal, recursos CPU/RAM/I/O/Metal, paneles, cuotas y admisión global están diseñados y en backlog T6–T11, no desplegados.
 
 ## Validaciones ejecutadas por Ansel antes de incorporar atribución optimizada
 
@@ -44,6 +44,18 @@ Contenedores exclusivos `sauri-perf-907-pg` y `sauri-perf-907-rabbit`, etiquetad
 ## Comunicación
 
 Aviso directo solicitado por canal configurado: primer intento con canal explícito devolvió `bad_request: Owner has no address on Telegram Ansel`. Reintento con resolución por defecto `message_contact(to="me")` devolvió envío confirmado a Owner en Telegram Ansel y final de chat. No se dio el primer intento por entregado.
+
+## Muestra de recursos (lectura, no atribución causal)
+
+A las 22:31Z se observaron `docker stats --no-stream`, `memory_pressure -Q` y `sysctl vm.swapusage`, sin alterar procesos. Contenedores del entorno: worker85,32MiB, API105,1MiB, portal7,836MiB, MinIO191,4MiB, PostgreSQL36,13MiB y RabbitMQ148,7MiB. Son muestras del runtime previo, no del candidato ni perfiles máximos. Red acumulada API3,33GB recibidos y30MB enviados; no equivale a una sola reunión ni a throughput instantáneo. Host24GiB; memory_pressure reportó53% libre y swap17.204,50MiB usado. El swap ocupado puede ser histórico: esta muestra no demuestra presión instantánea ni permite atribuir toda la memoria a Sauri. GPU/Metal y energía por proceso no medidos. Estos límites justifican separar alcance host/proceso/contenedor en T7.
+
+## Estado remoto y bloqueo de CI
+
+PR borrador https://github.com/lufermalgo/sauri/pull/908 apilado sobre `qa/combined-899-900` (#902). GitHub Actions run `43519584965`: ambos jobs fallaron **antes de iniciar**, sin steps ni logs. Se consultaron jobs/check-runs/annotations por API después de que `gh run view --log-failed` devolviera `log not found`.
+
+Anotación exacta en ambos: `The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings`.
+
+No es una prueba fallida del candidato. No se cambió facturación, límite de gastos ni controles. PR permanece borrador y no se declara listo para integrar. Requiere que el dueño revise facturación/límite de GitHub y luego reejecutar los controles del candidato final. Aviso directo por `message_contact(to="me")` confirmado a Owner en Telegram Ansel.
 
 ## Resultado de velocidad
 

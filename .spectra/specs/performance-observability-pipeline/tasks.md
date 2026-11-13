@@ -53,7 +53,7 @@ Primera unidad T1–T4: Ansel integra la entrega de Nahuel en la rama candidata 
 **Acción:** Emitir evento estructurado seguro con duración monotónica, resultado y contadores válidos del sobre Ollama ya recibido: prompt_eval_count, eval_count, total_duration, load_duration, prompt_eval_duration, eval_duration. Convertir ns a s. Omitir inválidos/ausentes, no loguear payloads, modelos libres, URLs ni excepciones crudas. Conservar generate y CanonicalSummary. Pruebas con secretos centinela y datos adversos, cancelación/error y timeouts existentes.
 **Criterio de Completado:** Pruebas de resúmenes y privacy pasan; evento observado contiene solo campos aprobados, no se añade una llamada al proveedor. P4.
 **Dependencias:** Ninguna; independiente de T1–T4.
-**Estado:** Pendiente.
+**Estado:** Implementado y probado por Ansel en commit8b17a86, PR#908. 33 pruebas focales y regresión182passed/1skipped; evento observado en pruebas con transporte de inferencia simulado, no en nueva generación real. No instalado. Detalle en evidence.md.
 
 ## Fase 3: Correlación y recursos
 
