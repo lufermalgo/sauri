@@ -117,6 +117,19 @@
 
 **Dependencias:** T7 (mandatory RED→GREEN), T4, T6
 
+### Delivery status — T1/T2 and T5–T8 (not product acceptance)
+
+| Task | Issue | Delivered implementation evidence | State |
+|---|---|---|---|
+| T1 RED | #269 | PR #857, `9f84187`; included in the accumulated candidate | Implemented; review complete; not integrated |
+| T2 GREEN | #270 | PR #860, `a6bdae8` and `35cc362`; PostgreSQL 16 migration 013→014→013 | Implemented; review complete; not integrated |
+| T5 RED | #273 | PR #862, `6a7147a` | Implemented; review complete; not integrated |
+| T6 GREEN | #274 | PR #864, `a1486af` | Implemented; review complete; not integrated |
+| T7 RED | #275 | PR #865, `e61ce31` | Implemented; review complete; not integrated |
+| T8 GREEN | #276 | PR #866, `ca2e0ca`; accumulated candidate to `main` | Implemented; review complete; not integrated |
+
+The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as supporting documentation; it does not authorize a new requirements or design phase. The existing APX T2 card `task_6e122ca9e8d6410c` tracks this accumulated delivery; do not create a second accumulator. PR #866 is the single proposed merge candidate for the dependency chain; the earlier PRs remain open as review evidence, not separate merge requests. Fer owns integration and product acceptance remains separate. CI's non-blocking global backend suite does not pass fully (#248); the candidate's focused tests and disposable PostgreSQL/S3 validation are recorded on #276.
+
 ## Fase 3: Summary Request, Outbox, Worker and API
 
 ### T9: RED — Specify accepted-request snapshot, generations, status and outbox recovery (P8)
