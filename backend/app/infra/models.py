@@ -1,6 +1,7 @@
 """SQLAlchemy domain models for sauri — Capture and Transcription module."""
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -198,6 +199,23 @@ class ProcessingRevisionOutbox(Base):
 # ---------------------------------------------------------------------------
 # Transcript
 # ---------------------------------------------------------------------------
+
+
+class ProcessingStage(Base):
+    """Lease and committed output for one exact-revision provider stage."""
+
+    __tablename__ = "processing_stages"
+    __table_args__ = (UniqueConstraint("processing_revision_id", "stage", name="uq_processing_stage_revision_stage"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    processing_revision_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("processing_revisions.id", ondelete="CASCADE"), nullable=False
+    )
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    output: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class Transcript(Base):

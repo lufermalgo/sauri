@@ -18,6 +18,8 @@ from app.infra.object_store import create_object_store
 from app.infra.queue import create_job_queue
 from app.meetings.speaker_excerpt_service import ExcerptKeyring
 from app.retention.worker import start_retention_worker
+from app.transcription.processing_dispatch import dispatch_forever
+from app.transcription.processing_worker import start_processing_worker
 from app.transcription.worker import start_worker as start_transcription_worker
 
 logging.basicConfig(
@@ -48,10 +50,13 @@ async def main() -> None:
     # Subscribe diarization worker (topic 'diarize', Req. 1.1)
     await start_diarization_worker(queue, session_factory)
 
+    # Revision events are published only from the committed outbox. Legacy
+    # transcribe/diarize subscriptions remain separate during migration.
+    await start_processing_worker(queue, session_factory, object_store)
+    processing_dispatch_task = asyncio.create_task(dispatch_forever(session_factory, queue))
+
     # Start retention worker as a background task
-    retention_task = asyncio.create_task(
-        start_retention_worker(session_factory, object_store)
-    )
+    retention_task = asyncio.create_task(start_retention_worker(session_factory, object_store))
 
     # Wait for shutdown signal
     stop_event = asyncio.Event()
@@ -68,6 +73,8 @@ async def main() -> None:
 
     # Cleanup
     retention_task.cancel()
+    processing_dispatch_task.cancel()
+    await asyncio.gather(retention_task, processing_dispatch_task, return_exceptions=True)
     await queue.disconnect()
     await engine.dispose()
     logger.info("sauri worker finished")

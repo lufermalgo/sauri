@@ -810,8 +810,22 @@ def _pipeline(engine: AsyncEngine) -> tuple[Any, AsyncMock]:
     validator = AsyncMock(return_value={"speaker-synthetic-1": "synthetic://validated-speaker-1-0-1000"})
     pipeline = pipeline_type(
         async_sessionmaker(engine, expire_on_commit=False),
-        transcription_provider=AsyncMock(return_value={"text": "synthetic speech"}),
-        diarization_provider=AsyncMock(return_value={"speakers": ["speaker-synthetic-1"]}),
+        transcription_provider=AsyncMock(
+            return_value={
+                "text": "synthetic speech",
+                "segments": [
+                    {"text": "synthetic speech", "start_ms": 0, "end_ms": 1000},
+                ],
+            }
+        ),
+        diarization_provider=AsyncMock(
+            return_value={
+                "speakers": ["speaker-synthetic-1"],
+                "segments": [
+                    {"raw_label": "speaker-synthetic-1", "start_ms": 0, "end_ms": 1000},
+                ],
+            }
+        ),
         speaker_identity_matcher=matcher,
         excerpt_validator=validator,
     )
@@ -819,7 +833,7 @@ def _pipeline(engine: AsyncEngine) -> tuple[Any, AsyncMock]:
 
 
 async def _complete_candidate_stages(pipeline: Any, revision_id: str) -> None:
-    """Set up durable completed outputs through the approved processing boundary."""
+    """Exercise the production stage boundary on migrated PostgreSQL."""
     assert await pipeline.process_stage(revision_id, "transcription") is not None
     assert await pipeline.process_stage(revision_id, "diarization") is not None
 
@@ -831,6 +845,7 @@ async def test_exact_current_candidate_finalization_activates_and_clears_atomica
 ) -> None:
     await _seed_legacy_stage_rows(postgres_engine)
     await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    await _run_migration(postgres_engine, _load_migration(MIGRATIONS_DIR / "015_processing_pipeline.py"), "upgrade")
     legacy_id = (await _revisions(postgres_engine, "meeting-complete"))[0].id
     factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
     async with factory() as session, session.begin():
@@ -889,6 +904,7 @@ async def test_non_current_candidate_cannot_activate_or_clear_current_inflight(
 ) -> None:
     await _seed_legacy_stage_rows(postgres_engine)
     await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    await _run_migration(postgres_engine, _load_migration(MIGRATIONS_DIR / "015_processing_pipeline.py"), "upgrade")
     factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
     async with factory() as session, session.begin():
         await _admission_service()(session).admit_candidate(

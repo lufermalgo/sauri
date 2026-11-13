@@ -11,23 +11,74 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import select
 
+from app.infra.models import (
+    Diarization,
+    Meeting,
+    ProcessingRevision,
+    ProcessingRevisionOutbox,
+    RecordingProcessingState,
+    SessionRecording,
+    SpeakerAssignment,
+    Transcript,
+)
 from app.transcription.processing_pipeline import ProcessingPipeline
-
 
 REVISION_ID = "revision-synthetic-1"
 RECORDING_ID = "recording-synthetic-1"
 
 
 @pytest.fixture
-
-def pipeline(session_factory: Any) -> tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock]:
-    """Use real database persistence; only provider and media I/O are external."""
-    transcription = AsyncMock(return_value={"text": "synthetic transcript"})
-    diarization = AsyncMock(return_value={"speakers": ["speaker-synthetic-1"]})
-    excerpt_validator = AsyncMock(
-        return_value={"speaker-synthetic-1": "excerpt-synthetic-1"}
+async def pipeline(session_factory: Any) -> tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock]:
+    """Persist a real admitted recording/revision; mock only external I/O."""
+    now = datetime.now(UTC)
+    async with session_factory() as session, session.begin():
+        session.add(
+            Meeting(
+                id="meeting-synthetic-1",
+                origin="manual",
+                process_state="transcribing",
+                created_by="owner-synthetic-1",
+                created_at=now,
+            )
+        )
+        session.add(
+            SessionRecording(
+                id=RECORDING_ID,
+                meeting_id="meeting-synthetic-1",
+                idempotency_key="recording-synthetic-key",
+                capture_origin="web_upload",
+                audio_ref="synthetic/audio.wav",
+                duration_seconds=10,
+                finished_at=now,
+            )
+        )
+    async with session_factory() as session, session.begin():
+        session.add(
+            ProcessingRevision(
+                id=REVISION_ID,
+                recording_id=RECORDING_ID,
+                revision=1,
+                request_id="synthetic-request-1",
+                request_fingerprint="synthetic-fingerprint",
+                created_at=now,
+            )
+        )
+        session.add(RecordingProcessingState(recording_id=RECORDING_ID, in_flight_revision_id=REVISION_ID))
+    transcription = AsyncMock(
+        return_value={
+            "text": "synthetic transcript",
+            "segments": [{"text": "synthetic transcript", "start_ms": 0, "end_ms": 1000}],
+        }
     )
+    diarization = AsyncMock(
+        return_value={
+            "speakers": ["speaker-synthetic-1"],
+            "segments": [{"raw_label": "speaker-synthetic-1", "start_ms": 0, "end_ms": 1000}],
+        }
+    )
+    excerpt_validator = AsyncMock(return_value={"speaker-synthetic-1": "excerpt-synthetic-1"})
     return (
         ProcessingPipeline(
             session_factory,
@@ -150,3 +201,52 @@ async def test_finalizer_recovers_from_persisted_stages_without_rerunning_provid
     assert await coordinator.get_review(RECORDING_ID) == recovered
     assert transcription.await_count == 1
     assert diarization.await_count == 1
+
+
+async def test_stage_output_is_real_revision_scoped_transcript_assignment_and_event(
+    pipeline: tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock],
+    session_factory: Any,
+) -> None:
+    coordinator, _, _, _ = pipeline
+    await coordinator.process_stage(REVISION_ID, "transcription")
+    await coordinator.process_stage(REVISION_ID, "diarization")
+    async with session_factory() as session:
+        transcript = await session.scalar(select(Transcript).where(Transcript.processing_revision_id == REVISION_ID))
+        diarization = await session.scalar(select(Diarization).where(Diarization.processing_revision_id == REVISION_ID))
+        assert transcript is not None and diarization is not None
+        assert diarization.transcript_id == transcript.id
+        assignments = (
+            await session.scalars(select(SpeakerAssignment).where(SpeakerAssignment.diarization_id == diarization.id))
+        ).all()
+        assert len(assignments) == 1 and assignments[0].overlap_ms == 1000
+        events = (
+            await session.scalars(
+                select(ProcessingRevisionOutbox).where(ProcessingRevisionOutbox.processing_revision_id == REVISION_ID)
+            )
+        ).all()
+        assert {event.event_type for event in events} == {"transcription_completed", "diarization_completed"}
+
+
+async def test_failed_excerpt_validation_leaves_candidate_and_stages_retryable(
+    pipeline: tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock],
+    session_factory: Any,
+) -> None:
+    coordinator, transcription, diarization, excerpt_validator = pipeline
+    await coordinator.process_stage(REVISION_ID, "transcription")
+    await coordinator.process_stage(REVISION_ID, "diarization")
+    excerpt_validator.side_effect = ValueError("validated excerpts unavailable")
+    with pytest.raises(ValueError, match="validated excerpts unavailable"):
+        await coordinator.finalize(REVISION_ID)
+    assert await coordinator.get_review(RECORDING_ID) is None
+    async with session_factory() as session:
+        state = await session.get(RecordingProcessingState, RECORDING_ID)
+        meeting = await session.get(Meeting, "meeting-synthetic-1")
+        assert state is not None and state.in_flight_revision_id == REVISION_ID
+        assert state.active_processing_revision_id is None
+        assert meeting is not None and meeting.process_state == "transcribing"
+    excerpt_validator.side_effect = None
+    assert await coordinator.finalize(REVISION_ID) is not None
+    async with session_factory() as session:
+        meeting = await session.get(Meeting, "meeting-synthetic-1")
+        assert meeting is not None and meeting.process_state == "completed"
+    assert transcription.await_count == diarization.await_count == 1

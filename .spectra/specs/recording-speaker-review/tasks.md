@@ -261,6 +261,8 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Validation command:** `pytest tests/integration/test_speaker_review_processing.py` (from `backend/`).
 
+**Implementation inventory (#248):** The issue's current normative path is `backend/tests/speaker_review/test_processing_readiness.py`, not the historical integration path above. The GREEN candidate uses `backend/app/transcription/processing_pipeline.py`, `processing_dispatch.py`, `processing_worker.py`, `backend/app/worker.py`, `backend/app/infra/models.py` and `backend/alembic/versions/015_processing_pipeline.py`. `backend/tests/speaker_review/test_processing_dispatch.py` exercises admission/outbox replay; `backend/tests/meetings/test_speaker_review_revisions.py` receives only valid stage fixture inputs and the real stage migration for its finalizer cases. Both concurrent 014 migrations are retained; 015 merges the summary and recording-revision heads without overwriting either table set. This is an implementation inventory, not an alteration of approved requirements or historical acceptance criteria. Integration and product acceptance remain with Fer/Ansel; T-16 revision-qualified routes and T-13 identity/security prerequisites are separate gates.
+
 **Dependencies:** T-6, T-10, T-13, T-14, T-17.
 
 ### B-1: Security remediation — enforce commercial authorization and ownership on transcript/diarization reads
