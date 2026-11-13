@@ -573,3 +573,92 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     is_sales: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    default_summary_template_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("summary_templates.id", ondelete="SET NULL", use_alter=True), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# Summary templates and generated summaries
+# ---------------------------------------------------------------------------
+
+
+class TemplateCategory(Base):
+    """Optional grouping for a user's summary templates (R4)."""
+
+    __tablename__ = "template_categories"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SummaryTemplate(Base):
+    """User-owned editable template with opaque instructions (R3/R4)."""
+
+    __tablename__ = "summary_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    category_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("template_categories.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    instructions: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SummaryRequestOutbox(Base):
+    """Durable request and immutable selected-template snapshot (D4/D15)."""
+
+    __tablename__ = "summary_request_outbox"
+    __table_args__ = (
+        UniqueConstraint("transcript_id", "generation", name="uq_summary_request_transcript_generation"),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
+    transcript_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False
+    )
+    template_id: Mapped[str] = mapped_column(String(36), ForeignKey("summary_templates.id"), nullable=False)
+    template_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    instructions_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProcessedSummaryEvent(Base):
+    """Transactional idempotency ledger for successfully processed events."""
+
+    __tablename__ = "processed_summary_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MeetingSummary(Base):
+    """Structured summary for one request generation on a transcript (R1/R6)."""
+
+    __tablename__ = "meeting_summaries"
+    __table_args__ = (
+        UniqueConstraint("event_id", name="uq_meeting_summary_event_id"),
+        UniqueConstraint("transcript_id", "generation", name="uq_meeting_summary_transcript_generation"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    meeting_id: Mapped[str] = mapped_column(String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False)
+    transcript_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False
+    )
+    template_id: Mapped[str] = mapped_column(String(36), ForeignKey("summary_templates.id"), nullable=False)
+    template_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    key_points_json: Mapped[str] = mapped_column(Text, nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

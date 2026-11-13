@@ -39,10 +39,10 @@
 
 **Tracking:** Issue #270 · Card task_76551eb8a88047d8
 
-**Archivo:** `backend/app/infra/models.py`; `backend/alembic/versions/012_meeting_summaries_templates.py`
-**Acción:** Implement the design's `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary` models, nullable `User.default_summary_template_id`, constraints and FKs; add revision `012_meeting_summaries_templates` with `down_revision = "011_linkless_cleanup"`. Preserve the existing 007→008→009 branches→010 merge→011 lineage; do not attach this migration to 007 or either 009 branch. In `upgrade()`, create `template_categories`, `summary_templates`, `summary_request_outbox`, `processed_summary_events`, and `meeting_summaries` in the design's dependency order; add the nullable user-default column before its named `summary_templates(id) ON DELETE SET NULL` FK, and preserve transcript/meeting `ON DELETE CASCADE` plus multiple summary generations. Do not seed templates/defaults. In `downgrade()`, drop the named user-default FK and column first, then `meeting_summaries`, `processed_summary_events`, `summary_request_outbox`, `summary_templates`, and `template_categories`; this rollback is destructive to feature data and stops at 011.
+**Archivo:** `backend/app/infra/models.py`; `backend/alembic/versions/014_meeting_summaries_templates.py`; `backend/tests/summaries/test_summary_migration.py` (nuevo test aislado de migración PostgreSQL 16)
+**Acción:** Implement the design's `TemplateCategory`, `SummaryTemplate`, `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary` models, nullable `User.default_summary_template_id`, constraints and FKs; add revision `014_meeting_summaries_templates` with `down_revision = "013_manual_recovery_persistence"`. Preserve the published 007→008→009 branches→010 merge→011→012_diarization_generations→013_manual_recovery_persistence lineage; do not fork or re-parent those revisions. Recheck the sole head before T2 implementation: if it differs from 013, reconcile again before creating the migration. In `upgrade()`, create `template_categories`, `summary_templates`, `summary_request_outbox`, `processed_summary_events`, and `meeting_summaries` in the design's dependency order; add the nullable user-default column before its named `summary_templates(id) ON DELETE SET NULL` FK, and preserve transcript/meeting `ON DELETE CASCADE` plus multiple summary generations. Do not seed templates/defaults. In `downgrade()`, drop the named user-default FK and column first, then `meeting_summaries`, `processed_summary_events`, `summary_request_outbox`, `summary_templates`, and `template_categories`; this rollback destroys only feature data and stops at 013, preserving existing 012/013 artifacts.
 
-**Criterio de Completado:** T1's RED test passes and `cd backend && pytest tests/summaries/test_summary_models_property.py -q` succeeds; the repository's configured PostgreSQL migration test fixture exercises upgrade from the supported 011 head to 012 and downgrade back to 011.
+**Criterio de Completado:** T1's RED test (PR #857, `9f84187`) is included in the GREEN candidate and `cd backend && pytest tests/summaries/test_summary_models_property.py -q` succeeds; `cd backend && pytest tests/summaries/test_summary_migration.py -q` must use the established `SAURI_MIGRATION_TEST_ADMIN_URL` disposable-database pattern to verify 013→014→013 on PostgreSQL 16, including preservation of 012/013 data and schema (a skip without the isolated admin URL does not satisfy T2). The current repository's migration tests cover older revisions, not future 014; do not claim their passing validates 014.
 
 **Dependencias:** T1 (mandatory RED→GREEN)
 
@@ -117,6 +117,19 @@
 
 **Dependencias:** T7 (mandatory RED→GREEN), T4, T6
 
+### Delivery status — T1/T2 and T5–T8 (not product acceptance)
+
+| Task | Issue | Delivered implementation evidence | State |
+|---|---|---|---|
+| T1 RED | #269 | PR #857, `9f84187`; included in the accumulated candidate | Implemented; review complete; not integrated |
+| T2 GREEN | #270 | PR #860, `a6bdae8` and `35cc362`; PostgreSQL 16 migration 013→014→013 | Implemented; review complete; not integrated |
+| T5 RED | #273 | PR #862, `6a7147a` | Implemented; review complete; not integrated |
+| T6 GREEN | #274 | PR #864, `a1486af` | Implemented; review complete; not integrated |
+| T7 RED | #275 | PR #865, `e61ce31` | Implemented; review complete; not integrated |
+| T8 GREEN | #276 | PR #866, `ca2e0ca`; accumulated candidate to `main` | Implemented; review complete; not integrated |
+
+The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as supporting documentation; it does not authorize a new requirements or design phase. The existing APX T2 card `task_6e122ca9e8d6410c` tracks this accumulated delivery; do not create a second accumulator. PR #866 is the single proposed merge candidate for the dependency chain; the earlier PRs remain open as review evidence, not separate merge requests. Fer owns integration and product acceptance remains separate. CI's non-blocking global backend suite does not pass fully (#248); the candidate's focused tests and disposable PostgreSQL/S3 validation are recorded on #276.
+
 ## Fase 3: Summary Request, Outbox, Worker and API
 
 ### T9: RED — Specify accepted-request snapshot, generations, status and outbox recovery (P8)
@@ -133,7 +146,7 @@
 
 ### T10: GREEN — Implement summary request acceptance and durable outbox dispatch
 
-**Tracking:** Issue #278 · Card task_dd486ec8afa04e97
+**Tracking:** Issue #278 · ejecución GREEN task_aa18e483bd2c4b37; referencia histórica task_dd486ec8afa04e97 (inaccesible, conservada para trazabilidad).
 
 **Archivo:** `backend/app/summaries/router.py`; `backend/app/summaries/service.py`; `backend/app/summaries/repository.py`; `backend/app/summaries/outbox.py`; `backend/app/infra/queue_rabbitmq.py`
 **Acción:** Accept a summary request only for an available transcript; validate explicit template ownership or resolve the configured personal default; atomically persist a unique increasing-generation request and immutable template id/version/instructions snapshot. Implement a recoverable dispatcher that republishes pending events after restart/failure and marks them delivered only after broker confirmation. Do not enqueue from transcript commit; preserve no-default as unresolved/gated.
@@ -144,7 +157,9 @@
 
 ### T11: RED — Specify summary worker idempotency and atomic outcome transitions (P8)
 
-**Tracking:** Issue #279 · Card task_4fb964f1c8d54d70
+**Tracking:** Issue #279 · current APX task `task_3776e17864d14913` (historical card `task_4fb964f1c8d54d70` retained for lineage).
+
+**Status (2026-11-13):** RED delivered, not integrated. Pre-implementation candidate `1688b76`; RED commit `7a7183b75d86049c957a624e6708aabf5186306b`. Six tests executed with real disposable PostgreSQL 16: all six fail explicitly because `app.summaries.worker` is absent, after successful schema/fixture creation. Evidence: `t11-red-evidence.md` in this spec. T12 must preserve this RED commit and pass these tests; T10 remains an additional T12 dependency. Queue and engine are synthetic contract doubles, not a real broker/provider validation. Fer retains integration.
 
 **Archivo:** `backend/tests/summaries/test_worker.py` (create/extend)
 **Test seam:** Exercise the consumer registered by `start_worker` in `backend/app/summaries/worker.py` and persistence in `backend/app/infra/models.py`: `SummaryRequestOutbox`, `ProcessedSummaryEvent`, and `MeetingSummary`.
@@ -156,7 +171,9 @@
 
 ### T12: GREEN — Implement summary event worker and event idempotency
 
-**Tracking:** Issue #280 · Card task_d05f492a1c11477f
+**Tracking:** Issue #280 · historical card task_d05f492a1c11477f (APX get: not found); this candidate is tracked by its draft PR and this evidence, without a duplicate assigned execution.
+
+**Status (2026-11-13):** GREEN candidate in progress; T11 RED `7a7183b` and T10 correction `54f7d1c` preserved. Six T11 PostgreSQL cases and T9/T10 regression pass. The existing RabbitMQ adapter does not route exhausted `summarize` deliveries to the subscribed `summarize.failed` handler (nor accept the original topic's signature there), so terminal status is not production-verified; see `t12-green-evidence.md`. T14's engine factory is intentionally absent: worker startup fails closed until a local engine is configured. Do not merge or claim complete terminal delivery while this gap remains.
 
 **Archivo:** `backend/app/summaries/worker.py`; `backend/app/summaries/repository.py`; `backend/app/worker.py`
 **Acción:** Consume accepted outbox events using only the frozen template snapshot; atomically persist a successful structured summary, processed-event claim and request status. Make already-committed `event_id` deliveries a no-op; let generation errors propagate for queue retries, and mark terminal dead-letter requests failed without exposing provider exception details. Register in the existing worker process; do not trigger it on transcript commit.
@@ -189,7 +206,9 @@
 
 ### T15: RED — Specify current successful summary query and status routes (P5/P8)
 
-**Tracking:** Issue #283 · Card task_abb0a6217a484a7a
+**Tracking:** Issue #283 · current APX task `task_4d3cdf24ea5443fd`; historical card `task_abb0a6217a484a7a` preserved for lineage.
+
+**Status (2026-11-13):** RED delivered on base T10 `744ae88`, test commit `73df389`, not integrated. Real disposable PostgreSQL16 and SQLite both: 3 expected HTTP assertion failures from absent current-summary route, 6 passed (including literal latest route and isolated statuses). Evidence: `t15-red-evidence.md`. T16 additionally waits on T12. Inherited T10 mypy gate resolved by `54f7d1c`, merged here preserving RED: Ansel repeated app+test, 71 files PASS. Still draft RED-only, not a functional integration candidate. T12 started with Nahuel after this validation. Fer retains integration.
 
 **Archivo:** `backend/tests/summaries/test_summary_api.py` (extend)
 **Test seam:** Exercise `GET /api/v1/meetings/{meeting_id}/summary`, `GET /api/v1/meetings/{meeting_id}/summary-requests/latest`, and `GET /api/v1/meetings/{meeting_id}/summary-requests/{event_id}` in `backend/app/summaries/router.py`; verify current-summary selection through `SummaryService.get_current_summary_for_user(meeting_id, user)` in `backend/app/summaries/service.py`.
@@ -201,7 +220,8 @@
 
 ### T16: GREEN — Implement summary read and request-status API
 
-**Tracking:** Issue #284 · Card task_c83508cfb0c54e80
+**Tracking:** Issue #284 · Card task_b0754ce57aa24b38 (current execution; historical card task_c83508cfb0c54e80)
+**Status:** T16 GREEN candidate; not integrated. T15 RED `73df389` and T12 `9589adf` preserved. PostgreSQL/RabbitMQ: API + worker/queue 25 PASS; outbox pipeline 14 PASS, no skips. Project mypy app + API test 72 files PASS; Ruff/format/diff PASS. See `t16-green-evidence.md` for exact commands, inherited broader pipeline-test typing gap and runtime-provider limits. Fer retains integration.
 
 **Archivo:** `backend/app/summaries/router.py`; `backend/app/summaries/service.py`; `backend/app/summaries/repository.py`; `backend/app/main.py`
 **Acción:** Implement GET current-summary, latest request status, and event-specific status routes with the designed ownership and `require_sales` checks. Return the highest-generation successful summary, 404 if none; latest status selects highest accepted generation. Register `/summary-requests/latest` before `/{event_id}` and expose no provider exception details.

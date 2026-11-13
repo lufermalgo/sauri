@@ -19,6 +19,7 @@ from typing import Any
 import aio_pika
 from aio_pika import DeliveryMode, Message
 from aio_pika.abc import AbstractChannel, AbstractRobustConnection
+from pamqp.commands import Basic
 
 from app.infra.queue import JobQueue
 
@@ -135,8 +136,8 @@ class RabbitMQJobQueue(JobQueue):
     async def connect(self) -> None:
         """Creates a robust connection and a channel with the RabbitMQ broker."""
         self._connection = await aio_pika.connect_robust(self._broker_url)
-        self._channel = await self._connection.channel()
-        logger.info("RabbitMQ connection established: %s", self._broker_url)
+        self._channel = await self._connection.channel(publisher_confirms=True, on_return_raises=True)
+        logger.info("RabbitMQ connection established")
 
     async def disconnect(self) -> None:
         """Closes the channel and connection with RabbitMQ."""
@@ -161,11 +162,14 @@ class RabbitMQJobQueue(JobQueue):
             content_type="application/json",
             headers={_HEADER_SIGNATURE: _message_signature(topic, body)},
         )
-        await self._channel.default_exchange.publish(
+        confirmation = await self._channel.default_exchange.publish(
             amqp_message,
             routing_key=queue.name,
+            mandatory=True,
         )
-        logger.debug("Message published to '%s': %s", topic, message)
+        if not isinstance(confirmation, Basic.Ack):
+            raise RuntimeError("Broker did not confirm publication")
+        logger.debug("Message published to '%s' with broker confirmation", topic)
 
     async def subscribe(
         self,
@@ -233,6 +237,25 @@ class RabbitMQJobQueue(JobQueue):
                     await channel.default_exchange.publish(retry_message, routing_key=topic)
                     await message.ack()
                 else:
+                    if topic == "summarize.failed" and not self._dlx_exchange:
+                        # A transient database failure cannot erase the only durable
+                        # terminal event. Keep it recoverable until the handler acks.
+                        logger.error("Terminal summary handler failed after retries; retaining delivery")
+                        await message.nack(requeue=True)
+                        return
+                    if topic == "summarize":
+                        # The terminal consumer is on a different signed topic. Publish
+                        # and confirm its own authenticated delivery before settling the
+                        # original; a failed publication must remain retryable.
+                        try:
+                            await self.publish("summarize.failed", payload)
+                        except Exception:
+                            logger.exception("Could not confirm terminal summary delivery; requeueing original")
+                            await message.nack(requeue=True)
+                            return
+                        if not self._dlx_exchange:
+                            await message.ack()
+                            return
                     if self._dlx_exchange:
                         logger.error(
                             "Error processing message on '%s'. Retries exhausted (%d/%d). "
