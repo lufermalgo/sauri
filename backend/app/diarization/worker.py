@@ -131,7 +131,9 @@ async def _process_diarization(
         # Ordinary transcription jobs have no revision yet. The persisted reservation
         # precedes the engine call, even when this is their first generation.
         async with session_factory() as session, session.begin():
-            attempt = await repo.reserve_next_revision(session, meeting_id, transcript.id)
+            attempt = await repo.reserve_next_revision(
+                session, meeting_id, transcript.id, reuse_terminal=True,
+            )
             revision = attempt.processing_revision
     else:
         # Published jobs must match the reserved transcript and may not manufacture
