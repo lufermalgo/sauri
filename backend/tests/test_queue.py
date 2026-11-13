@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aio_pika.abc import AbstractIncomingMessage
+from pamqp.commands import Basic
 
 from app.infra.queue_rabbitmq import (
     RabbitMQJobQueue,
@@ -147,11 +148,13 @@ class TestRabbitMQJobQueueBehavior:
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
         queue._channel = AsyncMock()
         queue._channel.declare_queue.return_value.name = "transcribe"
+        queue._channel.default_exchange.publish.return_value = Basic.Ack(delivery_tag=1)
         await queue.publish("transcribe", {"meeting_id": "synthetic-meeting"})
 
         args, kwargs = queue._channel.default_exchange.publish.call_args
         published = args[0]
         assert kwargs["routing_key"] == "transcribe"
+        assert kwargs["mandatory"] is True
         assert _has_valid_signature("transcribe", published.body, published.headers)
         assert not _has_valid_signature(
             "diarize", published.body, published.headers
@@ -159,6 +162,16 @@ class TestRabbitMQJobQueueBehavior:
         assert not _has_valid_signature(
             "transcribe", published.body + b"tampered", published.headers
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("confirmation", [None, Basic.Nack(delivery_tag=1)])
+    async def test_unconfirmed_publish_fails(self, confirmation: object) -> None:
+        queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
+        queue._channel = AsyncMock()
+        queue._channel.declare_queue.return_value.name = "summarize"
+        queue._channel.default_exchange.publish.return_value = confirmation
+        with pytest.raises(RuntimeError, match="did not confirm"):
+            await queue.publish("summarize", {"event_id": "synthetic"})
 
     def test_retry_counter_is_authenticated_by_signature(self) -> None:
         body = json.dumps({"meeting_id": "synthetic-meeting"}).encode()

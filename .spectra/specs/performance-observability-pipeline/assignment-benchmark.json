@@ -1,0 +1,82 @@
+{
+  "stage": "assign_turns including index construction",
+  "input_kind": "synthetic",
+  "scope": "CPU interval attribution only; not acoustic quality or whole-pipeline speed",
+  "baseline_revision": "178f893551405774bc5d9006d0eb90cd4c33f586",
+  "candidate_revision": "e51e2ec265305b7de02b2f0fc42c7da56c739124",
+  "candidate_source_sha256": "9ef673ea9718eaf0b7613a2562136ad12bd097336e1db65ae39cd2268a264e2c",
+  "candidate_dirty": false,
+  "input_sha256": "1aeff92cf973e3cb9025c859fd7ebd8d5c88df981c70e1f14a3d9bbeae1bad59",
+  "python": "3.13.4",
+  "platform": "macOS-27.2-arm64-arm-64bit-Mach-O",
+  "counts": {
+    "turns": 1500,
+    "segments": 2154,
+    "speakers": 4
+  },
+  "seed": 907,
+  "repetitions": 7,
+  "warmup": 1,
+  "results": [
+    {
+      "mode": "accumulated",
+      "equivalent": true,
+      "assignment_count": 1475,
+      "samples_seconds": {
+        "baseline": [
+          0.1788669580128044,
+          0.17852750001475215,
+          0.17992933304049075,
+          0.17825983394868672,
+          0.17928037501405925,
+          0.17846133303828537,
+          0.17955749994143844
+        ],
+        "indexed": [
+          0.004428624990396202,
+          0.0046319999964907765,
+          0.004348875023424625,
+          0.004696541000157595,
+          0.004365999950096011,
+          0.004708249936811626,
+          0.0047019170597195625
+        ]
+      },
+      "baseline_median_seconds": 0.1788669580128044,
+      "indexed_median_seconds": 0.0046319999964907765,
+      "speedup": 38.615491828219945,
+      "median_reduction_percent": 97.41036575567009,
+      "meets_20_percent_stage_target": true
+    },
+    {
+      "mode": "exclusive",
+      "equivalent": true,
+      "assignment_count": 101,
+      "samples_seconds": {
+        "baseline": [
+          0.1783786250744015,
+          0.1781575829954818,
+          0.17839562508743256,
+          0.17792179191019386,
+          0.18042508303187788,
+          0.17814683401957154,
+          0.17820691596716642
+        ],
+        "indexed": [
+          0.004355959012173116,
+          0.004785749944858253,
+          0.00428658293094486,
+          0.004832417005673051,
+          0.004335290985181928,
+          0.004753250046633184,
+          0.004300749977119267
+        ]
+      },
+      "baseline_median_seconds": 0.17820691596716642,
+      "indexed_median_seconds": 0.004355959012173116,
+      "speedup": 40.91106354976052,
+      "median_reduction_percent": 97.55567342124046,
+      "meets_20_percent_stage_target": true
+    }
+  ]
+}
