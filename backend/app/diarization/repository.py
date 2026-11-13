@@ -26,12 +26,15 @@ class DiarizationRepository:
 
     async def reserve_next_revision(
         self, session: AsyncSession, meeting_id: str, transcript_id: str,
-        *, audio_unavailable: bool = False,
+        *, audio_unavailable: bool = False, reuse_terminal: bool = False,
     ) -> Diarization:
         """Serialize revisions on the Meeting row, including when no attempt exists yet.
 
         The caller must commit before publishing. Repeated reservation of a pending
-        attempt returns the same row; no second revision is allocated by redelivery.
+        attempt returns the same row. Ordinary unversioned capture deliveries use
+        reuse_terminal=True: their redelivery never authorizes a new revision.
+        Explicit backfill calls use the default, so a completed generation can
+        be followed by a new authorized revision.
         """
         meeting = await session.scalar(
             select(Meeting).where(Meeting.id == meeting_id).with_for_update()
@@ -50,7 +53,9 @@ class DiarizationRepository:
                 latest.failure_cause = "audio_unavailable"
                 latest.updated_at = datetime.now(UTC)
             return latest
-        if latest is not None and latest.diarization_state == "not_reconstructible":
+        if latest is not None and (
+            reuse_terminal or latest.diarization_state == "not_reconstructible"
+        ):
             return latest
         now = datetime.now(UTC)
         attempt = Diarization(
@@ -110,6 +115,31 @@ class DiarizationRepository:
                      updated_at=datetime.now(UTC)).returning(Diarization.id)
         )
         return result.scalar_one_or_none() is not None
+
+    async def retry_failed_revision(
+        self, session: AsyncSession, meeting_id: str, processing_revision: int,
+    ) -> Diarization | None:
+        """Explicit retry only: reset a retryable failure without allocating a revision.
+
+        A normal queue redelivery never invokes this method. The caller commits
+        before republishing the same meeting/revision pair.
+        """
+        attempt = await session.scalar(
+            select(Diarization).where(
+                Diarization.meeting_id == meeting_id,
+                Diarization.processing_revision == processing_revision,
+            ).with_for_update()
+        )
+        if attempt is None or attempt.diarization_state not in {"failed", "pending"}:
+            return None
+        if attempt.diarization_state == "failed":
+            if attempt.failure_cause != "engine_failure":
+                return None
+            attempt.diarization_state = "pending"
+            attempt.failure_cause = None
+            attempt.updated_at = datetime.now(UTC)
+            await session.flush()
+        return attempt
 
     async def complete_revision(
         self, session: AsyncSession, meeting_id: str, processing_revision: int,
