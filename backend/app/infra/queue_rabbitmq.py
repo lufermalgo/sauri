@@ -237,6 +237,25 @@ class RabbitMQJobQueue(JobQueue):
                     await channel.default_exchange.publish(retry_message, routing_key=topic)
                     await message.ack()
                 else:
+                    if topic == "summarize.failed" and not self._dlx_exchange:
+                        # A transient database failure cannot erase the only durable
+                        # terminal event. Keep it recoverable until the handler acks.
+                        logger.error("Terminal summary handler failed after retries; retaining delivery")
+                        await message.nack(requeue=True)
+                        return
+                    if topic == "summarize":
+                        # The terminal consumer is on a different signed topic. Publish
+                        # and confirm its own authenticated delivery before settling the
+                        # original; a failed publication must remain retryable.
+                        try:
+                            await self.publish("summarize.failed", payload)
+                        except Exception:
+                            logger.exception("Could not confirm terminal summary delivery; requeueing original")
+                            await message.nack(requeue=True)
+                            return
+                        if not self._dlx_exchange:
+                            await message.ack()
+                            return
                     if self._dlx_exchange:
                         logger.error(
                             "Error processing message on '%s'. Retries exhausted (%d/%d). "
