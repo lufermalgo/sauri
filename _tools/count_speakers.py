@@ -34,6 +34,20 @@ def threshold_value(value: str) -> float:
     return threshold
 
 
+def positive_batch_size(value: str) -> int:
+    size = int(value)
+    if size < 1:
+        raise argparse.ArgumentTypeError("batch size must be positive")
+    return size
+
+
+def apply_batch_sizes(pipeline: Any, segmentation: int | None, embedding: int | None) -> None:
+    if segmentation is not None:
+        pipeline.segmentation_batch_size = segmentation
+    if embedding is not None:
+        pipeline.embedding_batch_size = embedding
+
+
 def parser() -> argparse.ArgumentParser:
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("audio", type=Path, help="read-only original recording")
@@ -42,6 +56,8 @@ def parser() -> argparse.ArgumentParser:
     cli.add_argument("--output-dir", type=Path, required=True, help="private manifests, never audio or text")
     cli.add_argument("--clustering-threshold", type=threshold_value, default=None,
                      help="omit for unchanged cached pipeline baseline")
+    cli.add_argument("--segmentation-batch-size", type=positive_batch_size, default=None)
+    cli.add_argument("--embedding-batch-size", type=positive_batch_size, default=None)
     return cli
 
 
@@ -181,6 +197,9 @@ def infer(args: argparse.Namespace, work: Path, result: dict[str, Any], guard: R
     # An existing local YAML plus copied dependency cache; no credentials required/read.
     pipeline = Pipeline.from_pretrained(config_path, use_auth_token=False)
     pipeline.instantiate(result["parameters"])
+    result["batch_sizes_cached"] = {"segmentation": pipeline.segmentation_batch_size,
+                                     "embedding": pipeline.embedding_batch_size}
+    apply_batch_sizes(pipeline, args.segmentation_batch_size, args.embedding_batch_size)
     pipeline.to(torch.device("mps"))
     if pipeline.device.type != "mps":
         raise RuntimeError("Pipeline did not select MPS")
@@ -222,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
         "model": MODEL_ID, "device_requested": "mps", "python": platform.python_version(),
         "input_name": args.audio.name, "input_bytes": args.audio.stat().st_size,
         "threshold_override": args.clustering_threshold, "speaker_count_constraints": None,
+        "batch_size_overrides": {"segmentation": args.segmentation_batch_size,
+                                 "embedding": args.embedding_batch_size},
         "script_sha256": digest(Path(__file__)),
         "resource_policy": {"mps_release_unused_cache_at_checks": True, "mps_synchronize_before_release": True,
                             "sustained_memory_warning_seconds": 30},

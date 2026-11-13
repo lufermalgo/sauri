@@ -63,6 +63,44 @@ def test_no_speaker_count_or_cpu_options() -> None:
     assert not options.intersection({"--num-speakers", "--min-speakers", "--max-speakers", "--device"})
 
 
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_invalid_batch_size(value: str) -> None:
+    with pytest.raises(argparse.ArgumentTypeError):
+        counter.positive_batch_size(value)
+
+
+def test_batch_override_preserves_other_configuration() -> None:
+    pipeline = SimpleNamespace(segmentation_batch_size=32, embedding_batch_size=32,
+                               clustering={"method": "centroid", "threshold": 0.7045654963945799})
+    counter.apply_batch_sizes(pipeline, None, None)
+    assert pipeline.segmentation_batch_size == pipeline.embedding_batch_size == 32
+    counter.apply_batch_sizes(pipeline, 4, 4)
+    assert pipeline.segmentation_batch_size == pipeline.embedding_batch_size == 4
+    assert pipeline.clustering == {"method": "centroid", "threshold": 0.7045654963945799}
+    assert counter.positive_batch_size("1") == 1
+    counter.apply_batch_sizes(pipeline, 1, None)
+    assert pipeline.segmentation_batch_size == 1 and pipeline.embedding_batch_size == 4
+    counter.apply_batch_sizes(pipeline, None, 2)
+    assert pipeline.segmentation_batch_size == 1 and pipeline.embedding_batch_size == 2
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "abc", "1.5"])
+def test_cli_rejects_invalid_batch_sizes(value: str) -> None:
+    with pytest.raises(SystemExit):
+        counter.parser().parse_args(["input.webm", "--cache", "cache", "--scratch", "scratch",
+                                     "--output-dir", "results", f"--segmentation-batch-size={value}"])
+
+
+def test_cli_batch_defaults_and_overrides() -> None:
+    base = ["input.webm", "--cache", "cache", "--scratch", "scratch", "--output-dir", "results"]
+    defaults = counter.parser().parse_args(base)
+    assert defaults.segmentation_batch_size is None and defaults.embedding_batch_size is None
+    adjusted = counter.parser().parse_args(base + ["--segmentation-batch-size", "4",
+                                                  "--embedding-batch-size", "4"])
+    assert adjusted.segmentation_batch_size == adjusted.embedding_batch_size == 4
+    assert adjusted.clustering_threshold is None
+
+
 def test_memory_pressure_must_be_sustained(monkeypatch: pytest.MonkeyPatch) -> None:
     now = [0.0]
     monkeypatch.setattr(time, "monotonic", lambda: now[0])
