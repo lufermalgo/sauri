@@ -316,7 +316,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T23: RED — Specify web template settings experience
 
-**Tracking:** Issue #291 · Card task_1bc73c1cd5944767
+**Tracking:** Issue #291 · current APX task `task_08379f9f7e7445bd` (historical card `task_1bc73c1cd5944767` unavailable)
+**Status (2026-11-13):** RED prepared on T8 `68e81cd` + T18 `722287a` (combined base `31e1400`), not integrated. Seven component tests collect and fail because `TemplateSettingsView.tsx` is absent, before any settings implementation. Frontend typecheck passes; existing frontend regression is 11 files / 94 tests passing with this new RED file explicitly excluded (not a full-suite PASS). See `t23-red-evidence.md`. T24 still depends on T20; this test delivery does not authorize bypassing that dependency or Fer's merge gate.
 
 **Archivo:** `frontend/src/components/TemplateSettingsView.test.tsx` (create)
 **Acción:** Add component tests for listing personal templates, marking the personal default, creating multiple templates with opaque instructions, editing an owned template, optional category assignment and category creation, and setting an owned template as default. Do not assert a template grammar or any seed template.
