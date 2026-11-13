@@ -63,6 +63,14 @@ Entorno dedicado: `SAURI_QA_POSTGRES_URL=postgresql+asyncpg://sauri_qa@127.0.0.1
 
 PR905 está OPEN, no draft y MERGEABLE respecto de QA, no integrado. La corrida CI `43514251944` no inició jobs por la anotación de GitHub: “recent account payments have failed or your spending limit needs to be increased”. Ambos checks figuran FAILURE/UNSTABLE por ese bloqueo de cuenta; `--log-failed` devuelve `log not found`. No es evidencia de tests ejecutados ni PASS remoto; no se cambió billing, límites ni workflows para eludirlo. Los resultados locales anteriores son la evidencia disponible para revisión de Ansel.
 
+### Cierre documental H1.3 y revisión independiente
+
+Ansel revisó el código exacto `f304adfec4c83f3382ece7760aa61a5e30b2715b` y registró [su evidencia independiente](https://github.com/lufermalgo/sauri/pull/905#issuecomment-6865834566): **23 PASS** PostgreSQL+retención en 2.44 s, Ruff de archivos cambiados y diff PASS, sin hallazgos nuevos accionables en el diff acotado. ObjectStore fue simulado en esa corrida; no reemplaza ni repite la evidencia S3 temporal de los 345 tests anteriores. El comentario documenta limpieza de sus recursos temporales. Esta evidencia es de Ansel; este cierre documental no ejecuta nuevamente suites.
+
+Se verificaron las annotations de **ambos** checks `132191994090` y `132191993653`: jobs no iniciados por pagos fallidos/límite GitHub. CI externa bloqueada, no fallo funcional demostrado y no PASS remoto. No rerun, bypass, modificación de billing ni nuevo aviso de facturación.
+
+**H1.3 completado solo como validación local y entrega documental.** No se declara integrabilidad plena, integración, instalación ni aceptación de producto; #903, T19 completo y T20/#659 siguen abiertos. Fer conserva merge; Ansel coordina incorporación QA. El commit documental previo `9108160954023930e3c9aba2f56a2d3c328e3320` y este cierre no modifican el código ni los tests de `f304adf`.
+
 ## Limpieza y preservación del entorno
 
 Solo dos contenedores propios, imágenes ya disponibles:

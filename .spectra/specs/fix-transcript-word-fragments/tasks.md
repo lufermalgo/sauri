@@ -19,7 +19,7 @@ Encargo de Ansel desde `178f893`/PR902; refs #659/#880. Implementa solo borrado 
 **Acción:** ejecutar suites pertinentes de retención/meetings/diarización, Ruff/mypy del proyecto y comparación con base; revisar diff, eliminar contenedor/volúmenes temporales y comprobar ausencia; publicar commit/PR vinculado #903/#659/#880 para revisión de Ansel, sin merge.
 **Criterio de Completado:** comandos/resultados/SHA y límites documentados; cero regresiones nuevas, limpieza verificada y PR publicado no draft. **Dependencias:** H1.2. T19 completo y T20 final no se cierran por esta entrega.
 
-**Entrega H1:** [PR905](https://github.com/lufermalgo/sauri/pull/905), código `f304adf`; PostgreSQL H1 7 PASS y regresiones configuradas 345 PASS. Evidencia/limpieza/deuda y bloqueo CI billing en `retention-h1-validation.md`. Publicado para revisión de Ansel, no merge ni instalación; T20/#659 sigue pendiente.
+**Entrega H1.3 — validación local completada; CI externa bloqueada:** [PR905](https://github.com/lufermalgo/sauri/pull/905), código `f304adf`; PostgreSQL H1 7 PASS y regresiones configuradas 345 PASS. Ansel verificó el SHA de código con 23 PASS propios, Ruff de archivos cambiados y diff PASS ([revisión independiente](https://github.com/lufermalgo/sauri/pull/905#issuecomment-6865834566)). Evidencia/limpieza/deuda y bloqueo CI billing en `retention-h1-validation.md`: ambos jobs no iniciaron; no PASS remoto ni integrabilidad plena declarada. H1.3 cierra solo registro de validación local y entrega documental; #903, T19 completo y T20/#659 no se cierran. Fer conserva merge; sin instalación, rerun ni bypass.
 
 ## Delta ejecutable #880 — 2026-11-13
 
