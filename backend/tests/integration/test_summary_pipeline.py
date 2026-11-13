@@ -98,11 +98,11 @@ async def pg_request(
             await connection.close()
     engine = create_async_engine(parsed)
     try:
-        async with engine.begin() as connection:
+        async with engine.begin() as db_connection:
             # Only the validated dedicated test database can contain interrupted RED debris.
-            await connection.execute(text("DROP SCHEMA public CASCADE"))
-            await connection.execute(text("CREATE SCHEMA public"))
-            await connection.run_sync(Base.metadata.create_all)
+            await db_connection.execute(text("DROP SCHEMA public CASCADE"))
+            await db_connection.execute(text("CREATE SCHEMA public"))
+            await db_connection.run_sync(Base.metadata.create_all)
         factory = async_sessionmaker(engine, expire_on_commit=False)
         owner, meeting, transcript, template = (_id() for _ in range(4))
         now = datetime.now(UTC)
@@ -164,9 +164,9 @@ async def pg_request(
         # the pre-existing unnamed use_alter=True user→template FK on PostgreSQL.
         # Recreate its schema instead of weakening production models or leaving rows.
         try:
-            async with engine.begin() as connection:
-                await connection.execute(text("DROP SCHEMA public CASCADE"))
-                await connection.execute(text("CREATE SCHEMA public"))
+            async with engine.begin() as db_connection:
+                await db_connection.execute(text("DROP SCHEMA public CASCADE"))
+                await db_connection.execute(text("CREATE SCHEMA public"))
         finally:
             await engine.dispose()
 

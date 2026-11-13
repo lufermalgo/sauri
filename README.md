@@ -58,6 +58,17 @@ bring-up preserves named volumes and their objects. A one-shot, root-owned helpe
 verified runtime identity (`10001:10001`); RustFS itself continues running as its image-defined
 non-root user. No production deployment behavior is implied.
 
+### Local meeting summaries
+
+The summaries worker requires `SUMMARIZATION_OLLAMA_URL` (HTTP base URL with port)
+and `SUMMARIZATION_OLLAMA_MODEL` (installed Ollama model name) in its runtime environment.
+Compose passes these variables through without defaults: missing/malformed values prevent
+worker startup. Configure a route to the owner-selected local Ollama instance **from the
+worker container**, then verify the endpoint and model there before claiming real generation.
+A host-only `localhost` check does not establish container connectivity. Summarization has no
+cloud provider or fallback; broker retries and terminal failure retain only request status,
+not provider diagnostics. See `.env.example` for the variable names.
+
 ### Native Mac GPU engines
 
 Fer confirmed the local deployment direction on 2026-11-12: keep the API, worker, PostgreSQL,

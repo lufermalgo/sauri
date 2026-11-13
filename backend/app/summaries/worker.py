@@ -1,43 +1,21 @@
-"""Idempotent summary-event consumer; provider construction is deferred to T14."""
+"""Idempotent summary-event consumer with local engine at startup."""
 
 from __future__ import annotations
 
-import importlib
 import json
 import logging
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import Meeting, MeetingSummary, ProcessedSummaryEvent, SummaryRequestOutbox, Transcript
 from app.infra.queue import JobQueue
+from app.summaries.factory import create_summarization_engine
 from app.summaries.repository import locked_request, transcript_text
 
 logger = logging.getLogger(__name__)
-
-
-class SummaryResult(Protocol):
-    topic: str
-    key_points: list[str]
-
-
-class SummarizationEngine(Protocol):
-    async def generate(self, transcript_text: str, instructions_snapshot: str) -> SummaryResult: ...
-
-
-def create_summarization_engine() -> SummarizationEngine:
-    """T14 supplies the local engine; until then startup must fail closed."""
-    try:
-        module = importlib.import_module("app.summaries.factory")
-    except ModuleNotFoundError as exc:
-        if exc.name != "app.summaries.factory":
-            raise
-        raise RuntimeError("Summary engine is not configured; T14 local adapter is required") from exc
-    factory = module.create_summarization_engine
-    engine: SummarizationEngine = factory()
-    return engine
 
 
 def _event_id(message: dict[str, Any]) -> str | None:
@@ -46,9 +24,17 @@ def _event_id(message: dict[str, Any]) -> str | None:
 
 
 def _matches_request(message: dict[str, Any], request: SummaryRequestOutbox) -> bool:
-    return all(message.get(key) == getattr(request, key) for key in (
-        "meeting_id", "transcript_id", "generation", "template_id", "template_version", "instructions_snapshot",
-    ))
+    return all(
+        message.get(key) == getattr(request, key)
+        for key in (
+            "meeting_id",
+            "transcript_id",
+            "generation",
+            "template_id",
+            "template_version",
+            "instructions_snapshot",
+        )
+    )
 
 
 async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession]) -> None:
@@ -96,13 +82,21 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
                 raise ValueError("Summary event changed after generation")
             now = datetime.now(UTC)
             session.add(ProcessedSummaryEvent(event_id=event_id, meeting_id=request.meeting_id, completed_at=now))
-            session.add(MeetingSummary(
-                id=str(uuid4()), event_id=event_id, meeting_id=request.meeting_id,
-                transcript_id=request.transcript_id, template_id=request.template_id,
-                template_version=request.template_version, generation=request.generation,
-                topic=result.topic, key_points_json=json.dumps(result.key_points, ensure_ascii=False),
-                created_at=now, updated_at=now,
-            ))
+            session.add(
+                MeetingSummary(
+                    id=str(uuid4()),
+                    event_id=event_id,
+                    meeting_id=request.meeting_id,
+                    transcript_id=request.transcript_id,
+                    template_id=request.template_id,
+                    template_version=request.template_version,
+                    generation=request.generation,
+                    topic=result.topic,
+                    key_points_json=json.dumps(result.key_points, ensure_ascii=False),
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
             request.status = "succeeded"
 
     async def terminal(message: dict[str, Any]) -> None:
