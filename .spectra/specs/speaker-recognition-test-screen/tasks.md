@@ -266,6 +266,8 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 **Dependencies:** T-18.
 
+**PR #893 boundary correction (2026-11-13; issue #557/#249; task_203cf62fe78b441c):** The production capped FFmpeg probe alone reports 30 s for both exact-30 s and longer sources. The service now accepts that boundary only for a complete bounded PCM RIFF/WAVE object whose verified frame count equals exactly 30 s, with the capped probe also reporting 30 s. It fails closed for ambiguous formats, mismatched header/body lengths, invalid codec, and >30 s, without decoding beyond the cap or changing upload/general playback policies. The synthetic FFmpeg adapter test exercises 29.999, 30.000, 30.001, and 31 s, plus forged/unknown inputs. This supplements T-18/T-19, not a change to their approved acceptance criteria; runtime with original recording and product acceptance remain separate.
+
 ## Phase 9 — Cross-Surface Validation
 
 ### T-17: Run configured validation on the integrated candidate

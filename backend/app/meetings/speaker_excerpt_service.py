@@ -12,6 +12,7 @@ import os
 import re
 import secrets
 import signal
+import struct
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
@@ -464,6 +465,57 @@ def _ffmpeg_probe_audio_duration_command() -> tuple[str, ...]:
     )
 
 
+def _is_complete_30_second_pcm_wav(source: bytes) -> bool:
+    """Prove exact duration from a complete, uncompressed RIFF/WAVE payload.
+
+    A capped decoder reporting 30 s cannot distinguish EOF from a longer
+    stream. Only accept that boundary if the complete bounded object contains
+    exactly one terminal PCM data chunk with exactly 30 s of whole frames.
+    Other formats fail closed at the cap rather than trusting container claims.
+    """
+    if (
+        len(source) < 44
+        or source[:4] != b"RIFF"
+        or source[8:12] != b"WAVE"
+        or struct.unpack_from("<I", source, 4)[0] + 8 != len(source)
+    ):
+        return False
+    offset = 12
+    frame_rate = block_align = 0
+    saw_data = False
+    while offset + 8 <= len(source):
+        chunk_id = source[offset : offset + 4]
+        size = struct.unpack_from("<I", source, offset + 4)[0]
+        start = offset + 8
+        end = start + size
+        next_offset = end + (size & 1)
+        if next_offset > len(source):
+            return False
+        if chunk_id == b"fmt ":
+            if frame_rate or saw_data or size != 16:
+                return False
+            codec, channels, frame_rate, byte_rate, block_align, bits = struct.unpack_from(
+                "<HHIIHH", source, start
+            )
+            if (
+                codec != 1
+                or not channels
+                or not frame_rate
+                or bits not in (8, 16, 24, 32)
+                or block_align != channels * (bits // 8)
+                or byte_rate != frame_rate * block_align
+            ):
+                return False
+        elif chunk_id == b"data":
+            if not frame_rate or saw_data or next_offset != len(source):
+                return False
+            saw_data = True
+            if size != 30 * frame_rate * block_align:
+                return False
+        offset = next_offset
+    return saw_data and offset == len(source)
+
+
 class SpeakerExcerptService:
     """Select validated intervals and encrypt their private source locator.
 
@@ -635,9 +687,13 @@ class SpeakerExcerptService:
             not math.isfinite(duration_seconds)
             or duration_seconds <= 0
             or duration_seconds > self.MAX_AUDIO_DURATION_MS / 1000
-            # Only the production probe is stopped at 30 s. It cannot tell
-            # an exact-30 s source from a longer one: reject both explicitly.
-            or (self._reject_ambiguous_cap and duration_seconds == self.MAX_AUDIO_DURATION_MS / 1000)
+            # The production probe stops at 30 s; at that boundary require
+            # independent proof of complete, exactly 30 s PCM source bytes.
+            or (
+                self._reject_ambiguous_cap
+                and duration_seconds == self.MAX_AUDIO_DURATION_MS / 1000
+                and not _is_complete_30_second_pcm_wav(source)
+            )
         ):
             raise ValueError("speaker excerpt unavailable")
         return math.ceil(duration_seconds * 1000)
