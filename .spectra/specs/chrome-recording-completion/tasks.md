@@ -211,8 +211,8 @@ Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (M
 | T1.3 | #612 | Pending — APX assignment resolution |
 | T1.4 | #613 | Pending — APX assignment resolution |
 | T1.5 | #614 | Pending — APX assignment resolution |
-| T1.6 | #615 | Pending — APX assignment resolution |
-| T1.7 | #616 | Pending — APX assignment resolution |
+| T1.6 | #615 | `task_7f2207cae42545ac` — review; PR #831 published, not integrated |
+| T1.7 | #616 | `task_4cfdfe7cffea49dc` — review; PR #828 published, not integrated |
 | T1.8 | #617 | Pending — APX assignment resolution |
 | T1.9 | #618 | Pending — APX assignment resolution |
 | T2.1 | #619 | Pending — APX assignment resolution |
@@ -221,7 +221,14 @@ Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (M
 | T2.4 | #622 | Pending — APX assignment resolution |
 | T2.5 | #623 | Pending — APX assignment resolution |
 | T2.6 | #624 | Pending — APX assignment resolution |
-| T2.7 | #625 | Pending — APX assignment resolution |
+| T2.7 | #625 | `task_4cfdfe7cffea49dc` — review; PR #828 published, not integrated |
 | T2.8 | #626 | Pending — APX assignment resolution |
 | T3.1 | #627 | Pending — APX assignment resolution |
 | T3.2 | #628 | Pending — APX assignment resolution |
+
+### Current delivery evidence (2026-11-12; not integration or product acceptance)
+
+| Task / issue | Candidate / APX card | Publication and validation | Remaining |
+|---|---|---|---|
+| T1.6 / #615 | [PR #831](https://github.com/lufermalgo/sauri/pull/831), `868827d`, `task_7f2207cae42545ac` | Published; 8 new backend authorization tests, 43/43 focal/regression tests, ownership-removal mutation detected 2 unauthorized HTTP 200 responses; both CI checks passed. Existing authorization was GREEN, not a new implementation. | Review and integration pending; no global completion or product acceptance. |
+| T1.7 / #616 and T2.7 / #625 | [PR #828](https://github.com/lufermalgo/sauri/pull/828), `584a9b0` + correction `b5ce76d`, `task_4cfdfe7cffea49dc` | Published; incorrect Stop projection RED 2/2 then GREEN 2/2, 29/29 focal and 192/192 extension tests, typecheck/build and both CI checks passed. Synthetic Teams handles only. | Review and integration pending; no actual Teams capture, full upload/review flow or product acceptance. |
