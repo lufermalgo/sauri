@@ -109,6 +109,31 @@ describe("T1.9: durable same-recording completion feedback", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })));
   });
 
+  it("does not recover an unrelated success before the initial selected-session read resolves", async () => {
+    await createCompletion(record("review_opened"));
+    let resolveProjection!: (value: { sauriState: typeof projection }) => void;
+    vi.mocked(chrome.storage.session.get).mockImplementationOnce(() => new Promise(resolve => { resolveProjection = resolve; }));
+    await mount();
+    expect(screen.queryByText(/review opened/i)).not.toBeInTheDocument();
+    await act(async () => resolveProjection({ sauriState: { status: "idle", sessionId: "missing-selected" } }));
+    expect(screen.queryByText(/review opened/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the newer selected session when the initial storage snapshot arrives late", async () => {
+    await createCompletion(record("review_opened"));
+    await createCompletion(record("upload_failed", { sessionId: "session-new", meetingId: "meeting-new", recordingId: "recording-new" }));
+    let resolveProjection!: (value: { sauriState: typeof projection }) => void;
+    vi.mocked(chrome.storage.session.get).mockImplementationOnce(() => new Promise(resolve => { resolveProjection = resolve; }));
+    await mount();
+    await act(async () => {
+      listeners.forEach(listener => listener({ sauriState: { newValue: { status: "idle", sessionId: "session-new" } } }, "session"));
+    });
+    await waitFor(() => outcome(/upload failed/i, "session-new"));
+    await act(async () => resolveProjection({ sauriState: { status: "idle", sessionId: "session-618-current" } }));
+    outcome(/upload failed/i, "session-new");
+    expect(screen.queryByText(/review opened/i)).not.toBeInTheDocument();
+  });
+
   it.each<[RecordingCompletion["status"], RegExp]>([
     ["finalizing", /finaliz/i],
     ["upload_pending", /upload.*(pending|wait|progress)|waiting.*upload/i],
@@ -186,9 +211,13 @@ describe("T1.9: durable same-recording completion feedback", () => {
       listeners.forEach((listener) => listener({ sauriState: { oldValue, newValue: projection } }, "session"));
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-    const region = outcome(/upload.*(fail|could not)/i, "session-618-next");
-    expect(region).not.toHaveTextContent("session-618-current");
-    expect(region).not.toHaveTextContent(/review ready|review opened/i);
+    // The prior success must disappear immediately, even before the new IDB read.
+    expect(screen.queryByText(/review ready/i)).not.toBeInTheDocument();
+    await waitFor(() => {
+      const region = outcome(/upload.*(fail|could not)/i, "session-618-next");
+      expect(region).not.toHaveTextContent("session-618-current");
+      expect(region).not.toHaveTextContent(/review ready|review opened/i);
+    });
   });
 
   it.each(["upload_pending", "upload_failed", "processing", "processing_assets_unavailable"] as const)(
