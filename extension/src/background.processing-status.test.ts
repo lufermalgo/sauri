@@ -50,7 +50,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
       video_sources: [],
     }));
     return new Response(JSON.stringify({ meeting_id: scenario.sameMeeting ? meetingId : otherMeetingId,
-      process_state: scenario.state }));
+      recording_id: recordingId, process_state: scenario.state }));
   }));
 
   let listener: Listener | undefined;
@@ -67,7 +67,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
       session: { get: vi.fn(async () => ({ sauriState: state })), set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = value.sauriState; }) },
-      sync: { get: vi.fn(async () => ({})) },
+      sync: { get: vi.fn(async () => ({ authToken: "synthetic-token" })) },
     },
     tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined), create: createTab },
   });
@@ -103,6 +103,15 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
         (job.status === "pending" && job.retryCount > 0)).toBe(true);
     } finally { db.close(); }
   }, { timeout: 2000, interval: 5 });
+  if (scenario.sameRecording) {
+    await vi.waitFor(async () => {
+      expect(fetched).toContain(`http://localhost:8000/api/v1/meetings/${meetingId}`);
+      const completion = await getCompletion(sessionId);
+      expect(scenario.sameMeeting
+        ? ["processing", "processing_failed", "processing_assets_unavailable", "processing_succeeded"]
+        : ["processing_status_unavailable"]).toContain(completion?.status);
+    }, { timeout: 2000, interval: 5 });
+  }
   return { completion: await getCompletion(sessionId), fetched, meetingId, recordingId,
     persistedRecordingId: scenario.sameRecording ? undefined : otherRecordingId, job: job!, createTab };
 }

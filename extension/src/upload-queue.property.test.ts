@@ -183,7 +183,9 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
       startup!();
       await awaitStatus("done", 0);
       await vi.waitFor(() => expect(clearSession).toHaveBeenCalledWith(identity.sessionId));
-      expect(await getCompletion(identity.sessionId)).toMatchObject({ status: "upload_succeeded", recordingId: identity.recordingId });
+      await vi.waitFor(async () => expect(await getCompletion(identity.sessionId)).toMatchObject({
+        status: "processing_status_unavailable", recordingId: identity.recordingId,
+      })); // Upload settled; no auth token means protected processing state is unavailable, not ready.
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({ meeting_id: identity.meetingId, idempotency_key: identity.sessionId });
     }), { numRuns: 100 });

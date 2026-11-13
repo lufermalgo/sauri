@@ -15,7 +15,7 @@ export interface RecordingCompletion {
   meetingId: string;
   recordingId?: string;
   capturedTabId: number;
-  status: "capturing" | "finalizing" | "upload_pending" | "uploading" | "upload_succeeded" | "upload_failed" | "upload_outcome_unavailable" | "processing" | "processing_assets_unavailable" | "processing_failed" | "processing_succeeded" | "review_launch_pending" | "review_opened";
+  status: "capturing" | "finalizing" | "upload_pending" | "uploading" | "upload_succeeded" | "upload_failed" | "upload_outcome_unavailable" | "processing" | "processing_assets_unavailable" | "processing_status_unavailable" | "processing_failed" | "processing_succeeded" | "review_launch_pending" | "review_opened";
   captureError?: boolean;
   trigger?: "stop" | "captured_tab_closed";
   reviewTabId?: number;
@@ -121,6 +121,37 @@ export async function setUploadOutcome(
         return;
       }
       store.put({ ...record, status, updatedAt: Date.now() });
+      result(undefined);
+    };
+  });
+}
+
+export async function getProcessingCompletions(): Promise<RecordingCompletion[]> {
+  return completionTransaction("readonly", (store, result) => {
+    const request = store.getAll();
+    request.onsuccess = () => result((request.result as RecordingCompletion[]).filter(record =>
+      !!record.recordingId && ["upload_succeeded", "processing", "processing_assets_unavailable", "processing_status_unavailable"].includes(record.status)));
+  });
+}
+
+/** Publish the status only for the same persisted ingestion identity. */
+export async function setProcessingStatus(
+  sessionId: string, meetingId: string, recordingId: string,
+  status: "processing" | "processing_assets_unavailable" | "processing_status_unavailable" | "processing_failed" | "processing_succeeded",
+): Promise<void> {
+  return completionTransaction("readwrite", (store, result, fail) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (!record || record.meetingId !== meetingId || record.recordingId !== recordingId ||
+          !["upload_succeeded", "processing", "processing_assets_unavailable", "processing_status_unavailable", "processing_failed", "processing_succeeded"].includes(record.status)) {
+        fail(new Error("Processing status identity or upload outcome mismatch"));
+        return;
+      }
+      // A stale concurrent status read must not demote an already verified result.
+      if (record.status !== "processing_succeeded" || status === "processing_succeeded") {
+        store.put({ ...record, status, updatedAt: Date.now() });
+      }
       result(undefined);
     };
   });
