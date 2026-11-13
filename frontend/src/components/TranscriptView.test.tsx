@@ -581,6 +581,49 @@ describe("TranscriptView — speaker review", () => {
     await waitFor(() => expect(play).toHaveBeenCalledWith(0, 8000));
   });
 
+  it.each([false, true])("keeps summary and original listening revision-safe with v2 (invalid=%s)", async (invalid) => {
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([
+      turn({ id: "parent", text: "AAAABBBB", endMs: 12000 }),
+    ]));
+    loadReview().mockResolvedValue(review({ labelsBySpeakerId: { "speaker-1": "Ana" },
+      items: review().items.map((item) => item.speakerId === "speaker-1"
+        ? { ...item, currentLabel: "Ana", disposition: "named" } : item),
+    }));
+    vi.spyOn(api, "getDiarization").mockResolvedValue({
+      diarization_id: "d1", transcript_id: "t-1", processing_revision: 1,
+      speakers: [{ id: "speaker-1", label: "Speaker 1", sequence: 1 }],
+      assignments: [{ turn_id: "parent", speaker_id: "speaker-1", overlap_ms: 12000 }],
+      latest_attempt: { processing_revision: 2, diarization_state: "in_progress", failure_cause: null },
+      presentation: { version: 2, transcript_id: "t-1", diarization_id: "d1", processing_revision: 1,
+        policy_version: "exclusive-source-v1", pieces: [
+          { source_turn_id: "parent", char_start: 0, char_end: invalid ? 99 : 4,
+            speaker_id: "speaker-1", intervals: [{ start_ms: 0, end_ms: 6000 }] },
+          { source_turn_id: "parent", char_start: 4, char_end: 8,
+            speaker_id: null, intervals: [{ start_ms: 6000, end_ms: 12000 }] },
+        ] },
+    });
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1", duration_seconds: 12, video_presence: "absent",
+      audio_source: { source_id: "original", url: "https://media.example.test/original", mime_type: "audio/webm" },
+      muxed_video_source: null, video_sources: [],
+    });
+    const play = vi.spyOn(PlaybackController.prototype, "playInterval").mockResolvedValue();
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const button = await screen.findByRole("button", { name: /listen to ana's speech/i });
+    expect(await screen.findByRole("heading", { name: /summary/i })).toBeInTheDocument();
+    if (invalid) {
+      expect(button).toBeDisabled();
+      expect((await screen.findAllByText("AAAABBBB")).length).toBeGreaterThan(0);
+      expect(new Set(screen.getAllByTestId("transcript-speaker-label").map((el) => el.textContent))).toEqual(new Set(["Speaker N"]));
+      expect(play).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect(button).toBeEnabled());
+      expect(new Set(screen.getAllByTestId("transcript-speaker-label").map((el) => el.textContent))).toEqual(new Set(["Ana", "Speaker N"]));
+      fireEvent.click(button);
+      await waitFor(() => expect(play).toHaveBeenCalledWith(0, 6000));
+    }
+  });
+
   it("does not offer original-audio listening for unproven or historical assignments", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn({ id: "t1", endMs: 8000 })]));
     const getDiarization = vi.spyOn(api, "getDiarization").mockResolvedValue({

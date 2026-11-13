@@ -152,7 +152,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       setReviewError("Review and diarization belong to different generations. Reload the recording.");
       return;
     }
-    const interval = representativeSpeakerInterval(data.turns, playableAssignments, speakerId);
+    const interval = listeningInterval(speakerId);
     if (!interval) {
       setReviewError("No attributed, playable speech interval is available for this speaker.");
       return;
@@ -209,6 +209,21 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     speakerIdByTurnId,
   );
   const playbackPassages = projection?.intervals ?? createPlaybackIntervals(sourceTurns, presentationTurns);
+  function listeningInterval(speakerId: string) {
+    if (!data) return null;
+    if (!projection) return representativeSpeakerInterval(data.turns, playableAssignments, speakerId);
+    // Reuse the original-only listening policy with validated v2 intervals, not
+    // the legacy parent assignment (which may cover more than one voice).
+    const speakerByPresentation = new Map(presentationTurns.map((turn) => [turn.id, turn.speakerId]));
+    const turns = playbackPassages.map((interval) => ({
+      ...interval, transcriptId: data.id,
+    }));
+    const assignments = playbackPassages.flatMap((interval) => {
+      const speaker = speakerByPresentation.get(interval.presentationTurnId);
+      return speaker ? [{ turn_id: interval.id, speaker_id: speaker }] : [];
+    });
+    return representativeSpeakerInterval(turns, assignments, speakerId);
+  }
   const playbackTurns = presentationTurns.map((turn) => {
     const speaker = speakerPresentation(turn.speakerId);
     return { ...turn, speakerLabel: speaker.label, speakerColor: speaker.color };
@@ -285,7 +300,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
             const busy = submittingSpeakerId === item.speakerId || item.expectedVersion === undefined;
             const interval = diarization?.processing_revision != null &&
               String(diarization.processing_revision) === activeReview.revisionId
-              ? representativeSpeakerInterval(data.turns, playableAssignments, item.speakerId)
+              ? listeningInterval(item.speakerId)
               : null;
             return (
               <article key={item.speakerId}>
