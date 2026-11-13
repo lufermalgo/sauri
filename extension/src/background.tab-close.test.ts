@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
+import * as fc from "fast-check";
 import { createCompletion, getCompletion, getChunksBySession, storeChunk, settleCapture } from "./recording-db";
 
 type Provider = "meet" | "teams";
@@ -7,7 +8,7 @@ type Handle = { provider: Provider; capturedTabId: number; sessionId: string };
 type TabRemovedListener = (tabId: number, info: { windowId: number; isWindowClosing: boolean }) => Promise<void>;
 type MessageListener = (message: { type: string }, sender: object, reply: (result: unknown) => void) => boolean;
 
-async function loadBackgroundWithHandles(handles: Handle[], projected?: Handle) {
+async function loadBackgroundWithHandles(handles: Handle[], projected?: Handle, mediaOwnerAvailable = true) {
   vi.resetModules();
   vi.stubGlobal("indexedDB", new IDBFactory());
   for (const handle of handles) {
@@ -15,13 +16,16 @@ async function loadBackgroundWithHandles(handles: Handle[], projected?: Handle) 
       ...handle, meetingId: `meeting-${handle.sessionId}`, status: "capturing", updatedAt: 1,
     });
   }
-  let state: { status: string; tabId?: number; sessionId?: string } = projected
-    ? { status: "recording", tabId: projected.capturedTabId, sessionId: projected.sessionId }
+  let state: { status: string; tabId?: number; sessionId?: string; provider?: Provider; notificationEmittedAt?: string } = projected
+    ? { status: "recording", tabId: projected.capturedTabId, sessionId: projected.sessionId, provider: projected.provider }
     : { status: "idle" };
   let tabRemovedListener: TabRemovedListener | undefined;
   let messageListener: MessageListener | undefined;
   const sendMessage = vi.fn(async (message: { type: string; sessionId?: string }) => {
-    if (message.type === "stop-recording" && message.sessionId) await settleCapture(message.sessionId);
+    if (message.type === "stop-recording") {
+      if (!mediaOwnerAvailable) return { ok: false };
+      if (message.sessionId) await settleCapture(message.sessionId);
+    }
     return { ok: true };
   });
   vi.stubGlobal("chrome", {
@@ -51,9 +55,9 @@ async function loadBackgroundWithHandles(handles: Handle[], projected?: Handle) 
   return {
     state: () => state,
     sendMessage,
-    async message(type: string) {
+    async message(type: string, sender: object = {}, payload: { sessionId?: string; emittedAt?: string } = {}) {
       const reply = vi.fn();
-      messageListener!({ type }, {}, reply);
+      messageListener!({ type, ...payload }, sender, reply);
       await vi.waitFor(() => expect(reply).toHaveBeenCalled());
       // The real listener starts async handlers without returning their promise.
       await new Promise(resolve => setTimeout(resolve, 0));
@@ -136,6 +140,95 @@ describe.each(providers)("%s captured-tab completion adapter", provider => {
     expect(await getChunksBySession(active.sessionId)).toHaveLength(1);
     expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
   });
+
+  it("does not stop either session when the projected tab has two durable handles", async () => {
+    const ambiguous: Handle = { ...active, sessionId: `ambiguous-stop-${provider}` };
+    const h = await loadBackgroundWithHandles([active, ambiguous, other], active);
+    await h.message("stop-capture");
+    expect(h.stops()).toEqual([]);
+    for (const handle of [active, ambiguous]) {
+      expect(await getCompletion(handle.sessionId)).toMatchObject({ ...handle, status: "capturing", captureError: true });
+    }
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+  });
+
+  it("never trusts a stale projected tab/provider over the durable handle", async () => {
+    const wrongTab = await loadBackgroundWithHandles([active, other], { ...active, capturedTabId: 888 });
+    expect(await wrongTab.message("stop-capture")).toMatchObject({ ok: false });
+    expect(wrongTab.stops()).toEqual([]);
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing", captureError: true });
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+
+    const wrongProvider = await loadBackgroundWithHandles([active, other], {
+      ...active, provider: provider === "meet" ? "teams" : "meet",
+    });
+    expect(await wrongProvider.message("stop-capture")).toMatchObject({ ok: false });
+    expect(wrongProvider.stops()).toEqual([]);
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing", captureError: true });
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+  });
+
+  it("reports a stale projection onto another captured tab without poisoning its owner", async () => {
+    const h = await loadBackgroundWithHandles([active, other], { ...active, capturedTabId: other.capturedTabId });
+    await storeChunk(active.sessionId, new Blob(["retained-media"]));
+    expect(await h.message("stop-capture")).toMatchObject({ ok: false });
+    expect(h.stops()).toEqual([]);
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing", captureError: true });
+    expect(await getChunksBySession(active.sessionId)).toHaveLength(1);
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+    await h.close(other.capturedTabId);
+    expect(h.stops()).toEqual([other.sessionId]);
+  });
+
+  it("does not accept a foreign page's media-owner completion or failure", async () => {
+    const h = await loadBackgroundWithHandles([active, other], active);
+    const sender = { tab: { id: other.capturedTabId } };
+    expect(await h.message("recording-error", sender, { sessionId: active.sessionId })).toMatchObject({ ok: false });
+    expect(await h.message("recording-stopped", sender, { sessionId: active.sessionId })).toMatchObject({ ok: false });
+    await h.message("notification-emitted", sender, { emittedAt: "2026-11-12T00:00:00Z" });
+    expect(h.state().notificationEmittedAt).toBeUndefined();
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing" });
+    expect(h.state()).toMatchObject({ status: "recording", sessionId: active.sessionId });
+  });
+
+  it("cannot be stopped by a provider page forging a panel stop message", async () => {
+    const h = await loadBackgroundWithHandles([active, other], active);
+    await h.message("stop-capture", { tab: { id: other.capturedTabId } });
+    expect(h.stops()).toEqual([]);
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "capturing" });
+  });
+
+  it("does not claim success if the existing media owner rejects the exact handle", async () => {
+    const h = await loadBackgroundWithHandles([active, other], active, false);
+    await storeChunk(active.sessionId, new Blob(["synthetic-media"]));
+    await h.message("stop-capture");
+    expect(h.stops()).toEqual([active.sessionId]);
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "finalizing", captureError: true });
+    expect(await getChunksBySession(active.sessionId)).toHaveLength(1);
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+  });
+
+  it("retains a non-successful error if tab-close cannot stop the exact media owner after restart", async () => {
+    const h = await loadBackgroundWithHandles([active, other], active, false);
+    await h.restartWithoutProjection();
+    await h.close(active.capturedTabId);
+    expect(h.stops()).toEqual([active.sessionId]);
+    expect(await getCompletion(active.sessionId)).toMatchObject({ ...active, status: "finalizing", captureError: true });
+    expect(await getCompletion(other.sessionId)).toMatchObject({ ...other, status: "capturing" });
+  });
+
+  it("rejects a mismatched projected tab across 100 synthetic handles", async () => {
+    await fc.assert(fc.asyncProperty(
+      fc.uuid(), fc.integer({ min: 1, max: 1000000 }),
+      async (sessionId, capturedTabId) => {
+        const handle = { provider, sessionId, capturedTabId };
+        const h = await loadBackgroundWithHandles([handle], { ...handle, capturedTabId: capturedTabId + 1 });
+        expect(await h.message("stop-capture")).toMatchObject({ ok: false });
+        expect(h.stops()).toEqual([]);
+        expect(await getCompletion(sessionId)).toMatchObject({ ...handle, status: "capturing", captureError: true });
+      },
+    ), { numRuns: 100 });
+  }, 30000);
 
   it("persists ambiguity without a projected session, including concurrent close events", async () => {
     const ambiguous: Handle = { ...active, sessionId: `unprojected-${provider}` };
