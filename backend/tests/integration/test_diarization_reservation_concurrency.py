@@ -202,3 +202,35 @@ async def test_worker_redelivery_does_not_rerun_engine_or_mix_generations(pg, se
             speakers[0].id, speakers[1].id,
         }
         assert (await DiarizationRepository(pg).get_by_meeting(meeting_id)).id == generations[1].id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("concurrent", [False, True])
+async def test_ordinary_unversioned_redelivery_without_processing_claim_is_idempotent(pg, seeded, concurrent):
+    meeting_id, _, _, recording_id = seeded
+    message = {"meeting_id": meeting_id, "owner_id": "qa-user", "recording_id": recording_id}
+    engine = AsyncMock()
+    engine.diarize.return_value = DiarizationResult(
+        segments=[SpeakerSegment(raw_label="SPEAKER_00", start_ms=0, end_ms=1000)], speaker_count=1,
+    )
+    engine.capabilities = MagicMock(return_value=DiarizationCapabilities(is_local=True, provider_name="qa-engine"))
+    with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
+        if concurrent:
+            await asyncio.wait_for(asyncio.gather(
+                _process_diarization(message, pg), _process_diarization(message, pg),
+            ), timeout=10)
+        else:
+            await _process_diarization(message, pg)
+            await _process_diarization(message, pg)
+    engine.diarize.assert_awaited_once()
+    async with pg() as session:
+        generations = (await session.scalars(select(Diarization).where(Diarization.meeting_id == meeting_id))).all()
+        reviews = (await session.scalars(select(SpeakerReview).where(SpeakerReview.meeting_id == meeting_id))).all()
+        speakers = (await session.scalars(select(Speaker))).all()
+        assignments = (await session.scalars(select(SpeakerAssignment))).all()
+        assert len(generations) == len(reviews) == len(speakers) == len(assignments) == 1
+        assert generations[0].processing_revision == reviews[0].processing_revision == 1
+        assert generations[0].diarization_state == "completed"
+        assert (await session.scalars(select(SpeakerReviewItem).where(
+            SpeakerReviewItem.review_id == reviews[0].id,
+        ))).one().speaker_key == speakers[0].id
