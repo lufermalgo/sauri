@@ -61,6 +61,12 @@ U4 #837 repitió en entorno nuevo y autenticado escrituras/lecturas PostgreSQL/S
 
 Orden de ejecución: reconciliar especificaciones y aprobaciones → reparar conexiones concretas con pruebas → publicar e integrar unidades → validar captura/carga/propiedad/reproducción → validar transcripción y hablantes sobre ese recorrido. No reemplazar funcionalidad con rutas de demostración o datos simulados; los datos sintéticos son únicamente fixtures de prueba.
 
+## Recuperación manual guardada — candidato #771 (T17/T18)
+
+Spec aprobada: `.spectra/specs/fix-stale-meeting-recovery/{bugfix,design,tasks}.md`. Esta unidad se apila sobre el precursor #913; no equivale a integración, despliegue ni autorización del piloto. El POST explícito y autenticado conserva propiedad; el servicio toma primero el fence PostgreSQL compartido con ambos workers, rechaza estados/activos/trabajo incierto y comprueba por metadatos el audio persistido. Solo entonces, en una transacción, avanza generación, agrega historial `guarded_manual_recovery` → `transcribing`, operación y outbox único, y consume la compuerta de una reunión. No modifica medios, notas, hablantes ni retención; no publica en RabbitMQ ni repite ingestión.
+
+Motivo y alternativa descartada: ni reingestión ni publicar directamente permiten atomicidad con PostgreSQL. Los mensajes antiguos quedan cercados por generación; un claim activo, incompleto o vencido nunca prueba inactividad. Se reutiliza el esquema T2 y fence T5, sin migración ni configuración personal. Modo deshabilitado por defecto. Entrega del outbox, estado/preservación verificable y verificación del piloto siguen en sus unidades dependientes: **no habilitar uso operativo de este candidato parcial**. Evidencia sintética PostgreSQL/S3 y límites: `../.spectra/specs/fix-stale-meeting-recovery/validation-t17-t18-20261113.md`.
+
 ## Preservación y mantenimiento
 
 No ejecutar `docker system prune`, eliminar volúmenes ni limpiar recursos ajenos. Identificar proyecto, propiedad, datos y autorización antes de retirar recursos existentes. La auditoría inicial midió un volumen principal de aproximadamente 2,426 GB; es un dato histórico, no un inventario vigente ni autorización de borrado. Las mediciones globales de Docker pueden incluir otros recursos: verificar siempre su estado y la autorización actual. QA retira contenedores/redes/volúmenes propios al finalizar; no ejecuta limpieza global de imágenes compartidas ni cache.

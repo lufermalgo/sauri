@@ -30,7 +30,7 @@ All test fixtures and sentinel content must be synthetic. No task reads or copie
 ## Delivery-unit mapping (WORKFLOW §9)
 
 - T-3 (RED) and T-4 (GREEN) share one delivery unit: Issue #767 · Card `task_23336cbd897c4cbb` · branch `bugfix/issue-767-stale-recovery-t-3` · worktree `.worktrees/bugfix-issue-767-stale-recovery-t-3` · one PR. T-4 remains a distinct task and retains its own acceptance evidence and dependency on T-3 and T-2.
-- T-17 (RED) and T-18 (GREEN) share one delivery unit: Issue #771 · Card `task_70f9cb0897cc4a76`.
+- T-17 (RED) and T-18 (GREEN) share one delivery unit: Issue #771 · historical card `task_70f9cb0897cc4a76` unavailable (`not_found`); resumed as `task_18946291951f433c`, same canonical branch/worktree, no duplicate executor. T17 behavioral RED is committed as `c568ce2`; T18 candidate and validation are recorded in `validation-t17-t18-20261113.md`. Publication, integration and pilot authorization remain distinct.
 - T-9 (RED) and T-10 (GREEN) share one delivery unit: Issue #777 · Card `task_e9315846d41a4199`.
 - The task IDs, individual acceptance evidence, validation commands, and dependency edges remain distinct below. The former GREEN-side issue/card references #768, #772 and #778 are not separate delivery units; issue/card reconciliation follows Mira's approval of this mapping.
 
@@ -90,7 +90,7 @@ Ansel retomó la unidad #767, preservó RED `d424f68` y reprodujo 2 fallos condu
 
 ## T-17 — RED: Specify complete guarded service behavior through the existing route
 
-**Tracking:** Issue #771 · Canonical shared delivery card `task_70f9cb0897cc4a76` (T-17 RED + T-18 GREEN). Shared implementation branch/worktree: `bugfix/issue-771-stale-recovery-service` / `.worktrees/bugfix-issue-771-stale-recovery-service`.
+**Tracking:** Issue #771 · Shared delivery card `task_18946291951f433c` (resumes unavailable historical `task_70f9cb0897cc4a76`) (T-17 RED + T-18 GREEN). Shared implementation branch/worktree: `bugfix/issue-771-stale-recovery-service` / `.worktrees/bugfix-issue-771-stale-recovery-service`.
 
 **Files / RED test seams:** `backend/tests/meetings/test_recovery_service.py` (new), invoking the now-existing FastAPI `POST /api/v1/meetings/{meeting_id}/recover` and the real `backend/app/meetings/recovery_service.py:MeetingRecoveryService.recover(meeting_id, actor_id, idempotency_key)` through its route/service boundary.
 
@@ -102,7 +102,7 @@ Ansel retomó la unidad #767, preservó RED `d424f68` y reprodujo 2 fallos condu
 
 ## T-18 — GREEN: Implement guarded meeting recovery service
 
-**Tracking:** Issue #771 · Canonical shared delivery card `task_70f9cb0897cc4a76` (T-17 RED + T-18 GREEN; former #772 / `task_5c2f095a8a914b16` consolidated as duplicate). Shared implementation branch/worktree: `bugfix/issue-771-stale-recovery-service` / `.worktrees/bugfix-issue-771-stale-recovery-service`.
+**Tracking:** Issue #771 · Shared delivery card `task_18946291951f433c` (resumes unavailable historical `task_70f9cb0897cc4a76`) (T-17 RED + T-18 GREEN; former #772 / `task_5c2f095a8a914b16` consolidated as duplicate). Shared implementation branch/worktree: `bugfix/issue-771-stale-recovery-service` / `.worktrees/bugfix-issue-771-stale-recovery-service`.
 
 **Files:** `backend/app/meetings/recovery_service.py`; `backend/app/meetings/state_machine.py` only if the existing event vocabulary lacks the specifically named recovery transition; the minimal required repository/service modules; `backend/tests/meetings/test_recovery_service.py`.
 

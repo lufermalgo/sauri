@@ -36,7 +36,7 @@ from app.infra.models import (
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.meetings import service as meeting_service
-from app.meetings.recovery_service import DisabledRecoveryResult, MeetingRecoveryService
+from app.meetings.recovery_service import MeetingRecoveryService, RecoveryResult
 from app.meetings.service import (
     delete_meeting,
     get_meeting,
@@ -187,8 +187,8 @@ async def recover_meeting_endpoint(
     meeting_id: str,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     idempotency_key: Annotated[str, Header(min_length=1, max_length=128)],
-) -> DisabledRecoveryResult:
-    """Owner-only disabled precursor; no recovery is accepted or dispatched."""
+) -> RecoveryResult:
+    """Explicit owner-only recovery; service owns fencing and atomic persistence."""
     engine = create_engine()
     session_factory = create_session_factory(engine)
     try:
@@ -196,9 +196,9 @@ async def recover_meeting_endpoint(
             await _get_authorized_meeting(
                 session, meeting_id, user, f"POST /api/v1/meetings/{meeting_id}/recover"
             )
-            return await MeetingRecoveryService().recover(meeting_id, user.id, idempotency_key)
     finally:
         await engine.dispose()
+    return await MeetingRecoveryService(_get_object_store).recover(meeting_id, user.id, idempotency_key)
 
 
 @router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)

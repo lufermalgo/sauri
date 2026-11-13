@@ -36,6 +36,8 @@ VALID_FAILURE_CAUSES: set[str] = {
 # Transition map: current_state -> {event -> new_state}
 VALID_TRANSITIONS: dict[str, dict[str, str]] = {
     "queued": {
+        # Only the guarded recovery service may emit this explicit event.
+        "guarded_manual_recovery": "transcribing",
         "start_capture": "joining",
         "meeting_cancelled": "failed",
     },
@@ -47,6 +49,7 @@ VALID_TRANSITIONS: dict[str, dict[str, str]] = {
         "recording_uploaded": "transcribing",
     },
     "transcribing": {
+        "guarded_manual_recovery": "transcribing",
         "transcription_completed": "completed",
         "engine_failed": "failed",
     },

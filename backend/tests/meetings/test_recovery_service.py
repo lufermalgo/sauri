@@ -11,23 +11,28 @@ import os
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session
 
 from app.infra.database import Base
 from app.infra.models import (
+    Diarization,
     ManualRecoveryPilotGate,
     Meeting,
     MeetingProcessingClaim,
     MeetingRecoveryOperation,
     MeetingRecoveryOutbox,
     SessionRecording,
+    Speaker,
+    SpeakerReview,
     StateHistory,
     Transcript,
     User,
@@ -147,7 +152,9 @@ async def test_accepts_one_atomic_fenced_operation(
     for table in before.keys() - {"meetings", "meeting_processing_claims", "meeting_recovery_operations",
                                  "meeting_recovery_outbox", "manual_recovery_pilot_gate", "state_history"}:
         assert before[table] == after[table], table
-    assert before["meetings"][0][:7] == after["meetings"][0][:7]  # note/title and identity preserved
+    # Only process_state (column 6) changes; every note/owner/failure field stays intact.
+    assert before["meetings"][0][:6] == after["meetings"][0][:6]
+    assert before["meetings"][0][7:] == after["meetings"][0][7:]
     await engine.dispose()
 
 
@@ -208,6 +215,7 @@ async def test_rejects_without_any_database_write(
             claim.claim_kind = "diarization"
         elif case.startswith("object_"):
             store = router._get_object_store()
+            assert isinstance(store, AsyncMock)
             if case == "object_error":
                 store.inspect.side_effect = RuntimeError("private-storage-error")
             else:
@@ -274,10 +282,139 @@ async def test_transaction_failure_rolls_back_gate_generation_history_and_outbox
 
     async def fail_flush(self: AsyncSession, objects: object = None) -> None:
         await original(self)
-        if any(isinstance(value, MeetingRecoveryOperation) for value in self.identity_map.values()):
+        if any(isinstance(value, ManualRecoveryPilotGate) and value.status == "running"
+               for value in self.identity_map.values()):
             raise OperationalError("synthetic failure", {}, RuntimeError("synthetic"))
 
     monkeypatch.setattr(AsyncSession, "flush", fail_flush)
     body = await post(api_client, candidate)
     assert body["status"] == "eligibility_unverified"
     assert await snapshot(api_db_url) == before
+
+
+async def test_read_query_failure_is_noop(
+    api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = await snapshot(api_db_url)
+    original = AsyncSession.scalar
+
+    async def fail_query(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> object:
+        if "transcripts" in str(statement):
+            raise OperationalError("synthetic query failure", {}, RuntimeError("private"))
+        return await original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "scalar", fail_query)
+    assert (await post(api_client, candidate))["status"] == "eligibility_unverified"
+    assert await snapshot(api_db_url) == before
+
+
+async def test_commit_failure_is_noop(
+    api_client: AsyncClient, api_db_url: str, candidate: str,
+) -> None:
+    before = await snapshot(api_db_url)
+
+    def fail_commit(session: Session) -> None:
+        operation = session.scalar(select(MeetingRecoveryOperation.id))
+        if operation is not None:
+            raise OperationalError("synthetic commit failure", {}, RuntimeError("private"))
+
+    event.listen(Session, "before_commit", fail_commit)
+    try:
+        assert (await post(api_client, candidate))["status"] == "eligibility_unverified"
+    finally:
+        event.remove(Session, "before_commit", fail_commit)
+    assert await snapshot(api_db_url) == before
+
+
+async def test_postgres_disallows_duplicate_recording_before_recovery(
+    api_client: AsyncClient, api_db_url: str, candidate: str,
+) -> None:
+    engine = create_async_engine(api_db_url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    before = await snapshot(api_db_url)
+    with pytest.raises(IntegrityError):
+        async with factory() as session, session.begin():
+            session.add(SessionRecording(id=str(uuid.uuid4()), meeting_id=candidate,
+                                         idempotency_key=str(uuid.uuid4()), capture_origin="web_upload",
+                                         audio_ref="synthetic/duplicate", duration_seconds=1,
+                                         finished_at=datetime.now(UTC)))
+    assert await snapshot(api_db_url) == before
+    assert (await post(api_client, candidate))["status"] == "accepted"
+    await engine.dispose()
+
+
+async def test_other_meeting_is_untouched_and_cannot_replace_consumed_gate(
+    api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    other = await _create_meeting(api_db_url)
+    before = await snapshot(api_db_url)
+    assert (await post(api_client, other))["status"] == "pilot_not_armed"
+    assert await snapshot(api_db_url) == before
+    assert (await post(api_client, candidate))["status"] == "accepted"
+    after = await snapshot(api_db_url)
+    assert next(row for row in after["meetings"] if row[0] == other) == next(
+        row for row in before["meetings"] if row[0] == other)
+    monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", other)
+    assert (await post(api_client, other))["status"] != "accepted"
+    assert await snapshot(api_db_url) == after
+
+
+@pytest.mark.parametrize("state", ["queued", "transcribing", "joining", "recording", "completed", "failed"])
+def test_guarded_recovery_event_has_only_two_sources(state: str) -> None:
+    from app.meetings.state_machine import apply_event
+
+    result = apply_event(state, "guarded_manual_recovery")
+    assert result.successful == (state in {"queued", "transcribing"})
+    assert result.new_state == ("transcribing" if result.successful else state)
+
+
+async def test_generated_artifact_graph_and_confirmed_labels_are_immutable(
+    api_client: AsyncClient, api_db_url: str, candidate: str, caplog: pytest.LogCaptureFixture,
+) -> None:
+    engine = create_async_engine(api_db_url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime.now(UTC)
+    transcript_id, diarization_id = str(uuid.uuid4()), str(uuid.uuid4())
+    async with factory() as session, session.begin():
+        session.add(Transcript(id=transcript_id, meeting_id=candidate, language="es",
+                               provider="synthetic", supports_turns=True, created_at=now))
+        await session.flush()
+        session.add(Diarization(id=diarization_id, meeting_id=candidate, transcript_id=transcript_id,
+                                speaker_count=1, diarization_state="completed", created_at=now, updated_at=now))
+        await session.flush()
+        session.add(Speaker(id=str(uuid.uuid4()), diarization_id=diarization_id,
+                            raw_label="synthetic-private-raw", label="synthetic-private-confirmed", sequence=1))
+        session.add(SpeakerReview(id=str(uuid.uuid4()), meeting_id=candidate, created_at=now))
+    before = await snapshot(api_db_url)
+    assert (await post(api_client, candidate))["status"] == "ineligible_artifacts"
+    assert await snapshot(api_db_url) == before
+    assert "synthetic-private" not in caplog.text
+    await engine.dispose()
+
+
+@pytest.mark.parametrize("available", [True, False])
+async def test_real_object_metadata_boundary(
+    api_client: AsyncClient, api_db_url: str, candidate: str, monkeypatch: pytest.MonkeyPatch,
+    available: bool,
+) -> None:
+    from app.infra.object_store import create_object_store
+
+    endpoint = os.environ.get("SAURI_RECOVERY_TEST_OBJECT_ENDPOINT")
+    if not endpoint:
+        pytest.skip("requires exclusively disposable local S3 endpoint")
+    assert endpoint.startswith("http://127.0.0.1:")
+    monkeypatch.setenv("OBJECT_STORE_ENDPOINT", endpoint)
+    monkeypatch.setenv("OBJECT_STORE_BUCKET", "recovery-771")
+    monkeypatch.setenv("MINIO_ROOT_USER", "synthetic771")
+    monkeypatch.setenv("MINIO_ROOT_PASSWORD", "synthetic771")
+    store = create_object_store()
+    if available:
+        await store.save("synthetic/private/audio", b"synthetic metadata fixture")
+    else:
+        await store.delete("synthetic/private/audio")
+    monkeypatch.setattr(router, "_get_object_store", lambda: store)
+    before = await snapshot(api_db_url)
+    body = await post(api_client, candidate)
+    assert body["status"] == ("accepted" if available else "eligibility_unverified")
+    if not available:
+        assert await snapshot(api_db_url) == before

@@ -108,8 +108,11 @@ async def test_disabled_owner_recovery_is_content_free_noop(
     # The approved contract specifies a no-op reason, not an HTTP status mapping.
     assert response.status_code != 404, "the owner-scoped recovery route must be registered"
     body = response.json()
-    assert body["status"] == "pilot_not_armed"
-    assert body["reason_code"] == "pilot_not_armed"
+    # T18 now evaluates pilot eligibility: this old precursor fixture has no
+    # durable fence, so it must still reject (without writes), never accept.
+    reason = "eligibility_unverified" if mode == "pilot" else "pilot_not_armed"
+    assert body["status"] == reason
+    assert body["reason_code"] == reason
     assert set(body) == {"status", "reason_code"}
     assert PRIVATE_TITLE not in caplog.text
     assert PRIVATE_TITLE not in response.text
