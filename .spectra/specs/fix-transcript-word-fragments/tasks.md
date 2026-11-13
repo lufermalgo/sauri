@@ -14,10 +14,12 @@ Encargo de Ansel desde `178f893`/PR902; refs #659/#880. Implementa solo borrado 
 **Acción:** borrar reviews del meeting fuente y diarizaciones del transcript antes de DELETE SQL del transcript; reutilizar helper en ambas rutas, manteniendo commit/objetos/plazos existentes.
 **Criterio de Completado:** tests H1.1 GREEN; rollback restaura snapshot completo y retries preservan otros orígenes, nombres/plantillas/auditoría. **Dependencias:** H1.1; P-H1–P-H4.
 
-### H1.3 — Regresiones y entrega [~]
+### H1.3 — Regresiones y entrega [x]
 **Archivos:** tests anteriores y evidencia `retention-h1-validation.md` en esta spec; delta bugfix/design/tasks en esta unidad.
 **Acción:** ejecutar suites pertinentes de retención/meetings/diarización, Ruff/mypy del proyecto y comparación con base; revisar diff, eliminar contenedor/volúmenes temporales y comprobar ausencia; publicar commit/PR vinculado #903/#659/#880 para revisión de Ansel, sin merge.
 **Criterio de Completado:** comandos/resultados/SHA y límites documentados; cero regresiones nuevas, limpieza verificada y PR publicado no draft. **Dependencias:** H1.2. T19 completo y T20 final no se cierran por esta entrega.
+
+**Entrega H1:** [PR905](https://github.com/lufermalgo/sauri/pull/905), código `f304adf`; PostgreSQL H1 7 PASS y regresiones configuradas 345 PASS. Evidencia/limpieza/deuda y bloqueo CI billing en `retention-h1-validation.md`. Publicado para revisión de Ansel, no merge ni instalación; T20/#659 sigue pendiente.
 
 ## Delta ejecutable #880 — 2026-11-13
 
