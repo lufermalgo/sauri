@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { PlaybackManifest, TimedPassage } from "../api";
+import type { PresentationTurn } from "../transcript-turns";
 import {
   PlaybackController,
   type MediaSourceOption,
@@ -7,6 +8,7 @@ import {
 } from "./PlaybackController";
 
 interface PlaybackTranscriptPassage extends TimedPassage {
+  presentationTurnId?: string;
   speakerLabel?: string;
   speakerColor?: string;
 }
@@ -14,6 +16,7 @@ interface PlaybackTranscriptPassage extends TimedPassage {
 interface MeetingPlaybackViewProps {
   manifest: PlaybackManifest | null;
   passages: PlaybackTranscriptPassage[];
+  presentationTurns?: Array<PresentationTurn & { speakerColor?: string }>;
   loading: boolean;
   error: string | null;
   onRefreshManifest?: (currentTimeMs: number) => Promise<PlaybackManifest>;
@@ -52,6 +55,7 @@ function formatTime(milliseconds: number): string {
 export function MeetingPlaybackView({
   manifest,
   passages,
+  presentationTurns,
   loading,
   error,
   onRefreshManifest,
@@ -161,11 +165,14 @@ export function MeetingPlaybackView({
     };
   }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, onSeekToReady, passages, playableVideoSources]);
 
+  const activeSource = passages.find((passage) => passage.id === state.activePassageId);
+  const activePresentationId = activeSource?.presentationTurnId ?? activeSource?.id ?? null;
+
   useEffect(() => {
-    if (state.activePassageId === previousActivePassage.current) return;
-    previousActivePassage.current = state.activePassageId;
-    if (state.activePassageId) passageRefs.current.get(state.activePassageId)?.scrollIntoView?.({ block: "nearest" });
-  }, [state.activePassageId]);
+    if (activePresentationId === previousActivePassage.current) return;
+    previousActivePassage.current = activePresentationId;
+    if (activePresentationId) passageRefs.current.get(activePresentationId)?.scrollIntoView?.({ block: "nearest" });
+  }, [activePresentationId]);
 
   async function refreshSource() {
     if (refreshAttempted.current) {
@@ -203,7 +210,21 @@ export function MeetingPlaybackView({
   const activeError = error ?? playbackError;
   const hasPlayableMedia = isMuxed || needsAudio;
   const durationMs = state.durationMs;
-  const activePassage = passages.find((passage) => passage.id === state.activePassageId);
+  // Display rows never become clock intervals. Only the first original interval
+  // is used for the row's play action; the controller keeps every source bound.
+  const displayPassages = presentationTurns?.map((turn) => {
+    const firstInterval = passages.find((passage) => passage.presentationTurnId === turn.id && isPlayablePassage(passage));
+    return {
+      id: turn.id,
+      text: turn.text,
+      sequence: turn.sequence,
+      speakerLabel: turn.speakerLabel,
+      speakerColor: turn.speakerColor,
+      startMs: firstInterval?.startMs ?? null,
+      endMs: firstInterval?.endMs ?? null,
+    };
+  }) ?? passages;
+  const activePassage = displayPassages.find((passage) => passage.id === activePresentationId);
   const activePassagePreview = activePassage
     ? `${activePassage.speakerLabel ?? "Speaker N"} · ${formatTime(isPlayablePassage(activePassage) ? activePassage.startMs : state.currentTimeMs)} · ${activePassage.text}`
     : null;
@@ -319,12 +340,12 @@ export function MeetingPlaybackView({
           onClick={() => controllerRef.current?.setMuted(!state.muted)}
         >{state.muted ? "Unmute" : "Mute"}</button>
       </div>
-      {passages.length === 0 ? (
+      {displayPassages.length === 0 ? (
         <p>No transcript or empty transcript.</p>
       ) : (
         <details>
           <summary>
-            Playback passages ({passages.length})
+            Playback passages ({displayPassages.length})
             {activePassage && activePassagePreview && (
               <span
                 aria-current="true"
@@ -346,9 +367,9 @@ export function MeetingPlaybackView({
             )}
           </summary>
           <ol aria-label="Transcript passages">
-            {passages.map((passage) => {
+            {displayPassages.map((passage) => {
               const playable = isPlayablePassage(passage);
-              const isActive = state.activePassageId === passage.id;
+              const isActive = activePresentationId === passage.id;
               return (
                 <li
                   key={passage.id}

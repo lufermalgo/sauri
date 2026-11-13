@@ -200,6 +200,30 @@ describe("T15 — validated generation attribution", () => {
   });
 });
 
+describe("T18 — grouped playback wiring", () => {
+  it("feeds exact source intervals to the clock and maps both intervals to one visible playback row", async () => {
+    const data = transcript([
+      turn({ id: "s1", text: "Synthetic grouped", startMs: 0, endMs: 100, sequence: 1 }),
+      turn({ id: "s2", text: "source", startMs: 200, endMs: 300, sequence: 2 }),
+    ]);
+    data.segments = data.turns.map(({ id, text, startMs, endMs, sequence }) => ({ id, text, startMs, endMs, sequence }));
+    vi.mocked(api.getTranscript).mockResolvedValue(data);
+    vi.mocked(api.getDiarization).mockResolvedValue({ processing_revision: 2, speakers: [{ id: "s", label: "Speaker 1", sequence: 1 }], assignments: [{ turn_id: "s1", speaker_id: "s", overlap_ms: 100 }, { turn_id: "s2", speaker_id: "s", overlap_ms: 100 }] });
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue({ meeting_id: "r-1", duration_seconds: 1, video_presence: "absent", audio_source: { source_id: "synthetic", url: "https://media.example.test/synthetic.wav", mime_type: "audio/wav" }, muxed_video_source: null, video_sources: [] });
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const summary = await screen.findByText("Playback passages (1)");
+    fireEvent.click(summary);
+    const row = summary.closest("details")!.querySelector("li")!;
+    expect(row.textContent).toContain("Synthetic grouped source");
+    const audio = screen.getByTestId("playback-audio") as HTMLAudioElement;
+    for (const [seconds, active] of [[0.05, true], [0.15, false], [0.25, true], [0.3, false]] as const) {
+      audio.currentTime = seconds;
+      fireEvent.timeUpdate(audio);
+      expect(row.getAttribute("aria-current")).toBe(active ? "true" : null);
+    }
+  });
+});
+
 describe("T16 — source visibility and review isolation", () => {
   it("preserves untimed source text without inventing a playback association", async () => {
     const data = transcript([]);

@@ -199,6 +199,8 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 ### T18: GREEN — conectar filas agrupadas con intervalos de playback fuente
 
+**Ejecución 2026-11-13:** Issue #657 · APX `task_94d76af0e39f436a`. GREEN preparado sobre T16 PR #859 (`00e505a`), RED T17 preservado (`81c1467` → `3a6f2f6`). Comando normativo 33 PASS; regresión frontend 120 PASS; typecheck de todos los workspaces y build PASS. Evidencia de corrección de fixture de metadata, integración y navegador APX: `qa-t18-green.md`. Pendiente integración de T16/T14 y gates T19/T20; Fer conserva merge.
+
 **Archivo / seam:** `frontend/src/components/MeetingPlaybackView.tsx`, `frontend/src/components/__tests__/MeetingPlaybackView.test.tsx`, `frontend/src/components/__tests__/PlaybackController.test.ts`.
 
 **Acción:** Renderizar filas de presentación agrupadas por separado de intervalos fuente; mapear passage activo por `presentationTurnId`, resaltar solo durante intervalos originales, dejar gaps sin passage y arrancar desde el primer intervalo sin sintetizar un `end_ms` compuesto.

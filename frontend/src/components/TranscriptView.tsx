@@ -9,7 +9,7 @@ import {
 } from "../api";
 import type { MeetingDiarization, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
-import { groupTranscriptTurns } from "../transcript-turns";
+import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -178,10 +178,6 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     };
   }
 
-  const playbackPassages = data.segments.map((passage) => {
-    const speaker = speakerPresentation(passage.id);
-    return { ...passage, speakerLabel: speaker.label, speakerColor: speaker.color };
-  });
   // Preserve untimed source text too; it cannot form a time-linked group.
   const sourceTurns = data.segments.length > 0 ? data.segments : data.turns;
   const sourceTurnById = new Map(sourceTurns.map((turn) => [turn.id, turn]));
@@ -195,6 +191,11 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     })),
     speakerIdByTurnId,
   );
+  const playbackPassages = createPlaybackIntervals(sourceTurns, presentationTurns);
+  const playbackTurns = presentationTurns.map((turn) => {
+    const speaker = speakerPresentation(turn.id);
+    return { ...turn, speakerLabel: speaker.label, speakerColor: speaker.color };
+  });
 
   return (
     <section>
@@ -204,6 +205,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       <MeetingPlaybackView
         manifest={playbackManifest}
         passages={playbackPassages}
+        presentationTurns={playbackTurns}
         loading={playbackLoading}
         error={playbackError}
         onRefreshManifest={() => getPlaybackManifest(meetingId)}

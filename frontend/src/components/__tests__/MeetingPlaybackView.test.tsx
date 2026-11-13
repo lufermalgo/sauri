@@ -128,6 +128,8 @@ describe("T17 grouped playback source fidelity", () => {
     HTMLMediaElement.prototype.play = play;
     renderGroupedPlayback();
     const audio = mediaElement();
+    // jsdom does not load media: supply valid metadata before enabling play.
+    Object.defineProperty(audio, "duration", { configurable: true, value: 0.3 });
     fireEvent.loadedMetadata(audio);
     setMediaTime(audio, 0.25);
     fireEvent.click(screen.getByRole("button", { name: "Play Synthetic first synthetic second" }));
