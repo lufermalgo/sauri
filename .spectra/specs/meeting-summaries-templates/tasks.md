@@ -146,7 +146,7 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T10: GREEN — Implement summary request acceptance and durable outbox dispatch
 
-**Tracking:** Issue #278 · Card task_dd486ec8afa04e97
+**Tracking:** Issue #278 · ejecución GREEN task_aa18e483bd2c4b37; referencia histórica task_dd486ec8afa04e97 (inaccesible, conservada para trazabilidad).
 
 **Archivo:** `backend/app/summaries/router.py`; `backend/app/summaries/service.py`; `backend/app/summaries/repository.py`; `backend/app/summaries/outbox.py`; `backend/app/infra/queue_rabbitmq.py`
 **Acción:** Accept a summary request only for an available transcript; validate explicit template ownership or resolve the configured personal default; atomically persist a unique increasing-generation request and immutable template id/version/instructions snapshot. Implement a recoverable dispatcher that republishes pending events after restart/failure and marks them delivered only after broker confirmation. Do not enqueue from transcript commit; preserve no-default as unresolved/gated.

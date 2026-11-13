@@ -6,10 +6,13 @@ personal data, fake persistence, simulated broker confirmation, or worker/provid
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import importlib
 import json
 import os
 import re
+import subprocess
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -68,6 +71,17 @@ async def pg_request(
     if not url:
         pytest.skip("requires disposable PostgreSQL URL in SAURI_QA_POSTGRES_URL")
     parsed = _dedicated_pg_url(url)
+    broker = os.environ.get("SAURI_QA_RABBITMQ_URL")
+    if broker:
+        # These RED cases inspect an empty broker. Isolate reruns after a
+        # previous confirmed delivery on the same disposable test instance.
+        connection = await aio_pika.connect_robust(broker)
+        try:
+            channel = await connection.channel()
+            queue = await channel.declare_queue("summarize", durable=True)
+            await queue.purge()
+        finally:
+            await connection.close()
     engine = create_async_engine(parsed)
     try:
         async with engine.begin() as connection:
@@ -266,3 +280,100 @@ async def test_committed_request_survives_failed_publication_and_recovery_confir
             await connection.close()
     finally:
         await connected.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_requests_allocate_distinct_generations(
+    pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
+) -> None:
+    client, factory, owner, meeting, template = pg_request
+    responses = await asyncio.gather(*(client.post(
+        f"/api/v1/meetings/{meeting}/summary-requests",
+        json={"template_id": template}, headers=_headers(owner),
+    ) for _ in range(8)))
+    assert all(response.status_code == 202 for response in responses), [r.text for r in responses]
+    assert sorted(response.json()["generation"] for response in responses) == list(range(1, 9))
+    async with factory() as session:
+        assert len((await session.scalars(select(SummaryRequestOutbox))).all()) == 8
+
+
+@pytest.mark.asyncio
+async def test_recovery_lifespan_delivers_after_start_and_stops_at_shutdown(
+    pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broker = os.environ.get("SAURI_QA_RABBITMQ_URL")
+    if not broker:
+        pytest.skip("requires disposable RabbitMQ URL in SAURI_QA_RABBITMQ_URL")
+    client, factory, owner, meeting, template = pg_request
+    response = await client.post(
+        f"/api/v1/meetings/{meeting}/summary-requests",
+        json={"template_id": template}, headers=_headers(owner),
+    )
+    assert response.status_code == 202, response.text
+    event_id = response.json()["event_id"]
+    monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", "synthetic:" + base64.b64encode(bytes(32)).decode())
+    monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "synthetic")
+    monkeypatch.setenv("QUEUE_BROKER_URL", broker)
+    monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "synthetic-test-signing-key-32-bytes-long")
+    # ASGITransport does not invoke lifespan. Drive the actual FastAPI startup/shutdown
+    # context, not an isolated dispatch_pending helper.
+    async with app.router.lifespan_context(app):
+        for _ in range(100):
+            async with factory() as session:
+                row = await session.get(SummaryRequestOutbox, event_id)
+                if row is not None and row.delivered_at is not None:
+                    break
+            await asyncio.sleep(0.05)
+        else:
+            pytest.fail("startup recovery did not deliver the committed event")
+    assert not any(t.get_name() == "summary-outbox-recovery" and not t.done()
+                   for t in asyncio.all_tasks())
+    connection = await aio_pika.connect_robust(broker)
+    try:
+        channel = await connection.channel()
+        queue = await channel.declare_queue("summarize", durable=True)
+        message = await queue.get(timeout=5)
+        assert message is not None and json.loads(message.body)["event_id"] == event_id
+        await message.ack()
+    finally:
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_lifespan_recovers_when_disposable_broker_returns(
+    pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    container = os.environ.get("SAURI_QA_RABBITMQ_CONTAINER", "")
+    broker = os.environ.get("SAURI_QA_RABBITMQ_URL", "")
+    if not re.fullmatch(r"sauri-t10-mq-[0-9]+", container) or not broker:
+        pytest.skip("requires exclusively owned disposable sauri-t10-mq container")
+    client, factory, owner, meeting, template = pg_request
+    response = await client.post(f"/api/v1/meetings/{meeting}/summary-requests",
+                                 json={"template_id": template}, headers=_headers(owner))
+    assert response.status_code == 202
+    event_id = response.json()["event_id"]
+    monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", "synthetic:" + base64.b64encode(bytes(32)).decode())
+    monkeypatch.setenv("SPEAKER_EXCERPT_ACTIVE_KEY_ID", "synthetic")
+    monkeypatch.setenv("QUEUE_BROKER_URL", broker)
+    monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "synthetic-test-signing-key-32-bytes-long")
+    try:
+        subprocess.run(["docker", "stop", container], check=True, capture_output=True, timeout=30)
+        async with app.router.lifespan_context(app):
+            await asyncio.sleep(0.3)
+            async with factory() as session:
+                pending = await session.get(SummaryRequestOutbox, event_id)
+                assert pending is not None and pending.delivered_at is None
+            subprocess.run(["docker", "start", container], check=True, capture_output=True, timeout=30)
+            for _ in range(150):
+                async with factory() as session:
+                    delivered = await session.get(SummaryRequestOutbox, event_id)
+                    if delivered is not None and delivered.delivered_at is not None:
+                        break
+                await asyncio.sleep(0.1)
+            else:
+                pytest.fail("no delivery after disposable RabbitMQ restart")
+    finally:
+        # Never leave the exclusively owned broker stopped even after a test failure.
+        subprocess.run(["docker", "start", container], check=True, capture_output=True, timeout=30)
