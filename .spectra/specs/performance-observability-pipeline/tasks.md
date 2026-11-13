@@ -23,7 +23,7 @@ Primera unidad T1–T4: Ansel integra la entrega de Nahuel en la rama candidata 
 **Acción:** Conservar en el test un oracle independiente del algoritmo previo; generar con Hypothesis turnos/segmentos válidos desordenados, huecos, duplicados, solapamientos y hablantes sin segmentos. Probar ambos modos, no mutación, desempates y turnos degenerados. Registrar ejecución antes de optimizar.
 **Criterio de Completado:** Suite pasa sobre implementación base; cubre P1. El test exige equivalencia, no una implementación particular.
 **Dependencias:** Ninguna.
-**Estado:** Pendiente.
+**Estado:** En ejecución por Nahuel, sesión performance-first-slice; Ansel verifica entrega.
 
 ### T2: Indexar consultas de solapamiento
 **Archivo:** `backend/app/diarization/assignment.py`.
@@ -100,6 +100,13 @@ Primera unidad T1–T4: Ansel integra la entrega de Nahuel en la rama candidata 
 **Criterio de Completado:** Informe reproducible con candidato aceptable o rechazo explícito; no habilitar cambio por defecto si degrada calidad o necesita decisión de privacidad/gasto/modelo. P2/P7.
 **Dependencias:** T8–T10.
 **Estado:** Backlog.
+
+### T13: Reutilizar pool para lectura de transcripción (candidato medido)
+**Archivo:** `backend/app/main.py`, `backend/app/infra/database.py`, `backend/app/meetings/router.py`, `backend/tests/meetings/test_transcript_pool.py` (nuevo).
+**Acción:** Exponer la session factory del lifespan por dependencia; limitar cambio a GET transcript, conservar sesión por petición, autorización, auditoría y errores, cerrar engine solo al terminar aplicación. No usar cache de respuestas ni sesión global. Probar dos usuarios, ausente/no autorizado, múltiples peticiones y shutdown. Repetir comparación de consultas con el mismo corpus real y verificar contrato HTTP mediante suite de API.
+**Criterio de Completado:** Pruebas de autorización/contrato/lifecycle pasan y reducción de mediana >=20% del subcamino DB sin cambios de salida; no extrapolar al endpoint completo ni inferencia. Benchmark previo READ ONLY14,907125→8,170ms disponible en evidence.md; no equivale a implementación.
+**Dependencias:** T5 para observabilidad inicial; no depende de GPU ni T9. Puede preceder T6 como unidad separada.
+**Estado:** Backlog; no implementado ni instalado.
 
 ## Fase 5: Validación y promoción
 

@@ -61,4 +61,15 @@ No es una prueba fallida del candidato. No se cambió facturación, límite de g
 
 Lectura DB explícitamente `BEGIN READ ONLY`: la reunión objetivo conserva1519 turnos, rango0–5.650.000ms, revisión1/ocho hablantes y `prepared_result`/`presentation` nulos. Las1517 asignaciones mencionadas en diagnóstico no son1517 segmentos acústicos originales. Esos segmentos no están disponibles en persistencia para replay fiel; no se reconstruyen a partir de asignaciones y se presentan como originales.
 
-Pendiente de incorporar la entrega T1–T3 de Nahuel. No se declara aún ahorro de tiempo total del resumen ni mejora de precisión acústica.
+La revisión READ ONLY de Nahuel entregó dos benchmarks sobre datos reales existentes, sin implementación ni inferencia nueva:
+
+| Subcamino | Base mediana | Variante mediana | Muestras | Límite |
+|---|---:|---:|---:|---|
+| Construcción+serialización payload de60849 caracteres, schema recalculado vs cacheado |0,289291ms|0,213396ms|100 por variante, alternadas|Ahorro0,075895ms; irrelevante frente al resumen |
+| Dos consultas GET transcript, engine nuevo vs compartido prewarm |14,907125ms|8,170ms|15 por variante, alternadas|Ahorro6,737125ms/45,2%; excluye HTTP, autorización, auditoría y respuesta |
+
+Payloads idénticos en el primer caso. En el segundo se compararon1519 turnos completos (IDs/texto/intervalos/secuencia) en30 lecturas READ ONLY/rollback, sin imprimir contenido. Un primer harness falló con DetachedInstanceError después de rollback; se corrigió copiando meeting_id antes y la pasada posterior completó30/30. No se modificó DB ni código del runtime.
+
+Fuente: informe `read-only-hotspots-178f893.md` en temporal del hilo, con evidencias tool jobs `job_6f7f4bb10a3248e0` (payload), `job_669cc508ba9446f2` (consultas corregidas), `job_6b43f6478fcc412b` (hashes/runtime). Son experimentos de candidato, **no mejoras implementadas/instaladas** ni benchmark de inferencia o UI. T13 agrega la implementación comprobable de pooling al backlog. No se incorpora el microcache solo para aparentar una mejora sustancial.
+
+La pieza de atribución T1–T3 fue encargada después de esa revisión; aún no se recibió entrega de implementación. Se mantiene explícitamente pendiente, sin fabricar commit ni declarar ahorro de tiempo total del resumen ni mejora de precisión acústica.
