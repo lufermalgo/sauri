@@ -53,11 +53,22 @@ async function worker(record: RecordingCompletion, crashAfterCreate = false, alr
       sync: { get: vi.fn(async () => ({})) } },
     tabs: { onRemoved: { addListener: vi.fn() }, query, create, sendMessage: vi.fn(async () => undefined) },
   });
+  let acceptedAmbiguousClaim = false;
   async function drain() {
-    // Real fake-indexeddb transactions use task callbacks, not just microtasks.
-    // Allow all current empty-queue recovery work to settle; no production polling is simulated.
+    // fake-indexeddb transactions advance on task callbacks. Await the actual
+    // durable claim/recovery rather than an arbitrary delay under parallel suites.
+    if (record.status !== "processing_succeeded" && record.status !== "review_launch_pending") return;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const saved = await getCompletion(record.sessionId);
+      if (saved?.status === "review_opened") break;
+      if (saved?.status === "review_launch_pending" && saved.reviewCreateAttempted && crashAfterCreate) {
+        if (!acceptedAmbiguousClaim || tabs.length === 0) { acceptedAmbiguousClaim = true; break; }
+      }
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    // Startup fire-and-forgets reconciliation; let its post-commit callbacks
+    // finish before the next case unstubs IndexedDB/Chrome globals.
     await new Promise(resolve => setTimeout(resolve, 15));
-    await getCompletion(record.sessionId);
   }
   async function restart() { vi.resetModules(); await import("./background"); await drain(); }
   await restart();
