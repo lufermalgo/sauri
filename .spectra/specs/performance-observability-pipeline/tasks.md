@@ -65,8 +65,8 @@ Primera unidad T1–T4: Ansel integra la entrega de Nahuel en la rama candidata 
 **Estado:** Backlog.
 
 ### T7: Métricas de recursos y consumo
-**Archivo:** `backend/app/infra/telemetry.py`, `_tools/resource-sampler.py` (nuevo), `backend/tests/telemetry/test_resources.py` (nuevo).
-**Acción:** Implementar métricas, unidades y labels acotados del diseño, muestrear cada 5 s CPU/RSS/I/O procesos propios, stats Docker del proyecto y memoria/presión host diferenciadas. Ausencias explícitas para Metal/energía; no sudo ni nuevas capacidades. Registrar pool DB, cola/outbox, almacenamiento y tokens reales/estimados separados.
+**Archivo:** `backend/app/infra/telemetry.py`, `_tools/resource-sampler.py` (nuevo), `backend/tests/telemetry/test_resources.py` (nuevo), `frontend/src/api.ts`, `extension/src/core/api/client.ts`, `extension/src/upload-queue.ts`, `backend/app/telemetry/router.py` (nuevo).
+**Acción:** Implementar métricas, unidades y labels acotados del diseño, muestrear cada 5 s CPU/RSS/I/O procesos propios, stats Docker del proyecto y memoria/presión host diferenciadas. Ausencias explícitas para Metal/energía; no sudo ni nuevas capacidades. Registrar pool DB, cola/outbox, almacenamiento y tokens reales/estimados separados. Instrumentar duración percibida y reintentos en portal/extensión, solo hacia Sauri; receptor autenticado con lotes de hasta50 eventos/32KiB, límite60 lotes/minuto, lista positiva y sin contenido de usuario. Agregar pruebas de límites, autenticación y privacidad; ejecutar typechecks definidos en package.json de frontend y extensión antes de declarar listo.
 **Criterio de Completado:** Fixtures Linux/macOS verifican unidades y ausencia, labels no contienen IDs, muestra real observada de host y Docker sin atribución falsa de GPU. P4/P8.
 **Dependencias:** T6.
 **Estado:** Backlog.

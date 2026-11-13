@@ -53,6 +53,8 @@ La petición real de resumen de José María terminó correctamente: aproximadam
 2. THE Pipeline_Sauri SHALL conservar incertidumbre, silencios, solapamientos y voces distintas; SHALL NOT forzar tres hablantes ni fusionar IDs sin evidencia.
 3. WHEN se proponga cambiar modelo, VAD, tamaño de ventana o estrategia de resumen, THE Comparacion_Controlada SHALL medir calidad además de velocidad antes de habilitarlo por defecto.
 4. THE Pipeline_Sauri SHALL NOT generar ni guardar muestras de voz derivadas; las pruebas acústicas usarán el original y memoria/pipes sin persistir derivados.
+5. WHEN se declare mejora de precisión acústica, THE Comparacion_Controlada SHALL demostrar DER menor que el baseline sobre la misma referencia humana temporal, sin aumento de WER ni fusión de voces distintas; IF falta esa referencia, THEN THE Comparacion_Controlada SHALL declarar precisión no evaluada.
+6. WHEN se promueva una nueva estrategia de resumen, THE Comparacion_Controlada SHALL conservar las decisiones, acciones y cifras verificadas de la evaluación y no introducir afirmaciones no sustentadas; una latencia menor no compensará una regresión de calidad.
 
 ### Requisito 5: Trazabilidad extremo a extremo
 **Historia de Usuario:** Como responsable, quiero localizar dónde se demora o falla cada operación.
@@ -71,6 +73,7 @@ La petición real de resumen de José María terminó correctamente: aproximadam
 4. WHERE la plataforma exponga GPU/Metal y energía sin permisos adicionales, THE Telemetria_Local SHALL registrarlos con fuente y alcance; IF no están disponibles, THEN THE Telemetria_Local SHALL indicar no disponible y no atribuir consumo global a un proceso.
 5. THE Telemetria_Local SHALL distinguir costo monetario configurado de consumo local; SHALL NOT inventar tarifas, energía ni costos cuando no exista una fuente.
 6. THE Telemetria_Local SHALL medir consultas/pool DB, profundidad/edad de cola, outboxes pendientes, almacenamiento y latencia HTTP del portal sin texto de SQL con valores ni URLs firmadas.
+7. THE Telemetria_Local SHALL distinguir tiempo percibido por portal/extensión de tiempo del servidor, incluyendo subida, reintentos y espera de respuesta; SHALL NOT capturar pantalla, contenido de formularios, audio ni actividad en sitios ajenos a Sauri.
 
 ### Requisito 7: Seguridad y privacidad de observabilidad
 **Historia de Usuario:** Como dueño, quiero diagnosticar sin exponer mis reuniones.
