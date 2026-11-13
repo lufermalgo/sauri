@@ -214,7 +214,7 @@ The graph lists only RED-before-GREEN prerequisites and genuine interface prereq
 
 ### T-15: RED — Specify owner-protected polling and revision-correct speaker labels
 
-**Tracking:** Issue #566 · Card task_50189ebf762f49ed (replaces inaccessible historical task_15b2006993284783) · RED PR pending review
+**Tracking:** Issue #566 · Card task_50189ebf762f49ed (replaces inaccessible historical task_15b2006993284783) · RED PR #891 (review pending)
 
 **Files / test seam:** `backend/tests/meetings/`; `GET /api/v1/meetings/{meeting_id}` and `GET /api/v1/meetings/{meeting_id}/transcript` handlers in `backend/app/meetings/router.py`.
 
