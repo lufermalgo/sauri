@@ -574,7 +574,8 @@ class User(Base):
     is_sales: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     default_summary_template_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("summary_templates.id", ondelete="SET NULL", use_alter=True), nullable=True
+        String(36), ForeignKey("summary_templates.id", ondelete="SET NULL", use_alter=True,
+                               name="fk_users_default_summary_template_id_summary_templates"), nullable=True
     )
 
 

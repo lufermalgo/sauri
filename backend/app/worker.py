@@ -18,6 +18,7 @@ from app.infra.object_store import create_object_store
 from app.infra.queue import create_job_queue
 from app.meetings.speaker_excerpt_service import ExcerptKeyring
 from app.retention.worker import start_retention_worker
+from app.summaries.worker import start_worker as start_summary_worker
 from app.transcription.worker import start_worker as start_transcription_worker
 
 logging.basicConfig(
@@ -47,6 +48,9 @@ async def main() -> None:
 
     # Subscribe diarization worker (topic 'diarize', Req. 1.1)
     await start_diarization_worker(queue, session_factory)
+
+    # T12 registers the consumer; absent T14 local engine configuration fails startup.
+    await start_summary_worker(queue, session_factory)
 
     # Start retention worker as a background task
     retention_task = asyncio.create_task(
