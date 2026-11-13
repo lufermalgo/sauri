@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
+import httpx
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
@@ -320,3 +321,105 @@ async def test_terminal_dead_letter_preserves_earlier_success(case: Case, monkey
     assert old_status == "succeeded" and old_processed and len(surviving) == 1
     assert surviving[0].id == original[0].id
     assert len(case.engine_calls) == 1
+
+
+def test_local_engine_factory_requires_valid_url_and_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.summaries.factory import create_summarization_engine
+
+    for url, model in (
+        (None, None),
+        ("not-a-url", "local-model"),
+        ("https://example.org/api", "local-model"),
+        ("http://localhost:11434", ""),
+        ("http://localhost:11434", "bad model"),
+    ):
+        if url is None:
+            monkeypatch.delenv("SUMMARIZATION_OLLAMA_URL", raising=False)
+        else:
+            monkeypatch.setenv("SUMMARIZATION_OLLAMA_URL", url)
+        if model is None:
+            monkeypatch.delenv("SUMMARIZATION_OLLAMA_MODEL", raising=False)
+        else:
+            monkeypatch.setenv("SUMMARIZATION_OLLAMA_MODEL", model)
+        with pytest.raises(ValueError):
+            create_summarization_engine()
+    monkeypatch.setenv("SUMMARIZATION_OLLAMA_URL", "http://host.docker.internal:11434")
+    monkeypatch.setenv("SUMMARIZATION_OLLAMA_MODEL", "local-model")
+    monkeypatch.setenv("SUMMARIZATION_PROVIDER", "cloud")  # No provider selector is consulted.
+    engine = create_summarization_engine()
+    assert engine.url == "http://host.docker.internal:11434"
+    assert engine.model == "local-model"
+
+
+@pytest.mark.asyncio
+async def test_missing_local_configuration_blocks_worker_subscription(
+    case: Case,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.summaries.worker import start_worker
+
+    monkeypatch.delenv("SUMMARIZATION_OLLAMA_URL", raising=False)
+    monkeypatch.delenv("SUMMARIZATION_OLLAMA_MODEL", raising=False)
+    queue = CapturedQueue()
+    with pytest.raises(ValueError):
+        await start_worker(queue, case.factory)
+    assert queue.handlers == {}
+
+
+@pytest.mark.asyncio
+async def test_ollama_adapter_sends_only_frozen_inputs_and_parses_canonical_content() -> None:
+    from app.summaries.engine import OllamaSummarizationEngine
+
+    requests: list[dict[str, Any]] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/generate"
+        payload: dict[str, Any] = json.loads(request.content)
+        requests.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "response": json.dumps(
+                    {
+                        "topic": "Synthetic topic",
+                        "key_points": ["Synthetic point"],
+                    }
+                )
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        engine = OllamaSummarizationEngine("http://localhost:11434", "local-model", client=client)
+        result = await engine.generate("Synthetic transcript.", "  Opaque instruction\n")
+    assert (result.topic, result.key_points) == ("Synthetic topic", ["Synthetic point"])
+    assert len(requests) == 1 and requests[0]["model"] == "local-model"
+    assert requests[0]["stream"] is False
+    payload = json.dumps(requests[0])
+    assert "Synthetic transcript." in payload and "  Opaque instruction\\n" in payload
+    assert "template_id" not in payload and "meeting_id" not in payload
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_error_propagates_without_success_artifact(
+    case: Case,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.summaries.engine import OllamaSummarizationEngine
+
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="private provider diagnostic")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(unavailable)) as client:
+        engine = OllamaSummarizationEngine("http://localhost:11434", "local-model", client=client)
+        monkeypatch.setattr("app.summaries.worker.create_summarization_engine", lambda: engine)
+        from app.summaries.worker import start_worker
+
+        queue = CapturedQueue()
+        await start_worker(queue, case.factory)
+        with pytest.raises(httpx.HTTPStatusError):
+            await queue.handlers["summarize"](case.message.copy())
+        status, rows, processed = await outcomes(case)
+        assert status == "running" and not rows and not processed
+        await queue.handlers["summarize.failed"](case.message.copy())
+        status, rows, processed = await outcomes(case)
+        assert status == "failed" and not rows and not processed

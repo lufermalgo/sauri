@@ -13,9 +13,11 @@ import json
 import os
 import re
 import subprocess
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
 
 import aio_pika
@@ -27,7 +29,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.auth.token import create_token
 from app.infra.database import Base
-from app.infra.models import Meeting, SummaryRequestOutbox, SummaryTemplate, Transcript, User
+from app.infra.models import (
+    Meeting,
+    MeetingSummary,
+    SpeechTurn,
+    SummaryRequestOutbox,
+    SummaryTemplate,
+    Transcript,
+    User,
+)
 from app.infra.queue_rabbitmq import RabbitMQJobQueue
 from app.main import app
 
@@ -39,19 +49,23 @@ def _id() -> str:
 def _dedicated_pg_url(raw: str) -> URL:
     parsed = make_url(raw)
     if parsed.drivername != "postgresql+asyncpg" or not re.fullmatch(
-        r"sauri_t9_[a-zA-Z0-9_]+", parsed.database or "",
+        r"sauri_t9_[a-zA-Z0-9_]+",
+        parsed.database or "",
     ):
         raise ValueError("SAURI_QA_POSTGRES_URL must target a dedicated sauri_t9_ PostgreSQL database")
     return parsed
 
 
-@pytest.mark.parametrize("url", [
-    "postgresql+asyncpg://sauri_t9_user@localhost/production",
-    "postgresql+asyncpg://localhost.sauri_t9_internal/production",
-    "postgresql+asyncpg://localhost/production?sauri_t9_marker=yes",
-    "postgresql+asyncpg://localhost/sauri_t9_demo/other",
-    "sqlite+aiosqlite:///sauri_t9_demo",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://sauri_t9_user@localhost/production",
+        "postgresql+asyncpg://localhost.sauri_t9_internal/production",
+        "postgresql+asyncpg://localhost/production?sauri_t9_marker=yes",
+        "postgresql+asyncpg://localhost/sauri_t9_demo/other",
+        "sqlite+aiosqlite:///sauri_t9_demo",
+    ],
+)
 def test_refuse_unsafe_postgres_target_before_connecting(url: str) -> None:
     with pytest.raises(ValueError, match="dedicated sauri_t9_"):
         _dedicated_pg_url(url)
@@ -93,17 +107,53 @@ async def pg_request(
         owner, meeting, transcript, template = (_id() for _ in range(4))
         now = datetime.now(UTC)
         async with factory() as session, session.begin():
-            session.add(User(id=owner, email=f"{owner}@example.test", name="Synthetic",
-                             password_hash="not-used", is_sales=True, created_at=now))
-            session.add(Meeting(id=meeting, meet_link="https://meet.google.com/abc-defg-hij",
-                                origin="manual", calendar_invite_id=None, scheduled_start_time=None,
-                                process_state="completed", failure_cause=None, created_by=owner, created_at=now))
-            session.add(Transcript(id=transcript, meeting_id=meeting, language="es-CO",
-                                   provider="synthetic", supports_turns=False, expires_at=None, created_at=now))
+            session.add(
+                User(
+                    id=owner,
+                    email=f"{owner}@example.test",
+                    name="Synthetic",
+                    password_hash="not-used",
+                    is_sales=True,
+                    created_at=now,
+                )
+            )
+            session.add(
+                Meeting(
+                    id=meeting,
+                    meet_link="https://meet.google.com/abc-defg-hij",
+                    origin="manual",
+                    calendar_invite_id=None,
+                    scheduled_start_time=None,
+                    process_state="completed",
+                    failure_cause=None,
+                    created_by=owner,
+                    created_at=now,
+                )
+            )
+            session.add(
+                Transcript(
+                    id=transcript,
+                    meeting_id=meeting,
+                    language="es-CO",
+                    provider="synthetic",
+                    supports_turns=False,
+                    expires_at=None,
+                    created_at=now,
+                )
+            )
             await session.flush()
-            session.add(SummaryTemplate(id=template, owner_user_id=owner, category_id=None,
-                                        name="Synthetic", version=1, instructions="Keep these exact words",
-                                        created_at=now, updated_at=now))
+            session.add(
+                SummaryTemplate(
+                    id=template,
+                    owner_user_id=owner,
+                    category_id=None,
+                    name="Synthetic",
+                    version=1,
+                    instructions="Keep these exact words",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
         monkeypatch.setenv("DATABASE_URL", url)
         monkeypatch.setenv("APP_ENV", "test")
         monkeypatch.delenv("AUTH_DISABLED", raising=False)
@@ -157,20 +207,57 @@ async def test_non_sales_user_cannot_enqueue_or_publish(
     non_sales, meeting, transcript, template = (_id() for _ in range(4))
     now = datetime.now(UTC)
     async with factory() as session, session.begin():
-        session.add(User(id=non_sales, email=f"{non_sales}@example.test", name="Synthetic",
-                         password_hash="not-used", is_sales=False, created_at=now))
-        session.add(Meeting(id=meeting, meet_link="https://meet.google.com/xyz-pqrs-tuv",
-                            origin="manual", calendar_invite_id=None, scheduled_start_time=None,
-                            process_state="completed", failure_cause=None, created_by=non_sales, created_at=now))
-        session.add(Transcript(id=transcript, meeting_id=meeting, language="es-CO",
-                               provider="synthetic", supports_turns=False, expires_at=None, created_at=now))
+        session.add(
+            User(
+                id=non_sales,
+                email=f"{non_sales}@example.test",
+                name="Synthetic",
+                password_hash="not-used",
+                is_sales=False,
+                created_at=now,
+            )
+        )
+        session.add(
+            Meeting(
+                id=meeting,
+                meet_link="https://meet.google.com/xyz-pqrs-tuv",
+                origin="manual",
+                calendar_invite_id=None,
+                scheduled_start_time=None,
+                process_state="completed",
+                failure_cause=None,
+                created_by=non_sales,
+                created_at=now,
+            )
+        )
+        session.add(
+            Transcript(
+                id=transcript,
+                meeting_id=meeting,
+                language="es-CO",
+                provider="synthetic",
+                supports_turns=False,
+                expires_at=None,
+                created_at=now,
+            )
+        )
         await session.flush()
-        session.add(SummaryTemplate(id=template, owner_user_id=non_sales, category_id=None,
-                                    name="Own synthetic template", version=1,
-                                    instructions="Only synthetic content", created_at=now, updated_at=now))
+        session.add(
+            SummaryTemplate(
+                id=template,
+                owner_user_id=non_sales,
+                category_id=None,
+                name="Own synthetic template",
+                version=1,
+                instructions="Only synthetic content",
+                created_at=now,
+                updated_at=now,
+            )
+        )
     response = await client.post(
         f"/api/v1/meetings/{meeting}/summary-requests",
-        json={"template_id": template}, headers=_headers(non_sales, sales=False),
+        json={"template_id": template},
+        headers=_headers(non_sales, sales=False),
     )
     assert response.status_code == 403, response.text
     async with factory() as session:
@@ -197,19 +284,35 @@ async def test_denied_selection_has_no_durable_event_and_never_publishes(
     foreign_owner, foreign_template = _id(), _id()
     now = datetime.now(UTC)
     async with factory() as session, session.begin():
-        session.add(User(id=foreign_owner, email=f"{foreign_owner}@example.test", name="Synthetic",
-                         password_hash="not-used", is_sales=True, created_at=now))
+        session.add(
+            User(
+                id=foreign_owner,
+                email=f"{foreign_owner}@example.test",
+                name="Synthetic",
+                password_hash="not-used",
+                is_sales=True,
+                created_at=now,
+            )
+        )
         await session.flush()
-        session.add(SummaryTemplate(id=foreign_template, owner_user_id=foreign_owner,
-                                    category_id=None, name="Private", version=1,
-                                    instructions="Never disclose", created_at=now, updated_at=now))
+        session.add(
+            SummaryTemplate(
+                id=foreign_template,
+                owner_user_id=foreign_owner,
+                category_id=None,
+                name="Private",
+                version=1,
+                instructions="Never disclose",
+                created_at=now,
+                updated_at=now,
+            )
+        )
     path = f"/api/v1/meetings/{meeting}/summary-requests"
     foreign = await client.post(path, json={"template_id": foreign_template}, headers=_headers(owner))
     assert foreign.status_code == 422, foreign.text
     assert "Never disclose" not in foreign.text
     # A valid template does not override the meeting's ownership boundary.
-    other_meeting = await client.post(path, json={"template_id": foreign_template},
-                                      headers=_headers(foreign_owner))
+    other_meeting = await client.post(path, json={"template_id": foreign_template}, headers=_headers(foreign_owner))
     assert other_meeting.status_code == 404, other_meeting.text
     async with factory() as session:
         assert (await session.scalars(select(SummaryRequestOutbox))).all() == []
@@ -233,7 +336,8 @@ async def test_committed_request_survives_failed_publication_and_recovery_confir
     client, factory, owner, meeting, template = pg_request
     response = await client.post(
         f"/api/v1/meetings/{meeting}/summary-requests",
-        json={"template_id": template}, headers=_headers(owner),
+        json={"template_id": template},
+        headers=_headers(owner),
     )
     assert response.status_code == 202, response.text
     event_id = response.json()["event_id"]
@@ -242,7 +346,10 @@ async def test_committed_request_survives_failed_publication_and_recovery_confir
         assert original is not None
         assert original.status == "pending" and original.delivered_at is None
         assert (original.template_id, original.template_version, original.instructions_snapshot) == (
-            template, 1, "Keep these exact words")
+            template,
+            1,
+            "Keep these exact words",
+        )
 
     # An unconnected real queue cannot confirm a publish. The dispatcher must
     # retain the committed row rather than marking it delivered or losing it.
@@ -271,10 +378,22 @@ async def test_committed_request_survives_failed_publication_and_recovery_confir
             message = await queue.get(timeout=5)
             assert message is not None
             payload = json.loads(message.body)
-            assert {key: payload[key] for key in (
-                "event_id", "meeting_id", "template_id", "template_version", "instructions_snapshot",
-            )} == {"event_id": event_id, "meeting_id": meeting, "template_id": template,
-                  "template_version": 1, "instructions_snapshot": "Keep these exact words"}
+            assert {
+                key: payload[key]
+                for key in (
+                    "event_id",
+                    "meeting_id",
+                    "template_id",
+                    "template_version",
+                    "instructions_snapshot",
+                )
+            } == {
+                "event_id": event_id,
+                "meeting_id": meeting,
+                "template_id": template,
+                "template_version": 1,
+                "instructions_snapshot": "Keep these exact words",
+            }
             await message.ack()
         finally:
             await connection.close()
@@ -287,10 +406,16 @@ async def test_concurrent_requests_allocate_distinct_generations(
     pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
 ) -> None:
     client, factory, owner, meeting, template = pg_request
-    responses = await asyncio.gather(*(client.post(
-        f"/api/v1/meetings/{meeting}/summary-requests",
-        json={"template_id": template}, headers=_headers(owner),
-    ) for _ in range(8)))
+    responses = await asyncio.gather(
+        *(
+            client.post(
+                f"/api/v1/meetings/{meeting}/summary-requests",
+                json={"template_id": template},
+                headers=_headers(owner),
+            )
+            for _ in range(8)
+        )
+    )
     assert all(response.status_code == 202 for response in responses), [r.text for r in responses]
     assert sorted(response.json()["generation"] for response in responses) == list(range(1, 9))
     async with factory() as session:
@@ -308,7 +433,8 @@ async def test_recovery_lifespan_delivers_after_start_and_stops_at_shutdown(
     client, factory, owner, meeting, template = pg_request
     response = await client.post(
         f"/api/v1/meetings/{meeting}/summary-requests",
-        json={"template_id": template}, headers=_headers(owner),
+        json={"template_id": template},
+        headers=_headers(owner),
     )
     assert response.status_code == 202, response.text
     event_id = response.json()["event_id"]
@@ -327,8 +453,7 @@ async def test_recovery_lifespan_delivers_after_start_and_stops_at_shutdown(
             await asyncio.sleep(0.05)
         else:
             pytest.fail("startup recovery did not deliver the committed event")
-    assert not any(t.get_name() == "summary-outbox-recovery" and not t.done()
-                   for t in asyncio.all_tasks())
+    assert not any(t.get_name() == "summary-outbox-recovery" and not t.done() for t in asyncio.all_tasks())
     connection = await aio_pika.connect_robust(broker)
     try:
         channel = await connection.channel()
@@ -350,8 +475,9 @@ async def test_lifespan_recovers_when_disposable_broker_returns(
     if not re.fullmatch(r"sauri-t10-mq-[0-9]+", container) or not broker:
         pytest.skip("requires exclusively owned disposable sauri-t10-mq container")
     client, factory, owner, meeting, template = pg_request
-    response = await client.post(f"/api/v1/meetings/{meeting}/summary-requests",
-                                 json={"template_id": template}, headers=_headers(owner))
+    response = await client.post(
+        f"/api/v1/meetings/{meeting}/summary-requests", json={"template_id": template}, headers=_headers(owner)
+    )
     assert response.status_code == 202
     event_id = response.json()["event_id"]
     monkeypatch.setenv("SPEAKER_EXCERPT_KEYRING", "synthetic:" + base64.b64encode(bytes(32)).decode())
@@ -377,3 +503,67 @@ async def test_lifespan_recovers_when_disposable_broker_returns(
     finally:
         # Never leave the exclusively owned broker stopped even after a test failure.
         subprocess.run(["docker", "start", container], check=True, capture_output=True, timeout=30)
+
+
+@pytest.mark.asyncio
+async def test_request_to_persisted_content_uses_frozen_lineage(
+    pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.summaries import worker
+
+    client, factory, owner, meeting, template_id = pg_request
+    response = await client.post(
+        f"/api/v1/meetings/{meeting}/summary-requests", json={"template_id": template_id}, headers=_headers(owner)
+    )
+    assert response.status_code == 202, response.text
+    event_id = response.json()["event_id"]
+    async with factory() as session, session.begin():
+        transcript = (await session.scalars(select(Transcript).where(Transcript.meeting_id == meeting))).one()
+        session.add(
+            SpeechTurn(
+                id=_id(), transcript_id=transcript.id, sequence=1, text="Synthetic transcript.", start_ms=0, end_ms=1000
+            )
+        )
+        template = await session.get(SummaryTemplate, template_id)
+        assert template is not None
+        template.instructions = "Changed after request"
+        template.version = 2
+        event = await session.get(SummaryRequestOutbox, event_id)
+        assert event is not None
+        message = {
+            key: getattr(event, key)
+            for key in (
+                "event_id",
+                "meeting_id",
+                "transcript_id",
+                "generation",
+                "template_id",
+                "template_version",
+                "instructions_snapshot",
+            )
+        }
+
+    calls: list[tuple[str, str]] = []
+
+    class Engine:
+        async def generate(self, text: str, instructions: str) -> SimpleNamespace:
+            calls.append((text, instructions))
+            return SimpleNamespace(topic="Identifiable topic", key_points=["Identifiable point"])
+
+    class Queue:
+        def __init__(self) -> None:
+            self.handlers: dict[str, Callable[[dict[str, Any]], Awaitable[None]]] = {}
+
+        async def subscribe(self, topic: str, handler: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+            self.handlers[topic] = handler
+
+    monkeypatch.setattr(worker, "create_summarization_engine", Engine)
+    queue = Queue()
+    await worker.start_worker(queue, factory)  # type: ignore[arg-type]  # Minimal subscription seam.
+    await queue.handlers["summarize"](message)
+    assert calls == [("Synthetic transcript.", "Keep these exact words")]
+    async with factory() as session:
+        row = (await session.scalars(select(MeetingSummary).where(MeetingSummary.event_id == event_id))).one()
+        assert (row.topic, json.loads(row.key_points_json)) == ("Identifiable topic", ["Identifiable point"])
+        assert (row.template_id, row.template_version, row.generation) == (template_id, 1, 1)
