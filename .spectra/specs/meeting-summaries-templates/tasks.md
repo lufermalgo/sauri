@@ -227,7 +227,8 @@
 
 ### T17: RED — Specify shared summary/template/status API contracts
 
-**Tracking:** Issue #285 · Card task_5419615ead9a41b7
+**Tracking:** Issue #285 · Card task_a16f69284c3042c0 (historical card task_5419615ead9a41b7 unavailable)
+**Status:** RED verified before T18, 2026-11-13. Pre-implementation base `baea619b0703488286bda3ddc5ab268a73b97d9e`; `npm run test --workspace=@sauri/shared-types` exits 1: one smoke test passes, the contract test fails with four missing exported members (`MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, `TemplateCategory`) and four failed exact-type assertions. No setup errors. `src/index.test.ts` compiles a virtual TypeScript consumer through the existing Vitest harness, because transpilation alone erases type-only imports and cannot validate absent interfaces. Synthetic, exact design §6 types; no generation/provider behavior tested.
 
 **Archivo:** `packages/shared-types/<test-location-confirmed-by-T17a>`; import seam: `packages/shared-types/src/index.ts` exports
 **Acción:** Add contract tests for the approved `MeetingSummary`, `SummaryRequestStatus`, `SummaryTemplate`, and `TemplateCategory` field names, including camel-case UI contracts and status union values. Use only the test location and command confirmed by T17a.
