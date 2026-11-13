@@ -288,6 +288,8 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 ### T19: Validar las suites afectadas y la concurrencia real
 
+**Continuidad 2026-11-13 / #658:** Sobre PR #902 `178f893`, la suite PostgreSQL aislada reprodujo 3FAIL/6PASS por fixture de disponibilidad de objeto ausente; corrección exclusivamente de pruebas conserva todas las aserciones y añade verificación del objeto exacto. GREEN 9PASS; Ruff PASS; deuda mypy idéntica a base (28), no PASS. Evidencia, alcance y limpieza: `t19-postgres-evidence-20261113.md`. Gate T19 completo sigue pendiente de #248 y validaciones acumuladas; no merge ni aceptación implicados.
+
 **Archivo / seam:** suites listadas en diseño §Ubicación y pruebas; validación final de backend, API, portal, agrupador y playback.
 
 **Acción:** Ejecutar desde `frontend/`: `npm run test -- src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/components/__tests__/MeetingPlaybackView.test.tsx src/components/__tests__/PlaybackController.test.ts src/api.test.ts` y `npm run typecheck`. Desde `backend/`, ejecutar `<root>/backend/.venv/bin/python -m pytest tests/diarization/test_assignment_property.py tests/diarization/test_state_property.py tests/diarization/test_worker.py tests/diarization/test_repository.py tests/diarization/test_reprocess_legacy.py tests/diarization/test_migration.py tests/infra/test_object_store_availability.py tests/meetings/test_diarization_endpoint.py tests/speaker_review`; también `<root>/backend/.venv/bin/python -m pytest tests/integration/test_diarization_reservation_concurrency.py` contra PostgreSQL real, nunca SQLite.

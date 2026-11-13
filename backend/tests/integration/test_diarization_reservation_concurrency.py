@@ -6,8 +6,10 @@ Run only against a dedicated disposable PostgreSQL database; never SQLite.
 import asyncio
 import os
 import uuid
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import call as mock_call
 
 import pytest
 from sqlalchemy import select
@@ -30,6 +32,16 @@ from app.infra.models import (
     SpeechTurn,
     Transcript,
 )
+from app.infra.object_store import ObjectStore
+
+
+@pytest.fixture
+def available_audio() -> Iterator[AsyncMock]:
+    """Keep synthetic media local; PostgreSQL transactions remain real."""
+    store = AsyncMock(spec=ObjectStore)
+    store.inspect.return_value = "available"
+    with patch("app.diarization.worker.create_object_store", return_value=store):
+        yield store
 
 
 @pytest.fixture
@@ -166,7 +178,7 @@ async def test_atomic_generation_rollback_and_active_completed_survives_failure(
 
 
 @pytest.mark.asyncio
-async def test_worker_redelivery_does_not_rerun_engine_or_mix_generations(pg, seeded):
+async def test_worker_redelivery_does_not_rerun_engine_or_mix_generations(pg, seeded, available_audio):
     meeting_id, transcript_id, _, _ = seeded
     await reserve(pg, meeting_id, transcript_id)
     engine = AsyncMock()
@@ -190,6 +202,7 @@ async def test_worker_redelivery_does_not_rerun_engine_or_mix_generations(pg, se
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
         await _process_diarization({"meeting_id": meeting_id, "processing_revision": 2}, pg)
     assert engine.diarize.await_count == 2
+    assert available_audio.inspect.await_args_list == [mock_call("qa/synthetic.webm")] * 2
     async with pg() as session:
         generations = (await session.scalars(select(Diarization).where(Diarization.meeting_id == meeting_id)
                                               .order_by(Diarization.processing_revision))).all()
@@ -252,7 +265,9 @@ async def test_ordinary_unversioned_redelivery_without_processing_claim_is_idemp
 
 
 @pytest.mark.asyncio
-async def test_legacy_completed_redelivery_preserves_identities_but_explicit_reprocess_can_advance(pg, seeded):
+async def test_legacy_completed_redelivery_preserves_identities_but_explicit_reprocess_can_advance(
+    pg, seeded, available_audio,
+):
     meeting_id, transcript_id, turn_id, recording_id = seeded
     now = datetime.now(UTC)
     diarization_id, speaker_id, review_id = (str(uuid.uuid4()) for _ in range(3))
@@ -295,6 +310,7 @@ async def test_legacy_completed_redelivery_preserves_identities_but_explicit_rep
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
         await _process_diarization({"meeting_id": meeting_id, "processing_revision": 2}, pg)
     engine.diarize.assert_awaited_once()
+    available_audio.inspect.assert_awaited_once_with("qa/synthetic.webm")
     async with pg() as session:
         assert len((await session.scalars(select(Diarization))).all()) == 2
         assert len((await session.scalars(select(SpeakerReview))).all()) == 2
@@ -302,7 +318,7 @@ async def test_legacy_completed_redelivery_preserves_identities_but_explicit_rep
 
 
 @pytest.mark.asyncio
-async def test_failed_ordinary_redelivery_requires_explicit_retry_of_same_revision(pg, seeded):
+async def test_failed_ordinary_redelivery_requires_explicit_retry_of_same_revision(pg, seeded, available_audio):
     meeting_id, transcript_id, _, recording_id = seeded
     message = {"meeting_id": meeting_id, "owner_id": "qa-user", "recording_id": recording_id}
     engine = AsyncMock()
@@ -332,6 +348,7 @@ async def test_failed_ordinary_redelivery_requires_explicit_retry_of_same_revisi
         await _process_diarization(queue.publish.await_args.args[1], pg)
         await _process_diarization(queue.publish.await_args.args[1], pg)
     assert engine.diarize.await_count == 2  # first failure and one retry, not redelivery
+    available_audio.inspect.assert_awaited_once_with("qa/synthetic.webm")
     async with pg() as session:
         generations = (await session.scalars(select(Diarization).where(Diarization.meeting_id == meeting_id))).all()
         reviews = (await session.scalars(select(SpeakerReview).where(SpeakerReview.meeting_id == meeting_id))).all()
