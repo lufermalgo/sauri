@@ -309,7 +309,7 @@ The numbered order is for readability, not a launch schedule. Dependencies below
 
 **Validation command:** `pytest tests/meetings/test_speaker_review_revisions.py` (from `backend/`, with `SAURI_T8_TEST_DATABASE_URL` set to the isolated local high-port PostgreSQL test database).
 
-**Independent migration reconciliation (#250):** Current main adds `014_meeting_summaries_templates` alongside this candidate's `014_processing_revisions`, both descending from 013. The technical follow-up copies the existing summary migration unchanged and adds a no-op `015_merge_processing_summaries` with both parents, plus isolated PostgreSQL regression `backend/tests/meetings/test_processing_summary_merge.py` for both upgrade orders and retained rows. It does not dispatch the admission outbox, add stage leases, activate speaker review, or implement T-15. The T-20 #253 → T-13 #246 → T-15 #248 privacy gate remains binding; the earlier T-15 PR #884 was closed unmerged.
+**Independent migration reconciliation (#250, PR #885):** Current main adds `014_meeting_summaries_templates` alongside this candidate's `014_processing_revisions`, both descending from 013. The technical follow-up copies the existing summary migration unchanged and adds a no-op `015_merge_processing_summaries` with both parents, plus isolated PostgreSQL regression `backend/tests/meetings/test_processing_summary_merge.py` for both upgrade orders and retained rows. It does not dispatch the admission outbox, add stage leases, activate speaker review, or implement T-15. The T-20 #253 → T-13 #246 → T-15 #248 privacy gate remains binding; the earlier T-15 PR #884 was closed unmerged.
 
 **Dependencies:** T-8, T-10, T-12, T-14.
 
