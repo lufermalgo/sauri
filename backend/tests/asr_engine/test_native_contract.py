@@ -88,6 +88,61 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
     assert observed_path and not Path(observed_path[0]).exists()
 
 
+@pytest.mark.parametrize("failure_stage", ["download", "inference", "response"])
+@pytest.mark.asyncio
+async def test_transcribe_failure_removes_partial_audio_and_does_not_expose_private_errors(
+    failure_stage: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = b"synthetic-capability-secret"
+    token_path = tmp_path / "engine_token"
+    token_path.write_text("synthetic-token", encoding="utf-8")
+    key_path = tmp_path / "capability_key"
+    key_path.write_bytes(secret)
+    observed_paths: list[Path] = []
+    invocations: list[str] = []
+    private_error = "synthetic-private-object-or-transcript"
+
+    class FailingS3:
+        def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
+            observed_paths.append(Path(path))
+            Path(path).write_bytes(b"synthetic partial audio")
+            if failure_stage == "download":
+                raise RuntimeError(private_error)
+
+    def transcribe(path: str, **_kwargs: Any) -> dict[str, Any]:
+        invocations.append(path)
+        assert Path(path).exists()
+        if failure_stage == "inference":
+            raise RuntimeError(private_error)
+        return {"language": "es", "segments": [{"text": private_error, "start": "invalid", "end": 1}]}
+
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
+    monkeypatch.setattr(native, "s3_client", FailingS3())
+    monkeypatch.setattr(native, "transcribe_audio", transcribe)
+    transport = httpx.ASGITransport(app=native.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/transcribe",
+            json={"audio_ref": "synthetic/recording.wav"},
+            headers={
+                "Authorization": "Bearer synthetic-token",
+                "X-Sauri-Recording-Capability": capability(
+                    "synthetic/recording.wav", secret, int(time.time()) + 60
+                ),
+            },
+        )
+
+    assert response.status_code == 500
+    expected_detail = "Audio download failed" if failure_stage == "download" else "Transcription failed"
+    assert response.json() == {"detail": expected_detail}
+    assert private_error not in response.text
+    assert len(observed_paths) == 1
+    assert not observed_paths[0].exists()
+    assert len(invocations) == (0 if failure_stage == "download" else 1)
+
+
 @pytest.mark.asyncio
 async def test_transcribe_requires_engine_bearer_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     token_path = tmp_path / "engine_token"
