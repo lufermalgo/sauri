@@ -129,7 +129,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 4.3: Recorrer portal Docker en navegador real (P1, P3–P4, P9)
 
-- [ ] Pendiente y no verificado. APX abrió origen real `http://127.0.0.1:15173`, pestaña t3, pero snapshot devolvió `paused_by_user` porque el dueño conserva su control. Se pidió liberarla sin cambiar de navegador ni eludirlo. La espera QA de 300s expiró y eliminó automáticamente ese entorno. Repetir con nuevo entorno tras recuperar control; no confundir las pruebas HTTP con recorrido visual.
+- [x] Recorrido APX 13/11 en ejecución `e4ddeee1678f`, portal construido `127.0.0.1:15273`: biblioteca, detalle, retorno, recarga/reapertura, reproducción real S3 (294 frames, 10,288 s, sin error), segunda reproducción (588 frames), velocidad 1,5× y salto a 2 s. Ausencia de objeto QA muestra error real y detiene reproducción; logout vuelve a login. Detectado y corregido redirect FastAPI que perdía puerto (`$http_host`), con regresión RED/GREEN real. Login API real de dos usuarios; sesión QA restaurada mediante APX, NO envío manual del formulario. Clip privado autorizado por Fer en Downloads; transcripción genuina MLX directa importada solo para QA, proveedor explícito y estado NO completed. No demuestra worker/diarización/captura. UI sin transcript sigue con 404; recarga vuelve a biblioteca; no hay búsqueda textual. Evidencia y límites en docs/LOCAL_DEPLOYMENT.md; capturas privadas fuera de Git. Limpieza al finalizar el hold acotado, verificación final en 5.2.
 
 **Archivo:** `_tools/validate-local-platform.py` (referencias a evidencias); capturas/logs en carpeta temporal de la ejecución, no en repositorio.
 **Acción:** Con navegador permitido/Playwright abrir origen Docker, iniciar sesión existente, consultar biblioteca y detalle autorizado, recargar ruta y reproducir medio sintético. Comprobar errores API/medio ausente y separación A/B/anónimo. Guardar captura y errores de consola/red sin tokens/URLs privadas. No interceptar API/medios para fabricar éxito ni modificar UI para facilitar QA. La captura Chrome pertenece a chrome-recording-completion y no se acredita con este recorrido.
@@ -149,7 +149,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 5.1: Documentar operación y recuperación sin borrar datos (P6, P10)
 
-- [ ] Guía `docs/LOCAL_DEPLOYMENT.md` redactada y README/ARCHITECTURE contrastados con candidato y pruebas reales. #703 ahora MERGED, no draft (verificado remoto). Incluye variables sin valores, make up, arranque/health diferenciados, QA, CORS acotado, limpieza, recuperación y límites. Falta completar resultado visual 4.3 antes de darla por finalizada.
+- [x] Guía `docs/LOCAL_DEPLOYMENT.md` redactada y README/ARCHITECTURE contrastados con candidato y pruebas reales. #703 ahora MERGED, no draft (verificado remoto). Incluye variables sin valores, make up, arranque/health diferenciados, QA, CORS acotado, limpieza, recuperación y límites. Resultado visual 4.3 añadido el 13/11: reproducción, regresión de redirect, autenticación API vs sesión restaurada, MLX directo vs worker y límites de UI documentados; finalización de entrega pendiente de 5.2/5.3.
 
 **Archivo:** `docs/LOCAL_DEPLOYMENT.md` (crear), `README.md`, `docs/ARCHITECTURE.md`.
 **Acción:** Documentar Docker/Node de construcción, variables privadas sin valores, URL local, make up, proxy/API/S3, motores nativos, salud diferenciada, puertos/conflictos, procedimientos QA e inventario/cleanup, recuperación sin borrar volúmenes. Advertir que make clean elimina datos y no es parte del arranque. Contrastar estado actual de #703 y de esta entrega, no confundir spec con implementación ni fixtures con inferencia. Registrar comandos reales y límites de validación, sin secretos.
@@ -192,8 +192,8 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 | Unidad | Issue | PR / commit | Estado real |
 |--------|-------|-------------|-------------|
 | Plan | #818 | PR #825, merge `3161afa` | Aprobado e integrado |
-| U1 | #827 | PR #829; implementación `87f16f2` | Publicado y validado localmente; CI/merge pendientes |
-| U2 | #830 | `feat/local-platform-bringup`, apilada sobre #829 | Implementado y validado localmente; no integrado |
-| U3 | #833 | PR #836, `e07c1ce`, apilado sobre #832 | Commit publicado repetido en Docker normal/fallo/cleanup PASS; 14 tests, CI PASS; no integrado |
-| U4 | #837 | `feat/local-platform-connections`, sobre #836 | 15 tests host y conexiones reales PASS; 3 pruebas S3 reutilizadas PASS. Navegador pendiente; inferencia no verificada; no integrado |
+| U1 | #827 | PR #829; merge `937242a` | Integrado por Fer; CI PASS |
+| U2 | #830 | PR #832; merge `d9e12c8` | Integrado por Fer; CI PASS |
+| U3 | #833 | PR #836; merge `fa59f2c` | Integrado por Fer; normal/fallo/cleanup PASS, 14 tests, CI PASS |
+| U4 | #837 | PR #840, `feat/local-platform-connections`, base main | 15 tests host y conexiones reales PASS; 3 pruebas S3 PASS. Recorrido APX realizado; corrección de redirect y documentación en validación final. Inferencia integral pendiente; no integrado |
 | U5 | #818 / APX padre | — | No iniciada |

@@ -115,6 +115,14 @@ async def probe(origin):
             assert direct.json() == proxied.json(), 'Login error body mismatch'
         checks.append('proxy-real-401-422-errors')
         headers = {'Authorization': 'Bearer ' + tokens[0]}
+        # The built frontend requests this exact slashless path. Preserve its
+        # public authority, including the port, through FastAPI's 307 redirect.
+        public_authority = origin.removeprefix('http://')
+        response = await client.get('http://portal/api/v1/meetings',
+                                    headers={**headers, 'Host': public_authority})
+        assert response.status_code == 307, 'Expected canonical meetings redirect'
+        assert response.headers['location'] == origin + '/api/v1/meetings/', 'Proxy redirect lost public origin'
+        checks.append('frontend-slashless-route-preserves-origin')
         meeting = str(uuid.uuid4())
         medium = Path('/tmp/qa-media.webm').read_bytes()
         response = await client.post('http://portal/api/v1/ingestion/upload', headers=headers,
