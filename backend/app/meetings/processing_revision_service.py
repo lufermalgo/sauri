@@ -133,6 +133,7 @@ class ProcessingRevisionService:
         self._session.add(
             ProcessingRevisionOutbox(
                 id=str(uuid.uuid4()),
+                recording_id=recording_id,
                 processing_revision_id=revision.id,
                 event_type="processing_revision_admitted",
                 delivery_status="pending",

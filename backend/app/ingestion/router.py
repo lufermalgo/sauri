@@ -2,7 +2,7 @@
 
 Receives A/V multipart + JSON metadata (IngestionData), requires authentication,
 persists to the ObjectStore, records a RecordingNotice, transitions the
-Meeting to "transcribing", and enqueues the transcription job.
+Meeting to "transcribing", and durably admits an exact-revision outbox event.
 
 Requirements: 2.2, 6.5, 9.1, 9.2
 """
@@ -24,8 +24,6 @@ from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
 from app.infra.models import Meeting, ProcessingRevision
 from app.infra.object_store import ObjectStore, create_object_store
-from app.infra.processing_claims import create_processing_generation
-from app.infra.queue import JobQueue, create_job_queue
 from app.ingestion.schemas import IngestionData
 from app.ingestion.service import preflight_ingestion, process_ingestion, resolve_upload_title
 from app.meetings.processing_revision_service import ProcessingRevisionService
@@ -49,25 +47,20 @@ def _cleanup_scope_hash(user_id: str, meeting_id: str, idempotency_key: str) -> 
     return hashlib.sha256(scope.encode()).hexdigest()
 
 
-def _request_fingerprint(audio_content: bytes, video_content: bytes | None) -> str:
-    """A stable content fingerprint independent of freshly generated object refs."""
-    return (
-        "sha256:"
-        + hashlib.sha256(
-            hashlib.sha256(audio_content).digest()
-            + (hashlib.sha256(video_content).digest() if video_content is not None else b"")
-        ).hexdigest()
-    )
+def _request_fingerprint(data: IngestionData, audio_content: bytes, video_content: bytes | None) -> str:
+    """Canonical request metadata and media, independent of staged object refs."""
+    metadata = json.dumps(data.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(metadata.encode("utf-8"))
+    digest.update(b"\x00" + hashlib.sha256(audio_content).digest())
+    digest.update(b"\x01" if video_content is not None else b"\x00")
+    if video_content is not None:
+        digest.update(hashlib.sha256(video_content).digest())
+    return "sha256:" + digest.hexdigest()
 
 
 def _get_object_store() -> ObjectStore:
     """Creates the object store instance (simplified DI, final wiring in task 17.1)."""
     return create_object_store()
-
-
-def _get_queue() -> JobQueue:
-    """Creates the job queue instance (simplified DI, final wiring in task 17.1)."""
-    return create_job_queue()
 
 
 @router.post("/upload", status_code=status.HTTP_200_OK)
@@ -86,7 +79,7 @@ async def upload_recording(
     d. Stores video in the ObjectStore (if provided) -> video_ref.
     e. Calls process_ingestion (creates SessionRecording, handles idempotency).
     f. Transitions the Meeting to "transcribing" via record_transition.
-    g. Enqueues the transcription job.
+    g. Leaves the exact revision admission event pending for T-15 dispatch.
     h. Returns 200 with the recording's ID and state.
     """
     # a. Parse the data JSON
@@ -131,7 +124,9 @@ async def upload_recording(
                     # A preflight retry must not bypass the admission fingerprint
                     # just because it avoids staging a duplicate media object.
                     fingerprint = _request_fingerprint(
-                        await audio.read(), await video.read() if video is not None else None
+                        ingestion_data,
+                        await audio.read(),
+                        await video.read() if video is not None else None,
                     )
                     try:
                         await ProcessingRevisionService(session).admit_candidate(
@@ -170,7 +165,6 @@ async def upload_recording(
 
     # Get infrastructure only after preflight passes.
     object_store = _get_object_store()
-    queue = _get_queue()
 
     cleanup_scope_hash = _cleanup_scope_hash(user.id, ingestion_data.meeting_id, ingestion_data.idempotency_key)
     staged_refs: list[str | None] = []
@@ -218,8 +212,6 @@ async def upload_recording(
     # e. Process ingestion (create SessionRecording, handles idempotency, notice)
     engine = create_engine()
     session_factory = create_session_factory(engine)
-    processing_generation: int | None = None
-    job_id = str(uuid.uuid4())
     try:
         async with session_factory() as session, session.begin():
             try:
@@ -229,7 +221,7 @@ async def upload_recording(
                     audio_ref=audio_ref,
                     video_ref=video_ref,
                     created_by=user.id,
-                    request_fingerprint=_request_fingerprint(audio_content, video_content),
+                    request_fingerprint=_request_fingerprint(ingestion_data, audio_content, video_content),
                 )
             except ValueError as error:
                 raise HTTPException(status_code=409, detail="Processing admission conflict") from error
@@ -248,8 +240,6 @@ async def upload_recording(
                     meeting=meeting,
                     event="recording_uploaded",
                 )
-                if transition_result.successful:
-                    processing_generation = await create_processing_generation(session, ingestion_data.meeting_id)
             else:
                 meeting = await session.get(Meeting, ingestion_data.meeting_id)
                 if meeting is None:
@@ -293,23 +283,8 @@ async def upload_recording(
             await engine.dispose()
         return {"recording_id": recording.id, "state": prior_state}
 
-    # g. Enqueue only after the state transition and durable generation commit.
-    if processing_generation is not None:
-        await queue.connect()
-        try:
-            await queue.publish(
-                topic="transcribe",
-                message={
-                    "meeting_id": ingestion_data.meeting_id,
-                    "owner_id": user.id,
-                    "recording_id": recording.id,
-                    "audio_ref": audio_ref,
-                    "generation": processing_generation,
-                    "job_id": job_id,
-                },
-            )
-        finally:
-            await queue.disconnect()
+    # T-15 dispatches the committed admission outbox event with its exact
+    # processing_revision_id. Never publish an unversioned legacy job here.
 
     # Close the engine
     await engine.dispose()

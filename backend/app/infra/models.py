@@ -184,6 +184,9 @@ class ProcessingRevisionOutbox(Base):
     __table_args__ = (UniqueConstraint("processing_revision_id", "event_type", name="uq_revision_outbox_event"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    recording_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("session_recordings.id", ondelete="CASCADE"), nullable=False
+    )
     processing_revision_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("processing_revisions.id", ondelete="CASCADE"), nullable=False
     )

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from io import BytesIO
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -120,9 +119,7 @@ async def test_invalid_json_returns_same_422_detail_and_chains_parse_error() -> 
 
     assert type(error.value) is HTTPException
     assert error.value.status_code == 422
-    assert error.value.detail == (
-        "Invalid ingestion data: Expecting value: line 1 column 1 (char 0)"
-    )
+    assert error.value.detail == ("Invalid ingestion data: Expecting value: line 1 column 1 (char 0)")
     assert isinstance(error.value.__cause__, json.JSONDecodeError)
 
 
@@ -144,17 +141,10 @@ async def test_upload_rejects_video_evidence_inconsistent_with_object_path_befor
     object_store = Mock()
     object_store.save = AsyncMock(return_value="synthetic-object-ref")
     monkeypatch.setattr(router, "_get_object_store", Mock(return_value=object_store))
-    monkeypatch.setattr(router, "_get_queue", Mock())
-    create_engine = Mock(
-        side_effect=AssertionError("invalid metadata must be rejected before persistence")
-    )
+    create_engine = Mock(side_effect=AssertionError("invalid metadata must be rejected before persistence"))
     monkeypatch.setattr(router, "create_engine", create_engine)
     audio = UploadFile(filename="synthetic-audio.webm", file=BytesIO(b"audio"))
-    video = (
-        UploadFile(filename="synthetic-video.webm", file=BytesIO(b"video"))
-        if include_video
-        else None
-    )
+    video = UploadFile(filename="synthetic-video.webm", file=BytesIO(b"video")) if include_video else None
     metadata = _payload(video_presence=video_presence)
     if video_offset_ms is not None:
         metadata["video_offset_ms"] = video_offset_ms
@@ -193,6 +183,7 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
         created_by="actual-owner",
         created_at=datetime.now(UTC),
     )
+
     class _SessionContext:
         async def __aenter__(self) -> _SessionContext:
             return self
@@ -208,21 +199,14 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
     engine = AsyncMock()
     store = Mock()
     store.save = AsyncMock(return_value="private/staged-object")
-    queue = Mock()
-    queue.connect = AsyncMock()
-    queue.publish = AsyncMock()
-    queue.disconnect = AsyncMock()
     monkeypatch.setattr(router, "_get_object_store", Mock(return_value=store))
-    monkeypatch.setattr(router, "_get_queue", Mock(return_value=queue))
     monkeypatch.setattr(router, "create_engine", Mock(return_value=engine))
     monkeypatch.setattr(router, "create_session_factory", Mock(return_value=Mock(return_value=session)))
     process_ingestion_mock = AsyncMock(
         return_value=(SimpleNamespace(id="synthetic-recording", process_state="recording"), True)
     )
     monkeypatch.setattr("app.ingestion.router.process_ingestion", process_ingestion_mock)
-    monkeypatch.setattr(
-        router, "record_transition", AsyncMock(return_value=SimpleNamespace(successful=True))
-    )
+    monkeypatch.setattr(router, "record_transition", AsyncMock(return_value=SimpleNamespace(successful=True)))
     audio = UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic media"))
 
     with pytest.raises(HTTPException) as error:
@@ -251,7 +235,7 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
 
 
 @pytest.mark.asyncio
-async def test_upload_binds_transcription_job_to_authenticated_owner_and_recording(
+async def test_upload_admits_revision_without_direct_queue_publish(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from datetime import UTC, datetime
@@ -289,25 +273,13 @@ async def test_upload_binds_transcription_job_to_authenticated_owner_and_recordi
     engine.dispose = AsyncMock()
     store = Mock()
     store.save = AsyncMock(return_value="synthetic/audio-object")
-    queue = Mock()
-    queue.connect = AsyncMock()
-    queue.publish = AsyncMock()
-    queue.disconnect = AsyncMock()
     monkeypatch.setattr(router, "_get_object_store", Mock(return_value=store))
-    monkeypatch.setattr(router, "_get_queue", Mock(return_value=queue))
     monkeypatch.setattr(router, "create_engine", Mock(return_value=engine))
-    monkeypatch.setattr(
-        router, "create_session_factory", Mock(return_value=Mock(return_value=session))
-    )
+    monkeypatch.setattr(router, "create_session_factory", Mock(return_value=Mock(return_value=session)))
     monkeypatch.setattr(router, "preflight_ingestion", AsyncMock(return_value=None))
-    process_ingestion = AsyncMock(
-        return_value=(SimpleNamespace(id=recording_id, process_state="recording"), True)
-    )
+    process_ingestion = AsyncMock(return_value=(SimpleNamespace(id=recording_id, process_state="recording"), True))
     monkeypatch.setattr(router, "process_ingestion", process_ingestion)
-    monkeypatch.setattr(
-        router, "record_transition", AsyncMock(return_value=SimpleNamespace(successful=True))
-    )
-    monkeypatch.setattr(router, "create_processing_generation", AsyncMock(return_value=1))
+    monkeypatch.setattr(router, "record_transition", AsyncMock(return_value=SimpleNamespace(successful=True)))
 
     result = await router.upload_recording(
         audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic audio")),
@@ -322,16 +294,8 @@ async def test_upload_binds_transcription_job_to_authenticated_owner_and_recordi
     )
 
     assert result["recording_id"] == recording_id
-    queue.publish.assert_awaited_once()
-    topic = queue.publish.await_args.kwargs["topic"]
-    message = queue.publish.await_args.kwargs["message"]
-    assert topic == "transcribe"
-    assert message == {
-        "meeting_id": meeting_id,
-        "owner_id": owner_id,
-        "recording_id": recording_id,
-        "audio_ref": "synthetic/audio-object",
-        "generation": 1,
-        "job_id": message["job_id"],
-    }
-    assert uuid.UUID(message["job_id"])
+    process_ingestion.assert_awaited_once()
+    assert process_ingestion.await_args.kwargs["created_by"] == owner_id
+    assert process_ingestion.await_args.kwargs["request_fingerprint"].startswith("sha256:")
+    # Production admission/outbox atomicity is asserted against real persistence
+    # in test_processing_revision_admission, not a mocked queue publication.

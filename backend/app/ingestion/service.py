@@ -8,6 +8,7 @@ but doesn't alter the flow.
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from datetime import UTC, datetime
 
@@ -19,6 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infra.models import Meeting, RecordingMediaSource, RecordingNotice, SessionRecording
 from app.ingestion.schemas import IngestionData
 from app.meetings.processing_revision_service import ProcessingRevisionService
+
+
+def _metadata_fingerprint(data: IngestionData) -> str:
+    """Canonical fallback for internal callers without uploaded media bytes."""
+    metadata = json.dumps(data.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(metadata.encode("utf-8")).hexdigest()
 
 
 async def _find_recording_by_key(session: AsyncSession, idempotency_key: str) -> SessionRecording | None:
@@ -83,13 +90,12 @@ async def process_ingestion(
     # 1. Repeat ownership and idempotency checks after media storage to cover races.
     existing = await preflight_ingestion(session, data, created_by)
     if existing is not None:
-        if request_fingerprint is not None:
-            await ProcessingRevisionService(session).admit_candidate(
-                owner_id=created_by,
-                recording_id=existing.id,
-                request_id=data.idempotency_key,
-                request_fingerprint=request_fingerprint,
-            )
+        await ProcessingRevisionService(session).admit_candidate(
+            owner_id=created_by,
+            recording_id=existing.id,
+            request_id=data.idempotency_key,
+            request_fingerprint=request_fingerprint or _metadata_fingerprint(data),
+        )
         return existing, False
 
     # 2. Ensure Meeting exists (auto-create upload-only meetings without a Meet link).
@@ -170,7 +176,7 @@ async def process_ingestion(
         owner_id=created_by,
         recording_id=recording.id,
         request_id=data.idempotency_key,
-        request_fingerprint=request_fingerprint or ("sha256:" + hashlib.sha256(audio_ref.encode()).hexdigest()),
+        request_fingerprint=request_fingerprint or _metadata_fingerprint(data),
     )
 
     # 5. Return the created recording (it's new).

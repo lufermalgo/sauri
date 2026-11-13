@@ -55,6 +55,7 @@ async def test_ingestion_admission_replay_and_conflict_share_upload_transaction(
     assert state.active_processing_revision_id is None
     event = (await db_session.scalars(select(ProcessingRevisionOutbox))).one()
     assert event.processing_revision_id == revision.id
+    assert event.recording_id == revision.recording_id
     assert event.event_type == "processing_revision_admitted"
     assert event.delivery_status == "pending"
 
@@ -82,6 +83,7 @@ async def test_upload_preflight_rejects_changed_content_without_staging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     data = _data()
+    data.title = ingestion_router.resolve_upload_title(data.title, "original.webm")
     original = b"synthetic original audio"
     async with session_factory() as session, session.begin():
         recording, _ = await process_ingestion(
@@ -90,7 +92,7 @@ async def test_upload_preflight_rejects_changed_content_without_staging(
             "synthetic://audio",
             None,
             "synthetic-owner",
-            ingestion_router._request_fingerprint(original, None),
+            ingestion_router._request_fingerprint(data, original, None),
         )
     monkeypatch.setattr(ingestion_router, "create_engine", Mock(return_value=Mock(dispose=AsyncMock())))
     monkeypatch.setattr(ingestion_router, "create_session_factory", Mock(return_value=session_factory))
@@ -107,6 +109,15 @@ async def test_upload_preflight_rejects_changed_content_without_staging(
         )
     assert error.value.status_code == 409
     store.save.assert_not_called()
+    with pytest.raises(HTTPException) as changed_metadata:
+        await ingestion_router.upload_recording(
+            audio=UploadFile(filename="original.webm", file=BytesIO(original)),
+            video=None,
+            data=data.model_copy(update={"duration_seconds": 99}).model_dump_json(),
+            user=user,
+        )
+    assert changed_metadata.value.status_code == 409
+    store.save.assert_not_called()
     replay = await ingestion_router.upload_recording(
         audio=UploadFile(filename="original.webm", file=BytesIO(original)),
         video=None,
@@ -115,6 +126,43 @@ async def test_upload_preflight_rejects_changed_content_without_staging(
     )
     assert replay["recording_id"] == recording.id
     store.save.assert_not_called()
+    async with session_factory() as session:
+        revisions = (await session.scalars(select(ProcessingRevision))).all()
+        assert len(revisions) == 1 and revisions[0].recording_id == recording.id
+        assert len((await session.scalars(select(ProcessingRevisionOutbox))).all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_real_upload_commits_outbox_but_never_directly_publishes(
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = _data()
+    user = AuthenticatedUser(id="synthetic-owner", email="owner@sauri.local", name="Synthetic", is_sales=True)
+    store = Mock(save=AsyncMock(return_value="synthetic://audio"))
+    monkeypatch.setattr(ingestion_router, "create_engine", Mock(return_value=Mock(dispose=AsyncMock())))
+    monkeypatch.setattr(ingestion_router, "create_session_factory", Mock(return_value=session_factory))
+    monkeypatch.setattr(ingestion_router, "_get_object_store", Mock(return_value=store))
+    forbidden_queue = Mock(side_effect=AssertionError("upload must not publish a job without revision ID"))
+    monkeypatch.setattr(ingestion_router, "_get_queue", forbidden_queue, raising=False)
+
+    result = await ingestion_router.upload_recording(
+        audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic audio")),
+        video=None,
+        data=data.model_dump_json(),
+        user=user,
+    )
+    async with session_factory() as session:
+        revision = (await session.scalars(select(ProcessingRevision))).one()
+        event = (await session.scalars(select(ProcessingRevisionOutbox))).one()
+        state = (await session.scalars(select(RecordingProcessingState))).one()
+    assert result["recording_id"] == revision.recording_id
+    assert event.processing_revision_id == revision.id
+    assert event.recording_id == revision.recording_id
+    assert event.event_type == "processing_revision_admitted"
+    assert event.delivery_status == "pending"
+    assert state.in_flight_revision_id == revision.id
+    forbidden_queue.assert_not_called()
 
 
 @pytest.mark.asyncio

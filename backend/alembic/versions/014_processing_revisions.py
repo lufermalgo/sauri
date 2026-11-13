@@ -46,6 +46,12 @@ def upgrade() -> None:
         "processing_revision_outbox",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column(
+            "recording_id",
+            sa.String(36),
+            sa.ForeignKey("session_recordings.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
             "processing_revision_id",
             sa.String(36),
             sa.ForeignKey("processing_revisions.id", ondelete="CASCADE"),
