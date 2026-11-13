@@ -470,37 +470,53 @@ async def get_diarization(
                 f"GET /api/v1/meetings/{meeting_id}/diarization",
             )
 
-            stmt = (
+            latest = await session.scalar(
                 select(Diarization)
                 .where(Diarization.meeting_id == meeting_id)
-                .options(
-                    selectinload(Diarization.speakers),
-                    selectinload(Diarization.assignments),
-                )
+                .order_by(Diarization.processing_revision.desc())
+                .limit(1)
             )
-            result = await session.execute(stmt)
-            diarization = result.scalar_one_or_none()
-
-            if diarization is None:
+            if latest is None:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Diarization not available for meeting: {meeting_id}",
                 )
 
-            ordered_speakers = sorted(diarization.speakers, key=lambda s: s.sequence)
+            # A pending or terminal attempt never replaces the active generation.
+            # Load children only for the latest completed generation, not the attempt.
+            diarization = await session.scalar(
+                select(Diarization)
+                .where(
+                    Diarization.meeting_id == meeting_id,
+                    Diarization.diarization_state == "completed",
+                )
+                .order_by(Diarization.processing_revision.desc())
+                .limit(1)
+                .options(
+                    selectinload(Diarization.speakers),
+                    selectinload(Diarization.assignments),
+                )
+            )
+            ordered_speakers = sorted(diarization.speakers, key=lambda s: s.sequence) if diarization else []
 
             return {
-                "diarization_id": diarization.id,
-                "meeting_id": diarization.meeting_id,
-                "diarization_state": diarization.diarization_state,
-                "speaker_count": diarization.speaker_count,
+                "diarization_id": diarization.id if diarization else None,
+                "meeting_id": meeting_id,
+                "diarization_state": diarization.diarization_state if diarization else None,
+                "speaker_count": diarization.speaker_count if diarization else 0,
+                "processing_revision": diarization.processing_revision if diarization else None,
+                "latest_attempt": {
+                    "processing_revision": latest.processing_revision,
+                    "diarization_state": latest.diarization_state,
+                    "failure_cause": latest.failure_cause,
+                },
                 "speakers": [
                     {"id": s.id, "label": s.label, "sequence": s.sequence}
                     for s in ordered_speakers
                 ],
                 "assignments": [
-                    {"turn_id": a.turn_id, "speaker_id": a.speaker_id}
-                    for a in diarization.assignments
+                    {"turn_id": a.turn_id, "speaker_id": a.speaker_id, "overlap_ms": a.overlap_ms}
+                    for a in (diarization.assignments if diarization else [])
                 ],
             }
     finally:
