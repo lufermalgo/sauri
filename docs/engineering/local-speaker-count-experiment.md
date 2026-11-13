@@ -1,0 +1,66 @@
+# Standalone local speaker-count experiment
+
+## Authority, boundary and traceability
+
+- Issue #910; APX `task_d1ddf9cdac7d4cf2`; owner authorization 2026-11-13.
+- This is an isolated experiment contract, not a new product feature, approved Spectra phase, or production correction. `speaker-oversegmentation-jose-maria` was a session name, not a spec found in the repository. The existing `fix-transcript-word-fragments` spec describes related attribution/admission defects, but does not authorize changing production here.
+- Implementer: Nahuel. Delivery: PR ready for Ansel's review, **no merge**.
+- Calibration recording A has owner-reported truth 3. Recording B (truth 6) is reserved: do not run it or use it to select parameters during this task. Private filenames, manifests and content remain outside Git.
+- Count acoustic labels only: `len(annotation.labels())`. No transcription, turn filtering, identity recognition, speaker constraints, or segment output. A correct count on A does not certify identities or out-of-sample accuracy.
+
+## CLI contract
+
+Use the already-installed native Python 3.11 environment (pyannote.audio 3.3.2, torch/torchaudio 2.5.1). No installation, model download or paid API is part of this task.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 "$HOME/.local/share/sauri/native-engines/venv/bin/python" \
+  _tools/count_speakers.py /absolute/path/to/authorized-recording.webm \
+  --cache "$HOME/.cache/torch/pyannote" \
+  --scratch /absolute/private/scratch/work \
+  --output-dir /absolute/private/scratch/results
+```
+
+The scratch directory must already exist. Baseline omits `--clustering-threshold`. An optional finite `[0, 2]` override changes only `clustering.threshold`; there is deliberately no device option or `num/min/max_speakers` argument. Do not supply the expected count to the pipeline.
+
+The CLI:
+
+1. Checks macOS memory pressure and active competing local inference processes (including Ollama/llama/MLX/native servers). Never terminates another process. This process-name/CPU signal is not an exhaustive scheduler or a GPU utilization measurement; operator preflight is still required. An idle loaded model is not treated as active inference.
+2. Hashes the read-only original and model blobs. Copies the existing small model cache into a temporary private directory, disables network connections and Hugging Face downloads/implicit credentials, and redirects library caches to scratch. It does not read Sauri credentials or connect to DB, object storage or services.
+3. Loads the cached 3.1 YAML and dependency weights, records the revision, effective parameters, batch sizes and library versions. Requires MPS and disables PyTorch's unsupported-operation CPU fallback. Pyannote's ordinary CPU clustering remains unchanged; “MPS” describes neural inference, not every operation.
+4. Decodes the full original with ffmpeg to temporary mono 16 kHz PCM16 WAV. Calls the pipeline **once for the entire recording**; the pipeline performs internal windows and global clustering. Keeps cached official batch sizes (32/32), centroid method, min cluster size 12, overlap exclusion and segmentation min_duration_off 0. Only the threshold can vary. PyTorch CPU intra-op threads are 1, recorded as a technical execution setting.
+5. Counts every emitted label without inspecting text, dropping short voices or forcing a target. Deletes temporary WAV/models/library caches on normal exit, exception, SIGINT or SIGTERM. SIGKILL/power loss cannot guarantee cleanup; inspect the private scratch path before reuse.
+6. Writes distinct UUID run directories with `started.json` and `result.json`. Final stdout is JSON containing count (only on success), parameters/model/version, decoded duration, timings, error (if any), resource samples and preservation checks. Progress on stderr contains stage/counters only; no audio, transcript, annotation intervals or embedding arrays are exported. All failed attempts are preserved. Exit 0 means successful completion, not acoustic accuracy.
+
+The guard synchronizes the MPS command queue and releases only **unused** allocator cache at resource checks (technical memory scheduling, not a quality-parameter change). It records driver/live-tensor bytes before/after release. It checks during pipeline callbacks, every 10 seconds at most: initial memory warning rejects the run; a warning during inference must persist at least 30 seconds before aborting this run. There is no CPU-idle cutoff, arbitrary inference deadline or CPU fallback. Callbacks cannot interrupt a single long native operation; this is not a hard real-time memory isolation mechanism. A busy CPU can make the run slower without being a failure. Do not weaken memory controls to obtain a count.
+
+## Bounded calibration method
+
+- Run the unchanged cached baseline first (`threshold=0.7045654963945799`). Report its real count before selecting any candidate.
+- If it over-counts, evaluate increasing threshold values sequentially (at most three variants), because larger centroid-distance cut thresholds generally merge more clusters. If it under-counts, evaluate decreasing values. The exact values and justification must be recorded after observing the baseline, not chosen by reading B.
+- Hold all other quality parameters, full audio, device and batching constant. No open grid, short-cluster deletion, manual label merging or expected-count input.
+- Retain the baseline, every failed attempt and every variant. Stop if resources or controls prevent a complete baseline; an incomplete run is not a count and is not grounds for threshold selection.
+- B remains untouched until Ansel reviews this stage. Later validation needs the frozen candidate, not further tuning on B.
+
+## Verification inventory
+
+`_tools/test_count_speakers.py` checks label count/empty output, baseline and single-field overrides, invalid thresholds, no speaker/device constraint arguments, progress scalar normalization, resource guard behavior, error manifests/cleanup, offline-network denial and production isolation. Synthetic fixtures test the CLI contract only, **not diarization quality**.
+
+Project Python validation: backend `pytest`, `ruff check .`, `mypy .`, plus targeted checks for the standalone tool (outside backend's normal discovery):
+
+```bash
+backend/.venv/bin/python -m pytest -p no:cacheprovider -q _tools/test_count_speakers.py
+backend/.venv/bin/ruff check --config backend/pyproject.toml _tools/count_speakers.py _tools/test_count_speakers.py
+backend/.venv/bin/mypy --strict --ignore-missing-imports _tools/count_speakers.py _tools/test_count_speakers.py
+```
+
+The native runtime requires existing pyannote/torch libraries; `--ignore-missing-imports` in the contract typecheck is not a runtime dependency check. Actual model loading and inference must be recorded separately in the private execution evidence. No Rust or TypeScript files are changed.
+
+## Delivery verification, 2026-11-13
+
+- Tool contract tests: **19 passed**. Targeted Ruff and strict mypy: **PASS**. Real installed `pyannote.core.Annotation` synthetic contract: four turns, three labels, **PASS** (not acoustic accuracy).
+- Existing diarization-engine regression tests: **23 passed**.
+- Backend full non-marked-integration discovery (`pytest --continue-on-collection-errors -m 'not integration'`): **528 passed, 2 failed, 5 skipped, 2 deselected, 10 errors**. Some live tests lack the integration marker: nine PostgreSQL tests reject missing isolated QA configuration before connecting; the object-store test fails on missing `OBJECT_STORE_ENDPOINT` before creating a client. Remaining collection error: missing `app.transcription.processing_pipeline`; remaining failure: absent speaker-review route in generated schema. No services were started to mask these failures.
+- Backend-wide Ruff: **3 existing errors** in untouched imports/datetime usage; backend-wide mypy: **82 errors in 8 untouched files**. `git diff origin/main -- backend` is empty. These broad checks are not represented as green.
+- Real MPS runs loaded the cached weights offline and processed the complete recording's segmentation windows, but **no final label count was produced**. First attempt exposed a NumPy scalar progress-serialization bug (fixed and regression-tested). Subsequent attempts hit the memory guard; releasing unused MPS cache, then synchronizing before release, did not resolve it. Last run observed memory-warning level 2 in four consecutive samples over 31.26 seconds, driver memory approximately 6.04 GiB after release, and exited safely after 70.259 seconds. No OOM or model defect is claimed.
+- All run manifests and errors remain private outside Git, with original/cache preservation true and temporary cleanup true. **No threshold variants were selected or run; B was not opened or processed.** The experiment objective (real baseline followed by tuning) remains blocked, even though the CLI implementation is available for review.
+- Recommended next condition: a sustained memory-available window for the unchanged MPS baseline. Do not repeat the exhausted batch-size ladder, silently switch to CPU, force a count, kill/unload someone else's processes, or weaken the memory guard. If that window cannot be provided, a different execution contract needs explicit review rather than claiming completion.
