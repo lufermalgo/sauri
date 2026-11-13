@@ -3,6 +3,12 @@ import * as fc from "fast-check";
 import { IDBFactory } from "fake-indexeddb";
 import { createCompletion, settleCapture, getCompletion, claimCompletion } from "./recording-db";
 
+// Each property executes 100 real IndexedDB/restart sequences. The default
+// five-second test deadline can expire while those sequences are still running,
+// leaking their async work into the next test's replacement Chrome/IDB globals.
+// Keep every sequence/assertion; allow the property to finish under suite load.
+vi.setConfig({ testTimeout: 30_000 });
+
 type Event = "stop" | "close" | "meeting-ended";
 
 async function harness(sessionId: string, tabId: number, legacy = false) {
