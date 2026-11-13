@@ -42,6 +42,10 @@ async def _upgrade(target: str) -> None:
     await asyncio.to_thread(command.upgrade, Config(str(ROOT / "alembic.ini")), target)
 
 
+async def _downgrade(target: str) -> None:
+    await asyncio.to_thread(command.downgrade, Config(str(ROOT / "alembic.ini")), target)
+
+
 @pytest.mark.parametrize("starting_parent", ["014_processing_revisions", "014_meeting_summaries_templates"])
 async def test_merge_preserves_both_sibling_014_schemas_and_existing_rows(
     starting_parent: str,
@@ -131,5 +135,39 @@ async def test_merge_preserves_both_sibling_014_schemas_and_existing_rows(
                     )
                 ).scalar_one()
                 assert owner == "merge-owner"
+
+        # Rolling back only the sibling introduced by this upgrade must not
+        # discard rows that existed at the starting parent. Re-upgrade must
+        # restore the merged head and both schemas without touching those rows.
+        await _downgrade(starting_parent)
+        other_parent = (
+            "014_meeting_summaries_templates"
+            if starting_parent == "014_processing_revisions"
+            else "014_processing_revisions"
+        )
+        # Downgrading the mergepoint yields two heads; explicitly remove only
+        # the sibling added during upgrade, leaving the stamped parent intact.
+        await _downgrade(f"{other_parent}@013_manual_recovery_persistence")
+        async with engine.connect() as connection:
+            assert (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalars().all() == [
+                starting_parent
+            ]
+            if starting_parent == "014_processing_revisions":
+                assert (
+                    await connection.execute(text("SELECT count(*) FROM processing_revision_outbox"))
+                ).scalar_one() == 1
+            else:
+                assert (await connection.execute(text("SELECT count(*) FROM summary_templates"))).scalar_one() == 1
+        await _upgrade("head")
+        async with engine.connect() as connection:
+            assert (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalars().all() == [
+                "015_merge_processing_summaries"
+            ]
+            assert (await connection.execute(text("SELECT count(*) FROM processing_revisions"))).scalar_one() == (
+                1 if starting_parent == "014_processing_revisions" else 0
+            )
+            assert (await connection.execute(text("SELECT count(*) FROM summary_templates"))).scalar_one() == (
+                1 if starting_parent == "014_meeting_summaries_templates" else 0
+            )
     finally:
         await engine.dispose()
