@@ -227,3 +227,70 @@ async def test_foreign_template_read_edit_and_list_are_isolated_like_missing(
         saved = await session.get(SummaryTemplate, foreign_id)
         assert saved is not None and saved.instructions == "Secret foreign instructions"
         assert saved.category_id == foreign_category
+
+
+@pytest.mark.asyncio
+async def test_setting_default_identifies_exactly_one_personal_template_across_categories(
+    template_api: tuple[AsyncClient, async_sessionmaker[AsyncSession]],
+) -> None:
+    """T7 #275 RED: R5.1/R5.3, category-blind personal default (P3/P7)."""
+    client, factory = template_api
+    first_category = await _seed_category(factory, OWNER, "First grouping")
+    second_category = await _seed_category(factory, OWNER, "Second grouping")
+    ids = [
+        await _seed_template(factory, OWNER, first_category, "First"),
+        await _seed_template(factory, OWNER, first_category, "Another in first"),
+        await _seed_template(factory, OWNER, second_category, "Second"),
+        await _seed_template(factory, OWNER, None, "Ungrouped"),
+    ]
+    for chosen in (ids[0], ids[2], ids[3]):
+        selected = await client.put(f"{BASE}/default", json={"template_id": chosen}, headers=_headers())
+        assert selected.status_code == 204, selected.text
+        assert not selected.content
+        listing = await client.get(BASE, headers=_headers())
+        assert listing.status_code == 200, listing.text
+        assert {item["id"] for item in listing.json()} == set(ids)
+        assert {item["id"] for item in listing.json() if item["is_default"]} == {chosen}
+        assert {item["id"]: item["category_id"] for item in listing.json()} == {
+            ids[0]: first_category, ids[1]: first_category,
+            ids[2]: second_category, ids[3]: None,
+        }
+        other_listing = await client.get(BASE, headers=_headers(OTHER))
+        assert other_listing.status_code == 200 and other_listing.json() == []
+        async with factory() as session:
+            owner = await session.get(User, OWNER)
+            other = await session.get(User, OTHER)
+            assert owner is not None and owner.default_summary_template_id == chosen
+            assert other is not None and other.default_summary_template_id is None
+
+
+@pytest.mark.asyncio
+async def test_foreign_default_selection_matches_missing_and_preserves_existing_defaults(
+    template_api: tuple[AsyncClient, async_sessionmaker[AsyncSession]],
+) -> None:
+    """T7 #275 RED: R5.2, no existence leak and no mutation on rejection."""
+    client, factory = template_api
+    own_id = await _seed_template(factory, OWNER)
+    foreign_category = await _seed_category(factory, OTHER, "Secret grouping")
+    foreign_id = await _seed_template(factory, OTHER, foreign_category, "Secret instructions")
+    async with factory() as session, session.begin():
+        owner = await session.get(User, OWNER)
+        other = await session.get(User, OTHER)
+        assert owner is not None and other is not None
+        owner.default_summary_template_id = own_id
+        other.default_summary_template_id = foreign_id
+    denied = await client.put(f"{BASE}/default", json={"template_id": foreign_id}, headers=_headers())
+    missing = await client.put(f"{BASE}/default", json={"template_id": str(uuid4())}, headers=_headers())
+    assert denied.status_code == missing.status_code == 422
+    assert denied.json() == missing.json()
+    for secret in (foreign_id, foreign_category, "Secret grouping", "Secret instructions"):
+        assert secret not in denied.text
+    listing = await client.get(BASE, headers=_headers())
+    assert listing.status_code == 200, listing.text
+    assert {item["id"] for item in listing.json() if item["is_default"]} == {own_id}
+    assert foreign_id not in listing.text
+    async with factory() as session:
+        owner = await session.get(User, OWNER)
+        other = await session.get(User, OTHER)
+        assert owner is not None and owner.default_summary_template_id == own_id
+        assert other is not None and other.default_summary_template_id == foreign_id
