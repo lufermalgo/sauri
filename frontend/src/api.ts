@@ -191,7 +191,7 @@ export async function getPlaybackManifest(
   meetingId: string
 ): Promise<PlaybackManifest> {
   const response = await fetch(
-    `${BASE_URL}/api/v1/meetings/${meetingId}/playback`,
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/playback`,
     {
       method: "GET",
       headers: getAuthHeaders(),

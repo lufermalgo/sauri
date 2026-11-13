@@ -11,7 +11,7 @@ import {
   markFailed,
   type UploadJob,
 } from "./upload-queue";
-import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture, bindRecordingId, setUploadOutcome, setProcessingStatus, getProcessingCompletions, type RecordingCompletion } from "./recording-db";
+import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture, bindRecordingId, setUploadOutcome, setProcessingStatus, getProcessingCompletions, claimReviewLaunch, claimReviewCreate, markReviewOpened, getPendingReviewLaunches, type RecordingCompletion } from "./recording-db";
 import { resolveProcessingStatus } from "./core/processing-status";
 import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from "./core/recording-completion";
 
@@ -201,6 +201,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   console.log("[sauri] Service worker started, current state:", state.status);
   await resumeFinalizations();
   await reconcilePendingProcessing();
+  await reconcileReviewLaunches();
 })();
 
 // --- Message handling ---
@@ -659,6 +660,7 @@ async function reconcileProcessing(record: RecordingCompletion): Promise<void> {
       status = resolveProcessingStatus(record, meeting, transcript, playback);
     }
     await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, status ?? "processing_status_unavailable");
+    if (status === "processing_succeeded") await reconcileReviewLaunches();
   } catch (error) {
     await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId,
       status === "processing_assets_unavailable" ? status : "processing_status_unavailable");
@@ -671,6 +673,45 @@ async function reconcilePendingProcessing(): Promise<void> {
   for (const record of await getProcessingCompletions()) await reconcileProcessing(record);
 }
 
+// The portal resolves this query parameter to its existing protected meeting review.
+// A deployment may override the portal origin; no bearer token or asset enters the URL.
+const PORTAL_URL = import.meta.env.VITE_SAURI_PORTAL_URL ?? "http://localhost:5173";
+
+function reviewDestination(meetingId: string): string {
+  const url = new URL(PORTAL_URL);
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+    throw new Error("Invalid Sauri portal origin");
+  }
+  url.searchParams.set("meetingId", meetingId);
+  return url.href;
+}
+
+async function reconcileReviewLaunches(): Promise<void> {
+  for (const candidate of await getPendingReviewLaunches()) {
+    try {
+      if (!candidate.recordingId) continue;
+      if (candidate.status === "processing_succeeded" && !await claimReviewLaunch(candidate.sessionId)) continue;
+      const record = await getCompletion(candidate.sessionId);
+      if (!record || record.status !== "review_launch_pending" || record.meetingId !== candidate.meetingId ||
+          record.recordingId !== candidate.recordingId) continue;
+      const target = reviewDestination(record.meetingId);
+      // Query before creation, including on a fresh launch: a lost Chrome result
+      // must be recovered by the exact canonical URL, never by a prefix match.
+      const existing = (await chrome.tabs.query({})).find(tab => tab.url === target);
+      if (existing?.id !== undefined) {
+        await markReviewOpened(record.sessionId, record.meetingId, record.recordingId, existing.id);
+      } else if (await claimReviewCreate(record.sessionId, record.meetingId, record.recordingId)) {
+        const created = await chrome.tabs.create({ url: target });
+        if (created.id !== undefined) await markReviewOpened(record.sessionId, record.meetingId, record.recordingId, created.id);
+      }
+      // A failed/ambiguous Chrome create stays pending. Never repeat it blindly:
+      // after an interruption, an absent tab does not establish it was never created.
+    } catch (error) {
+      console.warn("[sauri] Review launch pending; will reconcile existing tab:", error);
+    }
+  }
+}
+
 // --- Alarm-based retry (every 1 minute) ---
 
 chrome.alarms.create(UPLOAD_ALARM_NAME, { periodInMinutes: 1 });
@@ -680,6 +721,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     void resumeFinalizations();
     void processUploadQueue();
     void reconcilePendingProcessing();
+    void reconcileReviewLaunches();
   }
 });
 

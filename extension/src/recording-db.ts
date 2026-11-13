@@ -19,6 +19,8 @@ export interface RecordingCompletion {
   captureError?: boolean;
   trigger?: "stop" | "captured_tab_closed";
   reviewTabId?: number;
+  /** Once Chrome creation is attempted, a missing tab cannot prove creation failed. */
+  reviewCreateAttempted?: boolean;
   updatedAt: number;
 }
 
@@ -167,6 +169,45 @@ export async function claimReviewLaunch(sessionId: string): Promise<boolean> {
       store.put({ ...record, status: "review_launch_pending", updatedAt: Date.now() });
       result(true);
     };
+  });
+}
+
+/** Reserve the only creation attempt before crossing the Chrome boundary. */
+export async function claimReviewCreate(sessionId: string, meetingId: string, recordingId: string): Promise<boolean> {
+  return completionTransaction("readwrite", (store, result) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (!record || record.status !== "review_launch_pending" || record.meetingId !== meetingId ||
+          record.recordingId !== recordingId || record.reviewCreateAttempted) { result(false); return; }
+      store.put({ ...record, reviewCreateAttempted: true, updatedAt: Date.now() });
+      result(true);
+    };
+  });
+}
+
+export async function markReviewOpened(sessionId: string, meetingId: string, recordingId: string, tabId: number): Promise<void> {
+  if (!Number.isSafeInteger(tabId) || tabId < 0) throw new Error("Invalid review tab ID");
+  return completionTransaction("readwrite", (store, result, fail) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (!record || record.meetingId !== meetingId || record.recordingId !== recordingId ||
+          !["review_launch_pending", "review_opened"].includes(record.status) ||
+          (record.reviewTabId !== undefined && record.reviewTabId !== tabId)) {
+        fail(new Error("Review tab identity mismatch")); return;
+      }
+      store.put({ ...record, status: "review_opened", reviewTabId: tabId, updatedAt: Date.now() });
+      result(undefined);
+    };
+  });
+}
+
+export async function getPendingReviewLaunches(): Promise<RecordingCompletion[]> {
+  return completionTransaction("readonly", (store, result) => {
+    const request = store.getAll();
+    request.onsuccess = () => result((request.result as RecordingCompletion[]).filter(record =>
+      record.status === "review_launch_pending" || record.status === "processing_succeeded"));
   });
 }
 
