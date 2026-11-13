@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
+import { createCompletion } from "./recording-db";
 
 const { assembleBlob, clearSession } = vi.hoisted(() => ({
   assembleBlob: vi.fn(async () => new Blob(["synthetic recording"])),
@@ -50,6 +51,10 @@ async function runUpload(fetchImplementation: typeof fetch) {
   globalThis.fetch = fetchImplementation;
   assembleBlob.mockClear();
   clearSession.mockClear();
+  await createCompletion({
+    sessionId: "synthetic-session", meetingId: "synthetic-meeting", provider: "meet",
+    capturedTabId: 7, status: "finalizing", updatedAt: 1,
+  });
 
   let messageListener: ChromeMessageListener | undefined;
   vi.stubGlobal("chrome", {
@@ -88,7 +93,7 @@ describe("upload failures must remain retryable", () => {
   });
 
   it("persists a successful upload as done and clears its recording", async () => {
-    await runUpload(vi.fn(async () => new Response(JSON.stringify({ accepted: true }), { status: 200 })) as typeof fetch);
+    await runUpload(vi.fn(async () => new Response(JSON.stringify({ recording_id: "synthetic-recording", state: "queued" }), { status: 200 })) as typeof fetch);
     const jobs = await waitForStoredStatus("done");
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({ status: "done", retryCount: 0 });

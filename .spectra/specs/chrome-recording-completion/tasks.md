@@ -112,6 +112,7 @@
 **Acción:** On the existing `GET /api/v1/meetings/{meeting_id}` handler, enforce meeting ownership for the authenticated user using the existing meetings authorization boundary; return 404 for a non-owner without disclosing meeting status or recording fields, while preserving 401 for unauthenticated requests. Do not add a parallel route. In the extension status bridge, map documented `process_state` values; for `completed`, require the persisted `meetingId`, matching `recordingId`, protected transcript availability, and usable playback-manifest video before persisting `processing_succeeded`. Preserve unavailable/auth-required, failed, and non-ready states without inventing retry intervals or limits. Publish per-recording status for T2.8; do not implement a speculative UI component.
 **Criterio de Completado:** T1.4 passes with owner success, unauthenticated 401, and non-owner 404/no status disclosure; `cd backend && pytest tests/meetings/test_get_meeting_property.py` and `cd extension && npm run test -- src/background.processing-status.test.ts` pass; `cd extension && npm run typecheck` passes. The status bridge emits the matching durable per-recording state consumed by T2.8.
 **Dependencias:** T1.4, T2.2, T2.3 (provides the persisted `recordingId` bound to the meeting), `task_6a271652b2c34130` (protected transcript/playback asset contract).
+**Seguimiento de implementación:** #622 → PR #839 (`08bc8c3`, además de T1.4 #613 cherry-picked como `940dc02`/`ce4e8b2`); base original PR #834 ya integrado; PR #839 retargeted a main, pendiente de integración y validación de producto. Pruebas locales: backend 47, extensión 208, typecheck/build y ruff correctos; ninguna captura/lectura HTTP real.
 
 ### Tarea 2.5: Open one authenticated review destination only after verified success
 
@@ -209,7 +210,7 @@ Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (M
 | T1.1 | #610 | Pending — APX assignment resolution |
 | T1.2 | #611 | Pending — APX assignment resolution |
 | T1.3 | #612 | Pending — APX assignment resolution |
-| T1.4 | #613 | Pending — APX assignment resolution |
+| T1.4 | #613 | RED PR #824, cherry-picked into PR #839; APX card not confirmed |
 | T1.5 | #614 | Pending — APX assignment resolution |
 | T1.6 | #615 | `task_7f2207cae42545ac` — review; PR #831 published, not integrated |
 | T1.7 | #616 | `task_4cfdfe7cffea49dc` — review; PR #828 published, not integrated |
@@ -217,8 +218,8 @@ Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (M
 | T1.9 | #618 | Pending — APX assignment resolution |
 | T2.1 | #619 | Pending — APX assignment resolution |
 | T2.2 | #620 | Pending — APX assignment resolution |
-| T2.3 | #621 | Pending — APX assignment resolution |
-| T2.4 | #622 | Pending — APX assignment resolution |
+| T2.3 | #621 | `task_932ac7b879bd45ae` — GREEN implementation candidate in [PR #834](https://github.com/lufermalgo/sauri/pull/834), branch `feature/issue-621-chrome-recording-completion-t2-3`; review passed, not merged or product-accepted |
+| T2.4 | #622 | `task_e3eb102ac4ff47d8` — PR #839, reviewed; integration pending |
 | T2.5 | #623 | Pending — APX assignment resolution |
 | T2.6 | #624 | Pending — APX assignment resolution |
 | T2.7 | #625 | `task_4cfdfe7cffea49dc` — review; PR #828 published, not integrated |
