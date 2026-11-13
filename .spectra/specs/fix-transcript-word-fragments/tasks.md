@@ -177,6 +177,8 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 ### T16: GREEN — adapter y TranscriptView usan atribución validada
 
+**Ejecución 2026-11-13:** Issue #655 · APX `task_17d5224c897743f6`. GREEN frontend preparado con RED T15 preservado (`f8f4f40` → cherry-pick `a350eb4`). Comando normativo 49 PASS, regresión frontend 113 PASS, typecheck de todos los workspaces y build PASS; recorrido APX con HTTP sintético documentado en `qa-t16-green.md`. Pendiente integración de T14/PR #850 y sus gates; no constituye integración ni aceptación de producto. Fer conserva merge.
+
 **Archivo / seam:** `frontend/src/api.ts`, `frontend/src/components/TranscriptView.tsx`; adapter GET/PUT y renderizado de `TranscriptView`.
 
 **Acción:** Adaptar estructura wire al modelo camelCase aprobado y consumir transcript fuente, diarización y review de la misma revisión. Agrupar solo asignaciones positivas de la generación activa; usar label de `labelsBySpeakerId`, fallback aprobado a speaker label/`Speaker N`, e indicar `not_reconstructible` sin ocultar ni reescribir fuente.

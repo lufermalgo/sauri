@@ -62,7 +62,13 @@ export type MeetingTranscript = Transcript & {
 
 export interface MeetingDiarization {
   speakers: Array<{ id: string; label: string; sequence: number }>;
-  assignments: Array<{ turn_id: string; speaker_id: string }>;
+  processing_revision?: number | null;
+  assignments: Array<{ turn_id: string; speaker_id: string; overlap_ms?: number | null }>;
+  latest_attempt?: {
+    processing_revision: number;
+    diarization_state: string;
+    failure_cause: string | null;
+  } | null;
 }
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -264,14 +270,15 @@ export interface SpeakerReviewItem {
   currentLabel: string;
   attributionState: "recognized" | "uncertain";
   disposition: "confirmed" | "named" | "corrected" | null;
-  excerptRef: string;
-  expectedVersion: number;
+  excerptRef: string | null;
+  expectedVersion?: number;
 }
 
 export interface SpeakerReview {
   reviewId: string;
   revisionId: string;
   status: "pending" | "complete";
+  labelsBySpeakerId?: Record<string, string>;
   items: SpeakerReviewItem[];
 }
 
@@ -280,14 +287,16 @@ interface SpeakerReviewItemResponse {
   current_label: string;
   attribution_state: "recognized" | "uncertain";
   disposition: "confirmed" | "named" | "corrected" | null;
-  excerpt_ref: string;
-  version: number;
+  excerpt_ref: string | null;
+  version?: number;
+  expected_version?: number;
 }
 
 interface SpeakerReviewResponse {
   review_id: string;
   revision_id: string | number;
   status: "pending" | "complete";
+  labels_by_speaker_id?: Record<string, string>;
   items: SpeakerReviewItemResponse[];
 }
 
@@ -304,19 +313,27 @@ export async function getSpeakerReview(meetingId: string): Promise<SpeakerReview
     `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review`,
     { method: "GET", headers: getAuthHeaders() }
   );
-  const review = await handleResponse<SpeakerReviewResponse>(response);
+  return adaptSpeakerReview(await handleResponse<SpeakerReviewResponse>(response));
+}
+
+function adaptSpeakerReview(review: SpeakerReviewResponse): SpeakerReview {
   return {
     reviewId: review.review_id,
     revisionId: String(review.revision_id),
     status: review.status,
-    items: review.items.map((item) => ({
-      speakerId: item.speaker_id,
-      currentLabel: item.current_label,
-      attributionState: item.attribution_state,
-      disposition: item.disposition,
-      excerptRef: item.excerpt_ref,
-      expectedVersion: item.version,
-    })),
+    ...(review.labels_by_speaker_id === undefined ? {} : { labelsBySpeakerId: review.labels_by_speaker_id }),
+    items: review.items.map((item) => {
+      // T14 uses expected_version; older servers exposed version.
+      const expectedVersion = item.expected_version ?? item.version;
+      return {
+        speakerId: item.speaker_id,
+        currentLabel: item.current_label,
+        attributionState: item.attribution_state,
+        disposition: item.disposition,
+        excerptRef: item.excerpt_ref,
+        expectedVersion,
+      };
+    }),
   };
 }
 
@@ -341,7 +358,7 @@ export async function submitSpeakerDisposition(
       }),
     }
   );
-  return handleResponse<SpeakerReview>(response);
+  return adaptSpeakerReview(await handleResponse<SpeakerReviewResponse>(response));
 }
 
 export async function playSpeakerExcerpt(
