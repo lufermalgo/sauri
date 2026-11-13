@@ -9,7 +9,9 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "014_processing_revisions"
-down_revision = "013_manual_recovery_persistence"
+# The summaries migration is already on main; preserve its schema and data before
+# installing the processing-revision tables on the stacked speaker-review branch.
+down_revision = "014_meeting_summaries_templates"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

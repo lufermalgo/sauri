@@ -164,7 +164,7 @@ async def test_revision_migration_backfills_complete_and_partial_legacy_rows(
     postgres_engine: AsyncEngine,
 ) -> None:
     migration = _revision_migration()
-    assert migration.down_revision == "013_manual_recovery_persistence"
+    assert migration.down_revision == "014_meeting_summaries_templates"
     await _seed_legacy_stage_rows(postgres_engine)
 
     await _run_migration(postgres_engine, migration, "upgrade")
