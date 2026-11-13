@@ -51,3 +51,14 @@ La revisión independiente detectó palabras con inicios/fin en orden inverso ac
 - Los cambios de esos tests y de la función están en el worktree compartido con la continuación activa de #900; la publicación conjunta y el rerun completo corresponden al candidato final. Este informe no afirma que ya estén confirmados en remoto.
 
 Antes de la continuación de proyección ejecuté adicionalmente las suites ASR/diarización/provider/factory/fence/worker: **179 passed, 1 skipped**. Es evidencia del estado de ese momento, no un reemplazo de las suites completas sobre el SHA final.
+
+## Verificación independiente del WIP de proyección (19:38–19:48Z)
+
+- `python -m alembic heads` en backend: un único head `014_final_presentation` en este candidato. No apliqué migraciones a la DB viva.
+- `python -m pytest tests/asr_engine/test_native_acoustic_alignment.py tests/diarization/test_presentation.py tests/diarization/test_prepared_presentation_worker.py -q`: **21 passed**.
+- `npm run typecheck` desde raíz: **PASS en los tres workspaces** (extensión, frontend y shared-types).
+- `npm run test --workspace sauri-frontend -- src/transcript-projection.test.ts src/transcript-turns.test.ts src/components/TranscriptView.test.tsx src/components/__tests__/MeetingPlaybackView.test.tsx src/components/__tests__/PlaybackController.test.ts src/api.test.ts`: **96 passed, 6 archivos**. Hubo avisos de jsdom por `HTMLMediaElement.pause` no implementado; las aserciones pasaron. No constituyen prueba de reproducción real.
+
+**Hallazgo de regresión pendiente en el WIP:** `projectTranscript` publica cada pieza como fila nueva y no agrupa piezas consecutivas con la misma voz cuando pertenecen a fuentes distintas. Reproduje con dos fuentes sintéticas `One.` `[0,1000)` y `Two.` `[2000,3000)`, ambas sustentadas por el mismo speaker: `groupTranscriptTurns` legacy devuelve **1 turno**, la proyección v2 devuelve **2 turnos** y conserva 2 intervalos. La comprobación se ejecutó con Node usando el TypeScript real transpilado en memoria; la aserción `v2.turns.length === 1` falla. Los 96 tests actuales no cubren ese contraejemplo.
+
+Recomendación: agrupar también esas corridas en v2, separar el ID único de cada intervalo del `presentationTurnId` agrupado y conservar ambos intervalos/gap sin sintetizar un envolvente. Agregar RED→GREEN de este caso antes de declarar readiness. No edité el archivo de agrupación porque la continuación activa `run_20b4009d286b4886` está modificando los contratos en el mismo worktree. Este hallazgo ya quedó en la descripción de la tarea; no afirmo que los checks verdes actuales prueben su corrección.
