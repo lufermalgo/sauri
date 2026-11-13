@@ -239,7 +239,8 @@
 
 ### T18: GREEN — Add shared summary and template TypeScript contracts
 
-**Tracking:** Issue #286 · Card task_8c8c8278a7a7465e
+**Tracking:** Issue #286 · Card task_a16f69284c3042c0 (historical card task_8c8c8278a7a7465e)
+**Status:** GREEN implemented, not integrated or product-accepted. Candidate preserves RED commit `70b5548`; four exported interfaces match design §6 exactly. `npm run test --workspace=@sauri/shared-types`: 2 passed; root `npm run typecheck`: extension, frontend and shared-types passed; `git diff --check`: passed. Fer retains integration; issues #285/#286 remain open until integration. This does not implement summary generation, API, or user-facing controls.
 
 **Archivo:** `packages/shared-types/src/index.ts`
 **Acción:** Add the four interfaces exactly as designed, including `SummaryRequestStatus` lifecycle union and optional category id; preserve existing exports and do not add fields/semantics not specified.
