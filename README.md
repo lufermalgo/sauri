@@ -27,7 +27,7 @@ It's an in-house solution built incrementally, module by module.
 - **Chrome extension**: TypeScript / MV3 / React (Vite + CRXJS)
 - **Frontend web**: TypeScript / React (Vite)
 - **Native audio engines (Mac)**: MLX Whisper and pyannote/MPS, outside Docker for Apple GPU acceleration
-- **Infrastructure**: Docker Compose (API, worker, PostgreSQL, S3-compatible RustFS, RabbitMQ); portal server integration is pending
+- **Infrastructure**: Docker Compose (built Nginx portal, API, worker, PostgreSQL, S3-compatible RustFS, RabbitMQ); local deployment candidate tracked in #818 (publication, merge and product acceptance are separate)
 
 See [Architecture and specification map](docs/ARCHITECTURE.md) for the current deployment boundaries, evidence and remaining gaps. The roadmap above is historical, not delivery evidence or authorization for deferred features; [PRODUCT_BASELINE.md](PRODUCT_BASELINE.md) defines approved scope.
 
@@ -39,10 +39,12 @@ See [Architecture and specification map](docs/ARCHITECTURE.md) for the current d
 - Node.js >= 20
 - Python >= 3.11
 
-### Start the backend
+### Start the local platform
+
+See [Local deployment and isolated validation](docs/LOCAL_DEPLOYMENT.md) for required private variables, the built portal at `http://127.0.0.1:5173`, QA cleanup and evidence boundaries. `make clean` deletes data and is not a startup or validation step.
 
 ```bash
-make up        # Start dependencies, verify bucket, migrate to head, then start API/worker
+make up        # Start dependencies, verify bucket, migrate, then start API/worker/portal and check HTTP
 make build     # Rebuild images, then run the same readiness sequence
 make down      # Stop everything
 make logs      # View logs
