@@ -65,6 +65,141 @@ function turn(overrides: Partial<SpeechTurn> = {}): SpeechTurn {
   };
 }
 
+describe("T15 — validated generation attribution", () => {
+  // Fixtures model the approved T14/T16 contract without changing production types.
+  function sources() {
+    const data = transcript([
+      turn({ id: "source-1", text: "Synthetic opening", startMs: 0, endMs: 400, sequence: 1 }),
+      turn({ id: "source-2", text: "continues here", startMs: 600, endMs: 1000, sequence: 2 }),
+    ]);
+    data.segments = data.turns.map(({ id, text, startMs, endMs, sequence }) => ({ id, text, startMs, endMs, sequence }));
+    return data;
+  }
+  function generation(overlap: number | null = 400, state = "completed") {
+    return {
+      processing_revision: 2,
+      speakers: [{ id: "speaker-2", label: "Speaker 1", sequence: 1 }],
+      assignments: [
+        { turn_id: "source-1", speaker_id: "speaker-2", overlap_ms: overlap },
+        { turn_id: "source-2", speaker_id: "speaker-2", overlap_ms: overlap },
+      ],
+      latest_attempt: { processing_revision: state === "completed" ? 2 : 3, diarization_state: state, failure_cause: state === "not_reconstructible" ? "audio_unavailable" : null },
+    };
+  }
+  function completedReview(revisionId = "2") {
+    return {
+      reviewId: "review-2", revisionId, status: "complete" as const,
+      labelsBySpeakerId: { "speaker-2": "Synthetic chosen name" }, items: [],
+    };
+  }
+  beforeEach(() => {
+    vi.mocked(api.getTranscript).mockResolvedValue(sources());
+    vi.mocked(api.getDiarization).mockResolvedValue(generation());
+    vi.mocked(api.getSpeakerReview).mockResolvedValue(completedReview());
+  });
+  function labels() {
+    return screen.getAllByTestId("transcript-speaker-label").map((element) => element.textContent);
+  }
+
+  it("uses the complete label map after reload, groups positive assignments and preserves source data", async () => {
+    const source = sources();
+    const before = structuredClone(source);
+    vi.mocked(api.getTranscript).mockResolvedValue(source);
+    const view = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await screen.findByText("Synthetic opening continues here");
+    await waitFor(() => expect(labels()).toEqual(["Synthetic chosen name"]));
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(source).toEqual(before);
+    view.unmount();
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await waitFor(() => expect(labels()).toEqual(["Synthetic chosen name"]));
+    expect(source).toEqual(before);
+  });
+
+  it("never uses pending review.items as the transcript label source", async () => {
+    const review = {
+      ...completedReview(),
+      items: [{ speakerId: "speaker-2", currentLabel: "Synthetic stale item", attributionState: "recognized" as const, disposition: null, excerptRef: "synthetic", expectedVersion: 1 }],
+    };
+    vi.mocked(api.getSpeakerReview).mockResolvedValue(review);
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await waitFor(() => expect(labels()).toEqual(["Synthetic chosen name"]));
+  });
+
+  it("does not apply a historical review even when the speaker key happens to match", async () => {
+    const historical = {
+      ...completedReview("1"),
+      items: [{ speakerId: "speaker-2", currentLabel: "Synthetic historical identity", attributionState: "recognized" as const, disposition: "named" as const, excerptRef: "synthetic", expectedVersion: 1 }],
+    };
+    vi.mocked(api.getSpeakerReview).mockResolvedValue(historical);
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await screen.findByText("Synthetic opening continues here");
+    expect(labels()).toEqual(["Speaker 1"]);
+  });
+
+  it.each([null, 0, -1])("keeps fragments separate and uncertain for overlap %s", async (overlap) => {
+    vi.mocked(api.getDiarization).mockResolvedValue(generation(overlap));
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await screen.findByText("Synthetic opening");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(labels()).toEqual(["Speaker N", "Speaker N"]);
+    expect(screen.getByText("continues here")).toBeVisible();
+  });
+
+  it("does not group unknown speaker IDs even with positive-looking assignments", async () => {
+    const unknown = { ...generation(), speakers: [] };
+    vi.mocked(api.getDiarization).mockResolvedValue(unknown);
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await screen.findByText("Synthetic opening");
+    expect(labels()).toEqual(["Speaker N", "Speaker N"]);
+  });
+
+  it("shows the not_reconstructible status without hiding or grouping source fragments", async () => {
+    vi.mocked(api.getDiarization).mockResolvedValue(generation(400, "not_reconstructible"));
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    // Match the terminal concept, not incidental UI wording or translation.
+    await waitFor(() => expect(screen.getAllByRole("status").some((element) => /not.reconstructible|no.*reconstru/i.test(element.textContent ?? ""))).toBe(true));
+    expect(screen.getByText("Synthetic opening")).toBeVisible();
+    expect(screen.getByText("continues here")).toBeVisible();
+    expect(labels()).toEqual(["Speaker N", "Speaker N"]);
+  });
+
+  it.each(["pending", "failed"])("keeps the completed generation and source visible during a newer %s attempt", async (state) => {
+    vi.mocked(api.getDiarization).mockResolvedValue(generation(400, state));
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await screen.findByText("Synthetic opening continues here");
+    await waitFor(() => expect(labels()).toEqual(["Synthetic chosen name"]));
+  });
+
+  it("keeps source fragments visible while diarization is loading and after a transport failure", async () => {
+    let reject!: (reason: Error) => void;
+    vi.mocked(api.getDiarization).mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    expect(await screen.findByText("Synthetic opening")).toBeVisible();
+    expect(labels()).toEqual(["Speaker N", "Speaker N"]);
+    reject(new Error("Synthetic transport failure"));
+    await waitFor(() => expect(screen.getByText("continues here")).toBeVisible());
+    expect(labels()).toEqual(["Speaker N", "Speaker N"]);
+  });
+
+  it.each(["named", "corrected"] as const)("retains a %s label after the speaker leaves pending items", async (disposition) => {
+    const pending = {
+      ...completedReview(), status: "pending" as const,
+      labelsBySpeakerId: { "speaker-2": "Speaker 1" },
+      items: [{ speakerId: "speaker-2", currentLabel: "Speaker 1", attributionState: "uncertain" as const, disposition: null, excerptRef: "synthetic", expectedVersion: 1 }],
+    };
+    vi.mocked(api.getSpeakerReview).mockResolvedValue(pending);
+    vi.mocked(api.submitSpeakerDisposition).mockResolvedValue(completedReview());
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const input = await screen.findByRole("textbox", { name: "Name for Speaker 1" });
+    fireEvent.change(input, { target: { value: "Synthetic chosen name" } });
+    fireEvent.click(screen.getByRole("button", { name: `${disposition === "named" ? "Name" : "Correct"} Speaker 1` }));
+    await waitFor(() => expect(api.submitSpeakerDisposition).toHaveBeenCalledWith("r-1", "2", "speaker-2", { disposition, expectedVersion: 1, label: "Synthetic chosen name" }));
+    await waitFor(() => expect(labels()).toEqual(["Synthetic chosen name"]));
+    expect(screen.queryByRole("textbox", { name: "Name for Speaker 1" })).not.toBeInTheDocument();
+  });
+});
+
 describe("TranscriptView — renders the transcript view", () => {
   it("shows language, provider, and turns with their timestamps", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(
