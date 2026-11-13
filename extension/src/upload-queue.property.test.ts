@@ -195,6 +195,7 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
       globalThis.fetch = vi.fn(async () => accepted(identity.recordingId)) as typeof fetch;
       startup!();
       await awaitStatus("done", 0);
+      await vi.waitFor(() => expect(clearSession).toHaveBeenCalledWith(identity.sessionId));
       expect(await getCompletion(identity.sessionId)).toMatchObject({
         sessionId: identity.sessionId, meetingId: identity.meetingId, recordingId: identity.recordingId,
       });
@@ -287,6 +288,7 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
       expect(attempts).toHaveLength(2);
       expect(attempts[0]).toMatchObject({ idempotency_key: identity.sessionId, meeting_id: identity.meetingId });
       expect(attempts[1]).toMatchObject(attempts[0]);
+      await vi.waitFor(() => expect(clearSession).toHaveBeenCalledWith(identity.sessionId));
       expect(clearSession).toHaveBeenCalledTimes(1);
     }), { numRuns: 100 });
   });
