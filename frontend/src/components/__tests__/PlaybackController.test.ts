@@ -90,6 +90,25 @@ describe("PlaybackController state and controls", () => {
     expect(controller.getState()).toMatchObject({ playbackRate: 1.5, volume: 0.4, muted: true });
   });
 
+  it("plays only the selected original-media interval and stops at its end without affecting normal seeks", async () => {
+    const audio = mediaElement();
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+    await controller.playInterval(2000, 5500);
+    expect(audio.currentTime).toBe(2);
+    expect(audio.play).toHaveBeenCalledOnce();
+    audio.currentTime = 5.4;
+    audio.emit("timeupdate");
+    expect(audio.pause).not.toHaveBeenCalled();
+    audio.currentTime = 5.5;
+    audio.emit("timeupdate");
+    expect(audio.pause).toHaveBeenCalledOnce();
+    controller.seekTo(7000);
+    await controller.resume();
+    audio.currentTime = 8;
+    audio.emit("timeupdate");
+    expect(audio.pause).toHaveBeenCalledOnce();
+  });
+
   it("updates active passage from the authoritative audio clock and clears it on a gap", () => {
     const audio = mediaElement();
     const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });

@@ -61,6 +61,7 @@ export type MeetingTranscript = Transcript & {
 };
 
 export interface MeetingDiarization {
+  processing_revision?: number | null;
   speakers: Array<{ id: string; label: string; sequence: number }>;
   assignments: Array<{ turn_id: string; speaker_id: string }>;
 }
@@ -262,9 +263,9 @@ export async function getDiarization(meetingId: string): Promise<MeetingDiarizat
 export interface SpeakerReviewItem {
   speakerId: string;
   currentLabel: string;
-  attributionState: "recognized" | "uncertain";
+  attributionState: "attributed" | "uncertain";
   disposition: "confirmed" | "named" | "corrected" | null;
-  excerptRef: string;
+  excerptRef: string | null;
   expectedVersion: number;
 }
 
@@ -272,22 +273,24 @@ export interface SpeakerReview {
   reviewId: string;
   revisionId: string;
   status: "pending" | "complete";
+  labelsBySpeakerId: Record<string, string>;
   items: SpeakerReviewItem[];
 }
 
 interface SpeakerReviewItemResponse {
   speaker_id: string;
   current_label: string;
-  attribution_state: "recognized" | "uncertain";
+  attribution_state: "attributed" | "uncertain";
   disposition: "confirmed" | "named" | "corrected" | null;
-  excerpt_ref: string;
-  version: number;
+  excerpt_ref: string | null;
+  expected_version: number;
 }
 
 interface SpeakerReviewResponse {
   review_id: string;
   revision_id: string | number;
   status: "pending" | "complete";
+  labels_by_speaker_id: Record<string, string>;
   items: SpeakerReviewItemResponse[];
 }
 
@@ -299,25 +302,29 @@ export interface SpeakerDispositionRequest {
   expectedVersion: number;
 }
 
-export async function getSpeakerReview(meetingId: string): Promise<SpeakerReview> {
-  const response = await fetch(
-    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review`,
-    { method: "GET", headers: getAuthHeaders() }
-  );
-  const review = await handleResponse<SpeakerReviewResponse>(response);
+function adaptSpeakerReview(review: SpeakerReviewResponse): SpeakerReview {
   return {
     reviewId: review.review_id,
     revisionId: String(review.revision_id),
     status: review.status,
+    labelsBySpeakerId: review.labels_by_speaker_id,
     items: review.items.map((item) => ({
       speakerId: item.speaker_id,
       currentLabel: item.current_label,
       attributionState: item.attribution_state,
       disposition: item.disposition,
       excerptRef: item.excerpt_ref,
-      expectedVersion: item.version,
+      expectedVersion: item.expected_version,
     })),
   };
+}
+
+export async function getSpeakerReview(meetingId: string): Promise<SpeakerReview> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review`,
+    { method: "GET", headers: getAuthHeaders() }
+  );
+  return adaptSpeakerReview(await handleResponse<SpeakerReviewResponse>(response));
 }
 
 export async function submitSpeakerDisposition(
@@ -341,34 +348,5 @@ export async function submitSpeakerDisposition(
       }),
     }
   );
-  return handleResponse<SpeakerReview>(response);
-}
-
-export async function playSpeakerExcerpt(
-  meetingId: string,
-  revisionId: string,
-  speakerId: string
-): Promise<void> {
-  const response = await fetch(
-    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review/revisions/${encodeURIComponent(revisionId)}/speakers/${encodeURIComponent(speakerId)}/excerpt`,
-    { method: "GET", headers: getAuthHeaders() }
-  );
-  if (response.status === 401) {
-    await handleResponse<void>(response);
-  }
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Error ${response.status}: ${body}`);
-  }
-  const audioUrl = URL.createObjectURL(await response.blob());
-  const audio = new Audio(audioUrl);
-  const releaseUrl = () => URL.revokeObjectURL(audioUrl);
-  audio.addEventListener("ended", releaseUrl, { once: true });
-  audio.addEventListener("error", releaseUrl, { once: true });
-  try {
-    await audio.play();
-  } catch (error) {
-    releaseUrl();
-    throw error;
-  }
+  return adaptSpeakerReview(await handleResponse<SpeakerReviewResponse>(response));
 }

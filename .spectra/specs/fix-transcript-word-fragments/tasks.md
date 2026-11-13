@@ -226,3 +226,9 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 **Criterio de Completado:** Evidencia de Zev sobre el SHA exacto con resultado `NO_ACTIONABLE_FINDINGS`; si reporta hallazgos, resolverlos mediante issues autorizados y repetir el gate antes de PR de implementación. Las suites de T19 permanecen verdes.
 
 **Dependencias:** T19 — gate posterior a implementación y validación; no impone secuencia entre componentes independientes durante desarrollo.
+
+### Corrección de escucha T13/T14 — decisión posterior 2026-11-13 (#652, #653, #893)
+
+**Encargo:** Sin clips por hablante, escuchar el medio original para identificar/renombrar. #893 tiene una ruta de clip no equivalente, no integrar como solución de este defecto. Mantener revisión por generación y propietario. Tarea frontend en el worktree/PR #850; no duplicar cambios de runtime #894 ni la implementación de procesamiento #248.
+
+**Prueba y entrega:** `frontend/src/speaker-review-interval.test.ts` cubre tramo continuo más largo, cap 20 s, tramo breve <5 s, gap >250 ms, atribución desconocida, cambio y overlap. Tests `TranscriptView` prueban click sobre el reproductor original y ausencia de GET `/excerpt`; `PlaybackController` detiene a fin y seek ordinario sigue intacto. Ejecutar Vitest y `npm run typecheck`, verificar diff y navegador APX con grabación autorizada antes de declarar escucha real; no reprocesar ni subir grabaciones para QA. Publicar PR actualizado sin merge; Ansel revisa e integra. El gate exacto T14 sigue sujeto al GREEN independiente de #248; no presentarlo como cumplido por la UI.

@@ -14,13 +14,13 @@ import type { TimedPassage } from "../api";
 
 import { TranscriptView } from "./TranscriptView";
 import * as api from "../api";
+import { PlaybackController } from "./PlaybackController";
 
 vi.mock("../api", () => ({
   getTranscript: vi.fn(),
   getPlaybackManifest: vi.fn(),
   getDiarization: vi.fn(),
   getSpeakerReview: vi.fn(),
-  playSpeakerExcerpt: vi.fn(),
   submitSpeakerDisposition: vi.fn(),
 }));
 
@@ -204,9 +204,10 @@ describe("TranscriptView — renders the transcript view", () => {
       reviewId: "review-synthetic",
       revisionId: "revision-synthetic",
       status: "complete",
+      labelsBySpeakerId: { "speaker-a": "Synthetic Person A", "speaker-b": "Synthetic Person B" },
       items: [
-        { speakerId: "speaker-a", currentLabel: "Synthetic Person A", attributionState: "recognized", disposition: "named", excerptRef: "synthetic-a", expectedVersion: 1 },
-        { speakerId: "speaker-b", currentLabel: "Synthetic Person B", attributionState: "recognized", disposition: "named", excerptRef: "synthetic-b", expectedVersion: 1 },
+        { speakerId: "speaker-a", currentLabel: "Synthetic Person A", attributionState: "attributed", disposition: "named", excerptRef: "synthetic-a", expectedVersion: 1 },
+        { speakerId: "speaker-b", currentLabel: "Synthetic Person B", attributionState: "attributed", disposition: "named", excerptRef: "synthetic-b", expectedVersion: 1 },
       ],
     });
     vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
@@ -306,10 +307,11 @@ interface SpeakerReview {
   reviewId: string;
   revisionId: string;
   status: "pending" | "complete";
+  labelsBySpeakerId: Record<string, string>;
   items: Array<{
     speakerId: string;
     currentLabel: string;
-    attributionState: "recognized" | "uncertain";
+    attributionState: "attributed" | "uncertain";
     disposition: string | null;
     excerptRef: string;
     expectedVersion: number;
@@ -322,15 +324,15 @@ interface DispositionRequest {
 }
 const reviewApi = api as unknown as {
   getSpeakerReview: (meetingId: string) => Promise<SpeakerReview>;
-  playSpeakerExcerpt: (meetingId: string, revisionId: string, speakerId: string) => Promise<void>;
   submitSpeakerDisposition: (meetingId: string, revisionId: string, speakerId: string, request: DispositionRequest) => Promise<SpeakerReview>;
 };
 function review(overrides: Partial<SpeakerReview> = {}): SpeakerReview {
   return {
     reviewId: "review-1", revisionId: "revision-1", status: "pending",
+    labelsBySpeakerId: { "speaker-1": "Speaker 1", "speaker-2": "Known Speaker" },
     items: [
       { speakerId: "speaker-1", currentLabel: "Speaker 1", attributionState: "uncertain", disposition: null, excerptRef: "opaque-1", expectedVersion: 1 },
-      { speakerId: "speaker-2", currentLabel: "Known Speaker", attributionState: "recognized", disposition: null, excerptRef: "opaque-2", expectedVersion: 1 },
+      { speakerId: "speaker-2", currentLabel: "Known Speaker", attributionState: "attributed", disposition: null, excerptRef: "opaque-2", expectedVersion: 1 },
     ],
     ...overrides,
   };
@@ -338,7 +340,6 @@ function review(overrides: Partial<SpeakerReview> = {}): SpeakerReview {
 
 describe("TranscriptView — speaker review", () => {
   const loadReview = () => vi.spyOn(reviewApi, "getSpeakerReview");
-  const playExcerpt = () => vi.spyOn(reviewApi, "playSpeakerExcerpt");
   const submit = () => vi.spyOn(reviewApi, "submitSpeakerDisposition");
   const loadTranscript = () => vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
 
@@ -358,12 +359,45 @@ describe("TranscriptView — speaker review", () => {
     expect(await screen.findByText(/complete/i)).toBeDefined();
   });
 
-  it("requests playback of the chosen speaker excerpt", async () => {
-    loadTranscript(); loadReview().mockResolvedValue(review());
-    const play = playExcerpt().mockResolvedValue();
+  it("plays the selected speaker's longest interval from original playback, not /excerpt", async () => {
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([
+      turn({ id: "a", startMs: 0, endMs: 1000, sequence: 1 }),
+      turn({ id: "b", startMs: 1000, endMs: 8000, sequence: 2 }),
+      turn({ id: "c", startMs: 8000, endMs: 9000, sequence: 3 }),
+    ]));
+    loadReview().mockResolvedValue(review({ revisionId: "1" }));
+    vi.spyOn(api, "getDiarization").mockResolvedValue({
+      processing_revision: 1, speakers: [], assignments: [
+        { turn_id: "a", speaker_id: "speaker-1" },
+        { turn_id: "b", speaker_id: "speaker-1" },
+        { turn_id: "c", speaker_id: "speaker-2" },
+      ],
+    });
+    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
+      meeting_id: "r-1", duration_seconds: 9, video_presence: "absent",
+      audio_source: { source_id: "original", url: "https://media.example.test/original", mime_type: "audio/webm" },
+      muxed_video_source: null, video_sources: [],
+    });
+    const play = vi.spyOn(PlaybackController.prototype, "playInterval").mockResolvedValue();
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: /play.*speaker 1|speaker 1.*play/i }));
-    await waitFor(() => expect(play).toHaveBeenCalledWith("r-1", "revision-1", "speaker-1"));
+    const button = await screen.findByRole("button", { name: /listen to speaker 1's speech/i });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(play).toHaveBeenCalledWith(0, 8000));
+  });
+
+  it("keeps a chosen name on transcript after the review item leaves the pending list", async () => {
+    vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn({ id: "t1" })]));
+    vi.spyOn(api, "getDiarization").mockResolvedValue({ speakers: [],
+      assignments: [{ turn_id: "t1", speaker_id: "speaker-1" }] });
+    loadReview().mockResolvedValue(review());
+    submit().mockResolvedValue(review({ labelsBySpeakerId: { "speaker-1": "Ana", "speaker-2": "Known Speaker" },
+      items: [review().items[1]] }));
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await screen.findByRole("button", { name: "Name Speaker 1" });
+    fireEvent.change(screen.getByRole("textbox", { name: /name for speaker 1/i }), { target: { value: "Ana" } });
+    fireEvent.click(screen.getByRole("button", { name: "Name Speaker 1" }));
+    await waitFor(() => expect(screen.getAllByTestId("transcript-speaker-label").some((el) => el.textContent === "Ana")).toBe(true));
   });
 
   it.each([
