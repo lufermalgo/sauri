@@ -130,6 +130,15 @@ async def _seed_legacy_stage_rows(engine: AsyncEngine) -> None:
             )
             await connection.execute(
                 text(
+                    "INSERT INTO session_recordings "
+                    "(id, meeting_id, idempotency_key, capture_origin, audio_ref, "
+                    "duration_seconds, interrupted, finished_at) "
+                    "VALUES (:id, :id, :id, 'web_upload', 'synthetic://audio', 10, false, :now)"
+                ),
+                {"id": meeting_id, "now": now},
+            )
+            await connection.execute(
+                text(
                     "INSERT INTO transcripts "
                     "(id, meeting_id, language, provider, supports_turns, created_at) "
                     "VALUES (:id, :meeting, 'es-CO', 'synthetic', false, :now)"
@@ -406,6 +415,15 @@ async def _meeting(engine: AsyncEngine, owner: str = OWNER_ID) -> str:
             ),
             {"id": meeting_id, "owner": owner, "now": datetime.now(UTC)},
         )
+        await connection.execute(
+            text(
+                "INSERT INTO session_recordings "
+                "(id, meeting_id, idempotency_key, capture_origin, audio_ref, "
+                "duration_seconds, interrupted, finished_at) "
+                "VALUES (:id, :id, :id, 'web_upload', 'synthetic://audio', 10, false, :now)"
+            ),
+            {"id": meeting_id, "now": datetime.now(UTC)},
+        )
     return meeting_id
 
 
@@ -441,11 +459,15 @@ async def test_admission_is_caller_transaction_and_exact_retry_preserves_revisio
     meeting_id = await _meeting(postgres_engine)
     factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
     async with factory() as session, session.begin():
-        await service(session).admit_candidate(OWNER_ID, meeting_id, "request-1", "sha256:audio-a")
+        await service(session).admit_candidate(
+            owner_id=OWNER_ID, recording_id=meeting_id, request_id="request-1", request_fingerprint="sha256:audio-a"
+        )
         assert len(await _revisions_in_session(session, meeting_id)) == 1
         # Caller owns the commit. An independent transaction cannot see the row yet.
         assert await _revisions(postgres_engine, meeting_id) == []
-        await service(session).admit_candidate(OWNER_ID, meeting_id, "request-1", "sha256:audio-a")
+        await service(session).admit_candidate(
+            owner_id=OWNER_ID, recording_id=meeting_id, request_id="request-1", request_fingerprint="sha256:audio-a"
+        )
         assert len(await _revisions_in_session(session, meeting_id)) == 1
     revisions = await _revisions(postgres_engine, meeting_id)
     assert len(revisions) == 1
@@ -453,7 +475,9 @@ async def test_admission_is_caller_transaction_and_exact_retry_preserves_revisio
     assert state.active_processing_revision_id is None
     assert state.in_flight_revision_id == revisions[0].id
     async with factory() as session, session.begin():
-        await service(session).admit_candidate(OWNER_ID, meeting_id, "request-1", "sha256:audio-a")
+        await service(session).admit_candidate(
+            owner_id=OWNER_ID, recording_id=meeting_id, request_id="request-1", request_fingerprint="sha256:audio-a"
+        )
     assert await _revisions(postgres_engine, meeting_id) == revisions
 
 
@@ -483,16 +507,18 @@ async def test_changed_fingerprint_or_distinct_request_cannot_displace_inflight(
     meeting_id = await _meeting(postgres_engine)
     factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
     async with factory() as session, session.begin():
-        await service(session).admit_candidate(OWNER_ID, meeting_id, "request-1", "sha256:audio-a")
+        await service(session).admit_candidate(
+            owner_id=OWNER_ID, recording_id=meeting_id, request_id="request-1", request_fingerprint="sha256:audio-a"
+        )
     state_before = await _state(postgres_engine, meeting_id)
     revisions_before = await _revisions(postgres_engine, meeting_id)
     async with factory() as session, session.begin():
         try:
             outcome = await service(session).admit_candidate(
-                OWNER_ID,
-                meeting_id,
-                request_id,
-                fingerprint,
+                owner_id=OWNER_ID,
+                recording_id=meeting_id,
+                request_id=request_id,
+                request_fingerprint=fingerprint,
             )
         except ValueError:
             outcome = None
@@ -513,7 +539,9 @@ async def test_two_concurrent_distinct_admissions_allocate_one_candidate(
 
     async def first() -> None:
         async with factory() as session, session.begin():
-            await service(session).admit_candidate(OWNER_ID, meeting_id, "request-a", "sha256:a")
+            await service(session).admit_candidate(
+                owner_id=OWNER_ID, recording_id=meeting_id, request_id="request-a", request_fingerprint="sha256:a"
+            )
             locked.set()
             await asyncio.wait_for(release.wait(), 5)
 
@@ -522,10 +550,10 @@ async def test_two_concurrent_distinct_admissions_allocate_one_candidate(
         async with factory() as session, session.begin():
             try:
                 return await service(session).admit_candidate(
-                    OWNER_ID,
-                    meeting_id,
-                    "request-b",
-                    "sha256:b",
+                    owner_id=OWNER_ID,
+                    recording_id=meeting_id,
+                    request_id="request-b",
+                    request_fingerprint="sha256:b",
                 )
             except ValueError:
                 return None
@@ -558,10 +586,10 @@ async def test_foreign_owner_cannot_admit_or_mutate_processing_state(
     async with factory() as session, session.begin():
         try:
             outcome = await service(session).admit_candidate(
-                "another-owner",
-                meeting_id,
-                "request-foreign",
-                "sha256:foreign",
+                owner_id="another-owner",
+                recording_id=meeting_id,
+                request_id="request-foreign",
+                request_fingerprint="sha256:foreign",
             )
         except ValueError:
             outcome = None
@@ -591,7 +619,9 @@ async def test_partial_legacy_get_before_and_after_admission_keeps_compatibility
     service = _admission_service()
     factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
     async with factory() as session, session.begin():
-        await service(session).admit_candidate(OWNER_ID, meeting_id, "partial-new", "sha256:new")
+        await service(session).admit_candidate(
+            owner_id=OWNER_ID, recording_id=meeting_id, request_id="partial-new", request_fingerprint="sha256:new"
+        )
     state = await _state(postgres_engine, meeting_id)
     assert state.active_processing_revision_id is None
     assert state.in_flight_revision_id != state.legacy_compatibility_revision_id
@@ -617,10 +647,10 @@ async def test_complete_legacy_get_while_candidate_inflight_cannot_activate_comp
     factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
     async with factory() as session, session.begin():
         await service(session).admit_candidate(
-            OWNER_ID,
-            "meeting-complete",
-            "candidate-new",
-            "sha256:new",
+            owner_id=OWNER_ID,
+            recording_id="meeting-complete",
+            request_id="candidate-new",
+            request_fingerprint="sha256:new",
         )
     before = await _state(postgres_engine, "meeting-complete")
     assert before.active_processing_revision_id is None
@@ -679,10 +709,10 @@ async def test_active_review_is_pinned_not_latest_and_owner_isolated(
     factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
     async with factory() as session, session.begin():
         await service(session).admit_candidate(
-            OWNER_ID,
-            "meeting-complete",
-            "candidate-new",
-            "sha256:new",
+            owner_id=OWNER_ID,
+            recording_id="meeting-complete",
+            request_id="candidate-new",
+            request_fingerprint="sha256:new",
         )
     rows = await _revisions(postgres_engine, "meeting-complete")
     assert [row.revision for row in rows] == [1, 2]
@@ -747,10 +777,10 @@ async def test_pending_active_review_rejects_new_candidate_without_displacing_re
     async with factory() as session, session.begin():
         try:
             outcome = await service(session).admit_candidate(
-                OWNER_ID,
-                "meeting-complete",
-                "request-after-review",
-                "sha256:new",
+                owner_id=OWNER_ID,
+                recording_id="meeting-complete",
+                request_id="request-after-review",
+                request_fingerprint="sha256:new",
             )
         except ValueError:
             outcome = None
@@ -816,10 +846,10 @@ async def test_get_first_holds_shared_state_lock_and_pending_review_blocks_admis
             attempted.set()
             try:
                 return await service(session).admit_candidate(
-                    OWNER_ID,
-                    "meeting-complete",
-                    "new-request",
-                    "sha256:new",
+                    owner_id=OWNER_ID,
+                    recording_id="meeting-complete",
+                    request_id="new-request",
+                    request_fingerprint="sha256:new",
                 )
             except ValueError:
                 return None
