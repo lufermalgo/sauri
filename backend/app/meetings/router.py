@@ -502,29 +502,34 @@ async def get_diarization(
                     selectinload(Diarization.assignments),
                 )
             )
-            result = await session.execute(stmt)
-            diarization = result.scalar_one_or_none()
+            result = await session.execute(stmt.order_by(Diarization.processing_revision.desc()))
+            generations = result.scalars().all()
 
-            if diarization is None:
+            if not generations:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Diarization not available for meeting: {meeting_id}",
                 )
 
-            ordered_speakers = sorted(diarization.speakers, key=lambda s: s.sequence)
+            latest = generations[0]
+            diarization = next((d for d in generations if d.diarization_state == "completed"), None)
+            ordered_speakers = sorted(diarization.speakers, key=lambda s: s.sequence) if diarization else []
 
             return {
-                "diarization_id": diarization.id,
-                "meeting_id": diarization.meeting_id,
-                "diarization_state": diarization.diarization_state,
-                "speaker_count": diarization.speaker_count,
-                "speakers": [
-                    {"id": s.id, "label": s.label, "sequence": s.sequence}
-                    for s in ordered_speakers
-                ],
+                "diarization_id": diarization.id if diarization else None,
+                "meeting_id": meeting_id,
+                "diarization_state": diarization.diarization_state if diarization else None,
+                "speaker_count": diarization.speaker_count if diarization else 0,
+                "processing_revision": diarization.processing_revision if diarization else None,
+                "latest_attempt": {
+                    "processing_revision": latest.processing_revision,
+                    "diarization_state": latest.diarization_state,
+                    "failure_cause": latest.failure_cause,
+                },
+                "speakers": [{"id": s.id, "label": s.label, "sequence": s.sequence} for s in ordered_speakers],
                 "assignments": [
-                    {"turn_id": a.turn_id, "speaker_id": a.speaker_id}
-                    for a in diarization.assignments
+                    {"turn_id": a.turn_id, "speaker_id": a.speaker_id, "overlap_ms": a.overlap_ms}
+                    for a in (diarization.assignments if diarization else [])
                 ],
             }
     finally:

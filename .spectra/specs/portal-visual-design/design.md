@@ -251,3 +251,7 @@ P5: no porcentaje global, ETA ni subida numérica sin bytes; solo confirmación 
 ### Manejo de errores y testing
 Consulta rechazada: mensaje español genérico, reintento GET y último estado marcado histórico; job failed: etapa y mensaje genérico sin traceback. Campos no informados: detalle no disponible, jamás completados por tiempo.
 Pruebas backend SQLite de proyección, transiciones, revisión vigente y autorización; regresiones de workers existentes. Frontend Vitest para polling, fallos, cambio de reunión y estados parciales; `npm run typecheck`, `npm run test`, `npm run build`. Integración real APX coordinada con Ansel, no sustituida por mocks ni cambio de runtime del dueño.
+
+
+### Continuación autorizada de conexión y compatibilidad
+Ansel autorizó conectar solo API/portal preservando el runtime. Fuentes verificadas: API `bcc52de` (61 módulos iguales) y portal `7e8d296` (bundle reproducido byte a byte). La API real ya seleccionaba generaciones; el PR inicial ahora incluye esa misma lectura segura para su base antigua, con regresión. Se preservó contenido parcial y enlace de playback del portal #880 al combinar el indicador; `onProgress` carga el contenido parcial sin declararlo listo. `onReady` valida transcript/latest_attempt antes de habilitar enlace. No se cambia algoritmo de atribución, playback ni muestras. Evidencia y rollback: `docs/engineering/portal-processing-runtime.md`. Acceso autenticado y etapas activas APX todavía pendientes; no aprobación ni merge.

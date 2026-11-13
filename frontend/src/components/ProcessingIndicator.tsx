@@ -10,15 +10,16 @@ interface Props {
   meetingId: string;
   onReady?: (snapshot: ProcessingSnapshot) => Promise<void>;
   onPending?: () => void;
+  onProgress?: (snapshot: ProcessingSnapshot) => Promise<void>;
 }
 
 /** Polls reads only. A transport error is never a failed processing job. */
-export function ProcessingIndicator({ meetingId, onReady, onPending }: Props) {
+export function ProcessingIndicator({ meetingId, onReady, onPending, onProgress }: Props) {
   const [confirmed, setConfirmed] = useState<ProcessingSnapshot | null>(null);
   const [queryFailed, setQueryFailed] = useState(false);
   const [retry, setRetry] = useState(0);
-  const callbacks = useRef({ onReady, onPending });
-  callbacks.current = { onReady, onPending };
+  const callbacks = useRef({ onReady, onPending, onProgress });
+  callbacks.current = { onReady, onPending, onProgress };
 
   useEffect(() => {
     setConfirmed(null);
@@ -45,6 +46,8 @@ export function ProcessingIndicator({ meetingId, onReady, onPending }: Props) {
         } else {
           deliveredExecution = undefined;
           callbacks.current.onPending?.();
+          await callbacks.current.onProgress?.(snapshot);
+          if (!active) return;
         }
         setConfirmed(snapshot);
         setQueryFailed(false);

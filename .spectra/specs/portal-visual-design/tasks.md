@@ -53,3 +53,13 @@ Solo R7–11, #892, task_5d2838ff10c446ed. No sustituye tareas/aprobaciones de d
 - [~] 3.2: PR borrador #894 publicado (código 8bb2c17), sin merge; prueba APX de procesamiento real y captura del indicador pendientes de coordinación de Ansel, login y conexión del candidato. No se declara aceptación ni validación visible.
 
 Dependencia detectada: lectura `/diarization` multirrevisión de #653; no se duplica ni se modifica atribución. Instrucciones y evidencia: `docs/engineering/portal-processing-indicator.md`.
+
+
+## Continuación técnica autorizada por Ansel
+- [x] Identificar imágenes activas y demostrar fuentes exactas, sin asumir HEAD de worktree.
+- [x] Preservar API generacional #850 y portal #880 en worktree de integración nuevo; tests combinados 85 backend / 136 frontend pasan.
+- [x] Resolver lectura multirrevisión en base del PR con el contrato ya activo; regresiones del PR 203 backend / 110 frontend pasan.
+- [x] Construir/recrear únicamente API y portal; healthchecks 200 y processing sin credenciales/bearer inválido 401; demás servicios y configuración preservados.
+- [ ] Login autorizado de Fer, reapertura autenticada APX y validación visible; etapas activas necesitan recorrido real autorizado. PR sigue borrador.
+
+La nota anterior sobre dependencia #653 está supersedida para lectura de diarización por la verificación/corrección de esta continuación. No se instaló #893 ni se generaron muestras.

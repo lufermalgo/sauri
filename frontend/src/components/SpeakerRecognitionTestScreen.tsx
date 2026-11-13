@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getDiarization, getSpeakerReview, getTranscript, uploadRecording } from "../api";
 import { ProcessingIndicator } from "./ProcessingIndicator";
-import type { MeetingDiarization, MeetingTranscript, RecordingUploadData, SpeakerReview } from "../api";
+import type { MeetingDiarization, MeetingTranscript, RecordingUploadData, SpeakerReview, ProcessingSnapshot } from "../api";
 
 interface EbmlElement {
   id: number;
@@ -143,6 +143,12 @@ function formatTimestamp(milliseconds: number): string {
   return `${minutes}:${seconds}`;
 }
 
+function diarizationState(diarization: MeetingDiarization | null): string {
+  if (!diarization) return "pending";
+  return diarization.latest_attempt?.diarization_state ?? diarization.diarization_state
+    ?? (diarization.assignments.length > 0 ? "completed" : "pending");
+}
+
 function withSpeakerLabels(
   transcript: MeetingTranscript,
   diarization: MeetingDiarization | null,
@@ -185,6 +191,7 @@ export function SpeakerRecognitionTestScreen() {
   const [transcript, setTranscript] = useState<MeetingTranscript | null>(null);
   const [speakerDiarization, setSpeakerDiarization] = useState<MeetingDiarization | null>(null);
   const [speakerReview, setSpeakerReview] = useState<SpeakerReview | null>(null);
+  const [resultReady, setResultReady] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
 
   useEffect(() => () => {
@@ -198,7 +205,7 @@ export function SpeakerRecognitionTestScreen() {
   useEffect(() => () => { currentMeetingId.current = undefined; }, []);
 
   useEffect(() => {
-    if (!transcript || !selectedMeetingId) return;
+    if (!transcript || !selectedMeetingId || diarizationState(speakerDiarization) !== "completed") return;
     let active = true;
     let timeout: number | undefined;
     async function observeSpeakerReview() {
@@ -211,17 +218,48 @@ export function SpeakerRecognitionTestScreen() {
     }
     void observeSpeakerReview();
     return () => { active = false; if (timeout !== undefined) window.clearTimeout(timeout); };
-  }, [transcript, selectedMeetingId]);
+  }, [transcript, selectedMeetingId, speakerDiarization]);
 
-  async function loadReadyResult() {
+  async function loadReadyResult(snapshot: ProcessingSnapshot) {
     if (!selectedMeetingId) return;
     const meetingId = selectedMeetingId;
     const [completedTranscript, completedDiarization] = await Promise.all([
       getTranscript(meetingId), getDiarization(meetingId),
     ]);
     if (currentMeetingId.current !== meetingId) return;
+    if (completedTranscript.id !== snapshot.execution.transcript_id ||
+      diarizationState(completedDiarization) !== "completed" ||
+      (completedDiarization.latest_attempt && completedDiarization.latest_attempt.processing_revision !== snapshot.execution.diarization_revision)) {
+      throw new Error("Result changed during processing read");
+    }
     setTranscript(completedTranscript);
     setSpeakerDiarization(completedDiarization);
+    setResultReady(true);
+  }
+
+  async function loadPartialResult(snapshot: ProcessingSnapshot) {
+    setResultReady(false);
+    const meetingId = selectedMeetingId;
+    if (!meetingId) return;
+    if (!snapshot.stages.some((stage) => stage.key === "transcription" && stage.state === "completed")) {
+      setTranscript(null);
+      setSpeakerDiarization(null);
+      setSpeakerReview(null);
+      return;
+    }
+    const [partialTranscript, partialDiarization] = await Promise.all([
+      transcript?.id === snapshot.execution.transcript_id ? Promise.resolve(transcript) : getTranscript(meetingId),
+      getDiarization(meetingId).catch((error: unknown) => {
+        // Before reservation there is no diarization resource yet. Other read
+        // failures must remain visible, not be mistaken for pending processing.
+        if (error instanceof Error && error.message === "Error 404") return null;
+        throw error;
+      }),
+    ]);
+    if (currentMeetingId.current !== meetingId) return;
+    setTranscript(partialTranscript);
+    setSpeakerDiarization(partialDiarization);
+    setSpeakerReview(null);
   }
 
   function releaseObjectUrl(objectUrl: string) {
@@ -245,6 +283,7 @@ export function SpeakerRecognitionTestScreen() {
     });
     setUploadState("idle");
     setUploadError(null);
+    setResultReady(false);
     setTranscript(null);
     setSpeakerDiarization(null);
     setSpeakerReview(null);
@@ -322,6 +361,7 @@ export function SpeakerRecognitionTestScreen() {
         <video
           src={recording.objectUrl}
           preload="metadata"
+          hidden
           onLoadedMetadata={handleMetadata}
           onError={() => releaseObjectUrl(recording.objectUrl)}
           aria-label="Selected recording metadata"
@@ -330,6 +370,7 @@ export function SpeakerRecognitionTestScreen() {
         <audio
           src={recording.objectUrl}
           preload="metadata"
+          hidden
           onLoadedMetadata={handleMetadata}
           onError={() => releaseObjectUrl(recording.objectUrl)}
           aria-label="Selected recording metadata"
@@ -353,7 +394,7 @@ export function SpeakerRecognitionTestScreen() {
             key={selectedMeetingId}
             meetingId={selectedMeetingId}
             onReady={loadReadyResult}
-            onPending={() => { setTranscript(null); setSpeakerDiarization(null); setSpeakerReview(null); }}
+            onProgress={loadPartialResult}
           />
         </>
       )}
@@ -361,6 +402,11 @@ export function SpeakerRecognitionTestScreen() {
         <>
           <section aria-labelledby="test-transcript-heading">
             <h3 id="test-transcript-heading">Transcript</h3>
+            {resultReady && diarizationState(speakerDiarization) === "completed" ? (
+              <a href={`?meetingId=${selectedMeetingId}`}>Open playback and speaker paragraphs</a>
+            ) : ["failed", "not_reconstructible"].includes(diarizationState(speakerDiarization)) ? (
+              <p role="alert">Speaker separation is unavailable for this recording. The transcript is still available.</p>
+            ) : <p role="status">Separating speakers…</p>}
             <ol>
               {displayedTranscript.segments.map((segment) => (
                 <li key={segment.id}>

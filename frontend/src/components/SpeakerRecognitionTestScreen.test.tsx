@@ -323,7 +323,7 @@ const apiMocks = api as unknown as {
   getProcessing: typeof api.getProcessing;
   getTranscript: (meetingId: string) => Promise<typeof transcript>;
   getSpeakerReview: (meetingId: string) => Promise<typeof review>;
-  getDiarization: (meetingId: string) => Promise<typeof diarization>;
+  getDiarization: typeof api.getDiarization;
 };
 
 async function uploadSyntheticRecording(assertUploadControls?: () => void) {
@@ -371,6 +371,9 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
     expect(await screen.findByText("La propuesta queda para el viernes.")).toBeVisible();
     expect(getTranscript).toHaveBeenCalledWith(meetingId);
     expect(getSpeakerReview).toHaveBeenCalledWith(meetingId);
+    expect(screen.getByRole("link", { name: "Open playback and speaker paragraphs" }))
+      .toHaveAttribute("href", `?meetingId=${meetingId}`);
+    expect(document.querySelector("audio, video")).toHaveAttribute("hidden");
     expect(await screen.findByText(/pending/i)).toBeVisible();
   });
 
@@ -464,4 +467,62 @@ it("never associates a late upload response with a newly selected recording", as
   await waitFor(() => expect(screen.getByRole("button", { name: /^upload$/i })).toBeEnabled());
   expect(processing).not.toHaveBeenCalled();
   expect(screen.queryByText(/Archivo recibido/)).toBeNull();
+});
+
+
+function partialSnapshot(id: string, state: "pending" | "active" | "failed"): api.ProcessingSnapshot {
+  return {
+    ...meeting("processing"), meeting_id: id, failed: state === "failed",
+    stages: [{ key: "transcription", state: "completed" }, { key: "diarization", state }],
+  };
+}
+
+it("preserves the live portal partial transcript while awaiting real speaker completion", async () => {
+  vi.spyOn(apiMocks, "getProcessing")
+    .mockImplementationOnce(async (id) => partialSnapshot(id, "pending"))
+    .mockImplementation(async (id) => ({ ...meeting("completed"), meeting_id: id }));
+  vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+  const getDiarization = vi.spyOn(apiMocks, "getDiarization")
+    .mockRejectedValueOnce(new Error("Error 404"))
+    .mockResolvedValue({ ...diarization, diarization_state: "completed" });
+  vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
+  await uploadSyntheticRecording();
+  expect(await screen.findByText("La propuesta queda para el viernes.")).toBeVisible();
+  expect(screen.getByText("Separating speakers…")).toBeVisible();
+  expect(screen.queryByText("Listo para revisar")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open playback and speaker paragraphs" })).toBeNull();
+  expect(await screen.findByRole("link", { name: "Open playback and speaker paragraphs" }, { timeout: 4000 })).toBeVisible();
+  expect(getDiarization).toHaveBeenCalledTimes(2);
+});
+
+it.each(["failed", "not_reconstructible"])("keeps partial content but no ready link for terminal separation %s", async (state) => {
+  vi.spyOn(apiMocks, "getProcessing").mockImplementation(async (id) => partialSnapshot(id, "failed"));
+  vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+  vi.spyOn(apiMocks, "getDiarization").mockResolvedValue({
+    ...diarization, diarization_state: "completed",
+    latest_attempt: { processing_revision: 2, diarization_state: state, failure_cause: null },
+  });
+  const review = vi.spyOn(apiMocks, "getSpeakerReview");
+  await uploadSyntheticRecording();
+  expect(await screen.findByText("La propuesta queda para el viernes.")).toBeVisible();
+  expect(screen.getByRole("alert")).toHaveTextContent("Speaker separation is unavailable");
+  expect(screen.queryByText("Listo para revisar")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open playback and speaker paragraphs" })).toBeNull();
+  expect(review).not.toHaveBeenCalled();
+});
+
+it("does not accept an earlier completed result as the newly ready execution", async () => {
+  vi.spyOn(apiMocks, "getProcessing").mockImplementation(async (id) => ({
+    ...meeting("completed"), meeting_id: id,
+    execution: { generation: 3, transcript_id: "transcript-test-1", diarization_revision: 2 },
+  }));
+  vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+  vi.spyOn(apiMocks, "getDiarization").mockResolvedValue({
+    ...diarization, diarization_state: "completed",
+    latest_attempt: { processing_revision: 1, diarization_state: "completed", failure_cause: null },
+  });
+  await uploadSyntheticRecording();
+  expect(await screen.findByRole("alert")).toHaveTextContent("No pudimos actualizar el estado");
+  expect(screen.queryByText("Listo para revisar")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open playback and speaker paragraphs" })).toBeNull();
 });

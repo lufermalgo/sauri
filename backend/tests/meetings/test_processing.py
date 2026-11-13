@@ -173,3 +173,34 @@ async def test_failure_does_not_invent_an_affected_stage(db_session: AsyncSessio
     snapshot = await processing_snapshot(db_session, m)
     assert snapshot["failed"] and not snapshot["ready"]
     assert snapshot["stages"][1]["state"] == ("failed" if cause == "engine_failure" else "unavailable")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("latest", ["pending", "in_progress", "failed", "not_reconstructible", "completed"])
+async def test_multirevision_result_read_preserves_completed_and_current_attempt_separately(
+    api_client: AsyncClient, api_db_url: str, latest: str,
+) -> None:
+    engine = create_async_engine(api_db_url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with factory() as session, session.begin():
+            m = meeting()
+            m.process_state = "completed"
+            session.add(m)
+            await session.flush()
+            await artifacts(session, m, "completed")
+            session.add(Diarization(
+                id="new-attempt", meeting_id=m.id, transcript_id="transcript", processing_revision=2,
+                diarization_state=latest, created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+            ))
+        path = "/api/v1/meetings/processing-meeting"
+        result = await api_client.get(path + "/diarization", headers=headers("owner"))
+        status = await api_client.get(path + "/processing", headers=headers("owner"))
+        assert result.status_code == status.status_code == 200
+        assert result.json()["processing_revision"] == (2 if latest == "completed" else 1)
+        assert result.json()["latest_attempt"]["processing_revision"] == 2
+        assert result.json()["latest_attempt"]["diarization_state"] == latest
+        assert status.json()["execution"]["diarization_revision"] == 2
+        assert status.json()["ready"] == (latest == "completed")
+    finally:
+        await engine.dispose()

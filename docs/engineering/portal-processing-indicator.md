@@ -49,17 +49,21 @@ CI publicado: https://github.com/lufermalgo/sauri/actions/runs/43472620108. Ambo
 
 `git diff --check` pasa. No hay cambios Rust/extensión/modelos/migraciones.
 
-## Límite material del contrato core existente
+## Contrato core y continuación autorizada
 
-En la base y en el runtime de referencia `baea619`, `GET /diarization` usa `scalar_one_or_none()` sin elegir revisión: si hay más de una revisión puede fallar. El endpoint nuevo de seguimiento sí elige la última revisión del transcript y no completa una revisión vieja. El arreglo de la lectura del resultado por generación pertenece a #653 (API core); esta entrega no lo duplica ni cambia atribución. En la pantalla de prueba, si esa lectura falla, no se declara listo: se comunica fallo de actualización y se reintenta lectura. Validar la combinación con la entrega core actual antes de integración; no interpretar tests con mocks como prueba de que #653 ya está integrado.
+La base inicial `41ab5f4` tenía `GET /diarization` con `scalar_one_or_none` sin elegir revisión. Ansel autorizó resolverlo técnicamente en esta continuación. El PR ahora conserva la misma lectura generacional instalada en la API real `bcc52de`: atribución completada y latest_attempt separados, con regresión HTTP de ambas rutas frente a dos revisiones. No se modifica el cálculo de atribución ni la política de revisión. El candidato combinado preserva además el resto de #850 existente en la API activa, sin reemplazarlo por la base antigua.
+
+Validación actualizada del PR: **203 backend pertinentes pasan / 3 skips**, **110 frontend pasan / 12 archivos**, typecheck/build y ruff/mypy de archivos backend modificados pasan. En el candidato combinado con portal #880: **85 backend pasan / 2 skips y 136 frontend pasan**. No se repitió la suite global base.
+
+Fuente desplegada, imágenes, invariantes, comandos y rollback: `docs/engineering/portal-processing-runtime.md`. La conexión técnica API/portal ya se realizó con autorización expresa de Ansel; la lectura autenticada APX sigue pendiente. No presentar el estado anterior de dependencia #653 como bloqueo vigente de esa conexión.
 
 ## Navegador APX y pendiente de aceptación
 
 Se abrió `http://127.0.0.1:15273/` con APX: el runtime de referencia respondió y mostró la pantalla de acceso (tab `t25`). No hay sesión autenticada en ese tab, no se ingresaron credenciales ni se eludió el login. No se cargaron videos ni se sustituyó el runtime. Esa captura NO valida el indicador nuevo.
 
-Pendiente, coordinado por Ansel: conectar candidato preservando el código de Nahuel y el resto del candidato actual, acceder con la sesión autorizada y contrastar etapas del navegador con persistencia/logs core durante una carga/proceso real autorizado, sin duplicar cargas privadas. Registrar captura del indicador y límites; recién entonces declarar validada la funcionalidad visible y cambiar el PR de borrador a listo. Fer conserva el merge.
+Continuación: candidato conectado, sin instalar #893 de Nahuel. Pendiente, coordinado por Ansel: acceder con la sesión autorizada y contrastar etapas del navegador con persistencia/logs core durante una carga/proceso real autorizado, sin duplicar cargas privadas. Registrar captura del indicador y límites; recién entonces declarar validada la funcionalidad visible y cambiar el PR de borrador a listo. Fer conserva el merge.
 
-## Conexión exacta del candidato (solo Ansel, tras coordinar la ventana)
+## Plan inicial de conexión (histórico, supersedido por la evidencia de conexión real)
 
 Se verificó `git apply --check` del parche de código contra el worktree de referencia `baea619`, sin aplicar cambios: pasó. Los comandos de aplicación/build/despliegue siguientes son instrucciones; **no fueron ejecutados contra el runtime**. No uses `down`, `clean`, `up` global, migraciones, ni reinicies worker/motores. No imprimas `qa.env`, tokens o configuración expandida.
 

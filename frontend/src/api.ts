@@ -61,6 +61,13 @@ export type MeetingTranscript = Transcript & {
 };
 
 export interface MeetingDiarization {
+  diarization_state?: string | null;
+  processing_revision?: number | null;
+  latest_attempt?: {
+    processing_revision: number;
+    diarization_state: string;
+    failure_cause: string | null;
+  } | null;
   speakers: Array<{ id: string; label: string; sequence: number }>;
   assignments: Array<{ turn_id: string; speaker_id: string }>;
 }
