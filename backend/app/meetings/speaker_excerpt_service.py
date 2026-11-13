@@ -382,6 +382,88 @@ class ManagedDecoderProcess:
                 task.exception()
 
 
+def _ffmpeg_timestamp(milliseconds: int) -> str:
+    return f"{milliseconds / 1000:.3f}"
+
+
+def _ffmpeg_decode_interval_command(start_ms: int, end_ms: int) -> tuple[str, ...]:
+    """Build a decoder command that validates a selected interval without output."""
+    return (
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        _ffmpeg_timestamp(start_ms),
+        "-i",
+        "pipe:0",
+        "-t",
+        _ffmpeg_timestamp(end_ms - start_ms),
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-f",
+        "md5",
+        "-",
+    )
+
+
+def _ffmpeg_read_interval_command(start_ms: int, end_ms: int) -> tuple[str, ...]:
+    """Build a bounded mono PCM16 WAV command for the selected interval."""
+    return (
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-ss",
+        _ffmpeg_timestamp(start_ms),
+        "-i",
+        "pipe:0",
+        "-t",
+        _ffmpeg_timestamp(end_ms - start_ms),
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-acodec",
+        "pcm_s16le",
+        "-f",
+        "s16le",
+        "pipe:1",
+    )
+
+
+def _ffmpeg_probe_audio_duration_command() -> tuple[str, ...]:
+    """Probe decoded audio, hard-stopping at 30 s even for unseekable input."""
+    return (
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        "pipe:0",
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-t",
+        "30",
+        "-f",
+        "null",
+        "-",
+        "-progress",
+        "pipe:1",
+        "-stats_period",
+        "3600",
+        "-nostats",
+    )
+
+
 class SpeakerExcerptService:
     """Select validated intervals and encrypt their private source locator.
 
@@ -408,6 +490,7 @@ class SpeakerExcerptService:
         probe_audio: Callable[..., Any],
         keyring: ExcerptKeyring | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        reject_ambiguous_cap: bool = False,
     ) -> None:
         self._object_store = object_store
         self._decoder = decoder
@@ -416,6 +499,7 @@ class SpeakerExcerptService:
         self._probe_audio = probe_audio
         self._keyring = keyring or ExcerptKeyring.from_environment()
         self._monotonic = monotonic
+        self._reject_ambiguous_cap = reject_ambiguous_cap
         self._unhealthy = False
 
     async def _acquire(self) -> _OperationLease:
@@ -529,17 +613,31 @@ class SpeakerExcerptService:
             tuple(command),
             input_bytes=source,
             deadline_monotonic=lease.deadline_monotonic,
-            max_output_bytes=128,
+            max_output_bytes=1024,
             on_reap=lease.defer_release_until,
         )
         try:
-            duration_seconds = float(result.decode("ascii").strip())
-        except (UnicodeDecodeError, ValueError):
+            output = result.decode("ascii").strip()
+            try:
+                duration_seconds = float(output)
+            except ValueError:
+                progress: dict[str, str] = {}
+                for line in output.splitlines():
+                    name, separator, value = line.partition("=")
+                    if separator:
+                        progress[name] = value
+                if progress.get("progress") != "end":
+                    raise ValueError from None
+                duration_seconds = int(progress["out_time_us"]) / 1_000_000
+        except (KeyError, UnicodeDecodeError, ValueError):
             raise ValueError("speaker excerpt unavailable") from None
         if (
             not math.isfinite(duration_seconds)
             or duration_seconds <= 0
             or duration_seconds > self.MAX_AUDIO_DURATION_MS / 1000
+            # Only the production probe is stopped at 30 s. It cannot tell
+            # an exact-30 s source from a longer one: reject both explicitly.
+            or (self._reject_ambiguous_cap and duration_seconds == self.MAX_AUDIO_DURATION_MS / 1000)
         ):
             raise ValueError("speaker excerpt unavailable")
         return math.ceil(duration_seconds * 1000)
@@ -774,3 +872,15 @@ class SpeakerExcerptService:
             raise ValueError("speaker excerpt unavailable") from None
         finally:
             lease.release()
+
+
+def create_speaker_excerpt_service(object_store: ObjectStore) -> SpeakerExcerptService:
+    """Wire the bounded excerpt service to the production FFmpeg tools."""
+    return SpeakerExcerptService(
+        object_store=object_store,
+        decoder=ManagedDecoderProcess(),
+        decode_interval=_ffmpeg_decode_interval_command,
+        read_interval=_ffmpeg_read_interval_command,
+        probe_audio=_ffmpeg_probe_audio_duration_command,
+        reject_ambiguous_cap=True,
+    )

@@ -14,9 +14,11 @@ Requirements: 4.5, 7.1, 7.2, 8.3, 8.4
 
 from __future__ import annotations
 
+import io
+import wave
 from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +32,7 @@ from app.infra.models import (
     Diarization,
     Meeting,
     SessionRecording,
+    SpeakerReviewItem,
     SpeechTurn,
     Transcript,
 )
@@ -43,6 +46,7 @@ from app.meetings.service import (
     rename_meeting,
     request_join,
 )
+from app.meetings.speaker_excerpt_service import create_speaker_excerpt_service
 from app.meetings.speaker_review_service import SpeakerReviewService
 
 router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"])
@@ -56,6 +60,19 @@ def _get_queue() -> JobQueue:
 def _get_object_store() -> ObjectStore:
     """Object store factory (simplified DI)."""
     return create_object_store()
+
+
+def _pcm16_mono_wav(pcm_audio: bytes) -> bytes:
+    """Wrap a complete, at-most-ten-second 16 kHz mono excerpt for browser playback."""
+    if not pcm_audio or len(pcm_audio) % 2 or len(pcm_audio) > 10 * 16_000 * 2:
+        raise ValueError("speaker excerpt unavailable")
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16_000)
+        wav_file.writeframes(pcm_audio)
+    return buffer.getvalue()
 
 
 async def _get_authorized_meeting(
@@ -355,6 +372,56 @@ async def put_speaker_disposition(
             if outcome["outcome"] == "invalid_request":
                 raise HTTPException(status_code=422, detail="Invalid disposition")
             return cast(dict[str, Any], outcome["result"])
+    finally:
+        await engine.dispose()
+
+
+@router.get(
+    "/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}/excerpt"
+)
+async def get_speaker_excerpt(
+    meeting_id: str,
+    revision_id: int,
+    speaker_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> Response:
+    """Play only a persisted excerpt from the owner's current review revision."""
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"GET /api/v1/meetings/{meeting_id}/speaker-review/revisions/"
+                f"{revision_id}/speakers/{speaker_id}/excerpt",
+            )
+            active = await SpeakerReviewService(session).get_active_review(user.id, meeting_id)
+            if active is None:
+                raise HTTPException(status_code=404, detail="Speaker review not found")
+            if active["revision_id"] != revision_id:
+                raise HTTPException(status_code=409, detail="Speaker review revision is not current")
+            item = await session.scalar(
+                select(SpeakerReviewItem)
+                .options(selectinload(SpeakerReviewItem.review))
+                .where(
+                    SpeakerReviewItem.review_id == active["review_id"],
+                    SpeakerReviewItem.speaker_key == speaker_id,
+                )
+            )
+            if item is None or not item.excerpt_ref:
+                raise HTTPException(status_code=404, detail="Speaker excerpt not found")
+            try:
+                audio = await create_speaker_excerpt_service(_get_object_store()).play(
+                    recording_id=meeting_id, revision_id=revision_id, review_item=item
+                )
+                excerpt = _pcm16_mono_wav(audio)
+            except LookupError as exc:
+                raise HTTPException(status_code=404, detail="Speaker excerpt not found") from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=503, detail="Speaker excerpt unavailable") from exc
+            return Response(content=excerpt, media_type="audio/wav")
     finally:
         await engine.dispose()
 
