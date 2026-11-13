@@ -71,8 +71,9 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
 ) -> None:
     meeting_id = await _persist_meeting(api_db_url)
     transcript_id = str(uuid.uuid4())
-    diarization_id = str(uuid.uuid4())
+    diarization_id, old_diarization_id = str(uuid.uuid4()), str(uuid.uuid4())
     speaker_ids = [str(uuid.uuid4()) for _ in range(4)]
+    old_speaker_id = str(uuid.uuid4())
     turn_ids = [str(uuid.uuid4()) for _ in range(4)]
     old_review_id, active_review_id = str(uuid.uuid4()), str(uuid.uuid4())
     now = datetime.now(UTC)
@@ -98,10 +99,34 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
                 transcript_id=transcript_id,
                 provider="local",
                 speaker_count=4,
+                processing_revision=2,
                 diarization_state="completed",
                 failure_cause=None,
                 created_at=now,
                 updated_at=now,
+            )
+        )
+        session.add(
+            Diarization(
+                id=old_diarization_id,
+                meeting_id=meeting_id,
+                transcript_id=transcript_id,
+                provider="local",
+                speaker_count=1,
+                processing_revision=1,
+                diarization_state="completed",
+                failure_cause=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.add(
+            Speaker(
+                id=old_speaker_id,
+                diarization_id=old_diarization_id,
+                raw_label="SPEAKER_0",
+                label="Speaker 1",
+                sequence=1,
             )
         )
         session.add_all(
@@ -143,7 +168,20 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
                     turn_id=turn_id,
                     speaker_id=speaker_id,
                 )
-                for turn_id, speaker_id in zip(turn_ids, speaker_ids, strict=True)
+                for turn_id, speaker_id in zip(
+                    turn_ids, (speaker_ids[2], speaker_ids[0], speaker_ids[3], speaker_ids[1]), strict=True
+                )
+            ]
+        )
+        session.add_all(
+            [
+                SpeakerAssignment(
+                    id=str(uuid.uuid4()),
+                    diarization_id=old_diarization_id,
+                    turn_id=turn_id,
+                    speaker_id=old_speaker_id,
+                )
+                for turn_id in turn_ids
             ]
         )
         session.add_all(
@@ -169,7 +207,7 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
                 SpeakerReviewItem(
                     id=str(uuid.uuid4()),
                     review_id=old_review_id,
-                    speaker_key=speaker_ids[0],
+                    speaker_key=old_speaker_id,
                     current_label="Stale revision name",
                     disposition="named",
                     chosen_label="Stale revision name",
@@ -180,7 +218,7 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
                     id=str(uuid.uuid4()),
                     review_id=active_review_id,
                     speaker_key=speaker_ids[0],
-                    current_label="Alice corrected",
+                    current_label="Speaker 1",
                     disposition="corrected",
                     chosen_label="Alice corrected",
                     attribution_state="attributed",
@@ -200,7 +238,7 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
                     id=str(uuid.uuid4()),
                     review_id=active_review_id,
                     speaker_key=speaker_ids[2],
-                    current_label="Bob named",
+                    current_label="Speaker 3",
                     disposition="named",
                     chosen_label="Bob named",
                     attribution_state="attributed",
@@ -224,8 +262,8 @@ async def test_transcript_uses_active_revision_speaker_join_and_effective_labels
         "Texto sin review",
     ]
     assert [segment["speaker_label"] for segment in segments] == [
-        "Alice corrected",
-        "Speaker 2",
         "Bob named",
+        "Alice corrected",
         "Speaker 4",
+        "Speaker 2",
     ]
