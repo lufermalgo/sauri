@@ -8,6 +8,8 @@ changed by this task.
 
 from __future__ import annotations
 
+import asyncio
+import importlib
 import importlib.util
 import inspect
 import os
@@ -15,19 +17,25 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
+from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from httpx import AsyncClient
+from fastapi.routing import APIRoute
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
+from alembic import command
 from app.auth.token import create_token
+from app.infra.database import Base
 from app.infra.models import Meeting, SpeakerReview, SpeakerReviewItem
+from app.meetings.speaker_review_service import SpeakerReviewService
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = BACKEND_ROOT / "alembic" / "versions"
@@ -55,13 +63,29 @@ async def postgres_engine() -> AsyncGenerator[AsyncEngine, None]:
     async with engine.begin() as connection:
         await connection.execute(text("DROP SCHEMA public CASCADE"))
         await connection.execute(text("CREATE SCHEMA public"))
+        await connection.run_sync(Base.metadata.create_all)
     try:
         yield engine
     finally:
         await engine.dispose()
 
 
-def _load_migration(path: Path):
+@pytest.fixture
+async def legacy_engine(
+    postgres_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncEngine:
+    """Real historical schema, not a hand-written approximation of pre-T-17 tables."""
+    async with postgres_engine.begin() as connection:
+        await connection.execute(text("DROP SCHEMA public CASCADE"))
+        await connection.execute(text("CREATE SCHEMA public"))
+    monkeypatch.setenv("DATABASE_URL", str(postgres_engine.url))
+    config = Config(str(BACKEND_ROOT / "alembic.ini"))
+    await asyncio.to_thread(command.upgrade, config, "013_manual_recovery_persistence")
+    return postgres_engine
+
+
+def _load_migration(path: Path) -> Any:
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -69,7 +93,7 @@ def _load_migration(path: Path):
     return module
 
 
-def _revision_migration():
+def _revision_migration() -> Any:
     """Find the migration that introduces exact processing revisions."""
     for path in sorted(MIGRATIONS_DIR.glob("*.py")):
         if path.name.startswith("__"):
@@ -81,9 +105,10 @@ def _revision_migration():
     pytest.fail("no migration introduces processing revisions and processing state")
 
 
-async def _run_migration(engine: AsyncEngine, migration, direction: str) -> None:
+async def _run_migration(engine: AsyncEngine, migration: Any, direction: str) -> None:
     async with engine.begin() as connection:
-        def run(sync_connection) -> None:
+
+        def run(sync_connection: Connection) -> None:
             context = MigrationContext.configure(sync_connection)
             with Operations.context(context):
                 getattr(migration, direction)()
@@ -93,45 +118,43 @@ async def _run_migration(engine: AsyncEngine, migration, direction: str) -> None
 
 async def _seed_legacy_stage_rows(engine: AsyncEngine) -> None:
     """Create complete and partial legacy records without customer data."""
+    now = datetime.now(UTC)
     async with engine.begin() as connection:
-        await connection.execute(text("DROP TABLE IF EXISTS diarizations"))
-        await connection.execute(text("DROP TABLE IF EXISTS transcripts"))
+        for meeting_id in ("meeting-complete", "meeting-partial"):
+            await connection.execute(
+                text(
+                    "INSERT INTO meetings (id, origin, process_state, created_by, created_at) "
+                    "VALUES (:id, 'manual', 'completed', :owner, :now)"
+                ),
+                {"id": meeting_id, "owner": OWNER_ID, "now": now},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO transcripts "
+                    "(id, meeting_id, language, provider, supports_turns, created_at) "
+                    "VALUES (:id, :meeting, 'es-CO', 'synthetic', false, :now)"
+                ),
+                {"id": f"transcript-{meeting_id}", "meeting": meeting_id, "now": now},
+            )
         await connection.execute(
             text(
-                "CREATE TABLE transcripts (id VARCHAR(36) PRIMARY KEY, meeting_id VARCHAR(36) NOT NULL, "
-                "content TEXT NOT NULL, UNIQUE(meeting_id))"
-            )
-        )
-        await connection.execute(
-            text(
-                "CREATE TABLE diarizations (id VARCHAR(36) PRIMARY KEY, meeting_id VARCHAR(36) NOT NULL, "
-                "content TEXT NOT NULL, UNIQUE(meeting_id))"
-            )
-        )
-        await connection.execute(
-            text(
-                "INSERT INTO transcripts (id, meeting_id, content) VALUES "
-                "('transcript-complete', 'meeting-complete', 'synthetic transcript'), "
-                "('transcript-partial', 'meeting-partial', 'synthetic partial transcript')"
-            )
-        )
-        await connection.execute(
-            text(
-                "INSERT INTO diarizations (id, meeting_id, content) VALUES "
-                "('diarization-complete', 'meeting-complete', 'synthetic diarization')"
-            )
+                "INSERT INTO diarizations "
+                "(id, meeting_id, transcript_id, provider, speaker_count, "
+                "diarization_state, processing_revision, is_legacy, created_at, updated_at) "
+                "VALUES ('diarization-complete', 'meeting-complete', "
+                "'transcript-meeting-complete', 'synthetic', 1, 'completed', 1, true, :now, :now)"
+            ),
+            {"now": now},
         )
 
 
 @pytest.mark.asyncio
 async def test_revision_migration_backfills_complete_and_partial_legacy_rows(
+    legacy_engine: AsyncEngine,
     postgres_engine: AsyncEngine,
 ) -> None:
     migration = _revision_migration()
-    assert migration.down_revision in {
-        "009_recording_media_sources",
-        "009_speaker_review_idempotency_receipts",
-    }
+    assert migration.down_revision == "013_manual_recovery_persistence"
     await _seed_legacy_stage_rows(postgres_engine)
 
     await _run_migration(postgres_engine, migration, "upgrade")
@@ -139,23 +162,37 @@ async def test_revision_migration_backfills_complete_and_partial_legacy_rows(
     async with postgres_engine.connect() as connection:
         transcript_revisions = (
             await connection.execute(
-                text("SELECT meeting_id, processing_revision_id FROM transcripts ORDER BY meeting_id")
+                text(
+                    "SELECT t.meeting_id, r.revision FROM transcripts t "
+                    "JOIN processing_revisions r ON r.id = t.processing_revision_id "
+                    "AND r.recording_id = t.meeting_id ORDER BY t.meeting_id"
+                )
             )
         ).all()
         diarization_revisions = (
             await connection.execute(
-                text("SELECT meeting_id, processing_revision_id FROM diarizations ORDER BY meeting_id")
+                text(
+                    "SELECT d.meeting_id, r.revision FROM diarizations d "
+                    "JOIN processing_revisions r ON r.id = d.processing_revision_id "
+                    "AND r.recording_id = d.meeting_id ORDER BY d.meeting_id"
+                )
             )
         ).all()
-    assert transcript_revisions == [
+    assert [tuple(row) for row in transcript_revisions] == [
         ("meeting-complete", LEGACY_REVISION),
         ("meeting-partial", LEGACY_REVISION),
     ]
-    assert diarization_revisions == [("meeting-complete", LEGACY_REVISION)]
+    assert [tuple(row) for row in diarization_revisions] == [("meeting-complete", LEGACY_REVISION)]
+    for meeting_id in ("meeting-complete", "meeting-partial"):
+        state = await _state(postgres_engine, meeting_id)
+        assert state.active_processing_revision_id is None
+        assert state.in_flight_revision_id is None
+        assert [row.revision for row in await _revisions(postgres_engine, meeting_id)] == [1]
 
 
 @pytest.mark.asyncio
 async def test_revision_migration_replaces_meeting_only_uniqueness(
+    legacy_engine: AsyncEngine,
     postgres_engine: AsyncEngine,
 ) -> None:
     migration = _revision_migration()
@@ -163,41 +200,51 @@ async def test_revision_migration_replaces_meeting_only_uniqueness(
     await _run_migration(postgres_engine, migration, "upgrade")
 
     async with postgres_engine.begin() as connection:
-        await connection.execute(
-            text(
-                "INSERT INTO transcripts (id, meeting_id, content, processing_revision_id) "
-                "VALUES ('transcript-revision-2', 'meeting-complete', 'new synthetic transcript', 2)"
-            )
-        )
-        with pytest.raises(IntegrityError):
-            async with connection.begin_nested():
-                await connection.execute(
-                    text(
-                        "INSERT INTO transcripts (id, meeting_id, content, processing_revision_id) "
-                        "VALUES ('transcript-duplicate-revision', 'meeting-complete', 'duplicate', 2)"
-                    )
-                )
-        await connection.execute(
-            text(
-                "INSERT INTO diarizations (id, meeting_id, content, processing_revision_id) "
-                "VALUES ('diarization-revision-2', 'meeting-complete', 'new synthetic diarization', 2)"
-            )
-        )
-        with pytest.raises(IntegrityError):
-            async with connection.begin_nested():
-                await connection.execute(
-                    text(
-                        "INSERT INTO diarizations (id, meeting_id, content, processing_revision_id) "
-                        "VALUES ('diarization-duplicate-revision', 'meeting-complete', 'duplicate', 2)"
-                    )
-                )
+        for table, row_id in (
+            ("transcripts", "transcript-meeting-complete"),
+            ("diarizations", "diarization-complete"),
+        ):
+
+            def unique_constraints(sync: Connection, name: str = table) -> Any:
+                return sa_inspect(sync).get_unique_constraints(name)
+
+            constraints = await connection.run_sync(unique_constraints)
+            keys = [set(item["column_names"]) for item in constraints]
+            assert {"meeting_id", "processing_revision_id"} in keys
+            assert {"meeting_id"} not in keys
+            with pytest.raises(IntegrityError):
+                async with connection.begin_nested():
+                    if table == "transcripts":
+                        await connection.execute(
+                            text(
+                                "INSERT INTO transcripts (id, meeting_id, language, provider, "
+                                "supports_turns, created_at, processing_revision_id) "
+                                "SELECT 'transcript-duplicate', meeting_id, language, provider, "
+                                "supports_turns, created_at, processing_revision_id "
+                                "FROM transcripts WHERE id=:id"
+                            ),
+                            {"id": row_id},
+                        )
+                    else:
+                        await connection.execute(
+                            text(
+                                "INSERT INTO diarizations (id, meeting_id, transcript_id, provider, "
+                                "speaker_count, diarization_state, processing_revision, is_legacy, "
+                                "created_at, updated_at, processing_revision_id) "
+                                "SELECT 'diarization-duplicate', meeting_id, transcript_id, provider, "
+                                "speaker_count, diarization_state, processing_revision, is_legacy, "
+                                "created_at, updated_at, processing_revision_id "
+                                "FROM diarizations WHERE id=:id"
+                            ),
+                            {"id": row_id},
+                        )
 
 
 @pytest.mark.asyncio
 async def test_processing_state_schema_has_distinct_active_and_in_flight_pointers(
-    async_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
 ) -> None:
-    def inspect_schema(sync_connection):
+    def inspect_schema(sync_connection: Connection) -> set[str]:
         inspector = sa_inspect(sync_connection)
         names = set(inspector.get_table_names())
         state_table = next(
@@ -207,7 +254,7 @@ async def test_processing_state_schema_has_distinct_active_and_in_flight_pointer
         assert state_table is not None, "per-recording processing state table is required"
         return {column["name"] for column in inspector.get_columns(state_table)}
 
-    async with async_engine.connect() as connection:
+    async with postgres_engine.connect() as connection:
         columns = await connection.run_sync(inspect_schema)
     assert "active_processing_revision_id" in columns
     assert "in_flight_revision_id" in columns
@@ -217,11 +264,9 @@ def test_revision_qualified_review_routes_are_registered() -> None:
     """The revision path is explicit for writes and excerpt reads."""
     from app.main import app
 
-    routes = {route.path: route.methods for route in app.routes if hasattr(route, "methods")}
+    routes = {route.path: route.methods for route in app.routes if isinstance(route, APIRoute)}
     review_path = "/api/v1/meetings/{meeting_id}/speaker-review"
-    disposition_path = (
-        "/api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}"
-    )
+    disposition_path = "/api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}"
     excerpt_path = f"{disposition_path}/excerpt"
 
     assert routes.get(review_path) == {"GET"}
@@ -232,6 +277,22 @@ def test_revision_qualified_review_routes_are_registered() -> None:
     # route could mutate or return whichever revision happened to be current.
     assert "/api/v1/meetings/{meeting_id}/speaker-review/speakers/{speaker_id}" not in routes
     assert "/api/v1/meetings/{meeting_id}/speaker-review/speakers/{speaker_id}/excerpt" not in routes
+
+
+@pytest.fixture
+async def api_db_url(postgres_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch) -> str:
+    url = str(postgres_engine.url)
+    monkeypatch.setenv("DATABASE_URL", url)
+    monkeypatch.setenv("APP_ENV", "test")
+    return url
+
+
+@pytest.fixture
+async def api_client(api_db_url: str) -> AsyncGenerator[AsyncClient, None]:
+    from app.main import app
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client
 
 
 def _auth_headers() -> dict[str, str]:
@@ -310,15 +371,470 @@ async def test_stale_revision_disposition_is_rejected_without_mutation(
 
 
 @pytest.mark.asyncio
-async def test_stale_revision_excerpt_is_rejected(
-    api_client: AsyncClient, api_db_url: str
-) -> None:
+async def test_stale_revision_excerpt_is_rejected(api_client: AsyncClient, api_db_url: str) -> None:
     meeting_id, _, _ = await _persist_synthetic_review(api_db_url)
 
     response = await api_client.get(
-        f"/api/v1/meetings/{meeting_id}/speaker-review/revisions/2/"
-        "speakers/speaker-synthetic-1/excerpt",
+        f"/api/v1/meetings/{meeting_id}/speaker-review/revisions/2/speakers/speaker-synthetic-1/excerpt",
         headers=_auth_headers(),
     )
 
     assert response.status_code == 409
+
+
+# T-17's service is deliberately absent in RED. Assert its contract at the
+# call site, so collection and import errors never masquerade as RED evidence.
+def _admission_service() -> Any:
+    try:
+        module = importlib.import_module("app.meetings.processing_revision_service")
+    except ModuleNotFoundError as error:
+        if error.name != "app.meetings.processing_revision_service":
+            raise
+        pytest.fail("T-17 contract absent: ProcessingRevisionService.admit_candidate", pytrace=False)
+    service = getattr(module, "ProcessingRevisionService", None)
+    assert service is not None and callable(getattr(service, "admit_candidate", None))
+    return service
+
+
+async def _meeting(engine: AsyncEngine, owner: str = OWNER_ID) -> str:
+    meeting_id = str(uuid.uuid4())
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO meetings (id, origin, process_state, created_by, created_at) "
+                "VALUES (:id, 'manual', 'completed', :owner, :now)"
+            ),
+            {"id": meeting_id, "owner": owner, "now": datetime.now(UTC)},
+        )
+    return meeting_id
+
+
+async def _state(engine: AsyncEngine, meeting_id: str) -> Any:
+    async with engine.connect() as connection:
+        return (
+            await connection.execute(
+                text(
+                    "SELECT active_processing_revision_id, in_flight_revision_id, "
+                    "legacy_compatibility_revision_id "
+                    "FROM recording_processing_states WHERE recording_id=:id"
+                ),
+                {"id": meeting_id},
+            )
+        ).one()
+
+
+async def _revisions(engine: AsyncEngine, meeting_id: str) -> Any:
+    async with engine.connect() as connection:
+        return (
+            await connection.execute(
+                text("SELECT id, revision FROM processing_revisions WHERE recording_id=:id ORDER BY revision"),
+                {"id": meeting_id},
+            )
+        ).all()
+
+
+@pytest.mark.asyncio
+async def test_admission_is_caller_transaction_and_exact_retry_preserves_revision(
+    postgres_engine: AsyncEngine,
+) -> None:
+    service = _admission_service()
+    meeting_id = await _meeting(postgres_engine)
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        await service(session).admit_candidate(OWNER_ID, meeting_id, "request-1", "sha256:audio-a")
+        assert len(await _revisions_in_session(session, meeting_id)) == 1
+        # Caller owns the commit. An independent transaction cannot see the row yet.
+        assert await _revisions(postgres_engine, meeting_id) == []
+        await service(session).admit_candidate(OWNER_ID, meeting_id, "request-1", "sha256:audio-a")
+        assert len(await _revisions_in_session(session, meeting_id)) == 1
+    revisions = await _revisions(postgres_engine, meeting_id)
+    assert len(revisions) == 1
+    state = await _state(postgres_engine, meeting_id)
+    assert state.active_processing_revision_id is None
+    assert state.in_flight_revision_id == revisions[0].id
+    async with factory() as session, session.begin():
+        await service(session).admit_candidate(OWNER_ID, meeting_id, "request-1", "sha256:audio-a")
+    assert await _revisions(postgres_engine, meeting_id) == revisions
+
+
+async def _revisions_in_session(session: AsyncSession, meeting_id: str) -> Any:
+    return (
+        await session.execute(
+            text("SELECT id, revision FROM processing_revisions WHERE recording_id=:id"),
+            {"id": meeting_id},
+        )
+    ).all()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "request_id,fingerprint",
+    [
+        ("request-1", "sha256:changed"),
+        ("request-2", "sha256:different"),
+    ],
+)
+async def test_changed_fingerprint_or_distinct_request_cannot_displace_inflight(
+    postgres_engine: AsyncEngine,
+    request_id: str,
+    fingerprint: str,
+) -> None:
+    service = _admission_service()
+    meeting_id = await _meeting(postgres_engine)
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        await service(session).admit_candidate(OWNER_ID, meeting_id, "request-1", "sha256:audio-a")
+    state_before = await _state(postgres_engine, meeting_id)
+    revisions_before = await _revisions(postgres_engine, meeting_id)
+    async with factory() as session, session.begin():
+        try:
+            outcome = await service(session).admit_candidate(
+                OWNER_ID,
+                meeting_id,
+                request_id,
+                fingerprint,
+            )
+        except ValueError:
+            outcome = None
+        assert outcome is None or getattr(outcome, "outcome", None) == "conflict"
+    assert await _state(postgres_engine, meeting_id) == state_before
+    assert await _revisions(postgres_engine, meeting_id) == revisions_before
+
+
+@pytest.mark.asyncio
+async def test_two_concurrent_distinct_admissions_allocate_one_candidate(
+    postgres_engine: AsyncEngine,
+) -> None:
+    service = _admission_service()
+    meeting_id = await _meeting(postgres_engine)
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    locked = asyncio.Event()
+    release = asyncio.Event()
+
+    async def first() -> None:
+        async with factory() as session, session.begin():
+            await service(session).admit_candidate(OWNER_ID, meeting_id, "request-a", "sha256:a")
+            locked.set()
+            await asyncio.wait_for(release.wait(), 5)
+
+    async def second() -> Any:
+        await asyncio.wait_for(locked.wait(), 5)
+        async with factory() as session, session.begin():
+            try:
+                return await service(session).admit_candidate(
+                    OWNER_ID,
+                    meeting_id,
+                    "request-b",
+                    "sha256:b",
+                )
+            except ValueError:
+                return None
+
+    first_task = asyncio.create_task(first())
+    await asyncio.wait_for(locked.wait(), 5)
+    second_task = asyncio.create_task(second())
+    try:
+        await asyncio.sleep(0.1)
+        assert not second_task.done(), "distinct admission bypassed the state-row lock"
+    finally:
+        release.set()
+        await first_task
+    outcome = await asyncio.wait_for(second_task, 5)
+    assert outcome is None or getattr(outcome, "outcome", None) == "conflict"
+    revisions = await _revisions(postgres_engine, meeting_id)
+    assert len(revisions) == 1
+    state = await _state(postgres_engine, meeting_id)
+    assert state.active_processing_revision_id is None
+    assert state.in_flight_revision_id == revisions[0].id
+
+
+@pytest.mark.asyncio
+async def test_foreign_owner_cannot_admit_or_mutate_processing_state(
+    postgres_engine: AsyncEngine,
+) -> None:
+    service = _admission_service()
+    meeting_id = await _meeting(postgres_engine)
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        try:
+            outcome = await service(session).admit_candidate(
+                "another-owner",
+                meeting_id,
+                "request-foreign",
+                "sha256:foreign",
+            )
+        except ValueError:
+            outcome = None
+        assert outcome is None or getattr(outcome, "outcome", None) == "not_found"
+    assert await _revisions(postgres_engine, meeting_id) == []
+
+
+@pytest.mark.asyncio
+async def test_partial_legacy_get_before_and_after_admission_keeps_compatibility_only(
+    legacy_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
+    api_client: AsyncClient,
+) -> None:
+    await _seed_legacy_stage_rows(postgres_engine)
+    await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    meeting_id = "meeting-partial"
+    path = f"/api/v1/meetings/{meeting_id}"
+    transcript = await api_client.get(f"{path}/transcript", headers=_auth_headers())
+    diarization = await api_client.get(f"{path}/diarization", headers=_auth_headers())
+    review = await api_client.get(f"{path}/speaker-review", headers=_auth_headers())
+    assert transcript.status_code == 200
+    assert transcript.json()["transcript_id"] == "transcript-meeting-partial"
+    assert diarization.status_code == 404
+    assert review.status_code == 409
+    assert (await _state(postgres_engine, meeting_id)).active_processing_revision_id is None
+
+    service = _admission_service()
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        await service(session).admit_candidate(OWNER_ID, meeting_id, "partial-new", "sha256:new")
+    state = await _state(postgres_engine, meeting_id)
+    assert state.active_processing_revision_id is None
+    assert state.in_flight_revision_id != state.legacy_compatibility_revision_id
+    review = await api_client.get(f"{path}/speaker-review", headers=_auth_headers())
+    assert review.status_code == 409
+    assert (await _state(postgres_engine, meeting_id)) == state
+    transcript = await api_client.get(f"{path}/transcript", headers=_auth_headers())
+    diarization = await api_client.get(f"{path}/diarization", headers=_auth_headers())
+    assert transcript.status_code == 200
+    assert transcript.json()["transcript_id"] == "transcript-meeting-partial"
+    assert diarization.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_complete_legacy_get_while_candidate_inflight_cannot_activate_compatibility(
+    legacy_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
+    api_client: AsyncClient,
+) -> None:
+    await _seed_legacy_stage_rows(postgres_engine)
+    await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    service = _admission_service()
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        await service(session).admit_candidate(
+            OWNER_ID,
+            "meeting-complete",
+            "candidate-new",
+            "sha256:new",
+        )
+    before = await _state(postgres_engine, "meeting-complete")
+    assert before.active_processing_revision_id is None
+    assert before.in_flight_revision_id is not None
+    # Candidate stage rows may exist but compatibility reads stay pinned to 1.
+    async with postgres_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO transcripts (id, meeting_id, language, provider, supports_turns, "
+                "created_at, processing_revision_id) "
+                "SELECT 'transcript-candidate', meeting_id, language, provider, supports_turns, "
+                "created_at, :candidate FROM transcripts WHERE id='transcript-meeting-complete'"
+            ),
+            {"candidate": before.in_flight_revision_id},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO diarizations (id, meeting_id, transcript_id, provider, speaker_count, "
+                "diarization_state, processing_revision, is_legacy, created_at, updated_at, "
+                "processing_revision_id) "
+                "SELECT 'diarization-candidate', meeting_id, 'transcript-candidate', provider, "
+                "speaker_count, diarization_state, 2, false, created_at, updated_at, :candidate "
+                "FROM diarizations WHERE id='diarization-complete'"
+            ),
+            {"candidate": before.in_flight_revision_id},
+        )
+    response = await api_client.get(
+        "/api/v1/meetings/meeting-complete/speaker-review",
+        headers=_auth_headers(),
+    )
+    assert response.status_code == 409
+    assert await _state(postgres_engine, "meeting-complete") == before
+    transcript = await api_client.get(
+        "/api/v1/meetings/meeting-complete/transcript",
+        headers=_auth_headers(),
+    )
+    diarization = await api_client.get(
+        "/api/v1/meetings/meeting-complete/diarization",
+        headers=_auth_headers(),
+    )
+    assert transcript.status_code == diarization.status_code == 200
+    assert transcript.json()["transcript_id"] == "transcript-meeting-complete"
+    assert diarization.json()["diarization_id"] == "diarization-complete"
+
+
+@pytest.mark.asyncio
+async def test_active_review_is_pinned_not_latest_and_owner_isolated(
+    legacy_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
+) -> None:
+    # A persisted review at revision 2 is not necessarily active; only the
+    # processing-state pointer may select a user-visible review.
+    await _seed_legacy_stage_rows(postgres_engine)
+    await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    service = _admission_service()
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        await service(session).admit_candidate(
+            OWNER_ID,
+            "meeting-complete",
+            "candidate-new",
+            "sha256:new",
+        )
+    rows = await _revisions(postgres_engine, "meeting-complete")
+    assert [row.revision for row in rows] == [1, 2]
+    async with postgres_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "UPDATE recording_processing_states SET active_processing_revision_id=:active "
+                "WHERE recording_id='meeting-complete'"
+            ),
+            {"active": rows[0].id},
+        )
+        for ordinal in (1, 2):
+            await connection.execute(
+                text(
+                    "INSERT INTO speaker_reviews (id, meeting_id, processing_revision, status, created_at) "
+                    "VALUES (:id, 'meeting-complete', :revision, 'pending', :now)"
+                ),
+                {"id": f"synthetic-review-{ordinal}", "revision": ordinal, "now": datetime.now(UTC)},
+            )
+    async with factory() as session, session.begin():
+        active = await SpeakerReviewService(session).get_active_review(OWNER_ID, "meeting-complete")
+        foreign = await SpeakerReviewService(session).get_active_review("another-owner", "meeting-complete")
+    assert active is not None
+    assert active["review_id"] == "synthetic-review-1"
+    assert active["revision_id"] == 1
+    assert foreign is None
+
+
+@pytest.mark.asyncio
+async def test_pending_active_review_rejects_new_candidate_without_displacing_review(
+    legacy_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
+) -> None:
+    await _seed_legacy_stage_rows(postgres_engine)
+    await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    legacy_id = (await _revisions(postgres_engine, "meeting-complete"))[0].id
+    async with postgres_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "UPDATE recording_processing_states SET active_processing_revision_id=:revision "
+                "WHERE recording_id='meeting-complete'"
+            ),
+            {"revision": legacy_id},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO speaker_reviews (id, meeting_id, processing_revision, status, created_at) "
+                "VALUES ('pending-review', 'meeting-complete', 1, 'pending', :now)"
+            ),
+            {"now": datetime.now(UTC)},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO speaker_review_items (id, review_id, speaker_key, current_label, "
+                "attribution_state, version) VALUES "
+                "('pending-item', 'pending-review', 'speaker-1', 'Speaker 1', 'uncertain', 1)"
+            )
+        )
+    state_before = await _state(postgres_engine, "meeting-complete")
+    service = _admission_service()
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        try:
+            outcome = await service(session).admit_candidate(
+                OWNER_ID,
+                "meeting-complete",
+                "request-after-review",
+                "sha256:new",
+            )
+        except ValueError:
+            outcome = None
+        assert outcome is None or getattr(outcome, "outcome", None) == "conflict"
+    assert await _state(postgres_engine, "meeting-complete") == state_before
+    assert len(await _revisions(postgres_engine, "meeting-complete")) == 1
+    async with factory() as session, session.begin():
+        active = await SpeakerReviewService(session).get_active_review(OWNER_ID, "meeting-complete")
+    assert active is not None
+    assert active["review_id"] == "pending-review"
+    assert active["remaining_speaker_ids"] == ["speaker-1"]
+
+
+@pytest.mark.asyncio
+async def test_get_first_holds_shared_state_lock_and_pending_review_blocks_admission(
+    legacy_engine: AsyncEngine,
+    postgres_engine: AsyncEngine,
+) -> None:
+    await _seed_legacy_stage_rows(postgres_engine)
+    await _run_migration(postgres_engine, _revision_migration(), "upgrade")
+    legacy_id = (await _revisions(postgres_engine, "meeting-complete"))[0].id
+    async with postgres_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "UPDATE recording_processing_states SET active_processing_revision_id=:revision "
+                "WHERE recording_id='meeting-complete'"
+            ),
+            {"revision": legacy_id},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO speaker_reviews (id, meeting_id, processing_revision, status, created_at) "
+                "VALUES ('read-first-review', 'meeting-complete', 1, 'pending', :now)"
+            ),
+            {"now": datetime.now(UTC)},
+        )
+        await connection.execute(
+            text(
+                "INSERT INTO speaker_review_items (id, review_id, speaker_key, current_label, "
+                "attribution_state, version) VALUES "
+                "('read-first-item', 'read-first-review', 'speaker-1', 'Speaker 1', 'uncertain', 1)"
+            )
+        )
+    factory = async_sessionmaker(postgres_engine, expire_on_commit=False)
+    started = asyncio.Event()
+    release = asyncio.Event()
+    attempted = asyncio.Event()
+    service = _admission_service()
+
+    async def read_first() -> None:
+        async with factory() as session, session.begin():
+            result = await SpeakerReviewService(session).get_active_review(
+                OWNER_ID,
+                "meeting-complete",
+            )
+            assert result is not None and result["review_id"] == "read-first-review"
+            started.set()
+            await asyncio.wait_for(release.wait(), 5)
+
+    async def admit_second() -> Any:
+        await asyncio.wait_for(started.wait(), 5)
+        async with factory() as session, session.begin():
+            attempted.set()
+            try:
+                return await service(session).admit_candidate(
+                    OWNER_ID,
+                    "meeting-complete",
+                    "new-request",
+                    "sha256:new",
+                )
+            except ValueError:
+                return None
+
+    reader = asyncio.create_task(read_first())
+    await asyncio.wait_for(started.wait(), 5)
+    admission = asyncio.create_task(admit_second())
+    await asyncio.wait_for(attempted.wait(), 5)
+    try:
+        await asyncio.sleep(0.1)
+        assert not admission.done(), "GET did not hold the shared processing-state lock"
+    finally:
+        release.set()
+        await reader
+    outcome = await asyncio.wait_for(admission, 5)
+    assert outcome is None or getattr(outcome, "outcome", None) == "conflict"
+    assert len(await _revisions(postgres_engine, "meeting-complete")) == 1
+    assert (await _state(postgres_engine, "meeting-complete")).active_processing_revision_id == legacy_id
