@@ -60,7 +60,7 @@ function renderView(overrides: Partial<{
 }
 
 function mediaElement(kind: "audio" | "video" = "audio"): HTMLMediaElement {
-  return screen.getByTestId(kind === "audio" ? "playback-media" : "playback-video") as HTMLMediaElement;
+  return screen.getByTestId(kind === "audio" ? "playback-audio" : "playback-video") as HTMLMediaElement;
 }
 
 function setMediaTime(media: HTMLMediaElement, seconds: number) {
@@ -227,7 +227,7 @@ describe("MeetingPlaybackView", () => {
 
     const video = screen.getByTestId("playback-media") as HTMLVideoElement;
     expect(video.src).toBe(MUXED_URL);
-    expect(document.querySelector("audio")).toBeNull();
+    expect(screen.queryByTestId("playback-audio")).toBeNull();
     expect(screen.queryByTestId("playback-video")).toBeNull();
     expect(screen.queryByRole("combobox", { name: /quality|resolution/i })).toBeNull();
   });
@@ -240,7 +240,7 @@ describe("MeetingPlaybackView", () => {
     ]) {
       const { unmount } = renderView({ manifest: legacy });
       expect(mediaElement("audio").src).toBe(legacy.audio_source.url);
-      expect(document.querySelector("video")).toBeNull();
+      expect(screen.queryByTestId("playback-media")).toBeNull();
       expect(screen.queryByTestId("playback-video")).toBeNull();
       expect(screen.queryByRole("combobox", { name: /quality|resolution/i })).toBeNull();
       unmount();
