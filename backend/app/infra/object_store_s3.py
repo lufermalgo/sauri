@@ -79,10 +79,30 @@ class S3ObjectStore(ObjectStore):
                 functools.partial(self._client.head_object, Bucket=self._bucket, Key=reference)
             )
         except ClientError as exc:
-            if (exc.response.get("Error", {}).get("Code") == "NoSuchKey"
-                    and exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404):
+            code = exc.response.get("Error", {}).get("Code")
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if status != 404 or code not in {"NoSuchKey", "404"}:
+                raise
+            # A bare HEAD 404 is ambiguous. Verify the bucket is accessible,
+            # then request metadata for this exact key (never download bytes).
+            # S3-compatible HEAD often erases the structured NoSuchKey code;
+            # GetObjectAttributes returns it, including on RustFS.
+            await asyncio.to_thread(
+                functools.partial(self._client.head_bucket, Bucket=self._bucket)
+            )
+            if code == "NoSuchKey":
                 return "missing"
-            raise
+            try:
+                await asyncio.to_thread(functools.partial(
+                    self._client.get_object_attributes, Bucket=self._bucket,
+                    Key=reference, ObjectAttributes=["ObjectSize"],
+                ))
+            except ClientError as attributes_exc:
+                if (attributes_exc.response.get("Error", {}).get("Code") == "NoSuchKey"
+                        and attributes_exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404):
+                    return "missing"
+                raise
+            raise ValueError("conflicting S3 object metadata response") from exc
         return "available"
 
     async def get(self, reference: str) -> bytes:
