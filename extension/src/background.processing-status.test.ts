@@ -31,7 +31,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
   await storeChunk(sessionId, new Blob(["synthetic media"], { type: "video/webm" }));
 
   const fetched: string[] = [];
-  const createTab = vi.fn();
+  const createTab = vi.fn(async () => ({ id: 614 }));
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
     fetched.push(url);
@@ -108,7 +108,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
       expect(fetched).toContain(`http://localhost:8000/api/v1/meetings/${meetingId}`);
       const completion = await getCompletion(sessionId);
       expect(scenario.sameMeeting
-        ? ["processing", "processing_failed", "processing_assets_unavailable", "processing_succeeded"]
+        ? ["processing", "processing_failed", "processing_assets_unavailable", "processing_succeeded", "review_launch_pending", "review_opened"]
         : ["processing_status_unavailable"]).toContain(completion?.status);
     }, { timeout: 2000, interval: 5 });
   }
@@ -168,10 +168,13 @@ it("marks success only after checking completed status, transcript and playable 
   let violations = 0;
   let counterexample = "";
   for (const [index, sessionId] of fc.sample(fc.uuid(), 100).entries()) {
-    const { completion, fetched, meetingId, recordingId, job } = await runScenario(ready, sessionId);
+    const { fetched, meetingId, recordingId, job, createTab } = await runScenario(ready, sessionId);
+    await vi.waitFor(async () => expect((await getCompletion(sessionId))?.status).toBe("review_opened"), { timeout: 2000, interval: 5 });
+    const completion = await getCompletion(sessionId);
     const required = [statusUrl(meetingId), `${statusUrl(meetingId)}/transcript`, `${statusUrl(meetingId)}/playback`];
-    if (job.status !== "done" || completion?.status !== "processing_succeeded" || completion.meetingId !== meetingId ||
-        completion.sessionId !== sessionId || completion.recordingId !== recordingId || required.some(url => !fetched.includes(url))) {
+    if (job.status !== "done" || completion?.status !== "review_opened" || completion.meetingId !== meetingId ||
+        completion.sessionId !== sessionId || completion.recordingId !== recordingId || completion.reviewTabId !== 614 ||
+        createTab.mock.calls.length !== 1 || required.some(url => !fetched.includes(url))) {
       violations++;
       if (!counterexample) counterexample = `${index}: meeting=${meetingId}; status=${completion?.status}; reads=${fetched.join(",")}`;
     }

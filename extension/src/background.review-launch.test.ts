@@ -11,13 +11,14 @@ const sequences = fc.sample(fc.record({
 
 // Only Chrome/HTTP boundaries are doubles. The worker, claim and IndexedDB are real.
 // Do not invent a portal URL: recovery discovers the exact target requested by production.
-async function worker(record: RecordingCompletion, crashAfterCreate = false) {
+async function worker(record: RecordingCompletion, crashAfterCreate = false, alreadyOpen = false) {
   vi.stubGlobal("indexedDB", new IDBFactory());
   vi.stubGlobal("IDBKeyRange", IDBKeyRange);
   await createCompletion(record);
   let startup: () => unknown;
   let alarm: (value: { name: string }) => unknown;
-  const tabs: Array<{ id: number; url: string }> = [];
+  const tabs: Array<{ id: number; url: string }> = alreadyOpen
+    ? [{ id: 614, url: `http://localhost:5173/?meetingId=${encodeURIComponent(record.meetingId)}` }] : [];
   const boundaryErrors: string[] = [];
   const create = vi.fn(async (options: { url?: string }) => {
     const saved = await getCompletion(record.sessionId);
@@ -103,7 +104,8 @@ it("opens exactly one review after verified success through 100 retry/restart se
     for (const event of events) await harness.event(event);
     const saved = await getCompletion(sessionId);
     if (harness.create.mock.calls.length !== 1 || saved?.status !== "review_opened" ||
-        saved.reviewTabId !== 614 || harness.boundaryErrors.length) {
+        saved.reviewTabId !== 614 || harness.boundaryErrors.length ||
+        new URL(harness.tabs[0].url).searchParams.get("meetingId") !== `meeting-${sessionId}`) {
       failures.push(`${sessionId}: creates=${harness.create.mock.calls.length}, status=${saved?.status}, boundary=${harness.boundaryErrors.join(",")}`);
     }
   }
@@ -125,4 +127,29 @@ it("reconciles a pending launch with the existing exact target after interruptio
     }
   }
   expect(failures, `100 executed interruption sequences; first counterexample: ${failures[0]}`).toEqual([]);
+}, 60000);
+
+it("recovers a previously pending exact target without creating a tab (100 sequences)", async () => {
+  const failures: string[] = [];
+  for (const { sessionId, events } of sequences) {
+    const harness = await worker({ ...ready(sessionId), status: "review_launch_pending" }, false, true);
+    for (const event of events) await harness.event(event);
+    const saved = await getCompletion(sessionId);
+    if (harness.create.mock.calls.length || saved?.status !== "review_opened" ||
+        saved.reviewTabId !== 614 || !harness.query.mock.calls.length) failures.push(sessionId);
+  }
+  expect(failures).toEqual([]);
+}, 60000);
+
+it("never repeats an ambiguous Chrome create after its tab disappeared (100 sequences)", async () => {
+  const failures: string[] = [];
+  for (const { sessionId, events } of sequences) {
+    const harness = await worker(ready(sessionId), true);
+    harness.tabs.splice(0); // tab closed between Chrome creating it and worker recovering
+    for (const event of events) await harness.event(event);
+    const saved = await getCompletion(sessionId);
+    if (harness.create.mock.calls.length !== 1 || saved?.status !== "review_launch_pending" ||
+        !saved.reviewCreateAttempted) failures.push(sessionId);
+  }
+  expect(failures).toEqual([]);
 }, 60000);
