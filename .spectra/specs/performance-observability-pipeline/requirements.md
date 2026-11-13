@@ -74,6 +74,7 @@ La petición real de resumen de José María terminó correctamente: aproximadam
 5. THE Telemetria_Local SHALL distinguir costo monetario configurado de consumo local; SHALL NOT inventar tarifas, energía ni costos cuando no exista una fuente.
 6. THE Telemetria_Local SHALL medir consultas/pool DB, profundidad/edad de cola, outboxes pendientes, almacenamiento y latencia HTTP del portal sin texto de SQL con valores ni URLs firmadas.
 7. THE Telemetria_Local SHALL distinguir tiempo percibido por portal/extensión de tiempo del servidor, incluyendo subida, reintentos y espera de respuesta; SHALL NOT capturar pantalla, contenido de formularios, audio ni actividad en sitios ajenos a Sauri.
+8. THE Telemetria_Local SHALL contar discontinuidades, muestras/paquetes descartados, saturación de buffers y errores de decodificación donde la etapa disponga de esos datos, sin almacenar audio ni inventar contadores en capturas ya finalizadas.
 
 ### Requisito 7: Seguridad y privacidad de observabilidad
 **Historia de Usuario:** Como dueño, quiero diagnosticar sin exponer mis reuniones.

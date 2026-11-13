@@ -59,4 +59,6 @@ No es una prueba fallida del candidato. No se cambió facturación, límite de g
 
 ## Resultado de velocidad
 
+Lectura DB explícitamente `BEGIN READ ONLY`: la reunión objetivo conserva1519 turnos, rango0–5.650.000ms, revisión1/ocho hablantes y `prepared_result`/`presentation` nulos. Las1517 asignaciones mencionadas en diagnóstico no son1517 segmentos acústicos originales. Esos segmentos no están disponibles en persistencia para replay fiel; no se reconstruyen a partir de asignaciones y se presentan como originales.
+
 Pendiente de incorporar la entrega T1–T3 de Nahuel. No se declara aún ahorro de tiempo total del resumen ni mejora de precisión acústica.
