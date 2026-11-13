@@ -321,7 +321,7 @@ const apiMocks = api as unknown as {
   getMeeting: (meetingId: string) => Promise<{ id: string; processState: string }>;
   getTranscript: (meetingId: string) => Promise<typeof transcript>;
   getSpeakerReview: (meetingId: string) => Promise<typeof review>;
-  getDiarization: (meetingId: string) => Promise<typeof diarization>;
+  getDiarization: (meetingId: string) => Promise<api.MeetingDiarization>;
 };
 
 async function uploadSyntheticRecording(assertUploadControls?: () => void) {
@@ -373,6 +373,60 @@ describe("SpeakerRecognitionTestScreen processing and transcript inspection", ()
     expect(document.querySelector("audio, video")).toHaveAttribute("hidden");
     expect(getSpeakerReview).toHaveBeenCalledWith(meetingId);
     expect(await screen.findByText(/pending/i)).toBeVisible();
+  });
+
+  it("keeps observing speakers after ASR completes and opens playback only once they arrive", async () => {
+    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    const getDiarization = vi.spyOn(apiMocks, "getDiarization")
+      .mockRejectedValueOnce(new Error("Error 404"))
+      .mockResolvedValue(diarization);
+    vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
+
+    await uploadSyntheticRecording();
+    expect(await screen.findByText("La propuesta queda para el viernes.")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Separating speakers");
+    expect(screen.queryByRole("link", { name: "Open playback and speaker paragraphs" })).not.toBeInTheDocument();
+
+    expect(await screen.findByRole("link", { name: "Open playback and speaker paragraphs" }, { timeout: 4000 })).toBeVisible();
+    expect(getDiarization).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Separating speakers…")).not.toBeInTheDocument();
+  });
+
+  it("does not mistake a successful HTTP response for completed speaker separation", async () => {
+    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization")
+      .mockResolvedValueOnce({ speakers: [], assignments: [], diarization_state: "processing" })
+      .mockResolvedValue({ ...diarization, diarization_state: "completed" });
+    vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
+    await uploadSyntheticRecording();
+    expect(await screen.findByText("Separating speakers…")).toBeVisible();
+    expect(await screen.findByRole("link", { name: "Open playback and speaker paragraphs" }, { timeout: 4000 })).toBeVisible();
+  });
+
+  it("observes latest_attempt when there is no completed generation yet", async () => {
+    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization")
+      .mockResolvedValueOnce({ speakers: [], assignments: [], diarization_state: null,
+        latest_attempt: { processing_revision: 1, diarization_state: "processing", failure_cause: null } })
+      .mockResolvedValue({ ...diarization, diarization_state: "completed" });
+    vi.spyOn(apiMocks, "getSpeakerReview").mockResolvedValue(review);
+    await uploadSyntheticRecording();
+    expect(await screen.findByText("Separating speakers…")).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Open playback and speaker paragraphs" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Open playback and speaker paragraphs" }, { timeout: 4000 })).toBeVisible();
+  });
+
+  it("reports failed separation without hiding the completed transcript or offering ready playback", async () => {
+    vi.spyOn(apiMocks, "getMeeting").mockResolvedValue(meeting("completed"));
+    vi.spyOn(apiMocks, "getTranscript").mockResolvedValue(transcript);
+    vi.spyOn(apiMocks, "getDiarization").mockResolvedValue({ speakers: [], assignments: [], diarization_state: "failed" });
+    await uploadSyntheticRecording();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Speaker separation failed");
+    expect(screen.getByText("La propuesta queda para el viernes.")).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Open playback and speaker paragraphs" })).not.toBeInTheDocument();
   });
 
   it("keeps the completed transcript visible while speaker review is not yet available", async () => {

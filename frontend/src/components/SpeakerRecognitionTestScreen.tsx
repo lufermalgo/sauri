@@ -142,6 +142,12 @@ function formatTimestamp(milliseconds: number): string {
   return `${minutes}:${seconds}`;
 }
 
+function diarizationState(diarization: MeetingDiarization | null): string {
+  if (!diarization) return "pending";
+  return diarization.diarization_state ?? diarization.latest_attempt?.diarization_state
+    ?? (diarization.assignments.length > 0 ? "completed" : "pending");
+}
+
 function withSpeakerLabels(
   transcript: MeetingTranscript,
   diarization: MeetingDiarization | null,
@@ -209,6 +215,23 @@ export function SpeakerRecognitionTestScreen() {
       }
     }
 
+    async function observeDiarization() {
+      try {
+        const result = await getDiarization(meetingId);
+        if (!active) return;
+        setSpeakerDiarization(result);
+        const state = diarizationState(result);
+        if (state === "failed") return;
+        if (state !== "completed") {
+          timeout = window.setTimeout(observeDiarization, PROCESSING_POLL_INTERVAL_MS);
+          return;
+        }
+        void observeSpeakerReview();
+      } catch {
+        if (active) timeout = window.setTimeout(observeDiarization, PROCESSING_POLL_INTERVAL_MS);
+      }
+    }
+
     async function observeProcessing() {
       try {
         const meeting = await getMeeting(meetingId);
@@ -216,14 +239,10 @@ export function SpeakerRecognitionTestScreen() {
         setMeetingProcessState(meeting.processState);
 
         if (meeting.processState === "completed") {
-          const [completedTranscript, completedDiarization] = await Promise.all([
-            getTranscript(meetingId),
-            getDiarization(meetingId).catch(() => null),
-          ]);
+          const completedTranscript = await getTranscript(meetingId);
           if (!active) return;
           setTranscript(completedTranscript);
-          setSpeakerDiarization(completedDiarization);
-          void observeSpeakerReview();
+          void observeDiarization();
           return;
         }
 
@@ -320,6 +339,9 @@ export function SpeakerRecognitionTestScreen() {
     }
   }
 
+  const speakerState = diarizationState(speakerDiarization);
+  const speakerSeparationPending = !["completed", "failed"].includes(speakerState);
+
   const displayedTranscript = transcript
     ? withSpeakerLabels(transcript, speakerDiarization, speakerReview)
     : null;
@@ -372,7 +394,13 @@ export function SpeakerRecognitionTestScreen() {
         <>
           <section aria-labelledby="test-transcript-heading">
             <h3 id="test-transcript-heading">Transcript</h3>
-            <a href={`?meetingId=${selectedMeetingId}`}>Open playback and speaker paragraphs</a>
+            {speakerSeparationPending ? (
+              <p role="status">Separating speakers…</p>
+            ) : speakerState === "failed" ? (
+              <p role="alert">Speaker separation failed. The transcript is still available.</p>
+            ) : (
+              <a href={`?meetingId=${selectedMeetingId}`}>Open playback and speaker paragraphs</a>
+            )}
             <ol>
               {displayedTranscript.segments.map((segment) => (
                 <li key={segment.id}>
