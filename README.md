@@ -69,6 +69,19 @@ A host-only `localhost` check does not establish container connectivity. Summari
 cloud provider or fallback; broker retries and terminal failure retain only request status,
 not provider diagnostics. See `.env.example` for the variable names.
 
+`SUMMARIZATION_TIMEOUT_SECONDS` is the finite, positive per-attempt generation budget
+(default **900 seconds**, including HTTP setup and response wait). Non-streaming local
+inference may take more than a minute before sending response headers; the HTTP read
+budget follows this setting while connection setup remains limited to 10 seconds.
+Empty, non-numeric, non-positive and non-finite values prevent worker startup. Expiry
+uses the existing broker retry/terminal-failure path; it does not truncate the transcript
+or change the model, prompt, template, or result schema. Keep this budget below the
+broker's configured consumer acknowledgement timeout (RabbitMQ default: 1800 seconds),
+allowing time for database work. Raising it is not a guarantee of model latency/quality.
+This setting is read at worker startup. Do not recreate a shared worker while ASR or
+diarization jobs are active: wait for the worker to drain and coordinate the update;
+changing `.env` alone does not reconfigure a running process.
+
 ### Native Mac GPU engines
 
 Fer confirmed the local deployment direction on 2026-11-12: keep the API, worker, PostgreSQL,

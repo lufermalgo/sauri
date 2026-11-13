@@ -33,4 +33,8 @@ def create_summarization_engine() -> OllamaSummarizationEngine:
         raise ValueError("SUMMARIZATION_OLLAMA_URL must be a local HTTP endpoint URL with a port")
     if _MODEL.fullmatch(model) is None:
         raise ValueError("SUMMARIZATION_OLLAMA_MODEL must name the installed local model")
-    return OllamaSummarizationEngine(url.rstrip("/"), model)
+    try:
+        timeout_seconds = float(os.getenv("SUMMARIZATION_TIMEOUT_SECONDS", "900"))
+    except ValueError:
+        raise ValueError("SUMMARIZATION_TIMEOUT_SECONDS must be finite and positive") from None
+    return OllamaSummarizationEngine(url.rstrip("/"), model, timeout_seconds=timeout_seconds)

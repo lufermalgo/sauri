@@ -195,6 +195,8 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 ### T14: GREEN — Implement local Ollama engine and fail-closed configuration
 
+**Delta 2026-11-13 (T14/T26, task_b7a67614c4f7420e, #281/#282, base #899 `afa74e3`):** corrección del timeout no streaming de 60s dentro del alcance autorizado; sin nueva tarjeta ni ejecutor paralelo. Bugfix y diseño incremental en `bugfix.md` / `design.md`; RED 12 fallas → GREEN 12, regresión backend 91 passed/1 skipped y HTTP loopback real con espera 61s OK. Detalle, límites y actualización segura sin interrumpir ASR en `timeout-evidence-20261113.md`. Entrega: PR apilado hacia #899, sin merge/despliegue; Fer integra, Ansel coordina y valida runtime/navegador. No se repitió generación real.
+
 **Tracking:** Issue #282 · Card task_ae51c57ca7ed46e4
 
 **Archivo:** `backend/app/summaries/engine.py`; `backend/app/summaries/factory.py`; `backend/app/summaries/worker.py`; corresponding tests in `backend/tests/summaries/test_worker.py` and `backend/tests/integration/test_summary_pipeline.py`

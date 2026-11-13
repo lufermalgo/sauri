@@ -1094,3 +1094,21 @@ These amendments are normative for implementation and supersede any conflicting 
    The repo contains configurable ASR
    factories/providers but no summary engine implementation or summary provider endpoint;
    `SummarizationEngine` is a new adapter seam, not a claim of verified provider availability.
+
+### Delta T14/T26 — presupuesto local finito (2026-11-13)
+
+Ver `bugfix.md`. El límite HTTP fijo de 60s cancela la evaluación no streaming antes de
+recibir cabeceras. `create_summarization_engine()` lee `SUMMARIZATION_TIMEOUT_SECONDS`
+(default 900s); el constructor rechaza números no positivos/no finitos. El motor aplica
+`asyncio.timeout` al intento HTTP completo y el mismo límite de lectura HTTP, con conexión
+limitada a 10s. Un cliente inyectado recibe los mismos límites. No cambia el contrato
+`generate(transcript_text, instructions_snapshot)`, payload, modelo ni persistencia.
+
+900s es un presupuesto operativo conservador, no una medición de finalización del caso real:
+da margen a evaluación/generación local y queda por debajo del ack timeout RabbitMQ default
+1800s; una configuración distinta exige comprobar el límite real del broker. Se descartan
+espera infinita (bloquea consumidor), cambiar a streaming (más complejidad/protocolo) y
+recortar input/cambiar modelo (alteran producto). Vencimiento propaga `TimeoutError`; HTTP y
+validación canónica conservan sus errores y el retry/terminal vigente. Propiedades: contenido
+íntegro, configuración local fail-closed y ausencia de artefacto/claim al fallar, cubiertas por
+`test_engine_timeout.py` y `test_worker.py`. No cambian datos ni transacciones.
