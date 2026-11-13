@@ -72,4 +72,19 @@ Payloads idénticos en el primer caso. En el segundo se compararon1519 turnos co
 
 Fuente: informe `read-only-hotspots-178f893.md` en temporal del hilo, con evidencias tool jobs `job_6f7f4bb10a3248e0` (payload), `job_669cc508ba9446f2` (consultas corregidas), `job_6b43f6478fcc412b` (hashes/runtime). Son experimentos de candidato, **no mejoras implementadas/instaladas** ni benchmark de inferencia o UI. T13 agrega la implementación comprobable de pooling al backlog. No se incorpora el microcache solo para aparentar una mejora sustancial.
 
-La pieza de atribución T1–T3 fue encargada después de esa revisión; aún no se recibió entrega de implementación. Se mantiene explícitamente pendiente, sin fabricar commit ni declarar ahorro de tiempo total del resumen ni mejora de precisión acústica.
+### Aceleración implementada y verificada antes de22:40Z
+
+Nahuel entregó T1–T3 en commit remoto `462886ed34ca6da850f797e9bd92c77d585fe81a`. Ansel revisó código/índice de cobertura y oracle independiente y lo incorporó mediante cherry-pick `e51e2ec265305b7de02b2f0fc42c7da56c739124` a este candidato. Se mantienen orden, objetos Speaker originales, desempates, multiplicidad acumulada y unión exclusiva; no cambia clustering ni modelos.
+
+Ansel repitió el benchmark con `PYTHONPATH=$PWD/backend /Users/lufermalgo/Proyectos/sauri/backend/.venv/bin/python _tools/benchmark-assignment.py`. Incluye construcción del índice, warmup1 y7 muestras por variante alternadas. Entrada **sintética** anónima determinista seed907:1500turnos/2154segmentos/4hablantes; no audio, no datos inventados presentados como reales. Salidas idénticas en ambos modos. Archivo durable `assignment-benchmark.json` conserva versiones, hash, entorno y todas las muestras.
+
+| Modo | Mediana base | Mediana indexada | Aceleración de etapa | Reducción |
+|---|---:|---:|---:|---:|
+| Acumulado |178,867ms|4,632ms|38,62x|97,41%|
+| Exclusivo |178,207ms|4,356ms|40,91x|97,56%|
+
+Un primer comando de Ansel omitió PYTHONPATH y cargó el backend del checkout raíz desde el venv editable: TypeError en `require_exclusive`. No se usó esa ejecución como medición; se corrigió PYTHONPATH al worktree y se obtuvo la comparación de arriba.
+
+Validación final de Ansel en el candidato integrado: **195 passed,1 skipped**,10,27s, suites completas summaries+diarization con PostgreSQL/RabbitMQ temporales reales. Recursos exclusivos eliminados con `docker rm -fv`; consulta por etiqueta vacía después. Además167passed/1skipped focales y Ruff de los5 archivos de código/test/benchmark cambiados PASS; Mypy de4 archivos de código/tests cambiados PASS. El oracle diferencial genera400 ejemplos en ambos modos e inputs degenerados sin mutación. Sin cambios TS/Rust ni pantallas.
+
+**Límite funcional:** mejora CPU de `assign_turns`, usada en el camino sin `prepared_result`; la ruta preparada reutiliza otra salida y no recibe esta aceleración. No se ha medido mejora del tiempo total de transcripción/resumen, ni precisión acústica. La ganancia absoluta de esta carga es aproximadamente174ms, no minutos. El candidato está publicado, no instalado ni integrado en main; CI sigue bloqueado por facturación de GitHub. No se declara reescritura completa.

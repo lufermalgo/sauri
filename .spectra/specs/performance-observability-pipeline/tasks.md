@@ -23,21 +23,21 @@ Primera unidad T1–T4: Ansel integra la entrega de Nahuel en la rama candidata 
 **Acción:** Conservar en el test un oracle independiente del algoritmo previo; generar con Hypothesis turnos/segmentos válidos desordenados, huecos, duplicados, solapamientos y hablantes sin segmentos. Probar ambos modos, no mutación, desempates y turnos degenerados. Registrar ejecución antes de optimizar.
 **Criterio de Completado:** Suite pasa sobre implementación base; cubre P1. El test exige equivalencia, no una implementación particular.
 **Dependencias:** Ninguna.
-**Estado:** En ejecución por Nahuel, sesión performance-first-slice; Ansel verifica entrega.
+**Estado:** Verificado en candidato: oracle diferencial400ejemplos/both modes; Ansel integró462886e comoe51e2ec. Ver evidence.md.
 
 ### T2: Indexar consultas de solapamiento
 **Archivo:** `backend/app/diarization/assignment.py`.
 **Acción:** Reemplazar recorrido total por índice temporal por hablante construido una vez por llamada; conservar exactamente multiplicidad en acumulado y unión en exclusivo, orden de turnos y desempates por sequence. Usar enteros, sin estado global ni acceso a DB.
 **Criterio de Completado:** T1, `tests/diarization/test_assignment_property.py` y `tests/diarization/test_exclusive_assignment.py` pasan; revisión confirma contrato público idéntico. P1.
 **Dependencias:** T1.
-**Estado:** Pendiente.
+**Estado:** Implementado y verificado en e51e2ec; no instalado.
 
 ### T3: Benchmark reproducible de etapa
 **Archivo:** `_tools/benchmark-assignment.py` (nuevo), `.spectra/specs/performance-observability-pipeline/evidence.md`.
 **Acción:** Comparar base y optimizada con misma entrada, warmup y 7 repeticiones alternadas. Ofrecer entrada JSON de intervalos sin texto para replay; etiquetar generación sintética de manera explícita. Verificar igualdad antes de medir. Reportar muestras, mediana, ratio y tamaño de entrada sin IDs personales. No derivar segmentos reales desde asignaciones finales.
 **Criterio de Completado:** Comando reproducible y salida real; reducción >=20% de mediana de etapa para promover, sin extrapolación al resumen ni al pipeline completo. P2/P7.
 **Dependencias:** T2.
-**Estado:** Pendiente.
+**Estado:** Verificado por Ansel:38,62x/40,91x en carga sintética, salidas iguales; assignment-benchmark.json.
 
 ### T4: Regresión y publicación de primera unidad
 **Archivo:** `backend/tests/diarization/`, `.spectra/specs/performance-observability-pipeline/evidence.md`.
