@@ -2,7 +2,7 @@
 
 ## Estado y autoridad
 
-Requisitos aprobados por merge #819 (`392a958`); diseño aprobado por merge #820 (`9632bcd0d2c975b323875bf3ee69cebd452e93fb`, 12-11-2026 23:27 UTC). Issue padre #818; APX `task_9e74a2d278d648ad`. Esta fase planifica implementación: ningún checkbox acredita código, integración ni aceptación de Fer. Pendiente revisión/aprobación del plan antes de implementar. Los merges permanecen reservados a Fer.
+Requisitos aprobados por merge #819 (`392a958`); diseño aprobado por merge #820 (`9632bcd0d2c975b323875bf3ee69cebd452e93fb`, 12-11-2026 23:27 UTC). Issue padre #818; APX `task_9e74a2d278d648ad`. Plan aprobado por Fer mediante merge #825 (`3161afaaf991679abc1a77366ad4ebbe7e4ec5b3`, 12-11-2026 23:47 UTC). Ningún checkbox acredita integración ni aceptación de Fer. Los merges permanecen reservados a Fer.
 
 Alcance: servir el portal construido con el núcleo Docker, conservar autenticación/API/S3 existentes, motores nativos y validación aislada con limpieza segura. No rediseñar UI, crear identidad nueva, modificar políticas, migrar datos, publicar en Internet ni descargar modelos. No ejecutar sobre el entorno personal del dueño.
 
@@ -24,7 +24,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 1.1: RED del contrato estático y proxy (P1, P3, P5)
 
-- [ ] Pendiente.
+- [x] RED observado por ausencia de `.dockerignore` y entrega Docker. Harness real en `_tools/test_portal_container.py`, #827; API doble explícita, no integración del backend.
 
 **Archivo:** `_tools/test_portal_container.py` (crear).
 **Acción:** Crear pruebas con librería estándar contra una imagen candidata y API de prueba explícita: `/` y ruta SPA válida entregan HTML construido, assets reales responden y asset inexistente devuelve 404; `/portal-health` responde local y `/api-health` reenvía `/health`; `/api/` conserva ruta/query/Authorization y códigos/cuerpos 401/403/404/422/500 sin fallback HTML 200. API no disponible produce 502/504, no éxito. Verificar configuración de buffering, límite de cuerpo y tiempos mediante `nginx -T`. Añadir inspección de runtime/dist y contexto excluido con una cadena privada sintética, nunca secretos reales. Dobles de API solo prueban el proxy y se etiquetan como tales.
@@ -33,7 +33,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 1.2: Construir y servir portal sin Vite (R1.1–1.3, R2.1–2.4)
 
-- [ ] Pendiente.
+- [x] Implementado y validado en rama #827: Node/Nginx con digests fijados, contexto default-deny, Compose loopback, proxy y health diferenciados. Cuatro pruebas Docker GREEN, `nginx -t/-T` e inspección de contexto/runtime. No integrado ni aceptado como producto.
 
 **Archivo:** `frontend/Dockerfile`, `frontend/nginx.conf`, `.dockerignore`, `docker-compose.yml`.
 **Acción:** Imagen multietapa Node 22 Alpine → Nginx stable Alpine; resolver digests reales y fijarlos antes de publicación. Usar contexto raíz, manifiestos de workspaces/lock, `npm ci`, fuentes frontend/shared-types y `VITE_API_BASE_URL='' npm run build --workspace frontend`; copiar solo dist/configuración al runtime. Excluir `.git`, `.worktrees`, `.apc`, `.env*`, node_modules, cachés, medios y QA del contexto sin excluir fuentes/manifiestos necesarios. Implementar `/portal-health`, `/api-health`, `/api/` sin URI final en proxy, `/assets/` con 404 y SPA con index no-cache. Mantener Authorization, HTTP/1.1, sin caché API ni directory listing, `client_max_body_size 0`, `proxy_request_buffering off`, connect 5s/read-send 3600s. Agregar servicio portal en sauri-net, depends_on api, publicación `127.0.0.1:${PORTAL_PORT:-5173}:80`, healthcheck estático cada 10s/timeout 3s/6 reintentos. No alterar servicios/volúmenes existentes ni `frontend/src/api.ts`; S3 conserva enlace firmado directo.
@@ -42,7 +42,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 1.3: Verificar build, tipos y límites de imagen (P1–P3, P5)
 
-- [ ] Pendiente.
+- [x] `npm ci`, frontend typecheck, 92 tests y build PASS; Compose config PASS con valores sintéticos. Suite Docker final: 4/4 PASS, limpieza verificada, 0 contenedores/volúmenes/cache al terminar (imagen base compartida del builder conservada). Navegador APX verificó login construido y recarga SPA; no autenticación backend ni reproducción. Avisos npm heredados: 10 en herramientas, 0 con `npm audit --omit=dev`. #827 / PR #829, publicado; pendiente CI remoto y merge de Fer.
 
 **Archivo:** `_tools/test_portal_container.py`, `frontend/package.json`, `package-lock.json` (lectura de comandos/lock; no cambio de dependencias previsto).
 **Acción:** Ejecutar `npm ci`, `npm run typecheck --workspace frontend`, `npm run test --workspace frontend`, `npm run build --workspace frontend`, pruebas 1.1 e inspección del build/contexto. Guardar digest, commit, comandos, diff y resultados sin variables privadas. Revisar composición efectiva para confirmar URLs nativas y controles existentes, no inferir GPU del nombre del servicio.
@@ -53,7 +53,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 2.1: RED de arranque y disponibilidad diferenciada (P2, P6)
 
-- [ ] Pendiente.
+- [x] RED observado: falta portal/puerto efectivo y API caída producía éxito. Harness extendido #830; dobles explícitos, no integración real.
 
 **Archivo:** `_tools/test_compose_bringup.py`.
 **Acción:** Extender harness existente para exigir portal en último paso, bucket y migraciones antes del arranque final, selección de COMPOSE_PROJECT_NAME/COMPOSE_FILE preservada incluso antes de stop, espera HTTP acotada a 60s y fallo no cero por bucket/migración/HTTP. Portal positivo con API caída no da éxito; mensaje final no acredita motores/inferencia. Ningún escenario borra datos, ejecuta prune o make clean.
@@ -62,7 +62,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 2.2: Integrar portal y espera HTTP al arranque (R1.1, R3.1–3.3)
 
-- [ ] Pendiente.
+- [x] Implementado #830: portal último, puerto Compose efectivo, HTTP 200 con plazo común 60s, fallo por etapa, mensaje de inferencia no verificada. Suite 11/11 y `bash -n` PASS. No ejecutado en entorno personal ni integrado.
 
 **Archivo:** `_tools/compose-bringup.sh`.
 **Acción:** Conservar credenciales → stop api/worker del proyecto seleccionado → infraestructura → bucket → migraciones → api/worker/portal. Añadir espera hasta 60s de `/portal-health` y `/api-health` usando puerto efectivo, fallar identificando etapa sin exponer secretos. Mantener errores/selección Compose y protecciones de credenciales. Mensaje de éxito limitado a portal/núcleo, inferencia por verificar aparte. No iniciar/parar motores ni recrear volúmenes.
@@ -71,7 +71,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 2.3: Verificar secuencia y configuración efectiva (P2, P6)
 
-- [ ] Pendiente.
+- [x] Harness completo 11/11 PASS, 62.748s, incluyendo timeout real de ~60s y selección Compose antes de stop. `bash -n`, Compose config con variables sintéticas y diff PASS. Modo ejecutable 100755 preservado. Publicación U2 #830; integración real de conexiones pendiente U4.
 
 **Archivo:** `_tools/test_compose_bringup.py`, `docker-compose.yml` (verificación).
 **Acción:** Ejecutar suite completa del script y `docker compose ... config --quiet` con valores sintéticos. Comprobar preservación de servicios, volúmenes, URLs/contratos de motores y ausencia de migraciones nuevas. Revisar diff y publicar U2 vinculado a U1/#818.
@@ -82,7 +82,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 3.1: RED de identidad, aislamiento y limpieza (P7–P8)
 
-- [ ] Pendiente.
+- [x] RED por ausencia de implementación y GREEN posterior; #833. Suite final 14/14, con 120 combinaciones de propiedad. Incluye entorno sin claves heredadas, clave sintética con formato real, configuración fallida, rechazo de recursos no inventariados y daemon inaccesible. Dobles explícitos, no evidencia Docker.
 
 **Archivo:** `_tools/test_validate_local_platform.py` (crear).
 **Acción:** Probar modos create/check/cleanup, runId de 12 hex y proyecto exacto, inventario schemaVersion 1, puertos libres y fallos por conflicto. Generar con unittest.subTest al menos 100 combinaciones de ID/etiqueta/proyecto: eliminar solo coincidencia de inventario Y etiqueta Compose; faltar inventario, etiqueta ajena o ID divergente rechazan sin borrado. Probar cleanup repetido, cancelación, fallo parcial durante create, secretos ausentes, override sin volúmenes externos/nombres fijos ni mounts del dueño. No admitir prune ni limpieza por prefijo. Usar dobles para estos límites, no para acreditar Docker.
@@ -91,7 +91,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 3.2: Implementar inventario QA y eliminación segura (R4.1–4.3)
 
-- [ ] Pendiente.
+- [x] #833: create/check/cleanup, inventario privado externo, claves sintéticas y puertos loopback propios; limpieza por ID + ambas etiquetas, preflight antes de borrar, métricas y diagnóstico sin claves. RabbitMQ usa volumen QA explícito etiquetado para evitar el volumen anónimo de su imagen. Imágenes compartidas y build cache se conservan según diseño; no se ejecuta prune. Implementado y validado, no integrado.
 
 **Archivo:** `_tools/validate-local-platform.py` (crear).
 **Acción:** Librería estándar Python, modos create/check/cleanup sin proyecto principal por defecto. Crear runId aleatorio y carpeta temporal externa al repo con override, secretos sintéticos e inventario del diseño (commit, fecha, composeFiles, IDs, puertos, checks con capa/resultado/evidencePath). Reemplazar publicaciones, no sumarlas: portal 15173/API 18000/PG 15432/S3 19000/consola 19001/AMQP 15673/admin 15674, todas loopback; si ocupadas seleccionar bloque libre y registrarlo sin detener al ocupante. Selección `-p` y archivos explícitos en cada comando; verificar config antes de crear. Worker monta solo secretos sintéticos de esa ejecución. Inventariar recursos antes/después y también al fallar parcialmente. Registrar espacio antes/después, no tokens ni URLs firmadas completas. Cleanup verifica inventario y etiqueta exactos por ID antes de borrar contenedores/redes/volúmenes temporales; rechaza ambigüedad, es idempotente y no elimina imágenes compartidas/cache. Ejecutar cleanup en cierre normal, error e interrupción y permitir repetición explícita desde inventario persistido.
@@ -100,7 +100,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 3.3: Validar ciclo real y recursos residuales (P7–P8)
 
-- [ ] Pendiente.
+- [x] Ciclo Docker real normal `cb04e1c55347`: portal/API HTTP 200, cleanup y repetición PASS. Fallo controlado `0550329644fa`: salida 1 esperada, cleanup automático y repetición PASS. Verificación externa final: 0 contenedores, 0 volúmenes, 0 redes de ambas ejecuciones. No había recursos de ejecución ajenos en la línea base de estos ciclos; sin motores ni datos personales. Evidencias privadas en scratch APX `th_be8ad158ded84cd3`: inventarios de ambos runId, métricas before/after y logs `u3-real-fixed.log`/`u3-controlled-failure.log`. Primer ensayo falló por formato de clave sintética y detectó volumen anónimo RabbitMQ; corregidos y repetidos los ciclos, sin residuo. Eliminación puntual del volumen inicial respaldada por evento mount cuyo container ID figura en inventario, no por prefijo. Métrica final global: imágenes 2.227GB y cache 953.9MB conservadas; no confundir limpieza de ejecución con ausencia de imágenes/cache. Python unittest 14/14 y py_compile PASS. Pendiente publicación/CI/merge; no acredita DB/S3/cola funcionales ni inferencia.
 
 **Archivo:** `_tools/test_validate_local_platform.py`, `_tools/validate-local-platform.py`.
 **Acción:** Ejecutar suite; ciclo real create/check/cleanup y repetir cleanup. Inventariar recursos ajenos antes y después sin cambiarlos; comprobar cero recursos QA residuales. Ensayar un fallo controlado de validación y verificar eliminación posterior. Comparar métricas Docker sin atribuir espacio global exclusivamente a Sauri.
@@ -191,9 +191,9 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 | Unidad | Issue | PR / commit | Estado real |
 |--------|-------|-------------|-------------|
-| Plan | #818 | PR #825 (`docs/local-platform-tasks`) | Publicado; pendiente aprobación |
-| U1 | Al activar | — | No iniciada |
-| U2 | Al activar | — | No iniciada |
-| U3 | Al activar | — | No iniciada |
+| Plan | #818 | PR #825, merge `3161afa` | Aprobado e integrado |
+| U1 | #827 | PR #829; implementación `87f16f2` | Publicado y validado localmente; CI/merge pendientes |
+| U2 | #830 | `feat/local-platform-bringup`, apilada sobre #829 | Implementado y validado localmente; no integrado |
+| U3 | #833 | `feat/local-platform-qa`, apilada sobre #832 | Implementado; 14 tests y dos ciclos Docker con limpieza PASS; no integrado |
 | U4 | Al activar | — | No iniciada |
 | U5 | #818 / APX padre | — | No iniciada |
