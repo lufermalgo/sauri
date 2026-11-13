@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +36,7 @@ from app.infra.models import (
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.meetings import service as meeting_service
+from app.meetings.recovery_service import DisabledRecoveryResult, MeetingRecoveryService
 from app.meetings.service import (
     delete_meeting,
     get_meeting,
@@ -177,6 +178,25 @@ async def rename_meeting_endpoint(
             updated = await rename_meeting(session, meeting_id, rename_input.title)
             assert updated is not None
             return {"meeting_id": updated.id, "title": updated.title}
+    finally:
+        await engine.dispose()
+
+
+@router.post("/{meeting_id}/recover")
+async def recover_meeting_endpoint(
+    meeting_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    idempotency_key: Annotated[str, Header(min_length=1, max_length=128)],
+) -> DisabledRecoveryResult:
+    """Owner-only disabled precursor; no recovery is accepted or dispatched."""
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session, session.begin():
+            await _get_authorized_meeting(
+                session, meeting_id, user, f"POST /api/v1/meetings/{meeting_id}/recover"
+            )
+            return await MeetingRecoveryService().recover(meeting_id, user.id, idempotency_key)
     finally:
         await engine.dispose()
 

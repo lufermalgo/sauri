@@ -76,12 +76,18 @@ async def _database_snapshot(api_db_url: str, meeting_id: str) -> tuple[tuple[ob
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", [None, "disabled", "pilot", "invalid"])
 async def test_disabled_owner_recovery_is_content_free_noop(
     api_client: AsyncClient,
     api_db_url: str,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    mode: str | None,
 ) -> None:
-    monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", "disabled")
+    if mode is None:
+        monkeypatch.delenv("SAURI_MANUAL_RECOVERY_MODE", raising=False)
+    else:
+        monkeypatch.setenv("SAURI_MANUAL_RECOVERY_MODE", mode)
     monkeypatch.delenv("SAURI_RECOVERY_PILOT_MEETING_ID", raising=False)
     queue = type("Queue", (), {
         "connect": AsyncMock(),
@@ -91,6 +97,8 @@ async def test_disabled_owner_recovery_is_content_free_noop(
     monkeypatch.setattr(router, "_get_queue", lambda: queue)
 
     meeting_id = await _create_meeting(api_db_url)
+    if mode == "pilot":
+        monkeypatch.setenv("SAURI_RECOVERY_PILOT_MEETING_ID", meeting_id)
     before = await _database_snapshot(api_db_url, meeting_id)
     response = await api_client.post(
         f"{BASE_PATH}/{meeting_id}/recover",
@@ -102,6 +110,8 @@ async def test_disabled_owner_recovery_is_content_free_noop(
     body = response.json()
     assert body["status"] == "pilot_not_armed"
     assert body["reason_code"] == "pilot_not_armed"
+    assert set(body) == {"status", "reason_code"}
+    assert PRIVATE_TITLE not in caplog.text
     assert PRIVATE_TITLE not in response.text
     assert await _database_snapshot(api_db_url, meeting_id) == before
     queue.publish.assert_not_awaited()
@@ -133,6 +143,39 @@ async def test_non_owner_recovery_is_nondisclosing_not_found(
     assert response.json()["detail"] == "Meeting not found"
     assert PRIVATE_TITLE not in response.text
     assert meeting_id not in response.text
+    absent = await api_client.post(
+        f"{BASE_PATH}/{uuid.uuid4()}/recover",
+        headers={**_headers(OTHER_ID), "Idempotency-Key": str(uuid.uuid4())},
+    )
+    assert (absent.status_code, absent.json()) == (response.status_code, response.json())
     assert await _database_snapshot(api_db_url, meeting_id) == before
     queue.publish.assert_not_awaited()
     queue.connect.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recovery_requires_authentication(api_client: AsyncClient, api_db_url: str) -> None:
+    meeting_id = await _create_meeting(api_db_url)
+    before = await _database_snapshot(api_db_url, meeting_id)
+    response = await api_client.post(
+        f"{BASE_PATH}/{meeting_id}/recover", headers={"Idempotency-Key": "synthetic-request"}
+    )
+    assert response.status_code == 401
+    assert PRIVATE_TITLE not in response.text
+    assert await _database_snapshot(api_db_url, meeting_id) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", [None, "", "x" * 129])
+async def test_recovery_requires_bounded_idempotency_key(
+    api_client: AsyncClient, api_db_url: str, key: str | None,
+) -> None:
+    meeting_id = await _create_meeting(api_db_url)
+    before = await _database_snapshot(api_db_url, meeting_id)
+    headers = _headers(OWNER_ID)
+    if key is not None:
+        headers["Idempotency-Key"] = key
+    response = await api_client.post(f"{BASE_PATH}/{meeting_id}/recover", headers=headers)
+    assert response.status_code == 422
+    assert PRIVATE_TITLE not in response.text
+    assert await _database_snapshot(api_db_url, meeting_id) == before
