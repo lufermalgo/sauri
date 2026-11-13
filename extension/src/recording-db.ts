@@ -107,6 +107,25 @@ export async function bindRecordingId(sessionId: string, meetingId: string, reco
   });
 }
 
+export async function setUploadOutcome(
+  sessionId: string, meetingId: string,
+  status: "uploading" | "upload_succeeded" | "upload_failed" | "upload_outcome_unavailable",
+): Promise<void> {
+  return completionTransaction("readwrite", (store, result, fail) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (!record || record.meetingId !== meetingId ||
+          (status === "upload_succeeded" && !record.recordingId)) {
+        fail(new Error("Upload outcome identity mismatch"));
+        return;
+      }
+      store.put({ ...record, status, updatedAt: Date.now() });
+      result(undefined);
+    };
+  });
+}
+
 /** The caller must independently verify processing and assets before persisting success. */
 export async function claimReviewLaunch(sessionId: string): Promise<boolean> {
   return completionTransaction("readwrite", (store, result) => {

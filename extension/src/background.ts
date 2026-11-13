@@ -4,12 +4,14 @@
 
 import {
   enqueueUpload,
+  getUploadJob,
   getNextPendingJob,
   markProcessing,
   markDone,
   markFailed,
+  type UploadJob,
 } from "./upload-queue";
-import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture } from "./recording-db";
+import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture, bindRecordingId, setUploadOutcome } from "./recording-db";
 import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from "./core/recording-completion";
 
 export {};
@@ -77,21 +79,20 @@ async function ensureOffscreenDocument(): Promise<void> {
 
 const BACKEND_URL = "http://localhost:8000";
 
-async function uploadRecording(
-  mimeType: string,
-  sessionId: string,
-  notificationEmittedAt?: string,
-  title?: string,
-  meetLink?: string,
-  videoPresence: "muxed" | "absent" = "absent"
-): Promise<void> {
+async function uploadRecording(job: UploadJob): Promise<void> {
+  const { mimeType, sessionId, meetingId, notificationEmittedAt, title, meetLink } = job;
+  const videoPresence = job.videoPresence ?? "absent";
+  const completion = await getCompletion(sessionId);
+  if (!meetingId || !completion || completion.meetingId !== meetingId || job.idempotencyKey !== sessionId) {
+    throw new Error("Upload job has no matching persisted recording identity");
+  }
   try {
     // Read Blob directly from shared sauri-recordings IndexedDB
     const blob = await assembleBlob(sessionId, mimeType);
 
     // Build IngestionData JSON payload
     const ingestionData = {
-      meeting_id: crypto.randomUUID(),
+      meeting_id: meetingId,
       idempotency_key: sessionId,
       capture_origin: "chrome_extension",
       duration_seconds: 0,
@@ -128,9 +129,13 @@ async function uploadRecording(
 
     if (response.ok) {
       const result = await response.json();
-      console.log("[sauri] Upload successful:", result);
-      // Clear chunks from IndexedDB after successful upload
-      await clearSession(sessionId);
+      if (!result || typeof result.recording_id !== "string" || !result.recording_id.trim() ||
+          result.recording_id !== result.recording_id.trim() ||
+          !["queued", "joining", "recording", "transcribing", "completed", "failed"].includes(result.state)) {
+        throw new Error("Invalid ingestion response identity or state");
+      }
+      await bindRecordingId(sessionId, meetingId, result.recording_id);
+      // Keep chunks until the queue and completion outcome have both committed.
     } else {
       throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
     }
@@ -482,7 +487,9 @@ async function handleRecordingStopped(
   console.log(`[sauri] Recording complete: ${size} bytes (session: ${sessionId ?? "unknown"})`);
 
   if (!sessionId) return; // Never invent identity for an unbound completion.
-  if ((await getCompletion(sessionId))?.captureError) return;
+  const completion = await getCompletion(sessionId);
+  if (!completion || completion.captureError ||
+      (completion.status !== "capturing" && completion.status !== "finalizing" && completion.status !== "upload_pending")) return;
   await settleCapture(sessionId);
 
   // Get notificationEmittedAt from state for upload payload
@@ -497,15 +504,28 @@ async function handleRecordingStopped(
 
   // Enqueue upload job — the queue handles retries with the same idempotencyKey
   const sid = sessionId;
-  await enqueueUpload({
-    sessionId: sid,
-    idempotencyKey: sid, // sessionId = idempotencyKey ensures idempotent retries
-    mimeType,
-    notificationEmittedAt,
-    title: ownsProjection ? currentState.meetingTitle : undefined,
-    meetLink: ownsProjection ? currentState.meetingUrl : undefined,
-    videoPresence: ownsProjection ? currentState.videoPresence ?? "absent" : "absent",
-  });
+  const previous = await getUploadJob(sid);
+  if (previous && (previous.sessionId !== sid || previous.meetingId !== completion.meetingId)) {
+    throw new Error("Upload job identity mismatch");
+  }
+  if (!previous) {
+    try {
+      await enqueueUpload({
+        sessionId: sid,
+        meetingId: completion.meetingId,
+        idempotencyKey: sid, // sessionId = idempotencyKey ensures idempotent retries
+        mimeType,
+        notificationEmittedAt,
+        title: ownsProjection ? currentState.meetingTitle : undefined,
+        meetLink: ownsProjection ? currentState.meetingUrl : undefined,
+        videoPresence: ownsProjection ? currentState.videoPresence ?? "absent" : "absent",
+      });
+    } catch (error) {
+      // A racing recording-stopped may have inserted the same job first.
+      const winner = await getUploadJob(sid);
+      if (!winner || winner.sessionId !== sid || winner.meetingId !== completion.meetingId || winner.mimeType !== mimeType) throw error;
+    }
+  }
   console.log(`[sauri] Upload job enqueued for session: ${sid}`);
 
   // Trigger immediate processing attempt
@@ -581,24 +601,32 @@ async function processUploadQueue(): Promise<void> {
 
   console.log(`[sauri] Processing upload job: ${job.id} (session: ${job.sessionId}, attempt: ${job.retryCount + 1})`);
 
-  await markProcessing(job.id);
+  if (!await markProcessing(job.id)) return; // Concurrent completion/alarm already owns this attempt.
 
   try {
-    await uploadRecording(
-      job.mimeType,
-      job.sessionId,
-      job.notificationEmittedAt,
-      job.title,
-      job.meetLink,
-      job.videoPresence ?? "absent"
-    );
+    if (job.meetingId) await setUploadOutcome(job.sessionId, job.meetingId, "uploading");
+    await uploadRecording(job);
     await markDone(job.id);
-    console.log(`[sauri] Upload job done: ${job.id}`);
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    await markFailed(job.id, errorMsg);
+    const errorMsg = error instanceof Error ? error.message : "Upload outcome unavailable";
+    const latest = await getUploadJob(job.idempotencyKey);
+    if (latest?.status !== "done") {
+      if (job.meetingId && (await getCompletion(job.sessionId))?.meetingId === job.meetingId) {
+        await setUploadOutcome(job.sessionId, job.meetingId, "upload_failed");
+      }
+      await markFailed(job.id, errorMsg.slice(0, 160));
+    }
     console.warn(`[sauri] Upload job failed: ${job.id} — ${errorMsg}`);
+    return;
   }
+  try {
+    await setUploadOutcome(job.sessionId, job.meetingId!, "upload_succeeded");
+    await clearSession(job.sessionId);
+  } catch (error) {
+    // Accepted upload remains bound; never invent success if persistence is unavailable.
+    console.warn("[sauri] Upload settlement unavailable:", error);
+  }
+  console.log(`[sauri] Upload job done: ${job.id}`);
 }
 
 // --- Alarm-based retry (every 1 minute) ---
