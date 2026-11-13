@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -28,7 +27,6 @@ from app.diarization.diarization_engine import DiarizationOptions
 from app.diarization.factory import create_diarization_engine
 from app.diarization.labeling import label_speakers
 from app.diarization.repository import DiarizationRepository
-from app.diarization.state import apply_diarization_event
 from app.infra.models import (
     Diarization,
     Meeting,
@@ -67,11 +65,15 @@ async def _process_diarization(
     if not meeting_id or not isinstance(meeting_id, str) or not meeting_id.strip():
         logger.warning("Diarization message discarded: reason=missing_meeting_id")
         return
-    if not owner_id or not isinstance(owner_id, str) or not owner_id.strip():
-        logger.warning("Diarization message discarded: owner_id missing or invalid.")
+    revision = message.get("processing_revision")
+    if revision is not None and (type(revision) is not int or revision < 1):
+        logger.warning("Diarization discarded: invalid processing_revision")
         return
-    if not recording_id or not isinstance(recording_id, str) or not recording_id.strip():
-        logger.warning("Diarization message discarded: recording_id missing or invalid.")
+    if revision is None and (
+        not isinstance(owner_id, str) or not owner_id.strip()
+        or not isinstance(recording_id, str) or not recording_id.strip()
+    ):
+        logger.warning("Diarization message discarded: missing owner or recording binding")
         return
 
     # Bind the job to the persisted meeting owner and its exact recording.
@@ -90,20 +92,29 @@ async def _process_diarization(
             meeting_id,
         )
         return
-    if meeting.created_by != owner_id:
+    if owner_id is not None and meeting.created_by != owner_id:
         logger.warning("Diarization discarded: queue owner does not match meeting owner.")
         return
-    if recording is None or recording.id != recording_id:
+    if recording is None or (recording_id is not None and recording.id != recording_id):
         logger.warning("Diarization discarded: queue recording does not match meeting recording.")
         return
+    # A reserved revision is itself the durable job binding; its publication
+    # carries only meeting/revision, never owner or audio references.
+    owner_id, recording_id = meeting.created_by, recording.id
 
-    async with session_factory() as session, session.begin():
-        if not await claim_worker_generation(
-            session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-            kind="diarization", operation_id=operation_id,
-        ):
-            logger.info("Diarization delivery acknowledged without claim; reason=fenced")
-            return
+    # Ordinary capture jobs retain their existing processing-generation fence.
+    # Backfill deliveries are already fenced by the persisted revision claim.
+    has_processing_fence = revision is None or any(
+        value is not None for value in (generation, job_id, operation_id)
+    )
+    if has_processing_fence:
+        async with session_factory() as session, session.begin():
+            if not await claim_worker_generation(
+                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                kind="diarization", operation_id=operation_id,
+            ):
+                logger.info("Diarization delivery acknowledged without claim; reason=fenced")
+                return
 
     # --- Load Transcript + turns (Req. 1.6) ---
     transcript_repo = TranscriptRepository(session_factory)
@@ -115,91 +126,72 @@ async def _process_diarization(
         )
         return
 
-    logger.info("Processing diarization for meeting_id=%s", meeting_id)
-
-    # --- State: pending -> in_progress (Req. 9.1) ---
-    transition = apply_diarization_event("pending", "start_process")
-    current_state = transition.new_state  # "in_progress"
-
-    # --- Create the engine (Req. 2) ---
-    engine = create_diarization_engine()
-
-    # --- Diarize (Req. 10.1: engine exception propagates without persisting) ---
-    duration_ms = recording.duration_seconds * 1000
-    result = await engine.diarize(
-        recording.audio_ref, DiarizationOptions(duration_ms=duration_ms)
-    )
-
-    # --- Label speakers (Req. 6) and assign turns (Req. 7) ---
-    domain_speakers = label_speakers(result.segments)
-    domain_assignments = assign_turns(
-        list(transcript.turns), result.segments, domain_speakers
-    )
-
-    # --- State: in_progress -> completed (Req. 9.2, 9.4) ---
-    final_transition = apply_diarization_event(current_state, "diarization_completed")
-    utc_now = datetime.now(UTC)
-
-    capabilities = engine.capabilities()
-
-    # --- Build ORM entities ---
-    diarization_id = str(uuid.uuid4())
-    diarization = Diarization(
-        id=diarization_id,
-        meeting_id=meeting_id,
-        transcript_id=transcript.id,
-        provider=capabilities.provider_name,
-        speaker_count=result.speaker_count,
-        diarization_state=final_transition.new_state,  # "completed"
-        failure_cause=final_transition.failure_cause,  # None on success
-        created_at=utc_now,
-        updated_at=utc_now,
-    )
-
-    # Map domain Speakers -> ORM, indexed by raw_label
-    orm_speakers: list[Speaker] = []
-    speaker_id_by_label: dict[str, str] = {}
-    for speaker in domain_speakers:
-        s_id = str(uuid.uuid4())
-        speaker_id_by_label[speaker.raw_label] = s_id
-        orm_speakers.append(
-            Speaker(
-                id=s_id,
-                diarization_id=diarization_id,
-                raw_label=speaker.raw_label,
-                label=speaker.label,
-                sequence=speaker.sequence,
-            )
-        )
-
-    # Map domain assignments -> ORM
-    orm_assignments: list[SpeakerAssignment] = []
-    for turn_id, speaker, overlap_ms in domain_assignments:
-        orm_assignments.append(
-            SpeakerAssignment(
-                id=str(uuid.uuid4()),
-                diarization_id=diarization_id,
-                turn_id=turn_id,
-                speaker_id=speaker_id_by_label[speaker.raw_label],
-                overlap_ms=overlap_ms,
-            )
-        )
-
-    # --- Persist in a single transaction (Req. 8.2) ---
     repo = DiarizationRepository(session_factory)
+    if revision is None:
+        # Ordinary transcription jobs have no revision yet. The persisted reservation
+        # precedes the engine call, even when this is their first generation.
+        async with session_factory() as session, session.begin():
+            attempt = await repo.reserve_next_revision(session, meeting_id, transcript.id)
+            revision = attempt.processing_revision
+    else:
+        # Published jobs must match the reserved transcript and may not manufacture
+        # an attempt for an arbitrary revision supplied in a queue message.
+        async with session_factory() as session:
+            reserved: Diarization | None = await session.scalar(select(Diarization).where(
+                Diarization.meeting_id == meeting_id,
+                Diarization.processing_revision == revision,
+                Diarization.transcript_id == transcript.id,
+            ))
+            if reserved is None:
+                logger.warning("Diarization discarded: unreserved revision")
+                return
+            attempt = reserved
     async with session_factory() as session, session.begin():
-        if (
-            not await verify_worker_binding(
-                session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id
-            )
-            or not await verify_worker_generation(
-                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-                kind="diarization", operation_id=operation_id,
-            )
-        ):
-            logger.info("Diarization artifact write skipped; reason=fenced")
+        if not await repo.claim_revision(session, meeting_id, revision):
+            logger.info("Diarization delivery acknowledged without claim; reason=revision_not_pending")
             return
-        await repo.create(session, diarization, orm_speakers, orm_assignments)
+
+    try:
+        engine = create_diarization_engine()
+        result = await engine.diarize(
+            recording.audio_ref, DiarizationOptions(duration_ms=recording.duration_seconds * 1000)
+        )
+        domain_speakers = label_speakers(result.segments)
+        domain_assignments = assign_turns(list(transcript.turns), result.segments, domain_speakers)
+        speaker_id_by_label: dict[str, str] = {}
+        orm_speakers: list[Speaker] = []
+        for speaker in domain_speakers:
+            speaker_id = str(uuid.uuid4())
+            speaker_id_by_label[speaker.raw_label] = speaker_id
+            orm_speakers.append(Speaker(
+                id=speaker_id, diarization_id=attempt.id, raw_label=speaker.raw_label,
+                label=speaker.label, sequence=speaker.sequence,
+            ))
+        orm_assignments = [SpeakerAssignment(
+            id=str(uuid.uuid4()), diarization_id=attempt.id, turn_id=turn_id,
+            speaker_id=speaker_id_by_label[speaker.raw_label], overlap_ms=overlap_ms,
+        ) for turn_id, speaker, overlap_ms in domain_assignments]
+
+        async with session_factory() as session, session.begin():
+            if (
+                not await verify_worker_binding(
+                    session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id
+                )
+                or (has_processing_fence and not await verify_worker_generation(
+                    session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                    kind="diarization", operation_id=operation_id,
+                ))
+            ):
+                logger.info("Diarization artifact write skipped; reason=fenced")
+                return
+            await repo.complete_revision(
+                session, meeting_id, revision, engine.capabilities().provider_name,
+                orm_speakers, orm_assignments,
+            )
+    except Exception:
+        async with session_factory() as session, session.begin():
+            await repo.fail_revision(session, meeting_id, revision)
+        raise
 
     logger.info(
         "Diarization completed for meeting_id=%s (%d speakers, %d assignments)",

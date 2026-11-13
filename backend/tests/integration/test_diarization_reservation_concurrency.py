@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.diarization.diarization_engine import DiarizationCapabilities, DiarizationResult, SpeakerSegment
@@ -18,8 +19,15 @@ from app.diarization.repository import DiarizationRepository
 from app.diarization.worker import _process_diarization
 from app.infra.database import Base
 from app.infra.models import (
-    Diarization, Meeting, SessionRecording, Speaker, SpeakerAssignment,
-    SpeakerReview, SpeakerReviewItem, SpeechTurn, Transcript,
+    Diarization,
+    Meeting,
+    SessionRecording,
+    Speaker,
+    SpeakerAssignment,
+    SpeakerReview,
+    SpeakerReviewItem,
+    SpeechTurn,
+    Transcript,
 )
 
 
@@ -85,9 +93,13 @@ async def test_commit_before_publish_and_redelivery_reuses_pending(pg, seeded):
     assert await reserve(pg, meeting_id, transcript_id) == 1
     repo = DiarizationRepository(pg)
     queue = AsyncMock()
-    await repo.publish_pending_revision(meeting_id, 1, queue)
-    await repo.publish_pending_revision(meeting_id, 1, queue)
-    assert queue.publish.await_count == 2
+    queue.publish.side_effect = RuntimeError("broker temporarily unavailable")
+    with pytest.raises(RuntimeError, match="broker temporarily unavailable"):
+        await repo.publish_pending_revision(meeting_id, 1, queue)
+    queue.publish.side_effect = None
+    assert await repo.publish_pending_revision(meeting_id, 1, queue)
+    assert await repo.publish_pending_revision(meeting_id, 1, queue)
+    assert queue.publish.await_count == 3
     for call in queue.publish.await_args_list:
         assert call.args == ("diarize", {"meeting_id": meeting_id, "processing_revision": 1})
 
@@ -116,7 +128,10 @@ async def test_atomic_generation_rollback_and_active_completed_survives_failure(
     await reserve(pg, meeting_id, transcript_id)
     async with pg() as session, session.begin():
         assert await repo.claim_revision(session, meeting_id, 1)
-    speaker = Speaker(id=str(uuid.uuid4()), diarization_id="unused", raw_label="SPEAKER_00", label="Speaker 1", sequence=1)
+    speaker = Speaker(
+        id=str(uuid.uuid4()), diarization_id="unused", raw_label="SPEAKER_00",
+        label="Speaker 1", sequence=1,
+    )
     assignment = SpeakerAssignment(id=str(uuid.uuid4()), diarization_id="unused", turn_id=turn_id,
                                    speaker_id=speaker.id, overlap_ms=1000)
     async with pg() as session, session.begin():
@@ -126,7 +141,7 @@ async def test_atomic_generation_rollback_and_active_completed_survives_failure(
     assert await reserve(pg, meeting_id, transcript_id) == 2
     async with pg() as session, session.begin():
         assert await repo.claim_revision(session, meeting_id, 2)
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError):
         async with pg() as session, session.begin():
             invalid = SpeakerAssignment(id=str(uuid.uuid4()), diarization_id="unused",
                                         turn_id=str(uuid.uuid4()), speaker_id=speaker.id, overlap_ms=1)
@@ -151,15 +166,14 @@ async def test_atomic_generation_rollback_and_active_completed_survives_failure(
 
 @pytest.mark.asyncio
 async def test_worker_redelivery_does_not_rerun_engine_or_mix_generations(pg, seeded):
-    meeting_id, transcript_id, _, recording_id = seeded
+    meeting_id, transcript_id, _, _ = seeded
     await reserve(pg, meeting_id, transcript_id)
     engine = AsyncMock()
     engine.diarize.return_value = DiarizationResult(
         segments=[SpeakerSegment(raw_label="SPEAKER_00", start_ms=0, end_ms=1000)], speaker_count=1
     )
     engine.capabilities = MagicMock(return_value=DiarizationCapabilities(is_local=True, provider_name="qa-engine"))
-    message = {"meeting_id": meeting_id, "owner_id": "qa-user", "recording_id": recording_id,
-               "processing_revision": 1}
+    message = {"meeting_id": meeting_id, "processing_revision": 1}
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
         await _process_diarization(message, pg)
         await _process_diarization(message, pg)
@@ -168,3 +182,23 @@ async def test_worker_redelivery_does_not_rerun_engine_or_mix_generations(pg, se
         generations = (await session.scalars(select(Diarization).where(Diarization.meeting_id == meeting_id))).all()
         assert len(generations) == 1 and generations[0].diarization_state == "completed"
         assert len((await session.scalars(select(SpeakerReview))).all()) == 1
+
+    # A fresh successful revision must have new keys and its own review;
+    # matching provider raw labels never transfer a prior speaker identity.
+    assert await reserve(pg, meeting_id, transcript_id) == 2
+    with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
+        await _process_diarization({"meeting_id": meeting_id, "processing_revision": 2}, pg)
+    assert engine.diarize.await_count == 2
+    async with pg() as session:
+        generations = (await session.scalars(select(Diarization).where(Diarization.meeting_id == meeting_id)
+                                              .order_by(Diarization.processing_revision))).all()
+        reviews = (await session.scalars(select(SpeakerReview).where(SpeakerReview.meeting_id == meeting_id)
+                                          .order_by(SpeakerReview.processing_revision))).all()
+        speakers = (await session.scalars(select(Speaker).order_by(Speaker.diarization_id))).all()
+        assert [g.diarization_state for g in generations] == ["completed", "completed"]
+        assert [r.processing_revision for r in reviews] == [1, 2]
+        assert len(speakers) == 2 and speakers[0].id != speakers[1].id
+        assert {item.speaker_key for item in (await session.scalars(select(SpeakerReviewItem))).all()} == {
+            speakers[0].id, speakers[1].id,
+        }
+        assert (await DiarizationRepository(pg).get_by_meeting(meeting_id)).id == generations[1].id
