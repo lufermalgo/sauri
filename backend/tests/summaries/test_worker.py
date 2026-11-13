@@ -400,23 +400,29 @@ async def test_ollama_adapter_sends_only_frozen_inputs_and_parses_canonical_cont
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("deadline_exceeded", [False, True])
 async def test_ollama_provider_error_propagates_without_success_artifact(
     case: Case,
     monkeypatch: pytest.MonkeyPatch,
+    deadline_exceeded: bool,
 ) -> None:
     from app.summaries.engine import OllamaSummarizationEngine
 
-    def unavailable(request: httpx.Request) -> httpx.Response:
+    async def unavailable(request: httpx.Request) -> httpx.Response:
+        if deadline_exceeded:
+            await asyncio.sleep(10)
         return httpx.Response(503, text="private provider diagnostic")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(unavailable)) as client:
-        engine = OllamaSummarizationEngine("http://localhost:11434", "local-model", client=client)
+        engine = OllamaSummarizationEngine(
+            "http://localhost:11434", "local-model", client=client, timeout_seconds=0.02,
+        )
         monkeypatch.setattr("app.summaries.worker.create_summarization_engine", lambda: engine)
         from app.summaries.worker import start_worker
 
         queue = CapturedQueue()
         await start_worker(queue, case.factory)
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(TimeoutError if deadline_exceeded else httpx.HTTPStatusError):
             await queue.handlers["summarize"](case.message.copy())
         status, rows, processed = await outcomes(case)
         assert status == "running" and not rows and not processed
