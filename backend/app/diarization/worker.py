@@ -16,6 +16,7 @@ Requirements: 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 6.1, 7.1, 8.2, 9.1, 9.2, 9.3, 9.4, 9
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -199,7 +200,10 @@ async def _process_diarization(
             recording.audio_ref, DiarizationOptions(duration_ms=recording.duration_seconds * 1000)
         )
         domain_speakers = label_speakers(result.segments)
-        domain_assignments = assign_turns(list(transcript.turns), result.segments, domain_speakers)
+        domain_assignments = assign_turns(
+            list(transcript.turns), result.segments, domain_speakers,
+            require_exclusive=os.environ.get("DIARIZATION_EXCLUSIVE_ASSIGNMENTS", "0") == "1",
+        )
         speaker_id_by_label: dict[str, str] = {}
         orm_speakers: list[Speaker] = []
         for speaker in domain_speakers:

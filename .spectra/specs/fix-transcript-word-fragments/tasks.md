@@ -1,5 +1,52 @@
 # Plan de Implementación — Renderizado de turnos completos en la transcripción
 
+## Delta ejecutable #880 — 2026-11-13
+
+Continúa la misma unidad y tarjeta `task_e54417ff1e164f69`, criterios #897, diseño #898 y actualización técnica de `design.md`. Ansel transmitió autorización de implementación posterior; Fer conserva merge y Ansel coordina cualquier sustitución de servicios vivos. El plan histórico de abajo no se reabre ni equivale a finalización del delta.
+
+| Fase | Tareas | Dependencias |
+|---|---|---|
+| RED | A1 | Criterios AC-R1–AC-R8 aprobados |
+| Implementación QA aislada | A2–A3 | A1 |
+| Regresiones y calificación | A4–A5 | A2/A3 |
+| Presentación e integración | A6 | A4/A5 y contrato final revisado |
+
+### A1 — RED acústica y palabras [x]
+**Archivo:** `backend/tests/asr_engine/test_native_acoustic_alignment.py`.
+**Acción:** probar N0–N2 y D0/D1 con texto, límites y evidencia suministrada; luego agregar score no-habla bajo observado con ruido real de motores.
+**Criterio de Completado:** RED ejecutado con 3 fallos conductuales/7 passes; contraejemplo adicional con 2 fallos/10 passes antes de corregir su regla. No error de importación como sustituto.
+**Dependencias:** ninguna adicional. Propiedades P-R1–P-R4.
+
+### A2 — VAD existente y límites originales [x]
+**Archivo:** `backend/asr-engine/native_main.py`.
+**Acción:** opt-in QA de VAD powerset con checkpoint local ya instalado, sin descargas; audio completo decodificado en memoria; scores no son detector de voz. Extraer palabras solo si reconstruyen exactamente texto y tiempos, fallback de fuente completa en caso contrario. Limpiar temporales existentes; no logs de evidencia.
+**Criterio de Completado:** tests A1 GREEN; modo por defecto conserva contrato, permisos y limpieza. No implica calificación humana.
+**Dependencias:** A1. Propiedades P-R1/P-R2/P-R3/P-R8/P-R10.
+
+### A3 — Atribución exclusiva opt-in [x]
+**Archivos:** `backend/app/diarization/assignment.py`, `backend/app/diarization/worker.py`, `backend/tests/diarization/test_exclusive_assignment.py`.
+**Acción:** `require_exclusive` conserva Speaker N con varios candidatos; mide unión de intervalos duplicados. Worker solo lo usa con `DIARIZATION_EXCLUSIVE_ASSIGNMENTS=1`; modo legacy conserva contrato. D0 distingue A/B y D3 mantiene cluster sin texto.
+**Criterio de Completado:** tests de atribución exclusiva y propiedades legacy pasan juntos; no se borra speaker ni se reinterpreta resultado guardado.
+**Dependencias:** A1/A2. Propiedades P-R4/P-R5/P-R6/P-R7.
+
+### A4 — Regresiones/contratos [~]
+**Archivos:** `backend/tests/asr_engine/`, `backend/tests/diar_engine/`, `backend/tests/diarization/`, `backend/tests/transcription/`; evidencia en `acoustic-qa-validation.md`.
+**Acción:** ejecutar suites sin excluir fallos, Ruff de cambios y mypy definido por proyecto; comparar deuda previa con base #882. Probar cleanup y errores/capabilities ya existentes.
+**Criterio de Completado:** registrar comandos/resultados reales; ningún fallo nuevo oculto. Mypy global tiene deuda previa y no se declara PASS.
+**Dependencias:** A2/A3. P-R5/P-R7–P-R11.
+
+### A5 — Calificación acústica [~]
+**Archivo:** `.spectra/specs/fix-transcript-word-fragments/acoustic-qa-validation.md`.
+**Acción:** ejecutar motores reales offline en proceso aislado con ruido, saludo al inicio, voz tras ruido y voz débil sintéticos; después contrastar habla humana autorizada y casos de overlap sin retener clips/evidencia privada.
+**Criterio de Completado:** controles sintéticos y validación humana informados por separado; ningún resultado de TTS se presenta como aceptación de video real. Variante permanece opt-in hasta pasar la calificación.
+**Dependencias:** A2/A3/A4. P-R1/P-R2/P-R11.
+
+### A6 — Completar presentación/fallback y candidato instalable aceptado [ ]
+**Archivos:** `backend/app/infra/models.py`, API de diarización/transcript, `frontend/src/transcript-turns.ts`, pruebas API/frontend especificadas en `design.md`.
+**Acción:** completar procedencia/piezas finales sin filas por palabra inciertas, aislamiento/retención y playback; revisar alternativa de contrato antes de migrar. Validar en navegador APX el candidato integrado aislado, coordinar con Ansel antes de reemplazar vivo. No implementar una segunda versión de #248 ni crear clips.
+**Criterio de Completado:** AC-R3/AC-R4/AC-R6/AC-R7 completos y prueba humana reproducible autorizada; suites/typecheck pertinentes pasan, sin declarar listo por menor conteo. Publicación/merge/aceptación separados.
+**Dependencias:** A4/A5 y contrato final revisado. P-R3–P-R11.
+
 ## Trazabilidad y alcance
 
 Derivado exclusivamente de `bugfix.md` APPROVED (`9fed8e2b14a10bb25960011326e3ebf9e7af5b27`, blob `ddf34bb41dc5d9d9aa38c15c312e9cf24a4e7b05`) y `design.md` APPROVED (`bc18206308380a321873c8baabb353073dd4a628`, blob `3b5230ae64e87139492fcad228d2290fa0554048`). Autoridad del comportamiento de producto: `PRODUCT_BASELINE.md` APPROVED (`4953b3b4b8a058fd4738342307cc50bfd66814f1`, blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446`), §4.C.4; la versión previa `f31c1437d002a49849fc577446290ab83d29a584` citada por el bugfix tiene el mismo requisito de turnos, sin delta de alcance. La evidencia QA sintética se conserva por separado en `qa-reproduction.md`, snapshot `d458eac3a38e2fc0089bb8698f418646aaa287a8` (rama `origin/fix/transcript-word-fragments`); no se incorpora ni altera el bugfix aprobado.

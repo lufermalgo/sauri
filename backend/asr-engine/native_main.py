@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import math
 import os
 import secrets
 import tempfile
@@ -27,9 +28,7 @@ MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "minioadmin")
 MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "sauri-recordings")
 MINIO_AUDIO_PREFIX = os.environ.get("MINIO_AUDIO_PREFIX", "recordings/")
-ENGINE_TOKEN_PATH = Path(
-    os.environ.get("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config" / "sauri" / "engine_token")
-)
+ENGINE_TOKEN_PATH = Path(os.environ.get("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config" / "sauri" / "engine_token"))
 RECORDING_CAPABILITY_KEY_PATH = Path(
     os.environ.get(
         "SAURI_RECORDING_CAPABILITY_KEY_FILE",
@@ -39,6 +38,9 @@ RECORDING_CAPABILITY_KEY_PATH = Path(
 RECORDING_CAPABILITY_TTL_SECONDS = 60
 MODEL_ID = os.environ.get("ASR_MODEL", "mlx-community/whisper-large-v3-turbo")
 MODEL_DEVICE = "mlx"
+# QA opt-in until the acoustic qualification protocol has passed.
+ACOUSTIC_VALIDATION_ENABLED = os.environ.get("ASR_ACOUSTIC_VALIDATION", "0") == "1"
+voice_activity_detector: Any = None
 _bearer_scheme = HTTPBearer(auto_error=False)
 _bearer_dependency = Depends(_bearer_scheme)
 
@@ -49,7 +51,7 @@ s3_client: Any = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Load the MLX inference function and initialize MinIO at process start."""
-    global transcribe_audio, s3_client
+    global transcribe_audio, s3_client, voice_activity_detector
     try:
         import mlx_whisper
 
@@ -67,6 +69,7 @@ async def lifespan(_app: FastAPI):
     yield
     transcribe_audio = None
     s3_client = None
+    voice_activity_detector = None
 
 
 app = FastAPI(title="Sauri Native ASR Engine", version="1.0.0", lifespan=lifespan)
@@ -158,6 +161,108 @@ def _language_code(language: str) -> str | None:
     return base or None
 
 
+def _load_voice_activity_detector() -> Any:
+    """Reuse the already-installed powerset checkpoint; never download a model."""
+    import torch
+    from pyannote.audio import Model
+    from pyannote.audio.pipelines import VoiceActivityDetection
+
+    cache = Path.home() / ".cache/torch/pyannote/models--pyannote--segmentation-3.0"
+    configured = os.environ.get("ASR_VAD_MODEL_PATH")
+    if configured:
+        checkpoint = Path(configured)
+    else:
+        revision = (cache / "refs/main").read_text(encoding="utf-8").strip()
+        if not revision or Path(revision).name != revision:
+            raise RuntimeError("Invalid cached segmentation revision")
+        checkpoint = cache / "snapshots" / revision / "pytorch_model.bin"
+    if not checkpoint.is_file():
+        raise RuntimeError("Existing segmentation checkpoint is unavailable")
+    model = Model.from_pretrained(str(checkpoint))
+    if not model.specifications.powerset:
+        raise RuntimeError("Only the existing powerset segmentation is supported")
+    detector = VoiceActivityDetection(segmentation=model)
+    # Powerset uses the library's fixed 0.5 decision; do not discard brief speech
+    # or fill gaps. These zero-duration settings do not introduce a voice cutoff.
+    detector.instantiate({"min_duration_on": 0.0, "min_duration_off": 0.0})
+    detector.to(torch.device(os.environ.get("DIARIZATION_DEVICE", "mps")))
+    return detector
+
+
+def _detect_speech(audio_path: str) -> tuple[Any, list[tuple[int, int]], int]:
+    """Decode once in memory; retain absolute offsets and no clips or payload cache."""
+    import numpy as np
+    import torch
+    from mlx_whisper.audio import SAMPLE_RATE, load_audio
+
+    global voice_activity_detector
+    if voice_activity_detector is None:
+        voice_activity_detector = _load_voice_activity_detector()
+    waveform = load_audio(audio_path)
+    duration_ms = int(len(waveform) * 1000 / SAMPLE_RATE)
+    annotation = voice_activity_detector(
+        {
+            "waveform": torch.from_numpy(np.array(waveform)).unsqueeze(0),
+            "sample_rate": SAMPLE_RATE,
+        }
+    )
+    regions = [(int(region.start * 1000), int(region.end * 1000)) for region in annotation.get_timeline().support()]
+    if duration_ms <= 0 or any(not (0 <= start < end <= duration_ms) for start, end in regions):
+        raise RuntimeError("Invalid speech activity coverage")
+    return waveform, regions, duration_ms
+
+
+def _aligned_segments(segment: dict[str, Any], source: Segment) -> list[Segment]:
+    """Use exact model word boundaries or preserve the entire valid source."""
+    words = segment.get("words")
+    if not isinstance(words, list) or not words:
+        return [source]
+    try:
+        texts = [str(word["word"]) for word in words]
+        texts[0] = texts[0].lstrip()
+        texts[-1] = texts[-1].rstrip()
+        if "".join(texts) != source.text or any(not text.strip() for text in texts):
+            return [source]
+        aligned = []
+        for text, word in zip(texts, words, strict=True):
+            start, end = float(word["start"]), float(word["end"])
+            if not math.isfinite(start) or not math.isfinite(end):
+                return [source]
+            start_ms, end_ms = int(start * 1000), int(end * 1000)
+            if not source.start_ms <= start_ms < end_ms <= source.end_ms:
+                return [source]
+            aligned.append(Segment(text=text, start_ms=start_ms, end_ms=end_ms))
+        return aligned
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return [source]
+
+
+def _admit_segments(
+    result: dict[str, Any], regions: list[tuple[int, int]] | None, duration_ms: int | None
+) -> list[Segment]:
+    segments = []
+    for segment in result.get("segments", []):
+        text = str(segment.get("text", "")).strip()
+        if not text:
+            continue
+        start, end = float(segment["start"]), float(segment["end"])
+        if not math.isfinite(start) or not math.isfinite(end) or not 0 <= start < end:
+            raise ValueError("Invalid source segment timing")
+        source = Segment(text=text, start_ms=int(start * 1000), end_ms=int(end * 1000))
+        # Decoder no_speech_prob was near zero even for noise in qualification.
+        # Only actual model VAD coverage, never that textual decoder score, gates.
+        if (
+            regions is not None
+            and duration_ms is not None
+            and source.end_ms <= duration_ms
+            and not any(min(source.end_ms, end) > max(source.start_ms, begin) for begin, end in regions)
+        ):
+            continue
+        # Alignment is part of the QA mode; the legacy response stays unchanged.
+        segments.extend(_aligned_segments(segment, source) if regions is not None else [source])
+    return segments
+
+
 @app.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe(
     request: TranscribeRequest,
@@ -175,8 +280,13 @@ async def transcribe(
         raise HTTPException(status_code=500, detail="Audio download failed") from exc
 
     try:
+        audio_input: Any = audio_path
+        regions: list[tuple[int, int]] | None = None
+        duration_ms: int | None = None
+        if ACOUSTIC_VALIDATION_ENABLED:
+            audio_input, regions, duration_ms = _detect_speech(audio_path)
         result = transcribe_audio(
-            audio_path,
+            audio_input,
             path_or_hf_repo=MODEL_ID,
             language=_language_code(request.language),
             # Align against speech instead of retaining decoder-only boundaries;
@@ -186,15 +296,7 @@ async def transcribe(
             hallucination_silence_threshold=2.0,
             verbose=False,
         )
-        segments = [
-            Segment(
-                text=str(segment.get("text", "")).strip(),
-                start_ms=int(float(segment["start"]) * 1000),
-                end_ms=int(float(segment["end"]) * 1000),
-            )
-            for segment in result.get("segments", [])
-            if str(segment.get("text", "")).strip()
-        ]
+        segments = _admit_segments(result, regions, duration_ms)
         language = str(result.get("language") or request.language)
         return TranscribeResponse(segments=segments, language=language)
     except HTTPException:
