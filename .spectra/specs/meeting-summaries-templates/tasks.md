@@ -204,7 +204,7 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 
 **Tracking:** Issue #283 · current APX task `task_4d3cdf24ea5443fd`; historical card `task_abb0a6217a484a7a` preserved for lineage.
 
-**Status (2026-11-13):** RED delivered on base T10 `744ae88`, test commit `73df389`, not integrated. Real disposable PostgreSQL16 and SQLite both: 3 expected HTTP assertion failures from absent current-summary route, 6 passed (including literal latest route and isolated statuses). Evidence: `t15-red-evidence.md`. T16 additionally waits on T12. Inherited mypy gate from T10 has 4 errors; correction assigned to Nahuel, so draft only and not ready for merge. Fer retains integration.
+**Status (2026-11-13):** RED delivered on base T10 `744ae88`, test commit `73df389`, not integrated. Real disposable PostgreSQL16 and SQLite both: 3 expected HTTP assertion failures from absent current-summary route, 6 passed (including literal latest route and isolated statuses). Evidence: `t15-red-evidence.md`. T16 additionally waits on T12. Inherited T10 mypy gate resolved by `54f7d1c`, merged here preserving RED: Ansel repeated app+test, 71 files PASS. Still draft RED-only, not a functional integration candidate. T12 started with Nahuel after this validation. Fer retains integration.
 
 **Archivo:** `backend/tests/summaries/test_summary_api.py` (extend)
 **Test seam:** Exercise `GET /api/v1/meetings/{meeting_id}/summary`, `GET /api/v1/meetings/{meeting_id}/summary-requests/latest`, and `GET /api/v1/meetings/{meeting_id}/summary-requests/{event_id}` in `backend/app/summaries/router.py`; verify current-summary selection through `SummaryService.get_current_summary_for_user(meeting_id, user)` in `backend/app/summaries/service.py`.

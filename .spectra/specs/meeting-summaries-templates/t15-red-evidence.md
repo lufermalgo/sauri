@@ -28,6 +28,10 @@ Four persisted outcomes are seeded through real SQLAlchemy/PostgreSQL after acce
 - `git diff --check`: PASS.
 - `python -m mypy --config-file backend/pyproject.toml backend/app backend/tests/summaries/test_summary_api.py` from repository root: **4 existing errors in T10 `app/summaries/repository.py`**, no errors reported in this test. Python 3.13.4, mypy 2.1.0, SQLAlchemy 2.0.50. Nahuel independently reproduced these and rectified his earlier mypy-PASS report; T10 task reopened and correction is running. This RED PR is draft, not declared ready until inherited gate is resolved.
 
+## T10 correction revalidated (2026-11-13)
+
+After the initial RED publication, merged T10 correction `54f7d1c` without rewriting RED `73df389`. Reviewed its four casts: each narrows the result of an unchanged ORM entity select to that exact entity or None; no filter, query semantics, data validation or test assertion changed. Repeated `/Users/lufermalgo/Proyectos/sauri/backend/.venv/bin/python -m mypy --config-file backend/pyproject.toml backend/app backend/tests/summaries/test_summary_api.py --no-incremental`: **71 files PASS**. Both T10 CI jobs on `54f7d1c` PASS. Nahuel reports **62 tests PASS** with disposable PostgreSQL/RabbitMQ on the correction; my previous 62-test regression remains applicable to unchanged runtime behavior. The inherited mypy gate is now resolved. This branch remains draft because it is RED-only, not an implementation or integration candidate.
+
 ## Cleanup
 
 Confirmed zero public tables in the disposable `sauri_t15_reads` database after test teardown. Removed own PostgreSQL and RabbitMQ containers **with volumes** (`docker rm -fv`), verified neither remains. No personal service or persistent project data touched.
