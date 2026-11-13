@@ -53,7 +53,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 2.1: RED de arranque y disponibilidad diferenciada (P2, P6)
 
-- [ ] Pendiente.
+- [x] RED observado: falta portal/puerto efectivo y API caída producía éxito. Harness extendido #830; dobles explícitos, no integración real.
 
 **Archivo:** `_tools/test_compose_bringup.py`.
 **Acción:** Extender harness existente para exigir portal en último paso, bucket y migraciones antes del arranque final, selección de COMPOSE_PROJECT_NAME/COMPOSE_FILE preservada incluso antes de stop, espera HTTP acotada a 60s y fallo no cero por bucket/migración/HTTP. Portal positivo con API caída no da éxito; mensaje final no acredita motores/inferencia. Ningún escenario borra datos, ejecuta prune o make clean.
@@ -62,7 +62,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 2.2: Integrar portal y espera HTTP al arranque (R1.1, R3.1–3.3)
 
-- [ ] Pendiente.
+- [x] Implementado #830: portal último, puerto Compose efectivo, HTTP 200 con plazo común 60s, fallo por etapa, mensaje de inferencia no verificada. Suite 11/11 y `bash -n` PASS. No ejecutado en entorno personal ni integrado.
 
 **Archivo:** `_tools/compose-bringup.sh`.
 **Acción:** Conservar credenciales → stop api/worker del proyecto seleccionado → infraestructura → bucket → migraciones → api/worker/portal. Añadir espera hasta 60s de `/portal-health` y `/api-health` usando puerto efectivo, fallar identificando etapa sin exponer secretos. Mantener errores/selección Compose y protecciones de credenciales. Mensaje de éxito limitado a portal/núcleo, inferencia por verificar aparte. No iniciar/parar motores ni recrear volúmenes.
@@ -71,7 +71,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 2.3: Verificar secuencia y configuración efectiva (P2, P6)
 
-- [ ] Pendiente.
+- [x] Harness completo 11/11 PASS, 62.748s, incluyendo timeout real de ~60s y selección Compose antes de stop. `bash -n`, Compose config con variables sintéticas y diff PASS. Modo ejecutable 100755 preservado. Publicación U2 #830; integración real de conexiones pendiente U4.
 
 **Archivo:** `_tools/test_compose_bringup.py`, `docker-compose.yml` (verificación).
 **Acción:** Ejecutar suite completa del script y `docker compose ... config --quiet` con valores sintéticos. Comprobar preservación de servicios, volúmenes, URLs/contratos de motores y ausencia de migraciones nuevas. Revisar diff y publicar U2 vinculado a U1/#818.
@@ -193,7 +193,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 |--------|-------|-------------|-------------|
 | Plan | #818 | PR #825, merge `3161afa` | Aprobado e integrado |
 | U1 | #827 | PR #829; implementación `87f16f2` | Publicado y validado localmente; CI/merge pendientes |
-| U2 | Al activar | — | No iniciada |
+| U2 | #830 | `feat/local-platform-bringup`, apilada sobre #829 | Implementado y validado localmente; no integrado |
 | U3 | Al activar | — | No iniciada |
 | U4 | Al activar | — | No iniciada |
 | U5 | #818 / APX padre | — | No iniciada |
