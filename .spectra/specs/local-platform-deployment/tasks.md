@@ -82,7 +82,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 3.1: RED de identidad, aislamiento y limpieza (P7–P8)
 
-- [ ] Pendiente.
+- [x] RED por ausencia de implementación y GREEN posterior; #833. Suite final 14/14, con 120 combinaciones de propiedad. Incluye entorno sin claves heredadas, clave sintética con formato real, configuración fallida, rechazo de recursos no inventariados y daemon inaccesible. Dobles explícitos, no evidencia Docker.
 
 **Archivo:** `_tools/test_validate_local_platform.py` (crear).
 **Acción:** Probar modos create/check/cleanup, runId de 12 hex y proyecto exacto, inventario schemaVersion 1, puertos libres y fallos por conflicto. Generar con unittest.subTest al menos 100 combinaciones de ID/etiqueta/proyecto: eliminar solo coincidencia de inventario Y etiqueta Compose; faltar inventario, etiqueta ajena o ID divergente rechazan sin borrado. Probar cleanup repetido, cancelación, fallo parcial durante create, secretos ausentes, override sin volúmenes externos/nombres fijos ni mounts del dueño. No admitir prune ni limpieza por prefijo. Usar dobles para estos límites, no para acreditar Docker.
@@ -91,7 +91,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 3.2: Implementar inventario QA y eliminación segura (R4.1–4.3)
 
-- [ ] Pendiente.
+- [x] #833: create/check/cleanup, inventario privado externo, claves sintéticas y puertos loopback propios; limpieza por ID + ambas etiquetas, preflight antes de borrar, métricas y diagnóstico sin claves. RabbitMQ usa volumen QA explícito etiquetado para evitar el volumen anónimo de su imagen. Imágenes compartidas y build cache se conservan según diseño; no se ejecuta prune. Implementado y validado, no integrado.
 
 **Archivo:** `_tools/validate-local-platform.py` (crear).
 **Acción:** Librería estándar Python, modos create/check/cleanup sin proyecto principal por defecto. Crear runId aleatorio y carpeta temporal externa al repo con override, secretos sintéticos e inventario del diseño (commit, fecha, composeFiles, IDs, puertos, checks con capa/resultado/evidencePath). Reemplazar publicaciones, no sumarlas: portal 15173/API 18000/PG 15432/S3 19000/consola 19001/AMQP 15673/admin 15674, todas loopback; si ocupadas seleccionar bloque libre y registrarlo sin detener al ocupante. Selección `-p` y archivos explícitos en cada comando; verificar config antes de crear. Worker monta solo secretos sintéticos de esa ejecución. Inventariar recursos antes/después y también al fallar parcialmente. Registrar espacio antes/después, no tokens ni URLs firmadas completas. Cleanup verifica inventario y etiqueta exactos por ID antes de borrar contenedores/redes/volúmenes temporales; rechaza ambigüedad, es idempotente y no elimina imágenes compartidas/cache. Ejecutar cleanup en cierre normal, error e interrupción y permitir repetición explícita desde inventario persistido.
@@ -100,7 +100,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 3.3: Validar ciclo real y recursos residuales (P7–P8)
 
-- [ ] Pendiente.
+- [x] Ciclo Docker real normal `cb04e1c55347`: portal/API HTTP 200, cleanup y repetición PASS. Fallo controlado `0550329644fa`: salida 1 esperada, cleanup automático y repetición PASS. Verificación externa final: 0 contenedores, 0 volúmenes, 0 redes de ambas ejecuciones. No había recursos de ejecución ajenos en la línea base de estos ciclos; sin motores ni datos personales. Evidencias privadas en scratch APX `th_be8ad158ded84cd3`: inventarios de ambos runId, métricas before/after y logs `u3-real-fixed.log`/`u3-controlled-failure.log`. Primer ensayo falló por formato de clave sintética y detectó volumen anónimo RabbitMQ; corregidos y repetidos los ciclos, sin residuo. Eliminación puntual del volumen inicial respaldada por evento mount cuyo container ID figura en inventario, no por prefijo. Métrica final global: imágenes 2.227GB y cache 953.9MB conservadas; no confundir limpieza de ejecución con ausencia de imágenes/cache. Python unittest 14/14 y py_compile PASS. Pendiente publicación/CI/merge; no acredita DB/S3/cola funcionales ni inferencia.
 
 **Archivo:** `_tools/test_validate_local_platform.py`, `_tools/validate-local-platform.py`.
 **Acción:** Ejecutar suite; ciclo real create/check/cleanup y repetir cleanup. Inventariar recursos ajenos antes y después sin cambiarlos; comprobar cero recursos QA residuales. Ensayar un fallo controlado de validación y verificar eliminación posterior. Comparar métricas Docker sin atribuir espacio global exclusivamente a Sauri.
@@ -194,6 +194,6 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 | Plan | #818 | PR #825, merge `3161afa` | Aprobado e integrado |
 | U1 | #827 | PR #829; implementación `87f16f2` | Publicado y validado localmente; CI/merge pendientes |
 | U2 | #830 | `feat/local-platform-bringup`, apilada sobre #829 | Implementado y validado localmente; no integrado |
-| U3 | Al activar | — | No iniciada |
+| U3 | #833 | `feat/local-platform-qa`, apilada sobre #832 | Implementado; 14 tests y dos ciclos Docker con limpieza PASS; no integrado |
 | U4 | Al activar | — | No iniciada |
 | U5 | #818 / APX padre | — | No iniciada |
