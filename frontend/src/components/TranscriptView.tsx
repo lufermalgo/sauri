@@ -9,6 +9,7 @@ import {
 } from "../api";
 import type { MeetingDiarization, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
+import { SummarySection } from "./SummarySection";
 import { groupTranscriptTurns } from "../transcript-turns";
 
 interface TranscriptViewProps {
@@ -192,6 +193,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         onRefreshManifest={() => getPlaybackManifest(meetingId)}
         onSeekToReady={registerSeekTo}
       />
+      <SummarySection meetingId={meetingId} hasTranscript={true} />
       <h2>Transcript</h2>
       <p>
         Language: {data.language} | Provider: {data.provider} |

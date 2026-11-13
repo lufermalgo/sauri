@@ -5,7 +5,7 @@
  */
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { MeetingSummary, SummaryRequestStatus, SummaryTemplate } from "@sauri/shared-types";
-import type { ComponentType } from "react";
+import { SummarySection } from "./SummarySection";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
@@ -29,14 +29,9 @@ const personal: SummaryTemplate = {
 const pending: SummaryRequestStatus = { eventId: "event-two", generation: 2, status: "pending" };
 const neutral = /No summary available for this meeting yet\./i;
 
-// Import in the test lifecycle: missing production component is an explicit RED
-// test failure, not a collection failure, stub, TS ignore or permissive fallback.
-// T20 should switch to a static import once production code exists.
+// Static import now that T20 supplies the production component; RED commit remains in history.
 async function openSection(hasTranscript = true) {
-  const modulePath = new URL("./SummarySection.tsx", import.meta.url).pathname;
-  const module: { SummarySection: ComponentType<{ meetingId: string; hasTranscript: boolean }> } =
-    await import(/* @vite-ignore */ modulePath);
-  await act(async () => { render(<module.SummarySection meetingId={meetingId} hasTranscript={hasTranscript} />); });
+  await act(async () => { render(<SummarySection meetingId={meetingId} hasTranscript={hasTranscript} />); });
 }
 async function poll() {
   await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
@@ -57,7 +52,7 @@ beforeEach(() => {
   api.getSummary.mockResolvedValue(summary);
   api.getLatestSummaryRequest.mockResolvedValue(null);
   api.listTemplates.mockResolvedValue([personal]);
-  api.requestSummary.mockResolvedValue({ eventId: pending.eventId, generation: pending.generation });
+  api.requestSummary.mockResolvedValue(pending);
   api.getSummaryRequest.mockResolvedValue({ ...pending, status: "running" });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -161,6 +156,23 @@ describe("summary presentation and durable status (T19 RED)", () => {
     expect(screen.getByText(/running/i)).toBeDefined();
     await poll();
     expect(api.getSummaryRequest.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not invent a default when none is configured; explicit selection sends its id", async () => {
+    api.listTemplates.mockResolvedValue([{ ...personal, isDefault: false }]);
+    await openSection();
+    expect(screen.getByRole("button", { name: /request summary/i }).hasAttribute("disabled")).toBe(true);
+    expect(api.requestSummary).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Template"), { target: { value: personal.id } });
+    });
+    await request();
+    expect(api.requestSummary).toHaveBeenCalledWith(meetingId, { templateId: personal.id });
+  });
+
+  it("does not offer a request until a transcript exists", async () => {
+    await openSection(false);
+    expect(screen.queryByRole("button", { name: /request summary/i })).toBeNull();
   });
 
   it("cancels polling when unmounted", async () => {
