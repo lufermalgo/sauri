@@ -52,7 +52,14 @@ async def lifespan(_app: FastAPI):
     global transcribe_audio, s3_client
     try:
         import mlx_whisper
+        from mlx import core as mx
 
+        # MLX defaults its reusable buffer cache to the device memory guideline
+        # (over 22 GiB on the measured 24 GiB host). Bound allocator retention,
+        # not audio, model precision, decoder options, or alignment work.
+        # The graph limit is a scheduling guideline, NOT a hard process/RAM cap.
+        mx.set_memory_limit(4 * 1024**3)
+        mx.set_cache_limit(256 * 1024**2)
         transcribe_audio = mlx_whisper.transcribe
     except Exception as exc:
         raise RuntimeError("Unable to initialize mlx-whisper") from exc
