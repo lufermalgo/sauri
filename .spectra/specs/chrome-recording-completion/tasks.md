@@ -217,7 +217,7 @@ Prior approved task-plan snapshot: `c0eb360fdb964c00bc76f1b72444022a10dfa00a` (M
 | T1.9 | #618 | Pending — APX assignment resolution |
 | T2.1 | #619 | Pending — APX assignment resolution |
 | T2.2 | #620 | Pending — APX assignment resolution |
-| T2.3 | #621 | Pending — APX assignment resolution |
+| T2.3 | #621 | `task_932ac7b879bd45ae` — GREEN implementation candidate in [PR #834](https://github.com/lufermalgo/sauri/pull/834), branch `feature/issue-621-chrome-recording-completion-t2-3`; review passed, not merged or product-accepted |
 | T2.4 | #622 | Pending — APX assignment resolution |
 | T2.5 | #623 | Pending — APX assignment resolution |
 | T2.6 | #624 | Pending — APX assignment resolution |
