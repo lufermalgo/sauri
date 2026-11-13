@@ -138,7 +138,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 4.4: Separar conectividad de motores e inferencia (P2, P6, P10)
 
-- [x] Evaluación explícita, NO inferencia verificada: GET /health desde worker QA efímero falló con ConnectError en ambos motores; make engines-status indicó ambos detenidos y GET de host 8001/8002 falló. No se tocaron procesos nativos. Dependencias nativas presentes; comprobación Hugging Face offline/local_files_only encontró snapshot MLX y devolvió LocalEntryNotFoundError para pyannote/speaker-diarization-3.1. No se descargaron modelos ni se leyó token HF. Inferencia/GPU no verificadas; para completar procesamiento faltan modelo pyannote local y entorno nativo compatible, sin ampliar por cuenta propia la exclusión de descargas. Guardado engines.json independiente, sin inferir GPU de health/configuración. Esta evaluación no cierra la validación de procesamiento del padre.
+- [x] Evaluación explícita, NO inferencia integral verificada (MLX directo posterior documentado en 4.3): GET /health desde worker QA efímero falló con ConnectError en ambos motores; make engines-status indicó ambos detenidos y GET de host 8001/8002 falló. No se tocaron procesos nativos. Dependencias nativas presentes; comprobación Hugging Face offline/local_files_only encontró snapshot MLX y devolvió LocalEntryNotFoundError para pyannote/speaker-diarization-3.1. No se descargaron modelos ni se leyó token HF. Inferencia/GPU no verificadas; para completar procesamiento faltan modelo pyannote local y entorno nativo compatible, sin ampliar por cuenta propia la exclusión de descargas. Guardado engines.json independiente, sin inferir GPU de health/configuración. Esta evaluación no cierra la validación de procesamiento del padre.
 
 **Archivo:** `_tools/validate-local-platform.py` (checks engines/inference), `docs/LOCAL_DEPLOYMENT.md` (matriz de resultados).
 **Acción:** Comprobar desde worker acceso a motores nativos existentes si es posible sin alterar sus procesos; conservar HTTP/credenciales. Solo con entorno/modelos/credenciales disponibles y alcance autorizado, enviar medio sintético y observar transcripción, diarización y dispositivo realmente usado. No descargar modelos, gastar en proveedor cloud ni sustituir motores por dobles. Si no es posible, registrar causa exacta e intervención externa necesaria sin bloquear lectura de reuniones anteriores validada; inferencia permanece no verificada.
@@ -158,7 +158,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 5.2: Revisar candidato y publicar entrega trazable (P10)
 
-- [ ] Pendiente.
+- [x] Código publicado `35137ad` repetido en ejecución `957299eaaed9`: conexiones reales PASS, limpieza automática y repetida verified. Ejecución visual `e4ddeee1678f` terminó exit 0 con cleanup verified. Regresión de redirect RED/GREEN, 15 tests host, frontend typecheck/92tests y 3 tests S3 PASS. CI de `35137ad`: backend PASS 1m30s, web/extensión PASS 2m1s, run43347460781. Diff/contratos/secretos revisados; capturas privadas fuera de GitHub. Actualización posterior solo documental, sin cambiar código probado. PR #840 preparado para merge de Fer; no integrado. Limpieza externa por etiquetas de ambas ejecuciones sin residuos propios. Inferencia integral/diarización y captura Chrome se mantienen separadas; no se considera aceptación de producto.
 
 **Archivo:** `.spectra/specs/local-platform-deployment/tasks.md`, `docs/LOCAL_DEPLOYMENT.md`; issues/APX/PRs vinculados.
 **Acción:** Revisar diff/seguridad y repetir validaciones pertinentes del candidato exacto, incluyendo frontend typecheck y pruebas/imagen/arranque/cleanup. Guardar commits, issues, PRs, comandos y resultados, y asociarlos a U1–U4 y esta spec. No bajar controles ni introducir cambios ajenos. Solicitar merge concreto a Fer con funcionalidad disponible, evidencia y límites; no cerrar como integrado por PR abierto.
@@ -195,5 +195,5 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 | U1 | #827 | PR #829; merge `937242a` | Integrado por Fer; CI PASS |
 | U2 | #830 | PR #832; merge `d9e12c8` | Integrado por Fer; CI PASS |
 | U3 | #833 | PR #836; merge `fa59f2c` | Integrado por Fer; normal/fallo/cleanup PASS, 14 tests, CI PASS |
-| U4 | #837 | PR #840, `feat/local-platform-connections`, base main | 15 tests host y conexiones reales PASS; 3 pruebas S3 PASS. Recorrido APX realizado; corrección de redirect y documentación en validación final. Inferencia integral pendiente; no integrado |
+| U4 | #837 | PR #840, `feat/local-platform-connections`, base main | 15 tests host y conexiones reales PASS; 3 pruebas S3 PASS. Recorrido APX y repetición publicada PASS, cleanup externo sin residuos propios; corrección redirect verificada. Listo para merge de Fer, controles de actualización documental en curso. Inferencia integral pendiente; no integrado |
 | U5 | #818 / APX padre | — | No iniciada |

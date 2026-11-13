@@ -78,6 +78,10 @@ El navegador decodificó 294 frames de 1280×652, llegó a 10,288 s, `readyState
 
 **Límites existentes:** sin transcripción, el detalle muestra el error 404 y no abre el reproductor; con motores detenidos esto impide revisar una carga nueva desde esa pantalla. Es comportamiento de la UI existente, no un fallo de proxy ni algo corregido por esta spec de despliegue. La inferencia integral, diarización, credenciales HTTP nativas, captura Chrome y aceptación de Fer siguen pendientes. La prueba directa MLX no elimina el bloqueo pyannote documentado arriba. Capturas privadas guardadas en la carpeta scratch de APX; la captura de biblioteca no contiene material de la reunión.
 
+### Cierre de validación del candidato
+
+Código publicado `35137ad` repetido en ejecución nueva `957299eaaed9`: validación de conexiones reales PASS, tres pruebas S3 PASS, limpieza automática y repetida verified. La ejecución visual `e4ddeee1678f` también terminó exit 0 con limpieza verificada. Inspección externa por etiquetas de ambas ejecuciones y del primer intento: cero contenedores, redes y volúmenes propios. No equivale a afirmar que no existan recursos de otros trabajos. CI de `35137ad`: backend PASS (1m30s), web/extensión PASS (2m1s), run43347460781. La actualización posterior es exclusivamente documental; no cambia código probado. PR #840 listo para el merge reservado a Fer una vez terminen los controles de esa actualización; integración y aceptación siguen pendientes.
+
 ## Recuperación y espacio de disco
 
 - Fallo de bucket/migración/API: el arranque termina no cero; investigar la etapa, sin borrar datos para conseguir un verde.
