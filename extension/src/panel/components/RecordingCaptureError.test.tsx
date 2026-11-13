@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { createCompletion, getCapturingCompletion, settleCapture } from "../../recording-db";
-import { RecordingCaptureError } from "./RecordingCaptureError";
+import { RecordingCompletionStatus } from "./RecordingCompletionStatus";
 
 async function record(sessionId: string) {
   await createCompletion({ sessionId, meetingId: `meeting-${sessionId}`, capturedTabId: 41, provider: "meet", status: "capturing", updatedAt: 1 });
@@ -17,12 +17,12 @@ describe("durable capture error feedback", () => {
     await record("capture-a");
     await record("capture-b");
     await expect(getCapturingCompletion(41)).rejects.toThrow("Ambiguous");
-    const panel = render(<RecordingCaptureError sessionId="capture-a" />);
+    const panel = render(<RecordingCompletionStatus sessionId="capture-a" />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Recording could not be finalized");
     expect(screen.getByRole("alert")).toHaveTextContent("Saving has not been confirmed");
     expect(screen.getByRole("alert")).toHaveTextContent("capture-a");
     panel.unmount();
-    render(<RecordingCaptureError sessionId="capture-a" />);
+    render(<RecordingCompletionStatus sessionId="capture-a" />);
     expect(await screen.findByRole("alert")).toHaveTextContent("capture-a");
   });
 
@@ -30,17 +30,17 @@ describe("durable capture error feedback", () => {
     await record("failed");
     await settleCapture("failed", true);
     await record("valid");
-    const panel = render(<RecordingCaptureError sessionId="failed" />);
+    const panel = render(<RecordingCompletionStatus sessionId="failed" />);
     await screen.findByRole("alert");
-    panel.rerender(<RecordingCaptureError sessionId="valid" />);
+    panel.rerender(<RecordingCompletionStatus sessionId="valid" />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    panel.rerender(<RecordingCaptureError />);
+    panel.rerender(<RecordingCompletionStatus />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("refreshes errors committed while the panel stays open", async () => {
     await record("live");
-    render(<RecordingCaptureError sessionId="live" />);
+    render(<RecordingCompletionStatus sessionId="live" />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await act(async () => { await settleCapture("live", true); });
     expect(await screen.findByRole("alert", {}, { timeout: 2500 })).toHaveTextContent("live");
@@ -48,7 +48,7 @@ describe("durable capture error feedback", () => {
 
   it("reports unavailable persistence rather than a successful save", async () => {
     vi.stubGlobal("indexedDB", { open: () => { throw new Error("unavailable"); } });
-    render(<RecordingCaptureError sessionId="unavailable" />);
+    render(<RecordingCompletionStatus sessionId="unavailable" />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Recording status unavailable");
     expect(screen.getByRole("alert")).toHaveTextContent("Saving has not been confirmed");
   });
