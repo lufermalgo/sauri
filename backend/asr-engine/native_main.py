@@ -154,12 +154,16 @@ def _download_audio(audio_ref: str) -> str:
     suffix = Path(audio_ref).suffix
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
         audio_path = temp.name
+    downloaded = False
     try:
         s3_client.download_file(MINIO_BUCKET, audio_ref, audio_path)
+        downloaded = True
     except Exception as exc:
-        with suppress(OSError):
-            os.unlink(audio_path)
         raise RuntimeError("Audio download failed") from exc
+    finally:
+        if not downloaded:
+            with suppress(OSError):
+                os.unlink(audio_path)
     return audio_path
 
 

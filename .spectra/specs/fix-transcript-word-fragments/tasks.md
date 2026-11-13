@@ -284,6 +284,12 @@ Las fases agrupan por lectura; el DAG indicado en cada tarea es el único orden 
 
 **Dependencias:** T17 (RED), T2 y T16 (agrupador e integración de filas necesarios para playback agrupado).
 
+## Unidad técnica de validación: limpieza nativa ante cancelación (#880)
+
+**Estado 2026-11-13:** defecto confirmado y corrección local, matriz de regresión en ejecución; no integrado ni instalado. Ansel corrige motores y revisa; Nahuel implementa pruebas en archivos separados. Misma tarea APX `task_94d76af0e39f436a`, rama `test/native-failure-cleanup-20261113`, base PR902 `178f893`.
+
+**Contrato:** cubrir la limpieza existente de audio temporal ante descarga parcial, conversión, inferencia, error y cancelación; preservar propagación de cancelación, status HTTP y privacidad de logs. No cambia producto, acústica, modelos, política de retención ni activa #248. Evidencia: `native-cleanup-evidence-20261113.md`. Pruebas HTTP sintéticas no equivalen a desconexión real ni inferencia real. Cierre: candidato publicado con matriz y regresión verificadas; Fer conserva merge y los gates finales siguen pendientes.
+
 ## Fase 4: Validación integrada y gate
 
 ### T19: Validar las suites afectadas y la concurrencia real

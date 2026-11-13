@@ -152,12 +152,16 @@ def _download_audio(audio_ref: str) -> str:
         raise RuntimeError("Object store is not initialized")
     with tempfile.NamedTemporaryFile(delete=False, suffix=Path(audio_ref).suffix) as temp:
         audio_path = temp.name
+    downloaded = False
     try:
         s3_client.download_file(MINIO_BUCKET, audio_ref, audio_path)
+        downloaded = True
     except Exception as exc:
-        with suppress(OSError):
-            os.unlink(audio_path)
         raise RuntimeError("Audio download failed") from exc
+    finally:
+        if not downloaded:
+            with suppress(OSError):
+                os.unlink(audio_path)
     return audio_path
 
 
@@ -168,6 +172,7 @@ def _convert_to_wav(audio_path: str) -> str:
         raise RuntimeError("ffmpeg is not installed; cannot decode audio to WAV")
 
     wav_path = audio_path + ".wav"
+    converted = False
     try:
         subprocess.run(
             [
@@ -189,10 +194,13 @@ def _convert_to_wav(audio_path: str) -> str:
             capture_output=True,
             timeout=FFMPEG_TIMEOUT_SECONDS,
         )
+        converted = True
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        with suppress(OSError):
-            os.unlink(wav_path)
         raise RuntimeError(f"Audio conversion failed ({type(exc).__name__})") from exc
+    finally:
+        if not converted:
+            with suppress(OSError):
+                os.unlink(wav_path)
     return wav_path
 
 
@@ -225,27 +233,28 @@ async def diarize(
     except Exception as exc:
         logger.error("Audio download failed")
         raise HTTPException(status_code=500, detail="Audio download failed") from exc
+    wav_path: str | None = None
     try:
-        wav_path = _convert_to_wav(audio_path)
-    except Exception as exc:
-        logger.error("Audio conversion failed (%s)", type(exc).__name__)
-        with suppress(OSError):
-            os.unlink(audio_path)
-        raise HTTPException(status_code=500, detail="Audio conversion failed") from exc
-    try:
-        segments = _run_diarization(wav_path)
-        return DiarizeResponse(
-            segments=segments,
-            num_speakers=len({segment.speaker for segment in segments}),
-        )
-    except Exception as exc:
-        logger.error("Diarization failed (%s)", type(exc).__name__)
-        raise HTTPException(status_code=500, detail="Diarization failed") from exc
+        try:
+            wav_path = _convert_to_wav(audio_path)
+        except Exception as exc:
+            logger.error("Audio conversion failed (%s)", type(exc).__name__)
+            raise HTTPException(status_code=500, detail="Audio conversion failed") from exc
+        try:
+            segments = _run_diarization(wav_path)
+            return DiarizeResponse(
+                segments=segments,
+                num_speakers=len({segment.speaker for segment in segments}),
+            )
+        except Exception as exc:
+            logger.error("Diarization failed (%s)", type(exc).__name__)
+            raise HTTPException(status_code=500, detail="Diarization failed") from exc
     finally:
         with suppress(OSError):
             os.unlink(audio_path)
-        with suppress(OSError):
-            os.unlink(wav_path)
+        if wav_path is not None:
+            with suppress(OSError):
+                os.unlink(wav_path)
 
 
 @app.get("/health")
