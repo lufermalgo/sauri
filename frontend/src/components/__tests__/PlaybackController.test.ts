@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { findPassageAt, PlaybackController } from "../PlaybackController";
 import type { TimedPassage } from "../PlaybackController";
+import { createPlaybackIntervals, groupTranscriptTurns } from "../../transcript-turns";
 
 function passage(id: string, startMs: number, endMs: number): TimedPassage {
   return { id, startMs, endMs, text: `Synthetic passage ${id}` };
@@ -35,6 +36,54 @@ function mediaElement() {
 }
 
 const passages = [passage("first", 0, 1000), passage("second", 1000, 2000)];
+
+describe("T17 derived source intervals", () => {
+  it("retains two intervals for one presentation turn and no association in the gap", async () => {
+    const sources = [
+      { ...passage("a", 0, 100), sequence: 1 },
+      { ...passage("b", 200, 300), sequence: 2 },
+    ];
+    const snapshot = structuredClone(sources);
+    const turns = groupTranscriptTurns(sources, new Map([["a", "speaker-a"], ["b", "speaker-a"]]));
+    const intervals = createPlaybackIntervals(sources, turns);
+    expect(turns).toHaveLength(1);
+    expect(intervals.map(({ id, startMs, endMs, presentationTurnId }) => ({ id, startMs, endMs, presentationTurnId }))).toEqual([
+      { id: "a", startMs: 0, endMs: 100, presentationTurnId: "a" },
+      { id: "b", startMs: 200, endMs: 300, presentationTurnId: "a" },
+    ]);
+    expect(findPassageAt(intervals, 50)?.id).toBe("a");
+    expect(findPassageAt(intervals, 150)).toBeNull();
+    expect(findPassageAt(intervals, 250)?.id).toBe("b");
+    const audio = mediaElement();
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages: intervals });
+    for (const [seconds, expected] of [[0.05, "a"], [0.15, null], [0.25, "b"], [0.3, null]] as const) {
+      audio.currentTime = seconds;
+      audio.emit("timeupdate");
+      expect(controller.getState().activePassageId).toBe(expected);
+    }
+    await controller.playPassage(intervals[0]!);
+    expect(audio.currentTime).toBe(0);
+    expect(sources).toEqual(snapshot);
+    controller.destroy();
+  });
+
+  it("keeps overlapping source order and excludes invalid timing without inventing text", () => {
+    const sources = [
+      { ...passage("a", 0, 100), sequence: 1 },
+      { ...passage("b", 50, 300), sequence: 2, text: "" },
+      { ...passage("invalid", 400, 200), sequence: 3 },
+      { id: "untimed", startMs: null, endMs: null, sequence: 4, text: "Synthetic untimed" },
+    ];
+    const intervals = createPlaybackIntervals(sources, groupTranscriptTurns(sources, new Map(sources.map(({ id }) => [id, "speaker-a"]))));
+    expect(intervals.map(({ id, startMs, endMs, text }) => ({ id, startMs, endMs, text }))).toEqual([
+      { id: "a", startMs: 0, endMs: 100, text: "Synthetic passage a" },
+      { id: "b", startMs: 50, endMs: 300, text: "" },
+    ]);
+    expect(findPassageAt(intervals, 75)?.id).toBe("a");
+    expect(findPassageAt(intervals, 150)?.id).toBe("b");
+    expect(findPassageAt(intervals, 400)).toBeNull();
+  });
+});
 
 describe("findPassageAt", () => {
   it("matches valid half-open intervals, including adjacent boundaries", () => {
