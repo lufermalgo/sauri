@@ -1,0 +1,77 @@
+# Despliegue local y validación aislada
+
+Spec: `.spectra/specs/local-platform-deployment/`; issue padre #818; U1 #827/PR #829, U2 #830/PR #832, U3 #833/PR #836, U4 #837. Esta guía describe el candidato de esas ramas, no afirma que esté integrado en `main` ni aceptado por Fer.
+
+## Qué se ejecuta dónde
+
+- Docker: portal construido (Nginx), API, worker, PostgreSQL, RustFS/S3 y RabbitMQ.
+- Chrome: extensión MV3; no vive en Docker.
+- Mac: motores HTTP nativos MLX Whisper y pyannote/MPS. No son servicios Compose. Una URL o `/health` no demuestra inferencia ni GPU.
+- PostgreSQL guarda datos/propiedad; S3 guarda audio/video; RabbitMQ transporta trabajos, no es el archivo de las grabaciones.
+
+El portal se sirve en `http://127.0.0.1:5173` por defecto (`PORTAL_PORT`). `/api/` pasa a la API sin reemplazar su autenticación. Los medios se leen directamente con enlaces S3 temporales firmados, usando `OBJECT_STORE_PUBLIC_ENDPOINT` accesible desde el navegador; nunca se reescribe una URL después de firmarla. El almacenamiento conserva nombres históricos MinIO aunque su imagen sea RustFS; esto no migra datos anteriores (#543).
+
+## Requisitos y arranque
+
+Docker Desktop activo y Docker Compose con soporte de `!override` para QA. La imagen del portal usa Node 22 y Nginx con digests fijados; no necesita Vite ni Node en el host para servirla. Node >=20 es requisito de desarrollo frontend/extensión, no del runtime Nginx. Python >=3.11 en el host ejecuta la herramienta QA; `--connections` requiere además `ffmpeg` en PATH para crear dos segundos audiovisuales sintéticos. No descarga modelos.
+
+Las variables privadas deben estar configuradas mediante un archivo privado de entorno o el mecanismo de secretos autorizado; no guardar sus valores en Git, capturas ni evidencias:
+
+- `QUEUE_MESSAGE_SIGNING_KEY`: firma de trabajos, mínimo 32 bytes.
+- `SPEAKER_EXCERPT_ACTIVE_KEY_ID` y `SPEAKER_EXCERPT_KEYRING`: identificador y llavero versionado AES-256. Formato del llavero: pares `id:base64`, separados por comas; **no JSON**.
+- `JWT_SECRET`: firma de sesiones. No usar el valor local predeterminado como evidencia de seguridad multiusuario.
+- `AUTH_DISABLED=false` en validación. El bypass heredado solo opera con `APP_ENV=test`; no se habilita en este procedimiento.
+- `OBJECT_STORE_PUBLIC_ENDPOINT`: dirección S3 accesible desde el navegador, por defecto `http://localhost:9000`.
+
+`make up` preserva volúmenes, verifica credenciales nativas, detiene API/worker del proyecto seleccionado antes de migrar, inicia infraestructura, asegura el bucket, ejecuta Alembic y arranca API/worker/portal. `make build` construye primero las imágenes. No aplicarlos sobre datos personales sin la coordinación y respaldo acordados. El portal se incluye al final; éxito exige HTTP 200 tanto estático como de API con un plazo común de 60 segundos. El mensaje final no acredita inferencia.
+
+Las credenciales nativas residen en `~/.config/sauri/engine_token` y `recording_capability_key` (0600), preservadas si existen y montadas de solo lectura en el worker. `make engines-status` comprueba procesos, no acceso desde Docker. `make engines-up` es una acción separada; las validaciones aisladas no la ejecutan ni modifican los procesos de Fer.
+
+## Procedimiento QA sin datos personales
+
+Usar una carpeta temporal externa al repositorio, por ejemplo la carpeta scratch de APX. No se selecciona el proyecto principal por defecto.
+
+1. `python3 _tools/validate-local-platform.py create --directory /ruta/temporal/externa` genera una carpeta privada y muestra la ruta del `inventory.json`.
+2. `python3 _tools/validate-local-platform.py check --inventory /ruta/inventory.json` construye/inicia exclusivamente ese proyecto y verifica HTTP estático/API. **Es solo salud HTTP**, no conexiones de datos.
+3. Añadir `--connections` para DB/S3/cola, dos usuarios con login real, carga audiovisual real, comparación API/proxy, propiedad, rangos S3/CORS/firma y controles de conectividad nativa. El worker QA se detiene antes de subir el medio para no enviar trabajos a los motores de Fer. No se simula procesamiento terminado.
+4. `--hold-seconds N` conserva el entorno por un máximo de 900 segundos para una revisión en navegador; al vencer el plazo también se elimina automáticamente. Sin esa opción no deja servicios esperando.
+5. `--controlled-failure` provoca un error después del arranque: debe terminar con salida no cero y eliminar sus recursos. No es un fallo inesperado ni una prueba de éxito funcional.
+6. `python3 _tools/validate-local-platform.py cleanup --inventory /ruta/inventory.json` permite repetir/verificar limpieza tras éxito, error o interrupción.
+
+Cada ejecución tiene runId aleatorio, nombre Compose exacto, puertos registrados y volúmenes propios. Publica solo en loopback; ante conflicto selecciona otro bloque sin detener al ocupante. El worker monta únicamente claves sintéticas de esa ejecución. El volumen RabbitMQ se declara explícitamente en el override QA para evitar el volumen anónimo generado por su imagen. No se alteran los montajes persistentes del Compose personal.
+
+El inventario y sus etiquetas deben coincidir antes de borrar un ID. Ante ambigüedad, inventario ausente, daemon inaccesible o recursos no registrados, se rechaza la limpieza; no anunciar éxito. Conservar el inventario para investigar, nunca reemplazarlo por un borrado por prefijo o `prune`.
+
+`--connections` instala herramientas pytest únicamente en `/tmp/qa-test-tools` del contenedor desechable, sin cambiar dependencias de aplicación ni el host. Reutiliza `tests/infra/test_object_store_browser_endpoint.py` y `tests/meetings/test_playback_storage_integration.py`. Configura CORS solo en el bucket QA con el origen exacto del portal y GET/HEAD/Range, sin bucket público ni comodín. Esto no configura una política para datos personales.
+
+Los archivos `qa.env`, `connections-private.json` (sesiones y enlaces temporales) son privados; no adjuntarlos a issues ni PRs. Las evidencias públicas deben limitarse a estados, comandos, IDs sintéticos y resultados. `connections.txt`, `engines.json`, métricas e inventario no deben incluir claves ni enlaces firmados completos.
+
+## Disponibilidad y evidencia: qué significa cada control
+
+| Capa | Control | Qué no acredita |
+|---|---|---|
+| Configuración | Compose efectivo y puertos/montajes propios | Servicio iniciado |
+| Portal | `/portal-health` y navegador con assets construidos | API, datos ni permisos |
+| API | `/api-health` proxifica `/health` | PostgreSQL/S3/cola saludables |
+| Datos | Escritura/lectura de dos usuarios QA en PostgreSQL | Aceptación multiusuario de producto |
+| Archivos | Escritura/lectura, carga real y tres rangos exactos 206, CORS y firma alterada denegada | Transcripción |
+| Cola | Publish/consume/ack de un mensaje sintético firmado | Trabajo de inferencia terminado |
+| Autorización | Usuario A/B/anónimo, API directa y proxy con mismo resultado | Cambio de política de acceso |
+| Motores | GET `/health` desde un worker QA de una sola ejecución | Credenciales compatibles, inferencia, dispositivo GPU |
+| Inferencia | Se registra separada como no verificada cuando no se ejecuta | No debe reemplazarse por un doble |
+| Navegador | Abrir, consultar, reproducir y buscar en medio real | Captura Chrome ni aceptación de Fer |
+| Integración | SHA remoto con merge y repetición aislada | Aceptación de producto |
+
+Estado observado de U3: commit `e07c1ce` publicado en PR #836; 14 tests, ciclo Docker normal/fallo provocado y limpieza repetida sobre ese commit PASS. Cero contenedores/volúmenes al terminar; ambos controles remotos PASS. Merges reservados a Fer.
+
+Estado observado inicial de U4 #837: DB/S3/cola, login de dos usuarios, carga real, comparación proxy/directo, denegación usuario B/anónimo y rangos/CORS/firma PASS en entornos sintéticos eliminados al finalizar. La comprobación visual autenticada permanece pendiente: el navegador APX fue reportado bajo control del dueño. Ni esto ni la integración de #703 (merge remoto verificado; ya no es draft) acredita por sí solo captura completa o inferencia. Ejecución `d63af4d2cec2`: tres pruebas reutilizadas PASS (0.12 s); ambos motores no alcanzables desde worker (`ConnectError`). `make engines-status` indicó ambos detenidos y GET locales a 8001/8002 devolvieron conexión fallida (HTTP 000). No se iniciaron ni alteraron. Preflight nativo sin red: dependencias instaladas, snapshot MLX encontrado; `snapshot_download(local_files_only=True)` para `pyannote/speaker-diarization-3.1` devolvió `LocalEntryNotFoundError`. No se descargó ningún modelo ni se leyó la credencial HF. Completar separación de hablantes requiere disponer de ese modelo y preparar el entorno nativo compatible; no se amplía la exclusión de descargas de esta spec. U4 no está listo como recorrido visual completo.
+
+## Recuperación y espacio de disco
+
+- Fallo de bucket/migración/API: el arranque termina no cero; investigar la etapa, sin borrar datos para conseguir un verde.
+- Puerto ocupado: elegir otro puerto o bloque QA; no matar al ocupante.
+- QA interrumpido: repetir `cleanup` con su inventario, comprobar que Docker esté accesible y revisar IDs/etiquetas antes de intervenir. Un inventario con `cleanup: verified` no sustituye una inspección externa de residuos.
+- `make down` conserva datos del proyecto seleccionado. **`make clean` elimina datos y no es parte del arranque ni de estas pruebas.**
+- Las pruebas retiran contenedores, redes y volúmenes exclusivamente temporales. Las imágenes compartidas y build cache se conservan según el diseño; medir con `docker system df`, no atribuir cifras globales solo a Sauri ni ejecutar limpieza global. La eliminación de imágenes antiguas/datos personales requiere una autorización específica vigente.
+
+Cambios de tecnología, límites, datos o permisos deben mantener sincronizados este documento, `ARCHITECTURE.md` y la spec. Documentación aprobada, implementación, publicación, merge, recorrido, inferencia y aceptación son estados diferentes.

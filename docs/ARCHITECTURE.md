@@ -5,7 +5,7 @@ Estado: dirección confirmada por Fer el 12-11-2026 (conversación APX `th_0eb2f
 ## Decisiones y límites
 
 - Núcleo de servicios en Docker; transcripción y diarización nativas en el Mac para aprovechar Apple GPU. No se trasladan los motores a Docker/CPU: esa alternativa pierde la aceleración prevista en este Mac. No es una limitación universal de Docker.
-- La extensión vive en Chrome. El portal es React/Vite; su servidor debe formar parte del despliegue central, pero **todavía no está en Compose**. No confundir el servidor de desarrollo con una entrega contenerizada.
+- La extensión vive en Chrome. El portal React se construye con Vite y se sirve mediante Nginx en Docker, añadido al candidato de local-platform-deployment (#829 → #832 → #836 → U4 #837). El runtime no usa Vite ni expone fuentes. Mantener publicación/merge/recorrido/aceptación separados; los PR de despliegue no se consideran integrados por existir. Ver [operación y QA](LOCAL_DEPLOYMENT.md).
 - PostgreSQL almacena datos estructurados y propiedad de las reuniones. Un almacén S3 guarda medios; RabbitMQ entrega trabajos a los procesadores. No guardar videos en PostgreSQL ni usar la cola como archivo durable de grabaciones.
 - Compose actualmente usa RustFS, aunque el servicio, volumen y variables conservan nombres MinIO. No renombrar ni migrar volúmenes existentes para limpiar nomenclatura. La compatibilidad real con datos anteriores requiere evidencia separada: issue #543 sigue abierto.
 - Se conserva la autenticación y autorización existentes. `AUTH_DISABLED=true`, valor predeterminado del Compose local, **no demuestra aislamiento entre cuentas**. La validación de propiedad debe ejecutarse con autenticación activa y dos identidades sintéticas; no habilitar un despliegue multiusuario ni cambiar política de acceso como parte de esta reconciliación.
@@ -15,7 +15,7 @@ Estado: dirección confirmada por Fer el 12-11-2026 (conversación APX `th_0eb2f
 | Componente | Tecnología actual | Ubicación | Contrato / responsabilidad |
 |---|---|---|---|
 | Captura | Chrome MV3, TypeScript, React | Chrome | Capturar medios autorizados; persistencia local y cola de carga |
-| Portal | React, TypeScript, Vite | Navegador; servidor pendiente en Compose | Consultar reuniones y reproducir medios autorizados |
+| Portal | React/TypeScript construido con Vite, servido por Nginx | Navegador y Docker `portal` en candidato #818 | Consultar reuniones vía proxy API y reproducir enlaces S3 autorizados |
 | API | Python, FastAPI, SQLAlchemy | Docker `api` | Ingestión y acceso a reuniones del usuario |
 | Procesadores | Python | Docker `worker` | Consumir trabajos y coordinar motores |
 | Datos | PostgreSQL 16 | Docker `postgres`, volumen `pgdata` | Reuniones, estados, transcripciones, hablantes y propiedad |
@@ -27,7 +27,8 @@ Estado: dirección confirmada por Fer el 12-11-2026 (conversación APX `th_0eb2f
 ```mermaid
 graph LR
   E[Extensión Chrome] --> A[API Docker]
-  P[Portal React] --> A
+  P[Portal React servido por Nginx Docker] -->|proxy API| A
+  P -->|enlaces firmados y Range| S
   A --> D[PostgreSQL Docker]
   A --> S[S3 RustFS Docker]
   A --> Q[RabbitMQ Docker]
@@ -45,7 +46,7 @@ La configuración de API/worker apunta a `host.docker.internal:8001` y `:8002`. 
 | Tramo | Fuente existente | Estado contrastado / pendiente |
 |---|---|---|
 | Captura y preferencias | `.spectra/specs/extension-capture-preferences/requirements.md` | Solo requirements en main; no inventar diseño/tareas aprobados |
-| Finalización, carga y apertura de revisión | `.spectra/specs/chrome-recording-completion/{requirements,design,tasks}.md` | Tres documentos presentes, con procedencia de aprobaciones; issues #610–628 abiertos y PR #703 draft. Esto no equivale a implementación |
+| Finalización, carga y apertura de revisión | `.spectra/specs/chrome-recording-completion/{requirements,design,tasks}.md` | Tres documentos presentes; PR #703 MERGED (head `191c8aa`, verificado durante U4). No inferir de ese merge captura real, recorrido integrado ni aceptación; revisar cada issue antes de abrir trabajo |
 | Reproducción | `.spectra/specs/meeting-review-playback/` | Diseño, tareas y registro de aceptación separados; API `/api/v1/meetings/{meeting_id}/playback` implementada, falta comprobar recorrido integrado |
 | Biblioteca y metadatos | `.spectra/specs/recording-library-metadata/` | Main contiene requirements/config; discrepancias documentales ya registradas en #701, #715, #716. Reusar esos issues, no duplicarlos |
 | Fallos de carga existentes | #606 y pruebas `extension/src/background.upload-retry.test.ts`, `upload-queue.*test.ts` | Inspeccionar correcciones existentes antes de iniciar otra; una prueba con dobles no acredita carga real |
@@ -56,10 +57,12 @@ La spec de finalización exige abrir revisión **después de procesamiento exito
 
 Auditoría APX `task_9e74a2d278d648ad`, informe adjunto `arquitectura-docker-sauri.md`: se verificaron aisladamente escrituras/lecturas PostgreSQL, migraciones, objetos S3 con lectura parcial firmada, envío/recepción RabbitMQ y arranque API/worker. Se retiraron recursos sintéticos de esa auditoría. **No acredita inferencia, captura real Chrome, propiedad con autenticación activa ni recorrido completo.**
 
+U4 #837 repitió en entorno nuevo y autenticado escrituras/lecturas PostgreSQL/S3, mensaje firmado publish/consume/ack, login real de dos usuarios sintéticos, carga audiovisual por API/proxy y permisos A/B/anónimo; tres rangos del enlace firmado con bytes/Content-Range/CORS exactos y firma alterada denegada. También pasaron las tres pruebas existentes de endpoint público y playback con S3 real. Entorno eliminado al terminar. La revisión visual autenticada está pendiente porque el navegador APX estaba bajo control del dueño. El worker QA no alcanzó los motores (`ConnectError`); `make engines-status` y GET locales confirmaron ambos detenidos. No se enviaron grabaciones a esos motores ni se verificó inferencia/GPU. Estos resultados son del candidato, no de un merge ni aceptación de producto.
+
 Orden de ejecución: reconciliar especificaciones y aprobaciones → reparar conexiones concretas con pruebas → publicar e integrar unidades → validar captura/carga/propiedad/reproducción → validar transcripción y hablantes sobre ese recorrido. No reemplazar funcionalidad con rutas de demostración o datos simulados; los datos sintéticos son únicamente fixtures de prueba.
 
 ## Preservación y mantenimiento
 
-No ejecutar `docker system prune`, eliminar volúmenes ni limpiar recursos ajenos. Identificar proyecto, propiedad, datos y autorización antes de retirar recursos existentes. El volumen principal de Sauri medido en la auditoría contiene aproximadamente 2,426 GB: no se considera basura. Las mediciones globales de Docker incluyen otros proyectos.
+No ejecutar `docker system prune`, eliminar volúmenes ni limpiar recursos ajenos. Identificar proyecto, propiedad, datos y autorización antes de retirar recursos existentes. La auditoría inicial midió un volumen principal de aproximadamente 2,426 GB; es un dato histórico, no un inventario vigente ni autorización de borrado. Las mediciones globales de Docker pueden incluir otros recursos: verificar siempre su estado y la autorización actual. QA retira contenedores/redes/volúmenes propios al finalizar; no ejecuta limpieza global de imágenes compartidas ni cache.
 
 Todo cambio arquitectónico debe actualizar este documento y la spec afectada en la misma entrega, indicando motivo, alternativas descartadas, impacto de despliegue/datos y evidencia. Registrar decisiones de producto, privacidad, gasto o seguridad aprobadas por Fer; decisiones técnicas no amplían esas autorizaciones. `PRODUCT_BASELINE.md` sigue siendo la autoridad de producto, y las fases SDD conservan sus aprobaciones separadas de implementación, merge y aceptación.

@@ -111,7 +111,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 4.1: Comprobar núcleo y proxy con autenticación activa (P3, P6, P9)
 
-- [ ] Pendiente.
+- [x] U4 #837: opción `check --connections` y helper QA `_tools/check_local_platform_backend.py`, ejecutado dentro del contenedor desechable sin agregar endpoints. PostgreSQL y S3 write/read PASS; RabbitMQ publish/consume/ack firmado PASS; login real de dos usuarios, comparación semántica directa/proxy por ruta/query/identidad y errores reales 401/404/422 PASS. B/anónimo no reciben reunión/manifiesto de A. Claves/sesiones/enlaces solo en archivo privado, nunca evidencias públicas. Entorno `d63af4d2cec2` eliminado al finalizar. Suite host extendida 15/15 PASS. No integrado ni aceptado.
 
 **Archivo:** `_tools/validate-local-platform.py` (modo check), `backend/tests/infra/test_object_store_browser_endpoint.py` (reusar).
 **Acción:** En proyecto QA generar dos identidades sintéticas y AUTH_DISABLED=false. Probar escritura/lectura PostgreSQL, objeto propio S3 y publicación/recepción/ack en cola aislada. Comparar API directa/proxy por ruta/query/identidad/código/cuerpo semántico, incluidos errores y usuario B/anónimo sin acceso a reunión de A. Reusar test de endpoint público de objetos. Mantener contratos de credenciales; no imprimir tokens. Cleanup siempre al cerrar ejecución, aunque un control falle.
@@ -120,7 +120,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 4.2: Comprobar medio real, firma y rangos (P4, P9)
 
-- [ ] Pendiente.
+- [x] #837: ffmpeg creó dos segundos de señal audiovisual sintética, cargados por API/proxy real (sin doble ni inferencia). Manifiesto del propietario entrega URL S3 de endpoint público local; tres rangos inicial/intermedio/final devolvieron 206 con bytes/Content-Range exactos, CORS exacto y preflight GET/Range PASS; firma alterada 403, B/anónimo no obtienen manifiesto. CORS se configuró solo en bucket QA para origen exacto, sin wildcard/ACL pública. Reutilizadas las dos suites de endpoint público y playback storage: 3 pruebas PASS, 0.12s, S3 real. Evidencias en scratch de `d63af4d2cec2`, ningún recurso de ejecución residual. No acredita reproducción en navegador.
 
 **Archivo:** `backend/tests/meetings/test_playback_storage_integration.py` (reusar), `_tools/validate-local-platform.py` (check).
 **Acción:** Crear/cargar medio audiovisual sintético por API real; usar fixtures explícitos de playback cuando sean necesarios sin acreditar procesamiento. Ejecutar test con S3 real y sus variables documentadas. Probar varios rangos válidos/iniciales/intermedios/finales: 206, bytes y Content-Range exactos, CORS del origen portal, firma inválida denegada. API B y anónima no obtienen manifiesto/medios de A; un enlace firmado válido conserva su política de capacidad temporal. No reescribir URL tras firmar ni abrir bucket/CORS global para pasar.
@@ -129,7 +129,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 4.3: Recorrer portal Docker en navegador real (P1, P3–P4, P9)
 
-- [ ] Pendiente.
+- [ ] Pendiente y no verificado. APX abrió origen real `http://127.0.0.1:15173`, pestaña t3, pero snapshot devolvió `paused_by_user` porque el dueño conserva su control. Se pidió liberarla sin cambiar de navegador ni eludirlo. La espera QA de 300s expiró y eliminó automáticamente ese entorno. Repetir con nuevo entorno tras recuperar control; no confundir las pruebas HTTP con recorrido visual.
 
 **Archivo:** `_tools/validate-local-platform.py` (referencias a evidencias); capturas/logs en carpeta temporal de la ejecución, no en repositorio.
 **Acción:** Con navegador permitido/Playwright abrir origen Docker, iniciar sesión existente, consultar biblioteca y detalle autorizado, recargar ruta y reproducir medio sintético. Comprobar errores API/medio ausente y separación A/B/anónimo. Guardar captura y errores de consola/red sin tokens/URLs privadas. No interceptar API/medios para fabricar éxito ni modificar UI para facilitar QA. La captura Chrome pertenece a chrome-recording-completion y no se acredita con este recorrido.
@@ -138,7 +138,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 4.4: Separar conectividad de motores e inferencia (P2, P6, P10)
 
-- [ ] Pendiente.
+- [x] Evaluación explícita, NO inferencia verificada: GET /health desde worker QA efímero falló con ConnectError en ambos motores; make engines-status indicó ambos detenidos y GET de host 8001/8002 falló. No se tocaron procesos nativos. Dependencias nativas presentes; comprobación Hugging Face offline/local_files_only encontró snapshot MLX y devolvió LocalEntryNotFoundError para pyannote/speaker-diarization-3.1. No se descargaron modelos ni se leyó token HF. Inferencia/GPU no verificadas; para completar procesamiento faltan modelo pyannote local y entorno nativo compatible, sin ampliar por cuenta propia la exclusión de descargas. Guardado engines.json independiente, sin inferir GPU de health/configuración. Esta evaluación no cierra la validación de procesamiento del padre.
 
 **Archivo:** `_tools/validate-local-platform.py` (checks engines/inference), `docs/LOCAL_DEPLOYMENT.md` (matriz de resultados).
 **Acción:** Comprobar desde worker acceso a motores nativos existentes si es posible sin alterar sus procesos; conservar HTTP/credenciales. Solo con entorno/modelos/credenciales disponibles y alcance autorizado, enviar medio sintético y observar transcripción, diarización y dispositivo realmente usado. No descargar modelos, gastar en proveedor cloud ni sustituir motores por dobles. Si no es posible, registrar causa exacta e intervención externa necesaria sin bloquear lectura de reuniones anteriores validada; inferencia permanece no verificada.
@@ -149,7 +149,7 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 
 ### Tarea 5.1: Documentar operación y recuperación sin borrar datos (P6, P10)
 
-- [ ] Pendiente.
+- [ ] Guía `docs/LOCAL_DEPLOYMENT.md` redactada y README/ARCHITECTURE contrastados con candidato y pruebas reales. #703 ahora MERGED, no draft (verificado remoto). Incluye variables sin valores, make up, arranque/health diferenciados, QA, CORS acotado, limpieza, recuperación y límites. Falta completar resultado visual 4.3 antes de darla por finalizada.
 
 **Archivo:** `docs/LOCAL_DEPLOYMENT.md` (crear), `README.md`, `docs/ARCHITECTURE.md`.
 **Acción:** Documentar Docker/Node de construcción, variables privadas sin valores, URL local, make up, proxy/API/S3, motores nativos, salud diferenciada, puertos/conflictos, procedimientos QA e inventario/cleanup, recuperación sin borrar volúmenes. Advertir que make clean elimina datos y no es parte del arranque. Contrastar estado actual de #703 y de esta entrega, no confundir spec con implementación ni fixtures con inferencia. Registrar comandos reales y límites de validación, sin secretos.
@@ -194,6 +194,6 @@ Alcance: servir el portal construido con el núcleo Docker, conservar autenticac
 | Plan | #818 | PR #825, merge `3161afa` | Aprobado e integrado |
 | U1 | #827 | PR #829; implementación `87f16f2` | Publicado y validado localmente; CI/merge pendientes |
 | U2 | #830 | `feat/local-platform-bringup`, apilada sobre #829 | Implementado y validado localmente; no integrado |
-| U3 | #833 | `feat/local-platform-qa`, apilada sobre #832 | Implementado; 14 tests y dos ciclos Docker con limpieza PASS; no integrado |
-| U4 | Al activar | — | No iniciada |
+| U3 | #833 | PR #836, `e07c1ce`, apilado sobre #832 | Commit publicado repetido en Docker normal/fallo/cleanup PASS; 14 tests, CI PASS; no integrado |
+| U4 | #837 | `feat/local-platform-connections`, sobre #836 | 15 tests host y conexiones reales PASS; 3 pruebas S3 reutilizadas PASS. Navegador pendiente; inferencia no verificada; no integrado |
 | U5 | #818 / APX padre | — | No iniciada |

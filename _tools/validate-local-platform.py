@@ -18,6 +18,8 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+import urllib.error
+import urllib.parse
 
 ROOT = Path(__file__).resolve().parents[1]
 KINDS = {'containers': 'container', 'networks': 'network', 'volumes': 'volume'}
@@ -289,7 +291,94 @@ def metrics(path, phase):
     (path.parent / ('docker-space-' + phase + '.txt')).write_text(docker('system', 'df'))
 
 
-def check(path, hold_seconds=0, controlled_failure=False):
+def connections(path, inventory):
+    compose = compose_args(path, inventory)
+    # Upload is real, but do not dispatch synthetic data to the owner's native
+    # engines. Stop only this run's worker before uploading; no fake inference.
+    docker('compose', *compose, 'stop', 'worker')
+    medium_path = path.parent / 'synthetic.webm'
+    run(['ffmpeg', '-nostdin', '-loglevel', 'error', '-y', '-f', 'lavfi',
+         '-i', 'color=c=blue:s=320x180:r=12', '-f', 'lavfi',
+         '-i', 'sine=frequency=440:sample_rate=48000', '-t', '2',
+         '-c:v', 'libvpx-vp9', '-c:a', 'libopus', str(medium_path)])
+    docker('compose', *compose, 'cp', str(medium_path), 'api:/tmp/qa-media.webm')
+    origin = f'http://127.0.0.1:{inventory["ports"]["portal"]}'
+    source = (ROOT / '_tools/check_local_platform_backend.py').read_text()
+    result = json.loads(docker('compose', *compose, 'exec', '-T', 'api', 'python', '-c', source, origin))
+    if 'error' in result:
+        raise RuntimeError('Backend connection check failed: ' + result['error'])
+    save(path.parent / 'connections-private.json', result)
+    medium = medium_path.read_bytes()
+    signed = result['manifest']['audio_source']['url']
+    endpoint = urllib.parse.urlsplit(signed)
+    if endpoint.scheme != 'http' or endpoint.netloc != f'localhost:{inventory["ports"]["s3"]}':
+        raise RuntimeError('Signed medium endpoint does not match the isolated browser endpoint')
+    def fetch(url, headers, method='GET'):
+        request = urllib.request.Request(url, headers=headers, method=method)
+        try:
+            return urllib.request.urlopen(request, timeout=10)
+        except urllib.error.HTTPError as response:
+            return response
+    for start, end in [(0, 31), (len(medium) // 2, len(medium) // 2 + 31),
+                       (len(medium) - 32, len(medium) - 1)]:
+        with fetch(signed, {'Origin': origin, 'Range': f'bytes={start}-{end}'}) as response:
+            if (response.status != 206 or response.read() != medium[start:end + 1]
+                    or response.headers.get('Content-Range') != f'bytes {start}-{end}/{len(medium)}'
+                    or response.headers.get('Access-Control-Allow-Origin') != origin):
+                raise RuntimeError('Signed medium range/CORS mismatch')
+    with fetch(signed, {'Origin': origin, 'Access-Control-Request-Method': 'GET',
+                        'Access-Control-Request-Headers': 'range'}, method='OPTIONS') as response:
+        if (response.status not in [200, 204]
+                or response.headers.get('Access-Control-Allow-Origin') != origin
+                or 'range' not in response.headers.get('Access-Control-Allow-Headers', '').lower()
+                or 'GET' not in response.headers.get('Access-Control-Allow-Methods', '')):
+            raise RuntimeError('Signed medium CORS preflight failed')
+    parts = urllib.parse.urlsplit(signed)
+    query = urllib.parse.parse_qsl(parts.query)
+    invalid = urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode([
+        (key, '0' * 64 if key.lower() == 'x-amz-signature' else value) for key, value in query])))
+    with fetch(invalid, {'Origin': origin}) as response:
+        if response.status not in [401, 403]:
+            raise RuntimeError('Invalid media signature was not denied')
+    docker('compose', *compose, 'exec', '-T', 'api', 'python', '-m', 'pip', 'install',
+           '--disable-pip-version-check', '--no-cache-dir', '--target', '/tmp/qa-test-tools',
+           'pytest>=8,<9', 'pytest-asyncio>=0.23,<2', 'hypothesis>=6.100', 'aiosqlite>=0.20')
+    pytest_output = docker('compose', *compose, 'exec', '-T',
+                           '-e', 'PYTHONPATH=/tmp/qa-test-tools:/app',
+                           '-e', 'PLAYBACK_TEST_FRONTEND_ORIGIN=' + origin,
+                           'api', 'python', '-m', 'pytest', '-q',
+                           'tests/infra/test_object_store_browser_endpoint.py',
+                           'tests/meetings/test_playback_storage_integration.py')
+    (path.parent / 'reused-storage-tests.txt').write_text(pytest_output)
+    engine_probe = '''import json, os, httpx
+results = {}
+for name, variable in [('asr', 'ASR_LOCAL_URL'), ('diarization', 'DIARIZATION_LOCAL_URL')]:
+    try:
+        response = httpx.get(os.environ[variable].rstrip('/') + '/health', timeout=3, trust_env=False)
+        results[name] = {'httpStatus': response.status_code}
+    except httpx.RequestError as error:
+        results[name] = {'notVerified': type(error).__name__}
+print(json.dumps(results))
+'''
+    engines = json.loads(docker('compose', *compose, 'run', '--rm', '--no-deps',
+                                'worker', 'python', '-c', engine_probe))
+    engine_evidence = path.parent / 'engines.json'
+    save(engine_evidence, {'connectivity': engines, 'inference': 'not_verified',
+                           'reason': 'QA credentials are synthetic; no audio sent to native engines; GPU not measured'})
+    evidence = path.parent / 'connections.txt'
+    evidence.write_text('\n'.join(result['checks'] + ['three-real-ranges-CORS-signature-denial']) +
+                        '\nSynthetic audiovisual upload; no transcription/inference claimed.\n')
+    current = load(path)
+    for layer in ['api', 'storage', 'queue', 'ownership']:
+        current['checks'].append({'layer': layer, 'outcome': 'passed', 'evidencePath': str(evidence)})
+    current['checks'].append({'layer': 'engines',
+                              'outcome': 'passed' if all(item.get('httpStatus') == 200 for item in engines.values()) else 'not_verified',
+                              'evidencePath': str(engine_evidence)})
+    current['checks'].append({'layer': 'inference', 'outcome': 'not_verified', 'evidencePath': str(engine_evidence)})
+    save(path, current)
+
+
+def check(path, hold_seconds=0, controlled_failure=False, check_connections=False):
     inventory = load(path)
     directory = path.parent
     stage = 'starting'
@@ -311,10 +400,14 @@ def check(path, hold_seconds=0, controlled_failure=False):
             inventory = load(path)
             inventory['checks'].append({'layer': layer, 'outcome': 'passed', 'evidencePath': str(evidence)})
             save(path, inventory)
+        if check_connections:
+            stage = 'real-connections'
+            connections(path, inventory)
         stage = 'browser-hold'
         time.sleep(min(900, max(0, hold_seconds)))
         inventory = load(path)
-        inventory['validation'] = {'outcome': 'passed', 'stage': 'http-health-only'}
+        inventory['validation'] = {'outcome': 'passed',
+                                   'stage': 'real-connections' if check_connections else 'http-health-only'}
         save(path, inventory)
     except BaseException:
         # Persist only a fixed stage, never the exception, command or secret.
@@ -341,6 +434,7 @@ def main():
     parser.add_argument('--directory', type=Path)
     parser.add_argument('--hold-seconds', type=int, default=0)
     parser.add_argument('--controlled-failure', action='store_true')
+    parser.add_argument('--connections', action='store_true', help='Real DB/S3/queue/login/upload/range checks')
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, interrupt)
     if args.mode == 'create':
@@ -352,7 +446,7 @@ def main():
             parser.error('mode requires --inventory; no default project is allowed')
         path = args.inventory.resolve()
         if args.mode == 'check':
-            check(path, args.hold_seconds, args.controlled_failure)
+            check(path, args.hold_seconds, args.controlled_failure, args.connections)
         else:
             cleanup(path)
         print(args.mode + ': completed; cleanup verified')
