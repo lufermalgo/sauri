@@ -3,7 +3,8 @@
 Deletes data whose retention period has expired:
 - SessionRecording with expires_at <= now: deletes audio + video from the
   object store and the associated Transcript.
-- Transcript with expires_at <= now (orphaned): deletes the record.
+- Transcript with expires_at <= now (orphaned): deletes the source and all
+  source-bound revision results/reviews without deleting its meeting.
 """
 
 from __future__ import annotations
@@ -15,11 +16,26 @@ from datetime import datetime
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import SessionRecording, Transcript
+from app.infra.models import Diarization, SessionRecording, SpeakerReview, Transcript
 from app.infra.object_store import ObjectStore
 from app.retention.cleanup import drain_pending_object_deletions
 
 logger = logging.getLogger(__name__)
+
+
+async def _delete_transcript_artifacts(session: AsyncSession, transcript: Transcript) -> None:
+    """Delete only this source and its revision derivatives; caller owns commit.
+
+    A meeting has one transcript (UNIQUE meeting_id). Reviews are linked through
+    that meeting, including legacy reviews without a diarization row. Their DB
+    cascades remove items/receipts. Diarizations must go before turns because
+    both their transcript FK and assignments' turn FK are restrictive.
+    """
+    await session.execute(delete(SpeakerReview).where(SpeakerReview.meeting_id == transcript.meeting_id))
+    await session.execute(delete(Diarization).where(Diarization.transcript_id == transcript.id))
+    # Use SQL deletion so existing DB cascades remove turns/summaries/requests;
+    # session.delete would try to NULL the non-null FK of loaded source turns.
+    await session.execute(delete(Transcript).where(Transcript.id == transcript.id))
 
 
 async def run_retention_deletion(
@@ -76,13 +92,16 @@ async def run_retention_deletion(
                     recording.id,
                 )
 
-        # Delete the associated Transcript (by meeting_id)
-        transcript_result = await session.execute(
-            delete(Transcript).where(
-                Transcript.meeting_id == recording.meeting_id
-            )
+        # Remove revision derivatives before the associated source (restrictive FKs).
+        transcript = await session.scalar(
+            select(Transcript).where(Transcript.meeting_id == recording.meeting_id)
         )
-        deleted_transcripts += transcript_result.rowcount  # type: ignore[attr-defined]
+        if transcript is not None:
+            await _delete_transcript_artifacts(session, transcript)
+            deleted_transcripts += 1
+        else:
+            # Review-only legacy records can outlive an already removed source.
+            await session.execute(delete(SpeakerReview).where(SpeakerReview.meeting_id == recording.meeting_id))
 
         # Delete the SessionRecording record
         await session.delete(recording)
@@ -99,7 +118,7 @@ async def run_retention_deletion(
 
     # d. Delete independently expired transcripts
     for transcript in orphan_transcripts:
-        await session.delete(transcript)
+        await _delete_transcript_artifacts(session, transcript)
         deleted_transcripts += 1
 
     # e. Commit

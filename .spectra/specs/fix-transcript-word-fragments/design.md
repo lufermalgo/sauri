@@ -1,5 +1,21 @@
 # Documento de Diseño — Renderizado de turnos completos en la transcripción
 
+## Delta técnico H1 — borrado ligado al origen (#903)
+
+Corrección de AC-H1–H3 por encargo de Ansel sobre `178f893`/PR902; no reabre fases aprobadas ni habilita #248/#246/#253. Ubicación: helper privado `_delete_transcript_artifacts(session, transcript)` en `backend/app/retention/worker.py`; tests `backend/tests/integration/test_retention_revision_artifacts.py`. Sin carpetas nuevas, migración, esquema, HTTP, Compose, shared-types o dependencias.
+
+**Diseño mínimo:** selección por vencimiento existente → DELETE reviews del meeting fuente → DELETE diarizaciones por transcript ID → DELETE SQL transcript por ID → recording si venció → commit exterior único. El helper no hace commit y se reutiliza en ambas expiraciones. SQL evita NULL updates ORM sobre turns; errores se propagan y la sesión exterior revierte. Borrados ObjectStore mantienen su comportamiento no transaccional vigente; no se registran payloads privados.
+
+**Relaciones inspeccionadas:**
+- `transcripts.meeting_id` es UNIQUE: una fuente por meeting. Reviews se vinculan por meeting/revisión, sin FK al transcript: todas las revisiones de ese meeting derivan de su única fuente, incluidas legacy sin diarización. DELETE reviews limitado al meeting fuente activa cascadas de items/receipts, no identities globales/per-user.
+- Diarization tiene FK restrictiva a transcript: eliminar todas las generaciones por ID fuente, sin filtro de estado, elimina ambos JSON. Sus cascadas eliminan speakers/assignments antes de borrar turns y liberan la FK restrictiva de assignment a SpeechTurn.
+- DELETE transcript activa CASCADE ya existente de turns, summaries y requests. Permanecen User/plantillas/categorías, Meeting, claim, auditoría/outbox de recuperación y ledger de eventos de resumen sin contenido, que no dependen del transcript. Nunca borrar por owner ni llamar `delete_meeting`.
+- Recording vencido conserva borrado existente audio/video/recording e inventario media. Si el transcript ya no existe, elimina igualmente reviews legacy de ese único recording/meeting. Expiración independiente conserva recording/media/objetos vigentes.
+
+**Alternativas descartadas:** una migración de FK amplía esquema innecesariamente y no elimina reviews ni corrige por sí sola nulificación ORM; borrar meeting pierde auditoría/metadatos fuera del origen; ocultar o vaciar JSON deja fuente y FK bloqueadas.
+
+**Propiedades y pruebas:** P-H1 (AC-H1): cero derivados de cualquier estado tras éxito. P-H2 (AC-H2): snapshot exacto de otros orígenes y datos de usuario/meeting intacto. P-H3 (AC-H3): fallo después de borrar hijos restaura snapshot completo; retry/redelivery idempotente. P-H4 (AC-H2): solo expiración recording borra sus objetos. Se prueban en PostgreSQL real con FK, turns cargados, reviews/receipts, ambos JSON y rollback. Suites pertinentes y Ruff/mypy del proyecto con deuda comparada; evidencia y limpieza Docker antes de publicar sin merge.
+
 ## Resumen
 
 > **Lectura por alcance:** las secciones originales documentan el diseño previamente aprobado (AC1–AC7). El [delta de diseño #880](#delta-de-diseño-880--admisión-acústica-y-atribución-granular) al final precisa sus excepciones para ejecuciones nuevas: admisión acústica, atribución dentro de una fuente y resultados derivados versionados. No cambia las fuentes ni activa reprocesamiento histórico. El delta está escrito para revisión de Ansel e integración por Fer; no está implementado ni autoriza implementar. El estado `complete` de `.config.spectra` corresponde al alcance histórico y no acredita aprobación del delta.

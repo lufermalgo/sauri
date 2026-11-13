@@ -1,5 +1,24 @@
 # Plan de Implementación — Renderizado de turnos completos en la transcripción
 
+## Continuación correctiva H1 / #903 — 2026-11-13
+
+Encargo de Ansel desde `178f893`/PR902; refs #659/#880. Implementa solo borrado existente, sin política nueva ni cierre T20. Unidad: rama `bugfix/issue-903-retention-revisions`, worktree `.worktrees/fix-retention-h1-902`; Nahuel implementa y publica, Ansel revisa e incorpora a QA. Sin merge/instalación viva.
+
+### H1.1 — RED PostgreSQL [x]
+**Archivo:** `backend/tests/integration/test_retention_revision_artifacts.py`.
+**Acción:** sembrar origen con revisiones completed/failed/pending, fuente/turns, reviews/receipts, summaries, media y auditoría; otros meetings del mismo/otro dueño. Ejecutar expiración recording/transcript y fallo antes de borrar fuente.
+**Criterio de Completado:** RED real con FK, sin fallos de setup: cuatro fallos observados (ForeignKeyViolation, NotNullViolation y falta de borrado previo); P-H1–P-H4. **Dependencias:** contrato H1 autorizado.
+
+### H1.2 — Borrado transaccional mínimo [x]
+**Archivo:** `backend/app/retention/worker.py`.
+**Acción:** borrar reviews del meeting fuente y diarizaciones del transcript antes de DELETE SQL del transcript; reutilizar helper en ambas rutas, manteniendo commit/objetos/plazos existentes.
+**Criterio de Completado:** tests H1.1 GREEN; rollback restaura snapshot completo y retries preservan otros orígenes, nombres/plantillas/auditoría. **Dependencias:** H1.1; P-H1–P-H4.
+
+### H1.3 — Regresiones y entrega [~]
+**Archivos:** tests anteriores y evidencia `retention-h1-validation.md` en esta spec; delta bugfix/design/tasks en esta unidad.
+**Acción:** ejecutar suites pertinentes de retención/meetings/diarización, Ruff/mypy del proyecto y comparación con base; revisar diff, eliminar contenedor/volúmenes temporales y comprobar ausencia; publicar commit/PR vinculado #903/#659/#880 para revisión de Ansel, sin merge.
+**Criterio de Completado:** comandos/resultados/SHA y límites documentados; cero regresiones nuevas, limpieza verificada y PR publicado no draft. **Dependencias:** H1.2. T19 completo y T20 final no se cierran por esta entrega.
+
 ## Delta ejecutable #880 — 2026-11-13
 
 Continúa la misma unidad y tarjeta `task_e54417ff1e164f69`, criterios #897, diseño #898 y actualización técnica de `design.md`. Ansel transmitió autorización de implementación posterior; Fer conserva merge y Ansel coordina cualquier sustitución de servicios vivos. El plan histórico de abajo no se reabre ni equivale a finalización del delta.

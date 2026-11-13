@@ -1,5 +1,21 @@
 # Bugfix — Render transcript speaker turns instead of word fragments
 
+## Delta técnico H1 — retención de revisiones (#903, #659, #880)
+
+Ansel autorizó esta continuación correctiva el 2026-11-13 sobre QA `178f893551405774bc5d9006d0eb90cd4c33f586`/PR902. No reabre fases aprobadas ni redefine política, plazos o producto. Búsqueda all-state `retention`, `diarization retention`, `retention deletion`, `retención`: sin issue específico; creado #903. T20/#659 sigue abierto y no equivale a gate final.
+
+**Causa/comportamiento actual:** WHEN vence una grabación con transcript/diarización, THEN el worker borra primero el transcript y la FK restrictiva de `diarizations.transcript_id` lo impide, reteniendo fuente y JSON v2. WHEN vence independientemente un transcript con turns, THEN el DELETE ORM puede intentar `transcript_id=NULL` y violar NOT NULL. RED real: cuatro fallos conductuales en `tests/integration/test_retention_revision_artifacts.py`, incluidos ambos errores y ausencia del borrado previo de hijos.
+
+**AC-H1 — esperado:** WHEN vence la fuente bajo las reglas vigentes, THEN el sistema SHALL eliminar transaccionalmente sus diarizaciones de todos los estados/generaciones, `prepared_result`/`presentation`, speakers/assignments, reviews/items/receipts y transcript/turns, respetando las FK. Expirar grabación sigue eliminando su transcript; expirar solo transcript no elimina grabación vigente.
+
+**AC-H2 — regresiones:** WHEN procesa una expiración, THEN el sistema SHALL CONTINUE TO preservar otros meetings del mismo/otro dueño, nombres/plantillas/datos de usuario, meeting y auditoría de recuperación sin contenido; SHALL CONTINUE TO usar plazos y borrados de objetos originales existentes. Sin reconocimiento, muestras o inferencia nueva.
+
+**AC-H3 — atomicidad:** WHEN falla el borrado relacional, THEN el sistema SHALL revertir toda la transacción DB y admitir retry idempotente. Los borrados externos ya existentes no son transaccionales; no se promete recuperar objetos por rollback DB.
+
+**Reproducción/aceptación:** en PostgreSQL dedicado crear fuente/turns, generaciones completed/failed/pending con ambos JSON, review/receipts, summary y media; añadir otro meeting mismo dueño y uno ajeno. Ejecutar `python -m pytest tests/integration/test_retention_revision_artifacts.py`; probar ambas expiraciones, fallo tras borrar hijos, rollback íntegro y dos ciclos idempotentes. No reemplazar PostgreSQL/FK por SQLite.
+
+**Límites:** PR para revisión e incorporación QA por Ansel, sin merge/instalación viva; sin cambios de esquema, HTTP, Compose ni #248/#246/#253. La lectura HTTP de fuentes vencidas antes del ciclo de borrado no se modifica en esta pieza de eliminación, ni se declara resuelto el gate completo de privacidad.
+
 ## Descripción del Bug
 
 The meeting transcript is reported to render as thousands of very short word-level fragments, with speaker attribution repeated per word, rather than readable speaker turns. QA traced the confirmed fragmentation-preserving path: the worker persists each ASR segment as a `SpeechTurn`, while the API, frontend adapter, and view preserve and render that one-to-one granularity. It is not yet proven that the private meeting's ASR provider emitted the reported fragments, or how its actual speech-turn boundaries can be derived from current inputs; a mapping-only change may therefore be insufficient.
