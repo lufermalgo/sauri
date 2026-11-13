@@ -226,7 +226,7 @@ export function MeetingPlaybackView({
         <>
           <audio
             ref={audioRef}
-            data-testid="playback-audio"
+            data-testid="playback-media"
             aria-label="Meeting audio"
             onError={handleMediaError}
           />
