@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from sqlalchemy import UniqueConstraint, select, text
+from sqlalchemy import Table, UniqueConstraint, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -244,19 +245,19 @@ def test_summary_schema_declares_exact_owner_event_and_transcript_links() -> Non
         (MeetingSummary, "template_id", "summary_templates.id"),
     ):
         assert any(fk.target_fullname == target for fk in model.__table__.c[field].foreign_keys)
-    assert SummaryRequestOutbox.__table__.primary_key.columns.keys() == ["event_id"]
-    assert ProcessedSummaryEvent.__table__.primary_key.columns.keys() == ["event_id"]
+    assert cast(Table, SummaryRequestOutbox.__table__).primary_key.columns.keys() == ["event_id"]
+    assert cast(Table, ProcessedSummaryEvent.__table__).primary_key.columns.keys() == ["event_id"]
     for model in (SummaryRequestOutbox, MeetingSummary):
         uniques = {
             frozenset(column.name for column in constraint.columns)
-            for constraint in model.__table__.constraints
+            for constraint in cast(Table, model.__table__).constraints
             if isinstance(constraint, UniqueConstraint)
         }
         assert frozenset({"transcript_id", "generation"}) in uniques
         assert frozenset({"transcript_id"}) not in uniques
     assert frozenset({"event_id"}) in {
         frozenset(column.name for column in constraint.columns)
-        for constraint in MeetingSummary.__table__.constraints
+        for constraint in cast(Table, MeetingSummary.__table__).constraints
         if isinstance(constraint, UniqueConstraint)
     }
     assert any(

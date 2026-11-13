@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]  # asyncpg does not ship py.typed; exercised against PG16.
 import pytest
 from alembic.config import Config
 from sqlalchemy.engine import make_url
