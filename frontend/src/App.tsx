@@ -5,8 +5,10 @@ import { MeetingList } from "./components/MeetingList";
 import { TranscriptView } from "./components/TranscriptView";
 import { SpeakerRecognitionTestScreen } from "./components/SpeakerRecognitionTestScreen";
 import { SpeakerTestLogin } from "./components/SpeakerTestLogin";
+import { UploadView } from "./components/UploadView";
+import { copy } from "./copy/es";
 
-type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" };
+type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" } | { type: "upload" };
 
 export function App() {
   // Only the meeting key is carried across tabs. Protected media and transcript
@@ -65,6 +67,9 @@ export function App() {
       {view.type === "list" && (
         <>
           <RegisterForm onRegistered={handleRegistered} />
+          <button type="button" onClick={() => setView({ type: "upload" })}>
+            {copy.upload.title}
+          </button>
           <button type="button" onClick={() => setView({ type: "speaker-test" })}>
             Open speaker recognition test
           </button>
@@ -78,6 +83,13 @@ export function App() {
       {view.type === "transcript" && (
         <TranscriptView
           meetingId={view.meetingId}
+          onBack={() => setView({ type: "list" })}
+        />
+      )}
+
+      {view.type === "upload" && (
+        <UploadView
+          onUploaded={(meetingId) => setView({ type: "transcript", meetingId })}
           onBack={() => setView({ type: "list" })}
         />
       )}

@@ -1,3 +1,4 @@
+import { copy } from "./copy/es";
 import type {
   Meeting,
   MeetingListApiResponse,
@@ -119,6 +120,59 @@ export interface RecordingUploadData {
 export interface RecordingUploadResult {
   recording_id: string;
   state: string;
+}
+
+export interface UploadProgress {
+  loaded: number;
+  total: number | null;
+}
+
+export async function uploadWithProgress(
+  audio: File,
+  data: RecordingUploadData,
+  onProgress: (progress: UploadProgress) => void
+): Promise<RecordingUploadResult> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) throw new Error(copy.upload.errors.unauthenticated);
+
+  const formData = new FormData();
+  formData.append("audio", audio);
+  formData.append("data", JSON.stringify(data));
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.onprogress = (event) => onProgress({
+      loaded: event.loaded,
+      total: event.lengthComputable && event.total > 0 ? event.total : null,
+    });
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        localStorage.removeItem(TOKEN_KEY);
+        window.dispatchEvent(new Event("sauri:unauthorized"));
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(copy.upload.errors.http(xhr.status)));
+        return;
+      }
+      try {
+        const result: unknown = JSON.parse(xhr.responseText);
+        if (
+          !result || typeof result !== "object" ||
+          !("recording_id" in result) || typeof result.recording_id !== "string" || !result.recording_id.trim() ||
+          !("state" in result) || typeof result.state !== "string" || !result.state.trim()
+        ) throw new Error("Invalid upload response");
+        resolve({ recording_id: result.recording_id, state: result.state });
+      } catch {
+        reject(new Error(copy.upload.errors.invalidResponse));
+      }
+    };
+    xhr.onerror = () => reject(new Error(copy.upload.errors.network));
+    xhr.ontimeout = () => reject(new Error(copy.upload.errors.timeout));
+    xhr.onabort = () => reject(new Error(copy.upload.errors.aborted));
+    xhr.open("POST", `${BASE_URL}/api/v1/ingestion/upload`);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.send(formData);
+  });
 }
 
 export async function uploadRecording(
