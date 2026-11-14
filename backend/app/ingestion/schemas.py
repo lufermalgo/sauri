@@ -24,6 +24,8 @@ class IngestionData(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    language: str | None = Field(default=None, pattern=r"^(auto|[a-z]{2})$")
+
     video_presence: Literal["muxed", "separate", "absent"]
     video_offset_ms: int | None = Field(default=None, strict=True)
 

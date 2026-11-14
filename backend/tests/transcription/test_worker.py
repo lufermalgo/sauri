@@ -286,7 +286,7 @@ async def test_property_7_segment_to_turn_mapping(
         session.add(_create_recording_in_db(meeting_id))
 
     asr_result = TranscriptionResult(
-        segments=segments, language="es-CO", supports_turns=True
+        segments=segments, language="es", supports_turns=True
     )
     capabilities = ASRCapabilities(supports_turns=True, is_local=True)
 
@@ -344,7 +344,7 @@ async def test_property_7_segment_to_turn_mapping(
 async def test_property_9_language_selection(
     session_factory: async_sessionmaker[AsyncSession], engine_language: str | None
 ) -> None:
-    """language = result.language if non-empty, otherwise 'es-CO'."""
+    """language = result.language if non-empty, otherwise 'es'."""
     meeting_id = str(uuid.uuid4())
 
     async with session_factory() as session, session.begin():
@@ -381,7 +381,7 @@ async def test_property_9_language_selection(
     if engine_language and engine_language.strip():
         assert trans.language == engine_language
     else:
-        assert trans.language == "es-CO"
+        assert trans.language == "es"
 
 
 # ---------------------------------------------------------------------------
@@ -459,7 +459,7 @@ async def test_property_8_no_segments_does_not_persist(
         session.add(_create_recording_in_db(meeting_id))
 
     asr_result = TranscriptionResult(
-        segments=[], language="es-CO", supports_turns=True
+        segments=[], language="es", supports_turns=True
     )
     capabilities = ASRCapabilities(supports_turns=True, is_local=True)
 
@@ -541,7 +541,7 @@ async def test_timeout_fails_meeting_without_rethrowing_for_retry(
     async with session_factory() as session:
         persisted_meeting = cast(Meeting, await session.get(Meeting, meeting_id))
         assert persisted_meeting.process_state == "failed"
-        assert persisted_meeting.failure_cause == "engine_failure"
+        assert persisted_meeting.failure_cause == "engine_failed"
         assert await session.get(Transcript, meeting_id) is None
 
 
@@ -566,7 +566,7 @@ async def test_property_10_transcript_uniqueness(
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
-        segments=segments, language="es-CO", supports_turns=True
+        segments=segments, language="es", supports_turns=True
     )
     capabilities = ASRCapabilities(supports_turns=True, is_local=True)
 
@@ -626,7 +626,7 @@ async def test_property_11_atomicity_rollback(
 
     segments = [TranscriptionSegment(text="hola", start_ms=0, end_ms=1000)]
     asr_result = TranscriptionResult(
-        segments=segments, language="es-CO", supports_turns=True
+        segments=segments, language="es", supports_turns=True
     )
     capabilities = ASRCapabilities(supports_turns=True, is_local=True)
 
@@ -661,10 +661,10 @@ async def test_property_11_atomicity_rollback(
 
 
 @pytest.mark.asyncio
-async def test_example_preferred_language_es_co(
+async def test_example_preferred_language_es(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """The worker invokes the engine with preferred_language='es-CO'."""
+    """The worker invokes the engine with preferred_language='es'."""
     meeting_id = str(uuid.uuid4())
 
     async with session_factory() as session, session.begin():
@@ -674,7 +674,7 @@ async def test_example_preferred_language_es_co(
 
     segments = [TranscriptionSegment(text="test", start_ms=0, end_ms=500)]
     asr_result = TranscriptionResult(
-        segments=segments, language="es-CO", supports_turns=True
+        segments=segments, language="es", supports_turns=True
     )
     capabilities = ASRCapabilities(supports_turns=True, is_local=True)
 
@@ -687,12 +687,12 @@ async def test_example_preferred_language_es_co(
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
         await _process_transcription_for_seeded_recording(message, session_factory)
 
-    # Verify the engine was called with preferred_language="es-CO"
+    # Verify the engine was called with preferred_language="es"
     mock_engine.transcribe.assert_called_once()
     call_args = mock_engine.transcribe.call_args
     options = call_args[0][1]
     assert isinstance(options, TranscriptionOptions)
-    assert options.preferred_language == "es-CO"
+    assert options.preferred_language == "es"
 
 
 @pytest.mark.asyncio
@@ -727,7 +727,7 @@ async def test_transcription_uses_audio_ref_from_recording_owned_by_meeting(
     mock_engine = AsyncMock()
     mock_engine.transcribe.return_value = TranscriptionResult(
         segments=[TranscriptionSegment(text="synthetic", start_ms=0, end_ms=100)],
-        language="es-CO",
+        language="es",
         supports_turns=True,
     )
     mock_engine.capabilities = MagicMock(
@@ -772,7 +772,7 @@ async def test_transcription_rejects_mismatched_queue_identity(
     mock_engine = AsyncMock()
     mock_engine.transcribe.return_value = TranscriptionResult(
         segments=[TranscriptionSegment(text="synthetic", start_ms=0, end_ms=100)],
-        language="es-CO",
+        language="es",
         supports_turns=True,
     )
     mock_engine.capabilities = MagicMock(
@@ -796,3 +796,99 @@ async def test_transcription_rejects_mismatched_queue_identity(
     async with session_factory() as session:
         transcripts = await session.execute(select(Transcript))
         assert transcripts.scalars().all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("configured", "requested", "expected"), [
+    (None, None, "es"), ("en", None, "en"), ("auto", None, "auto"), ("es", "en", "en"),
+    ("en", "auto", "auto"),
+])
+async def test_language_precedence_and_detected_language_persistence(
+    session_factory, monkeypatch, configured, requested, expected,
+):
+    if configured is None:
+        monkeypatch.delenv("SAURI_DEFAULT_LANGUAGE", raising=False)
+    else:
+        monkeypatch.setenv("SAURI_DEFAULT_LANGUAGE", configured)
+    meeting_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id))
+        session.add(_create_recording_in_db(meeting_id))
+    engine = AsyncMock()
+    engine.transcribe.return_value = TranscriptionResult(
+        segments=[TranscriptionSegment("synthetic", 0, 100)], language="fr",
+    )
+    engine.capabilities = MagicMock(return_value=ASRCapabilities(supports_turns=True, is_local=True))
+    message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm"}
+    if requested:
+        message["language"] = requested
+    with patch("app.transcription.worker.create_asr_engine", return_value=engine):
+        await _process_transcription_for_seeded_recording(message, session_factory)
+    assert engine.transcribe.call_args.args[1].preferred_language == expected
+    async with session_factory() as session:
+        transcript = (await session.execute(select(Transcript))).scalar_one()
+        assert transcript.language == "fr"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("failure", "cause"), [
+    ("contract", "engine_contract_mismatch"), ("v1", "engine_contract_mismatch"),
+    ("auto_missing", "engine_contract_mismatch"), ("value", "invalid_response"),
+    ("normalize_failed", "engine_failed"), ("no_word_timestamps", "engine_failed"),
+    ("engine_failed", "engine_failed"),
+])
+async def test_engine_failures_are_persisted_without_leaking_content(
+    session_factory, monkeypatch, caplog, failure, cause,
+):
+    from app.infra.models import StateHistory
+    from app.transcription.asr_engine import EngineContractError
+    from app.transcription.local_provider import LocalProvider
+
+    meeting_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="transcribing"))
+        session.add(_create_recording_in_db(meeting_id))
+    engine = AsyncMock()
+    engine.transcribe.return_value = TranscriptionResult(language="")
+    private = "/private/audio.wav private transcript content"
+    if failure == "contract":
+        engine.transcribe.side_effect = EngineContractError(private)
+    elif failure == "value":
+        engine.transcribe.side_effect = ValueError(private)
+    elif failure in {"normalize_failed", "no_word_timestamps", "engine_failed"}:
+        response = httpx.Response(422 if failure == "normalize_failed" else 500,
+                                  json={"detail": failure, "private": private})
+        engine.transcribe.side_effect = httpx.HTTPStatusError(private,
+            request=httpx.Request("POST", "http://engine/transcribe"), response=response)
+    elif failure == "v1":
+        engine = LocalProvider("http://engine")
+        client = AsyncMock()
+        client.post.return_value = httpx.Response(200, json={"segments": [], "language": "es"},
+                                                  request=httpx.Request("POST", "http://engine/transcribe"))
+        manager = MagicMock()
+        manager.__aenter__ = AsyncMock(return_value=client)
+        manager.__aexit__ = AsyncMock(return_value=False)
+        monkeypatch.setattr("app.transcription.local_provider.httpx.AsyncClient", lambda: manager)
+    message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm", "language": "auto"}
+    with patch("app.transcription.worker.create_asr_engine", return_value=engine):
+        await _process_transcription_for_seeded_recording(message, session_factory)
+    async with session_factory() as session:
+        meeting = await session.get(Meeting, meeting_id)
+        assert meeting.process_state == "failed" and meeting.failure_cause == cause
+        history = (await session.execute(
+            select(StateHistory).where(StateHistory.meeting_id == meeting_id))).scalar_one()
+        assert history.state == "failed" and history.failure_cause == cause
+        assert (await session.execute(select(Transcript))).scalars().all() == []
+    assert private not in caplog.text
+    assert "cause=" + cause in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_invalid_default_language_fails_before_worker_subscription(monkeypatch, session_factory):
+    from app.transcription.worker import start_worker
+
+    monkeypatch.setenv("SAURI_DEFAULT_LANGUAGE", "spa")
+    queue = AsyncMock()
+    with pytest.raises(ValueError, match="SAURI_DEFAULT_LANGUAGE"):
+        await start_worker(queue, session_factory)
+    queue.subscribe.assert_not_called()

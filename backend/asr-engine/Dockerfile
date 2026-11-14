@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir \
     boto3==1.35.0 \
     requests==2.32.3
 
-COPY main.py .
+COPY main.py whisper_words.py asr_config.py .
 
 EXPOSE 8001
 

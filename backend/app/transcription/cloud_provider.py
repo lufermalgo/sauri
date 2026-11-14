@@ -114,9 +114,12 @@ class CloudProvider(ASREngine):
                 "The external ASR service did not return valid segments"
             )
 
+        language = data.get("language") or options.preferred_language
+        if not isinstance(language, str) or language == "auto":
+            raise ExternalServiceError("The external ASR service did not return a detected language")
         return TranscriptionResult(
             segments=segments,
-            language=options.preferred_language,
+            language=language,
             supports_turns=True,
         )
 

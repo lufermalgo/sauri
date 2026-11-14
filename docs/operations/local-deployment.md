@@ -6,7 +6,7 @@ Spec: `.spectra/specs/local-platform-deployment/`; issue padre #818; U1 #827/PR 
 
 - Docker: portal construido (Nginx), API, worker, PostgreSQL, RustFS/S3 y RabbitMQ.
 - Chrome: extensión MV3; no vive en Docker.
-- Mac: motores HTTP nativos MLX Whisper y Senko/CoreML (contrato de diarización v2, U1 #921). No son servicios Compose. Una URL o `/health` no demuestra inferencia ni GPU.
+- Mac: motores HTTP nativos whisper.cpp/Metal (ASR v2, U2 #922) y Senko/CoreML (contrato de diarización v2, U1 #921). No son servicios Compose. Una URL o `/health` no demuestra inferencia ni GPU.
 - PostgreSQL guarda datos/propiedad; S3 guarda audio/video; RabbitMQ transporta trabajos, no es el archivo de las grabaciones.
 
 El portal se sirve en `http://127.0.0.1:5173` por defecto (`PORTAL_PORT`). `/api/` pasa a la API sin reemplazar su autenticación. Los medios se leen directamente con enlaces S3 temporales firmados, usando `OBJECT_STORE_PUBLIC_ENDPOINT` accesible desde el navegador; nunca se reescribe una URL después de firmarla. El almacenamiento conserva nombres históricos MinIO aunque su imagen sea RustFS; esto no migra datos anteriores (#543).
@@ -38,7 +38,7 @@ contrato; no se modificó ASR ni se declara aceptación integral del core.
 
 - `make engines-install` prepara Senko en
   `~/.local/share/sauri/native-engines/diar-venv`; vuelve a ejecutar pip también en venvs
-  existentes para completar instalaciones parciales. ASR conserva sus dependencias hasta U2.
+  existentes para completar instalaciones parciales. ASR usa un venv separado `asr-venv` con dependencias HTTP y `install-asr-engine.sh`; verifica modelo y binario con `--check`.
   Requiere Python 3.11, herramientas de compilación de Apple, Git y red en una instalación
   nueva. El instalador descarga Senko (MIT) en el commit
   `1bcb09041bfa170b4a5a4b0af92f66eff76204d5`, con los modelos incluidos en ese checkout,

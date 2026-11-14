@@ -16,28 +16,27 @@ def test_makefile_exposes_native_engine_lifecycle_targets() -> None:
     assert "bash scripts/engines/ensure-native-engine-credentials.sh" in makefile
 
 
-def test_native_diarization_install_pins_compatible_torch_pair() -> None:
-    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    assert "'torch==2.5.1'" in makefile
-    assert "'torchaudio==2.5.1'" in makefile
+def test_asr_installer_is_wired_and_has_a_separate_venv() -> None:
+    makefile = (REPO_ROOT / "Makefile").read_text()
+    assert "bash scripts/engines/install-asr-engine.sh" in makefile
+    assert "native-engines/asr-venv" in makefile
+    assert "native-engines/asr-venv/bin/python" in MANAGER.read_text()
 
 
-def test_diarization_pins_huggingface_hub_compatible_with_pyannote() -> None:
-    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    requirements = (REPO_ROOT / "backend" / "diar-engine" / "requirements.txt").read_text(
-        encoding="utf-8"
-    )
-    assert "'huggingface_hub==0.24.7'" in makefile
+def test_native_asr_has_only_service_dependencies() -> None:
+    requirements = (REPO_ROOT / "scripts/engines/requirements-native-asr.txt").read_text()
+    assert [line for line in requirements.splitlines() if line and not line.startswith("#")] == [
+        "fastapi>=0.115", "uvicorn[standard]>=0.30", "pydantic>=2", "boto3>=1.34",
+    ]
+
+
+def test_diarization_dependencies_stay_isolated_from_asr() -> None:
+    makefile = (REPO_ROOT / "Makefile").read_text()
+    assert "bash scripts/engines/install-diar-engine.sh" in makefile
+    requirements = (REPO_ROOT / "backend/diar-engine/requirements.txt").read_text()
     assert "huggingface_hub==0.24.7" in requirements
-
-
-def test_diarization_installs_matplotlib_runtime_dependency() -> None:
-    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    requirements = (REPO_ROOT / "backend" / "diar-engine" / "requirements.txt").read_text(
-        encoding="utf-8"
-    )
-    assert "'matplotlib==3.9.2'" in makefile
     assert "matplotlib==3.9.2" in requirements
+    assert "backend/engine-common" in MANAGER.read_text()
 
 
 def test_native_engine_manager_binds_loopback_only() -> None:

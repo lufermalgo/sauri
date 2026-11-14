@@ -33,5 +33,19 @@ Living record of what each Sauri component needs to be installed, kept as engine
 
 ## Pending to document
 
-- ASR engine (whisper.cpp `large-v3-turbo`, unit U2).
 - Extension packaging and updates; portal and backend updates.
+
+## ASR engine (whisper.cpp, Metal) — 2026-11-14
+
+- `make engines-install` runs `scripts/engines/install-asr-engine.sh`. Requires Python 3.11, ffmpeg and an executable `whisper-cli` (default `/opt/homebrew/bin/whisper-cli`, override `WHISPER_CLI`). It does not install Homebrew packages.
+- The isolated `~/.local/share/sauri/native-engines/asr-venv` contains only the FastAPI/uvicorn/Pydantic/boto3 service dependencies, not MLX, Torch or pyannote. The old shared venv is left untouched and is no longer the default.
+- Model: `~/.local/share/sauri/models/ggml-large-v3-turbo-q5_0.bin` (`ASR_MODEL_PATH` override), 574,041,195 bytes, SHA-256 `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2`. An existing file is verified without replacing it; otherwise `SAURI_ASR_MODEL_SOURCE` can provide a local copy, or the installer downloads from ggerganov/whisper.cpp on Hugging Face. Any size/hash mismatch fails closed.
+- `bash scripts/engines/install-asr-engine.sh --check` verifies assets and requires provenance without modifying anything or requiring the service venv. Installation records the executable SHA-256 and model SHA-256 in `native-engines/asr-provenance/provenance.json`; subsequent runs reject missing or changed provenance. The native service performs the same model and binary hash verification once at startup, before accepting requests. This records the installed binary, not a vendor-signed binary pin.
+- `SAURI_DEFAULT_LANGUAGE=es` is the default; only two lowercase letters or `auto` are accepted (invalid configuration fails startup). `auto` enables detection. Ingestion accepts optional two-letter/`auto` `language` in multipart `data` and forwards it to the transcription queue. No language preference or new database column is introduced. Recovery jobs without a language override use the configured default. Only the native engine boundary also accepts legacy region hints, reducing them to the two-letter base code. Migration `018_transcript_language_default` changes the SQL default for future rows to `es`, without rewriting existing rows.
+- Native service: contract v2 with segments, words, detected language, engine metadata and stage timings; shared PCM mono 16 kHz normalization and KeepAwake protection. `ASR_THREADS=4` by default. Linux retains faster-whisper with word timestamps and the same v2 schema.
+- Opt-in verification: `cd backend && SAURI_RUN_NATIVE_TESTS=1 uv run --extra dev pytest tests/native/test_asr_native.py -q`. Uses only a synthetic 30-second tone/silence recording; skips if the installation is absent. This is a technical smoke test, not speech accuracy or product acceptance.
+
+- `ASR_TIMEOUT_SECONDS` is the single end-to-end HTTP timeout (default 3600 s); configure the same value for the worker and native service. The client uses it directly; the server reserves `min(30 s, 10%)` for transport/response overhead, so its request deadline is 3570 s by default. The deadline starts before waiting for the engine lock, bounds the HTTP response including download, and is shared by normalization (at most 300 s) and inference (only the remaining time). Storage reads use the remaining deadline as their socket timeout and check it between chunks; an expired request cleans up without starting inference. Linux also bounds its HTTP response by this deadline.
+- ASR failures persist a retryable meeting state with a safe category: `engine_contract_mismatch`, `engine_failed`, or `invalid_response`. Engine response bodies, paths and transcript text are not copied into logs or stored as causes.
+
+- Both ASR adapters trim segment text. Word text keeps its separators: U3 reconstructs turns by concatenating words, so stripping every word would merge adjacent words.

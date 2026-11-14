@@ -160,14 +160,14 @@ async def _counts(factory: async_sessionmaker[AsyncSession], transcript_id: str)
 
 def test_head_is_single_and_chains_after_summary_failure_cause() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["017_transcript_words"]
+    assert script.get_heads() == ["018_transcript_language_default"]
     assert script.get_revision("017_transcript_words").down_revision == "016_summary_failure_cause"
 
 
 def test_upgrade_downgrade_upgrade_is_clean(migrated_url: str) -> None:
     config = Config(str(BACKEND / "alembic.ini"))
     assert asyncio.run(_table_names(migrated_url)) == TABLES
-    command.downgrade(config, "-1")
+    command.downgrade(config, "016_summary_failure_cause")
     assert asyncio.run(_table_names(migrated_url)) == set()
     command.upgrade(config, "head")
     assert asyncio.run(_table_names(migrated_url)) == TABLES

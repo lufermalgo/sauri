@@ -280,6 +280,7 @@ async def upload_recording(
                     "audio_ref": audio_ref,
                     "generation": processing_generation,
                     "job_id": job_id,
+                    **({"language": ingestion_data.language} if ingestion_data.language else {}),
                 },
             )
         finally:

@@ -2,7 +2,7 @@
 
 Subscribes to the "transcribe" topic of the JobQueue. For each message:
 1. Creates an ASREngine via the configuration factory.
-2. Invokes transcribe(audio_ref, preferred_language="es-CO").
+2. Invokes transcribe with the message language or configured default.
 3. If there are segments -> persists Transcript + SpeechTurn -> transitions to "completed".
 4. If there are no segments -> transitions to "failed" with cause "engine_failure".
 
@@ -30,7 +30,7 @@ from app.infra.processing_claims import (
 )
 from app.infra.queue import JobQueue
 from app.meetings.service import record_transition
-from app.transcription.asr_engine import TranscriptionOptions
+from app.transcription.asr_engine import EngineContractError, TranscriptionOptions, default_language
 from app.transcription.factory import create_asr_engine
 from app.transcription.repository import TranscriptRepository
 
@@ -136,11 +136,27 @@ async def _process_transcription(
 
     # 2. Transcribe only the audio persisted for this meeting. The queue's
     # audio_ref is untrusted and must not select the object sent to the engine.
-    options = TranscriptionOptions(preferred_language="es-CO")
+    options = TranscriptionOptions()
+    if message.get("language"):
+        options.preferred_language = message["language"]
     started_at = time.monotonic()
     try:
         result = await engine.transcribe(recording_audio_ref, options)
-    except httpx.TimeoutException:
+        if type(result.contract_version) is not int or result.contract_version != 2:
+            raise EngineContractError("Unsupported ASR contract_version")
+        if result.language == "auto":
+            raise EngineContractError("Missing detected language")
+        if not result.language:
+            if options.preferred_language == "auto":
+                raise EngineContractError("Missing detected language")
+            result.language = options.preferred_language
+    except (httpx.HTTPError, ValueError) as exc:
+        if isinstance(exc, EngineContractError):
+            cause = "engine_contract_mismatch"
+        elif isinstance(exc, httpx.HTTPError):
+            cause = "engine_failed"
+        else:
+            cause = "invalid_response"
         elapsed_seconds = time.monotonic() - started_at
         async with session_factory() as session, session.begin():
             meeting = await session.get(Meeting, meeting_id)
@@ -154,12 +170,12 @@ async def _process_transcription(
                     kind="transcription", operation_id=operation_id,
                 )
             ):
-                await record_transition(session, meeting, "engine_failed")
+                await record_transition(session, meeting, "engine_failed", failure_cause=cause)
         logger.error(
-            "Transcription timed out for meeting_id=%s; audio_duration_seconds=%s; "
-            "elapsed_seconds=%.2f; meeting failed and the full recording will not be retried",
+            "Transcription failed for meeting_id=%s; cause=%s; "
+            "elapsed_seconds=%.2f; manual retry available",
             meeting_id,
-            audio_duration_seconds,
+            cause,
             elapsed_seconds,
         )
         return
@@ -196,7 +212,7 @@ async def _process_transcription(
             transcript = Transcript(
                 id=str(uuid.uuid4()),
                 meeting_id=meeting_id,
-                language=result.language or "es-CO",
+                language=result.language,
                 provider="local" if capabilities.is_local else "cloud",
                 supports_turns=capabilities.supports_turns,
                 expires_at=None,
@@ -290,6 +306,8 @@ async def start_worker(
         queue: Already-connected JobQueue instance.
         session_factory: SQLAlchemy session factory for persistence.
     """
+
+    default_language()  # Reject invalid configuration before subscribing to the queue.
 
     async def handler(message: dict[str, Any]) -> None:
         await _process_transcription(message, session_factory, queue)

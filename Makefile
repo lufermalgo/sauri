@@ -4,7 +4,7 @@
 
 .PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english engines-install engines-up engines-down engines-status
 
-SAURI_NATIVE_VENV ?= $(HOME)/.local/share/sauri/native-engines/venv
+SAURI_NATIVE_VENV ?= $(HOME)/.local/share/sauri/native-engines/asr-venv
 NATIVE_PYTHON311 ?= python3.11
 
 ## Instalar los git hooks compartidos (bloquean commit/push directo a main).
@@ -24,15 +24,10 @@ worktree-rm:
 	@test -n "$(BRANCH)" || (echo "Uso: make worktree-rm BRANCH=feature/issue-12-desc" && exit 1)
 	scripts/dev/remove-worktree.sh $(BRANCH)
 
-## Instalar motores nativos en un venv fuera del repositorio (MLX + Senko/CoreML).
+## Instalar motores nativos en un venv fuera del repositorio (whisper.cpp + Senko/CoreML).
 engines-install:
-	mkdir -p "$(dir $(SAURI_NATIVE_VENV))"
 	bash scripts/engines/ensure-native-engine-credentials.sh
-	@set -e; if [ ! -x "$(SAURI_NATIVE_VENV)/bin/python" ]; then \
-	  $(NATIVE_PYTHON311) -m venv "$(SAURI_NATIVE_VENV)"; \
-	fi
-	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install --upgrade pip
-	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install -r scripts/engines/requirements-native-asr.txt
+	SAURI_ASR_VENV="$(SAURI_NATIVE_VENV)" NATIVE_PYTHON311="$(NATIVE_PYTHON311)" bash scripts/engines/install-asr-engine.sh
 	NATIVE_PYTHON311="$(NATIVE_PYTHON311)" bash scripts/engines/install-diar-engine.sh
 
 ## Iniciar/detener/consultar los servidores nativos; cada uno usa su PID exacto.

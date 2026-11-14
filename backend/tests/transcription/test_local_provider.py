@@ -17,8 +17,14 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from app.transcription.asr_engine import TranscriptionOptions
+from app.transcription.asr_engine import EngineContractError, TranscriptionOptions
 from app.transcription.local_provider import LocalProvider
+
+
+def v2(**fields):
+    return {"contract_version": 2, "words": [], "diagnostics": {"inverted_words": 0},
+            "engine": {"name": "whisper.cpp", "model": "turbo", "device": "metal"}, **fields}
+
 
 # ---------------------------------------------------------------------------
 # Strategies
@@ -66,7 +72,7 @@ async def test_property_4_faithful_mapping_of_local_response(segments: list[Segm
     provider = LocalProvider(url="http://fake-asr:8001")
     options = TranscriptionOptions(preferred_language="es-CO")
 
-    response_data = {"segments": segments, "language": "es"}
+    response_data = v2(segments=segments, language="es")
 
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -103,7 +109,7 @@ async def test_property_6_ascending_order_preserved(segments: list[Segment]) -> 
     provider = LocalProvider(url="http://fake-asr:8001")
     options = TranscriptionOptions(preferred_language="es-CO")
 
-    response_data = {"segments": segments, "language": "es"}
+    response_data = v2(segments=segments, language="es")
 
     mock_response = MagicMock()
     mock_response.status_code = 200
@@ -181,7 +187,7 @@ async def test_example_response_without_segments_raises_valueerror() -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"language": "es"}  # no 'segments'
+    mock_response.json.return_value = v2(language="es")  # no 'segments'
 
     with patch("app.transcription.local_provider.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
@@ -200,7 +206,7 @@ async def test_local_provider_uses_configured_timeout(monkeypatch: pytest.Monkey
     provider = LocalProvider(url="http://fake-asr:8001")
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"segments": [], "language": "es"}
+    mock_response.json.return_value = v2(segments=[], language="es")
 
     with patch("app.transcription.local_provider.httpx.AsyncClient") as client_class:
         mock_client = AsyncMock()
@@ -228,7 +234,7 @@ async def test_local_provider_sends_bearer_token_from_secret_file(
     provider = LocalProvider(url="http://fake-asr:8001")
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"segments": [], "language": "es"}
+    mock_response.json.return_value = v2(segments=[], language="es")
 
     with patch("app.transcription.local_provider.httpx.AsyncClient") as client_class:
         mock_client = AsyncMock()
@@ -246,3 +252,45 @@ async def test_local_provider_sends_bearer_token_from_secret_file(
     message = f"recordings/synthetic.wav\n{expiry_text}".encode()
     expected = hmac.new(b"synthetic-capability-secret", message, hashlib.sha256).hexdigest()
     assert signature == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", [None, 1, "2", 2.0, True, 3])
+async def test_rejects_incompatible_contract_version(version):
+    response = MagicMock()
+    response.json.return_value = v2(segments=[], language="es", contract_version=version)
+    with patch("app.transcription.local_provider.httpx.AsyncClient") as cls:
+        cls.return_value.__aenter__.return_value.post.return_value = response
+        with pytest.raises(EngineContractError, match="contract_version"):
+            await LocalProvider("http://test").transcribe("recordings/a.wav", TranscriptionOptions())
+
+
+@pytest.mark.asyncio
+async def test_exposes_v2_words_engine_and_diagnostics():
+    response = MagicMock()
+    word = {"text": "hello", "start_ms": 5, "end_ms": 5, "probability": 0.8, "timing_repaired": True}
+    response.json.return_value = v2(segments=[], words=[word], language="en",
+                                   diagnostics={"inverted_words": 1, "stage_ms": {"inference": 10}})
+    with patch("app.transcription.local_provider.httpx.AsyncClient") as cls:
+        post = cls.return_value.__aenter__.return_value.post
+        post.return_value = response
+        result = await LocalProvider("http://test").transcribe(
+            "recordings/a.wav", TranscriptionOptions(preferred_language="auto"))
+    assert post.call_args.kwargs["json"]["contract_version"] == 2
+    assert result.words[0].text == "hello" and result.words[0].timing_repaired
+    assert result.words[0].probability == 0.8
+    assert result.engine.name == "whisper.cpp" and result.contract_version == 2
+    assert result.inverted_words == 1 and result.diagnostics["stage_ms"] == {"inference": 10}
+    assert result.language == "en"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("start", "end"), [(1.0, 2), (1, "2"), (True, 2), (2, 1), (-1, 2), (None, 2)])
+async def test_rejects_invalid_word_timestamps(start, end):
+    response = MagicMock()
+    response.json.return_value = v2(segments=[], language="es",
+                                   words=[{"text": "word", "start_ms": start, "end_ms": end}])
+    with patch("app.transcription.local_provider.httpx.AsyncClient") as cls:
+        cls.return_value.__aenter__.return_value.post.return_value = response
+        with pytest.raises(EngineContractError, match="timestamps"):
+            await LocalProvider("http://test").transcribe("recordings/a.wav", TranscriptionOptions())
