@@ -6,7 +6,7 @@ Spec: `.spectra/specs/local-platform-deployment/`; issue padre #818; U1 #827/PR 
 
 - Docker: portal construido (Nginx), API, worker, PostgreSQL, RustFS/S3 y RabbitMQ.
 - Chrome: extensión MV3; no vive en Docker.
-- Mac: motores HTTP nativos MLX Whisper y pyannote/MPS. No son servicios Compose. Una URL o `/health` no demuestra inferencia ni GPU.
+- Mac: motores HTTP nativos MLX Whisper y Senko/CoreML (contrato de diarización v2, U1 #921). No son servicios Compose. Una URL o `/health` no demuestra inferencia ni GPU.
 - PostgreSQL guarda datos/propiedad; S3 guarda audio/video; RabbitMQ transporta trabajos, no es el archivo de las grabaciones.
 
 El portal se sirve en `http://127.0.0.1:5173` por defecto (`PORTAL_PORT`). `/api/` pasa a la API sin reemplazar su autenticación. Los medios se leen directamente con enlaces S3 temporales firmados, usando `OBJECT_STORE_PUBLIC_ENDPOINT` accesible desde el navegador; nunca se reescribe una URL después de firmarla. El almacenamiento conserva nombres históricos MinIO aunque su imagen sea RustFS; esto no migra datos anteriores (#543).
@@ -26,6 +26,57 @@ Las variables privadas deben estar configuradas mediante un archivo privado de e
 `make up` preserva volúmenes, verifica credenciales nativas, detiene API/worker del proyecto seleccionado antes de migrar, inicia infraestructura, asegura el bucket, ejecuta Alembic y arranca API/worker/portal. `make build` construye primero las imágenes. No aplicarlos sobre datos personales sin la coordinación y respaldo acordados. El portal se incluye al final; éxito exige HTTP 200 tanto estático como de API con un plazo común de 60 segundos. El mensaje final no acredita inferencia.
 
 Las credenciales nativas residen en `~/.config/sauri/engine_token` y `recording_capability_key` (0600), preservadas si existen y montadas de solo lectura en el worker. `make engines-status` comprueba procesos, no acceso desde Docker. `make engines-up` es una acción separada; las validaciones aisladas no la ejecutan ni modifican los procesos de Fer.
+
+## Diarización nativa Senko (U1 #921)
+
+El adaptador conserva puerto 8002, token de motor, capability HMAC por grabación y
+validación de `audio_ref`. El proveedor local exige `contract_version: 2`; una respuesta
+anterior falla con `EngineContractError`. Actualizar cliente y motor juntos. La respuesta
+incluye `speaker_count`, `engine` y `diagnostics` (duración y tiempos medidos de descarga,
+normalización e inferencia). El contenedor Linux conserva pyannote y devuelve el mismo
+contrato; no se modificó ASR ni se declara aceptación integral del core.
+
+- `make engines-install` prepara Senko en
+  `~/.local/share/sauri/native-engines/diar-venv`; vuelve a ejecutar pip también en venvs
+  existentes para completar instalaciones parciales. ASR conserva sus dependencias hasta U2.
+  Requiere Python 3.11, herramientas de compilación de Apple, Git y red en una instalación
+  nueva. El instalador descarga Senko (MIT) en el commit
+  `1bcb09041bfa170b4a5a4b0af92f66eff76204d5`, con los modelos incluidos en ese checkout,
+  y verifica los 14 archivos de `_tools/engine-hashes.json` antes de terminar.
+- `bash _tools/install-diar-engine.sh --check` exige procedencia VCS con el commit fijado (rechaza `file:`) y verifica SHA-256 sin
+  instalar, cargar modelos ni arrancar servicios. Hash incorrecto o ausente falla; no se
+  repara silenciosamente una instalación alterada. Con la instalación completa válida,
+  repetir el instalador verifica y satisface las dependencias declaradas. Las dependencias transitivas no están fijadas
+  con hashes; la verificación cubre el commit de Senko y sus modelos, no todo el venv.
+- Variables: `SAURI_DIAR_VENV` selecciona el destino de instalación;
+  `SAURI_DIAR_ENGINE_PYTHON` selecciona el intérprete del instalador y del servicio.
+  `SAURI_NATIVE_ENGINE_PYTHON` es un override heredado solo para ASR;
+  `SAURI_ASR_ENGINE_PYTHON` es exclusivo de ASR. `SAURI_ENGINE_HASHES_FILE` permite probar
+  un manifiesto alternativo. No usar un manifiesto modificado para eludir una discrepancia.
+- `make engines-up` añade `backend/engine-common` al `PYTHONPATH` y selecciona el venv
+  de cada motor. Reiniciar el servicio de diarización es necesario tras actualizar su código;
+  ni el instalador ni `--check` reinician procesos personales.
+- Senko usa CoreML, clustering CPU, VAD mínimo 0 y `raw_segments`, conservando turnos
+  breves. Si no detecta voz devuelve cero segmentos. La normalización común usa ffmpeg
+  (PCM mono, 16 kHz, sin `aresample=async`); sus errores devuelven `422 normalize_failed`.
+  Los originales descargados y WAV derivados temporales se eliminan en éxito y error.
+  `caffeinate -i -w <pid>` protege la carga de modelo y cada petición, y se termina al salir,
+  sin cambiar ajustes globales de energía.
+
+Validación local sin voces reales (tono de 15 s + silencio de 15 s):
+
+```bash
+bash _tools/install-diar-engine.sh --check
+cd backend
+SAURI_RUN_NATIVE_TESTS=1 \
+  uv run --extra dev pytest tests/native/test_diar_native.py -q
+```
+
+La prueba ejecuta el adaptador y Senko reales en un subproceso. Solo almacenamiento y
+credenciales son sintéticos. Usa exclusivamente el venv del instalador, configurable con
+`SAURI_DIAR_ENGINE_PYTHON`; si no está aprovisionado, la prueba se omite con un motivo
+explícito. No instala dependencias ni inyecta paquetes de otro venv. Comprueba contrato v2,
+duración y eliminación de temporales propios. No demuestra calidad vocal, cantidad correcta de hablantes ni el recorrido de U8.
 
 ## Procedimiento QA sin datos personales
 

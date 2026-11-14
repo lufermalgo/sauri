@@ -1,4 +1,4 @@
-"""Host-native pyannote diarization service using Apple MPS."""
+"""Host-native Senko diarization service using CoreML."""
 
 from __future__ import annotations
 
@@ -7,19 +7,22 @@ import hmac
 import logging
 import os
 import secrets
-import shutil
-import subprocess
 import tempfile
+import threading
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import boto3
 from botocore.config import Config
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from sauri_engine_common.audio import NormalizeError, normalize_to_wav
+from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
 
 logger = logging.getLogger("diar-engine-native")
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +32,6 @@ MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "minioadmin")
 MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "sauri-recordings")
 MINIO_AUDIO_PREFIX = os.environ.get("MINIO_AUDIO_PREFIX", "recordings/")
-FFMPEG_TIMEOUT_SECONDS = 60
 ENGINE_TOKEN_PATH = Path(
     os.environ.get("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config" / "sauri" / "engine_token")
 )
@@ -40,29 +42,28 @@ RECORDING_CAPABILITY_KEY_PATH = Path(
     )
 )
 RECORDING_CAPABILITY_TTL_SECONDS = 60
-MODEL_ID = os.environ.get("DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
-MODEL_DEVICE = os.environ.get("DIARIZATION_DEVICE", "mps")
-HF_TOKEN_PATH = Path(os.environ.get("HF_TOKEN_PATH", Path.home() / ".config" / "sauri" / "hf_token"))
+MODEL_ID = "senko-coreml"
+MODEL_DEVICE = "coreml"
 _bearer_scheme = HTTPBearer(auto_error=False)
 _bearer_dependency = Depends(_bearer_scheme)
 
 diarization_pipeline: Any = None
 s3_client: Any = None
+_job_lock = threading.Lock()
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
-    """Load pyannote on MPS and initialize MinIO without exposing credentials."""
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Load Senko on CoreML and initialize MinIO without exposing credentials."""
     global diarization_pipeline, s3_client
     try:
-        import torch
-        from pyannote.audio import Pipeline
+        from senko import Diarizer  # type: ignore[import-not-found]
 
-        token = HF_TOKEN_PATH.read_text(encoding="utf-8").strip()
-        if not token:
-            raise RuntimeError("Hugging Face token file is empty")
-        pipeline = Pipeline.from_pretrained(MODEL_ID, use_auth_token=token)
-        pipeline.to(torch.device(MODEL_DEVICE))
+        with KeepAwake():
+            pipeline = Diarizer(device="coreml", vad="pyannote", clustering="cpu", warmup=True, quiet=True)
+            vad = pipeline.vad_processor_pyannote_coreml
+            vad.lib.vad_set_min_duration_on(vad.processor, 0.0)
+            vad.lib.vad_set_min_duration_off(vad.processor, 0.0)
         diarization_pipeline = pipeline
     except Exception as exc:
         raise RuntimeError("Unable to initialize native diarization pipeline") from exc
@@ -84,6 +85,7 @@ app = FastAPI(title="Sauri Native Diarization Engine", version="1.0.0", lifespan
 
 class DiarizeRequest(BaseModel):
     audio_ref: str
+    contract_version: Literal[2] = 2
 
 
 class Segment(BaseModel):
@@ -92,9 +94,18 @@ class Segment(BaseModel):
     end_ms: int
 
 
+class EngineInfo(BaseModel):
+    name: str
+    model: str
+    device: str
+
+
 class DiarizeResponse(BaseModel):
+    contract_version: Literal[2] = 2
     segments: list[Segment]
-    num_speakers: int
+    speaker_count: int
+    engine: EngineInfo
+    diagnostics: dict[str, object] = {}
 
 
 def _require_engine_token(
@@ -161,53 +172,24 @@ def _download_audio(audio_ref: str) -> str:
     return audio_path
 
 
-def _convert_to_wav(audio_path: str) -> str:
-    """Decode downloaded audio into a temporary 16 kHz mono PCM WAV."""
-    ffmpeg = shutil.which("ffmpeg")
-    if ffmpeg is None:
-        raise RuntimeError("ffmpeg is not installed; cannot decode audio to WAV")
-
-    wav_path = audio_path + ".wav"
-    try:
-        subprocess.run(
-            [
-                ffmpeg,
-                "-y",
-                "-v",
-                "error",
-                "-i",
-                audio_path,
-                "-ar",
-                "16000",
-                "-ac",
-                "1",
-                "-c:a",
-                "pcm_s16le",
-                wav_path,
-            ],
-            check=True,
-            capture_output=True,
-            timeout=FFMPEG_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        with suppress(OSError):
-            os.unlink(wav_path)
-        raise RuntimeError(f"Audio conversion failed ({type(exc).__name__})") from exc
-    return wav_path
-
-
-def _run_diarization(audio_path: str) -> list[Segment]:
+def _run_diarization(audio_path: str) -> tuple[list[Segment], int]:
     if diarization_pipeline is None:
         raise RuntimeError("Diarization pipeline not loaded")
-    annotation = diarization_pipeline(audio_path)
-    segments: list[Segment] = []
-    for turn, _track, speaker in annotation.itertracks(yield_label=True):
-        start_ms = int(turn.start * 1000)
-        end_ms = int(turn.end * 1000)
-        if end_ms > start_ms:
-            segments.append(Segment(speaker=str(speaker), start_ms=start_ms, end_ms=end_ms))
+    result = diarization_pipeline.diarize(wav_path=str(audio_path), accurate=True, generate_colors=False)
+    # Senko returns None (not a result dictionary) when VAD finds no voice.
+    if result is None:
+        return [], 0
+    segments = []
+    dropped_segments = 0
+    for segment in result["raw_segments"]:
+        start_ms = round(segment["start"] * 1000)
+        end_ms = round(segment["end"] * 1000)
+        if end_ms <= start_ms:
+            dropped_segments += 1
+            continue
+        segments.append(Segment(speaker=str(segment["speaker"]), start_ms=start_ms, end_ms=end_ms))
     segments.sort(key=lambda segment: (segment.start_ms, segment.end_ms))
-    return segments
+    return segments, dropped_segments
 
 
 @app.post("/diarize", response_model=DiarizeResponse)
@@ -220,32 +202,55 @@ async def diarize(
     _require_recording_capability(request.audio_ref, recording_capability)
     if diarization_pipeline is None:
         raise HTTPException(status_code=503, detail="Diarization pipeline not loaded")
+    return await run_in_threadpool(_diarize_serialized, request.audio_ref)
+
+
+def _diarize_serialized(audio_ref: str) -> DiarizeResponse:
+    # Senko mutates per-run state; keep jobs serial while freeing the event loop.
+    with _job_lock:
+        return _diarize_audio(audio_ref)
+
+
+def _diarize_audio(audio_ref: str) -> DiarizeResponse:
+    audio_path: str | None = None
+    wav_path: Path | None = None
     try:
-        audio_path = _download_audio(request.audio_ref)
-    except Exception as exc:
-        logger.error("Audio download failed")
-        raise HTTPException(status_code=500, detail="Audio download failed") from exc
-    try:
-        wav_path = _convert_to_wav(audio_path)
-    except Exception as exc:
-        logger.error("Audio conversion failed (%s)", type(exc).__name__)
-        with suppress(OSError):
-            os.unlink(audio_path)
-        raise HTTPException(status_code=500, detail="Audio conversion failed") from exc
-    try:
-        segments = _run_diarization(wav_path)
-        return DiarizeResponse(
-            segments=segments,
-            num_speakers=len({segment.speaker for segment in segments}),
-        )
-    except Exception as exc:
-        logger.error("Diarization failed (%s)", type(exc).__name__)
-        raise HTTPException(status_code=500, detail="Diarization failed") from exc
+        with KeepAwake():
+            started = time.monotonic()
+            try:
+                audio_path = _download_audio(audio_ref)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail="Audio download failed") from exc
+            download_ms = round((time.monotonic() - started) * 1000)
+            wav_path = Path(audio_path + ".wav")
+            try:
+                report = normalize_to_wav(Path(audio_path), wav_path)
+            except NormalizeError as exc:
+                raise HTTPException(status_code=422, detail=exc.code) from exc
+            started = time.monotonic()
+            try:
+                segments, dropped_segments = _run_diarization(str(wav_path))
+            except Exception as exc:
+                logger.error("Diarization failed (%s)", type(exc).__name__)
+                raise HTTPException(status_code=500, detail="Diarization failed") from exc
+            return DiarizeResponse(
+                segments=segments,
+                speaker_count=len({segment.speaker for segment in segments}),
+                engine=EngineInfo(name="senko", model=MODEL_ID, device=MODEL_DEVICE),
+                diagnostics={
+                    "audio_ms": report.audio_ms,
+                    "dropped_segments": dropped_segments,
+                    "stage_ms": {"download": download_ms, "normalize": round(report.seconds * 1000),
+                                 "inference": round((time.monotonic() - started) * 1000)},
+                },
+            )
+    except KeepAwakeError as exc:
+        raise HTTPException(status_code=503, detail="keep_awake_failed") from exc
     finally:
-        with suppress(OSError):
-            os.unlink(audio_path)
-        with suppress(OSError):
-            os.unlink(wav_path)
+        for path in (audio_path, wav_path):
+            if path is not None:
+                with suppress(OSError):
+                    os.unlink(path)
 
 
 @app.get("/health")

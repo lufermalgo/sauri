@@ -10,6 +10,17 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 
+class EngineContractError(ValueError):
+    """The engine returned an incompatible or invalid wire contract."""
+
+
+@dataclass
+class EngineInfo:
+    name: str
+    model: str
+    device: str
+
+
 @dataclass
 class DiarizationOptions:
     """Options for audio diarization.
@@ -46,6 +57,8 @@ class DiarizationResult:
 
     segments: list[SpeakerSegment] = field(default_factory=list)
     speaker_count: int = 0
+    engine: EngineInfo | None = None
+    contract_version: int = 2
 
     def __post_init__(self) -> None:
         """Sorts segments by ascending start_ms (Property 6)."""

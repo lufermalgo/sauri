@@ -1,0 +1,21 @@
+{
+  "senko": {
+    "commit": "1bcb09041bfa170b4a5a4b0af92f66eff76204d5",
+    "files": {
+      "senko/models/camplusplus_traced_cuda_optimized.pt": "21dd6f3055f94c2af2a9b6fa59091c763b5274e9fd81009e59f8b5c7bf9229c3",
+      "senko/models/README.md": "0bc7a845e233a0f294e58ee959dffb65b19c2eba431778dbe30bf82d5ad40696",
+      "senko/models/speech_campplus_sv_zh_en_16k-common_advanced/campplus_cn_en_common.pt": "92f29b94e6948786a26778c9e302525d185bb08c8b9f5252ed98776902840199",
+      "senko/models/camplusplus_batch16.mlpackage/Manifest.json": "8b410c47f8dc52d53ec85adea5a6776ad7cbce6da8f781cea1aee837b558fd12",
+      "senko/models/pyannote_segmentation_3.0/config.yaml": "fa65a47a751602f04cc570135007d76859b69e8f9f1bfdf5878a5145980d4263",
+      "senko/models/pyannote_segmentation_3.0/pytorch_model.bin": "da85c29829d4002daedd676e012936488234d9255e65e86dfab9bec6b1729298",
+      "senko/models/pyannote_segmentation.mlmodelc/metadata.json": "44e1fa36d6abafacf688beccad99f7569394248d8bb41545829997c67668c08c",
+      "senko/models/pyannote_segmentation.mlmodelc/model.mil": "97f2dec6f83e80bf4247b98e13c2dde19f92c05820ef08068bbf554488d70bdd",
+      "senko/models/pyannote_segmentation.mlmodelc/Manifest.json": "eb232005d8b11ae4116e2592ad0f2ed811da1d92efb62545b3335d6630499168",
+      "senko/models/pyannote_segmentation.mlmodelc/coremldata.bin": "4a450ea1b053b9eb7eef0cab6971018076600840c7e246d064e7c5387f456c98",
+      "senko/models/pyannote_segmentation.mlmodelc/weights/weight.bin": "0266f4ad4d843ecf31ef9220ad6b80616b3ec64a4404b64f3ea0371554e236ec",
+      "senko/models/pyannote_segmentation.mlmodelc/analytics/coremldata.bin": "b379db0541b35344a34bb7540783ae704c11599bbed5aa8bbbda11c20ad215ee",
+      "senko/models/camplusplus_batch16.mlpackage/Data/com.apple.CoreML/model.mlmodel": "356b7b355c5da04fbe8d0d61ad6de07469b615f488422079a9a753dd28031460",
+      "senko/models/camplusplus_batch16.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "bad93198b2d9431ec2a17a30a983830434cb008aaa56c814ddd371449f724d46"
+    }
+  }
+}
