@@ -85,6 +85,59 @@ def test_patch_refuses_tampered_binary(monkeypatch: Any, tmp_path: Path) -> None
         patch.load_patch(library)
 
 
+def test_per_batch_release_records_peaks_and_only_releases_unused() -> None:
+    events: list[str] = []
+    values = iter([500, 100, 700, 90])
+
+    def driver() -> int:
+        events.append("driver")
+        return next(values)
+
+    fake = SimpleNamespace(mps=SimpleNamespace(
+        driver_allocated_memory=driver, synchronize=lambda: events.append("sync"),
+        empty_cache=lambda: events.append("empty")))
+    statistics: dict[str, int] = {}
+    patch.release_unused_cache(fake, statistics)
+    patch.release_unused_cache(fake, statistics)
+    assert events == ["driver", "sync", "empty", "driver"] * 2
+    assert statistics == {"calls": 2, "max_driver_before_bytes": 700, "max_driver_after_bytes": 100}
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_per_batch_hook_preserves_guard_and_original_callback(
+    monkeypatch: Any, tmp_path: Path, enabled: bool,
+) -> None:
+    calls: list[str] = []
+    fake = SimpleNamespace(backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: True)),
+                           mps=SimpleNamespace(driver_allocated_memory=lambda: 100,
+                                               synchronize=lambda: calls.append("sync"),
+                                               empty_cache=lambda: calls.append("empty")))
+    monkeypatch.setitem(sys.modules, "torch", fake)
+    monkeypatch.setattr(counter.ResourceGuard, "hook", lambda *a, **kw: calls.append("original_hook"))
+    guard: Any = SimpleNamespace(last_check=12.0, warning_since=3.0)
+    result: dict[str, Any] = {}
+    library = tmp_path / "unit-library"
+    library.write_bytes(b"unit fixture, not loaded")
+
+    def fake_infer(*args: Any) -> int:
+        counter.ResourceGuard.hook(guard, "segmentation", None, completed=1, total=4)
+        return 8
+
+    def fake_main(argv: Any) -> int:
+        args = counter.parser().parse_args([
+            "/input", "--cache", "/cache", "--scratch", str(tmp_path),
+            "--output-dir", "/output", "--mps-patch-library", str(library),
+        ] + (["--release-unused-mps-per-batch"] if enabled else []))
+        return counter.infer(args, tmp_path, result, guard)
+
+    monkeypatch.setattr(counter, "infer", fake_infer)
+    monkeypatch.setattr(counter, "main", fake_main)
+    assert launcher.main([]) == 8
+    assert guard.last_check == 12.0 and guard.warning_since == 3.0
+    assert calls == (["sync", "empty", "original_hook"] if enabled else ["original_hook"])
+    assert result["gpu_memory_patch"]["per_batch_cache_release"]["enabled"] is enabled
+
+
 def test_distribution_retains_short_and_unassigned_labels() -> None:
     annotation = SimpleNamespace(
         labels=lambda: ["long", "short", "unused"],

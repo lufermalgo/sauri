@@ -12,7 +12,7 @@ from typing import Any
 from unittest.mock import patch
 
 import count_speakers as counter
-from mps_lstm_patch import load_patch, no_competing_pipeline, patch_segmentation
+from mps_lstm_patch import load_patch, no_competing_pipeline, patch_segmentation, release_unused_cache
 
 
 def label_distribution(annotation: Any) -> list[dict[str, Any]]:
@@ -35,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     original_batch = counter.apply_batch_sizes
     original_count = counter.count_labels
     original_check = counter.ResourceGuard.check
+    original_hook = counter.ResourceGuard.hook
     active_result: dict[str, Any] = {}
     state: dict[str, Any] = {}
 
@@ -43,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
         cli.description = __doc__
         cli.add_argument("--mps-patch-library", type=Path, required=True,
                          help="isolated local build; no dependency is replaced")
+        cli.add_argument("--release-unused-mps-per-batch", action="store_true",
+                         help="synchronize/release unused cache per inference callback; guard unchanged")
         return cli
 
     def apply_batch_sizes(pipeline: Any, segmentation: int | None, embedding: int | None) -> None:
@@ -60,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
 
     def infer(args: argparse.Namespace, work: Path, result: dict[str, Any], guard: Any) -> int:
         library = args.mps_patch_library.expanduser().resolve(strict=True)
-        active_result.update(library=library, result=result)
+        active_result.update(library=library, result=result, release_per_batch=args.release_unused_mps_per_batch)
+        state["per_batch_cache_release"] = {"enabled": args.release_unused_mps_per_batch}
         result["gpu_memory_patch"] = state
         result["patch_launcher_sha256"] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
         result["patch_module_sha256"] = hashlib.sha256(
@@ -74,12 +78,20 @@ def main(argv: list[str] | None = None) -> int:
             no_competing_pipeline()
         original_check(guard, initial=initial)
 
+    def hook(guard: counter.ResourceGuard, step: str, artifact: Any, **kwargs: Any) -> None:
+        if active_result.get("release_per_batch") and step in ("segmentation", "embeddings"):
+            torch = sys.modules.get("torch")
+            if torch is not None and torch.backends.mps.is_available():
+                release_unused_cache(torch, state["per_batch_cache_release"])
+        original_hook(guard, step, artifact, **kwargs)
+
     counter.parser = parser
     counter.apply_batch_sizes = apply_batch_sizes
     counter.count_labels = count_labels
     counter.infer = infer
     try:
-        with patch.object(counter.ResourceGuard, "check", check):
+        with (patch.object(counter.ResourceGuard, "check", check),
+              patch.object(counter.ResourceGuard, "hook", hook)):
             return counter.main(argv)
     finally:
         counter.parser = original_parser

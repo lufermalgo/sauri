@@ -42,7 +42,8 @@ The verifier refuses an existing performance/ASR/counter executor even if its in
   --cache "$HOME/.cache/torch/pyannote" \
   --scratch /absolute/private/scratch/work \
   --output-dir /absolute/private/scratch/results \
-  --segmentation-batch-size 4 --embedding-batch-size 4 \
+  --segmentation-batch-size 1 --embedding-batch-size 1 \
+  --release-unused-mps-per-batch \
   --mps-patch-library /absolute/private/scratch/native-patch/lstm_autorelease.dylib
 ```
 
@@ -54,5 +55,7 @@ Baseline has no threshold override, no expected-count input, and one full-record
 - Initial verification failed before GPU execution on a real macOS warning. After fixing a Darwin truncated-`comm` detection gap, the verifier independently rejected the active performance orchestrator/ASR runner. No competitor was signalled or restarted.
 - After those workloads ended, operator verification succeeded in7.056s with pressure1 throughout: three API modes and all25 representative output/state comparisons bitwise equal; driver201408512B and live tensors2924800B constant. This corrects the demonstrated native retention, without claiming all model/system memory problems solved.
 - A subsequent corrected full-original4/4 run reached2800/5646 segmentation windows and stopped at65.574s under the unchanged memory guard: warning samples35.297–65.487s (30.190s). MPS driver **after** synchronization/release remained273006592B throughout those samples instead of rising per call. **Before** synchronization/release it was1355137024B. Their difference is not a measured CUDA-like reserved-memory category or proof of allocator-only causality. Physical footprint ended2227357352B, RSS637370368B. Do not sum RSS and Metal. No embeddings, clustering, count or tuning was completed. Original/cache hashes and temporary cleanup passed.
-- Next bounded investigation targets transient allocation/cache peaks and batch4-versus1 equivalence in the same cached segmentation/embedding models, not another identical retry. That probe was rejected before model loading by a new performance GPU workload; no GPU was interrupted. Real input distribution/count remain pending. Private manifests/logs are attached to task_d1ddf9cdac7d4cf2, not committed.
+- The same-model batch4-versus1 probe subsequently ran after exclusive/normal admission:18.251s, all neural inference MPS, actual checkpoint LSTM4 layers/128hidden/bidirectional. Segmentation max absolute difference3.814697265625e-6 passed declared float32 tolerance; argmax classifications matched but outputs were **not** bitwise equal. Embeddings matched bitwise. This is a synthetic batch-comparison fixture, not global acoustic equivalence.
+- Segmentation batch1 used169721856B driver before release/119390208B after, constant over four examples; batch4 reached1391951872B before release. Pressure stayed1. Based on that measured reduction, the next full baseline uses1/1 plus explicit `--release-unused-mps-per-batch`, not another identical4/4 retry. The option synchronizes/releases only unused process cache after segmentation/embedding callbacks and records calls/max before/after bytes. The original guard's check cadence, warning timer, abort conditions and competitor handling are unchanged; tests cover delegation/restoration and unchanged guard state. This is a scheduling tradeoff, not a full-pipeline speed claim.
+- Private manifests/logs are attached to task_d1ddf9cdac7d4cf2, not committed. No holdout or new models were used; count/tuning remain pending a complete original result.
 - Targeted Python unit/regression, Ruff and strict mypy are separate from these unperformed GPU checks. See the private delivery evidence for exact commands/results and the single regression skip; no global-backend or end-to-end pass is claimed.

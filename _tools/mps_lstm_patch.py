@@ -51,6 +51,17 @@ def load_patch(library: Path) -> dict[str, Any]:
             "device": "mps", "scope": "process-local segmentation LSTM; no dependency replaced"}
 
 
+def release_unused_cache(torch: Any, statistics: dict[str, int]) -> None:
+    """Release only this process's unused MPS cache; never alter live weights."""
+    before = int(torch.mps.driver_allocated_memory())
+    torch.mps.synchronize()
+    torch.mps.empty_cache()
+    after = int(torch.mps.driver_allocated_memory())
+    statistics["calls"] = statistics.get("calls", 0) + 1
+    statistics["max_driver_before_bytes"] = max(statistics.get("max_driver_before_bytes", 0), before)
+    statistics["max_driver_after_bytes"] = max(statistics.get("max_driver_after_bytes", 0), after)
+
+
 def fixed_lstm_forward(module: Any, inputs: Any, hx: Any = None) -> Any:
     import torch
 
