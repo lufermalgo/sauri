@@ -8,11 +8,13 @@ Primera unidad T1–T4: Ansel integra la entrega de Nahuel en la rama candidata 
 
 ## Reconciliación hacia main (posterior al merge de #908 en QA)
 
-El merge `bd638ee` de #908 no llevó la entrega a main. Esta unidad adicional conserva T1–T5 ya publicados y agrega únicamente sus dependencias backend reales desde el stack aprobado #899/#902. Inventario y evidencia completos: `main-delivery.md`. Rama/worktree nuevos `perf/907-main-delivery` / `.worktrees/perf-907-main-delivery`, base main `ea1dd2a`. Nahuel publica el candidato; **Ansel revisa e integra**, sin eludir CI bloqueado por facturación. No se cambian las fases aprobadas ni se habilitan T6–T12 por esta reconciliación.
+El merge `bd638ee` de #908 no llevó la entrega a main. Esta unidad adicional conserva T1–T5 ya publicados y agrega únicamente sus dependencias backend reales desde el stack aprobado #899/#902. Inventario y evidencia completos: `main-delivery.md`. Rama/worktree nuevos `perf/907-main-delivery` / `.worktrees/perf-907-main-delivery`, base main `ea1dd2a`. Nahuel publica el candidato; **Ansel revisa e integra** con la política aprobada por Fer 17:55: Actions desactivado, sustitución por validaciones locales pertinentes obligatorias con evidencia del SHA exacto. No se espera pago y los fallos históricos no se vuelven aprobados. No se cambian las fases aprobadas ni se habilitan T6–T12 por esta reconciliación. La aclaración de Fer 18:02 exige además baseline y repetición completos reales para cerrar el objetivo de rendimiento total; #912 por sí solo no lo satisface y la tarea permanece abierta.
 
 - Preparación e implementación: verificadas; assignment, engine, oracle, benchmark y pruebas de uso conservados sin reimplementación.
 - Validación: 408 pruebas backend y 15 de integración pasan; Ruff/mypy focales pasan y full conserva deuda 3/82 sin diagnósticos nuevos. Recursos exclusivamente temporales.
-- T4: candidato verificado localmente y publicado como **PR #912 a main**, commit de código `e7e70a6`; completo para revisión de Ansel y sin conflictos Git. Estado de checks y límites en `evidence.md`: CI no certificado. No integrado, instalado ni aceptado por esta tarea.
+- T4: candidato verificado localmente y publicado como **PR #912 a main**, commit de código `e7e70a6`; llegó a main posteriormente como `6302c48` (merge no ejecutado por Nahuel). No se declara instalación ni aceptación de producto. Política vigente y controles locales pendientes/executados: `local-validation-policy.md`.
+- Preservación QA: matriz obligatoria con commit/PR, prueba y estado main/incluida/preservada pendiente en `qa-preservation-matrix.md`. El merge de #912 no integra automáticamente las reparaciones restantes de #899/#902.
+- Cierre de rendimiento total exigido por Fer18:02: **pendiente**. Dos arranques reales con original completo, detención segura por memoria; dos admisiones adicionales rechazadas por host bajo presión. Runs/PID/job, recursos/etapas y acción necesaria en `real-pipeline-attempts.md`. No hay baseline completo ni comparación total antes/después; el benchmark sintético no cierra esta tarea.
 
 ## Resumen de Fases
 
