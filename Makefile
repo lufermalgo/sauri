@@ -51,22 +51,27 @@ check-english:
 up:
 	scripts/platform/compose-bringup.sh
 
+## Llave privada de la cola: se genera una vez en ~/.config/sauri y nunca se imprime ni se versiona.
+## Compose la exige en cualquier comando (build, logs, down), así que se carga desde su archivo.
+WITH_QUEUE_KEY = QUEUE_MESSAGE_SIGNING_KEY="$$(cat $(HOME)/.config/sauri/queue_signing_key 2>/dev/null)"
+
 ## Levantar con rebuild de imágenes
 build:
-	docker compose build
+	bash scripts/engines/ensure-native-engine-credentials.sh
+	$(WITH_QUEUE_KEY) docker compose build
 	scripts/platform/compose-bringup.sh
 
 ## Ver logs de todos los servicios
 logs:
-	docker compose logs -f
+	$(WITH_QUEUE_KEY) docker compose logs -f
 
 ## Detener todos los servicios
 down:
-	docker compose down
+	$(WITH_QUEUE_KEY) docker compose down
 
 ## Detener y eliminar volúmenes (datos locales)
 clean:
-	docker compose down -v
+	$(WITH_QUEUE_KEY) docker compose down -v
 
 ## Ejecutar migraciones de base de datos
 migrate:
