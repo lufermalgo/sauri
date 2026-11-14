@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import UTC, datetime
@@ -10,6 +11,7 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.infra.engine_slot import ENGINE_CALL_TIMEOUT_S, SLOT_WAIT_TIMEOUT_S, EngineSlotTimeout, engine_slot
 from app.infra.models import Meeting, MeetingSummary, ProcessedSummaryEvent, SummaryRequestOutbox, Transcript
 from app.infra.queue import JobQueue
 from app.summaries.engine import ContextExceededError, SummaryProviderError
@@ -81,12 +83,18 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
                 return
             passages = await transcript_passages(session, request.transcript_id)
             instructions = request.instructions_snapshot
+            if instructions is None:
+                raise ValueError("Accepted summary request has no instruction snapshot")
             request.status = "running"
 
         # Only provider availability/timeouts are retryable generation failures.
         # Acknowledge deterministic failures after persisting a terminal outcome.
         try:
-            result = await engine.generate(passages, instructions)
+            async with engine_slot(factory.kw["bind"], kind="summary", timeout_s=SLOT_WAIT_TIMEOUT_S):
+                async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
+                    result = await engine.generate(passages, instructions)
+        except EngineSlotTimeout:
+            raise
         except ContextExceededError:
             await record_failure(message, "context_exceeded", terminal=True)
             return

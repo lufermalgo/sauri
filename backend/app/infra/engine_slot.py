@@ -18,6 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 logger = logging.getLogger(__name__)
 
+# RabbitMQ must retain its default consumer_timeout (1800000 ms) or higher.
+# Per delivery: 120 s slot wait + 1200 s hard inference limit = 1320 s < 1800 s;
+# the remaining 480 s is reserved for SQL, confirmed publication and acknowledgement.
+BROKER_CONSUMER_TIMEOUT_S = 1800.0
+SLOT_WAIT_TIMEOUT_S = 120.0
+ENGINE_CALL_TIMEOUT_S = 1200.0
+
+
 SLOT_KEY: int = int.from_bytes(
     hashlib.sha256(b"sauri.heavy_engine").digest()[:8], "big", signed=True
 )

@@ -677,6 +677,12 @@ class SummaryRequestOutbox(Base):
     __tablename__ = "summary_request_outbox"
     __table_args__ = (
         UniqueConstraint("transcript_id", "generation", name="uq_summary_request_transcript_generation"),
+        CheckConstraint(
+            "(template_id IS NOT NULL AND template_version IS NOT NULL AND instructions_snapshot IS NOT NULL) OR "
+            "(status = 'failed' AND template_id IS NULL AND template_version IS NULL "
+            "AND instructions_snapshot IS NULL)",
+            name="ck_summary_request_snapshot_or_failed",
+        ),
     )
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -684,9 +690,9 @@ class SummaryRequestOutbox(Base):
     transcript_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False
     )
-    template_id: Mapped[str] = mapped_column(String(36), ForeignKey("summary_templates.id"), nullable=False)
-    template_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    instructions_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    template_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("summary_templates.id"), nullable=True)
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    instructions_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     failure_cause: Mapped[str | None] = mapped_column(String(32), nullable=True)

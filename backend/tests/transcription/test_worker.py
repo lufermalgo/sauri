@@ -580,18 +580,10 @@ async def test_property_10_transcript_uniqueness(
     with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
         await _process_transcription_for_seeded_recording(message, session_factory)
 
-    # Second processing — should fail with IntegrityError (unique constraint)
-    # Reset meeting state for the second attempt
-    async with session_factory() as session, session.begin():
-        persisted_meeting = cast(Meeting, await session.get(Meeting, meeting_id))
-        persisted_meeting.process_state = "recording"
-
-    from sqlalchemy.exc import IntegrityError
-
-    with patch(
-        "app.transcription.worker.create_asr_engine", return_value=mock_engine
-    ), pytest.raises(IntegrityError):
+    # Redelivery reuses the persisted transcript rather than invoking ASR again.
+    with patch("app.transcription.worker.create_asr_engine", return_value=mock_engine):
         await _process_transcription_for_seeded_recording(message, session_factory)
+    assert mock_engine.transcribe.await_count == 1
 
     # Still only one Transcript
     from sqlalchemy import select
@@ -603,6 +595,16 @@ async def test_property_10_transcript_uniqueness(
         transcripts = result.scalars().all()
 
     assert len(transcripts) == 1
+
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError):
+        async with session_factory() as session, session.begin():
+            session.add(Transcript(
+                id=str(uuid.uuid4()), meeting_id=meeting_id, language="es", provider="local",
+                supports_turns=True, created_at=datetime.now(UTC),
+            ))
+            await session.flush()
 
 
 # ---------------------------------------------------------------------------

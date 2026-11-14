@@ -11,6 +11,7 @@ Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -21,7 +22,8 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript
+from app.infra.engine_slot import ENGINE_CALL_TIMEOUT_S, SLOT_WAIT_TIMEOUT_S, EngineSlotTimeout, engine_slot
+from app.infra.models import Meeting, MeetingProcessingClaim, SessionRecording, SpeechTurn, Transcript, TranscriptWord
 from app.infra.processing_claims import (
     advance_processing_generation,
     claim_worker_generation,
@@ -35,6 +37,32 @@ from app.transcription.factory import create_asr_engine
 from app.transcription.repository import TranscriptRepository
 
 logger = logging.getLogger(__name__)
+
+
+async def _publish_diarization(
+    message: dict[str, Any], session_factory: async_sessionmaker[AsyncSession], queue: JobQueue,
+) -> None:
+    meeting_id = message["meeting_id"]
+    async with session_factory() as session, session.begin():
+        if not await verify_worker_binding(
+            session, meeting_id=meeting_id, owner_id=message["owner_id"], recording_id=message["recording_id"],
+        ) or not await verify_worker_generation(
+            session, meeting_id=meeting_id, generation=message.get("generation"), job_id=message.get("job_id"),
+            kind="transcription", operation_id=message.get("operation_id"),
+        ):
+            return
+        job = {key: message[key] for key in ("meeting_id", "owner_id", "recording_id")}
+        generation = message.get("generation")
+        if type(generation) is int:
+            next_generation = await advance_processing_generation(session, meeting_id, generation)
+            if next_generation is None:
+                return
+            job.update(generation=next_generation, job_id=str(uuid.uuid5(
+                uuid.NAMESPACE_URL, f"sauri:diarize:{meeting_id}:{next_generation}",
+            )))
+        # Keep the generation lock until broker confirmation. Failed publication
+        # rolls back advancement; redelivery finds the transcript and retries here.
+        await queue.publish("diarize", job)
 
 
 async def _process_transcription(
@@ -101,6 +129,13 @@ async def _process_transcription(
         logger.warning("Message discarded: queue recording does not match meeting recording.")
         return
 
+    async with session_factory() as session:
+        persisted_transcript = await session.scalar(select(Transcript.id).where(Transcript.meeting_id == meeting_id))
+    if persisted_transcript is not None:
+        if queue is not None:
+            await _publish_diarization(message, session_factory, queue)
+        return
+
     async with session_factory() as session, session.begin():
         if not await claim_worker_generation(
             session, meeting_id=meeting_id, generation=generation, job_id=job_id,
@@ -109,27 +144,21 @@ async def _process_transcription(
             logger.info("Transcription delivery acknowledged without claim; reason=fenced")
             return
 
-    logger.info("Processing transcription for meeting_id=%s", meeting_id)
-    recording_audio_ref = recording.audio_ref
-    audio_duration_seconds = recording.duration_seconds
-
-    # Initial transition recording -> transcribing (Req. 8.1)
     async with session_factory() as session, session.begin():
         meeting = await session.get(Meeting, meeting_id)
-        if (
-            meeting is None
-            or not await verify_worker_binding(
-                session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id
-            )
-            or not await verify_worker_generation(
-                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-                kind="transcription", operation_id=operation_id,
-            )
+        if meeting is None or not await verify_worker_binding(
+            session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id,
+        ) or not await verify_worker_generation(
+            session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+            kind="transcription", operation_id=operation_id,
         ):
-            logger.info("Transcription transition skipped; reason=fenced")
             return
         if meeting.process_state == "recording":
             await record_transition(session, meeting, "recording_uploaded")
+
+    logger.info("Processing transcription for meeting_id=%s", meeting_id)
+    recording_audio_ref = recording.audio_ref
+    audio_duration_seconds = recording.duration_seconds
 
     # 1. Create the ASR engine via the factory (selects provider by config)
     engine = create_asr_engine()
@@ -141,7 +170,9 @@ async def _process_transcription(
         options.preferred_language = message["language"]
     started_at = time.monotonic()
     try:
-        result = await engine.transcribe(recording_audio_ref, options)
+        async with engine_slot(session_factory.kw["bind"], kind="transcription", timeout_s=SLOT_WAIT_TIMEOUT_S):
+            async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
+                result = await engine.transcribe(recording_audio_ref, options)
         if type(result.contract_version) is not int or result.contract_version != 2:
             raise EngineContractError("Unsupported ASR contract_version")
         if result.language == "auto":
@@ -150,9 +181,22 @@ async def _process_transcription(
             if options.preferred_language == "auto":
                 raise EngineContractError("Missing detected language")
             result.language = options.preferred_language
-    except (httpx.HTTPError, ValueError) as exc:
+    except EngineSlotTimeout:
+        async with session_factory() as session, session.begin():
+            if await verify_worker_generation(
+                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                kind="transcription", operation_id=operation_id,
+            ):
+                claim = await session.get(MeetingProcessingClaim, meeting_id)
+                if claim is not None:
+                    claim.claim_id = operation_id if operation_id is not None else None
+                    claim.claim_kind = "recovery" if operation_id is not None else None
+        raise
+    except (httpx.HTTPError, ValueError, TimeoutError) as exc:
         if isinstance(exc, EngineContractError):
             cause = "engine_contract_mismatch"
+        elif isinstance(exc, TimeoutError):
+            cause = "engine_timeout"
         elif isinstance(exc, httpx.HTTPError):
             cause = "engine_failed"
         else:
@@ -170,6 +214,8 @@ async def _process_transcription(
                     kind="transcription", operation_id=operation_id,
                 )
             ):
+                if meeting.process_state == "recording":
+                    await record_transition(session, meeting, "recording_uploaded")
                 await record_transition(session, meeting, "engine_failed", failure_cause=cause)
         logger.error(
             "Transcription failed for meeting_id=%s; cause=%s; "
@@ -233,6 +279,14 @@ async def _process_transcription(
 
             repo = TranscriptRepository(session_factory)
             await repo.create(session, transcript, turns)
+            session.add_all([
+                TranscriptWord(
+                    id=str(uuid.uuid4()), transcript_id=transcript.id, sequence=sequence,
+                    text=word.text, start_ms=word.start_ms, end_ms=word.end_ms,
+                    probability=word.probability, timing_repaired=word.timing_repaired,
+                )
+                for sequence, word in enumerate(result.words, start=1)
+            ])
             transcript_created = True
 
             # Transition to "completed" (Req. 3.6)
@@ -268,32 +322,8 @@ async def _process_transcription(
                     meeting_id,
                 )
 
-    # Enqueue the Diarization_Message once the Transcript transaction is
-    # committed (Req. 1.2 of the speaker-identification feature). Doesn't
-    # alter the Meeting's ProcessState (Req. 9.5).
     if queue is not None and transcript_created:
-        diarization_job: dict[str, Any] = {
-            "meeting_id": meeting_id,
-            "owner_id": owner_id,
-            "recording_id": recording_id,
-        }
-        if isinstance(generation, int) and not isinstance(generation, bool):
-            diarization_job_id = str(uuid.uuid4())
-            async with session_factory() as session, session.begin():
-                next_generation = await advance_processing_generation(
-                    session, meeting_id, generation
-                )
-            if next_generation is None:
-                logger.info("Diarization delivery skipped; reason=generation_not_advanced")
-                return
-            diarization_job.update(
-                {"generation": next_generation, "job_id": diarization_job_id}
-            )
-        await queue.publish("diarize", diarization_job)
-        logger.info(
-            "Diarization_Message enqueued for meeting_id=%s (topic 'diarize')",
-            meeting_id,
-        )
+        await _publish_diarization(message, session_factory, queue)
 
 
 async def start_worker(
@@ -312,5 +342,34 @@ async def start_worker(
     async def handler(message: dict[str, Any]) -> None:
         await _process_transcription(message, session_factory, queue)
 
+    async def terminal(message: dict[str, Any]) -> None:
+        meeting_id = message.get("meeting_id")
+        if not isinstance(meeting_id, str):
+            return
+        async with session_factory() as session:
+            transcript = await session.scalar(select(Transcript.id).where(Transcript.meeting_id == meeting_id))
+        if transcript is not None:
+            # Exhausted publication retries must still deliver the already committed result.
+            await _publish_diarization(message, session_factory, queue)
+            return
+        async with session_factory() as session, session.begin():
+            if not await verify_worker_binding(
+                session, meeting_id=meeting_id, owner_id=message.get("owner_id", ""),
+                recording_id=message.get("recording_id", ""),
+            ):
+                return
+            binding: dict[str, Any] = {
+                "meeting_id": meeting_id, "generation": message.get("generation"),
+                "job_id": message.get("job_id"), "operation_id": message.get("operation_id"),
+            }
+            if not await claim_worker_generation(session, kind="transcription", **binding) and not (
+                await verify_worker_generation(session, kind="transcription", **binding)
+            ):
+                return
+            meeting = await session.get(Meeting, meeting_id)
+            if meeting is not None and meeting.process_state == "transcribing":
+                await record_transition(session, meeting, "engine_failed", failure_cause="processing_retries_exhausted")
+
     await queue.subscribe("transcribe", handler)
+    await queue.subscribe("transcribe.failed", terminal)
     logger.info("Transcription worker subscribed to the 'transcribe' topic")

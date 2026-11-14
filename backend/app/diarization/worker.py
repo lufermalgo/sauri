@@ -15,12 +15,13 @@ Requirements: 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 6.1, 7.1, 8.2, 9.1, 9.2, 9.3, 9.4, 9
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.diarization.assignment import assign_turns
@@ -29,12 +30,17 @@ from app.diarization.factory import create_diarization_engine
 from app.diarization.labeling import label_speakers
 from app.diarization.repository import DiarizationRepository
 from app.diarization.reprocess_legacy import expired
+from app.diarization.word_attribution import WordTime, attribute_words
+from app.infra.engine_slot import ENGINE_CALL_TIMEOUT_S, SLOT_WAIT_TIMEOUT_S, EngineSlotTimeout, engine_slot
 from app.infra.models import (
     Diarization,
     Meeting,
+    MeetingProcessingClaim,
     SessionRecording,
     Speaker,
     SpeakerAssignment,
+    TranscriptWord,
+    WordSpeakerAssignment,
 )
 from app.infra.object_store import create_object_store
 from app.infra.processing_claims import (
@@ -43,9 +49,24 @@ from app.infra.processing_claims import (
     verify_worker_generation,
 )
 from app.infra.queue import JobQueue
+from app.summaries.service import accept_request, record_failed_request
 from app.transcription.repository import TranscriptRepository
 
 logger = logging.getLogger(__name__)
+
+
+async def _request_summary(
+    session_factory: async_sessionmaker[AsyncSession],
+    meeting_id: str, owner_id: str, revision: int,
+) -> None:
+    try:
+        async with session_factory() as session, session.begin():
+            await accept_request(session, meeting_id, owner_id, None, processing_revision=revision)
+    except Exception:
+        # Do not leak template/provider contents or roll back completed diarization.
+        logger.error("Automatic summary request failed for meeting_id=%s revision=%s", meeting_id, revision)
+        async with session_factory() as session, session.begin():
+            await record_failed_request(session, meeting_id, owner_id, revision)
 
 
 async def _process_diarization(
@@ -110,6 +131,23 @@ async def _process_diarization(
     has_processing_fence = revision is None or any(
         value is not None for value in (generation, job_id, operation_id)
     )
+    # A redelivery after completion can repair a failed summary request, without
+    # rerunning the engine or accepting a stale processing-generation identity.
+    async with session_factory() as session, session.begin():
+        query = select(Diarization).where(Diarization.meeting_id == meeting_id)
+        if revision is not None:
+            query = query.where(Diarization.processing_revision == revision)
+        completed = await session.scalar(query.order_by(Diarization.processing_revision.desc()).limit(1))
+        can_request_summary = completed is not None and completed.diarization_state == "completed"
+        if can_request_summary and has_processing_fence:
+            can_request_summary = await verify_worker_generation(
+                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                kind="diarization", operation_id=operation_id,
+            )
+    if can_request_summary and completed is not None:
+        await _request_summary(session_factory, meeting_id, owner_id, completed.processing_revision)
+        return
+
     if has_processing_fence:
         async with session_factory() as session, session.begin():
             if not await claim_worker_generation(
@@ -195,11 +233,20 @@ async def _process_diarization(
 
     try:
         engine = create_diarization_engine()
-        result = await engine.diarize(
-            recording.audio_ref, DiarizationOptions(duration_ms=recording.duration_seconds * 1000)
-        )
+        async with engine_slot(session_factory.kw["bind"], kind="diarization", timeout_s=SLOT_WAIT_TIMEOUT_S):
+            async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
+                result = await engine.diarize(
+                    recording.audio_ref, DiarizationOptions(duration_ms=recording.duration_seconds * 1000)
+                )
         domain_speakers = label_speakers(result.segments)
         domain_assignments = assign_turns(list(transcript.turns), result.segments, domain_speakers)
+        async with session_factory() as session:
+            words = list(await session.scalars(select(TranscriptWord).where(
+                TranscriptWord.transcript_id == transcript.id,
+            ).order_by(TranscriptWord.sequence)))
+        attributions = attribute_words([
+            WordTime(word.sequence, word.text, word.start_ms, word.end_ms) for word in words
+        ], result.segments)
         speaker_id_by_label: dict[str, str] = {}
         orm_speakers: list[Speaker] = []
         for speaker in domain_speakers:
@@ -213,6 +260,18 @@ async def _process_diarization(
             id=str(uuid.uuid4()), diarization_id=attempt.id, turn_id=turn_id,
             speaker_id=speaker_id_by_label[speaker.raw_label], overlap_ms=overlap_ms,
         ) for turn_id, speaker, overlap_ms in domain_assignments]
+
+        orm_word_assignments = [WordSpeakerAssignment(
+            diarization_id=attempt.id, word_id=word.id,
+            speaker_id=speaker_id_by_label[attribution.raw_label]
+            if attribution.state == "assigned" and attribution.raw_label is not None else None,
+            state=attribution.state,
+            candidates_json=[
+                {"speaker_id": speaker_id_by_label[label], "fraction": overlap}
+                for label, overlap in attribution.candidates
+            ]
+            if attribution.state == "ambiguous" else None,
+        ) for word, attribution in zip(words, attributions, strict=True)]
 
         async with session_factory() as session, session.begin():
             if (
@@ -228,12 +287,31 @@ async def _process_diarization(
                 return
             await repo.complete_revision(
                 session, meeting_id, revision, engine.capabilities().provider_name,
-                orm_speakers, orm_assignments,
+                orm_speakers, orm_assignments, orm_word_assignments,
             )
+    except EngineSlotTimeout:
+        async with session_factory() as session, session.begin():
+            if not has_processing_fence or await verify_worker_generation(
+                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                kind="diarization", operation_id=operation_id,
+            ):
+                await session.execute(update(Diarization).where(
+                    Diarization.meeting_id == meeting_id,
+                    Diarization.processing_revision == revision,
+                    Diarization.diarization_state == "in_progress",
+                ).values(diarization_state="pending", updated_at=datetime.now(UTC)))
+                if has_processing_fence:
+                    claim = await session.get(MeetingProcessingClaim, meeting_id)
+                    if claim is not None:
+                        claim.claim_id = operation_id if operation_id is not None else None
+                        claim.claim_kind = "recovery" if operation_id is not None else None
+        raise
     except Exception:
         async with session_factory() as session, session.begin():
             await repo.fail_revision(session, meeting_id, revision)
         raise
+
+    await _request_summary(session_factory, meeting_id, owner_id, revision)
 
     logger.info(
         "Diarization completed for meeting_id=%s (%d speakers, %d assignments)",

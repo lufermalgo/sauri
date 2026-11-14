@@ -14,6 +14,7 @@ from app.infra.models import (
     SpeakerAssignment,
     SpeakerReview,
     SpeakerReviewItem,
+    WordSpeakerAssignment,
 )
 from app.infra.queue import JobQueue
 
@@ -144,6 +145,7 @@ class DiarizationRepository:
     async def complete_revision(
         self, session: AsyncSession, meeting_id: str, processing_revision: int,
         provider: str, speakers: list[Speaker], assignments: list[SpeakerAssignment],
+        word_assignments: list[WordSpeakerAssignment] | None = None,
     ) -> Diarization:
         """Commit the generation, its new speaker keys, assignments and review together.
 
@@ -167,6 +169,11 @@ class DiarizationRepository:
         for assignment in assignments:
             assignment.diarization_id = attempt.id
             session.add(assignment)
+        # Word assignments have no ORM relationship to speakers: flush their FK targets first.
+        await session.flush()
+        for word_assignment in word_assignments or []:
+            word_assignment.diarization_id = attempt.id
+            session.add(word_assignment)
         review = SpeakerReview(
             id=str(uuid.uuid4()), meeting_id=meeting_id,
             processing_revision=processing_revision,
