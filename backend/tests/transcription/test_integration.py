@@ -96,9 +96,7 @@ class TestWorkerSubscription:
 
         await start_worker(mock_queue, mock_session_factory)
 
-        # Verify subscribe was called with "transcribe" as the topic
-        mock_queue.subscribe.assert_called_once()
-        call_args = mock_queue.subscribe.call_args
-        assert call_args[0][0] == "transcribe"
-        # Second arg should be a callable (the handler)
-        assert callable(call_args[0][1])
+        assert mock_queue.subscribe.await_count == 2
+        handlers = {call.args[0]: call.args[1] for call in mock_queue.subscribe.await_args_list}
+        assert set(handlers) == {"transcribe", "transcribe.failed"}
+        assert all(callable(handler) for handler in handlers.values())

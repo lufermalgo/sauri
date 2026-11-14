@@ -90,6 +90,7 @@ async def test_terminal_delivery_is_not_discarded_on_failure(
     monkeypatch.delenv("QUEUE_DLX_EXCHANGE", raising=False)
     queue = RabbitMQJobQueue("amqp://not-used/")
     channel = AsyncMock()
+    channel.is_closed = False
     broker_queue = AsyncMock()
     channel.declare_queue.return_value = broker_queue
     queue._channel = channel

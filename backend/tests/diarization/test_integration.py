@@ -219,6 +219,7 @@ class TestDiarizeAckNackRetries:
         mock_message.nack = AsyncMock()
 
         queue._channel = AsyncMock()
+        queue._channel.is_closed = False
         mock_queue_obj = AsyncMock()
         queue._channel.declare_queue.return_value = mock_queue_obj
 
@@ -273,9 +274,12 @@ class TestDiarizeAckNackRetries:
             mock_message.nack = AsyncMock()
 
             queue._channel = AsyncMock()
+            queue._channel.is_closed = False
             mock_queue_obj = AsyncMock()
             queue._channel.declare_queue.return_value = mock_queue_obj
-            queue._channel.default_exchange.publish = AsyncMock()
+            from pamqp.commands import Basic
+
+            queue._channel.default_exchange.publish = AsyncMock(return_value=Basic.Ack())
 
             captured: dict[str, Any] = {}
 

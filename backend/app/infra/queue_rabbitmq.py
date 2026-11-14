@@ -191,6 +191,9 @@ class RabbitMQJobQueue(JobQueue):
             raise RuntimeError("No active connection. Call `connect()` first.")
         _signing_key()
         channel = self._channel
+        # Per consumer (not global): at most one slot waiter/DB connection and one
+        # unacked inference delivery per topic, rather than exhausting the SQL pool.
+        await channel.set_qos(prefetch_count=1, global_=False)
 
         max_retries = _read_max_retries(topic)
 
@@ -213,6 +216,9 @@ class RabbitMQJobQueue(JobQueue):
                 await message.ack()
                 logger.debug("Message processed and acked on '%s'.", topic)
             except Exception:
+                if channel.is_closed:
+                    # The broker requeues unacked deliveries when their channel closes.
+                    return
                 retries = _count_retries(message)
                 if retries < max_retries:
                     logger.warning(
@@ -234,23 +240,33 @@ class RabbitMQJobQueue(JobQueue):
                         content_type=message.content_type,
                         headers=retry_headers,
                     )
-                    await channel.default_exchange.publish(retry_message, routing_key=topic)
+                    try:
+                        confirmation = await channel.default_exchange.publish(
+                            retry_message, routing_key=topic, mandatory=True,
+                        )
+                        if not isinstance(confirmation, Basic.Ack):
+                            raise RuntimeError("Broker did not confirm retry publication")
+                    except Exception:
+                        # If already closed, RabbitMQ itself requeues this unacked delivery.
+                        if not message.channel.is_closed:
+                            await message.nack(requeue=True)
+                        return
                     await message.ack()
                 else:
-                    if topic == "summarize.failed" and not self._dlx_exchange:
+                    if topic in {"summarize.failed", "transcribe.failed"} and not self._dlx_exchange:
                         # A transient database failure cannot erase the only durable
                         # terminal event. Keep it recoverable until the handler acks.
-                        logger.error("Terminal summary handler failed after retries; retaining delivery")
+                        logger.error("Terminal worker handler failed after retries; retaining delivery")
                         await message.nack(requeue=True)
                         return
-                    if topic == "summarize":
+                    if topic in {"summarize", "transcribe"}:
                         # The terminal consumer is on a different signed topic. Publish
                         # and confirm its own authenticated delivery before settling the
                         # original; a failed publication must remain retryable.
                         try:
-                            await self.publish("summarize.failed", payload)
+                            await self.publish(f"{topic}.failed", payload)
                         except Exception:
-                            logger.exception("Could not confirm terminal summary delivery; requeueing original")
+                            logger.exception("Could not confirm terminal worker delivery; requeueing original")
                             await message.nack(requeue=True)
                             return
                         if not self._dlx_exchange:
