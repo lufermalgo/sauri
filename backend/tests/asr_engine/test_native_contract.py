@@ -29,8 +29,7 @@ MODULE_SPEC.loader.exec_module(native)
 
 
 class SyntheticBody(BytesIO):
-    def set_socket_timeout(self, seconds):
-        assert seconds > 0
+    """Like a real streaming body here: no set_socket_timeout (it breaks on current botocore)."""
 
 
 class FakeS3:
