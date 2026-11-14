@@ -104,6 +104,34 @@ def test_credential_provisioner_creates_shared_private_files_and_preserves_exist
     assert capability_key.stat().st_mode & 0o777 == 0o600
 
 
+def test_credential_provisioner_creates_a_private_admin_password_without_printing_it(tmp_path: Path) -> None:
+    password_file = tmp_path / ".config" / "sauri" / "admin_password"
+    env = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+    provisioner = REPO_ROOT / "scripts" / "engines" / "ensure-native-engine-credentials.sh"
+
+    first = subprocess.run(["bash", str(provisioner)], env=env, text=True, capture_output=True, check=False)
+    assert first.returncode == 0, first.stderr
+    password = password_file.read_text(encoding="utf-8").strip()
+    assert len(password) >= 32
+    assert set(password) <= set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
+    assert password_file.stat().st_mode & 0o777 == 0o600
+    assert password not in first.stdout + first.stderr
+
+    password_file.chmod(0o644)
+    second = subprocess.run(["bash", str(provisioner)], env=env, text=True, capture_output=True, check=False)
+    assert second.returncode == 0, second.stderr
+    assert password_file.read_text(encoding="utf-8").strip() == password
+    assert password_file.stat().st_mode & 0o777 == 0o600
+
+
+def test_api_mounts_the_admin_password_read_only_and_not_as_a_value() -> None:
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    api_config = compose.split("  api:", maxsplit=1)[1].split("  # --- Worker", maxsplit=1)[0]
+    assert "SAURI_ADMIN_PASSWORD_FILE=/run/secrets/sauri_admin_password" in api_config
+    assert ".config/sauri/admin_password:/run/secrets/sauri_admin_password:ro" in api_config
+    assert "SAURI_ADMIN_PASSWORD=" not in compose
+
+
 def test_manager_starts_reports_and_stops_exact_server_pids(tmp_path: Path) -> None:
     fake_python = tmp_path / "fake-python"
     fake_python.write_text(

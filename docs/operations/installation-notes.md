@@ -31,6 +31,10 @@ Living record of what each Sauri component needs to be installed, kept as engine
 - Verify: `bash scripts/engines/install-llm-engine.sh --check`; start with `bash scripts/engines/native-engines.sh start llm`.
 - Other platforms: llama.cpp builds on Linux (CUDA/CPU) and Windows; the gateway is platform-neutral, but the installer and the build flags (Metal) are macOS-specific today. An external OpenAI-compatible provider can replace the local engine through configuration.
 
+## Administrator account — 2026-11-14
+
+- For now Sauri has a single account, the administrator `admin@sauri.local`; other profiles come later. `make up` (via `scripts/engines/ensure-native-engine-credentials.sh`) generates a random password once into `~/.config/sauri/admin_password` (0600, never overwritten), mounts it read-only into the `api` container and runs `python -m app.auth.seed_admin --retire-legacy`, which creates the account and moves data owned by the old seed users to it. Read it with `cat ~/.config/sauri/admin_password`; to change it, replace the file (20+ characters) and run `docker compose run --rm api python -m app.auth.seed_admin --reset-password`. The installer must provision this file the same way on every platform.
+
 ## Pending to document
 
 - Extension packaging and updates; portal and backend updates.

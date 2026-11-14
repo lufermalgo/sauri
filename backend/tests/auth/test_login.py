@@ -88,10 +88,10 @@ async def test_seed_users_is_idempotent(
 ) -> None:
     async with api_session_factory() as session:
         async with session.begin():
-            created1 = await seed_users(session)
-        assert len(created1) == 2
+            created1 = await seed_users(session, "synthetic-test-password-0001")
+        assert [user.email for user in created1] == ["admin@sauri.local"]
 
     async with api_session_factory() as session:
         async with session.begin():
-            created2 = await seed_users(session)
+            created2 = await seed_users(session, "synthetic-test-password-0002")
         assert len(created2) == 0
