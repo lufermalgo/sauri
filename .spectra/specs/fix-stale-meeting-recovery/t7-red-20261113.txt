@@ -1,0 +1,27 @@
+F....                                                                    [100%]
+=================================== FAILURES ===================================
+________________ test_startup_delivers_committed_operation_once ________________
+
+recovery_db = async_sessionmaker(class_='AsyncSession', bind=<sqlalchemy.ext.asyncio.engine.AsyncEngine object at 0x10a8c5ad0>, autoflush=True, expire_on_commit=False)
+candidate = ('d62ba6f1-dd8c-4b35-8852-559ba3835852', '06f2081d-1cdd-4f83-839a-9c80f0d8c01d')
+run_startup = <function run_startup.<locals>.run at 0x108d34e00>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x10b1c4980>
+
+    async def test_startup_delivers_committed_operation_once(
+        recovery_db: async_sessionmaker[AsyncSession], candidate: tuple[str, str],
+        run_startup: Callable[[], Awaitable[AsyncMock]], caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        receipt = await accept(candidate)
+        before = await snapshot(recovery_db)
+        # Dispatcher delivers accepted intent, independent of later runtime arming.
+        queue = await run_startup()
+>       assert queue.publish.await_count == 1
+E       AssertionError: assert 0 == 1
+E        +  where 0 = <AsyncMock name='mock.publish' id='4481380240'>.await_count
+E        +    where <AsyncMock name='mock.publish' id='4481380240'> = <AsyncMock spec='JobQueue' id='4480415600'>.publish
+
+tests/infra/test_recovery_outbox.py:131: AssertionError
+=========================== short test summary info ============================
+FAILED tests/infra/test_recovery_outbox.py::test_startup_delivers_committed_operation_once
+1 failed, 4 passed in 2.92s
+Cleanup verified: own containers/networks/volumes=0
