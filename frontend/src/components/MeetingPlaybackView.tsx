@@ -18,6 +18,7 @@ interface MeetingPlaybackViewProps {
   error: string | null;
   onRefreshManifest?: (currentTimeMs: number) => Promise<PlaybackManifest>;
   onSeekToReady?: (seekTo: ((timeMs: number) => void) | undefined) => void;
+  onPlayIntervalReady?: (playInterval: ((startMs: number, endMs: number) => Promise<void>) | undefined) => void;
 }
 
 const INITIAL_STATE: PlaybackState = {
@@ -56,6 +57,7 @@ export function MeetingPlaybackView({
   error,
   onRefreshManifest,
   onSeekToReady,
+  onPlayIntervalReady,
 }: MeetingPlaybackViewProps) {
   const [state, setState] = useState<PlaybackState>(INITIAL_STATE);
   const [mediaReady, setMediaReady] = useState(false);
@@ -130,6 +132,7 @@ export function MeetingPlaybackView({
     });
     controllerRef.current = controller;
     onSeekToReady?.((timeMs) => controller.seekTo(timeMs));
+    onPlayIntervalReady?.((startMs, endMs) => controller.playInterval(startMs, endMs));
     if (savedTimeMs.current > 0) controller.seekTo(savedTimeMs.current);
     setState(controller.getState());
     setMediaReady(false);
@@ -157,9 +160,10 @@ export function MeetingPlaybackView({
       if (controllerRef.current === controller) {
         controllerRef.current = null;
         onSeekToReady?.(undefined);
+        onPlayIntervalReady?.(undefined);
       }
     };
-  }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, onSeekToReady, passages, playableVideoSources]);
+  }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, onSeekToReady, onPlayIntervalReady, passages, playableVideoSources]);
 
   useEffect(() => {
     if (state.activePassageId === previousActivePassage.current) return;

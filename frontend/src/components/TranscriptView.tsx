@@ -10,7 +10,6 @@ import {
 } from "../api";
 import type { MeetingDiarization, MeetingState, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
-import { playbackControllerFor } from "./PlaybackController";
 import { selectListeningInterval } from "../speaker-review-interval";
 import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
 import { ProcessingStatus } from "./ProcessingStatus";
@@ -59,6 +58,13 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
     seekToRef.current = seekTo;
   }, []);
+  const playIntervalRef = useRef<((startMs: number, endMs: number) => Promise<void>) | undefined>(undefined);
+  const registerPlayInterval = useCallback(
+    (playInterval: ((startMs: number, endMs: number) => Promise<void>) | undefined) => {
+      playIntervalRef.current = playInterval;
+    },
+    [],
+  );
   const [data, setData] = useState<MeetingTranscript | null>(null);
   const [playbackManifest, setPlaybackManifest] = useState<PlaybackManifest | null>(null);
   const [diarization, setDiarization] = useState<MeetingDiarization | null>(null);
@@ -254,14 +260,13 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
 
   async function listenToSpeaker(startMs: number, endMs: number) {
     setReviewError(null);
-    const clocks = Array.from(playbackRef.current?.querySelectorAll("audio, video") ?? []);
-    const controller = clocks.map(playbackControllerFor).find((candidate) => candidate !== undefined);
-    if (!controller) {
+    const playInterval = playIntervalRef.current;
+    if (!playInterval) {
       setReviewError(copy.speakerReview.playbackUnavailable);
       return;
     }
     try {
-      await controller.playInterval(startMs, endMs);
+      await playInterval(startMs, endMs);
     } catch {
       setReviewError(copy.speakerReview.playbackFailed);
     }
@@ -344,6 +349,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           error={playbackError}
           onRefreshManifest={() => getPlaybackManifest(meetingId)}
           onSeekToReady={registerSeekTo}
+          onPlayIntervalReady={registerPlayInterval}
         />
       </div>
       <div role="tablist" aria-label={copy.summary.tabsLabel} onKeyDown={(event) => {

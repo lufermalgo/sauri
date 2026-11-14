@@ -39,14 +39,6 @@ export interface PlaybackControllerOptions {
 
 const DRIFT_THRESHOLD_SECONDS = 0.25;
 
-// Lets views outside the player (speaker review) drive the controller of a rendered clock element.
-const controllersByClock = new WeakMap<object, PlaybackController>();
-
-/** Returns the live controller whose clock is `element`, if any. */
-export function playbackControllerFor(element: Element): PlaybackController | undefined {
-  return controllersByClock.get(element);
-}
-
 export function findPassageAt(
   passages: readonly TimedPassage[],
   currentTimeMs: number,
@@ -72,7 +64,6 @@ export class PlaybackController {
 
   constructor(options: PlaybackControllerOptions) {
     this.audio = options.audioElement;
-    controllersByClock.set(this.audio, this);
     this.passages = options.passages;
     this.onError = options.onError;
     this.video = options.videoPresence === "separate" ? options.videoElement : undefined;
@@ -201,7 +192,6 @@ export class PlaybackController {
   }
 
   destroy(): void {
-    if (controllersByClock.get(this.audio) === this) controllersByClock.delete(this.audio);
     for (const [event, listener] of this.listeners) this.audio.removeEventListener(event, listener);
     this.listeners.length = 0;
   }
