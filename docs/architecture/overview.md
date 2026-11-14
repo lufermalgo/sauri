@@ -32,12 +32,12 @@ En el Mac, los servicios de Sauri corren en **Docker Desktop** como el proyecto 
 | Servicio (Compose) | Puerto en el Mac | Datos |
 |---|---|---|
 | `portal` (Nginx con el portal construido) | `127.0.0.1:5173` (`PORTAL_PORT`) | — |
-| `api` (FastAPI) | `8000` | — |
+| `api` (FastAPI) | `127.0.0.1:8000` | — |
 | `worker` (transcripción, diarización, resumen, retención) | — | — |
-| `postgres` (PostgreSQL 16) | `5432` | volumen `sauri_pgdata` |
-| `minio` (RustFS, compatible S3; conserva el nombre MinIO) | `9000` (API) y `9001` (consola) | volumen `sauri_minio-data` |
-| `rabbitmq` (RabbitMQ 3 con consola de administración) | `5672` y `15672` | — |
-| Motores nativos (fuera de Docker) | `8001` ASR, `8002` diarización, `8003` resumen | modelos en `~/.local/share/sauri/`, credenciales en `~/.config/sauri/` |
+| `postgres` (PostgreSQL 16) | `127.0.0.1:5432` | volumen `sauri_pgdata` |
+| `minio` (RustFS, compatible S3; conserva el nombre MinIO) | `127.0.0.1:9000` (API) y `127.0.0.1:9001` (consola) | volumen `sauri_minio-data` |
+| `rabbitmq` (RabbitMQ 3 con consola de administración) | `127.0.0.1:5672` y `127.0.0.1:15672` | volumen `sauri_rabbitmq-data` |
+| Motores nativos (fuera de Docker) | `127.0.0.1` `8001` ASR, `8002` diarización, `8003` resumen | modelos en `~/.local/share/sauri/`, credenciales en `~/.config/sauri/` |
 
 Comandos: `make up` (levanta el proyecto `sauri`), `make logs`, `make down`; `make engines-install`, `make engines-up`, `make engines-status`, `make engines-down` para los motores nativos. Instalación paso a paso en `docs/operations/installation-notes.md`.
 
@@ -63,6 +63,13 @@ graph LR
 ```
 
 La configuración de API/worker apunta a `host.docker.internal:8001`, `:8002` y `:8003`. Los motores implementan HTTP y controles de credenciales/capacidad por grabación. Su arranque, accesibilidad desde Docker y uso efectivo de GPU deben comprobarse juntos; tener una URL o un modelo configurado no demuestra inferencia. Credenciales fuera del repositorio en `~/.config/sauri`, montadas de solo lectura al worker; modelos compartidos en caché, nunca copiados al repositorio.
+
+## Seguridad local
+
+- **Puertos solo locales.** Todo puerto publicado (portal 5173, API 8000, PostgreSQL 5432, RustFS 9000/9001, RabbitMQ 5672/15672) escucha únicamente en `127.0.0.1`; otras máquinas de la red no los alcanzan. Los motores nativos (8001 ASR, 8002 diarización, 8003 pasarela LLM, 8004 llama-server) también.
+- **Sin credenciales fijas.** `scripts/engines/ensure-native-engine-credentials.sh` (invocado por `make build`/`make up` mediante `scripts/platform/compose-bringup.sh`) genera una vez valores al azar en archivos privados (0600, carpeta 0700) bajo `~/.config/sauri/`: `engine_token`, `recording_capability_key`, `queue_signing_key`, `admin_password`, `database_password`, `queue_password`, `object_store_access_key`, `object_store_secret_key` y `jwt_secret`. Nunca se versionan ni se imprimen.
+- **Patrón `*_FILE`.** Los contenedores reciben esos archivos de solo lectura en `/run/secrets/<nombre>` y los leen con `DATABASE_PASSWORD_FILE`, `QUEUE_BROKER_PASSWORD_FILE`, `OBJECT_STORE_ACCESS_KEY_FILE`, `OBJECT_STORE_SECRET_KEY_FILE` y `JWT_SECRET_FILE` (PostgreSQL: `POSTGRES_PASSWORD_FILE`; RustFS: `RUSTFS_ACCESS_KEY_FILE`/`RUSTFS_SECRET_KEY_FILE`). Las URL de conexión no llevan contraseña. Los motores ASR y diarización leen las llaves del almacén desde `~/.config/sauri/`.
+- Migración de instalaciones existentes, rotación de valores y reinicio de motores: ver `docs/operations/local-deployment.md`.
 
 ## Mapa de especificaciones del primer recorrido
 

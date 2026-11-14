@@ -24,7 +24,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,13 +33,16 @@ services:
       rabbitmq:
         condition: service_started
     environment:
-      - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
+      # Credentials arrive as private read-only files (generated in ~/.config/sauri), never as values.
+      - DATABASE_URL=postgresql+asyncpg://sauri@postgres:5432/sauri
+      - DATABASE_PASSWORD_FILE=/run/secrets/database_password
       - OBJECT_STORE_ENDPOINT=http://minio:9000
       - OBJECT_STORE_PUBLIC_ENDPOINT=${OBJECT_STORE_PUBLIC_ENDPOINT:-http://localhost:9000}
       - OBJECT_STORE_BUCKET=sauri-recordings
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-      - QUEUE_BROKER_URL=amqp://guest:guest@rabbitmq:5672/
+      - OBJECT_STORE_ACCESS_KEY_FILE=/run/secrets/object_store_access_key
+      - OBJECT_STORE_SECRET_KEY_FILE=/run/secrets/object_store_secret_key
+      - QUEUE_BROKER_URL=amqp://sauri@rabbitmq:5672/
+      - QUEUE_BROKER_PASSWORD_FILE=/run/secrets/queue_password
       - QUEUE_MESSAGE_SIGNING_KEY=${QUEUE_MESSAGE_SIGNING_KEY:?Set a private queue message signing key}
       - SAURI_DEFAULT_LANGUAGE=${SAURI_DEFAULT_LANGUAGE:-es}
       - ASR_PROVIDER=${ASR_PROVIDER:-local}
@@ -49,12 +52,17 @@ services:
       - DIARIZATION_TIMEOUT_SECONDS=${DIARIZATION_TIMEOUT_SECONDS:-3600}
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
+      - JWT_SECRET_FILE=/run/secrets/jwt_secret
       - AUTH_DISABLED=${AUTH_DISABLED:-true}
       - RETENTION_DAYS=${RETENTION_DAYS:-90}
       - SAURI_ADMIN_PASSWORD_FILE=/run/secrets/sauri_admin_password
     volumes:
       - "${HOME:?HOME must be set}/.config/sauri/admin_password:/run/secrets/sauri_admin_password:ro"
+      - "${HOME}/.config/sauri/database_password:/run/secrets/database_password:ro"
+      - "${HOME}/.config/sauri/queue_password:/run/secrets/queue_password:ro"
+      - "${HOME}/.config/sauri/object_store_access_key:/run/secrets/object_store_access_key:ro"
+      - "${HOME}/.config/sauri/object_store_secret_key:/run/secrets/object_store_secret_key:ro"
+      - "${HOME}/.config/sauri/jwt_secret:/run/secrets/jwt_secret:ro"
     networks:
       - sauri-net
 
@@ -72,12 +80,15 @@ services:
       rabbitmq:
         condition: service_started
     environment:
-      - DATABASE_URL=postgresql+asyncpg://sauri:sauri_dev@postgres:5432/sauri
+      # Credentials arrive as private read-only files (generated in ~/.config/sauri), never as values.
+      - DATABASE_URL=postgresql+asyncpg://sauri@postgres:5432/sauri
+      - DATABASE_PASSWORD_FILE=/run/secrets/database_password
       - OBJECT_STORE_ENDPOINT=http://minio:9000
       - OBJECT_STORE_BUCKET=sauri-recordings
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-      - QUEUE_BROKER_URL=amqp://guest:guest@rabbitmq:5672/
+      - OBJECT_STORE_ACCESS_KEY_FILE=/run/secrets/object_store_access_key
+      - OBJECT_STORE_SECRET_KEY_FILE=/run/secrets/object_store_secret_key
+      - QUEUE_BROKER_URL=amqp://sauri@rabbitmq:5672/
+      - QUEUE_BROKER_PASSWORD_FILE=/run/secrets/queue_password
       - QUEUE_MESSAGE_SIGNING_KEY=${QUEUE_MESSAGE_SIGNING_KEY:?Set a private queue message signing key}
       - SAURI_DEFAULT_LANGUAGE=${SAURI_DEFAULT_LANGUAGE:-es}
       - ASR_PROVIDER=${ASR_PROVIDER:-local}
@@ -98,6 +109,10 @@ services:
     volumes:
       - "${HOME:?HOME must be set}/.config/sauri/engine_token:/run/secrets/sauri_engine_token:ro"
       - "${HOME:?HOME must be set}/.config/sauri/recording_capability_key:/run/secrets/recording_capability_key:ro"
+      - "${HOME}/.config/sauri/database_password:/run/secrets/database_password:ro"
+      - "${HOME}/.config/sauri/queue_password:/run/secrets/queue_password:ro"
+      - "${HOME}/.config/sauri/object_store_access_key:/run/secrets/object_store_access_key:ro"
+      - "${HOME}/.config/sauri/object_store_secret_key:/run/secrets/object_store_secret_key:ro"
     networks:
       - sauri-net
 
@@ -105,13 +120,15 @@ services:
   postgres:
     image: postgres:16
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       - POSTGRES_DB=sauri
       - POSTGRES_USER=sauri
-      - POSTGRES_PASSWORD=sauri_dev
+      # Used only when the volume is first created; bring-up re-applies it to existing volumes.
+      - POSTGRES_PASSWORD_FILE=/run/secrets/database_password
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - "${HOME:?HOME must be set}/.config/sauri/database_password:/run/secrets/database_password:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sauri -d sauri"]
       interval: 2s
@@ -136,32 +153,41 @@ services:
   minio:
     image: rustfs/rustfs@sha256:9ca9559533b537d10482fe923288b676ad08f92a7069d9a17327fbae3cab688b
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     command: server /data --console-address ":9001"
     depends_on:
       minio-volume-permissions:
         condition: service_completed_successfully
     environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
+      - RUSTFS_ACCESS_KEY_FILE=/run/secrets/object_store_access_key
+      - RUSTFS_SECRET_KEY_FILE=/run/secrets/object_store_secret_key
     volumes:
       - minio-data:/data
+      - "${HOME:?HOME must be set}/.config/sauri/object_store_access_key:/run/secrets/object_store_access_key:ro"
+      - "${HOME}/.config/sauri/object_store_secret_key:/run/secrets/object_store_secret_key:ro"
     networks:
       - sauri-net
 
   # --- RabbitMQ (broker de cola) ---
   rabbitmq:
     image: rabbitmq:3-management
+    # Fixed node name + named volume: users and durable queues survive container recreation.
+    hostname: sauri-rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      # Bring-up creates the "sauri" user with this password and removes "guest".
+      - "${HOME:?HOME must be set}/.config/sauri/queue_password:/run/secrets/queue_password:ro"
     networks:
       - sauri-net
 
 volumes:
   pgdata:
   minio-data:
+  rabbitmq-data:
 
 networks:
   sauri-net:

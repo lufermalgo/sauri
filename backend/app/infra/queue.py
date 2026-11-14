@@ -53,6 +53,8 @@ def create_job_queue() -> JobQueue:
     Reads QUEUE_BROKER_URL from the environment to determine the broker URL.
     """
     from app.infra.queue_rabbitmq import RabbitMQJobQueue
+    from app.infra.secrets import read_secret, with_password
 
     broker_url = os.environ.get("QUEUE_BROKER_URL", "amqp://guest:guest@localhost:5672/")
+    broker_url = with_password(broker_url, read_secret("QUEUE_BROKER_PASSWORD_FILE"))
     return RabbitMQJobQueue(broker_url=broker_url)

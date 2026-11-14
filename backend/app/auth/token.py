@@ -5,7 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 from jose import jwt
 
-JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
+from app.infra.secrets import read_secret
+
+# Deployments mount a generated secret through JWT_SECRET_FILE; the fixed fallback only serves tests.
+JWT_SECRET: str = read_secret("JWT_SECRET_FILE", "JWT_SECRET") or "dev-secret-change-in-production"
 JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 
 

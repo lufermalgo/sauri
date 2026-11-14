@@ -20,6 +20,47 @@ run_compose() {
 
 run_compose "stopping existing API/worker before schema changes" stop api worker
 run_compose "starting infrastructure (database, broker and object-store volume repair)" up -d postgres minio rabbitmq
+
+# Apply the private credentials to services whose data predates them. Values are read
+# inside each container from its mounted secret file and are never printed.
+wait_for() {
+  local step="$1" deadline=$((SECONDS + 90))
+  shift
+  until "$@" >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+      echo "Compose bring-up failed during: ${step}" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+wait_for "waiting for the database" docker compose exec -T postgres pg_isready -U sauri -d sauri -q
+if ! docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -q -U sauri -d sauri >/dev/null <<'SQL'
+\set pw `cat /run/secrets/database_password`
+ALTER ROLE sauri WITH PASSWORD :'pw';
+SQL
+then
+  echo "Compose bring-up failed during: applying the database password" >&2
+  exit 1
+fi
+wait_for "waiting for the queue broker" docker compose exec -T rabbitmq rabbitmqctl -q await_startup
+# shellcheck disable=SC2016 # expanded inside the container
+if ! docker compose exec -T rabbitmq sh -c '
+  set -e
+  pw="$(cat /run/secrets/queue_password)"
+  if rabbitmqctl -q list_users | cut -f1 | grep -qx sauri; then
+    rabbitmqctl -q change_password sauri "$pw"
+  else
+    rabbitmqctl -q add_user sauri "$pw"
+  fi
+  rabbitmqctl -q set_permissions -p / sauri ".*" ".*" ".*"
+  rabbitmqctl -q set_user_tags sauri management
+  if rabbitmqctl -q list_users | cut -f1 | grep -qx guest; then
+    rabbitmqctl -q delete_user guest
+  fi' >/dev/null; then
+  echo "Compose bring-up failed during: applying the queue broker user" >&2
+  exit 1
+fi
 run_compose "creating/verifying object-store bucket" run --rm api python -m app.infra.ensure_bucket
 run_compose "applying database migrations" run --rm api alembic upgrade head
 run_compose "creating the administrator account and retiring legacy seed users" \

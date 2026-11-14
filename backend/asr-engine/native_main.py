@@ -28,6 +28,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
+from sauri_engine_common.credentials import object_store_credentials
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
 from whisper_words import NoWordTimestampsError, words_from_ggml_json
 
@@ -35,8 +36,6 @@ logger = logging.getLogger("asr-engine-native")
 logging.basicConfig(level=logging.INFO)
 
 MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://localhost:9000")
-MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "minioadmin")
-MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "sauri-recordings")
 MINIO_AUDIO_PREFIX = os.environ.get("MINIO_AUDIO_PREFIX", "recordings/")
 ENGINE_TOKEN_PATH = Path(
@@ -73,11 +72,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         verify_assets(ASR_MODEL_PATH, Path(WHISPER_CLI))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RuntimeError("Native ASR asset verification failed") from exc
+    access_key, secret_key = object_store_credentials()
     s3_client = boto3.client(
         "s3",
         endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=MINIO_ACCESS_KEY,
-        aws_secret_access_key=MINIO_SECRET_KEY,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
         config=Config(signature_version="s3v4", connect_timeout=min(5, server_budget() / 100),
                       read_timeout=min(5, server_budget() / 100),
                       retries={"max_attempts": 0}),

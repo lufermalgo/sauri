@@ -1,7 +1,6 @@
 """Alembic environment configuration for async SQLAlchemy migrations."""
 
 import asyncio
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -15,9 +14,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override sqlalchemy.url from environment variable
-database_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/sauri")
-config.set_main_option("sqlalchemy.url", database_url)
+# Override sqlalchemy.url from the environment (password from DATABASE_PASSWORD_FILE when set).
+from app.infra.database import get_database_url  # noqa: E402
+
+database_url = get_database_url()
+# ConfigParser treats "%" as interpolation; escape it so URL-encoded passwords survive.
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 # Import models to register them with Base.metadata for autogenerate support
 import app.infra.models  # noqa: E402, F401

@@ -19,17 +19,36 @@ Las variables privadas deben estar configuradas mediante un archivo privado de e
 
 - `QUEUE_MESSAGE_SIGNING_KEY`: firma de trabajos, mínimo 32 bytes.
 - `SPEAKER_EXCERPT_ACTIVE_KEY_ID` y `SPEAKER_EXCERPT_KEYRING`: identificador y llavero versionado AES-256. Formato del llavero: pares `id:base64`, separados por comas; **no JSON**.
-- `JWT_SECRET`: firma de sesiones. No usar el valor local predeterminado como evidencia de seguridad multiusuario.
+- `JWT_SECRET_FILE`: ruta del archivo con el secreto que firma las sesiones. En el entorno personal `make up` lo genera al azar (ver "Puertos y credenciales locales"); ya no existe un valor predeterminado.
 - `AUTH_DISABLED=false` en validación. El bypass heredado solo opera con `APP_ENV=test`; no se habilita en este procedimiento.
 - `OBJECT_STORE_PUBLIC_ENDPOINT`: dirección S3 accesible desde el navegador, por defecto `http://localhost:9000`.
 
 `make up` preserva volúmenes, verifica credenciales nativas, detiene API/worker del proyecto seleccionado antes de migrar, inicia infraestructura, asegura el bucket, ejecuta Alembic y arranca API/worker/portal. `make build` construye primero las imágenes. No aplicarlos sobre datos personales sin la coordinación y respaldo acordados. El portal se incluye al final; éxito exige HTTP 200 tanto estático como de API con un plazo común de 60 segundos. El mensaje final no acredita inferencia.
 
-Las credenciales nativas residen en `~/.config/sauri/engine_token` y `recording_capability_key` (0600), preservadas si existen y montadas de solo lectura en el worker. `make engines-status` comprueba procesos, no acceso desde Docker. `make engines-up` es una acción separada; las validaciones aisladas no la ejecutan ni modifican los procesos de Fer.
+Las credenciales nativas residen en `~/.config/sauri/engine_token` y `recording_capability_key` (0600), preservadas si existen y montadas de solo lectura en el worker. El resto de credenciales locales se describe en "Puertos y credenciales locales". `make engines-status` comprueba procesos, no acceso desde Docker. `make engines-up` es una acción separada; las validaciones aisladas no la ejecutan ni modifican los procesos de Fer.
 
 ## Cuenta de administrador
 
 Por ahora Sauri tiene una sola cuenta, la de administrador: `admin@sauri.local`. Los demás perfiles se crearán más adelante. `make up` genera su contraseña la primera vez, al azar, en `~/.config/sauri/admin_password` (solo legible por tu usuario) y crea la cuenta automáticamente; si ya existía, conserva la contraseña. Para verla: `cat ~/.config/sauri/admin_password`. Para cambiarla, reemplaza el contenido de ese archivo (mínimo 20 caracteres) y ejecuta `docker compose run --rm api python -m app.auth.seed_admin --reset-password`. El arranque también traslada a esta cuenta las reuniones y plantillas de los antiguos usuarios de prueba (`comercial1@summan.com`, `comercial2@summan.com`) y luego los elimina; la contraseña nunca se muestra en pantalla ni en los registros.
+
+## Puertos y credenciales locales
+
+**Puertos.** Todo puerto publicado por el Compose del entorno personal escucha solo en `127.0.0.1`: portal 5173, API 8000, PostgreSQL 5432, almacén de objetos RustFS 9000/9001 y RabbitMQ 5672/15672. Otras máquinas de la red no pueden alcanzarlos. Los motores nativos (8001 ASR, 8002 diarización, 8003 pasarela LLM, 8004 llama-server) ya escuchaban solo en `127.0.0.1`.
+
+**Credenciales.** Ya no hay contraseñas fijas (`sauri_dev`, `minioadmin`, `guest/guest`, `dev-secret-change-in-production`). `scripts/engines/ensure-native-engine-credentials.sh`, invocado por `make build` y `make up` a través de `scripts/platform/compose-bringup.sh`, genera una sola vez valores al azar en archivos privados (0600, carpeta 0700) bajo `~/.config/sauri/`: `engine_token`, `recording_capability_key`, `queue_signing_key`, `admin_password`, `database_password`, `queue_password`, `object_store_access_key`, `object_store_secret_key` y `jwt_secret`. Si un archivo ya existe se conserva.
+
+Los contenedores reciben esos archivos de solo lectura en `/run/secrets/<mismo nombre>` y los leen mediante variables `*_FILE`:
+
+- `DATABASE_PASSWORD_FILE`: `DATABASE_URL` no lleva contraseña (`postgresql+asyncpg://sauri@postgres:5432/sauri`). PostgreSQL usa `POSTGRES_PASSWORD_FILE`.
+- `QUEUE_BROKER_PASSWORD_FILE`: `QUEUE_BROKER_URL` es `amqp://sauri@rabbitmq:5672/`.
+- `OBJECT_STORE_ACCESS_KEY_FILE` y `OBJECT_STORE_SECRET_KEY_FILE`: RustFS usa `RUSTFS_ACCESS_KEY_FILE` y `RUSTFS_SECRET_KEY_FILE`. Los valores `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` del entorno se siguen aceptando solo como alternativa para pruebas y CI.
+- `JWT_SECRET_FILE`.
+
+Los motores nativos ASR y diarización leen las llaves del almacén desde `~/.config/sauri/object_store_access_key` y `object_store_secret_key`; se pueden cambiar con `SAURI_OBJECT_STORE_ACCESS_KEY_FILE` y `SAURI_OBJECT_STORE_SECRET_KEY_FILE`.
+
+**Migración de instalaciones existentes.** En el siguiente arranque, sin pérdida de datos, `compose-bringup.sh` fija la contraseña del rol de base de datos desde el archivo (`ALTER ROLE` dentro del contenedor, sin imprimir nada), asegura el usuario `sauri` de RabbitMQ con la contraseña del archivo y elimina `guest`. RabbitMQ ahora tiene el volumen con nombre `rabbitmq-data` y un hostname fijo, de modo que usuarios y colas durables sobreviven a la recreación del contenedor. RustFS arranca con las nuevas llaves raíz sobre el mismo volumen de datos. Tras la primera actualización hay que reiniciar los motores nativos para que lean las llaves del almacén: `make engines-down && make engines-up`.
+
+**Ver o rotar un valor.** Para abrir la consola de RabbitMQ o RustFS, o usar `psql`, el dueño ejecuta él mismo `cat ~/.config/sauri/<archivo>`; ningún script imprime ni versiona los valores. Rotar = borrar el archivo y volver a ejecutar `make up`: base de datos y cola se resincronizan en el arranque, las llaves raíz de RustFS siguen al archivo y la contraseña de administrador se cambia con `python -m app.auth.seed_admin --reset-password`. Cambiar `jwt_secret` cierra la sesión de todos los usuarios.
 
 ## Diarización nativa Senko (U1 #921)
 

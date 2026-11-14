@@ -9,15 +9,18 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, EndpointConnectionError
 
+from app.infra.secrets import object_store_credentials
+
 
 def ensure_bucket() -> None:
     endpoint = os.environ["OBJECT_STORE_ENDPOINT"]
     bucket = os.environ["OBJECT_STORE_BUCKET"]
+    access_key, secret_key = object_store_credentials()
     client = boto3.client(
         "s3",
         endpoint_url=endpoint,
-        aws_access_key_id=os.environ["MINIO_ROOT_USER"],
-        aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
         config=Config(signature_version="s3v4", connect_timeout=2, read_timeout=2),
     )
     deadline = time.monotonic() + 60
