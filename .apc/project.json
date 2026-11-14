@@ -4,5 +4,6 @@
   "apf": "0.1.0",
   "created": "2026-10-05T06:52:59Z",
   "kind": "app",
-  "apx_id": "ba9e1802c272"
+  "apx_id": "ba9e1802c272",
+  "description": "Aplicación de grabaciones de sesiones virtuales y transcripciones con identificación de hablantes."
 }

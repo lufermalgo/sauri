@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Creates an isolated git worktree + branch for a spec/issue, so concurrent
-# APX/Codex sessions never share a working directory (see docs/engineering/WORKFLOW.md §6-§8).
+# APX/Codex sessions never share a working directory (see AGENTS.md: Code changes and Git protection).
 #
 # Usage: _tools/new-worktree.sh <branch-name>
 #   e.g.: _tools/new-worktree.sh feature/issue-12-silero-vad

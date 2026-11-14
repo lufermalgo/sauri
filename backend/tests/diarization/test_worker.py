@@ -6,7 +6,7 @@ Validates: Requirements 1.3, 1.4, 1.5, 1.6, 7.4, 7.5, 9.1, 9.2, 9.3, 9.4, 9.5, 1
 
 NOTE: The mocks used here simulate ONLY the DiarizationEngine (external I/O
 boundary: diar-engine / cloud service) within tests. The worker's
-production code is 100% real (docs/engineering/WORKFLOW.md §4).
+production code is 100% real; mocks are confined to external I/O in tests.
 """
 
 from __future__ import annotations
