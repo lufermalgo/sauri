@@ -73,16 +73,16 @@ def create_object_store() -> ObjectStore:
     - OBJECT_STORE_ENDPOINT: internal S3/MinIO endpoint URL used by backend I/O.
     - OBJECT_STORE_PUBLIC_ENDPOINT: optional browser-reachable endpoint used only in signatures.
     - OBJECT_STORE_BUCKET: bucket name.
-    - MINIO_ROOT_USER: access key.
-    - MINIO_ROOT_PASSWORD: secret key.
+    - OBJECT_STORE_ACCESS_KEY_FILE / OBJECT_STORE_SECRET_KEY_FILE: private key files
+      (fallback: MINIO_ROOT_USER / MINIO_ROOT_PASSWORD values, used by tests and CI).
     """
     from app.infra.object_store_s3 import S3ObjectStore
+    from app.infra.secrets import object_store_credentials
 
     endpoint_url = os.environ["OBJECT_STORE_ENDPOINT"]
     public_endpoint_url = os.environ.get("OBJECT_STORE_PUBLIC_ENDPOINT")
     bucket = os.environ["OBJECT_STORE_BUCKET"]
-    access_key = os.environ["MINIO_ROOT_USER"]
-    secret_key = os.environ["MINIO_ROOT_PASSWORD"]
+    access_key, secret_key = object_store_credentials()
 
     return S3ObjectStore(
         endpoint_url=endpoint_url,

@@ -18,11 +18,14 @@ class Base(DeclarativeBase):
 
 
 def get_database_url() -> str:
-    """Get database URL from environment variable."""
-    return os.environ.get(
+    """Get the database URL; the password may come from the file named by DATABASE_PASSWORD_FILE."""
+    from app.infra.secrets import read_secret, with_password
+
+    url = os.environ.get(
         "DATABASE_URL",
         "postgresql+asyncpg://postgres:postgres@localhost:5432/sauri",
     )
+    return with_password(url, read_secret("DATABASE_PASSWORD_FILE"))
 
 
 def create_engine(database_url: str | None = None) -> AsyncEngine:

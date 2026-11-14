@@ -508,6 +508,8 @@ async def test_startup_uses_exact_coreml_options(monkeypatch: pytest.MonkeyPatch
     pipeline = SimpleNamespace(vad_processor_pyannote_coreml=vad)
     constructor = Mock(return_value=pipeline)
     monkeypatch.setitem(sys.modules, "senko", SimpleNamespace(Diarizer=constructor))
+    monkeypatch.setenv("MINIO_ROOT_USER", "synthetic-access-key")
+    monkeypatch.setenv("MINIO_ROOT_PASSWORD", "synthetic-secret-key")
     monkeypatch.setattr(native.boto3, "client", Mock())
     async with native.lifespan(native.app):
         assert native.diarization_pipeline is pipeline

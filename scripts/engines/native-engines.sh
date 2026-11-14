@@ -71,6 +71,15 @@ start_engine() {
     echo "Recording capability key missing: $RECORDING_CAPABILITY_KEY_FILE (run make engines-install)" >&2
     return 1
   }
+  if [[ "$1" != "llm" ]]; then
+    local key_file
+    for key_file in "$HOME/.config/sauri/object_store_access_key" "$HOME/.config/sauri/object_store_secret_key"; do
+      [[ -s "$key_file" ]] || {
+        echo "Object-store key missing: $key_file (run make build)" >&2
+        return 1
+      }
+    done
+  fi
   [[ -x "$ENGINE_PYTHON" ]] || {
     echo "Native engine Python not executable: $ENGINE_PYTHON (run make engines-install)" >&2
     return 1

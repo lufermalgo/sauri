@@ -40,8 +40,8 @@ logging.basicConfig(level=logging.INFO)
 # ---------------------------------------------------------------------------
 
 MINIO_ENDPOINT = os.environ.get("MINIO_ENDPOINT", "http://minio:9000")
-MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER", "minioadmin")
-MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
+MINIO_ACCESS_KEY = os.environ.get("MINIO_ROOT_USER")
+MINIO_SECRET_KEY = os.environ.get("MINIO_ROOT_PASSWORD")
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "sauri-recordings")
 ASR_MODEL = os.environ.get("ASR_MODEL", "base")
 ASR_COMPUTE_TYPE = os.environ.get("ASR_COMPUTE_TYPE", "int8")

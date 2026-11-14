@@ -223,9 +223,13 @@ ASR engine → PostgreSQL → `/api/v1/meetings` transcript endpoints → fronte
 view. Retention (`RETENTION_DAYS`) is enforced by the worker, not by the API.
 
 Configuration comes from the environment: `.env.example` documents the variables, and the Compose
-file defaults `ASR_PROVIDER=local`, `AUTH_DISABLED=true`, `RETENTION_DAYS=90`,
-`JWT_SECRET=dev-secret-change-in-production`. Those defaults are for local development only; verify
-auth, retention and audit behavior in the target environment instead of assuming them.
+file defaults `ASR_PROVIDER=local`, `AUTH_DISABLED=true` and `RETENTION_DAYS=90`. Those defaults are
+for local development only; verify auth, retention and audit behavior in the target environment
+instead of assuming them. There are no fixed passwords or signing secrets: `make up` generates them
+once as private files under `~/.config/sauri/` and the containers read them through `*_FILE`
+settings (`DATABASE_PASSWORD_FILE`, `QUEUE_BROKER_PASSWORD_FILE`, `OBJECT_STORE_ACCESS_KEY_FILE`,
+`OBJECT_STORE_SECRET_KEY_FILE`, `JWT_SECRET_FILE`). All published ports bind to `127.0.0.1`. See
+`docs/operations/local-deployment.md`.
 
 ## 9. Where new code goes (placement rules)
 

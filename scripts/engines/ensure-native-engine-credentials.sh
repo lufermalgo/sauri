@@ -18,6 +18,12 @@ credentials = {
     "queue_signing_key": secrets.token_hex(32),
     # Login password for the single administrator account (43 URL-safe characters).
     "admin_password": secrets.token_urlsafe(32),
+    # Service credentials for the local stack (hex: safe inside connection URLs).
+    "database_password": secrets.token_hex(32),
+    "queue_password": secrets.token_hex(32),
+    "object_store_access_key": f"sauri-{secrets.token_hex(8)}",
+    "object_store_secret_key": secrets.token_hex(32),
+    "jwt_secret": secrets.token_hex(32),
 }
 for name, value in credentials.items():
     path = config_dir / name
@@ -46,5 +52,5 @@ for name, value in credentials.items():
         finally:
             os.close(fd)
 
-print("Native engine credentials and the admin password file are present with private file permissions.")
+print("Local service credentials and the admin password file are present with private file permissions.")
 PY

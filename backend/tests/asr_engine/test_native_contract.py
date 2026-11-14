@@ -479,6 +479,8 @@ async def test_startup_verifies_assets_once(monkeypatch, tmp_path, tamper):
     hashes.write_text(json.dumps(manifest))
     monkeypatch.setenv("SAURI_ENGINE_HASHES_FILE", str(hashes))
     monkeypatch.setenv("SAURI_ASR_VENV", str(tmp_path / "asr-venv"))
+    monkeypatch.setenv("MINIO_ROOT_USER", "synthetic-access-key")
+    monkeypatch.setenv("MINIO_ROOT_PASSWORD", "synthetic-secret-key")
     monkeypatch.setattr(native, "ASR_MODEL_PATH", model)
     monkeypatch.setattr(native, "WHISPER_CLI", str(binary))
     path = provenance_path()

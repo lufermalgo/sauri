@@ -150,6 +150,8 @@ def test_manager_starts_reports_and_stops_exact_server_pids(tmp_path: Path) -> N
     (token_file.parent / "recording_capability_key").write_text(
         "synthetic-capability-key", encoding="utf-8"
     )
+    for name in ("object_store_access_key", "object_store_secret_key"):
+        (token_file.parent / name).write_text(f"synthetic-{name}", encoding="utf-8")
     env = {
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
         "HOME": str(tmp_path),
