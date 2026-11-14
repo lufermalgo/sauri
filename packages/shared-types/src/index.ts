@@ -155,6 +155,21 @@ export interface TemplateCategory {
   createdAt: string;
 }
 
+/** How GET /meetings/{id}/transcript presents speech: attributed word turns or legacy segments. */
+export type TranscriptPresentation = "words" | "segments";
+
+/** Speaker turn built from attributed words of the latest completed diarization revision. */
+export interface AttributedTurn {
+  sequence: number;
+  speakerId: string | null;
+  speakerLabel: string | null;
+  startMs: number;
+  endMs: number;
+  text: string;
+  wordCount: number;
+  hasAmbiguous: boolean;
+}
+
 /** Timed speech segment within a Transcript. */
 export interface SpeechTurn {
   id: string;

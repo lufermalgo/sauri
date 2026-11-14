@@ -18,20 +18,24 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth.audit import record_access
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
+from app.diarization.word_attribution import WordAttribution, WordTime, group_words_into_turns
 from app.infra.database import create_engine, create_session_factory
 from app.infra.models import (
     Diarization,
     Meeting,
     SessionRecording,
+    Speaker,
     SpeechTurn,
     Transcript,
+    TranscriptWord,
+    WordSpeakerAssignment,
 )
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
@@ -385,6 +389,96 @@ async def get_playback_manifest(
         await engine.dispose()
 
 
+def _latest_completed_diarization(meeting_id: str) -> Select[Diarization]:
+    """Select the meeting's latest completed diarization revision (as the repository does)."""
+    return (
+        select(Diarization)
+        .where(
+            Diarization.meeting_id == meeting_id,
+            Diarization.diarization_state == "completed",
+        )
+        .order_by(Diarization.processing_revision.desc())
+        .limit(1)
+    )
+
+
+async def _attributed_turns(
+    session: AsyncSession, meeting_id: str, transcript_id: str
+) -> list[dict[str, Any]] | None:
+    """Build speaker turns from stored words and the latest completed revision.
+
+    Returns None when the transcript has no words, there is no completed
+    revision, or that revision has no word assignments for this transcript.
+    """
+    diarization = await session.scalar(_latest_completed_diarization(meeting_id))
+    if diarization is None:
+        return None
+    words = (
+        await session.scalars(
+            select(TranscriptWord)
+            .where(TranscriptWord.transcript_id == transcript_id)
+            .order_by(TranscriptWord.sequence)
+        )
+    ).all()
+    if not words:
+        return None
+    assignments = {
+        assignment.word_id: assignment
+        for assignment in (
+            await session.scalars(
+                select(WordSpeakerAssignment)
+                .join(TranscriptWord, TranscriptWord.id == WordSpeakerAssignment.word_id)
+                .where(
+                    WordSpeakerAssignment.diarization_id == diarization.id,
+                    TranscriptWord.transcript_id == transcript_id,
+                )
+            )
+        ).all()
+    }
+    if not assignments:
+        return None
+    speakers = (
+        await session.scalars(select(Speaker).where(Speaker.diarization_id == diarization.id))
+    ).all()
+    raw_label_by_speaker_id = {speaker.id: speaker.raw_label for speaker in speakers}
+    speaker_by_raw_label = {speaker.raw_label: speaker for speaker in speakers}
+
+    word_times: list[WordTime] = []
+    attributions: list[WordAttribution] = []
+    for word in words:
+        word_times.append(WordTime(word.sequence, word.text, word.start_ms, word.end_ms))
+        assignment = assignments.get(word.id)
+        state = assignment.state if assignment is not None else "unassigned"
+        raw_label = (
+            raw_label_by_speaker_id.get(assignment.speaker_id)
+            if assignment is not None and assignment.speaker_id is not None
+            else None
+        )
+        if state == "assigned" and raw_label is not None:
+            attributions.append(WordAttribution(word.sequence, raw_label, "assigned", ()))
+        elif state == "ambiguous":
+            attributions.append(WordAttribution(word.sequence, None, "ambiguous", ()))
+        else:
+            attributions.append(WordAttribution(word.sequence, None, "unassigned", ()))
+
+    turns = []
+    for turn in group_words_into_turns(word_times, attributions):
+        speaker = speaker_by_raw_label.get(turn.raw_label) if turn.raw_label is not None else None
+        turns.append(
+            {
+                "sequence": turn.sequence,
+                "speaker_id": speaker.id if speaker is not None else None,
+                "speaker_label": speaker.label if speaker is not None else None,
+                "start_ms": turn.start_ms,
+                "end_ms": turn.end_ms,
+                "text": turn.text.strip(),
+                "word_count": turn.word_count,
+                "has_ambiguous": turn.has_ambiguous,
+            }
+        )
+    return turns
+
+
 @router.get("/{meeting_id}/transcript")
 async def get_transcript(
     meeting_id: str,
@@ -424,8 +518,9 @@ async def get_transcript(
             )
             result_turns = await session.execute(stmt_turns)
             turns = result_turns.scalars().all()
+            attributed_turns = await _attributed_turns(session, meeting_id, transcript.id)
 
-            return {
+            response: dict[str, Any] = {
                 "transcript_id": transcript.id,
                 "meeting_id": transcript.meeting_id,
                 "language": transcript.language,
@@ -444,7 +539,11 @@ async def get_transcript(
                     }
                     for t in turns
                 ],
+                "presentation": "segments" if attributed_turns is None else "words",
             }
+            if attributed_turns is not None:
+                response["turns"] = attributed_turns
+            return response
     finally:
         await engine.dispose()
 
@@ -470,16 +569,12 @@ async def get_diarization(
                 f"GET /api/v1/meetings/{meeting_id}/diarization",
             )
 
-            stmt = (
-                select(Diarization)
-                .where(Diarization.meeting_id == meeting_id)
-                .options(
+            diarization = await session.scalar(
+                _latest_completed_diarization(meeting_id).options(
                     selectinload(Diarization.speakers),
                     selectinload(Diarization.assignments),
                 )
             )
-            result = await session.execute(stmt)
-            diarization = result.scalar_one_or_none()
 
             if diarization is None:
                 raise HTTPException(
