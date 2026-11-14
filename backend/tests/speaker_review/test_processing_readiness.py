@@ -1,152 +1,121 @@
-"""Durable pipeline readiness, replay, lease, and finalizer recovery contracts.
+"""Review readiness and atomic publication using current revisions, without clips.
 
-The production coordinator API is intentionally kept to the smallest seam needed
-by these tests; pipeline state and outputs must be persisted by the implementation.
+Replaces contracts for the removed ProcessingPipeline/excerpt finalizer with
+its production seams: DiarizationRepository and durable worker generation fencing.
 """
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import func, select
 
-from app.transcription.processing_pipeline import ProcessingPipeline
+from app.diarization.repository import DiarizationRepository
+from app.infra.models import Diarization, MeetingProcessingClaim, Speaker, SpeakerReview, SpeakerReviewItem
+from app.infra.processing_claims import claim_worker_generation, verify_worker_generation
+from app.meetings.speaker_review_service import SpeakerReviewService
+from tests.meetings import test_transcript_word_turns as word_tests
 
-
-REVISION_ID = "revision-synthetic-1"
-RECORDING_ID = "recording-synthetic-1"
-
-
-@pytest.fixture
-
-def pipeline(session_factory: Any) -> tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock]:
-    """Use real database persistence; only provider and media I/O are external."""
-    transcription = AsyncMock(return_value={"text": "synthetic transcript"})
-    diarization = AsyncMock(return_value={"speakers": ["speaker-synthetic-1"]})
-    excerpt_validator = AsyncMock(
-        return_value={"speaker-synthetic-1": "excerpt-synthetic-1"}
-    )
-    return (
-        ProcessingPipeline(
-            session_factory,
-            transcription_provider=transcription,
-            diarization_provider=diarization,
-            excerpt_validator=excerpt_validator,
-        ),
-        transcription,
-        diarization,
-        excerpt_validator,
-    )
+migrated_url = word_tests.migrated_url
+factory = word_tests.factory
+Factory = word_tests.Factory
 
 
-async def test_review_is_hidden_until_all_revision_outputs_are_validated(
-    pipeline: tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock],
-) -> None:
-    coordinator, _, _, _ = pipeline
-
-    await coordinator.process_stage(REVISION_ID, "transcription")
-    assert await coordinator.get_review(RECORDING_ID) is None
-
-    # An early/replayed finalizer must not publish a review without diarization.
-    await coordinator.finalize(REVISION_ID)
-    assert await coordinator.get_review(RECORDING_ID) is None
-
-    await coordinator.process_stage(REVISION_ID, "diarization")
-    assert await coordinator.get_review(RECORDING_ID) is None
-
-    await coordinator.finalize(REVISION_ID)
-    review = await coordinator.get_review(RECORDING_ID)
-    assert review is not None
-    assert review["processing_revision_id"] == REVISION_ID
-    assert review["speaker_keys"] == ["speaker-synthetic-1"]
-    assert review["excerpts"] == {"speaker-synthetic-1": "excerpt-synthetic-1"}
+async def _pending(factory: Factory) -> tuple[str, int, str]:
+    meeting, transcript = await word_tests._seed_meeting(factory)
+    repo = DiarizationRepository(factory)
+    async with factory() as session, session.begin():
+        attempt = await repo.reserve_next_revision(session, meeting, transcript)
+        return meeting, attempt.processing_revision, attempt.id
 
 
-async def test_duplicate_stage_and_finalizer_delivery_replay_durable_output_without_provider_rerun(
-    pipeline: tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock],
-) -> None:
-    coordinator, transcription, diarization, _ = pipeline
-
-    first_transcript = await coordinator.process_stage(REVISION_ID, "transcription")
-    replayed_transcript = await coordinator.process_stage(REVISION_ID, "transcription")
-    await coordinator.process_stage(REVISION_ID, "diarization")
-    first_review = await coordinator.finalize(REVISION_ID)
-    replayed_review = await coordinator.finalize(REVISION_ID)
-
-    assert replayed_transcript == first_transcript
-    assert first_review == replayed_review
-    assert transcription.await_count == 1
-    assert diarization.await_count == 1
-    assert await coordinator.count_stage_outputs(REVISION_ID) == 2
-    assert await coordinator.count_reviews(RECORDING_ID, REVISION_ID) == 1
+async def _complete(repo: DiarizationRepository, factory: Factory, meeting: str, revision: int, attempt: str) -> None:
+    async with factory() as session, session.begin():
+        await repo.complete_revision(session, meeting, revision, "synthetic", [Speaker(
+            id=str(uuid.uuid4()), diarization_id=attempt, raw_label="SPEAKER_00", label="Speaker 1", sequence=1,
+        )], [])
 
 
-async def test_unexpired_stage_lease_blocks_duplicate_provider_execution(
-    pipeline: tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock],
-) -> None:
-    coordinator, transcription, _, _ = pipeline
-
-    claim = await coordinator.claim_stage(REVISION_ID, "transcription")
-    assert claim.acquired is True
-    duplicate = await coordinator.claim_stage(REVISION_ID, "transcription")
-
-    assert duplicate.acquired is False
-    await coordinator.process_stage(REVISION_ID, "transcription")
-    assert transcription.await_count == 0
-
-
-async def test_expired_stage_lease_permits_recovery(
-    pipeline: tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock],
-) -> None:
-    coordinator, transcription, _, _ = pipeline
-
-    await coordinator.claim_stage(
-        REVISION_ID,
-        "transcription",
-        lease_expires_at=datetime.now(UTC) - timedelta(seconds=1),
-    )
-    recovered = await coordinator.process_stage(REVISION_ID, "transcription")
-
-    assert recovered["text"] == "synthetic transcript"
-    assert transcription.await_count == 1
+async def test_review_is_hidden_until_revision_is_complete(factory: Factory) -> None:
+    meeting, revision, attempt = await _pending(factory)
+    repo = DiarizationRepository(factory)
+    async with factory() as session, session.begin():
+        service = SpeakerReviewService(session)
+        assert await service.get_active_review(word_tests.OWNER, meeting) is None
+        assert await repo.claim_revision(session, meeting, revision)
+        assert await service.get_active_review(word_tests.OWNER, meeting) is None
+    await _complete(repo, factory, meeting, revision, attempt)
+    async with factory() as session:
+        review = await SpeakerReviewService(session).get_active_review(word_tests.OWNER, meeting)
+        assert review is not None and review["revision_id"] == revision
+        assert review["status"] == "pending" and len(review["items"]) == 1
+        item = await session.scalar(select(SpeakerReviewItem).where(SpeakerReviewItem.review_id == review["review_id"]))
+        assert item is not None and item.excerpt_ref is None
 
 
-async def test_stage_output_completion_and_outbox_event_roll_back_atomically(
-    pipeline: tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock],
-) -> None:
-    coordinator, _, _, _ = pipeline
+async def test_duplicate_claim_and_completion_do_not_duplicate_review(factory: Factory) -> None:
+    meeting, revision, attempt = await _pending(factory)
+    repo = DiarizationRepository(factory)
+    async with factory() as session, session.begin():
+        assert await repo.claim_revision(session, meeting, revision)
+        assert not await repo.claim_revision(session, meeting, revision)
+    await _complete(repo, factory, meeting, revision, attempt)
+    with pytest.raises(ValueError, match="revision is not claimed"):
+        await _complete(repo, factory, meeting, revision, attempt)
+    async with factory() as session:
+        assert await session.scalar(select(func.count()).select_from(SpeakerReview)
+                                    .where(SpeakerReview.meeting_id == meeting)) == 1
+        assert await session.scalar(select(func.count()).select_from(Speaker)
+                                    .where(Speaker.diarization_id == attempt)) == 1
 
-    with pytest.raises(RuntimeError, match="synthetic transaction failure"):
-        await coordinator.process_stage(
-            REVISION_ID,
-            "transcription",
-            before_commit=AsyncMock(side_effect=RuntimeError("synthetic transaction failure")),
-        )
 
-    assert await coordinator.count_stage_outputs(REVISION_ID) == 0
-    assert await coordinator.is_stage_complete(REVISION_ID, "transcription") is False
-    assert await coordinator.count_outbox_events(REVISION_ID, "transcription") == 0
+async def test_worker_generation_is_consumed_once_and_stale_delivery_is_fenced(factory: Factory) -> None:
+    meeting, _, _ = await _pending(factory)
+    async with factory() as session, session.begin():
+        claim = MeetingProcessingClaim(meeting_id=meeting, generation=7)
+        session.add(claim)
+        await session.flush()
+        binding = {"meeting_id": meeting, "generation": 7, "job_id": "synthetic-job", "kind": "diarization"}
+        assert await claim_worker_generation(session, **binding)
+        assert not await claim_worker_generation(session, **binding)
+        assert await verify_worker_generation(session, **binding)
+        claim.generation = 8
+        await session.flush()
+        assert not await verify_worker_generation(session, **binding)
 
 
-async def test_finalizer_recovers_from_persisted_stages_without_rerunning_providers(
-    pipeline: tuple[ProcessingPipeline, AsyncMock, AsyncMock, AsyncMock],
-) -> None:
-    coordinator, transcription, diarization, _ = pipeline
-    await coordinator.process_stage(REVISION_ID, "transcription")
-    await coordinator.process_stage(REVISION_ID, "diarization")
+async def test_expired_worker_claim_cannot_publish(factory: Factory) -> None:
+    meeting, _, _ = await _pending(factory)
+    async with factory() as session, session.begin():
+        session.add(MeetingProcessingClaim(meeting_id=meeting, generation=7, claim_kind="diarization",
+                                          claim_id="synthetic-job",
+                                          claim_expires_at=datetime.now(UTC) - timedelta(seconds=1)))
+        await session.flush()
+        assert not await verify_worker_generation(session, meeting_id=meeting, generation=7,
+                                                  job_id="synthetic-job", kind="diarization")
+        assert not await claim_worker_generation(session, meeting_id=meeting, generation=7,
+                                                 job_id="synthetic-job", kind="diarization")
 
-    with pytest.raises(RuntimeError, match="synthetic finalizer failure"):
-        await coordinator.finalize(
-            REVISION_ID,
-            before_commit=AsyncMock(side_effect=RuntimeError("synthetic finalizer failure")),
-        )
-    assert await coordinator.get_review(RECORDING_ID) is None
 
-    recovered = await coordinator.finalize(REVISION_ID)
-
-    assert recovered is not None
-    assert await coordinator.get_review(RECORDING_ID) == recovered
-    assert transcription.await_count == 1
-    assert diarization.await_count == 1
+async def test_failed_publication_rolls_back_outputs_and_can_resume(factory: Factory) -> None:
+    meeting, revision, attempt = await _pending(factory)
+    repo = DiarizationRepository(factory)
+    async with factory() as session, session.begin():
+        assert await repo.claim_revision(session, meeting, revision)
+    with pytest.raises(RuntimeError, match="synthetic publication failure"):
+        async with factory() as session, session.begin():
+            await repo.complete_revision(session, meeting, revision, "synthetic", [Speaker(
+                id=str(uuid.uuid4()), diarization_id=attempt, raw_label="SPEAKER_00", label="Speaker 1", sequence=1,
+            )], [])
+            raise RuntimeError("synthetic publication failure")
+    async with factory() as session:
+        row = await session.get(Diarization, attempt)
+        assert row is not None and row.diarization_state == "in_progress"
+        assert await SpeakerReviewService(session).get_active_review(word_tests.OWNER, meeting) is None
+        assert await session.scalar(select(func.count()).select_from(Speaker)
+                                    .where(Speaker.diarization_id == attempt)) == 0
+    await _complete(repo, factory, meeting, revision, attempt)
+    async with factory() as session:
+        assert await SpeakerReviewService(session).get_active_review(word_tests.OWNER, meeting) is not None

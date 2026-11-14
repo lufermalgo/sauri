@@ -9,13 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import (
+    Diarization,
     Meeting,
     SpeakerReview,
     SpeakerReviewIdempotencyReceipt,
     SpeakerReviewItem,
 )
 from app.meetings.disposition_idempotency import canonical_request_hash
-from app.meetings.speaker_review_state import VALID_DISPOSITIONS, is_complete, review_status
+from app.meetings.speaker_review_state import VALID_DISPOSITIONS, review_status
 
 
 class SpeakerReviewService:
@@ -27,22 +28,38 @@ class SpeakerReviewService:
     async def get_active_review(
         self, owner_id: str, meeting_id: str
     ) -> dict[str, Any] | None:
-        """Return the owner's current review and only its undisposed items."""
+        """Return all speakers in the owner's latest completed revision."""
         meeting = await self._session.scalar(
             select(Meeting).where(Meeting.id == meeting_id, Meeting.created_by == owner_id)
         )
         if meeting is None:
             return None
 
-        review = await self._session.scalar(
-            select(SpeakerReview)
-            .where(SpeakerReview.meeting_id == meeting_id)
-            .order_by(SpeakerReview.processing_revision.desc())
-            .limit(1)
-        )
+        review = await self._active_review(meeting_id)
         if review is None:
             return None
+        return await self._snapshot(review)
 
+    async def _active_review(self, meeting_id: str) -> SpeakerReview | None:
+        revision = (
+            select(Diarization.processing_revision)
+            .where(
+                Diarization.meeting_id == meeting_id,
+                Diarization.diarization_state == "completed",
+            )
+            .order_by(Diarization.processing_revision.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        return await self._session.scalar(
+            select(SpeakerReview)
+            .where(
+                SpeakerReview.meeting_id == meeting_id,
+                SpeakerReview.processing_revision == revision,
+            )
+        )
+
+    async def _snapshot(self, review: SpeakerReview) -> dict[str, Any]:
         items = list(
             (
                 await self._session.scalars(
@@ -53,20 +70,23 @@ class SpeakerReviewService:
             ).all()
         )
         state = {item.speaker_key: item.disposition for item in items}
-        outstanding = [item for item in items if item.disposition is None]
         return {
             "review_id": review.id,
             "revision_id": review.processing_revision,
             "status": review_status(state),
-            "remaining_speaker_ids": [item.speaker_key for item in outstanding],
             "items": [
                 {
                     "speaker_id": item.speaker_key,
                     "current_label": item.current_label,
+                    "attribution_state": item.attribution_state,
                     "disposition": item.disposition,
+                    "version": item.version,
                 }
-                for item in outstanding
+                for item in items
             ],
+            "labels_by_speaker_id": {
+                item.speaker_key: item.chosen_label or item.current_label for item in items
+            },
         }
 
     async def record_disposition(
@@ -86,21 +106,25 @@ class SpeakerReviewService:
         """
         async with self._session.begin_nested():
             meeting = await self._session.scalar(
-                select(Meeting).where(Meeting.id == meeting_id, Meeting.created_by == owner_id)
+                select(Meeting)
+                .where(Meeting.id == meeting_id, Meeting.created_by == owner_id)
+                .with_for_update(key_share=True)
             )
             if meeting is None:
                 return {"outcome": "not_found", "result": None}
 
-            review = await self._session.scalar(
-                select(SpeakerReview)
-                .where(
-                    SpeakerReview.meeting_id == meeting_id,
-                    SpeakerReview.processing_revision == int(revision_id),
-                )
+            # NO KEY UPDATE fences reservations but permits workers' FK inserts.
+            # Attempt locks fence publication of an already reserved revision.
+            # Worker claim generations are not diarization revision identifiers.
+            await self._session.execute(
+                select(Diarization.id)
+                .where(Diarization.meeting_id == meeting_id)
+                .order_by(Diarization.processing_revision)
                 .with_for_update()
             )
-            if review is None:
-                return {"outcome": "not_found", "result": None}
+            review = await self._active_review(meeting_id)
+            if review is None or review.processing_revision != int(revision_id):
+                return {"outcome": "conflict_stale_revision", "result": None}
 
             item = await self._session.scalar(
                 select(SpeakerReviewItem)
@@ -130,8 +154,6 @@ class SpeakerReviewService:
                 return {"outcome": "invalid_request", "result": None}
             if item.version != expected_version or request.get("expected_version") != expected_version:
                 return {"outcome": "conflict_stale_version", "result": None}
-            if item.disposition is not None:
-                return {"outcome": "conflict_stale_version", "result": None}
 
             label = request.get("label")
             normalized_label: str | None = None
@@ -144,23 +166,8 @@ class SpeakerReviewService:
             if normalized_label is not None:
                 item.chosen_label = normalized_label
             item.version += 1
-            items = list(
-                (await self._session.scalars(
-                    select(SpeakerReviewItem).where(SpeakerReviewItem.review_id == review.id)
-                )).all()
-            )
-            statuses = {row.speaker_key: row.disposition for row in items}
-            review.status = "complete" if is_complete(statuses) else "pending"
-            result = {
-                "review_id": review.id,
-                "revision_id": review.processing_revision,
-                "speaker_id": item.speaker_key,
-                "disposition": item.disposition,
-                "chosen_label": item.chosen_label,
-                "version": item.version,
-                "status": review.status,
-                "remaining_speaker_ids": [row.speaker_key for row in items if row.disposition is None],
-            }
+            result = await self._snapshot(review)
+            review.status = result["status"]
             self._session.add(
                 SpeakerReviewIdempotencyReceipt(
                     id=str(uuid.uuid4()),

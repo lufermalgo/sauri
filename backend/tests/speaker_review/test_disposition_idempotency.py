@@ -12,7 +12,7 @@ from hypothesis import strategies as st
 
 async def _persisted_review(db_session: Any) -> tuple[str, str]:
     """Create a minimal synthetic database-backed review fixture."""
-    from app.infra.models import Meeting, SpeakerReview, SpeakerReviewItem
+    from app.infra.models import Diarization, Meeting, SpeakerReview, SpeakerReviewItem, Transcript
 
     meeting_id = "meeting-db-test"
     review_id = "review-db-test"
@@ -29,6 +29,16 @@ async def _persisted_review(db_session: Any) -> tuple[str, str]:
             created_at=datetime.now(UTC),
         )
     )
+    db_session.add(Transcript(
+        id=f"transcript-{meeting_id}", meeting_id=meeting_id, language="es",
+        provider="synthetic", supports_turns=True, created_at=datetime.now(UTC),
+    ))
+    db_session.add(Diarization(
+        id=f"diarization-{meeting_id}", meeting_id=meeting_id,
+        transcript_id=f"transcript-{meeting_id}", processing_revision=1,
+        diarization_state="completed", speaker_count=2,
+        created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+    ))
     db_session.add(
         SpeakerReview(
             id=review_id,

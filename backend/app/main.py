@@ -11,21 +11,14 @@ from app.infra.database import create_engine, create_session_factory
 from app.infra.queue import create_job_queue
 from app.ingestion.router import router as ingestion_router
 from app.meetings.router import router as meetings_router
-from app.meetings.speaker_excerpt_service import ExcerptKeyring
 from app.summaries.outbox import recover_outbox
 from app.summaries.router import router as summaries_router
 from app.templates.router import router as templates_router
 
 
-def validate_speaker_excerpt_keyring() -> None:
-    """Fail closed before serving requests if excerpt keys are not configured."""
-    ExcerptKeyring.from_environment()
-
-
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Validate encryption key material before serving requests."""
-    validate_speaker_excerpt_keyring()
+    """Recover pending summary deliveries while serving requests."""
     engine = create_engine()
     queue = create_job_queue()
     try:
