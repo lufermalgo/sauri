@@ -33,12 +33,13 @@ Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con 
 - Identificadores, comentarios y mensajes de commit en inglés, sin acentos. El texto que ve el usuario, en español, vive solo en `frontend/src/copy/` (único lugar exento del verificador de idioma). No se eluden los hooks (`.githooks`, `.claude/hooks/block-main-git.sh`).
 - Cambios acotados, simples y con nombres claros; sin código muerto ni defensas innecesarias; consistentes con el proyecto. Lee antes de editar.
 - Python con `cd backend && uv run --extra dev ...` (el `python3` de esta máquina no es el del proyecto). Secretos solo por archivo o variable de entorno, nunca en registros ni en el repositorio.
-- Los motores de audio corren nativos en el Mac (fuera de Docker) para aprovechar el hardware; el resto, en Docker Compose. La arquitectura es hexagonal: cada motor tras un contrato estable, intercambiable por configuración. Ver `docs/architecture/overview.md`.
+- Los motores de IA (transcripción, hablantes, resumen) corren nativos en el Mac (fuera de Docker, puertos 8001–8003) para aprovechar el hardware; el resto corre en **Docker Desktop** como el proyecto de Compose **`sauri`** (portal, api, worker, postgres, minio/RustFS, rabbitmq). La arquitectura es hexagonal: cada motor tras un contrato estable, intercambiable por configuración. Servicios, puertos y comandos en `docs/architecture/overview.md` («Entorno local con Docker Desktop»).
 
 ## Seguridad del repositorio (Code changes and Git protection)
 - Antes de borrar una rama o worktree con trabajo sin integrar, se archiva en `~/Proyectos/sauri-archive/`. Nunca se descartan cambios ajenos.
 - No borres rutas que puedan ser enlaces simbólicos a carpetas fuera del repositorio (las skills `~/.agents/library/` ya se vaciaron una vez así). Comprueba con `test -L` antes.
 - No toques archivos del dueño fuera del repositorio ni su entorno de pruebas. No hagas `git push --force`, ni commit directo a `main`.
+- Docker: el proyecto `sauri` y sus volúmenes (`sauri_pgdata`, `sauri_minio-data`) son el entorno principal del dueño; nunca se borran, recrean ni reutilizan para pruebas sin su autorización. Las pruebas usan bases y contenedores desechables con otro nombre (`sauri_qa_*`, `sauri-qa-*`), solo en `127.0.0.1`, y se eliminan al terminar. Borrar contenedores, imágenes o volúmenes ajenos a una prueba propia requiere autorización del dueño.
 
 ## Dónde va cada cosa
 - Documentos de producto → `docs/product/` (línea base y descubrimiento).

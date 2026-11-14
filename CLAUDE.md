@@ -15,6 +15,7 @@ Lee primero `AGENTS.md` (reglas comunes). Aquí van las reglas propias del orque
 - Verifica siempre contra el disco y las pruebas: un agente puede informar éxito sin haberlo logrado (ya pasó con un archivo escrito en otra carpeta).
 - Una corrección por entrega; si falla de nuevo, la haces tú o la reasignas.
 - Trabaja en tu propio worktree; el checkout raíz se mantiene limpio y al día con `origin/main`.
+- El dueño usa **Docker Desktop**: antes de probar o diagnosticar, revisa el estado real (`docker compose -p sauri ps`, `make engines-status`). Para pruebas que necesitan PostgreSQL o RabbitMQ, levanta instancias desechables con nombre propio y elimínalas al terminar; nunca uses ni toques los volúmenes del proyecto `sauri`.
 
 ## Qué consultar al dueño
 - Producto, privacidad, gastos (incluida la facturación de GitHub y servicios externos) y seguridad. Todo lo demás se decide y se informa.
