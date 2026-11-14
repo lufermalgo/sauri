@@ -59,6 +59,21 @@ def test_excludes_alembic_migration_files(tmp_path: Path) -> None:
     assert result.stdout.strip() == ""
 
 
+def test_excludes_ui_copy_module(tmp_path: Path) -> None:
+    """User-facing text is product-language content, not identifiers: it lives
+    in frontend/src/copy/ and is the only frontend place where it is allowed."""
+    copy_dir = tmp_path / "frontend" / "src" / "copy"
+    copy_dir.mkdir(parents=True)
+    copy_file = copy_dir / "es.ts"
+    copy_file.write_text('export const submit = "Subir grabación";\n')  # spanish-sample-data
+
+    other_file = tmp_path / "frontend" / "src" / "View.tsx"
+    other_file.write_text('const label = "Subir grabación";\n')  # spanish-sample-data
+
+    assert run_check(copy_file).returncode == 0
+    assert run_check(other_file).returncode == 1
+
+
 def test_excludes_test_migration_files(tmp_path: Path) -> None:
     test_migration_file = tmp_path / "backend" / "tests" / "test_migration.py"
     test_migration_file.parent.mkdir(parents=True)

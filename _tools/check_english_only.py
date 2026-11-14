@@ -24,6 +24,10 @@ EXCLUDED_PATH_PARTS = (
     "/.venv/",
     "/node_modules/",
     "/__pycache__/",
+    # User-facing text lives in one module so it can be written in the
+    # product language (and later selected per user) without weakening the
+    # identifier check anywhere else.
+    "/frontend/src/copy/",
     # A rename migration (and the test that verifies it happened) must name
     # both the old and new identifiers — that's not leftover Spanish code,
     # it's the record of the rename itself.
