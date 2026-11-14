@@ -94,6 +94,9 @@ class ComposeBringupTests(unittest.TestCase):
             calls.index("compose run --rm api alembic upgrade head"),
             calls.index("compose up -d api worker portal"),
         )
+        seed = "compose run --rm api python -m app.auth.seed_admin --retire-legacy"
+        self.assertLess(calls.index("compose run --rm api alembic upgrade head"), calls.index(seed))
+        self.assertLess(calls.index(seed), calls.index("compose up -d api worker portal"))
 
     def test_make_up_invokes_bringup_script(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -173,7 +176,9 @@ echo 200
         commands = [line.removeprefix(prefix) for line in calls]
         self.assertEqual(commands, ["stop api worker", "up -d postgres minio rabbitmq",
                          "run --rm api python -m app.infra.ensure_bucket",
-                         "run --rm api alembic upgrade head", "up -d api worker portal",
+                         "run --rm api alembic upgrade head",
+                         "run --rm api python -m app.auth.seed_admin --retire-legacy",
+                         "up -d api worker portal",
                          "port portal 80"])
         self.assertEqual(len(http_calls), 2)
         self.assertIn("http://127.0.0.1:15173/portal-health", http_calls[0])

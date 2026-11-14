@@ -16,6 +16,8 @@ credentials = {
     "engine_token": secrets.token_urlsafe(32),
     "recording_capability_key": secrets.token_hex(32),
     "queue_signing_key": secrets.token_hex(32),
+    # Login password for the single administrator account (43 URL-safe characters).
+    "admin_password": secrets.token_urlsafe(32),
 }
 for name, value in credentials.items():
     path = config_dir / name
@@ -44,5 +46,5 @@ for name, value in credentials.items():
         finally:
             os.close(fd)
 
-print("Native engine credentials are present with private file permissions.")
+print("Native engine credentials and the admin password file are present with private file permissions.")
 PY

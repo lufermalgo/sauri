@@ -22,6 +22,8 @@ run_compose "stopping existing API/worker before schema changes" stop api worker
 run_compose "starting infrastructure (database, broker and object-store volume repair)" up -d postgres minio rabbitmq
 run_compose "creating/verifying object-store bucket" run --rm api python -m app.infra.ensure_bucket
 run_compose "applying database migrations" run --rm api alembic upgrade head
+run_compose "creating the administrator account and retiring legacy seed users" \
+  run --rm api python -m app.auth.seed_admin --retire-legacy
 run_compose "starting API, worker and portal" up -d api worker portal
 
 # Resolve the selected project's actual binding (including QA overrides), rather

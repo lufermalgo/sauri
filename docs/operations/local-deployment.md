@@ -27,6 +27,10 @@ Las variables privadas deben estar configuradas mediante un archivo privado de e
 
 Las credenciales nativas residen en `~/.config/sauri/engine_token` y `recording_capability_key` (0600), preservadas si existen y montadas de solo lectura en el worker. `make engines-status` comprueba procesos, no acceso desde Docker. `make engines-up` es una acción separada; las validaciones aisladas no la ejecutan ni modifican los procesos de Fer.
 
+## Cuenta de administrador
+
+Por ahora Sauri tiene una sola cuenta, la de administrador: `admin@sauri.local`. Los demás perfiles se crearán más adelante. `make up` genera su contraseña la primera vez, al azar, en `~/.config/sauri/admin_password` (solo legible por tu usuario) y crea la cuenta automáticamente; si ya existía, conserva la contraseña. Para verla: `cat ~/.config/sauri/admin_password`. Para cambiarla, reemplaza el contenido de ese archivo (mínimo 20 caracteres) y ejecuta `docker compose run --rm api python -m app.auth.seed_admin --reset-password`. El arranque también traslada a esta cuenta las reuniones y plantillas de los antiguos usuarios de prueba (`comercial1@summan.com`, `comercial2@summan.com`) y luego los elimina; la contraseña nunca se muestra en pantalla ni en los registros.
+
 ## Diarización nativa Senko (U1 #921)
 
 El adaptador conserva puerto 8002, token de motor, capability HMAC por grabación y
