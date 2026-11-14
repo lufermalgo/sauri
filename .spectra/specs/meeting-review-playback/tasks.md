@@ -140,7 +140,9 @@ The dependency graph contains only mandatory RED-before-GREEN edges and real dat
 
 ### T-9: Add failing meeting playback view tests
 
-**Tracking:** Issue #307 · Card `task_91e0bb5a24b14959`
+**Tracking:** Task done · Issue #307 (closed after verification 2026-11-13) · Historical card `task_91e0bb5a24b14959` (unavailable in APX) · RED commit `496fb4c33ecafbda9ffa100a8c0d194edddf955f` · PR #594 (merged 2026-10-30, merge `46c8605d4dc635655838b33b98f11a67b7316053`).
+
+**Reconciliation evidence (2026-11-13):** Verified the RED commit is an ancestor of `origin/main` `41ab5f4017b9a6547b42aef8630ff41999f0557e`. In a separate worktree at that RED commit, `npm run test --workspace frontend -- src/components/__tests__/MeetingPlaybackView.test.tsx` exits 1 during collection because `MeetingPlaybackView` does not yet exist; this is missing-seam RED evidence, not a behavioral assertion failure. At current main, `npm run test --workspace frontend` passes 94 tests in 11 files, including all 14 playback-view tests; `npm run typecheck --workspaces` passes all three workspaces. Known jsdom `HTMLMediaElement.pause` warnings remain. This closes only the already-integrated synthetic component-test task, not real-media or product acceptance, and does not close T-13/T-14. Issue #308 is the GREEN task closed by PR #594, not a PR number.
 
 **Files:** `frontend/src/components/__tests__/MeetingPlaybackView.test.tsx` (new).
 
