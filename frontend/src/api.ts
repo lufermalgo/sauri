@@ -5,6 +5,8 @@ import type {
   MeetingListItem,
   Transcript,
   SpeechTurn,
+  MeetingSummary,
+  SummaryRequestStatus,
 } from "@sauri/shared-types";
 
 export interface PlaybackSource {
@@ -252,6 +254,83 @@ export async function getPlaybackManifest(
     }
   );
   return handleResponse<PlaybackManifest>(response);
+}
+
+interface MeetingSummaryResponse {
+  summary_id: string;
+  meeting_id: string;
+  template_id: string;
+  template_name: string;
+  template_version: number;
+  topic: string;
+  key_points: Array<string | {
+    text: string;
+    sources: Array<{ passage_id: string; start_ms: number; end_ms: number }>;
+  }>;
+  review_state: "draft";
+  generation: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SummaryRequestStatusResponse {
+  event_id: string;
+  generation: number;
+  status: SummaryRequestStatus["status"];
+  failure_cause?: string | null;
+}
+
+function mapSummaryRequest(request: SummaryRequestStatusResponse): SummaryRequestStatus {
+  return {
+    eventId: request.event_id,
+    generation: request.generation,
+    status: request.status,
+    failureCause: request.failure_cause,
+  };
+}
+
+export async function getMeetingSummary(meetingId: string): Promise<MeetingSummary | null> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/summary`,
+    { method: "GET", headers: getAuthHeaders() },
+  );
+  if (response.status === 404) return null;
+  const summary = await handleResponse<MeetingSummaryResponse>(response);
+  return {
+    summaryId: summary.summary_id,
+    meetingId: summary.meeting_id,
+    templateId: summary.template_id,
+    templateName: summary.template_name,
+    templateVersion: summary.template_version,
+    topic: summary.topic,
+    keyPoints: summary.key_points.map((point) => typeof point === "string" ? point : {
+      text: point.text,
+      sources: point.sources.map((source) => ({
+        passageId: source.passage_id, startMs: source.start_ms, endMs: source.end_ms,
+      })),
+    }),
+    reviewState: summary.review_state,
+    generation: summary.generation,
+    createdAt: summary.created_at,
+    updatedAt: summary.updated_at,
+  };
+}
+
+export async function getLatestSummaryRequest(meetingId: string): Promise<SummaryRequestStatus | null> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/summary-requests/latest`,
+    { method: "GET", headers: getAuthHeaders() },
+  );
+  if (response.status === 404) return null;
+  return mapSummaryRequest(await handleResponse<SummaryRequestStatusResponse>(response));
+}
+
+export async function requestMeetingSummary(meetingId: string): Promise<SummaryRequestStatus> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/summary-requests`,
+    { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({}) },
+  );
+  return mapSummaryRequest(await handleResponse<SummaryRequestStatusResponse>(response));
 }
 
 export async function getTranscript(meetingId: string): Promise<MeetingTranscript> {
