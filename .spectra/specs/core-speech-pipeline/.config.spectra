@@ -1,0 +1,14 @@
+{
+  "specId": "d371cc1d-a6f7-4697-b5a3-187b0f4c2481",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-11-14",
+  "idea": "Con base en el resultado de codex es que vamos a refactorizar el core de sauri, una vez finalizado esa refactorizacion debemos lograr procesar una grabacion en muy corto tiempo. (Plan aprobado por Fer el 14/11/2026: Senko para hablantes, Whisper large-v3-turbo para transcripción, resumen como borrador revisable, arquitectura portable/hexagonal, precisión primero, idioma configurable.)",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "complete"
+  },
+  "phaseAuthorization": "Fer aprobó el plan del core y sus metas de tiempo el 14/11/2026. Cada fase documental queda sujeta a su revisión; documentación terminada no es implementación ni aceptación de producto.",
+  "relatedSpecs": ["performance-observability-pipeline", "recording-speaker-review", "meeting-summaries-templates", "meeting-review-playback"]
+}
