@@ -6,7 +6,7 @@ Fer confirmó el 12-11-2026 que los servicios centrales de Sauri deben ejecutars
 
 **Idea fuerza:** abrir el portal y utilizar las conexiones reales de Sauri desde un despliegue local reproducible, conservando datos y sin confundir arranque de servicios con procesamiento terminado.
 
-**Autoridad:** conversación APX `th_0eb2f9523cf04772`, mensajes de Fer del 12-11-2026 a las 18:46, 19:10, 19:22 y 19:25 UTC; tarea `task_9e74a2d278d648ad`; arquitectura central `docs/ARCHITECTURE.md` integrada por PR #817. Fase aprobada por Fer mediante merge del PR #819 el 12-11-2026 a las 22:14 UTC, commit `392a958eac37f156d0bbdc0ea6619deafefe0d20`, confirmado en APX. Esta aprobación permite elaborar el diseño; no demuestra implementación ni aceptación de producto.
+**Autoridad:** conversación APX `th_0eb2f9523cf04772`, mensajes de Fer del 12-11-2026 a las 18:46, 19:10, 19:22 y 19:25 UTC; tarea `task_9e74a2d278d648ad`; arquitectura central `docs/architecture/overview.md` integrada por PR #817. Fase aprobada por Fer mediante merge del PR #819 el 12-11-2026 a las 22:14 UTC, commit `392a958eac37f156d0bbdc0ea6619deafefe0d20`, confirmado en APX. Esta aprobación permite elaborar el diseño; no demuestra implementación ni aceptación de producto.
 
 **No duplicación:** `chrome-recording-completion` conserva captura/carga/apertura; `meeting-review-playback` conserva reproducción y autorización; `portal-visual-design` excluye cambios Compose en su diseño. Ninguna de ellas especifica el despliegue del servidor web. Esta spec cubre esa conexión operativa, no reescribe sus comportamientos.
 

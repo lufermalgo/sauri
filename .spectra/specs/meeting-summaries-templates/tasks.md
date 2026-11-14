@@ -1,7 +1,7 @@
 # Implementation Plan — Meeting Summaries and Templates
 
 **Spec:** `meeting-summaries-templates`
-**Approved inputs:** requirements `cdce9c34c566b72f42bb6db5eecdd76bdacb4532` (Mira APPROVED, PR #231 merged); owner-approved `PRODUCT_BASELINE.md` `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`); revised design `6a0db6dcc0deab546fc81ebc778413bb81e5eedd` (blob `2297f0f92234f1c948246b66ca27d5c95fd8238e`; Mira APPROVED, PR #687 open). This amendment is based on the previously approved tasks snapshot `8cccde7a59c95600cf5b6ce84d3270a3988794df`; these identify planning sources and are not recurring implementation checks.
+**Approved inputs:** requirements `cdce9c34c566b72f42bb6db5eecdd76bdacb4532` (Mira APPROVED, PR #231 merged); owner-approved `docs/product/baseline.md` `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`); revised design `6a0db6dcc0deab546fc81ebc778413bb81e5eedd` (blob `2297f0f92234f1c948246b66ca27d5c95fd8238e`; Mira APPROVED, PR #687 open). This amendment is based on the previously approved tasks snapshot `8cccde7a59c95600cf5b6ce84d3270a3988794df`; these identify planning sources and are not recurring implementation checks.
 
 ## Planning constraints and unresolved gates
 
@@ -384,4 +384,4 @@ The T2 migration-lineage reconciliation in PR #858 (`042e253`) is included as su
 - Run frontend commands from repository root as `cd frontend && ...`; use the existing Vitest/Testing Library configuration cited by the design.
 - Design specifies `cd backend && ruff check . && mypy .`, `cd frontend && npm run typecheck && npm run test`, and the focused suite commands used above. Do not use `make clean` or real meeting data.
 - `packages/shared-types/package.json` currently defines `test` as `echo "no tests yet" && exit 0`; the package contains only `src/index.ts`, `package.json`, and `tsconfig.json`, with no test runner or test location. T17a is the required enablement task; its runner and location must be confirmed against existing repository-supported conventions before configuration, and its recorded actual command is the prerequisite for T17/T18. Do not treat the current placeholder script as validation.
-- The `PRODUCT_BASELINE.md` checked into the task branch is not the assigned approved snapshot; authority for this plan is the exact baseline commit/blob listed above, plus the approved requirements/design and Fer's documented 2026-10-16 template decision. No assumption beyond those sources is introduced.
+- The `docs/product/baseline.md` checked into the task branch is not the assigned approved snapshot; authority for this plan is the exact baseline commit/blob listed above, plus the approved requirements/design and Fer's documented 2026-10-16 template decision. No assumption beyond those sources is introduced.

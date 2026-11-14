@@ -13,7 +13,7 @@ Implementation approach:
 
 ### Authority and traceability
 
-- Product authority: approved `PRODUCT_BASELINE.md` at `d738e78d65940f17d209edf9a54af5d34e92e059`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`, approved in `22df139`; §§2 outcome 4, 3, 4.A.4/A.6/C.5, 5, and 7 open decision 5.
+- Product authority: approved `docs/product/baseline.md` at `d738e78d65940f17d209edf9a54af5d34e92e059`, blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`, approved in `22df139`; §§2 outcome 4, 3, 4.A.4/A.6/C.5, 5, and 7 open decision 5.
 - Exact Phase 1 input: `.spectra/specs/recording-notes/requirements.md` at `535a5fb4729aceaf95d957d64b0a8dfe23c53f9b`, blob `b2a61fc017f21f21f5201dfc1b02441e471ca576`; Mira's independent `APPROVED` round 1 is recorded in `th_dc47985b566e46c9`. This approval does not approve this design.
 - R1.1: the extension's active or explicitly selected recording context supplies the recording ID; its write reaches that recording. R1.2: the visible floating control delegates to the same boundary with that capture's ID. R2.1: the portal loads notes by recording ID. R2.2–2.3: notes and transcript are separately fetched, modeled, and rendered in separately identified sections, including when both are available.
 - Exclusions remain exclusions: capture flow/controls beyond the notes entry point, note format/structure/length, editing, and access from a hidden floating control. Discovery images and historical `handoff.md` add no requirements. The current “My Notes” meeting cards are not evidence that recording notes already exist.

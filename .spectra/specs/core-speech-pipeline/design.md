@@ -40,7 +40,7 @@ La solución sustituye las implementaciones detrás de las costuras existentes (
 **Resumen siempre borrador, con citas validadas por código.** El esquema JSON fija los identificadores de pasaje permitidos (enum), máximo 2 por punto, y el código descarta cualquier punto sin cita válida.
 *Alternativas descartadas:* confiar en la autorrevisión del modelo (falló en las pruebas); post-corregir con expresiones regulares (puede inventar datos).
 
-**Plantilla por defecto sembrada con el contenido que el dueño indicó el 14/11/2026** (tema principal; argumentos y puntos clave; presentación clara y estructurada), marcada como "propuesta del dueño, editable". `PRODUCT_BASELINE.md` aún no aprueba ninguna plantilla por defecto.
+**Plantilla por defecto sembrada con el contenido que el dueño indicó el 14/11/2026** (tema principal; argumentos y puntos clave; presentación clara y estructurada), marcada como "propuesta del dueño, editable". `docs/product/baseline.md` aún no aprueba ninguna plantilla por defecto.
 *Alternativas descartadas:* dejar el resumen manual (el servicio lanza `NotImplementedError` si no hay plantilla por defecto: es un 500 hoy); inventar otra plantilla.
 
 **Idioma por configuración** (`SAURI_DEFAULT_LANGUAGE`, por defecto `es`), con `language` opcional en el mensaje de cola; sin columna nueva ni preferencia por usuario.

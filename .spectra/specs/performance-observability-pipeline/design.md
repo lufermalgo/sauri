@@ -22,7 +22,7 @@ Inspección el 13/11/2026, documentación y código público; no benchmarks prop
 
 | Proyecto/fuente | Patrón relevante | Aplicación y límite en Sauri |
 |---|---|---|
-| MeetMemo, README y `docs/ARCHITECTURE.md` | Servicios por capas, cliente HTTP compartido, modelos residentes y perfiles de hardware | Reutilizar separación y medir residencia; cifras “4x” del proyecto son declaraciones sobre otro entorno CUDA, no evidencia para Metal. No copiar ausencia de autenticación ni autoelección de modelo |
+| MeetMemo, README y `docs/architecture/overview.md` | Servicios por capas, cliente HTTP compartido, modelos residentes y perfiles de hardware | Reutilizar separación y medir residencia; cifras “4x” del proyecto son declaraciones sobre otro entorno CUDA, no evidencia para Metal. No copiar ausencia de autenticación ni autoelección de modelo |
 | ghostmeet, README y `legacy/backend/incremental.py` | Ventanas acotadas, cursor temporal, holdback y decodificación única | Candidato para captura futura; no copiar PCM persistido (incompatible con restricción actual). El código inspeccionado avanza cursor tras fallo: Sauri no debe perder audio de ese modo. No incorpora diarización en ese flujo |
 | meetily, `docs/architecture.md` | Motores nativos, canales de audio, VAD separado de la grabación, vaciado al terminar y contexto de modelos reutilizado | Preservar original y asegurar flush/backpressure; no migrar al archivo Python legacy ni asumir que Rust acelera el contexto LLM. Identificación de hablantes anunciada en Pro no es código abierto validado aquí |
 
@@ -30,7 +30,7 @@ Inspección adicional de código: `MeetMemo/backend/services/transcription_servi
 
 Fuentes de código adicionales: https://raw.githubusercontent.com/NotYuSheng/MeetMemo/189229fa726cb0f53a18cc2f9c7341df1f35208d/backend/services/transcription_service.py ; https://raw.githubusercontent.com/Zackriya-Solutions/meetily/main/frontend/src-tauri/src/audio/pipeline.rs .
 
-Fuentes: https://github.com/NotYuSheng/MeetMemo ; https://raw.githubusercontent.com/NotYuSheng/MeetMemo/main/docs/ARCHITECTURE.md ; https://github.com/Higangssh/ghostmeet ; https://raw.githubusercontent.com/Higangssh/ghostmeet/main/legacy/backend/incremental.py ; https://github.com/Zackriya-Solutions/meetily ; https://raw.githubusercontent.com/Zackriya-Solutions/meetily/main/docs/architecture.md . No importar código de terceros en esta entrega; registrar licencias y commit de referencia si se incorpora más adelante.
+Fuentes: https://github.com/NotYuSheng/MeetMemo ; https://raw.githubusercontent.com/NotYuSheng/MeetMemo/main/docs/architecture/overview.md ; https://github.com/Higangssh/ghostmeet ; https://raw.githubusercontent.com/Higangssh/ghostmeet/main/legacy/backend/incremental.py ; https://github.com/Zackriya-Solutions/meetily ; https://raw.githubusercontent.com/Zackriya-Solutions/meetily/main/docs/architecture.md . No importar código de terceros en esta entrega; registrar licencias y commit de referencia si se incorpora más adelante.
 
 ## Arquitectura
 

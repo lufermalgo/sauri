@@ -3,7 +3,7 @@
   "specType": "feature",
   "workflowType": "requirements-first",
   "created": "2026-10-09",
-  "idea": "Requisitos para un único módulo: procesamiento de grabaciones almacenadas y revisión de hablantes, según el snapshot de PRODUCT_BASELINE.md indicado y las decisiones pertinentes de PRODUCT_DISCOVERY.md. Sin notas ni otros módulos/capacidades.",
+  "idea": "Requisitos para un único módulo: procesamiento de grabaciones almacenadas y revisión de hablantes, según el snapshot de docs/product/baseline.md indicado y las decisiones pertinentes de docs/product/discovery.md. Sin notas ni otros módulos/capacidades.",
   "phases": {
     "requirements": "complete",
     "design": "complete",

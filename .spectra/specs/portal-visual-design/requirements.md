@@ -10,7 +10,7 @@ Este documento traduce únicamente ese alcance a requisitos verificables. La lí
 
 **Alcance:** presentación visual de la autenticación ya existente; biblioteca de grabaciones; vista de reunión con reproductor y transcripción; carga manual de archivos con progreso veraz, resultado y recuperación de error.
 
-**Fuera de alcance:** cambiar autenticación, permisos, política de acceso, consentimiento, retención o garantías de eliminación; búsqueda full-text entre reuniones; edición del texto de la transcripción; límites de formato/tamaño/duración no aprobados; chat interactivo y métricas de tiempo de habla (Phase 2); diagnósticos distintos de la condición explícita de no incluir secretos ni contenido de transcripción; las pantallas Terra no respaldadas por la línea base. `design/stitch/README.md` y sus recursos son inspiración visual no normativa, no requisitos ni autorización para reproducir sus textos, controles, estados, datos o composiciones.
+**Fuera de alcance:** cambiar autenticación, permisos, política de acceso, consentimiento, retención o garantías de eliminación; búsqueda full-text entre reuniones; edición del texto de la transcripción; límites de formato/tamaño/duración no aprobados; chat interactivo y métricas de tiempo de habla (Phase 2); diagnósticos distintos de la condición explícita de no incluir secretos ni contenido de transcripción; las pantallas Terra no respaldadas por la línea base. `docs/design/stitch/README.md` y sus recursos son inspiración visual no normativa, no requisitos ni autorización para reproducir sus textos, controles, estados, datos o composiciones.
 
 ## Matriz de fases de entrega
 
@@ -27,7 +27,7 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 | Renombrar, eliminar y descargar video/transcripción | Fase 2 | Requisito 3; sin añadir garantías de eliminación ni formatos de exportación. |
 | Editar metadatos de empresa, proyecto y participantes; aplicar etiquetas predefinidas o creadas por el usuario | Fase 2 | Requisito 3; sin campos adicionales ni reglas de gobierno de etiquetas. |
 | Renombrar hablantes desde la transcripción | Fase 2 | Requisito 4; solo cambia atribución; no habilita edición del texto transcrito y mantiene el límite de identidad por usuario. |
-| Chat interactivo con la grabación y métricas de tiempo de habla | Fase 2 según la línea base | Capacidades ya clasificadas como Fase 2 en `PRODUCT_BASELINE.md` §5; siguen fuera de la interacción inicial y no se detallan ni amplían en esta enmienda. |
+| Chat interactivo con la grabación y métricas de tiempo de habla | Fase 2 según la línea base | Capacidades ya clasificadas como Fase 2 en `docs/product/baseline.md` §5; siguen fuera de la interacción inicial y no se detallan ni amplían en esta enmienda. |
 
 ## Glosario
 
@@ -43,7 +43,7 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 
 **Historia de Usuario:** Como usuario de Sauri, quiero que la pantalla de acceso existente tenga un tratamiento visual coherente con el portal, para usar la entrada actual sin que el rediseño altere su funcionamiento o sus permisos.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` (snapshot aprobado con enmienda autorizada, §4, párrafo posterior a §4.D; §6, restricción confirmada y no-objetivos), blob `2337a46b2ba78ef4364e23a86df9918db621c881`. La referencia visual de Stitch excluye expresamente la experiencia de login como alcance y no puede definirla (`design/stitch/README.md`, §3).
+**Trazabilidad:** `docs/product/baseline.md` (snapshot aprobado con enmienda autorizada, §4, párrafo posterior a §4.D; §6, restricción confirmada y no-objetivos), blob `2337a46b2ba78ef4364e23a86df9918db621c881`. La referencia visual de Stitch excluye expresamente la experiencia de login como alcance y no puede definirla (`docs/design/stitch/README.md`, §3).
 
 #### Criterios de Aceptación
 
@@ -55,7 +55,7 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 
 **Historia de Usuario:** Como usuario, quiero encontrar grabaciones previas en la biblioteca web, para volver a una sesión guardada.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §4.C.1 y §5 (biblioteca confirmada; full-text excluido; campos de filtro derivados de metadatos disponibles).
+**Trazabilidad:** `docs/product/baseline.md` §4.C.1 y §5 (biblioteca confirmada; full-text excluido; campos de filtro derivados de metadatos disponibles).
 
 #### Criterios de Aceptación
 
@@ -69,7 +69,7 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 
 **Historia de Usuario:** Como usuario, quiero seleccionar una grabación, administrar sus artefactos y editar sus metadatos y etiquetas, para retomar, organizar o llevarme el material de una sesión.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §4.C.2–3 y §5 (selección, renombrado, eliminación, descarga de video/transcripción, edición de metadatos de empresa/proyecto/participantes y uso de etiquetas predefinidas o creadas por el usuario confirmados; garantías de eliminación, formatos de exportación, gobierno de etiquetas y campos adicionales no especificados).
+**Trazabilidad:** `docs/product/baseline.md` §4.C.2–3 y §5 (selección, renombrado, eliminación, descarga de video/transcripción, edición de metadatos de empresa/proyecto/participantes y uso de etiquetas predefinidas o creadas por el usuario confirmados; garantías de eliminación, formatos de exportación, gobierno de etiquetas y campos adicionales no especificados).
 
 #### Criterios de Aceptación
 
@@ -86,7 +86,7 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 
 **Historia de Usuario:** Como usuario, quiero revisar el medio junto con su transcripción atribuida a hablantes, para navegar entre lo que escucho y lo que leo.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §4.C.4–5, §5 y §6 (composición confirmada; detalles de control, timestamp, colores y video específicos para diseño; nombres de pestañas adicionales abiertos).
+**Trazabilidad:** `docs/product/baseline.md` §4.C.4–5, §5 y §6 (composición confirmada; detalles de control, timestamp, colores y video específicos para diseño; nombres de pestañas adicionales abiertos).
 
 #### Criterios de Aceptación
 
@@ -104,7 +104,7 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 
 **Historia de Usuario:** Como usuario, quiero seleccionar un archivo local elegible desde el portal, para añadir una grabación existente sin iniciar una captura de la extensión.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §4.D.1–2, §5 y §6 (carga manual confirmada y sin límites inferibles); decisión de Fer del 2026-10-31 registrada en la tarjeta de carga manual (criterio provisional basado en la validación vigente de ingesta del backend, sin nuevos límites, con mensaje claro ante rechazo; Fer podrá definir reglas explícitas después).
+**Trazabilidad:** `docs/product/baseline.md` §4.D.1–2, §5 y §6 (carga manual confirmada y sin límites inferibles); decisión de Fer del 2026-10-31 registrada en la tarjeta de carga manual (criterio provisional basado en la validación vigente de ingesta del backend, sin nuevos límites, con mensaje claro ante rechazo; Fer podrá definir reglas explícitas después).
 
 #### Criterios de Aceptación
 
@@ -119,7 +119,7 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 
 **Historia de Usuario:** Como usuario, quiero entender si mi archivo se está transfiriendo, cuándo terminó la carga y cómo recuperarme de un fallo, para distinguir una transferencia de un procesamiento terminado y poder reintentar.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §4.D.3–5, §5, §6 y §7.12–13; decisión de Fer para #555 (2026-11-07) de ocultar «Copiar diagnóstico» en errores de carga manual mientras se revisa qué datos podría incluir; la referencia `design/stitch/README.md` §4b no puede ampliar esos límites.
+**Trazabilidad:** `docs/product/baseline.md` §4.D.3–5, §5, §6 y §7.12–13; decisión de Fer para #555 (2026-11-07) de ocultar «Copiar diagnóstico» en errores de carga manual mientras se revisa qué datos podría incluir; la referencia `docs/design/stitch/README.md` §4b no puede ampliar esos límites.
 
 #### Criterios de Aceptación
 
@@ -133,5 +133,5 @@ Las fases ordenan la entrega, no eliminan ni debilitan requisitos: todos los cri
 ## Dependencias y límites upstream
 
 - Fuente del alcance: baseline aprobado en #528 (commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`) y enmienda de carga manual aprobada por Fer para el snapshot exacto de #665 (commit `85b603ada14996842d913cfbbed4bcffe9fe54c5`, blob `2337a46b2ba78ef4364e23a86df9918db621c881`). La enmienda fue publicada en PR #665 y fusionada en `main` mediante el commit `7d5dd29edaae65256fab3d7b84564693f5603081`.
-- Referencia visual: `design/stitch/README.md` y seis recursos en `origin/main` `29002a98de8a3c9cd882e05887e221cfeed184bd`; solo inspiración no normativa. Su §8 enumera exclusiones y los §§0 y 10 niegan que la referencia autorice alcance o aceptación visual.
+- Referencia visual: `docs/design/stitch/README.md` y seis recursos en `origin/main` `29002a98de8a3c9cd882e05887e221cfeed184bd`; solo inspiración no normativa. Su §8 enumera exclusiones y los §§0 y 10 niegan que la referencia autorice alcance o aceptación visual.
 - No se afirma aceptación de producto, implementación, conformidad visual ni estado runtime.

@@ -4,7 +4,7 @@
 
 El núcleo actual puede iniciar API, worker, PostgreSQL, RustFS y RabbitMQ, pero no sirve el portal construido. El navegador necesita además un origen local estable y enlaces de medios alcanzables, distintos de los nombres internos de Docker. Completar ese despliegue no demuestra que la captura, la inferencia o el aislamiento entre cuentas funcionen: cada tramo requiere evidencia propia.
 
-**Base contrastada:** `origin/main` `cb7510f4a23481e7e7c8c82b9d532d650b9bc071`, `docker-compose.yml`, `_tools/compose-bringup.sh`, `frontend/{package.json,vite.config.ts,src/api.ts}`, `backend/app/{main.py,infra/object_store.py,infra/ensure_bucket.py}` y `docs/ARCHITECTURE.md`. Requisitos aprobados por Fer mediante merge del PR #819 el 12-11-2026, commit `392a958eac37f156d0bbdc0ea6619deafefe0d20`. Issue #818; APX `task_9e74a2d278d648ad`. El merge de #703 también está verificado; no acredita captura real ni recorrido completo. Este diseño está redactado para aprobación, no implementado.
+**Base contrastada:** `origin/main` `cb7510f4a23481e7e7c8c82b9d532d650b9bc071`, `docker-compose.yml`, `_tools/compose-bringup.sh`, `frontend/{package.json,vite.config.ts,src/api.ts}`, `backend/app/{main.py,infra/object_store.py,infra/ensure_bucket.py}` y `docs/architecture/overview.md`. Requisitos aprobados por Fer mediante merge del PR #819 el 12-11-2026, commit `392a958eac37f156d0bbdc0ea6619deafefe0d20`. Issue #818; APX `task_9e74a2d278d648ad`. El merge de #703 también está verificado; no acredita captura real ni recorrido completo. Este diseño está redactado para aprobación, no implementado.
 
 La solución consiste en:
 1. Construir el workspace React con Node y servir únicamente `frontend/dist` mediante Nginx dentro de un nuevo servicio `portal`.
@@ -119,9 +119,9 @@ sequenceDiagram
 
 Extender las pruebas existentes `_tools/test_compose_bringup.py` al último paso con portal y a la comprobación HTTP. Mantener salida no cero y etapa identificable ante fallo. El mensaje final debe decir que portal/núcleo respondieron y que inferencia requiere verificación separada, no «Sauri completamente operativo». Los comandos deben respetar el proyecto y los archivos Compose seleccionados por el entorno; la validación comprueba esa propagación antes de cualquier `stop`.
 
-### 4. Guía operativa — `docs/LOCAL_DEPLOYMENT.md`
+### 4. Guía operativa — `docs/operations/local-deployment.md`
 
-Documentar requisitos de Docker/Node para construir, variables privadas requeridas sin valores reales, URL local, alcance de `make up`, motores nativos existentes, matriz de verificación y recuperación sin borrado. Explicar que `/api-health` no verifica datos/cola y que arrancar contenedores no acredita transcripción. Advertir que `make clean` elimina datos y no es parte de arranque ni de este procedimiento. Actualizar README y `docs/ARCHITECTURE.md` al implementar, incluyendo estado real de #703 y esta spec, sin convertir este documento en un reporte de ejecución.
+Documentar requisitos de Docker/Node para construir, variables privadas requeridas sin valores reales, URL local, alcance de `make up`, motores nativos existentes, matriz de verificación y recuperación sin borrado. Explicar que `/api-health` no verifica datos/cola y que arrancar contenedores no acredita transcripción. Advertir que `make clean` elimina datos y no es parte de arranque ni de este procedimiento. Actualizar README y `docs/architecture/overview.md` al implementar, incluyendo estado real de #703 y esta spec, sin convertir este documento en un reporte de ejecución.
 
 ### 5. Validación reproducible — `_tools/validate-local-platform.py`
 

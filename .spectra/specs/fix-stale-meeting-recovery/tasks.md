@@ -4,7 +4,7 @@
 
 This plan is derived only from the approved snapshots below. It plans backend code/tests and does **not** authorize recovery against live meetings, the one-meeting operational pilot, deployment, or release.
 
-- Approved baseline: `PRODUCT_BASELINE.md` at `85b603ada14996842d913cfbbed4bcffe9fe54c5` (blob `2337a46b2ba78ef4364e23a86df9918db621c881`). The baseline supports later review of recordings/transcripts; it does not define recovery.
+- Approved baseline: `docs/product/baseline.md` at `85b603ada14996842d913cfbbed4bcffe9fe54c5` (blob `2337a46b2ba78ef4364e23a86df9918db621c881`). The baseline supports later review of recordings/transcripts; it does not define recovery.
 - Approved bugfix: `.spectra/specs/fix-stale-meeting-recovery/bugfix.md`, commit `f0c076e799fc46cf3b843fbade59f0a4154cb7a6`, blob `7cac06232e96bdc76239a1e9cb4a5495c7623663`; Mira-approved and merged by PR #671. Manual initiation, the single-meeting first pilot and data/privacy boundaries come from Fer's explicit decision recorded on `task_31c25607a8684d7b`.
 - Approved design base: `.spectra/specs/fix-stale-meeting-recovery/design.md`, commit `4673e6e5f2e6c81c4986367bd15fc72867ae996a`, blob `835f44e8d7b41d6b78024f63bf20bcad76fac8e8`; Mira-approved and merged by PR #689.
 - Approved design amendment: same artifact, commit `4473cfd0054a96c531673d036e8066c3d0f8b2b5`, blob `5417a8ceedd91b703a0a4dc6a321876781a2bd9b`; Mira-approved and merged via PR #731. It specifies executable staged RED precursors for service, outbox delivery, and preservation status; these tasks preserve all previously approved criteria.

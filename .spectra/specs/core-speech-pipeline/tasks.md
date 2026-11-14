@@ -41,7 +41,7 @@ Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evi
 **Dependencias:** U1.1, U1.2
 
 #### Tarea U1.4: Instalador de Senko
-**Archivo:** `_tools/install-diar-engine.sh`, `Makefile` (`engines-install`), `docs/LOCAL_DEPLOYMENT.md`
+**Archivo:** `_tools/install-diar-engine.sh`, `Makefile` (`engines-install`), `docs/operations/local-deployment.md`
 **Acción:** Crear el venv, instalar Senko desde `https://github.com/narcotic-sh/senko.git` en el commit `1bcb09041bfa170b4a5a4b0af92f66eff76204d5` y verificar el SHA-256 de los modelos descargados contra una lista fija en `_tools/engine-hashes.json` (tomar los valores de `~/.cache/sauri-coreml-benchmark/` y `senko-models.sha256.json` de la evidencia de Codex). Idempotente; falla si un hash no coincide.
 **Criterio de Completado:** `make engines-install` en un entorno con el venv ya presente termina sin cambios y con código 0; con un hash alterado en el archivo, falla.
 **Dependencias:** Ninguna
@@ -179,7 +179,7 @@ Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evi
 **Dependencias:** U1–U7
 
 #### Tarea U8.2: Actualizar arquitectura
-**Archivo:** `docs/ARCHITECTURE.md`, `docs/LOCAL_DEPLOYMENT.md`
+**Archivo:** `docs/architecture/overview.md`, `docs/operations/local-deployment.md`
 **Acción:** Registrar los motores nativos nuevos (puertos 8001–8003), el slot, el contrato v2, las alternativas descartadas y la evidencia, y el mapa de specs con `core-speech-pipeline`.
 **Criterio de Completado:** documento revisado en el PR; sin afirmaciones de despliegue o aceptación no comprobadas.
 **Dependencias:** U8.1

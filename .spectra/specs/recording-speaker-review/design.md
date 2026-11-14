@@ -198,7 +198,7 @@ Run configured project validation from the relevant package roots: backend `pyte
 
 ## Traceability and Boundaries
 
-This design is based on the feature artifact `.spectra/specs/recording-speaker-review/requirements.md`, blob `4ed34b661138550229a60ed8c728f0e50bc1e6e1` at the approved requirements commit/PR #232 (Mira approved; PR open, not merged), and the approved `PRODUCT_BASELINE.md` snapshot at commit `f5ff445fd508983740cd6b5a89c08adafcbb9295`, blob `c43cad6515b01a52037ad9cd4e09010a40477fb4` (approval annotation commit `b071a7c6d2c72613aa42543d15e47b81f4999077`). This is the approved design target; repository code is current-state evidence only.
+This design is based on the feature artifact `.spectra/specs/recording-speaker-review/requirements.md`, blob `4ed34b661138550229a60ed8c728f0e50bc1e6e1` at the approved requirements commit/PR #232 (Mira approved; PR open, not merged), and the approved `docs/product/baseline.md` snapshot at commit `f5ff445fd508983740cd6b5a89c08adafcbb9295`, blob `c43cad6515b01a52037ad9cd4e09010a40477fb4` (approval annotation commit `b071a7c6d2c72613aa42543d15e47b81f4999077`). This is the approved design target; repository code is current-state evidence only.
 
 The T-6/T-15 processing-boundary clarification above is an additive technical interpretation of this design, not a change to requirements or observable product behavior. It resolves the internal coordinator path and test seam for correctness property 8. It preserves approved T-6 in `.spectra/specs/recording-speaker-review/tasks.md` at commit `2680e8a996f4d59ef99c097cd68637486dbcb154`, blob `8421d5edabb94ab3f96e3790e91f2efd46c22819`.
 
