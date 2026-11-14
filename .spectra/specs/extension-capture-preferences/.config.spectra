@@ -6,7 +6,11 @@
   "idea": "Author requirements for extension capture and preferences (APX task t_1neprs).",
   "phases": {
     "requirements": "complete",
-    "design": "pending",
-    "tasks": "pending"
+    "design": "complete",
+    "tasks": "complete"
+  },
+  "phaseAuthorization": {
+    "design": "Written 2026-11-14; implementation requires the owner's review first.",
+    "tasks": "Written 2026-11-14; implementation requires the owner's review first."
   }
 }
