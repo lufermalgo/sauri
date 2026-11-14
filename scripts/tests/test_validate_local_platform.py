@@ -1,5 +1,4 @@
 """Ownership/lifecycle contract tests with Docker doubles, not live integration."""
-import base64
 import importlib.util
 import json
 from pathlib import Path
@@ -121,9 +120,8 @@ class ValidationLifecycleTests(unittest.TestCase):
             self.assertNotIn('QUEUE_MESSAGE_SIGNING_KEY', path.read_text())
             self.assertEqual((path.parent / 'qa.env').stat().st_mode & 0o777, 0o600)
             entries = dict(line.split('=', 1) for line in (path.parent / 'qa.env').read_text().splitlines())
-            key_id, encoded = entries['SPEAKER_EXCERPT_KEYRING'].strip("'").split(':', 1)
-            self.assertEqual(key_id, 'qa')
-            self.assertEqual(len(base64.b64decode(encoded, validate=True)), 32)
+            self.assertNotIn('SPEAKER_EXCERPT_KEYRING', entries)
+            self.assertEqual(len(entries['QUEUE_MESSAGE_SIGNING_KEY'].strip("'")), 64)
 
     def test_create_failure_preserves_inventory_without_starting_services(self):
         with tempfile.TemporaryDirectory() as temp:

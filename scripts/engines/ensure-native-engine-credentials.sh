@@ -15,6 +15,7 @@ os.chmod(config_dir, 0o700)
 credentials = {
     "engine_token": secrets.token_urlsafe(32),
     "recording_capability_key": secrets.token_hex(32),
+    "queue_signing_key": secrets.token_hex(32),
 }
 for name, value in credentials.items():
     path = config_dir / name
