@@ -574,3 +574,53 @@ describe("meeting summary API adapters", () => {
     },
   );
 });
+
+describe("attributed transcript and meeting state adapters", () => {
+  it("maps word turns without reusing segment attribution or dropping ambiguous and unassigned text", async () => {
+    mockFetch({
+      transcript_id: "transcript-1", meeting_id: "meeting-1", language: "es", provider: "local",
+      supports_turns: true, created_at: "2026-11-14T12:00:00Z", presentation: "words",
+      segments: [{ id: "old-segment", text: "Legacy text", start_ms: 0, end_ms: 90000, sequence: 1 }],
+      turns: [
+        { sequence: 1, speaker_id: "speaker-a", speaker_label: "Speaker A", start_ms: 65432, end_ms: 68000,
+          text: "Synthetic first turn", word_count: 3, has_ambiguous: false },
+        { sequence: 2, speaker_id: null, speaker_label: null, start_ms: 68000, end_ms: 70000,
+          text: "Synthetic uncertain turn", word_count: 3, has_ambiguous: true },
+      ],
+    });
+    const result = await api.getTranscript("meeting-1");
+    expect(result.presentation).toBe("words");
+    expect(result.turns).toEqual([
+      { id: "transcript-1:turn:1", transcriptId: "transcript-1", sequence: 1, speakerId: "speaker-a",
+        speakerLabel: "Speaker A", startMs: 65432, endMs: 68000, text: "Synthetic first turn",
+        wordCount: 3, hasAmbiguous: false },
+      { id: "transcript-1:turn:2", transcriptId: "transcript-1", sequence: 2, speakerId: null,
+        speakerLabel: null, startMs: 68000, endMs: 70000, text: "Synthetic uncertain turn",
+        wordCount: 3, hasAmbiguous: true },
+    ]);
+    expect(result.segments[0].id).toBe("old-segment");
+  });
+
+  it("keeps segments mode on its existing mapping even if unrelated turns are supplied", async () => {
+    mockFetch({
+      transcript_id: "t-1", meeting_id: "m-1", language: "es", provider: "local",
+      supports_turns: true, created_at: "2026-11-14T12:00:00Z", presentation: "segments",
+      segments: [{ id: "s-1", text: "Synthetic segment", start_ms: 1000, end_ms: 2000, sequence: 1 }],
+      turns: [{ text: "Do not use" }],
+    });
+    const result = await api.getTranscript("m-1");
+    expect(result.presentation).toBe("segments");
+    expect(result.turns).toEqual([
+      { id: "s-1", transcriptId: "t-1", sequence: 1, startMs: 1000, endMs: 2000, text: "Synthetic segment" },
+    ]);
+  });
+
+  it("maps failure_cause without inferring retry support", async () => {
+    const fetchMock = mockFetch({ meeting_id: "m / 1", process_state: "failed", failure_cause: "engine_failure" });
+    await expect(api.getMeeting("m / 1")).resolves.toEqual({
+      meetingId: "m / 1", processState: "failed", failureCause: "engine_failure",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/meetings/m%20%2F%201"),
+      expect.objectContaining({ method: "GET" }));
+  });
+});

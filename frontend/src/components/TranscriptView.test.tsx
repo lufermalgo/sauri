@@ -8,14 +8,17 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, fireEvent, act, within } from "@testing-library/react";
 import type { Transcript, SpeechTurn } from "@sauri/shared-types";
-import type { TimedPassage } from "../api";
+import { copy } from "../copy/es";
+import { PlaybackController } from "./PlaybackController";
+import type { MeetingTranscript, TimedPassage } from "../api";
 
 import { TranscriptView } from "./TranscriptView";
 import * as api from "../api";
 
 vi.mock("../api", () => ({
+  getMeeting: vi.fn(),
   getTranscript: vi.fn(),
   getPlaybackManifest: vi.fn(),
   getDiarization: vi.fn(),
@@ -25,6 +28,8 @@ vi.mock("../api", () => ({
 }));
 
 beforeEach(() => {
+  vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+  vi.mocked(api.getSpeakerReview).mockResolvedValue(null as unknown as api.SpeakerReview);
   vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(
     null as unknown as Awaited<ReturnType<typeof api.getPlaybackManifest>>,
   );
@@ -33,6 +38,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -158,7 +164,7 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
-    const seekButton = await screen.findByRole("button", { name: "Play turn at 00:00" });
+    const seekButton = await screen.findByRole("button", { name: copy.transcript.playAt("00:00") });
     fireEvent.click(seekButton);
 
     expect(screen.getByTestId("playback-audio")).toHaveProperty("currentTime", 0.5);
@@ -170,7 +176,7 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
-    expect(await screen.findByText("Identificando hablantes")).toBeVisible(); // spanish-sample-data
+    expect(await screen.findByText(copy.processing.identifying)).toBeVisible();
   });
 
   it("renders a speaker label on every transcript row, including unresolved rows", async () => {
@@ -220,6 +226,7 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
+    await waitFor(() => expect(screen.getAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(2));
     const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
     const secondLabels = screen.getAllByText("Synthetic Person B", { selector: '[data-testid="transcript-speaker-label"]' });
     const unresolvedLabels = screen.getAllByText("Speaker N", { selector: '[data-testid="transcript-speaker-label"]' });
@@ -408,8 +415,316 @@ describe("TranscriptView — speaker review", () => {
   it("exposes review actions as keyboard-operable native buttons", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await screen.findByRole("button", { name: /confirm speaker 1/i });
     const buttons = await screen.findAllByRole("button");
     expect(buttons.length).toBeGreaterThanOrEqual(4);
     for (const button of buttons) expect(button.tagName).toBe("BUTTON");
+  });
+});
+
+const playback: api.PlaybackManifest = {
+  meeting_id: "r-1", duration_seconds: 180, video_presence: "absent",
+  audio_source: { source_id: "audio-1", url: "http://localhost/synthetic.wav", mime_type: "audio/wav" },
+  muxed_video_source: null, video_sources: [],
+};
+
+function attributedTranscript(): MeetingTranscript {
+  return {
+    ...transcript([]),
+    presentation: "words",
+    segments: [{ id: "legacy", text: "Legacy segment must not be shown", startMs: 0, endMs: 90000, sequence: 1 }],
+    turns: [
+      { ...turn({ id: "word-turn-1", sequence: 1, text: "Synthetic attributed turn", startMs: 65432, endMs: 68000 }),
+        speakerId: "speaker-a", speakerLabel: "Speaker A", wordCount: 3, hasAmbiguous: false },
+      { ...turn({ id: "word-turn-2", sequence: 2, text: "Synthetic uncertain turn", startMs: 68000, endMs: 70000 }),
+        speakerId: null, speakerLabel: null, wordCount: 3, hasAmbiguous: true },
+      { ...turn({ id: "word-turn-3", sequence: 3, text: "Synthetic returning turn", startMs: 70000, endMs: 72000 }),
+        speakerId: "speaker-a", speakerLabel: "Speaker A", wordCount: 3, hasAmbiguous: false },
+    ],
+  };
+}
+
+describe("TranscriptView — attributed word turns", () => {
+  beforeEach(() => {
+    vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
+  });
+
+  it("shows backend speaker labels, null attribution, ambiguity and exact timestamp seeks", async () => {
+    const seek = vi.spyOn(PlaybackController.prototype, "seekTo");
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const panel = await screen.findByRole("tabpanel", { name: copy.summary.transcriptTab });
+    const button = await within(panel).findByRole("button", { name: copy.transcript.playAt("01:05") });
+    await screen.findByTestId("playback-audio");
+    expect(within(panel).getAllByText("Speaker A")).toHaveLength(2);
+    expect(within(panel).getByText(copy.transcript.unknownSpeaker)).toBeVisible();
+    expect(within(panel).getAllByLabelText(copy.transcript.ambiguous)).toHaveLength(1);
+    expect(within(panel).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByText("Legacy segment must not be shown")).not.toBeInTheDocument();
+    fireEvent.click(button);
+    expect(seek).toHaveBeenCalledWith(65432);
+    expect(screen.getByTestId("playback-audio")).toHaveProperty("currentTime", 65.432);
+  });
+
+  it("highlights and follows the visible word turn using the actual media clock, including seeks and gaps", async () => {
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
+    const panel = screen.getByRole("tabpanel", { name: copy.summary.transcriptTab });
+    const rows = within(panel).getAllByRole("listitem");
+    const scroll = vi.fn();
+    Object.defineProperty(rows[1], "scrollIntoView", { value: scroll });
+    audio.currentTime = 68.25;
+    fireEvent.timeUpdate(audio);
+    expect(rows[1]).toHaveAttribute("aria-current", "true");
+    expect(rows[1]).toHaveStyle({ backgroundColor: "#fef3c7" });
+    expect(rows[0]).not.toHaveAttribute("aria-current");
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+    fireEvent.timeUpdate(audio);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(audio.currentTime).toBe(68.25);
+    audio.currentTime = 70;
+    fireEvent.seeked(audio);
+    expect(rows[2]).toHaveAttribute("aria-current", "true");
+    expect(rows[1]).not.toHaveAttribute("aria-current");
+    audio.currentTime = 72;
+    fireEvent.timeUpdate(audio);
+    rows.forEach((row) => expect(row).not.toHaveAttribute("aria-current"));
+  });
+});
+
+describe("TranscriptView — processing polling", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "queued" });
+    vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
+    vi.mocked(api.getDiarization).mockRejectedValue(new Error("Error 404"));
+    vi.mocked(api.getSpeakerReview).mockRejectedValue(new Error("Error 404"));
+  });
+
+  async function open() {
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />); });
+    return view;
+  }
+
+  async function advance(ms = 5000) {
+    await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  }
+
+  it("polls every five seconds from queued through transcription and identification to completion", async () => {
+    await open();
+    expect(screen.getByText(copy.processing.queued)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await advance(4999);
+    expect(api.getMeeting).toHaveBeenCalledTimes(1);
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
+    await advance(1);
+    expect(api.getMeeting).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(copy.processing.transcribing)).toBeVisible();
+    vi.mocked(api.getTranscript).mockResolvedValue({ ...transcript([turn()]), presentation: "segments" });
+    await advance();
+    expect(screen.getByText(copy.processing.identifying)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+    vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
+    vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
+    await advance();
+    expect(screen.getByText(copy.processing.completed)).toBeVisible();
+    expect(screen.getByText("Synthetic attributed turn")).toBeVisible();
+    const calls = vi.mocked(api.getMeeting).mock.calls.length;
+    await advance(20000);
+    expect(api.getMeeting).toHaveBeenCalledTimes(calls);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops while hidden and resumes immediately when visible, without polling after unmount", async () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    const view = await open();
+    hidden.mockReturnValue(true);
+    fireEvent(document, new Event("visibilitychange"));
+    await advance(20000);
+    expect(api.getMeeting).toHaveBeenCalledTimes(1);
+    expect(api.getTranscript).toHaveBeenCalledTimes(1);
+    expect(api.getDiarization).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    hidden.mockReturnValue(false);
+    await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+    expect(api.getMeeting).toHaveBeenCalledTimes(2);
+    await advance();
+    expect(api.getMeeting).toHaveBeenCalledTimes(3);
+    view.unmount();
+    await advance(10000);
+    expect(api.getMeeting).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not start hidden and clears a pending poll if an in-flight request ends while hidden", async () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    await open();
+    await advance(10000);
+    expect(api.getMeeting).not.toHaveBeenCalled();
+    let finish!: (state: api.MeetingState) => void;
+    vi.mocked(api.getMeeting).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    hidden.mockReturnValue(false);
+    await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+    hidden.mockReturnValue(true);
+    fireEvent(document, new Event("visibilitychange"));
+    await act(async () => { finish({ meetingId: "r-1", processState: "transcribing" }); });
+    await advance(15000);
+    expect(api.getMeeting).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops on failure even without diarization and never invents a retry action", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" });
+    await open();
+    expect(screen.getByText(new RegExp(copy.processing.failureCause("engine_failure")))).toBeVisible();
+    expect(screen.queryByRole("button", { name: copy.summary.retry })).not.toBeInTheDocument();
+    await advance(20000);
+    expect(api.getMeeting).toHaveBeenCalledTimes(1);
+    fireEvent(document, new Event("visibilitychange"));
+    expect(api.getMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps polling completed with missing speakers and reloads word turns after the revision arrives", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    await open();
+    expect(screen.getByText(copy.processing.identifying)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await advance(4999);
+    expect(api.getDiarization).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(api.getDiarization).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(copy.processing.identifying)).toBeVisible();
+
+    vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
+    vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
+    await advance();
+    expect(api.getTranscript).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(api.getTranscript).mock.invocationCallOrder.at(-1)).toBeGreaterThan(
+      vi.mocked(api.getDiarization).mock.invocationCallOrder.at(-1)!,
+    );
+    expect(screen.getByText("Synthetic attributed turn")).toBeVisible();
+    expect(screen.getByText(copy.processing.completed)).toBeVisible();
+    expect(screen.queryByText(copy.processing.identifying)).not.toBeInTheDocument();
+    await advance(20000);
+    expect(api.getMeeting).toHaveBeenCalledTimes(3);
+    expect(api.getDiarization).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops speaker polling at fifteen minutes and explains the wait limit", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    await open();
+    await advance(15 * 60 * 1000 - 1);
+    expect(screen.getByText(copy.processing.identifying)).toBeVisible();
+    expect(api.getDiarization).toHaveBeenCalledTimes(180);
+    await advance(1);
+    expect(screen.getByText(copy.processing.speakerWaitExpired)).toBeVisible();
+    expect(screen.queryByText(copy.processing.identifying)).not.toBeInTheDocument();
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(20000);
+    await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+    expect(api.getMeeting).toHaveBeenCalledTimes(180);
+    expect(api.getTranscript).toHaveBeenCalledTimes(180);
+    expect(api.getDiarization).toHaveBeenCalledTimes(180);
+  });
+
+  it("does not query hidden while waiting for speakers and includes hidden time in the limit", async () => {
+    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    await open();
+    hidden.mockReturnValue(true);
+    fireEvent(document, new Event("visibilitychange"));
+    await advance(20000);
+    expect(api.getDiarization).toHaveBeenCalledTimes(1);
+    hidden.mockReturnValue(false);
+    await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+    expect(api.getDiarization).toHaveBeenCalledTimes(2);
+    hidden.mockReturnValue(true);
+    fireEvent(document, new Event("visibilitychange"));
+    await advance(15 * 60 * 1000 - 20000);
+    expect(screen.getByText(copy.processing.speakerWaitExpired)).toBeInTheDocument();
+    hidden.mockReturnValue(false);
+    await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+    expect(api.getMeeting).toHaveBeenCalledTimes(2);
+    expect(api.getTranscript).toHaveBeenCalledTimes(2);
+    expect(api.getDiarization).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ignores a speaker revision that arrives after the wait limit during a slow request", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    await open();
+    let finish!: (revision: api.MeetingDiarization) => void;
+    vi.mocked(api.getDiarization).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await advance();
+    await advance(15 * 60 * 1000 - 5000);
+    expect(screen.getByText(copy.processing.speakerWaitExpired)).toBeVisible();
+    vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
+    await act(async () => { finish({ speakers: [], assignments: [] }); });
+    expect(api.getTranscript).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Synthetic attributed turn")).not.toBeInTheDocument();
+    await advance(10000);
+    expect(api.getDiarization).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("clears the speaker deadline on failure and on unmount", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    const view = await open();
+    expect(vi.getTimerCount()).toBe(2);
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" });
+    await advance();
+    expect(vi.getTimerCount()).toBe(0);
+    await advance(15 * 60 * 1000);
+    expect(screen.queryByText(copy.processing.speakerWaitExpired)).not.toBeInTheDocument();
+    view.unmount();
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+    const next = await open();
+    expect(vi.getTimerCount()).toBe(2);
+    next.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not mislabel a diarization service error as pending identification", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    vi.mocked(api.getDiarization).mockRejectedValue(new Error("Error 503"));
+    await open();
+    expect(screen.getByText(copy.processing.transcribing)).toBeVisible();
+    expect(screen.getByText(copy.processing.diarizationFailed)).toBeVisible();
+    expect(screen.queryByText(copy.processing.identifying)).not.toBeInTheDocument();
+  });
+
+  it("does not overlap requests when a slow response outlasts the polling period", async () => {
+    let finish!: (state: api.MeetingState) => void;
+    vi.mocked(api.getMeeting).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    await open();
+    await advance(15000);
+    await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+    expect(api.getMeeting).toHaveBeenCalledTimes(1);
+    await act(async () => { finish({ meetingId: "r-1", processState: "queued" }); });
+    await advance(4999);
+    expect(api.getMeeting).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(api.getMeeting).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores results from a previous meeting when navigating during a request", async () => {
+    let finish!: (state: api.MeetingState) => void;
+    vi.mocked(api.getMeeting).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const view = await open();
+    await act(async () => { view.rerender(<TranscriptView meetingId="new-meeting" onBack={vi.fn()} />); });
+    expect(screen.getByText(copy.processing.queued)).toBeVisible();
+    await act(async () => { finish({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" }); });
+    expect(screen.getByText(copy.processing.queued)).toBeVisible();
+    expect(screen.queryByText(new RegExp(copy.processing.failed))).not.toBeInTheDocument();
   });
 });
