@@ -5,7 +5,9 @@ import { MeetingOrigin, ProcessState } from "./index";
 // Vitest transpiles type-only imports away. Compile a virtual consumer instead so
 // missing exports, field drift, and lifecycle widening actually fail this test.
 const summaryContractConsumer = `
-import type { MeetingSummary, SummaryRequestStatus, SummaryTemplate, TemplateCategory } from "./index";
+import type {
+  AttributedTurn, MeetingSummary, SummaryRequestStatus, SummaryTemplate, TemplateCategory, TranscriptPresentation,
+} from "./index";
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends
   (<T>() => T extends B ? 1 : 2) ? true : false;
 type Assert<T extends true> = T;
@@ -28,6 +30,11 @@ type TemplateContract = Assert<Equal<SummaryTemplate, {
 }>>;
 type CategoryContract = Assert<Equal<TemplateCategory, {
   id: string; name: string; ownerId: string; createdAt: string;
+}>>;
+type PresentationContract = Assert<Equal<TranscriptPresentation, "words" | "segments">>;
+type AttributedTurnContract = Assert<Equal<AttributedTurn, {
+  sequence: number; speakerId: string | null; speakerLabel: string | null;
+  startMs: number; endMs: number; text: string; wordCount: number; hasAmbiguous: boolean;
 }>>;
 `;
 
