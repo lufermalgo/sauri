@@ -7,7 +7,7 @@
   "phases": {
     "requirements": "complete",
     "design": "complete",
-    "tasks": "pending"
+    "tasks": "complete"
   },
   "phaseAuthorization": "Fer aprobó el plan del core y sus metas de tiempo el 14/11/2026. Cada fase documental queda sujeta a su revisión; documentación terminada no es implementación ni aceptación de producto.",
   "relatedSpecs": ["performance-observability-pipeline", "recording-speaker-review", "meeting-summaries-templates", "meeting-review-playback"]
