@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import importlib.util
+import io
 import shutil
 import subprocess
 import sys
 import time
+import wave
 from pathlib import Path
 from typing import Any
 
@@ -24,18 +26,26 @@ MODULE_SPEC.loader.exec_module(native)
 
 
 class FakeS3:
+    def __init__(self) -> None:
+        self.paths: list[Path] = []
+
     def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
         assert bucket == "synthetic-bucket"
         assert audio_ref == "synthetic/recording.wav"
+        self.paths.append(Path(path))
         Path(path).write_bytes(_minimal_wav_bytes())
 
 
 class WebMS3:
     """Writes opaque synthetic WebM data for the mocked ffmpeg boundary."""
 
+    def __init__(self) -> None:
+        self.paths: list[Path] = []
+
     def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
         assert bucket == "synthetic-bucket"
         assert audio_ref == "synthetic/recording.webm"
+        self.paths.append(Path(path))
         Path(path).write_bytes(b"synthetic-webm-container")
 
 
@@ -84,13 +94,17 @@ class FakeAnnotation:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("inference_fails", [False, True])
 async def test_diarize_preserves_contract_and_cleans_temp_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, inference_fails: bool,
 ) -> None:
-    seen_paths: list[str] = []
+    seen_audio: list[io.BytesIO] = []
 
-    def run_pipeline(path: str) -> FakeAnnotation:
-        seen_paths.append(path)
+    def run_pipeline(audio: io.BytesIO) -> FakeAnnotation:
+        seen_audio.append(audio)
+        assert audio.seekable()
+        if inference_fails:
+            raise RuntimeError("synthetic-private-failure")
         return FakeAnnotation()
 
     token_path = tmp_path / "engine_token"
@@ -101,13 +115,14 @@ async def test_diarize_preserves_contract_and_cleans_temp_file(
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", capability_key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
-    monkeypatch.setattr(native, "s3_client", FakeS3())
+    source = FakeS3()
+    monkeypatch.setattr(native, "s3_client", source)
     monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
     monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
 
-    def fake_ffmpeg(command: list[str], **_options: Any) -> None:
-        Path(command[-1]).write_bytes(_minimal_wav_bytes())
+    def fake_ffmpeg(command: list[str], **_options: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(command, 0, stdout=_minimal_wav_bytes()[44:])
 
     monkeypatch.setattr(subprocess, "run", fake_ffmpeg)
 
@@ -124,24 +139,33 @@ async def test_diarize_preserves_contract_and_cleans_temp_file(
             },
         )
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "segments": [{"speaker": "SPEAKER_00", "start_ms": 500, "end_ms": 2250}],
-        "num_speakers": 1,
-    }
-    assert seen_paths and not Path(seen_paths[0]).exists()
+    if inference_fails:
+        assert response.status_code == 500
+        assert response.json() == {"detail": "Diarization failed"}
+        assert "synthetic-private-failure" not in response.text
+    else:
+        assert response.status_code == 200
+        assert response.json() == {
+            "segments": [{"speaker": "SPEAKER_00", "start_ms": 500, "end_ms": 2250}],
+            "num_speakers": 1,
+        }
+    assert seen_audio and seen_audio[0].closed
+    assert source.paths and all(not path.exists() for path in source.paths)
 
 
 @pytest.mark.asyncio
 async def test_diarize_converts_webm_to_wav_before_pyannote(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A downloaded .webm must reach pyannote as a 16 kHz mono WAV file."""
-    seen_paths: list[str] = []
+    """A complete WebM reaches pyannote as seekable PCM WAV in RAM, never a file."""
+    seen_audio: list[io.BytesIO] = []
 
-    def run_pipeline(path: str) -> FakeAnnotation:
-        seen_paths.append(path)
-        assert Path(path).suffix == ".wav", f"expected WAV input, got {path!r}"
+    def run_pipeline(audio: io.BytesIO) -> FakeAnnotation:
+        seen_audio.append(audio)
+        assert isinstance(audio, io.BytesIO)
+        with wave.open(audio, "rb") as reader:
+            assert (reader.getframerate(), reader.getnchannels(), reader.getsampwidth()) == (16000, 1, 2)
+            assert reader.readframes(reader.getnframes()) == _minimal_wav_bytes()[44:]
         return FakeAnnotation()
 
     token_path = tmp_path / "engine_token"
@@ -152,20 +176,21 @@ async def test_diarize_converts_webm_to_wav_before_pyannote(
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
-    monkeypatch.setattr(native, "s3_client", WebMS3())
+    source = WebMS3()
+    monkeypatch.setattr(native, "s3_client", source)
     monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
     monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
     ffmpeg_calls: list[list[str]] = []
 
-    def fake_ffmpeg(command: list[str], **options: Any) -> None:
+    def fake_ffmpeg(command: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
         ffmpeg_calls.append(command)
         assert options == {
             "check": True,
             "capture_output": True,
             "timeout": native.FFMPEG_TIMEOUT_SECONDS,
         }
-        Path(command[-1]).write_bytes(_minimal_wav_bytes())
+        return subprocess.CompletedProcess(command, 0, stdout=_minimal_wav_bytes()[44:])
 
     monkeypatch.setattr(subprocess, "run", fake_ffmpeg)
 
@@ -195,10 +220,10 @@ async def test_diarize_converts_webm_to_wav_before_pyannote(
     assert command[5].endswith(".webm")
     assert command[6:11] == ["-ar", "16000", "-ac", "1", "-c:a"]
     assert command[11] == "pcm_s16le"
-    assert command[-1].endswith(".wav")
-    assert len(seen_paths) == 1
-    assert seen_paths[0].endswith(".wav"), f"pyannote received non-WAV: {seen_paths[0]!r}"
-    assert not Path(seen_paths[0]).exists(), "converted temp WAV must be cleaned up"
+    assert command[-3:] == ["-f", "s16le", "pipe:1"]
+    assert len(seen_audio) == 1 and seen_audio[0].closed
+    assert source.paths and all(not path.exists() for path in source.paths)
+    assert all(not Path(str(path) + ".wav").exists() for path in source.paths)
 
 
 @pytest.mark.asyncio
@@ -363,8 +388,8 @@ async def test_diarize_denies_missing_recording_capability_before_io(
         invocations.append(path)
         return EmptyAnnotation()
 
-    def fake_ffmpeg(command: list[str], **_options: Any) -> None:
-        Path(command[-1]).write_bytes(_minimal_wav_bytes())
+    def fake_ffmpeg(command: list[str], **_options: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(command, 0, stdout=_minimal_wav_bytes()[44:])
 
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
     monkeypatch.setattr(subprocess, "run", fake_ffmpeg)
@@ -432,8 +457,8 @@ async def test_diarize_denies_invalid_authorization_before_io(
         invocations.append(path)
         return EmptyAnnotation()
 
-    def fake_ffmpeg(command: list[str], **_options: Any) -> None:
-        Path(command[-1]).write_bytes(_minimal_wav_bytes())
+    def fake_ffmpeg(command: list[str], **_options: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(command, 0, stdout=_minimal_wav_bytes()[44:])
 
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
     monkeypatch.setattr(subprocess, "run", fake_ffmpeg)

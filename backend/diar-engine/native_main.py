@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import io
 import logging
 import os
 import secrets
@@ -11,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import wave
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
@@ -167,15 +169,14 @@ def _download_audio(audio_ref: str) -> str:
     return audio_path
 
 
-def _convert_to_wav(audio_path: str) -> str:
-    """Decode downloaded audio into a temporary 16 kHz mono PCM WAV."""
+def _convert_to_wav(audio_path: str) -> io.BytesIO:
+    """Decode the complete original to seekable PCM16 WAV in RAM, never a disk derivative."""
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise RuntimeError("ffmpeg is not installed; cannot decode audio to WAV")
 
-    wav_path = audio_path + ".wav"
     try:
-        subprocess.run(
+        result = subprocess.run(
             [
                 ffmpeg,
                 "-y",
@@ -189,23 +190,30 @@ def _convert_to_wav(audio_path: str) -> str:
                 "1",
                 "-c:a",
                 "pcm_s16le",
-                wav_path,
+                "-f",
+                "s16le",
+                "pipe:1",
             ],
             check=True,
             capture_output=True,
             timeout=FFMPEG_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        with suppress(OSError):
-            os.unlink(wav_path)
         raise RuntimeError(f"Audio conversion failed ({type(exc).__name__})") from exc
-    return wav_path
+    audio = io.BytesIO()
+    with wave.open(audio, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(result.stdout)
+    audio.seek(0)
+    return audio
 
 
-def _run_diarization(audio_path: str) -> list[Segment]:
+def _run_diarization(audio: io.BytesIO) -> list[Segment]:
     if diarization_pipeline is None:
         raise RuntimeError("Diarization pipeline not loaded")
-    annotation = diarization_pipeline(audio_path)
+    annotation = diarization_pipeline(audio)
     segments: list[Segment] = []
     for turn, _track, speaker in annotation.itertracks(yield_label=True):
         start_ms = int(turn.start * 1000)
@@ -232,14 +240,14 @@ async def diarize(
         logger.error("Audio download failed")
         raise HTTPException(status_code=500, detail="Audio download failed") from exc
     try:
-        wav_path = _convert_to_wav(audio_path)
+        wav_audio = _convert_to_wav(audio_path)
     except Exception as exc:
         logger.error("Audio conversion failed (%s)", type(exc).__name__)
         with suppress(OSError):
             os.unlink(audio_path)
         raise HTTPException(status_code=500, detail="Audio conversion failed") from exc
     try:
-        segments = _run_diarization(wav_path)
+        segments = _run_diarization(wav_audio)
         return DiarizeResponse(
             segments=segments,
             num_speakers=len({segment.speaker for segment in segments}),
@@ -250,8 +258,7 @@ async def diarize(
     finally:
         with suppress(OSError):
             os.unlink(audio_path)
-        with suppress(OSError):
-            os.unlink(wav_path)
+        wav_audio.close()
 
 
 @app.get("/health")
