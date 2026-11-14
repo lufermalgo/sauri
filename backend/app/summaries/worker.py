@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import Meeting, MeetingSummary, ProcessedSummaryEvent, SummaryRequestOutbox, Transcript
 from app.infra.queue import JobQueue
+from app.summaries.engine import ContextExceededError, SummaryProviderError
 from app.summaries.factory import create_summarization_engine
-from app.summaries.repository import locked_request, transcript_text
+from app.summaries.passages import SummaryInvalidError
+from app.summaries.repository import locked_request, transcript_passages
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,19 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
     """Register the normal consumer and terminal dead-letter status handler."""
     engine = create_summarization_engine()
 
+    async def record_failure(message: dict[str, Any], cause: str, *, terminal: bool) -> None:
+        async with factory() as session, session.begin():
+            request = await locked_request(session, message["event_id"])
+            if request is None or not _matches_request(message, request):
+                return
+            if request.status in ("succeeded", "failed"):
+                return
+            if await session.get(ProcessedSummaryEvent, request.event_id) is not None:
+                return
+            request.failure_cause = cause
+            if terminal:
+                request.status = "failed"
+
     async def consume(message: dict[str, Any]) -> None:
         meeting_id = message.get("meeting_id")
         event_id = _event_id(message)
@@ -64,13 +79,26 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
             if meeting is None or transcript is None or transcript.meeting_id != request.meeting_id:
                 logger.warning("Summary meeting or transcript unavailable for event_id=%s", event_id)
                 return
-            text = await transcript_text(session, request.transcript_id)
+            passages = await transcript_passages(session, request.transcript_id)
             instructions = request.instructions_snapshot
             request.status = "running"
 
-        # No DB transaction remains open during provider work. A failure propagates
-        # for the queue's retry policy; neither artifact nor event claim is written.
-        result = await engine.generate(text, instructions)
+        # Only provider availability/timeouts are retryable generation failures.
+        # Acknowledge deterministic failures after persisting a terminal outcome.
+        try:
+            result = await engine.generate(passages, instructions)
+        except ContextExceededError:
+            await record_failure(message, "context_exceeded", terminal=True)
+            return
+        except SummaryInvalidError:
+            await record_failure(message, "summary_invalid", terminal=True)
+            return
+        except (SummaryProviderError, TimeoutError):
+            await record_failure(message, "llm_unavailable", terminal=False)
+            raise
+        except Exception:
+            await record_failure(message, "summary_invalid", terminal=True)
+            return
 
         async with factory() as session, session.begin():
             request = await locked_request(session, event_id)
@@ -92,12 +120,13 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
                     template_version=request.template_version,
                     generation=request.generation,
                     topic=result.topic,
-                    key_points_json=json.dumps(result.key_points, ensure_ascii=False),
+                    key_points_json=json.dumps([point.model_dump() for point in result.key_points], ensure_ascii=False),
                     created_at=now,
                     updated_at=now,
                 )
             )
             request.status = "succeeded"
+            request.failure_cause = None
 
     async def terminal(message: dict[str, Any]) -> None:
         event_id = _event_id(message)
@@ -112,6 +141,7 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
             processed = await session.get(ProcessedSummaryEvent, event_id)
             if processed is None and request.status not in ("succeeded", "failed"):
                 request.status = "failed"
+                request.failure_cause = "llm_unavailable"
 
     await queue.subscribe("summarize", consume)
     await queue.subscribe("summarize.failed", terminal)

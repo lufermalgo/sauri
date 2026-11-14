@@ -17,5 +17,12 @@
       "senko/models/camplusplus_batch16.mlpackage/Data/com.apple.CoreML/model.mlmodel": "356b7b355c5da04fbe8d0d61ad6de07469b615f488422079a9a753dd28031460",
       "senko/models/camplusplus_batch16.mlpackage/Data/com.apple.CoreML/weights/weight.bin": "bad93198b2d9431ec2a17a30a983830434cb008aaa56c814ddd371449f724d46"
     }
+  },
+  "llm": {
+    "llama_cpp_commit": "af76639f728c69c74c873cc45f038aaa17afd09e",
+    "model_repo": "unsloth/Qwen3.5-9B-GGUF",
+    "model_revision": "3885219b6810b007914f3a7950a8d1b469d598a5",
+    "model_file": "Qwen3.5-9B-Q4_K_M.gguf",
+    "model_sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"
   }
 }

@@ -2,18 +2,22 @@
 
 from typing import cast
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import (
+    Diarization,
     Meeting,
     MeetingSummary,
+    Speaker,
+    SpeakerAssignment,
     SpeechTurn,
     SummaryRequestOutbox,
     SummaryTemplate,
     Transcript,
-    User,
 )
+from app.summaries.passages import Passage, Turn, build_passages
+from app.templates.seed import ensure_default
 
 
 async def current_summary_for_owner(
@@ -61,7 +65,7 @@ async def selected_template(
 ) -> SummaryTemplate | None:
     template_id = explicit_id
     if template_id is None:
-        template_id = await session.scalar(select(User.default_summary_template_id).where(User.id == owner_id))
+        template_id = await ensure_default(session, owner_id)
     if template_id is None:
         return None
     return cast(
@@ -111,10 +115,23 @@ async def locked_request(session: AsyncSession, event_id: str) -> SummaryRequest
     ).first()
 
 
-async def transcript_text(session: AsyncSession, transcript_id: str) -> str:
-    turns = (
-        await session.scalars(
-            select(SpeechTurn.text).where(SpeechTurn.transcript_id == transcript_id).order_by(SpeechTurn.sequence)
-        )
-    ).all()
-    return "\n".join(turns)
+async def transcript_passages(session: AsyncSession, transcript_id: str) -> list[Passage]:
+    revision = (
+        select(Diarization.id)
+        .where(Diarization.transcript_id == transcript_id, Diarization.diarization_state == "completed")
+        .order_by(Diarization.processing_revision.desc())
+        .limit(1).scalar_subquery()
+    )
+    rows = (await session.execute(
+        select(SpeechTurn, Speaker.sequence).select_from(SpeechTurn)
+        .outerjoin(SpeakerAssignment, and_(
+            SpeakerAssignment.turn_id == SpeechTurn.id, SpeakerAssignment.diarization_id == revision,
+        ))
+        .outerjoin(Speaker, Speaker.id == SpeakerAssignment.speaker_id)
+        .where(SpeechTurn.transcript_id == transcript_id)
+        .order_by(SpeechTurn.sequence)
+    )).all()
+    return build_passages([
+        Turn(turn.text, turn.start_ms, turn.end_ms, f"Speaker {speaker}" if speaker is not None else "Speaker ?")
+        for turn, speaker in rows
+    ])

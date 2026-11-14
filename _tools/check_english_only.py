@@ -21,6 +21,10 @@ from pathlib import Path
 EXCLUDED_PATH_PARTS = (
     ".spectra/specs/",
     "/fixtures/",
+    # User-facing copy is intentionally localized; identifiers and logic stay English.
+    "/backend/app/copy/",
+    # This scanner defines the prohibited vocabulary; it must not scan itself.
+    "/_tools/check_english_only.py",
     "/.venv/",
     "/node_modules/",
     "/__pycache__/",

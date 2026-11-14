@@ -10,7 +10,7 @@ ENGINE_TOKEN_FILE="${HOME}/.config/sauri/engine_token"
 RECORDING_CAPABILITY_KEY_FILE="${HOME}/.config/sauri/recording_capability_key"
 
 usage() {
-  echo "Usage: $0 {start|stop|status} {asr|diar|all}" >&2
+  echo "Usage: $0 {start|stop|status} {asr|diar|llm|all}" >&2
   exit 2
 }
 
@@ -18,7 +18,7 @@ usage() {
 ACTION="$1"
 TARGET="$2"
 case "$ACTION" in start|stop|status) ;; *) usage ;; esac
-case "$TARGET" in asr|diar|all) ;; *) usage ;; esac
+case "$TARGET" in asr|diar|llm|all) ;; *) usage ;; esac
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
@@ -27,6 +27,10 @@ engine_config() {
   case "$1" in
     asr) ENGINE_PYTHON="$ASR_PYTHON"; ENGINE_LABEL="ASR"; ENGINE_PORT=8001; ENGINE_APP_DIR="$ROOT_DIR/backend/asr-engine" ;;
     diar) ENGINE_PYTHON="$DIAR_PYTHON"; ENGINE_LABEL="diarization"; ENGINE_PORT=8002; ENGINE_APP_DIR="$ROOT_DIR/backend/diar-engine" ;;
+    llm)
+      ENGINE_LABEL="LLM"; ENGINE_PORT=8003; ENGINE_APP_DIR="$ROOT_DIR/backend/llm-engine"
+      ENGINE_PYTHON="${SAURI_NATIVE_LLM_PYTHON:-${SAURI_LLM_INSTALL_DIR:-$HOME/.local/share/sauri/native-engines/llm}/venv/bin/python}"
+      ;;
     *) echo "Unknown engine: $1" >&2; exit 2 ;;
   esac
   PID_FILE="$STATE_DIR/$1.pid"
@@ -149,7 +153,7 @@ status_engine() {
   return 1
 }
 
-engines=(asr diar)
+engines=(asr diar llm)
 if [[ "$TARGET" != all ]]; then engines=("$TARGET"); fi
 result=0
 for engine in "${engines[@]}"; do

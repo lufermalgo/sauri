@@ -471,3 +471,88 @@ async def test_status_routes_enforce_meeting_association_sales_and_owner(summary
     for suffix in ("latest", str(event)):
         denied = await client.get(f"{path}/{suffix}", headers=_headers(other, sales=False))
         assert denied.status_code == 403, denied.text
+
+
+async def test_no_personal_default_seeds_editable_starter_and_accepts(summary_api: ApiFixture) -> None:
+    from app.copy.templates_es import DEFAULT_INSTRUCTIONS, DEFAULT_NAME, DEFAULT_PROVENANCE
+    from app.templates.seed import seed_id
+
+    client, factory, owner, other, meeting, _, _ = summary_api
+    async with factory() as session, session.begin():
+        user = await session.get(User, owner)
+        assert user is not None
+        user.default_summary_template_id = None
+    path = f"/api/v1/meetings/{meeting}/summary-requests"
+    response = await client.post(path, json={}, headers=_headers(owner))
+    assert response.status_code == 202, response.text
+    template_id = seed_id(owner, "template")
+    async with factory() as session:
+        request = await session.get(SummaryRequestOutbox, response.json()["event_id"])
+        assert request is not None and request.template_id == template_id
+        assert request.instructions_snapshot == DEFAULT_INSTRUCTIONS
+    template = await client.get(f"/api/v1/templates/{template_id}", headers=_headers(owner))
+    assert template.status_code == 200
+    assert template.json()["name"] == DEFAULT_NAME and template.json()["is_default"]
+    assert template.json()["provenance"] == DEFAULT_PROVENANCE
+    assert (await client.get(f"/api/v1/templates/{template_id}", headers=_headers(other))).status_code == 404
+    updated = await client.patch(f"/api/v1/templates/{template_id}", json={"instructions": "Edited synthetic"},
+                                 headers=_headers(owner))
+    assert updated.status_code == 200
+    later = await client.post(path, json={}, headers=_headers(owner))
+    assert later.status_code == 202
+    async with factory() as session:
+        request = await session.get(SummaryRequestOutbox, later.json()["event_id"])
+        assert request is not None and request.instructions_snapshot == "Edited synthetic"
+        assert request.template_version == 2 and request.template_id == template_id
+
+
+async def test_grounded_summary_is_exposed_as_draft(summary_api: ApiFixture) -> None:
+    client, factory, owner, _, meeting, _, _ = summary_api
+    events = await _persist_successes(summary_api)
+    points = [{"text": "Synthetic point", "sources": [{"passage_id": "P0000", "start_ms": 0, "end_ms": 1000}]}]
+    async with factory() as session, session.begin():
+        summary = await session.scalar(select(MeetingSummary).where(MeetingSummary.event_id == events[1]["event_id"]))
+        assert summary is not None
+        summary.key_points_json = json.dumps(points)
+    response = await client.get(f"/api/v1/meetings/{meeting}/summary", headers=_headers(owner))
+    assert response.status_code == 200
+    assert response.json()["key_points"] == points
+    assert response.json()["review_state"] == "draft"
+
+
+@pytest.mark.parametrize("edit", [{"name": "Edited title"}, {"instructions": "Edited instructions"},
+                                  {"category_id": None}])
+async def test_editing_starter_removes_owner_proposal_provenance(
+    summary_api: ApiFixture, edit: dict[str, str | None]
+) -> None:
+    from app.copy.templates_es import DEFAULT_PROVENANCE
+    from app.templates.seed import ensure_default
+
+    client, factory, owner, _, _, _, _ = summary_api
+    async with factory() as session, session.begin():
+        user = await session.get(User, owner)
+        assert user is not None
+        user.default_summary_template_id = None
+        template_id = await ensure_default(session, owner)
+    path = f"/api/v1/templates/{template_id}"
+    assert (await client.get(path, headers=_headers(owner))).json()["provenance"] == DEFAULT_PROVENANCE
+    edited = await client.patch(path, json=edit, headers=_headers(owner))
+    assert edited.status_code == 200
+    assert edited.json()["provenance"] is None
+    assert (await client.get(path, headers=_headers(owner))).json()["provenance"] is None
+
+
+async def test_categorized_failure_is_returned_by_status_routes(summary_api: ApiFixture) -> None:
+    client, factory, owner, _, meeting, template, _ = summary_api
+    base = f"/api/v1/meetings/{meeting}/summary-requests"
+    response = await client.post(base, json={"template_id": template}, headers=_headers(owner))
+    event_id = response.json()["event_id"]
+    async with factory() as session, session.begin():
+        request = await session.get(SummaryRequestOutbox, event_id)
+        assert request is not None
+        request.status = "failed"
+        request.failure_cause = "context_exceeded"
+    for suffix in (event_id, "latest"):
+        response = await client.get(f"{base}/{suffix}", headers=_headers(owner))
+        assert response.status_code == 200
+        assert response.json()["failure_cause"] == "context_exceeded"
