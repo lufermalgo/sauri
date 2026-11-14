@@ -82,6 +82,10 @@ Only own temporary `sauri-773-pg`, `sauri-773-store`, `sauri-773-mq` resources (
 
 Validation setup corrections, not hidden test failures: PostgreSQL readiness initially probed its transient init socket (changed to final TCP readiness); a regression attempt lacked an isolated S3 endpoint (430 PASS/1 environmental FAIL/5 skips, then rerun with own real S3); RustFS's non-root data directory needed writable tmpfs mode; RabbitMQ TCP-listener availability did not prove AMQP readiness (changed to a real successful AMQP handshake before suite). These failures were corrected within the temporary harness and every run cleaned up. The final real-service run above passed without weakening tests or production controls.
 
+## Publication verified
+
+Published **draft PR #919**: https://github.com/lufermalgo/sauri/pull/919. Base is `bugfix/issue-771-stale-recovery-service` at exact #916 SHA `b85a868b7644fc62e7d7d80bb9833b14c819c287`. Published candidate `0d0a5d0c8b3eca35686cff73b56b064263164dc5` matched local/remote, OPEN/draft, MERGEABLE/CLEAN; `statusCheckRollup=[]` (no remote-CI green claim). Issue #773 remained OPEN and worktree clean. This final publication-record update changes documentation only, not tested Python code `1276147`. Ansel is the reviewer; Fer retains integration.
+
 ## Deferred and readiness
 
 Initial delivery only. T19/T20 still own ambiguous acknowledgement/crash retry and complete deduplication evidence; there is no claim of exactly-once broker transport. Preservation/status, full API/pilot verification, integrated recovery QA/security and explicit Fer pilot authorization remain their own units. A draft PR does not enable operational recovery or authorize deployment. Issue #773 must stay open at publication. Ansel reviews this unit; Fer integrates in dependency order.
