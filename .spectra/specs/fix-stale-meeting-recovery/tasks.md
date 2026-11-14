@@ -31,6 +31,7 @@ All test fixtures and sentinel content must be synthetic. No task reads or copie
 
 - T-3 (RED) and T-4 (GREEN) share one delivery unit: Issue #767 · Card `task_23336cbd897c4cbb` · branch `bugfix/issue-767-stale-recovery-t-3` · worktree `.worktrees/bugfix-issue-767-stale-recovery-t-3` · one PR. T-4 remains a distinct task and retains its own acceptance evidence and dependency on T-3 and T-2.
 - T-17 (RED) and T-18 (GREEN) share one delivery unit: Issue #771 · historical card `task_70f9cb0897cc4a76` unavailable (`not_found`); resumed as `task_18946291951f433c`, same canonical branch/worktree, no duplicate executor. T17 behavioral RED is committed as `c568ce2`; T18 code `cb8d6b3` and full validation are recorded in `validation-t17-t18-20261113.md`: 407 PASS (37 T17/T18 cases), 3 explicit skips; 18 additional PostgreSQL migration PASS. Published draft PR #916 stacked on #913; not integrated, issue #771 remains open. Publication, integration and pilot authorization remain distinct.
+- T-7 (RED) and T-8 (GREEN) share one delivery unit: Issue #773 · historical card `task_a7e3ad6bcc2b49e6` unavailable; resumed as `task_e3101ceaffb14e3f`, same canonical branch/worktree, no duplicate executor. RED `3064cf5` (1 behavioral FAIL/4 PASS), GREEN `1276147` (17 focal PASS; 457 regression PASS/3 explicit skips). Evidence: `validation-t7-t8-20261113.md`, `t7-red-20261113.txt`, `t8-green-20261113.txt`. Delivery is a draft PR stacked on #916 for Ansel review; not integrated, issue remains open, Fer retains merge.
 - T-9 (RED) and T-10 (GREEN) share one delivery unit: Issue #777 · Card `task_e9315846d41a4199`.
 - The task IDs, individual acceptance evidence, validation commands, and dependency edges remain distinct below. The former GREEN-side issue/card references #768, #772 and #778 are not separate delivery units; issue/card reconciliation follows Mira's approval of this mapping.
 
@@ -126,7 +127,7 @@ Ansel retomó la unidad #767, preservó RED `d424f68` y reprodujo 2 fallos condu
 
 ## T-7 — RED: Specify recovery outbox delivery at worker startup
 
-**Tracking:** T-7 RED + T-8 GREEN delivery unit · Issue #773 · Card `task_a7e3ad6bcc2b49e6`
+**Tracking:** T-7 RED + T-8 GREEN delivery unit · Issue #773 · resumed card `task_e3101ceaffb14e3f` (historical `task_a7e3ad6bcc2b49e6` unavailable)
 
 **Files / RED test seams:** `backend/tests/infra/test_recovery_outbox.py` (new); existing `backend/app/worker.py:main()` startup boundary with injected isolated queue/session factories and controlled stop event; use a persisted synthetic operation/outbox row produced through `MeetingRecoveryService.recover`.
 
@@ -138,9 +139,9 @@ Ansel retomó la unidad #767, preservó RED `d424f68` y reprodujo 2 fallos condu
 
 ## T-8 — GREEN: Wire startup to deliver only committed outbox records
 
-**Tracking:** T-7 RED + T-8 GREEN delivery unit · Issue #773 · Card `task_a7e3ad6bcc2b49e6`
+**Tracking:** T-7 RED + T-8 GREEN delivery unit · Issue #773 · resumed card `task_e3101ceaffb14e3f` (historical `task_a7e3ad6bcc2b49e6` unavailable)
 
-**Files:** `backend/app/infra/recovery_outbox.py` (new); `backend/app/worker.py:main()` existing startup boundary; `backend/app/infra/queue.py:JobQueue.publish`; `backend/app/infra/queue_rabbitmq.py:RabbitMQJobQueue.publish`; `backend/tests/infra/test_recovery_outbox.py`.
+**Files:** `backend/app/infra/recovery_outbox.py` (new); `backend/app/worker.py:main()` existing startup boundary; `backend/app/infra/queue.py:JobQueue.publish`; `backend/app/infra/queue_rabbitmq.py:RabbitMQJobQueue.publish`; `backend/tests/infra/test_recovery_outbox.py`. Technical inventory correction within the approved contract: minimal validation adjustment in `backend/app/transcription/worker.py` to consume identifier-only recovery envelopes without carrying media references, retaining all existing persisted identity/generation fences and normal-ingestion validation. Rationale and test evidence are in `validation-t7-t8-20261113.md`; no schema, policy, engine or product change.
 
 **Action:** Implement the minimum `dispatch_pending_recoveries(...)` path and wire worker startup only to delivery of already-accepted committed outbox rows using stable operation/generation identifiers. It must never initiate recovery or alter meeting processing state; ordinary startup without an authorized row does not publish recovery. Narrow touched logs to content-free reason codes/opaque IDs. Do not claim ambiguous delivery retry safety yet; T-19/T-20 provide its required RED→GREEN pair.
 
