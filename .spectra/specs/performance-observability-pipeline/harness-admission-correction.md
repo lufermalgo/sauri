@@ -24,7 +24,7 @@ La evidencia anterior de otro run `perf907-2ecb4725` pertenece a otra continuaci
 
 El admisor automático privado `real-pipeline/admit.py` quedó **desactivado de forma persistente** (no solo su PID): conserva fuente histórica en `admit.py.disabled-original.txt`, imprime categoría `admission.disabled` y sale2, sin iniciar proceso alguno. Se comprobó ejecutándolo sin modelos. No hay nuevo timer, observador automático ni reintento programado.
 
-Nuevo `_tools/pipeline_admission.py`: verificación **solo lectura**, sin opción `--run` ni launcher:
+Nuevo `scripts/platform/pipeline_admission.py`: verificación **solo lectura**, sin opción `--run` ni launcher:
 
 1. Requiere inventario explícito de contenedores persistentes por ID completo, recursos propios por ID **y** etiqueta de run, y servicios persistentes revisados por identidad PID+inicio+hash de comando. Nunca descubre persistencia por nombre o bajo consumo de CPU.
 2. Observa procesos, contenedores corriendo, presión y swap en cuatro muestras continuas separadas10s (≥30s). Rechaza observaciones vacías, malformadas, inconsistentes, futuras, viejas o discontinuas. Fallas de Docker/ps/sysctl no equivalen a ausencia de trabajo.
@@ -45,15 +45,15 @@ El archivo se conserva privado, fuera de Git. Ejemplo mínimo válido (sin exenc
 
 Cada servicio idle revisado se representa por `pid`, `started_at` y `command_sha256` tal como los captura `parse_processes`; no agregar suites ni inferencias a esa lista. IDs persistentes se toman solo de la lista de QA persistente **ya revisada**, no de todos los contenedores presentes en una foto.
 
-Invocación técnica del check: `python _tools/pipeline_admission.py --inventory /ruta/privada/inventory.json`. Exit2 significa rechazado/telemetría inválida. Exit0 significa solo exclusiones claras para **revisión manual**, nunca arranque autorizado. No encadenar esta salida con un launcher automático. Fer no tiene que ejecutar comandos para esta corrección.
+Invocación técnica del check: `python scripts/platform/pipeline_admission.py --inventory /ruta/privada/inventory.json`. Exit2 significa rechazado/telemetría inválida. Exit0 significa solo exclusiones claras para **revisión manual**, nunca arranque autorizado. No encadenar esta salida con un launcher automático. Fer no tiene que ejecutar comandos para esta corrección.
 
 ## Validación observada
 
 En `.worktrees/perf-907-admission-guard`, rama `fix/907-harness-admission`, base main6302c48; sin cambios en los otros worktrees:
 
-- `backend/.venv/bin/python -m pytest -p no:cacheprovider -q _tools/test_pipeline_admission.py`: **66 PASS**,0,65s. Son pruebas contractuales con fixtures, no benchmark ni calidad acústica.
-- `backend/.venv/bin/ruff check --config backend/pyproject.toml _tools/pipeline_admission.py _tools/test_pipeline_admission.py`: **PASS**. Se corrigió una línea larga detectada en el primer pase.
-- `backend/.venv/bin/mypy --strict _tools/pipeline_admission.py _tools/test_pipeline_admission.py`: **PASS,2 archivos**.
+- `backend/.venv/bin/python -m pytest -p no:cacheprovider -q scripts/tests/test_pipeline_admission.py`: **66 PASS**,0,65s. Son pruebas contractuales con fixtures, no benchmark ni calidad acústica.
+- `backend/.venv/bin/ruff check --config backend/pyproject.toml scripts/platform/pipeline_admission.py scripts/tests/test_pipeline_admission.py`: **PASS**. Se corrigió una línea larga detectada en el primer pase.
+- `backend/.venv/bin/mypy --strict scripts/platform/pipeline_admission.py scripts/tests/test_pipeline_admission.py`: **PASS,2 archivos**.
 - `git diff --check`: **PASS**.
 - Ejecución real **solo lectura** del nuevo CLI con seis IDs persistentes de QA y ninguna exención de procesos: **exit2**, cuatro muestras; motivos `memory_pressure`, `transient_suite_or_inference`, `unexcluded_running_containers`. Detectó el coordinador16196/ASR16714 del recorrido ya existente, tres contenedores no excluidos y otros servicios sin confirmación idle; no los detuvo ni modificó. Swap observado17229278085 bytes. No fue una admisión ni una inferencia nueva.
 - Ejecución del admisor privado desactivado: **exit2, `admission.disabled`**, sin child/launcher.

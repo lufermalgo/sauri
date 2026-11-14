@@ -9,7 +9,7 @@ branch="$(git symbolic-ref --short HEAD 2>/dev/null)"
 if [ "$branch" = "main" ]; then
   echo "ERROR: direct commits to 'main' are not allowed." >&2
   echo "Create a branch (or worktree) first, e.g.:" >&2
-  echo "  _tools/new-worktree.sh feature/issue-123-short-desc" >&2
+  echo "  scripts/dev/new-worktree.sh feature/issue-123-short-desc" >&2
   echo "To bypass in a real emergency: git commit --no-verify" >&2
   exit 1
 fi
@@ -18,7 +18,7 @@ fi
 # Enforces the English-only naming convention documented in AGENTS.md.
 repo_root="$(git rev-parse --show-toplevel)"
 
-if ! python3 "$repo_root/_tools/check_english_only.py" --staged; then
+if ! python3 "$repo_root/scripts/dev/check_english_only.py" --staged; then
   echo "ERROR: staged changes contain Spanish identifiers (see above)." >&2
   echo "Fix them, or if this is a false positive: git commit --no-verify" >&2
   exit 1

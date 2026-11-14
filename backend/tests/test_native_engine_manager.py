@@ -6,14 +6,14 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MANAGER = REPO_ROOT / "_tools" / "native-engines.sh"
+MANAGER = REPO_ROOT / "scripts" / "engines" / "native-engines.sh"
 
 
 def test_makefile_exposes_native_engine_lifecycle_targets() -> None:
     makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     for target in ("engines-up", "engines-down", "engines-status", "engines-install"):
         assert f"{target}:" in makefile
-    assert "bash _tools/ensure-native-engine-credentials.sh" in makefile
+    assert "bash scripts/engines/ensure-native-engine-credentials.sh" in makefile
 
 
 def test_native_diarization_install_pins_compatible_torch_pair() -> None:
@@ -57,8 +57,8 @@ def test_worker_mounts_the_native_engine_token_read_only() -> None:
 
 def test_make_engines_up_and_compose_bringup_provision_shared_credentials() -> None:
     makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    compose_bringup = (REPO_ROOT / "_tools" / "compose-bringup.sh").read_text(encoding="utf-8")
-    provisioner = '_tools/ensure-native-engine-credentials.sh'
+    compose_bringup = (REPO_ROOT / "scripts" / "platform" / "compose-bringup.sh").read_text(encoding="utf-8")
+    provisioner = 'scripts/engines/ensure-native-engine-credentials.sh'
     assert provisioner in makefile.split("engines-up:", maxsplit=1)[1].split("engines-down:", maxsplit=1)[0]
     assert provisioner in compose_bringup
 
@@ -68,7 +68,7 @@ def test_credential_provisioner_creates_shared_private_files_and_preserves_exist
 ) -> None:
     config_dir = tmp_path / ".config" / "sauri"
     env = {"HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
-    provisioner = REPO_ROOT / "_tools" / "ensure-native-engine-credentials.sh"
+    provisioner = REPO_ROOT / "scripts" / "engines" / "ensure-native-engine-credentials.sh"
 
     provisioned = subprocess.run(
         ["bash", str(provisioner)],

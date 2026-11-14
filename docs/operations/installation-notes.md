@@ -15,20 +15,20 @@ Living record of what each Sauri component needs to be installed, kept as engine
 
 ## Diarization engine (Senko, CoreML) — 2026-11-14
 
-- Command: `make engines-install` (runs `_tools/install-diar-engine.sh`).
+- Command: `make engines-install` (runs `scripts/engines/install-diar-engine.sh`).
 - Creates `~/.local/share/sauri/native-engines/diar-venv` with Python 3.11 and installs `backend/diar-engine/requirements-native.txt`: FastAPI service dependencies plus Senko pinned to commit `1bcb09041bfa170b4a5a4b0af92f66eff76204d5` from GitHub.
-- Senko ships its models inside the package; the installer verifies the pinned commit and the SHA-256 of every model file listed in `_tools/engine-hashes.json`, and fails closed on any mismatch.
+- Senko ships its models inside the package; the installer verifies the pinned commit and the SHA-256 of every model file listed in `scripts/engines/engine-hashes.json`, and fails closed on any mismatch.
 - Measured on a MacBook Air M3 (24 GB): ~41 s, downloads ~60 Python packages (coremltools, numba, scikit-learn, umap-learn, among others).
-- Verify: `bash _tools/install-diar-engine.sh --check`; native test: `cd backend && SAURI_RUN_NATIVE_TESTS=1 uv run --extra dev pytest tests/native/test_diar_native.py` (passed, ~63 s).
+- Verify: `bash scripts/engines/install-diar-engine.sh --check`; native test: `cd backend && SAURI_RUN_NATIVE_TESTS=1 uv run --extra dev pytest tests/native/test_diar_native.py` (passed, ~63 s).
 - macOS only: Senko uses CoreML. Windows/Linux need another adapter behind the same diarization contract (Senko's CUDA/CPU mode or pyannote); the container engine `backend/diar-engine/main.py` is the current Linux fallback.
 
 ## Summary engine (llm-engine + llama.cpp + Qwen3.5-9B) — 2026-11-14
 
-- Command: `bash _tools/install-llm-engine.sh` (Apple Silicon only today). Needs `uv`, `cmake` and `git`.
+- Command: `bash scripts/engines/install-llm-engine.sh` (Apple Silicon only today). Needs `uv`, `cmake` and `git`.
 - Creates `~/.local/share/sauri/native-engines/llm/` with: a Python 3.11 venv for the gateway (`backend/llm-engine/requirements-native.txt`), a `llama-server` binary compiled from llama.cpp commit `af76639f728c69c74c873cc45f038aaa17afd09e` as a static build with Metal and without OpenSSL (the Homebrew build crashes with this model), and the model `unsloth/Qwen3.5-9B-GGUF` revision `3885219b…` file `Qwen3.5-9B-Q4_K_M.gguf` (~5.5 GB, SHA-256 `03b74727…`). It records `provenance.json` and fails closed on any hash or provenance mismatch.
 - The model download is skipped when a file with the right SHA-256 is already in `models/` (useful for an offline or pre-seeded install).
 - Measured on a MacBook Air M3: compile ~1 min 25 s (model pre-seeded). First request including cold model load: ~16 s for a short transcript; the model unloads after 120 s idle.
-- Verify: `bash _tools/install-llm-engine.sh --check`; start with `bash _tools/native-engines.sh start llm`.
+- Verify: `bash scripts/engines/install-llm-engine.sh --check`; start with `bash scripts/engines/native-engines.sh start llm`.
 - Other platforms: llama.cpp builds on Linux (CUDA/CPU) and Windows; the gateway is platform-neutral, but the installer and the build flags (Metal) are macOS-specific today. An external OpenAI-compatible provider can replace the local engine through configuration.
 
 ## Pending to document

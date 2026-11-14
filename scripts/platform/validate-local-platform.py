@@ -21,7 +21,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 KINDS = {'containers': 'container', 'networks': 'network', 'volumes': 'volume'}
 DEFAULT_PORTS = {'portal': 15173, 'api': 18000, 'postgres': 15432,
                  's3': 19000, 'console': 19001, 'amqp': 15673, 'admin': 15674}
@@ -284,7 +284,7 @@ def start(path, inventory):
                         'COMPOSE_PROJECT_NAME': inventory['projectName'],
                         'COMPOSE_FILE': os.pathsep.join(inventory['composeFiles']),
                         'COMPOSE_ENV_FILES': str(path.parent / 'qa.env')}
-    run(['bash', str(ROOT / '_tools/compose-bringup.sh')], env=env)
+    run(['bash', str(ROOT / 'scripts/platform/compose-bringup.sh')], env=env)
 
 
 def metrics(path, phase):
@@ -303,7 +303,7 @@ def connections(path, inventory):
          '-c:v', 'libvpx-vp9', '-c:a', 'libopus', str(medium_path)])
     docker('compose', *compose, 'cp', str(medium_path), 'api:/tmp/qa-media.webm')
     origin = f'http://127.0.0.1:{inventory["ports"]["portal"]}'
-    source = (ROOT / '_tools/check_local_platform_backend.py').read_text()
+    source = (ROOT / 'scripts/platform/check_local_platform_backend.py').read_text()
     result = json.loads(docker('compose', *compose, 'exec', '-T', 'api', 'python', '-c', source, origin))
     if 'error' in result:
         raise RuntimeError('Backend connection check failed: ' + result['error'])

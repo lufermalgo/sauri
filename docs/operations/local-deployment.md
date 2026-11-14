@@ -42,8 +42,8 @@ contrato; no se modificó ASR ni se declara aceptación integral del core.
   Requiere Python 3.11, herramientas de compilación de Apple, Git y red en una instalación
   nueva. El instalador descarga Senko (MIT) en el commit
   `1bcb09041bfa170b4a5a4b0af92f66eff76204d5`, con los modelos incluidos en ese checkout,
-  y verifica los 14 archivos de `_tools/engine-hashes.json` antes de terminar.
-- `bash _tools/install-diar-engine.sh --check` exige procedencia VCS con el commit fijado (rechaza `file:`) y verifica SHA-256 sin
+  y verifica los 14 archivos de `scripts/engines/engine-hashes.json` antes de terminar.
+- `bash scripts/engines/install-diar-engine.sh --check` exige procedencia VCS con el commit fijado (rechaza `file:`) y verifica SHA-256 sin
   instalar, cargar modelos ni arrancar servicios. Hash incorrecto o ausente falla; no se
   repara silenciosamente una instalación alterada. Con la instalación completa válida,
   repetir el instalador verifica y satisface las dependencias declaradas. Las dependencias transitivas no están fijadas
@@ -66,7 +66,7 @@ contrato; no se modificó ASR ni se declara aceptación integral del core.
 Validación local sin voces reales (tono de 15 s + silencio de 15 s):
 
 ```bash
-bash _tools/install-diar-engine.sh --check
+bash scripts/engines/install-diar-engine.sh --check
 cd backend
 SAURI_RUN_NATIVE_TESTS=1 \
   uv run --extra dev pytest tests/native/test_diar_native.py -q
@@ -82,12 +82,12 @@ duración y eliminación de temporales propios. No demuestra calidad vocal, cant
 
 Usar una carpeta temporal externa al repositorio, por ejemplo una carpeta scratch de la herramienta de trabajo. No se selecciona el proyecto principal por defecto.
 
-1. `python3 _tools/validate-local-platform.py create --directory /ruta/temporal/externa` genera una carpeta privada y muestra la ruta del `inventory.json`.
-2. `python3 _tools/validate-local-platform.py check --inventory /ruta/inventory.json` construye/inicia exclusivamente ese proyecto y verifica HTTP estático/API. **Es solo salud HTTP**, no conexiones de datos.
+1. `python3 scripts/platform/validate-local-platform.py create --directory /ruta/temporal/externa` genera una carpeta privada y muestra la ruta del `inventory.json`.
+2. `python3 scripts/platform/validate-local-platform.py check --inventory /ruta/inventory.json` construye/inicia exclusivamente ese proyecto y verifica HTTP estático/API. **Es solo salud HTTP**, no conexiones de datos.
 3. Añadir `--connections` para DB/S3/cola, dos usuarios con login real, carga audiovisual real, comparación API/proxy, propiedad, rangos S3/CORS/firma y controles de conectividad nativa. El worker QA se detiene antes de subir el medio para no enviar trabajos a los motores de Fer. No se simula procesamiento terminado.
 4. `--hold-seconds N` conserva el entorno por un máximo de 900 segundos para una revisión en navegador; al vencer el plazo también se elimina automáticamente. Sin esa opción no deja servicios esperando.
 5. `--controlled-failure` provoca un error después del arranque: debe terminar con salida no cero y eliminar sus recursos. No es un fallo inesperado ni una prueba de éxito funcional.
-6. `python3 _tools/validate-local-platform.py cleanup --inventory /ruta/inventory.json` permite repetir/verificar limpieza tras éxito, error o interrupción.
+6. `python3 scripts/platform/validate-local-platform.py cleanup --inventory /ruta/inventory.json` permite repetir/verificar limpieza tras éxito, error o interrupción.
 
 Cada ejecución tiene runId aleatorio, nombre Compose exacto, puertos registrados y volúmenes propios. Publica solo en loopback; ante conflicto selecciona otro bloque sin detener al ocupante. El worker monta únicamente claves sintéticas de esa ejecución. El volumen RabbitMQ se declara explícitamente en el override QA para evitar el volumen anónimo generado por su imagen. No se alteran los montajes persistentes del Compose personal.
 
@@ -149,7 +149,7 @@ Sobre `origin/main` `8548fcc6285c169245facd620d53fe87454d6a46`, run QA `be682364
 
 En el navegador de pruebas se restauró una sesión QA legítima ya emitida por la API: **no se probó el envío manual del formulario de login**. La biblioteca mostró `Ready`; al abrir, transcripción, diarización, playback y revisión de hablantes respondieron 200. El video real de S3 se reprodujo: duración 20,008 s, 640×350, 285 frames decodificados y `readyState=4`; avanzó hasta 11,557119 s, el control de velocidad cambió a 1,5× y el slider desplazó el tiempo a 10 s. Sin error de medio ni errores globales observados durante ese intervalo. La captura contiene material privado y queda solo en la carpeta scratch externa, no en Git. No se confirmaron identidades ni se completó la revisión de hablantes artificialmente.
 
-El control HTTP adicional sobre esta reunión real cubrió detalle, transcripción, diarización, playback y revisión: propietario 200, otro usuario 404 y anónimo 401 en los cinco endpoints (15 controles PASS). `python3 -m unittest _tools/test_validate_local_platform.py`: 15 PASS; `PYTHONPATH=backend <venv-backend>/bin/python -m pytest -q backend/tests/meetings/test_review_asset_authorization.py backend/tests/meetings/test_get_meeting_property.py`: 16 PASS. No se atribuyen a este run otras suites históricas ni mediciones de utilización GPU.
+El control HTTP adicional sobre esta reunión real cubrió detalle, transcripción, diarización, playback y revisión: propietario 200, otro usuario 404 y anónimo 401 en los cinco endpoints (15 controles PASS). `python3 -m unittest scripts/tests/test_validate_local_platform.py`: 15 PASS; `PYTHONPATH=backend <venv-backend>/bin/python -m pytest -q backend/tests/meetings/test_review_asset_authorization.py backend/tests/meetings/test_get_meeting_property.py`: 16 PASS. No se atribuyen a este run otras suites históricas ni mediciones de utilización GPU.
 
 Dos intentos iniciales fallaron en el observador QA, por nombres de atributos del ORM obsoletos; no fueron fallos acreditados del producto. Se corrigió el observador y se contrastaron sus atributos con el ORM actual antes de la repetición exitosa. Los tres runs (`653ac9c80796`, `68bf870df3f9`, `be68236480bd`) finalizaron con limpieza verificada e inspección externa por etiqueta: cero contenedores —incluidos detenidos—, redes y volúmenes propios. Se terminaron los procesos nativos QA y se eliminaron audio, clones APFS, archivos de sesión y credenciales temporales. Manifiestos SHA-256 de los modelos originales idénticos antes/después; sin descarga ni arranque/modificación de servicios personales. Imágenes compartidas y caché de construcción se conservaron según el diseño, no se ejecutó `prune`. Las cifras Docker globales contienen recursos de otras ejecuciones concurrentes y no prueban residuos de estos runs.
 

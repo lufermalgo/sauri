@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Removes a worktree created by _tools/new-worktree.sh once its PR has merged
+# Removes a worktree created by scripts/dev/new-worktree.sh once its PR has merged
 # (see AGENTS.md: Code changes and Git protection — clean up branches/worktrees after merge).
 #
-# Usage: _tools/remove-worktree.sh <branch-name>
-#   e.g.: _tools/remove-worktree.sh feature/issue-12-silero-vad
+# Usage: scripts/dev/remove-worktree.sh <branch-name>
+#   e.g.: scripts/dev/remove-worktree.sh feature/issue-12-silero-vad
 
 set -euo pipefail
 
-branch="${1:?Usage: _tools/remove-worktree.sh <branch-name>}"
+branch="${1:?Usage: scripts/dev/remove-worktree.sh <branch-name>}"
 
 git_common_dir="$(git rev-parse --path-format=absolute --git-common-dir)"
 repo_root="$(cd "$(dirname "$git_common_dir")" && pwd)"

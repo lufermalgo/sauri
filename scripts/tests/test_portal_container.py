@@ -16,7 +16,7 @@ import tempfile
 import time
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 MARKER = "SAURI_PRIVATE_CONTEXT_SENTINEL_3e5ea103"
 
 

@@ -41,14 +41,14 @@ sauri/
 ├── frontend/                  # React SPA (meeting registration, list, transcript)
 ├── extension/                 # Chrome MV3 extension (capture, panel, detail, options)
 ├── packages/shared-types/     # @sauri/shared-types, the TS contract package
-├── _tools/                    # new-worktree.sh, remove-worktree.sh, check_english_only.py
+├── scripts/                   # dev/ engines/ platform/ tests/ (worktree helpers, engine installers, platform bring-up)
 ├── .spectra/                  # specs (requirements/design/tasks or bugfix) — one folder per slug
 ├── .agents/ .claude/          # Agent Skill bindings exposed from the canonical library
 ├── .githooks/                 # core.hooksPath (set by npm run prepare)
 └── .env.example .gitignore
 ```
 
-`.worktrees/` exists locally (one checkout per issue, created by `_tools/new-worktree.sh`) and is not
+`.worktrees/` exists locally (one checkout per issue, created by `scripts/dev/new-worktree.sh`) and is not
 part of the tracked layout. It must be treated as scratch space, never as a place to author artifacts.
 
 ## 3. backend/
@@ -244,7 +244,7 @@ auth, retention and audit behavior in the target environment instead of assuming
 | New web UI | `frontend/src/components/`, HTTP only through `frontend/src/api.ts` |
 | Contract shared by two TS surfaces | `packages/shared-types/src/index.ts` |
 | Spec artifacts | `.spectra/specs/<slug>/` |
-| Repo tooling | `_tools/` |
+| Repo tooling | `scripts/` (`dev`, `engines`, `platform`, `tests`) |
 
 Nothing else goes in the repository root. The root holds only the tracked top-level files listed in
 §2; ad-hoc scratch files (for example `action.html`, `page.html`, `off.html`, `live2.tsv` found in a
@@ -259,8 +259,8 @@ meeting speech.
 
 ## 10. Worktrees
 
-One issue = one worktree = one PR. Create it with `_tools/new-worktree.sh <branch>` (it branches from
+One issue = one worktree = one PR. Create it with `scripts/dev/new-worktree.sh <branch>` (it branches from
 `origin/main` into `.worktrees/<branch-with-dashes>` and seeds `.agents/skills`), and
-remove it with `_tools/remove-worktree.sh` after a human merges the PR. A worktree has no Python
+remove it with `scripts/dev/remove-worktree.sh` after a human merges the PR. A worktree has no Python
 virtualenv of its own: run backend tests with the root checkout's interpreter,
 `<root>/backend/.venv/bin/python -m pytest`, from the worktree directory.

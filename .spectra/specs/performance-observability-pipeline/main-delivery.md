@@ -10,7 +10,7 @@ APX `task_e2a1fd161b4d4910`. Nahuel prepara, publica y verifica; **Ansel revisa 
 
 | Pieza | Archivos | Origen / razón |
 |---|---|---|
-| Entrega íntegra #908 | `.spectra/specs/performance-observability-pipeline/{.config.spectra,requirements.md,design.md,tasks.md,evidence.md,assignment-benchmark.json}`, `_tools/benchmark-assignment.py`, `backend/app/diarization/assignment.py`, `backend/tests/diarization/test_assignment_equivalence.py`, `backend/app/summaries/engine.py`, `backend/tests/summaries/test_engine_usage.py` | #907, commits `8b17a86` y `e51e2ec`, documentación hasta `63621c9`; todos los archivos de #908 preservados. Solo tasks/evidence reciben estado adicional de esta entrega. |
+| Entrega íntegra #908 | `.spectra/specs/performance-observability-pipeline/{.config.spectra,requirements.md,design.md,tasks.md,evidence.md,assignment-benchmark.json}`, `scripts/dev/benchmark-assignment.py`, `backend/app/diarization/assignment.py`, `backend/tests/diarization/test_assignment_equivalence.py`, `backend/app/summaries/engine.py`, `backend/tests/summaries/test_engine_usage.py` | #907, commits `8b17a86` y `e51e2ec`, documentación hasta `63621c9`; todos los archivos de #908 preservados. Solo tasks/evidence reciben estado adicional de esta entrega. |
 | Prerrequisito opt-in de assignment | `backend/tests/diarization/test_exclusive_assignment.py`; opción `require_exclusive=False` ya incluida en el archivo de #908 | `e4ca3b8`/#880; el modo por defecto conserva atribución acumulada. No se incorpora ningún cambio de sus callsites ni VAD/ASR nativos. Se incluye para conservar completo el contrato de #908 y probar ambos modos. |
 | Solicitud durable y outbox | `backend/app/summaries/{__init__,service,repository,outbox}.py` | #278 (`744ae88`, `54f7d1c`), #284 (`4398c09`). Propiedad de reunión/plantilla, snapshot inmutable, generaciones y publicación confirmada recuperable. Sin estos módulos el engine de telemetría quedaría sin camino de ejecución real. |
 | Worker y proveedor local | `backend/app/summaries/{factory,worker}.py`, `backend/app/worker.py` | #280 (`2b03b70`, `9589adf`), #282 (`30137b7`), #901 (`c4bd7c5`). Registro real del consumidor, configuración fail-closed y presupuesto finito; no se cambia la estrategia de generación. |
@@ -53,8 +53,8 @@ La primera preparación sin URLs produjo 10 errores y skips; se crearon los recu
 ### Análisis estático
 
 ```bash
-ruff check app/diarization/assignment.py app/summaries app/infra/queue_rabbitmq.py app/infra/models.py app/main.py app/worker.py tests/diarization/test_assignment_equivalence.py tests/diarization/test_exclusive_assignment.py tests/summaries tests/integration/test_summary_pipeline.py tests/test_queue.py ../_tools/benchmark-assignment.py
-mypy app/diarization/assignment.py app/summaries app/infra/queue_rabbitmq.py app/infra/models.py app/main.py app/worker.py tests/diarization/test_assignment_equivalence.py tests/diarization/test_exclusive_assignment.py tests/summaries tests/integration/test_summary_pipeline.py tests/test_queue.py ../_tools/benchmark-assignment.py
+ruff check app/diarization/assignment.py app/summaries app/infra/queue_rabbitmq.py app/infra/models.py app/main.py app/worker.py tests/diarization/test_assignment_equivalence.py tests/diarization/test_exclusive_assignment.py tests/summaries tests/integration/test_summary_pipeline.py tests/test_queue.py ../scripts/dev/benchmark-assignment.py
+mypy app/diarization/assignment.py app/summaries app/infra/queue_rabbitmq.py app/infra/models.py app/main.py app/worker.py tests/diarization/test_assignment_equivalence.py tests/diarization/test_exclusive_assignment.py tests/summaries tests/integration/test_summary_pipeline.py tests/test_queue.py ../scripts/dev/benchmark-assignment.py
 ruff check .
 mypy .
 ```
@@ -66,7 +66,7 @@ Focales: **Ruff PASS**, **mypy PASS (25 archivos)**. Full: **3 errores Ruff / 82
 Se preserva `assignment-benchmark.json` original de #908. Repetición CPU sintética sobre el mismo código y baseline `178f893` usando el comando sin opciones (desde raíz):
 
 ```bash
-PYTHONPATH=backend /Users/lufermalgo/Proyectos/sauri/backend/.venv/bin/python _tools/benchmark-assignment.py
+PYTHONPATH=backend /Users/lufermalgo/Proyectos/sauri/backend/.venv/bin/python scripts/dev/benchmark-assignment.py
 ```
 
 1500 turnos / 2154 segmentos / 4 hablantes, warmup 1, 7 muestras alternadas, construcción del índice incluida y salidas iguales: acumulado **223,152 → 5,806 ms (38,44x)**; exclusivo **249,209 → 5,754 ms (43,31x)**. Ambas reducciones >97%. No equivale a mejora de precisión ni a aceleración total. Intentar `--baseline-ref ea1dd2a` falla porque main carece del argumento exclusivo; el comparador de ambos modos debe usar la base preoptimización de #908 (`178f893`, valor por defecto), no se inventa un tiempo para un modo inexistente en main.

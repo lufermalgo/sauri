@@ -4,7 +4,7 @@
 
 El núcleo actual puede iniciar API, worker, PostgreSQL, RustFS y RabbitMQ, pero no sirve el portal construido. El navegador necesita además un origen local estable y enlaces de medios alcanzables, distintos de los nombres internos de Docker. Completar ese despliegue no demuestra que la captura, la inferencia o el aislamiento entre cuentas funcionen: cada tramo requiere evidencia propia.
 
-**Base contrastada:** `origin/main` `cb7510f4a23481e7e7c8c82b9d532d650b9bc071`, `docker-compose.yml`, `_tools/compose-bringup.sh`, `frontend/{package.json,vite.config.ts,src/api.ts}`, `backend/app/{main.py,infra/object_store.py,infra/ensure_bucket.py}` y `docs/architecture/overview.md`. Requisitos aprobados por Fer mediante merge del PR #819 el 12-11-2026, commit `392a958eac37f156d0bbdc0ea6619deafefe0d20`. Issue #818; APX `task_9e74a2d278d648ad`. El merge de #703 también está verificado; no acredita captura real ni recorrido completo. Este diseño está redactado para aprobación, no implementado.
+**Base contrastada:** `origin/main` `cb7510f4a23481e7e7c8c82b9d532d650b9bc071`, `docker-compose.yml`, `scripts/platform/compose-bringup.sh`, `frontend/{package.json,vite.config.ts,src/api.ts}`, `backend/app/{main.py,infra/object_store.py,infra/ensure_bucket.py}` y `docs/architecture/overview.md`. Requisitos aprobados por Fer mediante merge del PR #819 el 12-11-2026, commit `392a958eac37f156d0bbdc0ea6619deafefe0d20`. Issue #818; APX `task_9e74a2d278d648ad`. El merge de #703 también está verificado; no acredita captura real ni recorrido completo. Este diseño está redactado para aprobación, no implementado.
 
 La solución consiste en:
 1. Construir el workspace React con Node y servir únicamente `frontend/dist` mediante Nginx dentro de un nuevo servicio `portal`.
@@ -34,7 +34,7 @@ La API sigue firmando con `OBJECT_STORE_PUBLIC_ENDPOINT` (predeterminado `http:/
 
 ### D3. Integrar el arranque existente, sin alterar datos ni permisos de acceso
 
-Mantener `_tools/compose-bringup.sh` como entrada de `make up`, con la secuencia actual: credenciales existentes → detener API/worker del proyecto seleccionado → infraestructura → verificar bucket → migraciones → iniciar API/worker/portal. Incorporar el portal al último paso y comprobar sus respuestas HTTP con espera acotada de 60 segundos. Un fallo de migración impide llegar a ese paso. No ejecutar el arranque sobre el proyecto de Fer en esta entrega: aplicar migraciones allí requiere coordinación explícita y respaldo acordado.
+Mantener `scripts/platform/compose-bringup.sh` como entrada de `make up`, con la secuencia actual: credenciales existentes → detener API/worker del proyecto seleccionado → infraestructura → verificar bucket → migraciones → iniciar API/worker/portal. Incorporar el portal al último paso y comprobar sus respuestas HTTP con espera acotada de 60 segundos. Un fallo de migración impide llegar a ese paso. No ejecutar el arranque sobre el proyecto de Fer en esta entrega: aplicar migraciones allí requiere coordinación explícita y respaldo acordado.
 
 Preservar nombres `minio`, `pgdata`, `minio-data`, imagen RustFS y sus montajes. No tocar `AUTH_DISABLED`, JWT, cola firmada, cifrado de extractos ni credenciales de motores. Documentar que los valores locales por defecto no demuestran separación entre cuentas. No cambiar otros puertos existentes ni la política de exposición del núcleo como efecto colateral.
 
@@ -115,15 +115,15 @@ sequenceDiagram
 
 `client_max_body_size 0` en `/api/` conserva la admisión del backend, sin añadir un límite Nginx inferior no aprobado; el backend mantiene sus controles existentes. `proxy_request_buffering off` evita copiar videos completos a disco del proxy. `proxy_connect_timeout 5s`, `proxy_read_timeout 3600s`, `proxy_send_timeout 3600s`; estas esperas no declaran que haya procesamiento exitoso. No cachear respuestas API, errores ni Authorization. Errores 401/403/404/422/5xx y contenido de respuesta pasan sin transformarse en 200. Un upstream caído produce 502/504. No habilitar listado de directorios.
 
-### 3. Arranque y comprobación — `_tools/compose-bringup.sh`
+### 3. Arranque y comprobación — `scripts/platform/compose-bringup.sh`
 
-Extender las pruebas existentes `_tools/test_compose_bringup.py` al último paso con portal y a la comprobación HTTP. Mantener salida no cero y etapa identificable ante fallo. El mensaje final debe decir que portal/núcleo respondieron y que inferencia requiere verificación separada, no «Sauri completamente operativo». Los comandos deben respetar el proyecto y los archivos Compose seleccionados por el entorno; la validación comprueba esa propagación antes de cualquier `stop`.
+Extender las pruebas existentes `scripts/tests/test_compose_bringup.py` al último paso con portal y a la comprobación HTTP. Mantener salida no cero y etapa identificable ante fallo. El mensaje final debe decir que portal/núcleo respondieron y que inferencia requiere verificación separada, no «Sauri completamente operativo». Los comandos deben respetar el proyecto y los archivos Compose seleccionados por el entorno; la validación comprueba esa propagación antes de cualquier `stop`.
 
 ### 4. Guía operativa — `docs/operations/local-deployment.md`
 
 Documentar requisitos de Docker/Node para construir, variables privadas requeridas sin valores reales, URL local, alcance de `make up`, motores nativos existentes, matriz de verificación y recuperación sin borrado. Explicar que `/api-health` no verifica datos/cola y que arrancar contenedores no acredita transcripción. Advertir que `make clean` elimina datos y no es parte de arranque ni de este procedimiento. Actualizar README y `docs/architecture/overview.md` al implementar, incluyendo estado real de #703 y esta spec, sin convertir este documento en un reporte de ejecución.
 
-### 5. Validación reproducible — `_tools/validate-local-platform.py`
+### 5. Validación reproducible — `scripts/platform/validate-local-platform.py`
 
 Herramienta propuesta de QA con librería estándar Python, sin agregar dependencias de aplicación. Modos explícitos `create`, `check`, `cleanup`; nunca seleccionar el proyecto principal por defecto. `create` valida identidad, genera override/secretos sintéticos en carpeta temporal e inventaría IDs antes/después. `check` registra pruebas por capa sin almacenar tokens ni URLs firmadas completas. `cleanup` compara inventario y etiquetas Compose; ante discrepancia se detiene sin borrar. Los artefactos de navegador y métricas se escriben en la carpeta temporal.
 
@@ -192,8 +192,8 @@ El inventario no contiene contraseñas, JWT, claves, muestras biométricas ni en
 
 ### Automatizadas
 
-1. Extender `python3 -m unittest _tools/test_compose_bringup.py` para arranque con portal, fallos de migración/bucket/HTTP y conservación del proyecto seleccionado. Ningún fallo debe continuar ni emitir éxito.
-2. Crear `_tools/test_validate_local_platform.py`: pruebas unitarias de inventario/puertos y eliminación segura; generación de combinaciones de IDs, etiquetas y proyectos con `unittest.subTest` para P7–P8, sin añadir una biblioteca por esta tarea.
+1. Extender `python3 -m unittest scripts/tests/test_compose_bringup.py` para arranque con portal, fallos de migración/bucket/HTTP y conservación del proyecto seleccionado. Ningún fallo debe continuar ni emitir éxito.
+2. Crear `scripts/tests/test_validate_local_platform.py`: pruebas unitarias de inventario/puertos y eliminación segura; generación de combinaciones de IDs, etiquetas y proyectos con `unittest.subTest` para P7–P8, sin añadir una biblioteca por esta tarea.
 3. `npm ci`, `npm run typecheck --workspace frontend`, `npm run test --workspace frontend`, `npm run build --workspace frontend`. Construir la imagen y ejecutar `nginx -t` dentro del contenedor. Revisar que una cadena privada sintética de prueba no aparezca en dist/runtime. Ninguna prueba introduce secretos reales en el build.
 4. `docker compose ... config --quiet` sobre el override; inspeccionar configuración sin publicar su salida con secretos. Verificar que el conjunto de servicios no incluye motores.
 5. Reusar `backend/tests/infra/test_object_store_browser_endpoint.py` y `backend/tests/meetings/test_playback_storage_integration.py`; el segundo requiere S3 real y sus variables de entorno documentadas, no omitirlo silenciosamente. Si cambia Python del backend, ejecutar también sus validaciones configuradas en `backend/pyproject.toml` y CI; esta fase no cambia ese código.

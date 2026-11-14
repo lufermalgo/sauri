@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Install once; verify the pinned source and every model file on every invocation.
 set -euo pipefail
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VENV="${SAURI_DIAR_VENV:-${HOME}/.local/share/sauri/native-engines/diar-venv}"
 PYTHON="${SAURI_DIAR_ENGINE_PYTHON:-${VENV}/bin/python}"
-HASHES="${SAURI_ENGINE_HASHES_FILE:-${ROOT_DIR}/_tools/engine-hashes.json}"
+HASHES="${SAURI_ENGINE_HASHES_FILE:-${ROOT_DIR}/scripts/engines/engine-hashes.json}"
 COMMIT="1bcb09041bfa170b4a5a4b0af92f66eff76204d5"
 [[ $# -eq 0 || ( $# -eq 1 && "$1" == --check ) ]] || { echo "Usage: $0 [--check]" >&2; exit 2; }
 CHECK_ONLY="${1:-}"

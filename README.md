@@ -42,7 +42,7 @@ backend/            API, workers, migrations, tests and the audio engines
 frontend/           web portal
 extension/          Chrome extension
 packages/           shared TypeScript types
-_tools/             development, engine and validation scripts
+scripts/            development, engine, platform scripts and their tests (dev, engines, platform, tests)
 docs/
   product/          approved scope and discovery notes
   architecture/     overview and project structure

@@ -43,7 +43,7 @@ El merge `bd638ee` de #908 no llevó la entrega a main. Esta unidad adicional co
 **Estado:** Implementado y verificado en e51e2ec; no instalado.
 
 ### T3: Benchmark reproducible de etapa
-**Archivo:** `_tools/benchmark-assignment.py` (nuevo), `.spectra/specs/performance-observability-pipeline/evidence.md`.
+**Archivo:** `scripts/dev/benchmark-assignment.py` (nuevo), `.spectra/specs/performance-observability-pipeline/evidence.md`.
 **Acción:** Comparar base y optimizada con misma entrada, warmup y 7 repeticiones alternadas. Ofrecer entrada JSON de intervalos sin texto para replay; etiquetar generación sintética de manera explícita. Verificar igualdad antes de medir. Reportar muestras, mediana, ratio y tamaño de entrada sin IDs personales. No derivar segmentos reales desde asignaciones finales.
 **Criterio de Completado:** Comando reproducible y salida real; reducción >=20% de mediana de etapa para promover, sin extrapolación al resumen ni al pipeline completo. P2/P7.
 **Dependencias:** T2.
@@ -75,7 +75,7 @@ El merge `bd638ee` de #908 no llevó la entrega a main. Esta unidad adicional co
 **Estado:** Backlog.
 
 ### T7: Métricas de recursos y consumo
-**Archivo:** `backend/app/infra/telemetry.py`, `_tools/resource-sampler.py` (nuevo), `backend/tests/telemetry/test_resources.py` (nuevo), `frontend/src/api.ts`, `extension/src/core/api/client.ts`, `extension/src/upload-queue.ts`, `backend/app/telemetry/router.py` (nuevo).
+**Archivo:** `backend/app/infra/telemetry.py`, `scripts/dev/resource-sampler.py` (nuevo), `backend/tests/telemetry/test_resources.py` (nuevo), `frontend/src/api.ts`, `extension/src/core/api/client.ts`, `extension/src/upload-queue.ts`, `backend/app/telemetry/router.py` (nuevo).
 **Acción:** Implementar métricas, unidades y labels acotados del diseño, muestrear cada 5 s CPU/RSS/I/O procesos propios, stats Docker del proyecto y memoria/presión host diferenciadas. Ausencias explícitas para Metal/energía; no sudo ni nuevas capacidades. Registrar pool DB, cola/outbox, almacenamiento y tokens reales/estimados separados. Instrumentar duración percibida y reintentos en portal/extensión, solo hacia Sauri; receptor autenticado con lotes de hasta50 eventos/32KiB, límite60 lotes/minuto, lista positiva y sin contenido de usuario. Agregar pruebas de límites, autenticación y privacidad; ejecutar typechecks definidos en package.json de frontend y extensión antes de declarar listo.
 **Criterio de Completado:** Fixtures Linux/macOS verifican unidades y ausencia, labels no contienen IDs, muestra real observada de host y Docker sin atribución falsa de GPU. P4/P8.
 **Dependencias:** T6.
@@ -105,7 +105,7 @@ El merge `bd638ee` de #908 no llevó la entrega a main. Esta unidad adicional co
 **Estado:** Backlog.
 
 ### T11: Evaluar estrategias de inferencia y resumen largo
-**Archivo:** `backend/app/summaries/engine.py`, `_tools/benchmark-pipeline.py`, `.spectra/specs/performance-observability-pipeline/quality-evaluation.md` (nuevos donde corresponda).
+**Archivo:** `backend/app/summaries/engine.py`, `scripts/dev/benchmark-pipeline.py`, `.spectra/specs/performance-observability-pipeline/quality-evaluation.md` (nuevos donde corresponda).
 **Acción:** Comparar resumen completo con bloques/síntesis sobre mismo texto, documentando decisiones/acciones/cifras/omisiones; comparar opciones ASR/diarización solo con evidencia humana y referencias temporales cuando existan. Registrar tiempo total, tokens, recursos y calidad. No forzar hablantes ni instalar modelos nuevos ni enviar datos fuera del entorno aprobado. Diseñar contratos adicionales de captura incremental antes de implementarla.
 **Criterio de Completado:** Informe reproducible con candidato aceptable o rechazo explícito; no habilitar cambio por defecto si degrada calidad o necesita decisión de privacidad/gasto/modelo. P2/P7.
 **Dependencias:** T8–T10.
