@@ -1,15 +1,17 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getDiarization,
+  getMeeting,
   getPlaybackManifest,
   getSpeakerReview,
   getTranscript,
   playSpeakerExcerpt,
   submitSpeakerDisposition,
 } from "../api";
-import type { MeetingDiarization, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
+import type { MeetingDiarization, MeetingState, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
-import { groupTranscriptTurns } from "../transcript-turns";
+import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
+import { ProcessingStatus } from "./ProcessingStatus";
 import { SummaryPanel } from "./SummaryPanel";
 import { copy } from "../copy/es";
 
@@ -27,6 +29,8 @@ function formatTimestamp(ms: number): string {
 
 const SPEAKER_COLORS = ["#1d4ed8", "#b45309", "#047857", "#7e22ce", "#be123c", "#0e7490"];
 const UNRESOLVED_SPEAKER_COLOR = "#6b7280";
+// Wall-clock speaker wait limit, including hidden time; repeated polls do not reset it.
+const SPEAKER_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 
 function speakerColor(diarization: MeetingDiarization | null, speakerId: string | undefined): string {
   const sequence = diarization?.speakers.find((speaker) => speaker.id === speakerId)?.sequence;
@@ -34,7 +38,16 @@ function speakerColor(diarization: MeetingDiarization | null, speakerId: string 
   return SPEAKER_COLORS[(Math.max(1, sequence) - 1) % SPEAKER_COLORS.length];
 }
 
-export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
+export function TranscriptView(props: TranscriptViewProps) {
+  return <MeetingTranscriptView key={props.meetingId} {...props} />;
+}
+
+function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
+  const [meeting, setMeeting] = useState<MeetingState | null>(null);
+  const [statusError, setStatusError] = useState(false);
+  const [diarizationError, setDiarizationError] = useState(false);
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const turnRefs = useRef(new Map<string, HTMLLIElement>());
   const [activeTab, setActiveTab] = useState<"transcript" | "summary">("transcript");
   const seekToRef = useRef<((timeMs: number) => void) | undefined>(undefined);
   const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
@@ -44,6 +57,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [playbackManifest, setPlaybackManifest] = useState<PlaybackManifest | null>(null);
   const [diarization, setDiarization] = useState<MeetingDiarization | null>(null);
   const [diarizationNotFound, setDiarizationNotFound] = useState(false);
+  const [speakerWaitExpired, setSpeakerWaitExpired] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackLoading, setPlaybackLoading] = useState(true);
   const [review, setReview] = useState<SpeakerReview | null>(null);
@@ -55,62 +69,131 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setPlaybackLoading(true);
-    setPlaybackManifest(null);
-    setDiarization(null);
-    setDiarizationNotFound(false);
-    setPlaybackError(null);
-    setError(null);
-    setReviewError(null);
-    setReview(null);
-    setActiveTab("transcript");
+    let inFlight = false;
+    let terminal = false;
+    let hasPlayback = false;
+    let hasReview = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let speakerWaitTimer: ReturnType<typeof setTimeout> | undefined;
 
-    getTranscript(meetingId)
-      .then((result) => {
-        if (!cancelled) setData(result);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load transcript");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    function startSpeakerWait() {
+      if (speakerWaitTimer !== undefined) return;
+      speakerWaitTimer = setTimeout(() => {
+        terminal = true;
+        clearTimeout(timer);
+        setSpeakerWaitExpired(true);
+      }, SPEAKER_WAIT_TIMEOUT_MS);
+    }
 
-    getDiarization(meetingId)
-      .then((result) => {
-        if (!cancelled) setDiarization(result);
-      })
-      .catch((err) => {
+    async function refreshPlayback() {
+      try {
+        const result = await getPlaybackManifest(meetingId);
         if (!cancelled) {
-          setDiarization(null);
-          setDiarizationNotFound(err instanceof Error && err.message === "Error 404");
+          hasPlayback = true;
+          setPlaybackManifest(result);
+          setPlaybackError(null);
         }
-      });
-
-    getPlaybackManifest(meetingId)
-      .then((result) => {
-        if (!cancelled) setPlaybackManifest(result);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (!cancelled) setPlaybackError(err instanceof Error ? err.message : "Failed to load playback manifest");
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setPlaybackLoading(false);
-      });
+      }
+    }
 
-    Promise.resolve()
-      .then(() => getSpeakerReview(meetingId))
-      .then((result) => {
-        if (!cancelled) setReview(result);
-      })
-      .catch((err) => {
+    async function refreshReview() {
+      try {
+        const result = await getSpeakerReview(meetingId);
         if (!cancelled) {
+          hasReview = Boolean(result);
+          setReview(result);
+          setReviewError(null);
+        }
+      } catch (err) {
+        if (!cancelled && !(err instanceof Error && err.message === "Error 404")) {
           setReviewError(err instanceof Error ? err.message : "Failed to load speaker review");
         }
-      });
+      }
+    }
 
-    return () => { cancelled = true; };
+    async function refresh() {
+      if (cancelled || document.hidden || inFlight || terminal) return;
+      clearTimeout(timer);
+      inFlight = true;
+      try {
+        const [state, speakers] = await Promise.allSettled([
+          getMeeting(meetingId), getDiarization(meetingId),
+        ]);
+        if (cancelled || terminal || document.hidden) return;
+        if (speakers.status === "fulfilled" ||
+          (state.status === "fulfilled" && state.value.processState === "failed")) {
+          clearTimeout(speakerWaitTimer);
+          speakerWaitTimer = undefined;
+        } else if (state.status === "fulfilled" && state.value.processState === "completed") {
+          // completed means ASR is done, not necessarily speaker identification.
+          startSpeakerWait();
+        }
+        // Fetch after diarization so its completed revision is visible to the transcript API.
+        const [transcript] = await Promise.allSettled([getTranscript(meetingId)]);
+        if (cancelled || terminal) return;
+        if (state.status === "fulfilled") {
+          setMeeting(state.value);
+          setStatusError(false);
+          terminal = state.value.processState === "failed" ||
+            (state.value.processState === "completed" && speakers.status === "fulfilled");
+        } else {
+          setStatusError(true);
+        }
+        if (transcript.status === "fulfilled") {
+          // Keep immutable artifact references stable so polling does not reset playback.
+          setData((current) => current?.id === transcript.value.id &&
+            current.presentation === transcript.value.presentation ? current : transcript.value);
+          setError(null);
+        } else if (transcript.reason instanceof Error && transcript.reason.message === "Error 404") {
+          setData(null);
+          setError(null);
+        } else {
+          setError(transcript.reason instanceof Error ? transcript.reason.message : "Failed to load transcript");
+        }
+        if (speakers.status === "fulfilled") {
+          setDiarization((current) => current ?? speakers.value);
+          setDiarizationNotFound(false);
+          setDiarizationError(false);
+        } else {
+          const notFound = speakers.reason instanceof Error && speakers.reason.message === "Error 404";
+          setDiarizationNotFound(notFound);
+          setDiarizationError(!notFound);
+        }
+        if (speakers.status === "rejected" && state.status === "fulfilled" &&
+          state.value.processState === "transcribing" && transcript.status === "fulfilled") {
+          startSpeakerWait();
+        }
+        if (document.hidden) return;
+        await Promise.all([
+          ...(!hasPlayback ? [refreshPlayback()] : []),
+          ...(!hasReview ? [refreshReview()] : []),
+        ]);
+      } finally {
+        inFlight = false;
+        if (!cancelled) {
+          setLoading(false);
+          if (!terminal && !document.hidden) timer = setTimeout(() => void refresh(), 5000);
+        }
+      }
+    }
+
+    function onVisibilityChange() {
+      clearTimeout(timer);
+      if (!document.hidden) void refresh();
+    }
+
+    void refresh();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      clearTimeout(speakerWaitTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [meetingId]);
 
   async function recordDisposition(
@@ -154,41 +237,75 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     }
   }
 
-  if (loading) return <p>Loading transcript...</p>;
-  if (error) return <p role="alert" style={{ color: "red" }}>{error}</p>;
-  if (!data) return <p>Transcript not found.</p>;
+  const presentationTurns = useMemo(() => {
+    if (!data) return [];
+    if (data.presentation === "words") return data.turns.map((turn) => ({
+      id: turn.id,
+      sourceIds: [turn.id],
+      text: turn.text,
+      timestampMs: turn.startMs,
+      sequence: turn.sequence,
+      speakerId: turn.speakerId ?? undefined,
+      speakerLabel: turn.speakerLabel ?? copy.transcript.unknownSpeaker,
+      hasAmbiguous: turn.hasAmbiguous ?? false,
+      color: speakerColor(diarization, turn.speakerId ?? undefined),
+    }));
+    return groupTranscriptTurns(
+      data.turns,
+      new Map(diarization?.assignments.map(({ turn_id, speaker_id }) => [turn_id, speaker_id]) ?? []),
+    ).map((turn) => {
+      const speaker = diarization?.speakers.find((candidate) => candidate.id === turn.speakerId);
+      const reviewedLabel = review?.items.find((item) => item.speakerId === turn.speakerId)?.currentLabel.trim();
+      return {
+        ...turn,
+        speakerLabel: reviewedLabel || speaker?.label || copy.transcript.legacyUnknownSpeaker,
+        color: speakerColor(diarization, turn.speakerId),
+        hasAmbiguous: false,
+      };
+    });
+  }, [data, diarization, review]);
 
-  function speakerPresentation(turnId: string) {
-    const speakerId = diarization?.assignments.find((assignment) => assignment.turn_id === turnId)?.speaker_id;
-    const speaker = diarization?.speakers.find((candidate) => candidate.id === speakerId);
-    const reviewedLabel = review?.items.find((item) => item.speakerId === speakerId)?.currentLabel.trim();
-    return {
-      label: reviewedLabel || speaker?.label || "Speaker N",
-      color: speakerColor(diarization, speakerId),
-    };
+  const playbackPassages = useMemo(() => {
+    if (!data) return [];
+    const source = data.presentation === "words" ? data.turns : data.segments;
+    return source.map((passage) => {
+      const turn = presentationTurns.find((candidate) => candidate.sourceIds.includes(passage.id));
+      return {
+        ...passage,
+        speakerLabel: turn?.speakerLabel ?? copy.transcript.legacyUnknownSpeaker,
+        speakerColor: turn?.color ?? UNRESOLVED_SPEAKER_COLOR,
+      };
+    });
+  }, [data, presentationTurns]);
+  const playbackIntervals = useMemo(() => createPlaybackIntervals(data?.turns ?? [], presentationTurns),
+    [data, presentationTurns]);
+
+  useEffect(() => {
+    if (activeTurnId && activeTab === "transcript") {
+      turnRefs.current.get(activeTurnId)?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [activeTurnId, activeTab]);
+
+  function updateActiveTurn(event: React.SyntheticEvent) {
+    if (!(event.target instanceof HTMLMediaElement)) return;
+    if (playbackManifest?.video_presence !== "muxed" && event.target instanceof HTMLVideoElement) return;
+    const timeMs = event.target.currentTime * 1000;
+    const interval = playbackIntervals.find((item) => item.startMs <= timeMs && timeMs < item.endMs);
+    setActiveTurnId(interval?.presentationTurnId ?? null);
   }
 
-  const playbackPassages = data.segments.map((passage) => {
-    const speaker = speakerPresentation(passage.id);
-    return { ...passage, speakerLabel: speaker.label, speakerColor: speaker.color };
-  });
-  const sourceTurnById = new Map(data.turns.map((turn) => [turn.id, turn]));
-  const presentationTurns = groupTranscriptTurns(
-    data.turns.map((turn) => ({
-      id: turn.id,
-      text: turn.text,
-      startMs: turn.startMs,
-      endMs: turn.endMs,
-      sequence: turn.sequence,
-    })),
-    new Map(diarization?.assignments.map(({ turn_id, speaker_id }) => [turn_id, speaker_id]) ?? []),
-  );
+  const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
   return (
     <section>
       <button onClick={onBack}>← Back to list</button>
-      {diarizationNotFound && <p role="status">Identificando hablantes</p>} {/* spanish-sample-data */}
-      <div id="meeting-playback">
+      {speakerWaitExpired ? <p role="status">{copy.processing.speakerWaitExpired}</p> :
+        <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
+          diarizationNotFound={diarizationNotFound} error={statusError} />}
+      {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
+      {error && <p role="alert" style={{ color: "red" }}>{error}</p>}
+      {!loading && !data && !error && <p>{copy.processing.transcriptPending}</p>}
+      <div id="meeting-playback" onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}>
         <MeetingPlaybackView
           manifest={playbackManifest}
           passages={playbackPassages}
@@ -219,6 +336,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         )}
       </div>
       <div role="tabpanel" id="transcript-panel" aria-labelledby="transcript-tab" hidden={activeTab !== "transcript"}>
+      {data && <>
       <h2>Transcript</h2>
       <p>
         Language: {data.language} | Provider: {data.provider} |
@@ -229,38 +347,48 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       ) : (
         <ol>
           {presentationTurns.map((turn) => {
-            const speaker = speakerPresentation(turn.id);
+            const isActive = activeTurnId === turn.id;
             const lastSource = sourceTurnById.get(turn.sourceIds.at(-1) ?? "");
             const timestamp = lastSource && turn.sourceIds.length === 1
               ? `[${formatTimestamp(turn.timestampMs ?? 0)} – ${formatTimestamp(lastSource.endMs)}]`
               : `[${formatTimestamp(turn.timestampMs ?? 0)}]`;
             return (
-              <li key={turn.id}>
+              <li key={turn.id}
+                aria-current={isActive ? "true" : undefined}
+                style={isActive ? { backgroundColor: "#fef3c7", fontWeight: 600 } : undefined}
+                ref={(element) => {
+                  if (element) turnRefs.current.set(turn.id, element);
+                  else turnRefs.current.delete(turn.id);
+                }}
+              >
                 <span style={{ color: "#6b7280", marginRight: "0.5rem" }}>
                   {timestamp}
                 </span>
                 <span
                   data-testid="transcript-speaker-label"
-                  style={{ color: speaker.color, fontWeight: 600, marginRight: "0.5rem" }}
+                  style={{ color: turn.color, fontWeight: 600, marginRight: "0.5rem" }}
                 >
-                  {speaker.label}
+                  {turn.speakerLabel}
                 </span>
                 <button
                   type="button"
-                  aria-label={`Play turn at ${formatTimestamp(turn.timestampMs ?? 0)}`}
+                  aria-label={copy.transcript.playAt(formatTimestamp(turn.timestampMs ?? 0))}
                   disabled={turn.timestampMs === null}
                   onClick={() => {
                     if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs);
                   }}
                 >
-                  Play turn
+                  {copy.transcript.play}
                 </button>
+                {turn.hasAmbiguous && <span title={copy.transcript.ambiguous}
+                  aria-label={copy.transcript.ambiguous} style={{ color: UNRESOLVED_SPEAKER_COLOR }}> · ? </span>}
                 {turn.text}
               </li>
             );
           })}
         </ol>
       )}
+      </>}
       {reviewError && <p role="alert" style={{ color: "red" }}>{reviewError}</p>}
       {review && (
         <section aria-labelledby="speaker-review-heading">

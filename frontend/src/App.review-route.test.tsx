@@ -28,6 +28,8 @@ it("holds a direct meeting review behind portal login, then fetches only that me
     const path = String(input);
     if (path.endsWith("/auth/login")) return json({ access_token: "synthetic-token", token_type: "bearer", expires_in: 3600 });
     expect(init?.headers).toMatchObject({ Authorization: "Bearer synthetic-token" });
+    if (path.endsWith("/meetings/meeting-614")) return json({ meeting_id: "meeting-614", process_state: "completed" });
+    if (path.endsWith("/diarization")) return json({ speakers: [], assignments: [] });
     if (path.endsWith("/transcript")) return json({ transcript_id: "transcript-614", meeting_id: "meeting-614", language: "en", provider: "synthetic", supports_turns: true,
       created_at: "2026-01-01T00:00:00Z", segments: [{ id: "segment-614", text: "Synthetic private turn", start_ms: 0, end_ms: 1000, sequence: 0 }] });
     if (path.endsWith("/playback")) return json({ meeting_id: "meeting-614", video_presence: "muxed", duration_seconds: 1,
@@ -44,7 +46,8 @@ it("holds a direct meeting review behind portal login, then fetches only that me
   fireEvent.click(screen.getByRole("button", { name: /log in/i }));
   await waitFor(() => expect(screen.getAllByText("Synthetic private turn").length).toBeGreaterThan(0));
   expect(fetchMock.mock.calls.map(([input]) => String(input)).filter(url => url.includes("/meetings/")))
-    .toEqual(expect.arrayContaining([expect.stringContaining("/meeting-614/transcript"), expect.stringContaining("/meeting-614/playback")]));
+    .toEqual(expect.arrayContaining([expect.stringMatching(/\/meetings\/meeting-614$/),
+      expect.stringContaining("/meeting-614/transcript"), expect.stringContaining("/meeting-614/playback")]));
   expect(fetchMock.mock.calls.every(([input]) => !String(input).includes("meeting-other"))).toBe(true);
 });
 
@@ -58,5 +61,7 @@ it("does not reveal a direct target denied by the server and preserves the targe
   expect(screen.queryByText("Synthetic private turn")).toBeNull();
   expect(localStorage.getItem("sauri_token")).toBeNull();
   expect(window.location.search).toBe("?meetingId=meeting-614");
-  expect(fetchMock.mock.calls.every(([input]) => String(input).includes("/meetings/meeting-614/"))).toBe(true);
+  expect(fetchMock.mock.calls.every(([input]) =>
+    /^\/api\/v1\/meetings\/meeting-614(?:\/(?:transcript|diarization|playback|speaker-review))?$/
+      .test(new URL(String(input)).pathname))).toBe(true);
 });

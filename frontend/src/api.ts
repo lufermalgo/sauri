@@ -7,6 +7,8 @@ import type {
   SpeechTurn,
   MeetingSummary,
   SummaryRequestStatus,
+  TranscriptPresentation,
+  AttributedTurn,
 } from "@sauri/shared-types";
 
 export interface PlaybackSource {
@@ -56,11 +58,23 @@ interface TranscriptResponse {
   supports_turns: boolean;
   created_at: string;
   segments: TranscriptSegmentResponse[];
+  presentation?: TranscriptPresentation;
+  turns?: Array<{
+    sequence: number;
+    speaker_id: string | null;
+    speaker_label: string | null;
+    start_ms: number;
+    end_ms: number;
+    text: string;
+    word_count: number;
+    has_ambiguous: boolean;
+  }>;
 }
 
 export type MeetingTranscript = Transcript & {
   segments: TimedPassage[];
-  turns: SpeechTurn[];
+  presentation?: TranscriptPresentation;
+  turns: Array<SpeechTurn & Partial<AttributedTurn>>;
 };
 
 export interface MeetingDiarization {
@@ -210,11 +224,13 @@ export async function registerMeeting(meetLink: string): Promise<Meeting> {
 export interface MeetingState {
   meetingId: string;
   processState: string;
+  failureCause?: string | null;
 }
 
 interface MeetingStateResponse {
   meeting_id: string;
   process_state: string;
+  failure_cause?: string | null;
 }
 
 export async function getMeeting(meetingId: string): Promise<MeetingState> {
@@ -223,7 +239,11 @@ export async function getMeeting(meetingId: string): Promise<MeetingState> {
     { method: "GET", headers: getAuthHeaders() }
   );
   const meeting = await handleResponse<MeetingStateResponse>(response);
-  return { meetingId: meeting.meeting_id, processState: meeting.process_state };
+  return {
+    meetingId: meeting.meeting_id,
+    processState: meeting.process_state,
+    failureCause: meeting.failure_cause,
+  };
 }
 
 export async function listMeetings(): Promise<MeetingListItem[]> {
@@ -380,7 +400,19 @@ export async function getTranscript(meetingId: string): Promise<MeetingTranscrip
     supportsTurns: transcript.supports_turns,
     createdAt: transcript.created_at,
     segments,
-    turns,
+    presentation: transcript.presentation ?? "segments",
+    turns: transcript.presentation === "words" ? (transcript.turns ?? []).map((turn) => ({
+      id: `${transcript.transcript_id}:turn:${turn.sequence}`,
+      transcriptId: transcript.transcript_id,
+      sequence: turn.sequence,
+      speakerId: turn.speaker_id,
+      speakerLabel: turn.speaker_label,
+      startMs: turn.start_ms,
+      endMs: turn.end_ms,
+      text: turn.text,
+      wordCount: turn.word_count,
+      hasAmbiguous: turn.has_ambiguous,
+    })) : turns,
   };
 }
 
