@@ -19,7 +19,7 @@ Fases: requisitos (o `bugfix.md` en correcciones), diseño y tareas, según `.co
 | [`meeting-review-playback`](specs/meeting-review-playback/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`meeting-summaries-templates`](specs/meeting-summaries-templates/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`performance-observability-pipeline`](specs/performance-observability-pipeline/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
-| [`portal-visual-design`](specs/portal-visual-design/) | Feature | 2/3 (pendiente: tareas) | Histórica (pendiente de producto, retomar con nueva unidad) |
+| [`portal-visual-design`](specs/portal-visual-design/) | Feature | 3/3 completas | Plan listo; implementación pendiente de revisión del dueño |
 | [`recording-library-metadata`](specs/recording-library-metadata/) | Feature | 1/3 (pendiente: diseño, tareas) | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`recording-notes`](specs/recording-notes/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`recording-speaker-review`](specs/recording-speaker-review/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
