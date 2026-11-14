@@ -7,7 +7,9 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -192,6 +194,34 @@ class SpeechTurn(Base):
 
 
 # ---------------------------------------------------------------------------
+# TranscriptWord
+# ---------------------------------------------------------------------------
+
+
+class TranscriptWord(Base):
+    """Word with engine timestamps within a Transcript, in transcript order."""
+
+    __tablename__ = "transcript_words"
+    __table_args__ = (
+        UniqueConstraint("transcript_id", "sequence", name="uq_transcript_word_sequence"),
+        Index("ix_transcript_words_transcript_start", "transcript_id", "start_ms"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    transcript_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("transcripts.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    probability: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timing_repaired: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+
+# ---------------------------------------------------------------------------
 # RecordingNotice
 # ---------------------------------------------------------------------------
 
@@ -333,6 +363,37 @@ class SpeakerAssignment(Base):
         "Diarization", back_populates="assignments"
     )
     speaker: Mapped["Speaker"] = relationship("Speaker")
+
+
+# ---------------------------------------------------------------------------
+# WordSpeakerAssignment
+# ---------------------------------------------------------------------------
+
+
+class WordSpeakerAssignment(Base):
+    """Speaker attribution of one TranscriptWord within one Diarization."""
+
+    __tablename__ = "word_speaker_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "state IN ('assigned', 'ambiguous', 'unassigned')",
+            name="ck_word_speaker_assignments_state_valid",
+        ),
+    )
+
+    diarization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("diarizations.id", ondelete="CASCADE"), primary_key=True
+    )
+    word_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("transcript_words.id", ondelete="CASCADE"), primary_key=True
+    )
+    speaker_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("speakers.id", ondelete="CASCADE"), nullable=True
+    )  # NULL when unassigned
+    state: Mapped[str] = mapped_column(String(16), nullable=False)  # assigned | ambiguous | unassigned
+    candidates_json: Mapped[list[dict[str, object]] | None] = mapped_column(
+        JSON, nullable=True
+    )  # only when ambiguous
 
 
 # ---------------------------------------------------------------------------

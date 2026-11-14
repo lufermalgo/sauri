@@ -12,10 +12,10 @@ import asyncio
 import logging
 from datetime import datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import ColumnElement, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import SessionRecording, Transcript
+from app.infra.models import Diarization, SessionRecording, Transcript
 from app.infra.object_store import ObjectStore
 from app.retention.cleanup import drain_pending_object_deletions
 
@@ -77,30 +77,18 @@ async def run_retention_deletion(
                 )
 
         # Delete the associated Transcript (by meeting_id)
-        transcript_result = await session.execute(
-            delete(Transcript).where(
-                Transcript.meeting_id == recording.meeting_id
-            )
+        deleted_transcripts += await _delete_transcripts(
+            session, Transcript.meeting_id == recording.meeting_id
         )
-        deleted_transcripts += transcript_result.rowcount  # type: ignore[attr-defined]
 
         # Delete the SessionRecording record
         await session.delete(recording)
         deleted_recordings += 1
 
-    # c. Query independently expired transcripts
-    independent_transcripts_result = await session.execute(
-        select(Transcript).where(
-            Transcript.expires_at.isnot(None),
-            Transcript.expires_at <= now,
-        )
+    # c/d. Delete independently expired transcripts
+    deleted_transcripts += await _delete_transcripts(
+        session, Transcript.expires_at.isnot(None), Transcript.expires_at <= now
     )
-    orphan_transcripts = independent_transcripts_result.scalars().all()
-
-    # d. Delete independently expired transcripts
-    for transcript in orphan_transcripts:
-        await session.delete(transcript)
-        deleted_transcripts += 1
 
     # e. Commit
     await session.commit()
@@ -118,6 +106,23 @@ async def run_retention_deletion(
         )
     else:
         logger.debug("Retention deletion: no expired data")
+
+
+async def _delete_transcripts(
+    session: AsyncSession, *criteria: ColumnElement[bool]
+) -> int:
+    """Deletes matching transcripts and everything derived from them.
+
+    Diarizations reference transcripts without ON DELETE CASCADE, so they are
+    removed first (cascading speakers and turn/word assignments). Deleting the
+    transcript then cascades speech turns and transcript words in the database.
+    """
+    transcript_ids = select(Transcript.id).where(*criteria).scalar_subquery()
+    await session.execute(
+        delete(Diarization).where(Diarization.transcript_id.in_(transcript_ids))
+    )
+    result = await session.execute(delete(Transcript).where(*criteria))
+    return int(result.rowcount)  # type: ignore[attr-defined]
 
 
 async def start_retention_worker(
