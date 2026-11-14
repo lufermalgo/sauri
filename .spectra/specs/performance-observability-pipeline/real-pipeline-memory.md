@@ -8,7 +8,7 @@ APX `task_e2a1fd161b4d4910`. Continuation authorized by Ansel on 2026-11-13: sol
 - Owner API/worker remain the existing `sauri-combined-api:6d03f2a`, running for three hours at inspection. Not rebuilt, restarted, replaced, or cleaned.
 - This patch is based on main `6302c48`; it does not import the QA acoustic/alignment changes.
 - Real experimental pipeline source is QA `bd638ee3a8fc6336a74235ab9f43c82b073ff6e7`. Its acoustic settings are held equal between attempts; this is NOT validation of installing all QA repairs or the main native endpoint.
-- Full baseline did not finish. The bounded-allocator repeat is actively running. No total speedup, WER/DER improvement, transcript equivalence, or complete quality acceptance is claimed.
+- Full baseline did not finish. The bounded-allocator repeat completed REAL ASR/persistence, then stopped before MPS inference because the shared Torch2.5.1 LSTM retention evidence has no verified/approved dependency fix. No total speedup, WER/DER improvement, transcript equivalence, or complete quality acceptance is claimed. PR#917 remains DRAFT.
 
 ## Real path, isolation and transport
 
@@ -32,13 +32,42 @@ Job `job_2107a8dae8cd4f58`, run `perf907-2ecb4725`, orchestration PID8611, nativ
 - This is a failed/cancelled attempt, NOT a completed baseline with comparable quality or total latency.
 - Earlier preflight-only failures (keyring format and broker startup race) were corrected; their exclusive containers were removed. They are not inference runs.
 
-## Correction and current real repeat
+## Correction and terminal real repeat
 
 Installed versions: mlx0.32.4, mlx-whisper0.4.3, pyannote.audio3.3.2, torch/torchaudio2.5.1, HFhub0.24.7. Installed MLX docs state default cache limit equals memory guideline, which defaults to1.5×recommended GPU working set. The repeat's API returned24481313587bytes (~22.8GiB) as both prior limits.
 
 Set graph scheduling guideline to4GiB and free reusable cache limit to256MiB before publishing the native inference callable. These are allocator controls, not model/audio/decoder changes. The4GiB guideline is NOT a hard process memory cap; cache can transiently exceed256MiB until the next allocation. Startup fails closed if allocator configuration fails.
 
-Repeat job `job_9b58b962562a40f2`, run `perf907-0cc6e543`, orchestration16196, native ASR16714; event/resource logs in session scratch `real-candidate/`. At native247.941s:81716/565482 frames, MLX peak4527877014bytes, active1914006346bytes, cache271925470bytes. `vmmap`:physical footprint3.5GiB, peak4.9GiB; host pressure1. Partial measurements only; more memory counters do not retroactively prove the entire failed-baseline footprint was cache.
+Repeat job `job_9b58b962562a40f2`, run `perf907-0cc6e543`, orchestration16196, native ASR16714; terminal, no process left running. Event/resource logs in session scratch `real-candidate/`; harness hashes/snapshot preserved before adding the subsequent MPS hold. Source backend remains bd638ee; ASR child retains the same acoustic parameters.
+
+| Observed stage | Duration/result |
+|---|---|
+| Preparation/broker readiness before upload |66.000s (not inference) |
+| Authenticated complete original upload |14.113s, HTTP200 |
+| Actual S3 object read for ASR |3.654s,400361891bytes, hash verified |
+| Full PCM decode in RAM |11.870s,5654.82s recording |
+| Actual MLX transcribe call (includes its internal model load) |1366.802s;1506segments |
+| Native ASR process |1380.662s, exit0 |
+| Production transcription handler |1385.090s, committed1506turns |
+| Admission before diarization |two15s waits while global pressure2; started next child only after pressure1 |
+| MPS inference |NOT executed: child28100 exited78 with explicit dependency hold before importing Torch or decoding audio |
+| Entire failed attempt through cleanup |1500.728s from preflight, NOT a complete-pipeline latency |
+
+Separate model-load time and precise broker wait are unavailable, not zero. ASR emitted MLX peak4527877014bytes (~4.22GiB); active memory at progress1914006346bytes (~1.78GiB), largest sampled cache278970834bytes (~266MiB). Native max RSS3329409024bytes (~3.10GiB). `vmmap` observed physical footprint3.5GiB/peak4.9GiB early and2.9GiB/peak4.9GiB later. Do NOT add RSS/footprint/Metal as separate RAM/VRAM pools. Resource sampler recorded82samples, including global pressure1 AND2; bounded own allocator did not eliminate host-wide pressure. More memory counters do not retroactively prove the entire failed-baseline footprint was cache.
+
+A read-only checkpoint of the disposable PG verified1506persisted turns,0invalid intervals against full duration, ordered sequence, start0/max end5650000ms. Canonical transcript SHA256`24209536a85122b3b9524a0dbb275fd97894891cec0d996e724f819355411f8b`; no transcript text in telemetry/evidence. These checks prove real persistence/temporal sanity, NOT WER/DER or factual accuracy. No speaker count, assignments, summary or complete API readback was obtained.
+
+Both exclusive test stacks are now removed; `docker ps -a` confirms no perf907 containers. Native/orchestrator/checkpoint/sampler processes ended; expired private credentials removed. Original SHA256 after the run still matches the initial hash. No owner services/data/names/results were replaced or cleaned.
+
+## Remaining GPU dependency boundary (not a CPU request)
+
+While the healthy bounded ASR was running, I incorporated shared task_d1dd evidence: repeated whole-recording MPS segmentation failures and a separate LSTM reproducer with driver growth141672448→946962432bytes over25iterations while live tensors remained2924800bytes, after synchronize/empty_cache. That reproducer is synthetic diagnostic evidence, NOT full-pipeline/quality validation. Do not repeat the same known MPS failure merely with batches4 or switch to CPU.
+
+Installed Torch2.5.1 has no verified in-environment fix. Upstream PR145503 identifies a missing autorelease in RnnOps.mm. I checked actual tagged SOURCE via GitHub API: v2.5.1 line331 ends `} mutableCopy];`; v2.7.1 line331 ends `} mutableCopy] autorelease];`. The PR API itself says merged=false, so its head commit is NOT evidence that a release contains it; the tagged-file check is the relevant evidence. This verifies source difference only, not wheel/runtime compatibility or all possible MPS leaks.
+
+Recommended bounded continuation for Ansel to authorize/confirm under the dependency contract: evaluate a disposable native environment with matched Torch2.7.1/torchaudio2.7.1, existing pyannote3.3.2/checkpoints and unchanged model/config on GPU. Verify wheel availability, model-loading/security compatibility and operator outputs/retention before the original. Do not substitute the owner's environment, relax guards, install/download implicitly, or claim that an upgrade guarantees the pipeline. No CPU solution/fallback, model download or paid resource is proposed. I did not install a different Torch or retry MPS. Full GPU pipeline/quality remains pending that verified/allowed path.
+
+Instrumentation note: after the deliberate hold, `diarization_committed` in the old harness meant only the fenced retry handler returned; it is NOT a successful artifact. The explicit hold/exit78 and missing final outputs take precedence, just as for the earlier transcription-handler name correction.
 
 No completed transcript baseline exists for exact comparison. WER/DER require a human temporal reference not available here; the owner's count3 alone is not such a reference. Neither an in-progress run nor schema validation substitutes for quality acceptance.
 

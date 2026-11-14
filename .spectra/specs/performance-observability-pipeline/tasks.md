@@ -121,7 +121,7 @@ El merge `bd638ee` de #908 no llevó la entrega a main. Esta unidad adicional co
 **Acción:** Continuación técnica autorizada por Ansel13/11 tras el criterio actualizado de Fer: ejecutar original completo aislado sin derivados persistentes, separar Python backend/nativo, medir el fallo de recursos y repetir con caché libre MLX256MiB/guideline4GiB, sin cambiar acústica. Configurar allocator antes de publicar callable; conservar autenticación/capability, esquema y kwargs. Pruebas RED→GREEN de lifecycle/fallo y regresión ASR/transcripción. No instalar ni tocar runtime del dueño.
 **Criterio de Completado:** Evidencia real, límites de calidad/tiempo explícitos, comandos locales vinculados al SHA y PR revisable. No presentar una cancelación por memoria como baseline exitoso ni mejora total; objetivo APX general sigue abierto hasta comparación completa. Requisitos1/2/3/4/6/7/9.
 **Dependencias:** #912 integrado, inferencia real autorizada y ejecuciones pesadas propias secuenciales; no exige rehacer fases aprobadas.
-**Estado:** Código y74tests PASS; corrida real corregida en curso, no listo para integrar. Ver `real-pipeline-memory.md`. Ansel integra si corresponde; sin despliegue autorizado.
+**Estado:** PR#917 DRAFT;74tests PASS. ASR real completo y1506turnos persistidos,0intervalos inválidos; picoMLX4,22GiB. Pipeline detenido antes de repetir MPS por retención LSTM/Torch2.5.1 ya reproducida, sin corrección de dependencia verificada/autorizada. No hay total completo, conteo ni comparación de calidad. Ver `real-pipeline-memory.md`: alternativa GPU aislada con sourcefix v2.7.1 identificado, sin instalar. Ansel decide/revisa integración; sin despliegue ni cierre APX.
 
 ## Fase 5: Validación y promoción
 
