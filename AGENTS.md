@@ -1,52 +1,41 @@
-# AGENTS.md
+# Sauri
 
-## Critical workflow rules (single source: [docs/engineering/WORKFLOW.md](docs/engineering/WORKFLOW.md))
-- Use one isolated branch and worktree per delivery unit; closely related tasks may share an issue and PR under WORKFLOW §9. Never work in the root checkout or on `main`.
-- Ansel is the only agent who merges; no cap on open PRs; after merge Ansel removes the worktree and branch when safe (WORKFLOW §8).
-- Technical questions go to Ansel with a recommended solution; choose the simplest option that fully satisfies approved requirements (WORKFLOW §3).
-- Work moves by reassigning APX task cards with PACKET and HAND-OFF (WORKFLOW §6).
-- Ansel coordinates and approves technical work within approved scope. Consult Fer for product, privacy, spending or security-policy changes; communicate briefly in nontechnical Spanish about user impact. Do not bypass permissions or assume authorization for deployment or other actions outside scope.
-- In a configured single-delivery pilot, follow WORKFLOW §10 before starting or dispatching work. Otherwise prioritize approved work that unblocks others or is close to completion. Do not create work merely to occupy agents. Escalate unresolved technical blockers to Teo through Ansel.
-- Preserve independent spec review, applicable QA and security gates, product acceptance, and the owner's test environment. Check current PR status and the reviewed candidate before merging; do not repeat unrelated reviews.
+Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con identificación de hablantes y resumen. Este archivo reúne las reglas para todos los agentes (Claude, Codex y subagentes). `CLAUDE.md` agrega las reglas propias del orquestador.
 
-## Architecture source of truth
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for deployment boundaries and the active specification map. Update it and the affected spec in the same delivery when architecture changes, recording the reason, alternatives, data/deployment impact and verification evidence. Documentation does not replace phase approvals, implementation or product acceptance.
+## Quién hace qué
+- **Fer (dueño):** decide producto, privacidad, gastos y seguridad. Acepta el producto al final. Prueba con sus propias grabaciones.
+- **Claude (orquestador):** diseña la arquitectura, toma las decisiones técnicas críticas, revisa la calidad (QA), integra los PR y mantiene el repositorio local y remoto limpio y al día.
+- **Codex y subagentes de Claude:** implementan código y pruebas, en paralelo, siempre en archivos distintos. Los subagentes también pueden revisar y leer código a gran escala.
+- No existe ni se usa APX, ni tarjetas de tarea, ni agentes con nombre propio. La trazabilidad vive en los issues de GitHub, los PR y el `tasks.md` de cada spec.
 
-## Evidence and context
-Assess relevant evidence and risks, state material contradictions, and carry out authorized requests. Explain trade-offs when they matter; do not require a formal debate for routine changes.
+## Alcance
+- Haz solo el trabajo pedido o aprobado. No crees alternativas paralelas, simuladores, entregas de relleno ni funciones fuera de alcance.
+- `PRODUCT_BASELINE.md` y las decisiones del dueño definen el alcance. Las notas de descubrimiento y las specs históricas no autorizan trabajo nuevo.
+- Consulta al dueño solo cambios de producto, privacidad, gastos o seguridad. Las decisiones técnicas se resuelven con evidencia y se le explican de forma simple.
+- Nada sale de la máquina: el audio, las transcripciones y los resúmenes se procesan localmente. Un servicio externo (p. ej. un modelo de lenguaje en la nube) solo se usa si el dueño lo configura de forma explícita.
 
-## 1. Agent Operating Principles
+## Cómo se trabaja
+1. **Spec antes de código:** `.spectra/specs/<slug>/` con `requirements.md` → `design.md` → `tasks.md` (skills `spectra-req`, `spectra-design`, `spectra-tasks`; `spectra-bugfix` para fallos). Respeta las fases ya aprobadas. Documentación terminada no es código ni aceptación.
+2. **Una unidad de entrega = un issue, una rama y un worktree propios**, creados desde `origin/main` en `.worktrees/`. Nunca se trabaja en el checkout raíz ni en `main`.
+3. **Cada encargo incluye:** spec y tarea, issue, objetivo, alcance y exclusiones, archivos permitidos, criterios de aceptación y comandos de verificación.
+4. **Implementa Codex o un subagente; Claude revisa el diff, ejecuta las pruebas por su cuenta e integra.** Un informe de un agente nunca se acepta sin verificarlo.
+5. **Calidad insuficiente:** se devuelve una sola vez al mismo agente con hallazgos concretos. Si vuelve a fallar, Claude lo corrige o lo reasigna a un modelo más fuerte.
+6. **Integración:** merge del PR tras la verificación de Claude; las ramas remotas se borran solas al integrar. Publicación, integración y aceptación del dueño son estados distintos.
+7. **Skills:** usa `skills-manager` para buscar o vincular las skills que la tarea necesite.
 
-These rules govern how agents must behave before, during, and after any task.
+## Entregas reales
+- Entrega funcionalidad real con pruebas. No sustituyas producción por simulaciones, no debilites pruebas ni recortes alcance para que pasen. Los datos simulados sirven en pruebas, no como validación.
+- Antes de dar algo por listo: pruebas del backend, `npm run typecheck` y `npm run test` si toca TypeScript, `ruff` y `mypy` sin errores nuevos. Reporta lo que se ejecutó y lo que no (`NO VERIFICADO`); una marca verde por sí sola no prueba nada.
+- El CI de GitHub puede estar inactivo por facturación: la verificación local es obligatoria.
+- Las recorridas visuales de la interfaz se hacen en el navegador integrado y no sustituyen las pruebas del backend.
 
-### Token Efficiency — The Fundamental Principle
+## Código
+- Identificadores, comentarios y mensajes de commit en inglés, sin acentos. El texto que ve el usuario, en español, vive solo en `frontend/src/copy/` (único lugar exento del verificador de idioma). No se eluden los hooks (`.githooks`, `.claude/hooks/block-main-git.sh`).
+- Cambios acotados, simples y con nombres claros; sin código muerto ni defensas innecesarias; consistentes con el proyecto. Lee antes de editar.
+- Python con `cd backend && uv run --extra dev ...` (el `python3` de esta máquina no es el del proyecto). Secretos solo por archivo o variable de entorno, nunca en registros ni en el repositorio.
+- Los motores de audio corren nativos en el Mac (fuera de Docker) para aprovechar el hardware; el resto, en Docker Compose. La arquitectura es hexagonal: cada motor tras un contrato estable, intercambiable por configuración. Ver `docs/ARCHITECTURE.md`.
 
-* **Read before writing**: inspect existing code before modifying. Never write blind.
-* **Edit, don't rewrite**: targeted edits only. Full rewrites require explicit justification.
-* **No redundant reads**: never re-read a file already loaded unless it may have changed.
-* **Focused reads**: read the context the task requires; broader scans are appropriate for audits, cross-cutting changes, or when needed to avoid missing dependencies.
-* **Focused diffs**: touch only what the task requires. Zero side edits.
-* **Lazy loading**: pull context just-in-time, never preemptively.
-* **Specialist agents**: do not delegate trivial isolated edits merely to change one file.
-  Required role-specific Spectra phases and independent reviews are valid exceptions even
-  when their deliverable is a single artifact. Give each agent a scoped brief and validate it.
-* **Parallelism**: outside the single-delivery pilot, after a task plan is approved, dispatch independent dependency-ready tasks
-  concurrently in separate worktrees; serialize only real dependencies or shared-resource
-  conflicts. A blocked task must not stall unrelated ready work.
-
-### Engineering Rigor
-
-* Think before writing. Understand impact area first. Find the correct, complete solution (WORKFLOW §3); among equally correct options, prefer the simpler design.
-* No side effects beyond the task scope. No unrelated edits.
-* Regression-safe. Clean separation of concerns. Low coupling.
-* Naming that documents intent. No dead code. Consistency with existing patterns.
-* Defensive only at system boundaries.
-* Surface cost, security, or compliance implications in one line. Never bury them.
-* Before presenting non-trivial work: ask "is there a more elegant way?"
-* If the project uses Rust, the configured Rust validation command must pass before marking ready any PR that touches Rust. This is typically `cargo check`, but do not assume it blindly if the project defines another validation workflow.
-* If the project uses TypeScript, the configured project typecheck command must pass before marking ready any PR that touches TypeScript. Do not assume raw `tsc --noEmit` unless the project defines it.
-
----
-
-## Project context (load on demand)
-The code map, stack, commands, directory ownership and anti-patterns live in the skill `sauri-project-context` (`.apc/skills/sauri-project-context.md`). APX agents load it with `load_skill` before touching code, tests or specs; other tools read that file. It is kept out of this file because this file reaches every model call of every agent.
+## Seguridad del repositorio (Code changes and Git protection)
+- Antes de borrar una rama o worktree con trabajo sin integrar, se archiva en `~/Proyectos/sauri-archive/`. Nunca se descartan cambios ajenos.
+- No borres rutas que puedan ser enlaces simbólicos a carpetas fuera del repositorio (las skills `~/.agents/library/` ya se vaciaron una vez así). Comprueba con `test -L` antes.
+- No toques archivos del dueño fuera del repositorio ni su entorno de pruebas. No hagas `git push --force`, ni commit directo a `main`.
