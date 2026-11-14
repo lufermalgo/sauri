@@ -10,6 +10,8 @@ import {
 import type { MeetingDiarization, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
 import { groupTranscriptTurns } from "../transcript-turns";
+import { SummaryPanel } from "./SummaryPanel";
+import { copy } from "../copy/es";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -33,6 +35,7 @@ function speakerColor(diarization: MeetingDiarization | null, speakerId: string 
 }
 
 export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
+  const [activeTab, setActiveTab] = useState<"transcript" | "summary">("transcript");
   const seekToRef = useRef<((timeMs: number) => void) | undefined>(undefined);
   const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
     seekToRef.current = seekTo;
@@ -61,6 +64,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     setError(null);
     setReviewError(null);
     setReview(null);
+    setActiveTab("transcript");
 
     getTranscript(meetingId)
       .then((result) => {
@@ -184,14 +188,37 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     <section>
       <button onClick={onBack}>← Back to list</button>
       {diarizationNotFound && <p role="status">Identificando hablantes</p>} {/* spanish-sample-data */}
-      <MeetingPlaybackView
-        manifest={playbackManifest}
-        passages={playbackPassages}
-        loading={playbackLoading}
-        error={playbackError}
-        onRefreshManifest={() => getPlaybackManifest(meetingId)}
-        onSeekToReady={registerSeekTo}
-      />
+      <div id="meeting-playback">
+        <MeetingPlaybackView
+          manifest={playbackManifest}
+          passages={playbackPassages}
+          loading={playbackLoading}
+          error={playbackError}
+          onRefreshManifest={() => getPlaybackManifest(meetingId)}
+          onSeekToReady={registerSeekTo}
+        />
+      </div>
+      <div role="tablist" aria-label={copy.summary.tabsLabel} onKeyDown={(event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? "transcript" : event.key === "End" ? "summary"
+          : activeTab === "transcript" ? "summary" : "transcript";
+        setActiveTab(next);
+        event.currentTarget.querySelector<HTMLButtonElement>(`#${next}-tab`)?.focus();
+      }}>
+        <button type="button" role="tab" id="transcript-tab" aria-controls="transcript-panel"
+          aria-selected={activeTab === "transcript"} tabIndex={activeTab === "transcript" ? 0 : -1}
+          onClick={() => setActiveTab("transcript")}>{copy.summary.transcriptTab}</button>
+        <button type="button" role="tab" id="summary-tab" aria-controls="summary-panel"
+          aria-selected={activeTab === "summary"} tabIndex={activeTab === "summary" ? 0 : -1}
+          onClick={() => setActiveTab("summary")}>{copy.summary.tab}</button>
+      </div>
+      <div role="tabpanel" id="summary-panel" aria-labelledby="summary-tab" hidden={activeTab !== "summary"}>
+        {activeTab === "summary" && (
+          <SummaryPanel meetingId={meetingId} onSeek={(timeMs) => seekToRef.current?.(timeMs)} />
+        )}
+      </div>
+      <div role="tabpanel" id="transcript-panel" aria-labelledby="transcript-tab" hidden={activeTab !== "transcript"}>
       <h2>Transcript</h2>
       <p>
         Language: {data.language} | Provider: {data.provider} |
@@ -296,6 +323,7 @@ export function TranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           })}
         </section>
       )}
+      </div>
     </section>
   );
 }

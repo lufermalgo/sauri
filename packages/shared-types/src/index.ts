@@ -100,7 +100,18 @@ export interface Transcript {
   createdAt: string;
 }
 
-/** Current successful structured summary artifact for a meeting. */
+export interface SummarySource {
+  passageId: string;
+  startMs: number;
+  endMs: number;
+}
+
+export interface SummaryKeyPoint {
+  text: string;
+  sources: SummarySource[];
+}
+
+/** Current successful summary artifact, including legacy points without citations. */
 export interface MeetingSummary {
   summaryId: string;
   meetingId: string;
@@ -108,7 +119,8 @@ export interface MeetingSummary {
   templateName: string;
   templateVersion: number;
   topic: string;
-  keyPoints: string[];
+  keyPoints: Array<SummaryKeyPoint | string>;
+  reviewState: "draft";
   generation: number;
   createdAt: string;
   updatedAt: string;
@@ -119,6 +131,7 @@ export interface SummaryRequestStatus {
   eventId: string;
   generation: number;
   status: "pending" | "running" | "succeeded" | "failed";
+  failureCause?: string | null;
 }
 
 /** User-owned summary template; instructions are opaque and preserved unchanged. */

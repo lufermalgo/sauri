@@ -512,3 +512,65 @@ describe("meeting list API adapter", () => {
     }]);
   });
 });
+
+describe("meeting summary API adapters", () => {
+  it("maps draft citations and keeps legacy point text without invented sources", async () => {
+    const fetchMock = mockFetch({
+      summary_id: "summary-1", meeting_id: "meeting-1", template_id: "template-1",
+      template_name: "General", template_version: 3, topic: "Synthetic topic",
+      key_points: [
+        { text: "Synthetic point", sources: [{ passage_id: "P0001", start_ms: 1234, end_ms: 5678 }] },
+        "Legacy point",
+      ],
+      review_state: "draft", generation: 2, created_at: "created", updated_at: "updated",
+    });
+    await expect(api.getMeetingSummary("meeting / 1")).resolves.toEqual({
+      summaryId: "summary-1", meetingId: "meeting-1", templateId: "template-1",
+      templateName: "General", templateVersion: 3, topic: "Synthetic topic",
+      keyPoints: [
+        { text: "Synthetic point", sources: [{ passageId: "P0001", startMs: 1234, endMs: 5678 }] },
+        "Legacy point",
+      ],
+      reviewState: "draft", generation: 2, createdAt: "created", updatedAt: "updated",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/meetings/meeting%20%2F%201/summary"), {
+      method: "GET", headers: { Authorization: "Bearer synthetic-token", "Content-Type": "application/json" },
+    });
+  });
+
+  it.each(["pending", "running", "succeeded", "failed"])("maps latest request state %s and optional failure cause", async (status) => {
+    const fetchMock = mockFetch({ event_id: "event-1", generation: 3, status, failure_cause: "summary_invalid" });
+    await expect(api.getLatestSummaryRequest("meeting / 1")).resolves.toEqual({
+      eventId: "event-1", generation: 3, status, failureCause: "summary_invalid",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/meeting%20%2F%201/summary-requests/latest"),
+      expect.objectContaining({ method: "GET", headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }));
+  });
+
+  it("posts JSON using the default template and maps the accepted request", async () => {
+    const fetchMock = mockFetch({ event_id: "event-1", generation: 3, status: "pending" }, 202);
+    await expect(api.requestMeetingSummary("meeting / 1")).resolves.toEqual({
+      eventId: "event-1", generation: 3, status: "pending", failureCause: undefined,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/meeting%20%2F%201/summary-requests"), {
+      method: "POST", body: "{}", headers: { Authorization: "Bearer synthetic-token", "Content-Type": "application/json" },
+    });
+  });
+
+  it.each([api.getMeetingSummary, api.getLatestSummaryRequest])("returns null only for a missing artifact or request", async (get) => {
+    mockFetch({ detail: "Not found" }, 404);
+    await expect(get("meeting-1")).resolves.toBeNull();
+    mockFetch({ detail: "private diagnostic" }, 500);
+    await expect(get("meeting-1")).rejects.toThrow("Error 500");
+  });
+
+  it.each([api.getMeetingSummary, api.getLatestSummaryRequest, api.requestMeetingSummary])(
+    "invalidates unauthorized sessions and does not expose server diagnostics", async (call) => {
+      mockFetch({ detail: "private diagnostic" }, 401);
+      const unauthorized = vi.spyOn(window, "dispatchEvent");
+      await expect(call("meeting-1")).rejects.toThrow("Error 401");
+      expect(localStorage.removeItem).toHaveBeenCalledWith("sauri_token");
+      expect(unauthorized.mock.calls[0][0].type).toBe("sauri:unauthorized");
+    },
+  );
+});

@@ -11,12 +11,15 @@ type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends
 type Assert<T extends true> = T;
 type SummaryContract = Assert<Equal<MeetingSummary, {
   summaryId: string; meetingId: string; templateId: string; templateName: string;
-  templateVersion: number; topic: string; keyPoints: string[]; generation: number;
+  templateVersion: number; topic: string;
+  keyPoints: Array<string | { text: string; sources: Array<{ passageId: string; startMs: number; endMs: number }> }>;
+  reviewState: "draft"; generation: number;
   createdAt: string; updatedAt: string;
 }>>;
 type StatusContract = Assert<Equal<SummaryRequestStatus, {
   eventId: string; generation: number;
   status: "pending" | "running" | "succeeded" | "failed";
+  failureCause?: string | null;
 }>>;
 type TemplateContract = Assert<Equal<SummaryTemplate, {
   id: string; name: string; ownerId: string; categoryId?: string;
