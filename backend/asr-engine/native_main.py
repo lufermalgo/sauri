@@ -197,7 +197,8 @@ def _download_audio(audio_ref: str, deadline: float) -> str:
         try:
             with open(audio_path, "wb") as output:
                 while True:
-                    body.set_socket_timeout(remaining(deadline))
+                    # The client's read_timeout bounds each read; this bounds the whole download.
+                    remaining(deadline)
                     chunk = body.read(1024 * 1024)
                     if not chunk:
                         break

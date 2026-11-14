@@ -71,8 +71,6 @@ class SyntheticBody:
         self.stream = source.open("rb")
     def read(self, count):
         return self.stream.read(count)
-    def set_socket_timeout(self, seconds):
-        assert seconds > 0
     def close(self):
         self.stream.close()
 class SyntheticStore:
