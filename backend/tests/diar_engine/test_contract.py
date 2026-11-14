@@ -4,7 +4,7 @@
 # Validates: Requirements 3.1, 3.3
 
 Verifies the HTTP contract of the Local_Diarization_Service:
-  - POST /diarize: request {"audio_ref": str} → response {"segments": [...], "num_speakers": int}
+  - POST /diarize: request {"audio_ref": str} → response {"segments": [...], "speaker_count": int}
   - GET /health → {"status": "ok"}
 
 Uses httpx.AsyncClient with ASGITransport to test the FastAPI app directly
@@ -163,12 +163,12 @@ class TestContratoDiarEngine:
     async def test_post_diarize_respuesta_con_segmentos(
         self, async_client: httpx.AsyncClient
     ) -> None:
-        """POST /diarize with a valid audio_ref returns segments and num_speakers.
+        """POST /diarize with a valid audio_ref returns segments and speaker_count.
 
         Contract:
           Request:  {"audio_ref": "test/audio.webm"}
           Response: {"segments": [{"speaker": str, "start_ms": int, "end_ms": int}, ...],
-                     "num_speakers": int}
+                     "speaker_count": int}
         """
         async with async_client as client:
             response = await client.post(
@@ -180,12 +180,17 @@ class TestContratoDiarEngine:
 
         data = response.json()
 
+        assert data["contract_version"] == 2
+        assert data["engine"] == {
+            "name": "pyannote", "model": main.DIARIZATION_MODEL, "device": main.DIARIZATION_DEVICE,
+        }
+
         # Verify top-level structure
         assert "segments" in data
-        assert "num_speakers" in data
+        assert "speaker_count" in data
         assert isinstance(data["segments"], list)
-        assert isinstance(data["num_speakers"], int)
-        assert data["num_speakers"] >= 0
+        assert isinstance(data["speaker_count"], int)
+        assert data["speaker_count"] >= 0
 
         # If segments are present, verify each segment's structure
         for segment in data["segments"]:
@@ -202,15 +207,15 @@ class TestContratoDiarEngine:
         starts = [segment["start_ms"] for segment in data["segments"]]
         assert starts == sorted(starts)
 
-        # num_speakers must equal the count of distinct speaker labels.
+        # speaker_count must equal the count of distinct speaker labels.
         distinct = {segment["speaker"] for segment in data["segments"]}
-        assert data["num_speakers"] == len(distinct)
+        assert data["speaker_count"] == len(distinct)
 
     @pytest.mark.asyncio
     async def test_post_diarize_respuesta_vacia_valida(
         self, async_client: httpx.AsyncClient
     ) -> None:
-        """POST /diarize can return segments: [] with num_speakers: 0 (no speakers)."""
+        """POST /diarize can return segments: [] with speaker_count: 0 (no speakers)."""
         async with async_client as client:
             response = await client.post(
                 "/diarize",
@@ -221,11 +226,11 @@ class TestContratoDiarEngine:
 
         data = response.json()
         assert "segments" in data
-        assert "num_speakers" in data
+        assert "speaker_count" in data
         assert isinstance(data["segments"], list)
-        assert isinstance(data["num_speakers"], int)
+        assert isinstance(data["speaker_count"], int)
         assert data["segments"] == []
-        assert data["num_speakers"] == 0
+        assert data["speaker_count"] == 0
 
     # -------------------------------------------------------------------
     # GET /health — Validates: Requirement 3.3

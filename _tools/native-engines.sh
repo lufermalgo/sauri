@@ -4,7 +4,8 @@ umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="${SAURI_NATIVE_ENGINE_STATE_DIR:-${HOME}/.local/state/sauri/native-engines}"
-ENGINE_PYTHON="${SAURI_NATIVE_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/venv/bin/python}"
+ASR_PYTHON="${SAURI_ASR_ENGINE_PYTHON:-${SAURI_NATIVE_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/venv/bin/python}}"
+DIAR_PYTHON="${SAURI_DIAR_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/diar-venv/bin/python}"
 ENGINE_TOKEN_FILE="${HOME}/.config/sauri/engine_token"
 RECORDING_CAPABILITY_KEY_FILE="${HOME}/.config/sauri/recording_capability_key"
 
@@ -24,8 +25,8 @@ chmod 700 "$STATE_DIR"
 
 engine_config() {
   case "$1" in
-    asr) ENGINE_LABEL="ASR"; ENGINE_PORT=8001; ENGINE_APP_DIR="$ROOT_DIR/backend/asr-engine" ;;
-    diar) ENGINE_LABEL="diarization"; ENGINE_PORT=8002; ENGINE_APP_DIR="$ROOT_DIR/backend/diar-engine" ;;
+    asr) ENGINE_PYTHON="$ASR_PYTHON"; ENGINE_LABEL="ASR"; ENGINE_PORT=8001; ENGINE_APP_DIR="$ROOT_DIR/backend/asr-engine" ;;
+    diar) ENGINE_PYTHON="$DIAR_PYTHON"; ENGINE_LABEL="diarization"; ENGINE_PORT=8002; ENGINE_APP_DIR="$ROOT_DIR/backend/diar-engine" ;;
     *) echo "Unknown engine: $1" >&2; exit 2 ;;
   esac
   PID_FILE="$STATE_DIR/$1.pid"
@@ -71,7 +72,8 @@ start_engine() {
     return 1
   }
 
-  SAURI_RECORDING_CAPABILITY_KEY_FILE="$RECORDING_CAPABILITY_KEY_FILE" \
+  PYTHONPATH="$ROOT_DIR/backend/engine-common${PYTHONPATH:+:$PYTHONPATH}" \
+    SAURI_RECORDING_CAPABILITY_KEY_FILE="$RECORDING_CAPABILITY_KEY_FILE" \
     nohup "$ENGINE_PYTHON" -m uvicorn native_main:app \
     --app-dir "$ENGINE_APP_DIR" --host 127.0.0.1 --port "$ENGINE_PORT" \
     >>"$LOG_FILE" 2>&1 </dev/null &

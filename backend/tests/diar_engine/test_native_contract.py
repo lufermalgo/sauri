@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -72,15 +73,11 @@ def capability(audio_ref: str, secret: bytes, expires_at: int) -> str:
     return f"{expires_at}.{signature}"
 
 
-class FakeTurn:
-    start = 0.5
-    end = 2.25
-
-
-class FakeAnnotation:
-    def itertracks(self, yield_label: bool = False) -> Any:
-        assert yield_label
-        yield FakeTurn(), None, "SPEAKER_00"
+def fake_result() -> dict[str, Any]:
+    return {
+        "raw_segments": [{"start": 0.5, "end": 2.25, "speaker": "SPEAKER_00"}],
+        "merged_segments": [],
+    }
 
 
 @pytest.mark.asyncio
@@ -89,9 +86,9 @@ async def test_diarize_preserves_contract_and_cleans_temp_file(
 ) -> None:
     seen_paths: list[str] = []
 
-    def run_pipeline(path: str) -> FakeAnnotation:
+    def run_pipeline(path: str) -> dict[str, Any]:
         seen_paths.append(path)
-        return FakeAnnotation()
+        return fake_result()
 
     token_path = tmp_path / "engine_token"
     token_path.write_text("synthetic-token", encoding="utf-8")
@@ -102,7 +99,9 @@ async def test_diarize_preserves_contract_and_cleans_temp_file(
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", capability_key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "s3_client", FakeS3())
-    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(
+        diarize=lambda *, wav_path, accurate, generate_colors: run_pipeline(wav_path)
+    ))
     monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
 
@@ -125,24 +124,26 @@ async def test_diarize_preserves_contract_and_cleans_temp_file(
         )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "segments": [{"speaker": "SPEAKER_00", "start_ms": 500, "end_ms": 2250}],
-        "num_speakers": 1,
-    }
+    data = response.json()
+    assert data["segments"] == [{"speaker": "SPEAKER_00", "start_ms": 500, "end_ms": 2250}]
+    assert data["speaker_count"] == 1
+    assert data["contract_version"] == 2
+    assert data["engine"] == {"name": "senko", "model": "senko-coreml", "device": "coreml"}
+    assert data["diagnostics"]["audio_ms"] == 10
     assert seen_paths and not Path(seen_paths[0]).exists()
 
 
 @pytest.mark.asyncio
-async def test_diarize_converts_webm_to_wav_before_pyannote(
+async def test_diarize_converts_webm_to_wav_before_senko(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A downloaded .webm must reach pyannote as a 16 kHz mono WAV file."""
+    """A downloaded .webm must reach Senko as a 16 kHz mono WAV file."""
     seen_paths: list[str] = []
 
-    def run_pipeline(path: str) -> FakeAnnotation:
+    def run_pipeline(path: str) -> dict[str, Any]:
         seen_paths.append(path)
         assert Path(path).suffix == ".wav", f"expected WAV input, got {path!r}"
-        return FakeAnnotation()
+        return fake_result()
 
     token_path = tmp_path / "engine_token"
     token_path.write_text("synthetic-token", encoding="utf-8")
@@ -153,7 +154,9 @@ async def test_diarize_converts_webm_to_wav_before_pyannote(
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "s3_client", WebMS3())
-    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(
+        diarize=lambda *, wav_path, accurate, generate_colors: run_pipeline(wav_path)
+    ))
     monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
     monkeypatch.setattr(shutil, "which", lambda _name: "/usr/bin/ffmpeg")
     ffmpeg_calls: list[list[str]] = []
@@ -163,7 +166,7 @@ async def test_diarize_converts_webm_to_wav_before_pyannote(
         assert options == {
             "check": True,
             "capture_output": True,
-            "timeout": native.FFMPEG_TIMEOUT_SECONDS,
+            "timeout": 300,
         }
         Path(command[-1]).write_bytes(_minimal_wav_bytes())
 
@@ -183,21 +186,20 @@ async def test_diarize_converts_webm_to_wav_before_pyannote(
         )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "segments": [{"speaker": "SPEAKER_00", "start_ms": 500, "end_ms": 2250}],
-        "num_speakers": 1,
-    }
+    data = response.json()
+    assert data["segments"] == [{"speaker": "SPEAKER_00", "start_ms": 500, "end_ms": 2250}]
+    assert data["speaker_count"] == 1
+    assert data["contract_version"] == 2
+    assert data["engine"] == {"name": "senko", "model": "senko-coreml", "device": "coreml"}
+    assert data["diagnostics"]["audio_ms"] == 10
     assert len(ffmpeg_calls) == 1
     command = ffmpeg_calls[0]
-    assert command[1:3] == ["-y", "-v"]
-    assert command[3] == "error"
-    assert command[4] == "-i"
-    assert command[5].endswith(".webm")
-    assert command[6:11] == ["-ar", "16000", "-ac", "1", "-c:a"]
-    assert command[11] == "pcm_s16le"
+    assert command[:6] == ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i"]
+    assert command[6].endswith(".webm")
+    assert command[7:-1] == ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"]
     assert command[-1].endswith(".wav")
     assert len(seen_paths) == 1
-    assert seen_paths[0].endswith(".wav"), f"pyannote received non-WAV: {seen_paths[0]!r}"
+    assert seen_paths[0].endswith(".wav"), f"Senko received non-WAV: {seen_paths[0]!r}"
     assert not Path(seen_paths[0]).exists(), "converted temp WAV must be cleaned up"
 
 
@@ -273,7 +275,9 @@ async def test_diarize_denies_expired_or_overlong_capability_before_io(
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
-    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(
+        diarize=lambda *, wav_path, accurate, generate_colors: run_pipeline(wav_path)
+    ))
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -321,7 +325,9 @@ async def test_diarize_denies_capability_for_another_owners_recording_before_io(
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
-    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(
+        diarize=lambda *, wav_path, accurate, generate_colors: run_pipeline(wav_path)
+    ))
     audio_ref = "recordings/owner-b/recording.wav"
     owner_a_capability = capability("recordings/owner-a/recording.wav", secret, int(time.time()) + 60)
     transport = httpx.ASGITransport(app=native.app)
@@ -371,7 +377,9 @@ async def test_diarize_denies_missing_recording_capability_before_io(
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
-    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(
+        diarize=lambda *, wav_path, accurate, generate_colors: run_pipeline(wav_path)
+    ))
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -441,7 +449,9 @@ async def test_diarize_denies_invalid_authorization_before_io(
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path, raising=False)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
-    monkeypatch.setattr(native, "diarization_pipeline", run_pipeline)
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(
+        diarize=lambda *, wav_path, accurate, generate_colors: run_pipeline(wav_path)
+    ))
     bearer = "synthetic-token" if bearer_kind == "valid" else "wrong-token"
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -459,11 +469,10 @@ async def test_diarize_denies_invalid_authorization_before_io(
     assert invocations == []
 
 
-def test_native_defaults_configure_mps_and_private_token_path() -> None:
+def test_native_defaults_configure_coreml() -> None:
     assert native.MINIO_ENDPOINT == "http://localhost:9000"
-    assert native.MODEL_ID == "pyannote/speaker-diarization-3.1"
-    assert native.MODEL_DEVICE == "mps"
-    assert Path.home() / ".config" / "sauri" / "hf_token" == native.HF_TOKEN_PATH
+    assert native.MODEL_ID == "senko-coreml"
+    assert native.MODEL_DEVICE == "coreml"
 
 
 @pytest.mark.asyncio
@@ -473,3 +482,155 @@ async def test_health_reports_ok() -> None:
         response = await client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_raw_segments_keep_short_turns_and_sort(monkeypatch: pytest.MonkeyPatch) -> None:
+    def infer(**kwargs: Any) -> dict[str, Any]:
+        assert kwargs == {"wav_path": "synthetic.wav", "accurate": True, "generate_colors": False}
+        return {
+            "raw_segments": [{"speaker": "brief", "start": 1.1, "end": 1.25},
+                             {"speaker": "first", "start": 0.0, "end": 1.0}],
+            "merged_segments": [{"speaker": "first", "start": 0.0, "end": 1.25}],
+        }
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(diarize=infer))
+    segments, dropped = native._run_diarization("synthetic.wav")
+    assert dropped == 0
+    assert [(s.speaker, s.start_ms, s.end_ms) for s in segments] == [
+        ("first", 0, 1000), ("brief", 1100, 1250),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_startup_uses_exact_coreml_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unittest.mock import Mock
+
+    vad = SimpleNamespace(lib=Mock(), processor=object())
+    pipeline = SimpleNamespace(vad_processor_pyannote_coreml=vad)
+    constructor = Mock(return_value=pipeline)
+    monkeypatch.setitem(sys.modules, "senko", SimpleNamespace(Diarizer=constructor))
+    monkeypatch.setattr(native.boto3, "client", Mock())
+    async with native.lifespan(native.app):
+        assert native.diarization_pipeline is pipeline
+        constructor.assert_called_once_with(
+            device="coreml", vad="pyannote", clustering="cpu", warmup=True, quiet=True,
+        )
+        vad.lib.vad_set_min_duration_on.assert_called_once_with(vad.processor, 0.0)
+        vad.lib.vad_set_min_duration_off.assert_called_once_with(vad.processor, 0.0)
+    assert native.diarization_pipeline is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["download", "normalize", "inference"])
+async def test_failures_remove_all_temporaries(
+    failure: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    from fastapi import HTTPException
+
+    paths: list[Path] = []
+    secret = b"synthetic-secret"
+    key = tmp_path / "key"
+    key.write_bytes(secret)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key)
+
+    class Store:
+        def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
+            paths.extend([Path(path), Path(path + ".wav")])
+            Path(path).write_bytes(b"bad" if failure == "normalize" else _minimal_wav_bytes())
+            if failure == "download":
+                raise OSError("synthetic download error")
+
+    def infer(**kwargs: Any) -> None:
+        assert paths[1].exists()
+        raise RuntimeError("synthetic inference error")
+
+    monkeypatch.setattr(native, "s3_client", Store())
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(diarize=infer))
+    audio_ref = "recordings/synthetic.wav"
+    with pytest.raises(HTTPException) as error:
+        await native.diarize(
+            native.DiarizeRequest(audio_ref=audio_ref),
+            recording_capability=capability(audio_ref, secret, int(time.time()) + 60),
+        )
+    assert error.value.status_code == (422 if failure == "normalize" else 500)
+    if failure == "normalize":
+        assert error.value.detail == "normalize_failed"
+    assert paths and all(not path.exists() for path in paths)
+
+
+def test_no_voice_is_valid_empty_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The pinned Senko implementation returns None when VAD finds no voice.
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(diarize=lambda **kwargs: None))
+    assert native._run_diarization("synthetic-silence.wav") == ([], 0)
+
+
+@pytest.fixture
+def synthetic_client(monkeypatch: pytest.MonkeyPatch) -> httpx.AsyncClient:
+    monkeypatch.setitem(native.app.dependency_overrides, native._require_engine_token, lambda: None)
+    monkeypatch.setattr(native, "_require_recording_capability", lambda *_args: None)
+    monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
+    monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
+    monkeypatch.setattr(native, "s3_client", FakeS3())
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(diarize=lambda **kwargs: None))
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test")
+
+
+async def test_rounds_times_and_reports_only_invalid_segments_as_dropped(
+    synthetic_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = [
+        {"speaker": "brief", "start": 1.005, "end": 1.006},
+        {"speaker": "inverted", "start": 2.0, "end": 1.0},
+        {"speaker": "collapsed", "start": 3.0001, "end": 3.0002},
+    ]
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(diarize=lambda **kwargs: {"raw_segments": raw}))
+    async with synthetic_client as client:
+        response = await client.post("/diarize", json={"audio_ref": "synthetic/recording.wav"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["segments"] == [{"speaker": "brief", "start_ms": 1005, "end_ms": 1006}]
+    assert data["diagnostics"]["dropped_segments"] == 2
+    assert data["speaker_count"] == 1
+
+
+async def test_caffeinate_failure_is_categorized(
+    synthetic_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    launch = Mock(side_effect=OSError("synthetic launch failure"))
+    download = Mock()
+    monkeypatch.setattr(subprocess, "Popen", launch)
+    monkeypatch.setattr(native, "_download_audio", download)
+    async with synthetic_client as client:
+        response = await client.post("/diarize", json={"audio_ref": "synthetic/recording.wav"})
+    assert response.status_code == 503
+    assert response.json() == {"detail": "keep_awake_failed"}
+    download.assert_not_called()
+
+
+async def test_health_responds_during_slow_diarization(
+    synthetic_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+
+    def infer(**kwargs: Any) -> None:
+        started.set()
+        release.wait(timeout=3)
+
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(diarize=infer))
+    async with synthetic_client as client:
+        pending = asyncio.create_task(client.post("/diarize", json={"audio_ref": "synthetic/recording.wav"}))
+        try:
+            assert await asyncio.to_thread(started.wait, 2)
+            response = await asyncio.wait_for(client.get("/health"), timeout=1)
+            assert response.status_code == 200
+            assert response.json() == {"status": "ok"}
+            assert not pending.done()
+        finally:
+            release.set()
+            result = await pending
+        assert result.status_code == 200

@@ -16,8 +16,10 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from app.diarization.diarization_engine import DiarizationOptions
+from app.diarization.diarization_engine import DiarizationOptions, EngineContractError
 from app.diarization.local_provider import LocalProvider
+
+ENGINE = {"name": "senko", "model": "senko-coreml", "device": "coreml"}
 
 # ---------------------------------------------------------------------------
 # Strategies
@@ -82,8 +84,9 @@ async def test_property_4_faithful_mapping_of_local_diarization_response(
     options = DiarizationOptions()
 
     response_data = {
+        "contract_version": 2, "engine": ENGINE,
         "segments": segments,
-        "num_speakers": len({s["speaker"] for s in segments}),
+        "speaker_count": len({s["speaker"] for s in segments}),
     }
 
     mock_response = MagicMock()
@@ -101,6 +104,10 @@ async def test_property_4_faithful_mapping_of_local_diarization_response(
         mock_client_cls.return_value = mock_client
 
         result = await provider.diarize("audio/test.webm", options)
+
+    assert result.engine is not None and result.engine.name == "senko"
+    assert result.contract_version == 2
+    assert mock_client.post.call_args.kwargs["json"]["contract_version"] == 2
 
     # Exactly N segments produced
     assert len(result.segments) == len(segments)
@@ -198,7 +205,7 @@ async def test_example_response_without_segments_raises_valueerror() -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"num_speakers": 2}
+    mock_response.json.return_value = {"contract_version": 2, "engine": ENGINE, "speaker_count": 2}
 
     with patch(
         "app.diarization.local_provider.httpx.AsyncClient"
@@ -225,7 +232,7 @@ async def test_example_empty_segments_is_a_valid_result() -> None:
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"segments": [], "num_speakers": 0}
+    mock_response.json.return_value = {"contract_version": 2, "engine": ENGINE, "segments": [], "speaker_count": 0}
 
     with patch(
         "app.diarization.local_provider.httpx.AsyncClient"
@@ -248,7 +255,7 @@ async def test_local_provider_uses_configured_timeout(monkeypatch: pytest.Monkey
     provider = LocalProvider(url="http://fake-diar-engine:8002")
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"segments": [], "num_speakers": 0}
+    mock_response.json.return_value = {"contract_version": 2, "engine": ENGINE, "segments": [], "speaker_count": 0}
 
     with patch("app.diarization.local_provider.httpx.AsyncClient") as client_class:
         mock_client = AsyncMock()
@@ -274,7 +281,7 @@ async def test_local_provider_sends_bearer_token_from_secret_file(
     provider = LocalProvider(url="http://fake-diar-engine:8002")
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"segments": [], "num_speakers": 0}
+    mock_response.json.return_value = {"contract_version": 2, "engine": ENGINE, "segments": [], "speaker_count": 0}
 
     with patch("app.diarization.local_provider.httpx.AsyncClient") as client_class:
         mock_client = AsyncMock()
@@ -290,3 +297,19 @@ async def test_local_provider_sends_bearer_token_from_secret_file(
     message = f"recordings/synthetic.wav\n{expiry_text}".encode()
     expected = hmac.new(b"synthetic-capability-secret", message, hashlib.sha256).hexdigest()
     assert signature == expected
+
+
+@pytest.mark.parametrize("version", [None, 1, 3, "2", 2.0, True])
+async def test_incompatible_contract_is_rejected(version: object) -> None:
+    data = {"segments": [], "engine": ENGINE}
+    if version is not None:
+        data["contract_version"] = version
+    response = MagicMock()
+    response.json.return_value = data
+    with patch("app.diarization.local_provider.httpx.AsyncClient") as client_class:
+        client = AsyncMock()
+        client.post.return_value = response
+        client.__aenter__.return_value = client
+        client_class.return_value = client
+        with pytest.raises(EngineContractError, match="contract_version"):
+            await LocalProvider("http://synthetic").diarize("recordings/test.wav", DiarizationOptions())

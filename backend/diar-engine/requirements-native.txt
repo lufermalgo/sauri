@@ -1,0 +1,5 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0.0
+boto3>=1.34.0
+senko @ git+https://github.com/narcotic-sh/senko.git@1bcb09041bfa170b4a5a4b0af92f66eff76204d5

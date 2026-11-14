@@ -19,6 +19,8 @@ from app.diarization.diarization_engine import (
     DiarizationEngine,
     DiarizationOptions,
     DiarizationResult,
+    EngineContractError,
+    EngineInfo,
     SpeakerSegment,
 )
 from app.infra.recording_capability import create_recording_capability
@@ -79,7 +81,7 @@ class LocalProvider(DiarizationEngine):
             httpx.ConnectError: If the service is unreachable (Req. 3.6).
             ValueError: If the response is missing the 'segments' key (Req. 3.7).
         """
-        payload = {"audio_ref": audio_ref}
+        payload = {"audio_ref": audio_ref, "contract_version": 2}
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -91,6 +93,8 @@ class LocalProvider(DiarizationEngine):
             response.raise_for_status()
 
         data = response.json()
+        if not isinstance(data, dict) or type(data.get("contract_version")) is not int or data["contract_version"] != 2:
+            raise EngineContractError("Unsupported diarization contract_version; expected 2")
 
         # Req. 3.7: distinguish a missing "segments" key (error) from an empty list (valid)
         if "segments" not in data:
@@ -98,6 +102,13 @@ class LocalProvider(DiarizationEngine):
                 "Local diarization service response missing the 'segments' key: "
                 "invalid structure"
             )
+
+        info = data.get("engine")
+        if not isinstance(info, dict) or any(
+            not isinstance(info.get(key), str) or not info[key] for key in ("name", "model", "device")
+        ):
+            raise EngineContractError("Invalid diarization engine metadata")
+        engine = EngineInfo(name=info["name"], model=info["model"], device=info["device"])
 
         segments = [
             SpeakerSegment(
@@ -110,5 +121,7 @@ class LocalProvider(DiarizationEngine):
 
         return DiarizationResult(
             segments=segments,
+            engine=engine,
+            contract_version=2,
             speaker_count=len({seg["speaker"] for seg in data["segments"]}),
         )

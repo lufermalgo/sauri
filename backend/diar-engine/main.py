@@ -10,7 +10,7 @@ Contract:
   POST /diarize
   Input:  { "audio_ref": str }
   Output: { "segments": [{"speaker": str, "start_ms": int, "end_ms": int}, ...],
-            "num_speakers": int }
+            "speaker_count": int, "contract_version": 2, "engine": {name, model, device} }
 
   GET /health -> { "status": "ok" }
 """
@@ -21,6 +21,7 @@ import logging
 import os
 import tempfile
 from contextlib import asynccontextmanager, suppress
+from typing import Literal
 
 import boto3
 import torch
@@ -106,6 +107,7 @@ class DiarizeRequest(BaseModel):
     """Request body for the /diarize endpoint."""
 
     audio_ref: str
+    contract_version: Literal[2] = 2
 
 
 class Segment(BaseModel):
@@ -116,11 +118,19 @@ class Segment(BaseModel):
     end_ms: int
 
 
-class DiarizeResponse(BaseModel):
-    """Response from the /diarize endpoint."""
+class EngineInfo(BaseModel):
+    name: str
+    model: str
+    device: str
 
+
+class DiarizeResponse(BaseModel):
+    contract_version: Literal[2] = 2
     segments: list[Segment]
-    num_speakers: int
+    speaker_count: int
+    engine: EngineInfo
+    diagnostics: dict[str, object] = {}
+
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +214,10 @@ async def diarize(request: DiarizeRequest) -> DiarizeResponse:
         # 3. Count distinct speakers
         num_speakers = len({segment.speaker for segment in segments})
 
-        return DiarizeResponse(segments=segments, num_speakers=num_speakers)
+        return DiarizeResponse(
+            segments=segments, speaker_count=num_speakers,
+            engine=EngineInfo(name="pyannote", model=DIARIZATION_MODEL, device=DIARIZATION_DEVICE),
+        )
 
     except Exception as e:
         logger.error("Diarization failed: %s", e)

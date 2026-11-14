@@ -174,7 +174,7 @@ r = d.diarize(wav_path=str(wav), accurate=True, generate_colors=False)
 segments = r["raw_segments"]   # [{start, end, speaker}] en segundos
 ```
 
-Se convierten a `SpeakerSegment(raw_label, start_ms, end_ms)`; sin filtro de duración mínima. Respuesta: `{"contract_version": 2, "segments": [...], "speaker_count": int, "engine": {"name": "senko", "model": "senko-coreml", "device": "coreml"}, "diagnostics": {...}}`. Senko se instala en `~/.local/share/sauri/native-engines/diar-venv` con el commit fijado; el instalador verifica los hashes de modelos que Codex registró en `senko-models.sha256.json`.
+Se convierten a `SpeakerSegment(raw_label, start_ms, end_ms)`; sin filtro de duración mínima. Respuesta: `{"contract_version": 2, "segments": [...], "speaker_count": int, "engine": {"name": "senko", "model": "senko-coreml", "device": "coreml"}, "diagnostics": {...}}`. Senko se instala en `~/.local/share/sauri/native-engines/diar-venv` con el commit fijado; el instalador verifica los hashes de modelos que Codex registró en `_tools/engine-hashes.json`.
 
 ### 4. Utilidades comunes de motor (`backend/engine-common/sauri_engine_common/`, nuevo)
 
