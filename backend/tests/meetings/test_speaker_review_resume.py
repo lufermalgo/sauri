@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
-from app.infra.models import AccessLog, Meeting, SpeakerReview, SpeakerReviewItem
+from app.infra.models import AccessLog, Diarization, Meeting, SpeakerReview, SpeakerReviewItem, Transcript
 
 OWNER_ID = "resume-owner"
 OTHER_OWNER_ID = "resume-other-owner"
@@ -48,6 +48,16 @@ async def _persist_review(
                 created_at=now,
             )
         )
+        session.add(Transcript(
+            id=f"transcript-{meeting_id}", meeting_id=meeting_id, language="es",
+            provider="synthetic", supports_turns=True, created_at=datetime.now(UTC),
+        ))
+        session.add(Diarization(
+            id=f"diarization-{meeting_id}", meeting_id=meeting_id,
+            transcript_id=f"transcript-{meeting_id}", processing_revision=1,
+            diarization_state="completed", speaker_count=2,
+            created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+        ))
         session.add(
             SpeakerReview(
                 id=review_id,
@@ -77,7 +87,7 @@ async def _persist_review(
 
 
 @pytest.mark.asyncio
-async def test_pending_review_reload_returns_only_undisposed_items(
+async def test_pending_review_reload_includes_disposed_and_pending_items(
     api_client: AsyncClient, api_db_url: str
 ) -> None:
     meeting_id, review_id = await _persist_review(api_db_url)
@@ -91,12 +101,21 @@ async def test_pending_review_reload_returns_only_undisposed_items(
         "review_id": review_id,
         "revision_id": 1,
         "status": "pending",
-        "remaining_speaker_ids": ["speaker-2"],
+        "labels_by_speaker_id": {"speaker-1": "Synthetic Alice", "speaker-2": "Speaker 2"},
         "items": [
+            {
+                "speaker_id": "speaker-1",
+                "current_label": "Speaker 1",
+                "disposition": "named",
+                "attribution_state": "uncertain",
+                "version": 2,
+            },
             {
                 "speaker_id": "speaker-2",
                 "current_label": "Speaker 2",
                 "disposition": None,
+                "attribution_state": "uncertain",
+                "version": 1,
             }
         ],
     }
@@ -117,8 +136,13 @@ async def test_completed_review_reload_returns_no_outstanding_items(
         "review_id": review_id,
         "revision_id": 1,
         "status": "complete",
-        "remaining_speaker_ids": [],
-        "items": [],
+        "labels_by_speaker_id": {"speaker-1": "Synthetic Alice", "speaker-2": "Speaker 2"},
+        "items": [
+            {"speaker_id": "speaker-1", "current_label": "Speaker 1", "disposition": "named",
+             "attribution_state": "uncertain", "version": 2},
+            {"speaker_id": "speaker-2", "current_label": "Speaker 2", "disposition": "confirmed",
+             "attribution_state": "uncertain", "version": 2},
+        ],
     }
 
 
@@ -137,7 +161,7 @@ async def test_empty_review_status_uses_approved_derived_completion_rule(
         "review_id": review_id,
         "revision_id": 1,
         "status": "complete",
-        "remaining_speaker_ids": [],
+        "labels_by_speaker_id": {},
         "items": [],
     }
 

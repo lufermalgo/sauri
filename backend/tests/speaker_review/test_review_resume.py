@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.auth.token import create_token
 from app.infra.database import Base
-from app.infra.models import Meeting, SpeakerReview, SpeakerReviewItem
+from app.infra.models import Diarization, Meeting, SpeakerReview, SpeakerReviewItem, Transcript
 
 
 @pytest.fixture
@@ -75,6 +75,16 @@ async def _persist_pending_review(api_db_url: str) -> tuple[str, str]:
                 created_at=now,
             )
         )
+        session.add(Transcript(
+            id=f"transcript-{meeting_id}", meeting_id=meeting_id, language="es",
+            provider="synthetic", supports_turns=True, created_at=datetime.now(UTC),
+        ))
+        session.add(Diarization(
+            id=f"diarization-{meeting_id}", meeting_id=meeting_id,
+            transcript_id=f"transcript-{meeting_id}", processing_revision=1,
+            diarization_state="completed", speaker_count=2,
+            created_at=datetime.now(UTC), updated_at=datetime.now(UTC),
+        ))
         session.add(
             SpeakerReview(
                 id=review_id,
@@ -112,7 +122,7 @@ async def _persist_pending_review(api_db_url: str) -> tuple[str, str]:
     return meeting_id, review_id
 
 
-async def test_pending_review_reload_returns_only_undisposed_items(
+async def test_pending_review_reload_includes_disposed_and_pending_items(
     api_client: AsyncClient, api_db_url: str
 ) -> None:
     """Leaving and reloading preserves the saved item and resumes the outstanding one."""
@@ -128,12 +138,16 @@ async def test_pending_review_reload_returns_only_undisposed_items(
     assert body["review_id"] == review_id
     assert body["revision_id"] == 1
     assert body["status"] == "pending"
-    assert body["remaining_speaker_ids"] == ["speaker-two"]
+    assert body["labels_by_speaker_id"] == {"speaker-one": "Synthetic Alice", "speaker-two": "Speaker 2"}
     assert body["items"] == [
+        {"speaker_id": "speaker-one", "current_label": "Speaker 1", "disposition": "named",
+         "attribution_state": "uncertain", "version": 2},
         {
             "speaker_id": "speaker-two",
             "current_label": "Speaker 2",
             "disposition": None,
+            "attribution_state": "uncertain",
+            "version": 1,
         }
     ]
 
@@ -190,8 +204,9 @@ async def test_completed_review_reload_does_not_request_review_again(
     body = response.json()
     assert body["review_id"] == review_id
     assert body["status"] == "complete"
-    assert body["remaining_speaker_ids"] == []
-    assert body["items"] == []
+    assert body["labels_by_speaker_id"] == {"speaker-one": "Synthetic Alice", "speaker-two": "Speaker 2"}
+    assert [item["disposition"] for item in body["items"]] == ["named", "confirmed"]
+    assert [item["version"] for item in body["items"]] == [2, 2]
 
 
 async def test_review_reload_is_scoped_to_meeting_owner(

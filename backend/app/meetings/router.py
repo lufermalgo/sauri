@@ -14,10 +14,10 @@ Requirements: 4.5, 7.1, 7.2, 8.3, 8.4
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -32,6 +32,8 @@ from app.infra.models import (
     Meeting,
     SessionRecording,
     Speaker,
+    SpeakerReview,
+    SpeakerReviewItem,
     SpeechTurn,
     Transcript,
     TranscriptWord,
@@ -84,6 +86,23 @@ async def _get_authorized_meeting(
             detail="Meeting not found",
         )
     return meeting
+
+
+class DispositionInput(BaseModel):
+    """Caller-controlled disposition fields; completion is server-derived."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    disposition: Literal["named", "corrected", "confirmed"]
+    label: str | None = Field(default=None, max_length=64)
+    expected_version: int = Field(ge=1, strict=True)
+    idempotency_key: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_label(self) -> DispositionInput:
+        if self.disposition in {"named", "corrected"} and not (self.label or "").strip():
+            raise ValueError("A label is required for named or corrected dispositions")
+        return self
 
 
 class RenameInput(BaseModel):
@@ -307,6 +326,40 @@ async def get_speaker_review(
         await engine.dispose()
 
 
+@router.put("/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}")
+async def put_speaker_disposition(
+    meeting_id: str,
+    revision_id: int,
+    speaker_id: str,
+    payload: DispositionInput,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Persist a decision and return its receipt-backed full review snapshot."""
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session, session.begin():
+            await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"PUT /api/v1/meetings/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}",
+            )
+            outcome = await SpeakerReviewService(session).record_disposition(
+                user.id, meeting_id, str(revision_id), speaker_id,
+                payload.model_dump(exclude_none=True), payload.expected_version,
+            )
+            if outcome["outcome"] == "not_found":
+                raise HTTPException(status_code=404, detail="Speaker review not found")
+            if outcome["outcome"].startswith("conflict_"):
+                raise HTTPException(status_code=409, detail="Speaker review conflict")
+            if outcome["outcome"] == "invalid_request":
+                raise HTTPException(status_code=422, detail="Invalid disposition")
+            return cast(dict[str, Any], outcome["result"])
+    finally:
+        await engine.dispose()
+
+
 @router.get("/{meeting_id}/playback")
 async def get_playback_manifest(
     meeting_id: str,
@@ -442,6 +495,17 @@ async def _attributed_turns(
     ).all()
     raw_label_by_speaker_id = {speaker.id: speaker.raw_label for speaker in speakers}
     speaker_by_raw_label = {speaker.raw_label: speaker for speaker in speakers}
+    review_items = (
+        await session.scalars(
+            select(SpeakerReviewItem)
+            .join(SpeakerReview, SpeakerReview.id == SpeakerReviewItem.review_id)
+            .where(
+                SpeakerReview.meeting_id == meeting_id,
+                SpeakerReview.processing_revision == diarization.processing_revision,
+            )
+        )
+    ).all()
+    chosen_labels = {item.speaker_key: item.chosen_label for item in review_items}
 
     word_times: list[WordTime] = []
     attributions: list[WordAttribution] = []
@@ -468,7 +532,9 @@ async def _attributed_turns(
             {
                 "sequence": turn.sequence,
                 "speaker_id": speaker.id if speaker is not None else None,
-                "speaker_label": speaker.label if speaker is not None else None,
+                "speaker_label": (
+                    chosen_labels.get(speaker.id) or speaker.label if speaker is not None else None
+                ),
                 "start_ms": turn.start_ms,
                 "end_ms": turn.end_ms,
                 "text": turn.text.strip(),
