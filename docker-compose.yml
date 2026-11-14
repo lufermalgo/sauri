@@ -50,8 +50,6 @@ services:
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-in-production}
-      - SPEAKER_EXCERPT_ACTIVE_KEY_ID=${SPEAKER_EXCERPT_ACTIVE_KEY_ID:?Set a managed excerpt encryption key ID}
-      - SPEAKER_EXCERPT_KEYRING=${SPEAKER_EXCERPT_KEYRING:?Set a managed versioned excerpt keyring}
       - AUTH_DISABLED=${AUTH_DISABLED:-true}
       - RETENTION_DAYS=${RETENTION_DAYS:-90}
     networks:
@@ -86,8 +84,6 @@ services:
       - DIARIZATION_TIMEOUT_SECONDS=${DIARIZATION_TIMEOUT_SECONDS:-3600}
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
-      - SPEAKER_EXCERPT_ACTIVE_KEY_ID=${SPEAKER_EXCERPT_ACTIVE_KEY_ID:?Set a managed excerpt encryption key ID}
-      - SPEAKER_EXCERPT_KEYRING=${SPEAKER_EXCERPT_KEYRING:?Set a managed versioned excerpt keyring}
       - RETENTION_DAYS=${RETENTION_DAYS:-90}
       - SUMMARIZATION_BASE_URL=${SUMMARIZATION_BASE_URL:-http://host.docker.internal:8003/v1}
       - SUMMARIZATION_MODEL=${SUMMARIZATION_MODEL:-qwen3.5-9b}

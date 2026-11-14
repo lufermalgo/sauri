@@ -3,6 +3,11 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 bash "${ROOT_DIR}/scripts/engines/ensure-native-engine-credentials.sh"
+# The queue signing key is generated once in the private credentials folder; an explicit value wins.
+if [[ -z "${QUEUE_MESSAGE_SIGNING_KEY:-}" ]]; then
+  QUEUE_MESSAGE_SIGNING_KEY="$(<"${HOME}/.config/sauri/queue_signing_key")"
+  export QUEUE_MESSAGE_SIGNING_KEY
+fi
 
 run_compose() {
   local step="$1"

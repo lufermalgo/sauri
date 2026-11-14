@@ -5,7 +5,6 @@ cleans its resources on return, failure or interruption. An optional bounded
 hold allows browser checks. cleanup can be repeated from the saved inventory.
 """
 import argparse
-import base64
 from datetime import datetime, timezone
 import json
 import os
@@ -219,10 +218,8 @@ def create(parent):
                  'resourceIds': {kind: [] for kind in KINDS}, 'ports': ports, 'checks': []}
     save(path, inventory)
     # Synthetic keys live in private files, not the public inventory/evidence.
-    keyring = 'qa:' + base64.b64encode(secrets.token_bytes(32)).decode()
     values = {'AUTH_DISABLED': 'false', 'JWT_SECRET': secrets.token_hex(32),
               'QUEUE_MESSAGE_SIGNING_KEY': secrets.token_hex(32),
-              'SPEAKER_EXCERPT_ACTIVE_KEY_ID': 'qa', 'SPEAKER_EXCERPT_KEYRING': keyring,
               'OBJECT_STORE_PUBLIC_ENDPOINT': f'http://localhost:{ports["s3"]}'}
     env_file = directory / 'qa.env'
     env_file.write_text(''.join(f"{key}='{value}'\n" for key, value in values.items()))
