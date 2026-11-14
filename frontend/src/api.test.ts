@@ -405,71 +405,103 @@ describe("meeting playback API adapter", () => {
   });
 });
 
+const reviewBody = {
+  review_id: "review-synthetic",
+  revision_id: 4,
+  status: "pending",
+  items: [
+    { speaker_id: "sp-8", current_label: "Speaker 8", attribution_state: "uncertain", disposition: null, version: 3 },
+    { speaker_id: "sp-9", current_label: "Ana", attribution_state: "attributed", disposition: "named", version: 2 },
+  ],
+  labels_by_speaker_id: { "sp-8": "Speaker 8", "sp-9": "Ana" },
+};
+
+const reviewModel = {
+  reviewId: "review-synthetic",
+  revisionId: "4",
+  status: "pending",
+  items: [
+    { speakerId: "sp-8", currentLabel: "Speaker 8", attributionState: "uncertain", disposition: null, expectedVersion: 3 },
+    { speakerId: "sp-9", currentLabel: "Ana", attributionState: "attributed", disposition: "named", expectedVersion: 2 },
+  ],
+  labelsBySpeakerId: { "sp-8": "Speaker 8", "sp-9": "Ana" },
+};
+
 describe("speaker review API adapter", () => {
-  it("normalizes the backend snake_case review response into the frontend model", async () => {
-    mockFetch({
-      review_id: "review-synthetic",
-      revision_id: 4,
-      status: "pending",
-      items: [{
-        speaker_id: "sp-8",
-        current_label: "Speaker 8",
-        attribution_state: "uncertain",
-        disposition: null,
-        excerpt_ref: "opaque-excerpt-synthetic",
-        version: 3,
-      }],
-    });
+  it("normalizes the review response, including every speaker and the chosen labels", async () => {
+    const fetchMock = mockFetch(reviewBody);
 
-    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toEqual({
-      reviewId: "review-synthetic",
-      revisionId: "4",
-      status: "pending",
-      items: [{
-        speakerId: "sp-8",
-        currentLabel: "Speaker 8",
-        attributionState: "uncertain",
-        disposition: null,
-        excerptRef: "opaque-excerpt-synthetic",
-        expectedVersion: 3,
-      }],
+    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toEqual(reviewModel);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/v1\/meetings\/meeting-synthetic\/speaker-review$/);
+  });
+
+  it("defaults labels to an empty map when the response has none", async () => {
+    mockFetch({ ...reviewBody, labels_by_speaker_id: undefined });
+
+    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toMatchObject({ labelsBySpeakerId: {} });
+  });
+
+  it("sends a disposition as PUT with version and idempotency key and returns the full review", async () => {
+    const fetchMock = mockFetch(reviewBody);
+
+    await expect(api.submitSpeakerDisposition("meeting/1", "4", "sp-9", {
+      disposition: "named", label: "Ana", expectedVersion: 1, idempotencyKey: "key-synthetic",
+    })).resolves.toEqual(reviewModel);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/v1\/meetings\/meeting%2F1\/speaker-review\/revisions\/4\/speakers\/sp-9$/);
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual({
+      disposition: "named", label: "Ana", expected_version: 1, idempotency_key: "key-synthetic",
     });
   });
 
-  it("normalizes labels from the currently persisted minimal review response", async () => {
-    mockFetch({
-      review_id: "review-synthetic",
-      revision_id: "revision-synthetic",
-      status: "pending",
-      items: [{ speaker_id: "sp-8", current_label: "Speaker 8", disposition: null }],
+  it("omits the label of a confirmation", async () => {
+    const fetchMock = mockFetch(reviewBody);
+
+    await api.submitSpeakerDisposition("m-1", "4", "sp-8", {
+      disposition: "confirmed", expectedVersion: 3, idempotencyKey: "key-synthetic",
     });
 
-    await expect(api.getSpeakerReview("meeting-synthetic")).resolves.toMatchObject({
-      items: [{ speakerId: "sp-8", currentLabel: "Speaker 8", disposition: null }],
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      disposition: "confirmed", expected_version: 3, idempotency_key: "key-synthetic",
     });
   });
-});
 
-describe("speaker excerpt API adapter", () => {
-  it("invalidates the session when an excerpt request returns 401", async () => {
-    const fetchMock = mockFetch({ detail: "Unauthorized" }, 401);
+  it.each([
+    [409, "conflict", copy.speakerReview.conflict],
+    [404, "not_found", copy.speakerReview.notFound],
+  ] as const)("maps HTTP %i to a %s review error", async (status, reason, message) => {
+    mockFetch({ detail: "synthetic" }, status);
+
+    const failure = api.submitSpeakerDisposition("m-1", "4", "sp-8", {
+      disposition: "confirmed", expectedVersion: 3, idempotencyKey: "key-synthetic",
+    });
+    await expect(failure).rejects.toBeInstanceOf(api.SpeakerReviewRequestError);
+    await expect(failure).rejects.toMatchObject({ reason, message });
+  });
+
+  it("maps a missing review to not found", async () => {
+    mockFetch({ detail: "synthetic" }, 404);
+
+    await expect(api.getSpeakerReview("m-1")).rejects.toMatchObject({ reason: "not_found" });
+  });
+
+  it("invalidates the session when a review request returns 401", async () => {
+    mockFetch({ detail: "Unauthorized" }, 401);
     const removeItem = vi.fn();
-    const dispatchEvent = vi.spyOn(window, "dispatchEvent");
-    vi.stubGlobal("localStorage", {
-      getItem: vi.fn().mockReturnValue("synthetic-token"),
-      setItem: vi.fn(),
-      removeItem,
-    });
+    vi.stubGlobal("localStorage", { getItem: vi.fn().mockReturnValue("synthetic-token"), setItem: vi.fn(), removeItem });
 
-    await expect(api.playSpeakerExcerpt("meeting-1", "revision-1", "speaker-1"))
-      .rejects.toThrow("Error 401");
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(removeItem).toHaveBeenCalledOnce();
+    await expect(api.getSpeakerReview("m-1")).rejects.toThrow("Error 401");
     expect(removeItem).toHaveBeenCalledWith("sauri_token");
-    expect(dispatchEvent).toHaveBeenCalledOnce();
-    expect(dispatchEvent.mock.calls[0][0]).toBeInstanceOf(Event);
-    expect(dispatchEvent.mock.calls[0][0].type).toBe("sauri:unauthorized");
+  });
+
+  it("creates a distinct idempotency key per action", () => {
+    expect(api.newIdempotencyKey()).not.toBe(api.newIdempotencyKey());
+  });
+
+  it("no longer exposes the derived excerpt route", () => {
+    expect("playSpeakerExcerpt" in api).toBe(false);
   });
 });
 
