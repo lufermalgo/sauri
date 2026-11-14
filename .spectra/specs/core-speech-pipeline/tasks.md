@@ -14,7 +14,8 @@ Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evi
 | 2 | U2 | ASR whisper.cpp con palabras e idioma | U1 (utilidades comunes) |
 | 3 | U3 | Palabras, atribución y API de turnos | U2 |
 | 4 | U5, U7 | Slot, resumen automático; turnos y resumen en el portal | U3 y U4 |
-| 5 | U8 | Corrida real de aceptación y arquitectura | U1–U7 |
+| 5 | U9 | Revisión de hablantes sobre la grabación original | U3, U7 |
+| 6 | U8 | Corrida real de aceptación y arquitectura | U1–U7, U9 |
 
 ---
 
@@ -165,6 +166,42 @@ Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evi
 **Acción:** Pestaña «Resumen» con marca «Borrador», tema, puntos y fuentes; cada fuente salta al turno cuyo intervalo contiene `start_ms`; estados pendiente, generando, fallido (con «Reintentar») y vacío.
 **Criterio de Completado:** pruebas verdes; en navegador, con un backend de desarrollo y datos sintéticos, la pestaña muestra el borrador y las citas saltan al turno correcto (captura).
 **Dependencias:** U5.2, U7.1
+
+---
+
+## Fase 4b: Revisión de hablantes
+
+### Unidad U9: Escuchar, nombrar y confirmar hablantes sobre la grabación original
+
+#### Tarea U9.1: API de revisión
+**Archivo:** `backend/app/meetings/router.py`, `backend/app/meetings/speaker_review_service.py`, `backend/tests/meetings/`
+**Acción:** Implementar el GET ampliado y el PUT del diseño §11 reutilizando `SpeakerReviewService.record_disposition`; el PUT toma `idempotency_key` del cuerpo, valida propiedad, revisión activa y versión, y responde con la revisión completa; el GET devuelve todos los hablantes y `labels_by_speaker_id`. Tomar como base el PUT del PR cerrado #850 (rama `feature/issue-652-transcript-turns-t13`, `refs/pull/850/head`) y sus casos de `test_generation_api.py`, adaptándolos a la revisión actual (`Diarization.processing_revision`).
+**Criterio de Completado:** pruebas con PostgreSQL real: nombrar, confirmar, corregir, repetir con la misma `idempotency_key`, versión obsoleta (409), revisión obsoleta (409), reunión ajena (404), un hablante no afecta a otro, la revisión sigue pendiente hasta tener todas las disposiciones (Propiedad 14).
+**Dependencias:** U3
+
+#### Tarea U9.2: Nombre elegido en la transcripción
+**Archivo:** `backend/app/meetings/router.py`, `backend/tests/meetings/`
+**Acción:** En los turnos por palabra, `speaker_label` usa `chosen_label` de la misma revisión y cae a `Speaker N`.
+**Criterio de Completado:** prueba: tras nombrar un hablante, `GET /transcript` devuelve el nombre en todos sus turnos; sin nombre, `Speaker N`.
+**Dependencias:** U9.1
+
+#### Tarea U9.3: Cliente y tramo de escucha
+**Archivo:** `frontend/src/api.ts`, `frontend/src/speaker-review-interval.ts`, `frontend/src/components/PlaybackController.ts`, pruebas
+**Acción:** Adaptar `api.ts` al contrato (enviar `idempotency_key` y `expected_version`, usar la revisión completa devuelta, exponer `labelsBySpeakerId`, quitar `playSpeakerExcerpt`); crear la función del tramo (Propiedad 13) y `playInterval` del reproductor, con base en `refs/pull/850/head` (`speaker-review-interval.ts`, `playInterval`) adaptada a turnos por palabra.
+**Criterio de Completado:** pruebas de Propiedad 13 con generadores y de `playInterval` (se detiene en `endMs`; un `seek` manual lo cancela).
+**Dependencias:** U9.1
+
+#### Tarea U9.4: Interfaz de revisión
+**Archivo:** `frontend/src/components/TranscriptView.tsx`, `frontend/src/copy/es.ts`, pruebas
+**Acción:** Por hablante: «Escuchar» (toca el tramo; advertencia si es corto; deshabilitado si no hay tramo utilizable), campo de nombre con «Guardar nombre», «Confirmar» y «Corregir»; revisión pendiente visible hasta completarse; los turnos muestran el nombre elegido tras guardar y al recargar. Texto solo en `copy/es.ts`.
+**Criterio de Completado:** pruebas de interfaz; en navegador con datos reales (U8), escuchar un tramo, nombrar y ver el nombre en el transcript con captura.
+**Dependencias:** U9.2, U9.3
+
+#### Tarea U9.5: Retirar el código de muestras
+**Archivo:** `backend/app/meetings/speaker_excerpt_service.py`, `backend/app/main.py`, `backend/app/worker.py`, pruebas asociadas
+**Acción:** Eliminar el servicio de muestras y la exigencia de `ExcerptKeyring`; quitar el campo `excerpt_ref` solo si ninguna otra ruta lo usa (si hace falta una migración, se documenta aparte).
+**Criterio de Completado:** la API y el worker arrancan sin llave de muestras; `grep -rn "speaker_excerpt\|ExcerptKeyring" backend/app` sin resultados; pruebas verdes.
+**Dependencias:** U9.1
 
 ---
 

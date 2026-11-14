@@ -49,6 +49,9 @@ La solución sustituye las implementaciones detrás de las costuras existentes (
 **Portal sin biblioteca de enrutado ni estilos Terra.** Se amplía el conmutador de vistas existente de `frontend/src/App.tsx` con una vista de carga y una de resumen.
 *Alternativas descartadas:* introducir un router (la spec `portal-visual-design` lo planifica con su propia estructura y lo haría dos veces); aplicar el tema Terra (fuera de alcance).
 
+**La revisión de hablantes reproduce un tramo de la grabación original; no hay ruta de «muestra».** El portal calcula el tramo con los turnos atribuidos por palabra y le pide al reproductor que lo toque de principio a fin.
+*Alternativas descartadas:* generar y servir un WAV por hablante (`GET .../excerpt` del PR #893 y `speaker_excerpt_service.py`): crea audio derivado, contradice la decisión del dueño del 13/11 y el requisito de no guardar muestras de voz; elegir el tramo en el servidor (ata el backend a una decisión de presentación y obliga a otra llamada por cada «Escuchar»).
+
 ## Arquitectura
 
 ```mermaid
@@ -259,6 +262,15 @@ FastAPI en el puerto 8003 con `POST /v1/chat/completions` (reenvía a `llama-ser
 - `GET /api/v1/meetings/{id}/summary` incluye `key_points[].sources` y `review_state`.
 - Portal: vista de carga (`SpeakerRecognitionTestScreen` ya implementa `uploadRecording`; se extrae la subida con XHR y progreso a `UploadView`), estado real por polling del campo `process_state` ya existente, `SummaryPanel` (pestaña Resumen con marca "Borrador", citas que al pulsar saltan al turno cuyo intervalo contiene `start_ms`) y turnos por hablante en `TranscriptView`. Tipos nuevos en `packages/shared-types`.
 
+### 11. Revisión de hablantes (`backend/app/meetings/`, `frontend/src/`)
+
+- `GET /api/v1/meetings/{id}/speaker-review`: `{review_id, revision_id, status, items: [{speaker_id, current_label, attribution_state, disposition, version}], labels_by_speaker_id: {speaker_id: label}}`. Incluye todos los hablantes de la revisión activa (con su disposición), no solo los pendientes, para que un nombre elegido no desaparezca.
+- `PUT /api/v1/meetings/{id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}`: cuerpo `{disposition: "named"|"corrected"|"confirmed", label?, expected_version, idempotency_key}` (`label` obligatorio en `named` y `corrected`). Responde con la revisión completa (misma forma que el GET). `404` si la reunión no es del usuario; `409` si `revision_id` no es la activa o `expected_version` no coincide. Repetir la misma `idempotency_key` devuelve el mismo resultado sin duplicar.
+- `GET /meetings/{id}/transcript` (turnos por palabra) resuelve `speaker_label` con la etiqueta elegida de la misma revisión (`chosen_label`) y cae a `Speaker N` si no hay.
+- Tramo de escucha (`frontend/src/speaker-review-interval.ts`): sobre `turns` atribuidos filtra los de `speakerId`, descarta los `hasAmbiguous`, une turnos contiguos con pausas ≤ 250 ms, elige el tramo más largo y lo recorta a 20 s; devuelve `{startMs, endMs, short: boolean}` (`short` si dura menos de 5 s) o `null` si el hablante no tiene tramos utilizables.
+- `PlaybackController.playInterval(startMs, endMs)`: busca a `startMs`, reproduce y se detiene al llegar a `endMs`; un nuevo `playInterval` o un `seek` manual cancela el anterior.
+- Se elimina `backend/app/meetings/speaker_excerpt_service.py` y la exigencia de `ExcerptKeyring` al arrancar (`main.py`, `worker.py`) porque nada los usa y contradicen la decisión de no generar audio derivado.
+
 ## Modelos de Datos
 
 ```python
@@ -309,6 +321,10 @@ La migración se numera con el siguiente `0NN` libre en `backend/alembic/version
 **Propiedad 11 — Idempotencia.** Reentregar un mensaje con la misma generación no duplica `transcript_words`, `speakers` ni `word_speaker_assignments` (restricciones únicas y fencing existente). *Valida: Requisito 8.2*
 
 **Propiedad 12 — Secretos fuera de registros.** Ninguna línea de log contiene el contenido de `api_key`, el token de motor ni texto de transcripción. *Valida: Requisitos 6.5, 10.2*
+
+**Propiedad 13 — Tramo de escucha acotado.** Para cualquier lista de turnos atribuidos y cualquier hablante, el tramo devuelto está contenido en los turnos de ese hablante, no los cruza con otro hablante, dura como máximo 20 000 ms, y `short` es verdadero exactamente cuando dura menos de 5 000 ms. *Valida: Requisito 10.2*
+
+**Propiedad 14 — Disposiciones idempotentes y aisladas.** Repetir una petición con la misma `idempotency_key` no cambia la versión ni el estado; registrar un hablante no modifica la disposición de otro; una `revision_id` o `expected_version` obsoletas producen conflicto sin cambios. *Valida: Requisitos 10.3, 10.5*
 
 ## Manejo de Errores
 
