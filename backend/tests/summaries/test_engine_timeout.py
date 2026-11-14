@@ -50,8 +50,10 @@ async def test_request_uses_long_generation_budget_without_changing_payload(
         assert payload["stream"] is False
         assert payload["temperature"] == 0
         schema = payload["response_format"]["json_schema"]["schema"]
-        assert schema["$defs"]["PassageRef"]["properties"]["passage_id"]["enum"] == ["P0000"]
-        assert schema["$defs"]["KeyPoint"]["properties"]["sources"]["maxItems"] == 2
+        assert "$ref" not in json.dumps(schema)
+        key_point = schema["properties"]["key_points"]["items"]["properties"]
+        assert key_point["sources"]["maxItems"] == 2
+        assert key_point["sources"]["items"]["properties"]["passage_id"]["enum"] == ["P0000"]
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({
             "topic": "Synthetic", "key_points": [{"text": "Point", "sources": [{"passage_id": "P0000"}]}],
         })}}]})
