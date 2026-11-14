@@ -2,7 +2,7 @@
 
 ## Resumen
 
-Sauri ya separa los motores detrás de servicios HTTP nativos en el host (`backend/asr-engine/native_main.py` en el puerto 8001, `backend/diar-engine/native_main.py` en el 8002, arrancados por `_tools/native-engines.sh`) y los workers Docker los consumen mediante `LocalProvider`. Lo que hay detrás de esas costuras es lo que falla: MLX-Whisper y pyannote son lentos y consumen memoria, el contrato solo transporta segmentos (sin palabras), la atribución asigna cada segmento entero a un hablante, el idioma está fijo en `es-CO`, el resumen solo habla con Ollama y nada de esto se ha visto de punta a punta en el portal.
+Sauri ya separa los motores detrás de servicios HTTP nativos en el host (`backend/asr-engine/native_main.py` en el puerto 8001, `backend/diar-engine/native_main.py` en el 8002, arrancados por `scripts/engines/native-engines.sh`) y los workers Docker los consumen mediante `LocalProvider`. Lo que hay detrás de esas costuras es lo que falla: MLX-Whisper y pyannote son lentos y consumen memoria, el contrato solo transporta segmentos (sin palabras), la atribución asigna cada segmento entero a un hablante, el idioma está fijo en `es-CO`, el resumen solo habla con Ollama y nada de esto se ha visto de punta a punta en el portal.
 
 La solución sustituye las implementaciones detrás de las costuras existentes (strangler), sin tocar el modelo de reuniones, la cola ni el fencing de generaciones:
 1. Contrato v2 de los motores: el ASR devuelve palabras con tiempos y el idioma usado; la diarización devuelve segmentos crudos; ambos declaran modelo y dispositivo.
@@ -174,7 +174,7 @@ r = d.diarize(wav_path=str(wav), accurate=True, generate_colors=False)
 segments = r["raw_segments"]   # [{start, end, speaker}] en segundos
 ```
 
-Se convierten a `SpeakerSegment(raw_label, start_ms, end_ms)`; sin filtro de duración mínima. Respuesta: `{"contract_version": 2, "segments": [...], "speaker_count": int, "engine": {"name": "senko", "model": "senko-coreml", "device": "coreml"}, "diagnostics": {...}}`. Senko se instala en `~/.local/share/sauri/native-engines/diar-venv` con el commit fijado; el instalador verifica los hashes de modelos que Codex registró en `_tools/engine-hashes.json`.
+Se convierten a `SpeakerSegment(raw_label, start_ms, end_ms)`; sin filtro de duración mínima. Respuesta: `{"contract_version": 2, "segments": [...], "speaker_count": int, "engine": {"name": "senko", "model": "senko-coreml", "device": "coreml"}, "diagnostics": {...}}`. Senko se instala en `~/.local/share/sauri/native-engines/diar-venv` con el commit fijado; el instalador verifica los hashes de modelos que Codex registró en `scripts/engines/engine-hashes.json`.
 
 ### 4. Utilidades comunes de motor (`backend/engine-common/sauri_engine_common/`, nuevo)
 
@@ -185,7 +185,7 @@ class KeepAwake:                       # contexto: lanza `caffeinate -i -w <pid>
     def __exit__(self, *exc) -> None: ...
 ```
 
-`normalize_to_wav` ejecuta `ffmpeg -nostdin -v error -y -i {source} -vn -ac 1 -ar 16000 -c:a pcm_s16le {dest}` (sin `aresample=async`: Codex comprobó que altera la duración en 110 ms sin demostrar una reparación). Devuelve duración en ms; el motor la informa en `diagnostics.audio_ms` y el worker registra una discrepancia si `recording.duration_seconds` existe y difiere en más de 100 ms. `_tools/native-engines.sh` añade `backend/engine-common` al `PYTHONPATH`.
+`normalize_to_wav` ejecuta `ffmpeg -nostdin -v error -y -i {source} -vn -ac 1 -ar 16000 -c:a pcm_s16le {dest}` (sin `aresample=async`: Codex comprobó que altera la duración en 110 ms sin demostrar una reparación). Devuelve duración en ms; el motor la informa en `diagnostics.audio_ms` y el worker registra una discrepancia si `recording.duration_seconds` existe y difiere en más de 100 ms. `scripts/engines/native-engines.sh` añade `backend/engine-common` al `PYTHONPATH`.
 
 ### 5. Slot de motor pesado (`backend/app/infra/engine_slot.py`, nuevo)
 

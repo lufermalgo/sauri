@@ -9,7 +9,7 @@ def test_check_is_read_only(tmp_path: Path) -> None:
     root = Path(__file__).parents[3]
     destination = tmp_path / "absent"
     result = subprocess.run(
-        ["bash", str(root / "_tools/install-llm-engine.sh"), "--check"],
+        ["bash", str(root / "scripts/engines/install-llm-engine.sh"), "--check"],
         cwd=root, env={**os.environ, "SAURI_LLM_INSTALL_DIR": str(destination)},
         capture_output=True, text=True, timeout=30,
     )

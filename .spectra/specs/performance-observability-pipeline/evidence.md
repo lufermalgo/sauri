@@ -76,7 +76,7 @@ Fuente: informe `read-only-hotspots-178f893.md` en temporal del hilo, con eviden
 
 Nahuel entregó T1–T3 en commit remoto `462886ed34ca6da850f797e9bd92c77d585fe81a`. Ansel revisó código/índice de cobertura y oracle independiente y lo incorporó mediante cherry-pick `e51e2ec265305b7de02b2f0fc42c7da56c739124` a este candidato. Se mantienen orden, objetos Speaker originales, desempates, multiplicidad acumulada y unión exclusiva; no cambia clustering ni modelos.
 
-Ansel repitió el benchmark con `PYTHONPATH=$PWD/backend /Users/lufermalgo/Proyectos/sauri/backend/.venv/bin/python _tools/benchmark-assignment.py`. Incluye construcción del índice, warmup1 y7 muestras por variante alternadas. Entrada **sintética** anónima determinista seed907:1500turnos/2154segmentos/4hablantes; no audio, no datos inventados presentados como reales. Salidas idénticas en ambos modos. Archivo durable `assignment-benchmark.json` conserva versiones, hash, entorno y todas las muestras.
+Ansel repitió el benchmark con `PYTHONPATH=$PWD/backend /Users/lufermalgo/Proyectos/sauri/backend/.venv/bin/python scripts/dev/benchmark-assignment.py`. Incluye construcción del índice, warmup1 y7 muestras por variante alternadas. Entrada **sintética** anónima determinista seed907:1500turnos/2154segmentos/4hablantes; no audio, no datos inventados presentados como reales. Salidas idénticas en ambos modos. Archivo durable `assignment-benchmark.json` conserva versiones, hash, entorno y todas las muestras.
 
 | Modo | Mediana base | Mediana indexada | Aceleración de etapa | Reducción |
 |---|---:|---:|---:|---:|

@@ -1,4 +1,4 @@
-"""Tests for the Language_Regression_Check tool (_tools/check_english_only.py).
+"""Tests for the Language_Regression_Check tool (scripts/dev/check_english_only.py).
 
 These tests verify the English-only identifier policy documented in AGENTS.md.
 """
@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CHECK_SCRIPT = REPO_ROOT / "_tools" / "check_english_only.py"
+CHECK_SCRIPT = REPO_ROOT / "scripts" / "dev" / "check_english_only.py"
 
 
 def run_check(*paths: Path) -> subprocess.CompletedProcess[str]:

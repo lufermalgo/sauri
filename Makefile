@@ -17,48 +17,48 @@ setup-hooks:
 ## Crear un worktree + rama aislados para un spec/issue: make worktree BRANCH=feature/issue-12-desc
 worktree:
 	@test -n "$(BRANCH)" || (echo "Uso: make worktree BRANCH=feature/issue-12-desc" && exit 1)
-	_tools/new-worktree.sh $(BRANCH)
+	scripts/dev/new-worktree.sh $(BRANCH)
 
 ## Eliminar un worktree ya mergeado: make worktree-rm BRANCH=feature/issue-12-desc
 worktree-rm:
 	@test -n "$(BRANCH)" || (echo "Uso: make worktree-rm BRANCH=feature/issue-12-desc" && exit 1)
-	_tools/remove-worktree.sh $(BRANCH)
+	scripts/dev/remove-worktree.sh $(BRANCH)
 
 ## Instalar motores nativos en un venv fuera del repositorio (MLX + Senko/CoreML).
 engines-install:
 	mkdir -p "$(dir $(SAURI_NATIVE_VENV))"
-	bash _tools/ensure-native-engine-credentials.sh
+	bash scripts/engines/ensure-native-engine-credentials.sh
 	@set -e; if [ ! -x "$(SAURI_NATIVE_VENV)/bin/python" ]; then \
 	  $(NATIVE_PYTHON311) -m venv "$(SAURI_NATIVE_VENV)"; \
 	fi
 	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install --upgrade pip
-	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install -r _tools/requirements-native-asr.txt
-	NATIVE_PYTHON311="$(NATIVE_PYTHON311)" bash _tools/install-diar-engine.sh
+	"$(SAURI_NATIVE_VENV)/bin/python" -m pip install -r scripts/engines/requirements-native-asr.txt
+	NATIVE_PYTHON311="$(NATIVE_PYTHON311)" bash scripts/engines/install-diar-engine.sh
 
 ## Iniciar/detener/consultar los servidores nativos; cada uno usa su PID exacto.
 engines-up:
-	bash _tools/ensure-native-engine-credentials.sh
-	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash _tools/native-engines.sh start all
+	bash scripts/engines/ensure-native-engine-credentials.sh
+	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash scripts/engines/native-engines.sh start all
 
 engines-down:
-	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash _tools/native-engines.sh stop all
+	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash scripts/engines/native-engines.sh stop all
 
 engines-status:
-	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash _tools/native-engines.sh status all
+	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash scripts/engines/native-engines.sh status all
 
 ## Escanear todo el repo en busca de identificadores en español (Language_Regression_Check).
 ## Ver AGENTS.md para las reglas de idioma del código.
 check-english:
-	python3 _tools/check_english_only.py $$(git ls-files 'backend/**' 'extension/src/**' 'frontend/src/**' 'packages/shared-types/**')
+	python3 scripts/dev/check_english_only.py $$(git ls-files 'backend/**' 'extension/src/**' 'frontend/src/**' 'packages/shared-types/**')
 
 ## Levantar API, worker, PostgreSQL, MinIO y RabbitMQ; motores locales corren fuera de Compose
 up:
-	_tools/compose-bringup.sh
+	scripts/platform/compose-bringup.sh
 
 ## Levantar con rebuild de imágenes
 build:
 	docker compose build
-	_tools/compose-bringup.sh
+	scripts/platform/compose-bringup.sh
 
 ## Ver logs de todos los servicios
 logs:

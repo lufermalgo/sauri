@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-PATH = Path(__file__).with_name('validate-local-platform.py')
+PATH = Path(__file__).resolve().parents[1] / 'platform' / 'validate-local-platform.py'
 
 
 class ValidationLifecycleTests(unittest.TestCase):

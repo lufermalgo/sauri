@@ -2,9 +2,9 @@
 # Creates an isolated git worktree + branch for a spec/issue, so concurrent
 # agent sessions never share a working directory (see AGENTS.md: Code changes and Git protection).
 #
-# Usage: _tools/new-worktree.sh <branch-name>
-#   e.g.: _tools/new-worktree.sh feature/issue-12-silero-vad
-#         _tools/new-worktree.sh bugfix/issue-34-paste-timing
+# Usage: scripts/dev/new-worktree.sh <branch-name>
+#   e.g.: scripts/dev/new-worktree.sh feature/issue-12-silero-vad
+#         scripts/dev/new-worktree.sh bugfix/issue-34-paste-timing
 #
 # Creates the worktree inside the repository root, so tools can inspect it
 # while remaining confined to this project:
@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-branch="${1:?Usage: _tools/new-worktree.sh <branch-name> (e.g. feature/issue-12-desc)}"
+branch="${1:?Usage: scripts/dev/new-worktree.sh <branch-name> (e.g. feature/issue-12-desc)}"
 
 if [ "$branch" = "main" ]; then
   echo "ERROR: refusing to create a worktree for 'main'." >&2

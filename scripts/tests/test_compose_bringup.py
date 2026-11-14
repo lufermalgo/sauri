@@ -12,8 +12,8 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent.parent
-SCRIPT_NAME = "_tools/compose-bringup.sh"
+ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_NAME = "scripts/platform/compose-bringup.sh"
 MAKEFILE_NAME = "Makefile"
 
 
@@ -129,9 +129,9 @@ class PortalBringupContractTests(unittest.TestCase):
     def run_bringup(self, failure=""):
         with tempfile.TemporaryDirectory() as temp_dir:
             tree = Path(temp_dir)
-            (tree / "_tools").mkdir()
-            for name in ["compose-bringup.sh", "ensure-native-engine-credentials.sh"]:
-                shutil.copy2(ROOT / "_tools" / name, tree / "_tools" / name)
+            for relative in [SCRIPT_NAME, "scripts/engines/ensure-native-engine-credentials.sh"]:
+                (tree / relative).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / relative, tree / relative)
             docker = tree / "docker"
             docker.write_text('''#!/bin/sh
 printf '%s|%s|%s\\n' "$COMPOSE_PROJECT_NAME" "$COMPOSE_FILE" "$*" >> "$CALL_LOG"

@@ -2,7 +2,7 @@
 # Pinned, static Metal build; --check never downloads, builds or installs anything.
 set -euo pipefail
 umask 077
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEST="${SAURI_LLM_INSTALL_DIR:-$HOME/.local/share/sauri/native-engines/llm}"
 CHECK=0
 case "${1:-}" in --check) CHECK=1 ;; '') ;; *) echo "Usage: $0 [--check]" >&2; exit 2 ;; esac
@@ -13,7 +13,7 @@ case "${1:-}" in --check) CHECK=1 ;; '') ;; *) echo "Usage: $0 [--check]" >&2; e
 command -v uv >/dev/null
 # Use the backend's Python environment, not an ambient system interpreter.
 py() { (cd "$ROOT/backend" && uv run --no-sync --extra dev python "$@"); }
-read_field() { py -c 'import json,sys; print(json.load(open(sys.argv[1]))["llm"][sys.argv[2]])' "$ROOT/_tools/engine-hashes.json" "$1"; }
+read_field() { py -c 'import json,sys; print(json.load(open(sys.argv[1]))["llm"][sys.argv[2]])' "$ROOT/scripts/engines/engine-hashes.json" "$1"; }
 COMMIT="$(read_field llama_cpp_commit)"
 REPO="$(read_field model_repo)"
 REVISION="$(read_field model_revision)"
@@ -82,7 +82,7 @@ if ! verify_model; then
   }
   mv "$BUILD/model.gguf" "$MODEL_PATH"
 fi
-py - "$DEST/provenance.json" "$ROOT/_tools/engine-hashes.json" "$BINARY" <<'PY'
+py - "$DEST/provenance.json" "$ROOT/scripts/engines/engine-hashes.json" "$BINARY" <<'PY'
 import hashlib, json, sys
 p = json.load(open(sys.argv[2]))['llm']
 p.update(binary_sha256=hashlib.file_digest(open(sys.argv[3], 'rb'), 'sha256').hexdigest(),

@@ -972,7 +972,7 @@ graph (AGENTS.md non-negotiable TDD order).
   the dispatcher publishes it and the summary worker consumes it. Transcript commit alone
   does not enqueue summary generation.
 - Candidate worktree: this branch's worktree or a successor created by
-  `_tools/new-worktree.sh` per AGENTS.md §7.
+  `scripts/dev/new-worktree.sh` per AGENTS.md §7.
 
 **Comandos:**
 

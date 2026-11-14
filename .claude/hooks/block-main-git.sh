@@ -33,7 +33,7 @@ fi
 branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null)"
 
 if [ "$branch" = "main" ]; then
-  reason="Direct git commit/push on 'main' is blocked by project policy (AGENTS.md: Code changes and Git protection). Create or enter a worktree first: _tools/new-worktree.sh <branch-name>, then cd into the printed path and retry there."
+  reason="Direct git commit/push on 'main' is blocked by project policy (AGENTS.md: Code changes and Git protection). Create or enter a worktree first: scripts/dev/new-worktree.sh <branch-name>, then cd into the printed path and retry there."
   jq -n --arg reason "$reason" \
     '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
   exit 0

@@ -4,7 +4,7 @@
 
 Ejecución por unidades de entrega (U1–U8). Cada unidad tiene su issue, su rama y su worktree desde `origin/main`, la implementa Codex con el protocolo de `~/Proyectos/sauri-orchestration/` y la valida, publica e integra el orquestador (Claude). Una unidad se cierra solo con: pruebas del backend/portal pertinentes en verde, `ruff` y `mypy` de los archivos tocados sin diagnósticos nuevos, `npm run typecheck` si toca TypeScript, diff revisado, PR integrado. Documentación terminada no es implementación ni aceptación de producto; la aceptación es del dueño tras U8.
 
-Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evidence/codex-pipeline-argos-20261114/{pipeline.py,pipeline_steps.py,optimization/report.md}`, `codex-coreml-20261114/{report.md,script-final.py}`, `codex-speaker-evaluation` (`_tools/benchmark_coreml.py`). Codex las usa solo como referencia de invocación.
+Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evidence/codex-pipeline-argos-20261114/{pipeline.py,pipeline_steps.py,optimization/report.md}`, `codex-coreml-20261114/{report.md,script-final.py}`, `codex-speaker-evaluation` (`_tools/benchmark_coreml.py`, rama archivada del experimento; no existe en el repositorio). Codex las usa solo como referencia de invocación.
 
 ## Resumen de Fases
 
@@ -35,14 +35,14 @@ Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evi
 **Dependencias:** Ninguna
 
 #### Tarea U1.3: Adaptador nativo Senko
-**Archivo:** `backend/diar-engine/native_main.py`, `_tools/native-engines.sh`, `backend/diar-engine/requirements-native.txt` (nuevo)
+**Archivo:** `backend/diar-engine/native_main.py`, `scripts/engines/native-engines.sh`, `backend/diar-engine/requirements-native.txt` (nuevo)
 **Acción:** Reemplazar pyannote/MPS por Senko según diseño §3: `Diarizer(device="coreml", vad="pyannote", clustering="cpu", warmup=True, quiet=True)`, VAD con duración mínima 0, `diarize(wav_path, accurate=True, generate_colors=False)`, usar `raw_segments`, convertir a ms. Descargar el audio del object store como hoy, `normalize_to_wav`, ejecutar bajo `KeepAwake`, borrar temporales siempre. Mantener intactos token de motor, `X-Sauri-Recording-Capability`, `_validate_audio_ref` y rutas. `native-engines.sh`: añadir `backend/engine-common` al `PYTHONPATH` y usar el venv `~/.local/share/sauri/native-engines/diar-venv`.
 **Criterio de Completado:** Con el venv instalado (T U1.4), un test `native` (`SAURI_RUN_NATIVE_TESTS=1 uv run --extra dev pytest tests/native/test_diar_native.py`) sobre un fixture sintético de 30 s devuelve contrato v2 válido, sin archivos temporales residuales, y `ruff`/`mypy` limpios en archivos tocados.
 **Dependencias:** U1.1, U1.2
 
 #### Tarea U1.4: Instalador de Senko
-**Archivo:** `_tools/install-diar-engine.sh`, `Makefile` (`engines-install`), `docs/operations/local-deployment.md`
-**Acción:** Crear el venv, instalar Senko desde `https://github.com/narcotic-sh/senko.git` en el commit `1bcb09041bfa170b4a5a4b0af92f66eff76204d5` y verificar el SHA-256 de los modelos descargados contra una lista fija en `_tools/engine-hashes.json` (tomar los valores de `~/.cache/sauri-coreml-benchmark/` y `senko-models.sha256.json` de la evidencia de Codex). Idempotente; falla si un hash no coincide.
+**Archivo:** `scripts/engines/install-diar-engine.sh`, `Makefile` (`engines-install`), `docs/operations/local-deployment.md`
+**Acción:** Crear el venv, instalar Senko desde `https://github.com/narcotic-sh/senko.git` en el commit `1bcb09041bfa170b4a5a4b0af92f66eff76204d5` y verificar el SHA-256 de los modelos descargados contra una lista fija en `scripts/engines/engine-hashes.json` (tomar los valores de `~/.cache/sauri-coreml-benchmark/` y `senko-models.sha256.json` de la evidencia de Codex). Idempotente; falla si un hash no coincide.
 **Criterio de Completado:** `make engines-install` en un entorno con el venv ya presente termina sin cambios y con código 0; con un hash alterado en el archivo, falla.
 **Dependencias:** Ninguna
 
@@ -67,7 +67,7 @@ Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evi
 **Dependencias:** Ninguna
 
 #### Tarea U4.4: `llm-engine` nativo e instalador
-**Archivo:** `backend/llm-engine/native_main.py`, `_tools/install-llm-engine.sh`, `_tools/native-engines.sh`, `_tools/engine-hashes.json`, `backend/tests/llm_engine/`
+**Archivo:** `backend/llm-engine/native_main.py`, `scripts/engines/install-llm-engine.sh`, `scripts/engines/native-engines.sh`, `scripts/engines/engine-hashes.json`, `backend/tests/llm_engine/`
 **Acción:** Servicio FastAPI (puerto 8003) según diseño §9: autenticación por token de motor, `/v1/chat/completions` con arranque perezoso de `llama-server`, apagado a los 120 s sin uso y `KeepAwake` por petición. El instalador compila `llama.cpp` en el commit `af76639f728c69c74c873cc45f038aaa17afd09e` estático (`-DLLAMA_OPENSSL=OFF`, Metal) y descarga `unsloth/Qwen3.5-9B-GGUF` revisión `3885219b6810b007914f3a7950a8d1b469d598a5` verificando SHA-256 `03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`. Registrar el indicador usado para desactivar el modo de razonamiento en `provenance.json`. Reutilizar las utilidades de U1.1 (si U1 aún no está integrado, copiar `keep_awake.py` solo para pruebas locales y rebasar al integrar).
 **Criterio de Completado:** Prueba con un `llama-server` falso: arranque al primer uso, apagado por inactividad, 401 sin token. Con binario y modelo reales: `curl` autenticado devuelve JSON válido con el esquema.
 **Dependencias:** U4.2
@@ -99,7 +99,7 @@ Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evi
 **Dependencias:** Ninguna
 
 #### Tarea U2.3: Adaptador nativo whisper.cpp
-**Archivo:** `backend/asr-engine/native_main.py`, `_tools/install-asr-engine.sh`, `_tools/engine-hashes.json`, `Makefile`
+**Archivo:** `backend/asr-engine/native_main.py`, `scripts/engines/install-asr-engine.sh`, `scripts/engines/engine-hashes.json`, `Makefile`
 **Acción:** Reemplazar `mlx_whisper` por el subproceso de diseño §2 sobre el WAV normalizado (U1.1) y bajo `KeepAwake`; temporales siempre eliminados; tiempos por etapa en `diagnostics.stage_ms`. El instalador copia/descarga `ggml-large-v3-turbo-q5_0.bin` a `~/.local/share/sauri/models/` verificando 574 041 195 bytes y SHA-256 `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2`, y verifica que `whisper-cli` exista.
 **Criterio de Completado:** test `native` sobre un fixture sintético devuelve contrato v2; el motor responde `422 normalize_failed` ante archivo corrupto y no deja temporales.
 **Dependencias:** U1.1, U2.1, U2.2

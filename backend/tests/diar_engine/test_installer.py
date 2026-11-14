@@ -24,11 +24,11 @@ def test_check_is_idempotent_and_rejects_tampered_hash(tmp_path: Path) -> None:
     if provisioned.returncode:
         pytest.skip("Senko is not installed in the configured diarization venv")
     env = {**os.environ, "SAURI_DIAR_ENGINE_PYTHON": str(PYTHON), "PYTHONDONTWRITEBYTECODE": "1"}
-    command = ["bash", str(ROOT / "_tools/install-diar-engine.sh"), "--check"]
+    command = ["bash", str(ROOT / "scripts/engines/install-diar-engine.sh"), "--check"]
     for _ in range(2):
         result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
-    manifest = json.loads((ROOT / "_tools/engine-hashes.json").read_text())
+    manifest = json.loads((ROOT / "scripts/engines/engine-hashes.json").read_text())
     files = manifest["senko"]["files"]
     files[next(iter(files))] = "0" * 64
     altered = tmp_path / "hashes.json"
@@ -65,7 +65,7 @@ def test_check_verifies_provenance_and_hashes_without_installed_senko(
     manifest = tmp_path / "hashes.json"
     manifest.write_text(json.dumps({"senko": {"commit": commit, "files": {"senko/model.bin": digest}}}))
     result = subprocess.run(
-        ["bash", str(ROOT / "_tools/install-diar-engine.sh"), "--check"],
+        ["bash", str(ROOT / "scripts/engines/install-diar-engine.sh"), "--check"],
         env={**os.environ, "PYTHONPATH": str(tmp_path), "SAURI_DIAR_ENGINE_PYTHON": sys.executable,
              "SAURI_ENGINE_HASHES_FILE": str(manifest), "PYTHONDONTWRITEBYTECODE": "1"},
         capture_output=True, text=True, timeout=30,
@@ -86,7 +86,7 @@ def test_diarization_never_uses_legacy_asr_python(tmp_path: Path, script: str) -
     env = {key: value for key, value in os.environ.items() if not key.startswith("SAURI_")}
     env.update(HOME=str(tmp_path), SAURI_NATIVE_ENGINE_PYTHON=str(legacy), SAURI_NATIVE_VENV=str(tmp_path))
     arguments = ["--check"] if script == "install-diar-engine.sh" else ["start", "diar"]
-    result = subprocess.run(["bash", str(ROOT / "_tools" / script), *arguments],
+    result = subprocess.run(["bash", str(ROOT / "scripts" / "engines" / script), *arguments],
                             env=env, capture_output=True, text=True, timeout=30)
     assert result.returncode != 0
     assert not marker.exists()

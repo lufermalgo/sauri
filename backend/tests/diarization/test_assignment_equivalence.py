@@ -136,7 +136,7 @@ def test_identical_detections_keep_multiplicity_only_in_accumulated_mode() -> No
 
 
 def test_benchmark_loads_anonymous_intervals_without_content(tmp_path: Path) -> None:
-    benchmark = run_path(str(Path(__file__).resolve().parents[3] / "_tools" / "benchmark-assignment.py"))
+    benchmark = run_path(str(Path(__file__).resolve().parents[3] / "scripts" / "dev" / "benchmark-assignment.py"))
     fixture = tmp_path / "intervals.json"
     fixture.write_text('{"speakers":[1],"turns":[[0,10]],"segments":[[0,0,10],[0,0,10]]}')
     turns, segments, speakers = benchmark["load_input"](fixture)
@@ -151,7 +151,7 @@ def test_benchmark_loads_anonymous_intervals_without_content(tmp_path: Path) -> 
     '{"speakers":[1],"turns":[],"segments":[[1,0,10]]}',
 ])
 def test_benchmark_rejects_content_and_malformed_intervals(tmp_path: Path, payload: str) -> None:
-    benchmark = run_path(str(Path(__file__).resolve().parents[3] / "_tools" / "benchmark-assignment.py"))
+    benchmark = run_path(str(Path(__file__).resolve().parents[3] / "scripts" / "dev" / "benchmark-assignment.py"))
     fixture = tmp_path / "intervals.json"
     fixture.write_text(payload)
     with pytest.raises(ValueError):

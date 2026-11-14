@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 
-SPEC = importlib.util.spec_from_file_location("pipeline_admission", Path(__file__).with_name("pipeline_admission.py"))
+SPEC = importlib.util.spec_from_file_location("pipeline_admission", Path(__file__).parents[1] / "platform" / "pipeline_admission.py")
 assert SPEC and SPEC.loader
 admission = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = admission

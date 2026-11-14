@@ -24,7 +24,7 @@ EXCLUDED_PATH_PARTS = (
     # User-facing copy is intentionally localized; identifiers and logic stay English.
     "/backend/app/copy/",
     # This scanner defines the prohibited vocabulary; it must not scan itself.
-    "/_tools/check_english_only.py",
+    "/scripts/dev/check_english_only.py",
     "/.venv/",
     "/node_modules/",
     "/__pycache__/",
@@ -153,7 +153,7 @@ def scan_file(path: Path) -> list[tuple[int, str]]:
 def main(argv: list[str]) -> int:
     if argv and argv[0] == "--staged":
         # --staged scans the whole repo's diff, so scope it to the trees this
-        # standard governs (Requisito 1.1 / 7.1) — e.g. Makefile or _tools/
+        # standard governs (Requisito 1.1 / 7.1) — e.g. Makefile or scripts/
         # itself are out of scope and shouldn't block unrelated commits.
         paths = [p for p in staged_files() if is_in_scope(p) and not is_excluded_path(p)]
     else:

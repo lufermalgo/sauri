@@ -149,7 +149,7 @@ P8 (R6): recursos host/proceso/contenedor se distinguen y campos no disponibles 
 
 ## Estrategia de Testing
 
-Primera entrega: `backend/tests/diarization/test_assignment_property.py`, `test_exclusive_assignment.py`, nuevas pruebas diferenciales y benchmark reproducible en `_tools/benchmark-assignment.py`; `backend/tests/summaries/test_engine.py` y nuevas pruebas de telemetría de uso. Usar `backend/.venv/bin/python` del checkout disponible con `PYTHONPATH` del worktree aislado para no instalar dependencias innecesarias. Ejecutar pytest, ruff y mypy según `backend/pyproject.toml`, registrar límites y fallos previos sin desactivarlos.
+Primera entrega: `backend/tests/diarization/test_assignment_property.py`, `test_exclusive_assignment.py`, nuevas pruebas diferenciales y benchmark reproducible en `scripts/dev/benchmark-assignment.py`; `backend/tests/summaries/test_engine.py` y nuevas pruebas de telemetría de uso. Usar `backend/.venv/bin/python` del checkout disponible con `PYTHONPATH` del worktree aislado para no instalar dependencias innecesarias. Ejecutar pytest, ruff y mypy según `backend/pyproject.toml`, registrar límites y fallos previos sin desactivarlos.
 
 Siguientes entregas: suites de contexto entre cola/HTTP, redacción de centinelas, cardinalidad, colector ausente, carga/overhead y concurrencia PostgreSQL real. Cada prueba Docker temporal termina eliminando sus contenedores/redes/volúmenes exclusivos, sin tocar datos del dueño. Toda UI nueva requiere navegador APX y captura. Cambios TS/Rust exigirán los checks específicos del proyecto, no comandos inventados.
 

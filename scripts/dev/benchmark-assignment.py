@@ -32,7 +32,7 @@ from app.diarization.assignment import assign_turns
 from app.diarization.diarization_engine import SpeakerSegment
 from app.diarization.labeling import Speaker
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SOURCE = "backend/app/diarization/assignment.py"
 AssignmentFunction = Callable[..., list[tuple[str, Speaker, int]]]
 
