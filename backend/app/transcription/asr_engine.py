@@ -6,15 +6,44 @@ shared by every implementation.
 
 from __future__ import annotations
 
+import os
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+
+
+def default_language() -> str:
+    language = os.environ.get("SAURI_DEFAULT_LANGUAGE", "es")
+    if re.fullmatch(r"auto|[a-z]{2}", language) is None:
+        raise ValueError("SAURI_DEFAULT_LANGUAGE must be a two-letter lowercase code or auto")
+    return language
+
+
+class EngineContractError(ValueError):
+    """The engine returned an incompatible or invalid wire contract."""
+
+
+@dataclass
+class EngineInfo:
+    name: str
+    model: str
+    device: str
+
+
+@dataclass
+class TranscriptionWord:
+    text: str
+    start_ms: int
+    end_ms: int
+    probability: float | None = None
+    timing_repaired: bool = False
 
 
 @dataclass
 class TranscriptionOptions:
     """Options for audio transcription."""
 
-    preferred_language: str = "es-CO"
+    preferred_language: str = field(default_factory=default_language)
 
 
 @dataclass
@@ -31,8 +60,13 @@ class TranscriptionResult:
     """Result produced by an ASREngine."""
 
     segments: list[TranscriptionSegment] = field(default_factory=list)
-    language: str = "es-CO"
+    language: str = "es"
     supports_turns: bool = False
+    words: list[TranscriptionWord] = field(default_factory=list)
+    engine: EngineInfo | None = None
+    contract_version: int = 2
+    diagnostics: dict[str, object] = field(default_factory=dict)
+    inverted_words: int = 0
 
 
 @dataclass

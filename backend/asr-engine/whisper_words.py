@@ -69,6 +69,16 @@ def _merge_tokens(tokens: list[Mapping[str, Any]]) -> list[_RawWord]:
     return words
 
 
+def repair_word_timing(
+    start_ms: int, end_ms: int, audio_ms: int, previous_valid_end: int,
+) -> tuple[int, int, bool]:
+    """Repair inverted/negative timestamps, then clip to the recording duration."""
+    repaired = end_ms < start_ms or start_ms < 0
+    if repaired:
+        start_ms = end_ms = previous_valid_end
+    return min(start_ms, audio_ms), min(end_ms, audio_ms), repaired
+
+
 def words_from_ggml_json(doc: Mapping[str, Any], audio_ms: int) -> WordsResult:
     segments: list[Segment] = []
     inverted_words = 0
@@ -76,13 +86,8 @@ def words_from_ggml_json(doc: Mapping[str, Any], audio_ms: int) -> WordsResult:
     for raw_segment in doc.get("transcription", []):
         words: list[Word] = []
         for raw in _merge_tokens(list(raw_segment.get("tokens", []))):
-            repaired = raw.end_ms < raw.start_ms or raw.start_ms < 0
-            if repaired:
-                start = end = previous_valid_end
-                inverted_words += 1
-            else:
-                start, end = raw.start_ms, raw.end_ms
-            start, end = min(start, audio_ms), min(end, audio_ms)
+            start, end, repaired = repair_word_timing(raw.start_ms, raw.end_ms, audio_ms, previous_valid_end)
+            inverted_words += int(repaired)
             if not repaired:
                 previous_valid_end = end
             words.append(Word(raw.text, start, end, raw.probability, repaired))

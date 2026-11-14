@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import importlib.util
+import json
 import sys
+import threading
 import time
+from contextlib import nullcontext
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
 
 MODULE_PATH = Path(__file__).resolve().parents[2] / "asr-engine" / "native_main.py"
+sys.path[:0] = [str(MODULE_PATH.parent), str(MODULE_PATH.parent.parent / "engine-common")]
 MODULE_SPEC = importlib.util.spec_from_file_location("native_asr_engine", MODULE_PATH)
 assert MODULE_SPEC is not None and MODULE_SPEC.loader is not None
 native = importlib.util.module_from_spec(MODULE_SPEC)
@@ -21,11 +28,16 @@ sys.modules[MODULE_SPEC.name] = native
 MODULE_SPEC.loader.exec_module(native)
 
 
+class SyntheticBody(BytesIO):
+    def set_socket_timeout(self, seconds):
+        assert seconds > 0
+
+
 class FakeS3:
-    def download_file(self, bucket: str, audio_ref: str, path: str) -> None:
-        assert bucket == "synthetic-bucket"
-        assert audio_ref == "synthetic/recording.wav"
-        Path(path).write_bytes(b"synthetic audio")
+    def get_object(self, **kwargs):
+        assert kwargs["Bucket"] == "synthetic-bucket"
+        assert kwargs["Key"] == "synthetic/recording.wav"
+        return {"Body": SyntheticBody(b"synthetic audio")}
 
 
 def capability(audio_ref: str, secret: bytes, expires_at: int) -> str:
@@ -34,55 +46,113 @@ def capability(audio_ref: str, secret: bytes, expires_at: int) -> str:
     return f"{expires_at}.{signature}"
 
 
-@pytest.mark.asyncio
-async def test_transcribe_preserves_response_contract_and_cleans_temp_file(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    observed_path: list[str] = []
-
-    def transcribe(path: str, **kwargs: Any) -> dict[str, Any]:
-        observed_path.append(path)
-        assert kwargs["path_or_hf_repo"] == "mlx-community/whisper-large-v3-turbo"
-        assert kwargs["language"] == "es"
-        return {
-            "language": "es",
-            "segments": [
-                {"text": " hola ", "start": 0.25, "end": 1.5},
-                {"text": " ", "start": 1.5, "end": 2.0},
-            ],
-        }
-
+@pytest.fixture
+def configured(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     token_path = tmp_path / "engine_token"
-    token_path.write_text("synthetic-token", encoding="utf-8")
-    capability_key_path = tmp_path / "recording_capability_key"
-    secret = b"synthetic-capability-secret"
-    capability_key_path.write_bytes(secret)
+    token_path.write_text("synthetic-token")
+    key_path = tmp_path / "capability_key"
+    key_path.write_bytes(b"synthetic-secret")
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
-    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", capability_key_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
-    monkeypatch.setattr(native, "s3_client", FakeS3())
-    monkeypatch.setattr(native, "transcribe_audio", transcribe)
     monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
-
-    transport = httpx.ASGITransport(app=native.app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/transcribe",
-            json={"audio_ref": "synthetic/recording.wav", "language": "es-CO"},
-            headers={
-                "Authorization": "Bearer synthetic-token",
-                "X-Sauri-Recording-Capability": capability(
-                    "synthetic/recording.wav", secret, int(time.time()) + 60
-                ),
-            },
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "segments": [{"text": "hola", "start_ms": 250, "end_ms": 1500}],
-        "language": "es",
+    monkeypatch.setattr(native, "s3_client", FakeS3())
+    monkeypatch.setattr(native, "KeepAwake", nullcontext)
+    monkeypatch.setattr(native.tempfile, "tempdir", str(tmp_path))
+    def normalize(source, dest, **kwargs):
+        dest.write_bytes(b"normalized")
+        return SimpleNamespace(audio_ms=2000, seconds=0.01)
+    monkeypatch.setattr(native, "normalize_to_wav", normalize)
+    return {
+        "Authorization": "Bearer synthetic-token",
+        "X-Sauri-Recording-Capability": capability(
+            "synthetic/recording.wav", b"synthetic-secret", int(time.time()) + 60),
     }
-    assert observed_path and not Path(observed_path[0]).exists()
+
+
+def document():
+    return {"result": {"language": "en"}, "transcription": [{
+        "text": " hello", "offsets": {"from": 250, "to": 1500},
+        "tokens": [{"text": " hello", "id": 1, "p": 0.9, "offsets": {"from": 500, "to": 200}}],
+    }]}
+
+
+@pytest.mark.asyncio
+async def test_transcribe_preserves_response_contract_and_cleans_temp_file(monkeypatch, tmp_path, configured):
+    before = set(tmp_path.iterdir())
+    def run(command, **kwargs):
+        assert command == [native.WHISPER_CLI, "-m", str(native.ASR_MODEL_PATH),
+                           "-f", command[4], "-l", "auto", "-t", "4", "-bs", "5", "-bo", "5",
+                           "-fa", "-ojf", "-of", command[-1]]
+        assert Path(command[4]).exists()
+        assert kwargs["capture_output"] and kwargs["check"]
+        Path(command[-1] + ".json").write_text(json.dumps(document()))
+    monkeypatch.setattr(native.subprocess, "run", run)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav", "language": "auto"},
+                                     headers=configured)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["contract_version"] == 2 and data["language"] == "en"
+    assert data["segments"] == [{"text": "hello", "start_ms": 250, "end_ms": 1500}]
+    assert data["words"] == [{"text": " hello", "start_ms": 0, "end_ms": 0,
+                              "probability": 0.9, "timing_repaired": True}]
+    assert data["engine"] == {"name": "whisper.cpp", "model": native.MODEL_ID, "device": "metal"}
+    assert data["diagnostics"]["inverted_words"] == 1
+    assert set(data["diagnostics"]["stage_ms"]) == {"download", "normalize", "inference"}
+    assert set(tmp_path.iterdir()) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("failure", "status"), [
+    ("normalize_failed", 422), ("no_word_timestamps", 500), ("engine_failed", 500),
+    ("keep_awake_failed", 503), ("download_failed", 500),
+])
+async def test_failures_are_categorized_private_and_clean(monkeypatch, tmp_path, configured, failure, status):
+    before = set(tmp_path.iterdir())
+    def fail(*args, **kwargs):
+        error = {"normalize_failed": native.NormalizeError, "keep_awake_failed": native.KeepAwakeError}.get(
+            failure, RuntimeError)
+        raise error("private /path/to/audio sensitive text")
+    if failure == "normalize_failed":
+        monkeypatch.setattr(native, "normalize_to_wav", fail)
+    elif failure == "keep_awake_failed":
+        monkeypatch.setattr(native, "KeepAwake", fail)
+    elif failure == "download_failed":
+        monkeypatch.setattr(native.s3_client, "get_object", fail)
+    elif failure == "no_word_timestamps":
+        doc = document()
+        doc["transcription"][0]["tokens"] = []
+        monkeypatch.setattr(native, "_run_whisper", lambda *args: doc)
+    else:
+        monkeypatch.setattr(native, "_run_whisper", fail)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav"}, headers=configured)
+    assert response.status_code == status
+    assert response.json() == {"detail": "engine_failed" if failure == "download_failed" else failure}
+    assert set(tmp_path.iterdir()) == before
+
+
+@pytest.mark.asyncio
+async def test_health_responds_while_inference_runs(monkeypatch, configured):
+    entered, release = threading.Event(), threading.Event()
+    def slow(*args):
+        entered.set()
+        assert release.wait(5)
+        return document()
+    monkeypatch.setattr(native, "_run_whisper", slow)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        pending = asyncio.create_task(client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav"},
+                                                  headers=configured))
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            response = await asyncio.wait_for(client.get("/health"), timeout=0.5)
+            assert response.status_code == 200
+            assert not pending.done()
+        finally:
+            release.set()
+            result = await pending
+        assert result.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -135,7 +205,7 @@ async def test_transcribe_returns_503_until_model_is_initialized(
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
-    monkeypatch.setattr(native, "transcribe_audio", None)
+    monkeypatch.setattr(native, "s3_client", None)
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -177,7 +247,7 @@ async def test_transcribe_denies_expired_or_overlong_capability_before_io(
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
-    monkeypatch.setattr(native, "transcribe_audio", transcribe)
+    monkeypatch.setattr(native, "_run_whisper", transcribe)
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -220,7 +290,7 @@ async def test_transcribe_denies_capability_for_another_owners_recording_before_
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
-    monkeypatch.setattr(native, "transcribe_audio", transcribe)
+    monkeypatch.setattr(native, "_run_whisper", transcribe)
     audio_ref = "recordings/owner-b/recording.wav"
     owner_a_capability = capability("recordings/owner-a/recording.wav", secret, int(time.time()) + 60)
     transport = httpx.ASGITransport(app=native.app)
@@ -259,7 +329,7 @@ async def test_transcribe_denies_missing_recording_capability_before_io(
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
-    monkeypatch.setattr(native, "transcribe_audio", transcribe)
+    monkeypatch.setattr(native, "_run_whisper", transcribe)
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -318,7 +388,7 @@ async def test_transcribe_denies_invalid_authorization_before_io(
     monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path, raising=False)
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "recordings/")
     monkeypatch.setattr(native, "s3_client", RecordingS3())
-    monkeypatch.setattr(native, "transcribe_audio", transcribe)
+    monkeypatch.setattr(native, "_run_whisper", transcribe)
     bearer = "synthetic-token" if bearer_kind == "valid" else "wrong-token"
     transport = httpx.ASGITransport(app=native.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -338,8 +408,8 @@ async def test_transcribe_denies_invalid_authorization_before_io(
 
 def test_native_defaults_use_host_minio_and_expected_model() -> None:
     assert native.MINIO_ENDPOINT == "http://localhost:9000"
-    assert native.MODEL_ID == "mlx-community/whisper-large-v3-turbo"
-    assert native.MODEL_DEVICE == "mlx"
+    assert native.MODEL_ID == "ggml-large-v3-turbo-q5_0"
+    assert native.MODEL_DEVICE == "metal"
 
 
 @pytest.mark.asyncio
@@ -349,3 +419,168 @@ async def test_health_reports_ok() -> None:
         response = await client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_corrupt_audio_uses_real_normalization_and_leaves_no_files(monkeypatch, tmp_path, configured):
+    from sauri_engine_common.audio import normalize_to_wav
+
+    monkeypatch.setattr(native, "normalize_to_wav", normalize_to_wav)
+    before = set(tmp_path.iterdir())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav"}, headers=configured)
+    assert response.status_code == 422
+    assert response.json() == {"detail": "normalize_failed"}
+    assert set(tmp_path.iterdir()) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("language", "expected"), [("es-CO", "es"), ("es", "es"), ("auto", "auto")])
+async def test_language_hint_is_validated_before_cli(monkeypatch, configured, language, expected):
+    def run(command, **kwargs):
+        assert command[command.index("-l") + 1] == expected
+        Path(command[-1] + ".json").write_text(json.dumps(document()))
+    monkeypatch.setattr(native.subprocess, "run", run)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav", "language": language},
+                                     headers=configured)
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("language", ["spa", "ES", "", "auto-X", "es\n", None, 1])
+async def test_invalid_language_returns_safe_422(configured, language):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav", "language": language},
+                                     headers=configured)
+    assert response.status_code == 422 and response.json() == {"detail": "invalid_language"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("language", ["spa", "es-CO", "ES", ""])
+async def test_startup_rejects_invalid_default_language(monkeypatch, language):
+    monkeypatch.setenv("SAURI_DEFAULT_LANGUAGE", language)
+    with pytest.raises(ValueError, match="SAURI_DEFAULT_LANGUAGE"):
+        async with native.lifespan(native.app):
+            pytest.fail("Invalid configuration must not start")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tamper", [None, "model", "binary", "missing_provenance", "provenance"])
+async def test_startup_verifies_assets_once(monkeypatch, tmp_path, tamper):
+    from asr_assets import binary_record, load_manifest, provenance_path
+
+    model, binary = tmp_path / "model.bin", tmp_path / "whisper-cli"
+    model.write_bytes(b"synthetic model")
+    binary.write_bytes(b"synthetic binary")
+    binary.chmod(0o700)
+    manifest = {"asr": {"model_file": "model.bin", "model_size": model.stat().st_size,
+                        "model_sha256": hashlib.sha256(model.read_bytes()).hexdigest()}}
+    hashes = tmp_path / "hashes.json"
+    hashes.write_text(json.dumps(manifest))
+    monkeypatch.setenv("SAURI_ENGINE_HASHES_FILE", str(hashes))
+    monkeypatch.setenv("SAURI_ASR_VENV", str(tmp_path / "asr-venv"))
+    monkeypatch.setattr(native, "ASR_MODEL_PATH", model)
+    monkeypatch.setattr(native, "WHISPER_CLI", str(binary))
+    path = provenance_path()
+    path.parent.mkdir()
+    path.write_text(json.dumps(binary_record(binary, load_manifest())))
+    if tamper == "model":
+        model.write_bytes(b"x" * model.stat().st_size)
+    elif tamper == "binary":
+        binary.write_bytes(b"tampered binary")
+    elif tamper == "missing_provenance":
+        path.unlink()
+    elif tamper == "provenance":
+        path.write_text("{}")
+    calls = []
+    monkeypatch.setattr(native.boto3, "client", lambda *args, **kwargs: calls.append(True) or FakeS3())
+    if tamper:
+        with pytest.raises(RuntimeError, match="asset verification failed"):
+            async with native.lifespan(native.app):
+                pytest.fail("Tampered assets must not start")
+        assert calls == []
+    else:
+        async with native.lifespan(native.app):
+            assert calls == [True]
+            assert native.s3_client is not None
+        assert native.s3_client is None
+
+
+@pytest.mark.asyncio
+async def test_server_budget_covers_lock_wait(monkeypatch, configured):
+    monkeypatch.setenv("ASR_TIMEOUT_SECONDS", "0.2")
+    native._job_lock.acquire()
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+            response = await asyncio.wait_for(client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav"},
+                                                         headers=configured), timeout=0.3)
+        assert response.status_code == 504
+        assert response.json() == {"detail": "engine_failed"}
+    finally:
+        native._job_lock.release()
+
+
+@pytest.mark.asyncio
+async def test_normalization_and_inference_share_remaining_budget(monkeypatch, configured):
+    monkeypatch.setenv("ASR_TIMEOUT_SECONDS", "3600")
+    seen = []
+    def normalize(source, dest, timeout_s):
+        assert timeout_s == 300
+        dest.touch()
+        return SimpleNamespace(audio_ms=2000, seconds=0.01)
+    def run(command, **kwargs):
+        seen.append(kwargs["timeout"])
+        assert 0 < kwargs["timeout"] < 3570
+        Path(command[-1] + ".json").write_text(json.dumps(document()))
+    monkeypatch.setattr(native, "normalize_to_wav", normalize)
+    monkeypatch.setattr(native.subprocess, "run", run)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav"}, headers=configured)
+    assert response.status_code == 200 and len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_download_is_inside_http_budget_and_expired_work_cannot_infer(monkeypatch, tmp_path, configured):
+    monkeypatch.setenv("ASR_TIMEOUT_SECONDS", "0.2")
+    entered, release = threading.Event(), threading.Event()
+    before = set(tmp_path.iterdir())
+    original = native.s3_client.get_object
+    def slow_download(**kwargs):
+        entered.set()
+        assert release.wait(2)
+        return original(**kwargs)
+    def no_inference(*args):
+        pytest.fail("Expired download must not reach inference")
+    monkeypatch.setattr(native.s3_client, "get_object", slow_download)
+    monkeypatch.setattr(native, "_run_whisper", no_inference)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        task = asyncio.create_task(client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav"},
+                                               headers=configured))
+        try:
+            assert await asyncio.to_thread(entered.wait, 1)
+            response = await asyncio.wait_for(task, timeout=0.3)
+            assert response.status_code == 504 and response.json() == {"detail": "engine_failed"}
+        finally:
+            release.set()
+            assert await asyncio.to_thread(native._job_lock.acquire, timeout=2)
+            native._job_lock.release()
+    assert set(tmp_path.iterdir()) == before
+
+
+def test_streaming_download_timeout_closes_body_and_removes_partial_file(monkeypatch, tmp_path):
+    body = SyntheticBody(b"partial")
+    reads = []
+    original = body.read
+    def read(count):
+        reads.append(count)
+        if len(reads) == 2:
+            raise TimeoutError("private audio path")
+        return original(count)
+    monkeypatch.setattr(body, "read", read)
+    monkeypatch.setattr(native, "s3_client", SimpleNamespace(get_object=lambda **kwargs: {"Body": body}))
+    monkeypatch.setattr(native.tempfile, "tempdir", str(tmp_path))
+    with pytest.raises(RuntimeError, match="Audio download failed"):
+        native._download_audio("recordings/synthetic.wav", time.monotonic() + 1)
+    assert body.closed and len(reads) == 2
+    assert list(tmp_path.iterdir()) == []

@@ -1,11 +1,5 @@
-# Legacy ASR environment retained until U2.
+# HTTP service only; whisper.cpp runs in a separate native process.
 fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2
 boto3>=1.34
-mlx-whisper
-torch==2.5.1
-torchaudio==2.5.1
-pyannote.audio==3.3.2
-huggingface_hub==0.24.7
-matplotlib==3.9.2

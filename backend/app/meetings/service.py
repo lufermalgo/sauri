@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -108,6 +108,8 @@ async def record_transition(
     session: AsyncSession,
     meeting: Meeting,
     event: str,
+    *,
+    failure_cause: str | None = None,
 ) -> TransitionResult:
     """Applies an event via the pure function and persists the transition.
 
@@ -130,6 +132,9 @@ async def record_transition(
 
     if not result.successful:
         return result
+
+    if result.new_state == "failed" and failure_cause is not None:
+        result = replace(result, failure_cause=failure_cause)
 
     # Update the meeting's state
     meeting.process_state = result.new_state

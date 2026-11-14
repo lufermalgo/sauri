@@ -1,0 +1,145 @@
+"""Opt-in real whisper.cpp/Metal inference; only storage and credentials are synthetic."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("SAURI_RUN_NATIVE_TESTS") != "1", reason="Set SAURI_RUN_NATIVE_TESTS=1 for Metal inference",
+)
+
+
+def test_synthetic_transcription_v2(tmp_path: Path) -> None:
+    backend = Path(__file__).resolve().parents[2]
+    python = Path(os.environ.get(
+        "SAURI_ASR_ENGINE_PYTHON", "~/.local/share/sauri/native-engines/asr-venv/bin/python",
+    )).expanduser()
+    if not python.is_file():
+        pytest.skip("ASR installer venv not provisioned; run install-asr-engine.sh")
+    provisioned = subprocess.run(
+        [str(python), "-c", "import importlib.util; import sys; "
+         "sys.exit(not all(importlib.util.find_spec(name) for name in "
+         "('fastapi', 'boto3', 'uvicorn', 'pydantic')))"],
+        capture_output=True, timeout=30,
+    )
+    if provisioned.returncode:
+        pytest.skip("Configured ASR venv is missing native service dependencies")
+    cli = Path(os.environ.get("WHISPER_CLI", "/opt/homebrew/bin/whisper-cli"))
+    model = Path(os.environ.get(
+        "ASR_MODEL_PATH", "~/.local/share/sauri/models/ggml-large-v3-turbo-q5_0.bin",
+    )).expanduser()
+    if not cli.is_file() or not model.is_file():
+        pytest.skip("whisper-cli or ASR model not installed")
+    work = tmp_path / "job"
+    work.mkdir()
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "TMPDIR": str(work),
+           "SAURI_ENGINE_TOKEN_FILE": str(work / "token"),
+           "SAURI_RECORDING_CAPABILITY_KEY_FILE": str(work / "capability"),
+           "MPLCONFIGDIR": str(work / "mpl"), "XDG_CACHE_HOME": str(work / "cache")}
+    script = r'''
+import sys
+from pathlib import Path
+backend, work = map(Path, sys.argv[1:])
+sys.path[:0] = [str(backend / "engine-common"), str(backend / "asr-engine")]
+import hashlib
+import hmac
+import subprocess
+import time
+import asyncio
+import http.client
+import json
+import socket
+import uvicorn
+import native_main as native
+
+source = work / "tone.wav"
+subprocess.run([
+    "ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i",
+    "sine=frequency=440:duration=15", "-af", "apad=pad_dur=15",
+    "-ac", "2", "-ar", "44100", str(source),
+], check=True)
+native.ENGINE_TOKEN_PATH.write_text("synthetic-token")
+secret = b"synthetic-capability-key"
+native.RECORDING_CAPABILITY_KEY_PATH.write_bytes(secret)
+paths = []
+class SyntheticBody:
+    def __init__(self):
+        self.stream = source.open("rb")
+    def read(self, count):
+        return self.stream.read(count)
+    def set_socket_timeout(self, seconds):
+        assert seconds > 0
+    def close(self):
+        self.stream.close()
+class SyntheticStore:
+    def get_object(self, **kwargs):
+        assert kwargs["Key"] == "recordings/synthetic.wav"
+        return {"Body": SyntheticBody()}
+original_download = native._download_audio
+def download(audio_ref, deadline):
+    filename = original_download(audio_ref, deadline)
+    paths.append(Path(filename))
+    return filename
+native._download_audio = download
+
+def request(port):
+    expiry = int(time.time()) + 60
+    signature = hmac.new(secret, f"recordings/synthetic.wav\n{expiry}".encode(), hashlib.sha256).hexdigest()
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=120)
+    try:
+        connection.request("POST", "/transcribe",
+            body=json.dumps({"audio_ref": "recordings/synthetic.wav", "contract_version": 2}),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer synthetic-token",
+                     "X-Sauri-Recording-Capability": f"{expiry}.{signature}"})
+        response = connection.getresponse()
+        body = response.read()
+        assert response.status == 200, body
+        return json.loads(body)
+    finally:
+        connection.close()
+
+async def check():
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    server = uvicorn.Server(uvicorn.Config(native.app, log_level="error"))
+    task = asyncio.create_task(server.serve(sockets=[listener]))
+    try:
+        while not server.started:
+            if task.done():
+                await task
+                raise AssertionError("Native service failed to start")
+            await asyncio.sleep(0.05)
+        native.s3_client = SyntheticStore()
+        before = set(work.iterdir())
+        data = await asyncio.to_thread(request, listener.getsockname()[1])
+        assert data["contract_version"] == 2
+        assert data["engine"] == {"name": "whisper.cpp", "model": "ggml-large-v3-turbo-q5_0", "device": "metal"}
+        assert abs(data["diagnostics"]["audio_ms"] - 30000) <= 100
+        assert isinstance(data["words"], list) and data["language"] != "auto"
+        assert set(data["diagnostics"]["stage_ms"]) == {"download", "normalize", "inference"}
+        for segment in data["segments"] + data["words"]:
+            assert 0 <= segment["start_ms"] <= segment["end_ms"] <= 30100
+        assert paths and all(not path.exists() for path in paths)
+        assert source.exists()
+        assert set(work.iterdir()) == before
+    finally:
+        server.should_exit = True
+        await task
+        listener.close()
+asyncio.run(check())
+'''
+    try:
+        result = subprocess.run(
+            [str(python), "-c", script, str(backend), str(work)],
+            env=env, capture_output=True, text=True, timeout=300,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    finally:
+        import shutil
+
+        shutil.rmtree(work)
+    assert not work.exists()

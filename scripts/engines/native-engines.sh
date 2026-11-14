@@ -4,7 +4,7 @@ umask 077
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATE_DIR="${SAURI_NATIVE_ENGINE_STATE_DIR:-${HOME}/.local/state/sauri/native-engines}"
-ASR_PYTHON="${SAURI_ASR_ENGINE_PYTHON:-${SAURI_NATIVE_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/venv/bin/python}}"
+ASR_PYTHON="${SAURI_ASR_ENGINE_PYTHON:-${SAURI_NATIVE_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/asr-venv/bin/python}}"
 DIAR_PYTHON="${SAURI_DIAR_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/diar-venv/bin/python}"
 ENGINE_TOKEN_FILE="${HOME}/.config/sauri/engine_token"
 RECORDING_CAPABILITY_KEY_FILE="${HOME}/.config/sauri/recording_capability_key"

@@ -1,7 +1,7 @@
 """Property tests for the transcription pipeline, meeting-capture-transcription spec.
 
 # Feature: meeting-capture-transcription, Property 7: Transcript temporal invariant
-# Feature: meeting-capture-transcription, Property 8: Transcription language is es-CO
+# Feature: meeting-capture-transcription, Property 8: Transcription language is es
 # Feature: meeting-capture-transcription, Property 9: ASREngine interchangeability
 Tasks: 10.5, 10.6, 10.7
 """
@@ -108,7 +108,7 @@ async def test_property_7_temporal_invariant_of_persisted_turns(
 
     mock_engine = AsyncMock()
     mock_engine.transcribe.return_value = TranscriptionResult(
-        segments=segments, language="es-CO", supports_turns=True
+        segments=segments, language="es", supports_turns=True
     )
     mock_engine.capabilities = MagicMock(
         return_value=ASRCapabilities(supports_turns=True, is_local=True)
@@ -150,8 +150,8 @@ async def test_property_7_temporal_invariant_of_persisted_turns(
 
 
 # ---------------------------------------------------------------------------
-# Property 8: Transcription language is es-CO
-# Feature: meeting-capture-transcription, Property 8: Transcription language is es-CO
+# Property 8: Transcription language is es
+# Feature: meeting-capture-transcription, Property 8: Transcription language is es
 # Validates: Requirements 3.2
 # ---------------------------------------------------------------------------
 
@@ -161,14 +161,14 @@ async def test_property_7_temporal_invariant_of_persisted_turns(
     language_returned_by_engine=st.one_of(
         st.just(None),
         st.just(""),
-        st.just("es-CO"),
+        st.just("es"),
     )
 )
 @pytest.mark.asyncio
-async def test_property_8_options_fix_es_co_and_transcript_records_es_co(
+async def test_property_8_default_options_and_transcript_language(
     session_factory: async_sessionmaker[AsyncSession], language_returned_by_engine: str | None
 ) -> None:
-    """Transcription options always fix es-CO and the persisted Transcript records es-CO."""
+    """Transcription options always fix es and the persisted Transcript records es."""
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
         session.add(_create_recording_meeting(meeting_id))
@@ -196,7 +196,7 @@ async def test_property_8_options_fix_es_co_and_transcript_records_es_co(
         await _process_transcription(message, session_factory)
 
     options_used: TranscriptionOptions = mock_engine.transcribe.call_args.args[1]
-    assert options_used.preferred_language == "es-CO"
+    assert options_used.preferred_language == "es"
 
     async with session_factory() as session:
         result = await session.execute(
@@ -204,7 +204,7 @@ async def test_property_8_options_fix_es_co_and_transcript_records_es_co(
         )
         transcript = result.scalar_one()
 
-    assert transcript.language == "es-CO"
+    assert transcript.language == "es"
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ class _ConformantASREngineWithTurns(ASREngine):
                 TranscriptionSegment(text="uno", start_ms=0, end_ms=100),
                 TranscriptionSegment(text="dos", start_ms=100, end_ms=250),
             ],
-            language="es-CO",
+            language="es",
             supports_turns=True,
         )
 
@@ -240,8 +240,8 @@ class _ConformantASREngineWithoutTurns(ASREngine):
         self, audio_ref: str, options: TranscriptionOptions
     ) -> TranscriptionResult:
         return TranscriptionResult(
-            segments=[TranscriptionSegment(text="texto único", start_ms=0, end_ms=1000)],
-            language="es-CO",
+            segments=[TranscriptionSegment(text="single text", start_ms=0, end_ms=1000)],
+            language="es",
             supports_turns=False,
         )
 
@@ -288,7 +288,7 @@ async def test_property_9_asr_engine_interchangeability(
         )
         turns = turns_result.scalars().all()
 
-    assert transcript.language == "es-CO"
+    assert transcript.language == "es"
     assert transcript.supports_turns == engine.capabilities().supports_turns
     assert len(turns) >= 1
     previous_end = None

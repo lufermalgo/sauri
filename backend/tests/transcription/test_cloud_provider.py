@@ -201,3 +201,22 @@ async def test_example_integration_https_and_auth_header() -> None:
         assert headers["Authorization"] == "Bearer sk-my-secret"
 
     assert len(result.segments) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("detected", ["en", None])
+async def test_auto_requires_and_returns_detected_language(monkeypatch, detected):
+    monkeypatch.setenv("ASR_CLOUD_API_KEY", "synthetic-key")
+    monkeypatch.setenv("ASR_CLOUD_ENDPOINT", "https://example.test/transcribe")
+    response = MagicMock()
+    response.json.return_value = {
+        "segments": [{"text": "synthetic", "start_ms": 0, "end_ms": 100}], "language": detected,
+    }
+    with patch("app.transcription.cloud_provider.httpx.AsyncClient") as cls:
+        cls.return_value.__aenter__.return_value.post.return_value = response
+        if detected is None:
+            with pytest.raises(ExternalServiceError, match="detected language"):
+                await CloudProvider().transcribe("synthetic/ref", TranscriptionOptions("auto"))
+        else:
+            result = await CloudProvider().transcribe("synthetic/ref", TranscriptionOptions("auto"))
+            assert result.language == detected

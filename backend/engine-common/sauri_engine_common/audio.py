@@ -21,7 +21,7 @@ class NormalizeError(RuntimeError):
     code = "normalize_failed"
 
 
-def normalize_to_wav(source: Path, dest: Path, *, timeout_s: int = 300) -> NormalizeReport:
+def normalize_to_wav(source: Path, dest: Path, *, timeout_s: float = 300) -> NormalizeReport:
     if source.resolve() == dest.resolve():
         raise NormalizeError("normalize_failed")
     started = time.monotonic()

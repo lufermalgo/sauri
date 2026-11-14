@@ -158,7 +158,7 @@ class Transcript(Base):
     meeting_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
     )
-    language: Mapped[str] = mapped_column(String(16), nullable=False, default="es-CO")
+    language: Mapped[str] = mapped_column(String(16), nullable=False, default="es", server_default="es")
     provider: Mapped[str] = mapped_column(String(128), nullable=False)
     supports_turns: Mapped[bool] = mapped_column(Boolean, nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
