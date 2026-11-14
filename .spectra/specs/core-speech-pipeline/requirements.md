@@ -132,6 +132,20 @@ El dueño decidió el 14/11/2026 **implementar esa recomendación sin nuevas pru
 4. WHEN se cierre la entrega, THE Recorrido_de_Aceptacion SHALL ejecutarse en Condiciones_de_Referencia con una grabación de al menos 60 minutos del dueño, registrando Tiempo_Hasta_Transcripcion, número de hablantes, porcentaje de palabras `sin_asignar` y tiempo del resumen.
 5. THE aceptación de producto SHALL ser del dueño tras el Recorrido_de_Aceptacion; la verificación técnica no la sustituye.
 
+### Requisito 10: Revisión de hablantes sobre la grabación original
+
+**Historia de Usuario:** Como usuario, quiero escuchar dónde habla cada «Speaker N» y ponerle su nombre, para que la transcripción muestre personas y no etiquetas.
+
+#### Criterios de Aceptación
+
+1. THE portal SHALL ofrecer, por cada hablante de la revisión activa, una acción «Escuchar» que reproduce un tramo de la grabación ORIGINAL; THE Core_de_Voz SHALL NOT generar, almacenar ni servir clips o muestras de audio derivados (decisión del dueño del 13/11/2026, enmienda R-R6).
+2. THE tramo SHALL ser el tramo continuo más largo del hablante en los turnos atribuidos por palabra, con pausas de hasta 250 ms permitidas, cortado en cambios de hablante, huecos y solapamientos, de máximo 20 s; IF dura menos de 5 s, THEN THE portal SHALL advertirlo sin impedir la reproducción.
+3. WHEN el usuario nombre, confirme o corrija un hablante, THE Core_de_Voz SHALL guardar esa disposición de forma idempotente y con control de versión (`expected_version`), y SHALL rechazar con conflicto una revisión que ya no sea la activa.
+4. THE nombre elegido SHALL mostrarse en todos los turnos de ese hablante de la revisión, también después de recargar la reunión; mientras no haya nombre ni confirmación, THE transcripción SHALL mostrar `Speaker N`.
+5. THE revisión SHALL permanecer pendiente hasta que cada hablante tenga disposición y SHALL volver a pedirse al regresar a la reunión; marcar un hablante SHALL NOT marcar a otro.
+6. THE acceso SHALL verificar la propiedad de la reunión en cada ruta y responder «no encontrado» para reuniones ajenas.
+7. THE Core_de_Voz SHALL NOT reutilizar nombres entre grabaciones ni generar huellas de voz en esta entrega; el reconocimiento por usuario queda para una spec posterior.
+
 ### Requisito 9: Exclusiones explícitas
 
 **Historia de Usuario:** Como dueño, quiero límites claros, para evitar cambios de producto, privacidad o gastos no aprobados.
@@ -140,6 +154,6 @@ El dueño decidió el 14/11/2026 **implementar esa recomendación sin nuevas pru
 
 1. THE spec SHALL NOT agregar el panel de configuración de proveedores de LLM ni de idioma por usuario; el Adaptador_de_Motor de Proveedor_LLM queda listo para que una spec posterior lo configure desde el portal.
 2. THE Core_de_Voz SHALL procesar localmente por defecto y SHALL NOT enviar audio, transcripciones ni resúmenes a un Proveedor_LLM externo salvo configuración explícita del dueño.
-3. THE spec SHALL NOT persistir muestras de voz, embeddings ni Audio_Normalizado más allá del trabajo.
+3. THE spec SHALL NOT persistir muestras de voz, clips derivados, embeddings ni Audio_Normalizado más allá del trabajo.
 4. THE spec SHALL NOT incluir procesamiento incremental durante la captura ni pulido visual Terra; ambos quedan para specs posteriores.
 5. THE spec SHALL NOT prometer tiempos fuera de las Condiciones_de_Referencia.
