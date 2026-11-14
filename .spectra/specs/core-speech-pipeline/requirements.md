@@ -2,36 +2,37 @@
 
 ## Introducción
 
-Sauri tiene puertos para sus motores (`ASREngine`, `DiarizationEngine`, `JobQueue`, `ObjectStore`) y servicios de motor HTTP separados (`backend/asr-engine`, `backend/diar-engine`), pero el recorrido real worker → motor nativo → transcripción nunca se demostró de extremo a extremo (`docs/ARCHITECTURE.md`). Los motores nativos actuales (Whisper Turbo sobre MLX, pyannote 3.1 sobre MPS) fueron lentos e inestables por memoria: pyannote tardó entre 8 y 15 minutos solo en diarizar reuniones de 70–98 minutos. Además, el idioma está fijado a `es-CO` (`backend/app/transcription/worker.py:139`), la transcripción no tiene marcas por palabra y cada segmento se asigna entero a un único hablante por solapamiento máximo, lo que pierde cambios de hablante dentro de un segmento. El resumen recibe texto sin hablantes y no superó pruebas de fidelidad.
+Sauri tiene puertos para sus motores (`ASREngine`, `DiarizationEngine`, `JobQueue`, `ObjectStore`) y servicios de motor HTTP separados (`backend/asr-engine`, `backend/diar-engine`), pero el recorrido real worker → motor nativo → transcripción nunca se demostró de extremo a extremo (`docs/ARCHITECTURE.md`). Los motores nativos actuales (Whisper Turbo sobre MLX, pyannote 3.1 sobre MPS) fueron lentos e inestables por memoria: pyannote tardó entre 8 y 15 minutos solo en diarizar reuniones de 70–98 minutos. El idioma está fijado a `es-CO` (`backend/app/transcription/worker.py:139`), la transcripción no tiene marcas por palabra y cada segmento se asigna entero a un único hablante, lo que pierde cambios de hablante dentro de un segmento. El resumen recibe texto sin hablantes y está acoplado a Ollama. El portal no permite subir una grabación y ver su resultado completo.
 
-Entre el 13 y el 14/11/2026 Codex evaluó alternativas en el Mac del dueño (Apple M3, 24 GiB), fuera de Sauri. Evidencia en `~/Proyectos/APX/evidence/codex-*` (informes `report.md`; las transcripciones y audios son privados y no se copian al repositorio):
-- **Hablantes:** Senko (CoreML) diarizó 98 min en 11,1 s de inferencia (~31 s de extremo a extremo) y 60 min en ~19 s, detectó los 4 hablantes confirmados por el dueño en SupplyChain y conservó al hablante breve (~60 s de voz); FluidAudio coincidió (49,6 s). La salida suavizada de Senko descarta turnos ≤ 0,78 s.
-- **Transcripción:** whisper.cpp con `large-v3-turbo` GGML Q5_0 en Metal transcribió 60 min en 5 min 47 s de cómputo activo. Parakeet Ultra fue ~3× más rápido pero con errores de nombres y mezcla de idiomas; Whisper con CoreML fue más lento. Whisper emitió marcas de palabra invertidas (39 en 9 min).
-- **Unión:** con Senko + Whisper, 8,69 % de las palabras de Argos quedaron sin hablante asignado.
-- **Resumen:** ninguna variante local (Qwen3-4B, Qwen3.5-9B, extractiva) superó fidelidad y cobertura; Codex recomendó Qwen3.5-9B solo como borrador con revisión humana.
-- **Operación:** el Mac entró en suspensión durante una transcripción y triplicó la espera real; la concurrencia de cargas de GPU abortó corridas.
-- No existe referencia humana del audio: WER y DER siguen sin medir.
+Entre el 13 y el 14/11/2026 Codex evaluó alternativas en el Mac del dueño (Apple M3, 24 GiB), fuera de Sauri, y recomendó priorizando precisión: **Senko** para hablantes, **Whisper large-v3-turbo** (whisper.cpp, Metal) para transcripción y **Qwen3.5-9B** local para el resumen como borrador revisable. Evidencia en `~/Proyectos/APX/evidence/codex-*` (informes `report.md`; audios y transcripciones son privados y no se copian al repositorio):
+- Senko (CoreML) diarizó 60 min en ~19 s y 98 min en ~31 s de extremo a extremo, detectó los 4 hablantes confirmados por el dueño en SupplyChain y conservó al hablante breve. Su salida suavizada descarta turnos ≤ 0,78 s.
+- whisper.cpp `large-v3-turbo` GGML Q5_0 en Metal transcribió 60 min en 5 min 47 s de cómputo activo; emitió marcas de palabra invertidas (39 en 9 min).
+- Con Senko + Whisper, 8,69 % de las palabras de ArgosOKRs quedaron sin hablante.
+- Ningún resumen local fue fiel sin revisión: el resumen se entrega como borrador con citas.
+- El Mac entró en suspensión durante una transcripción y triplicó la espera; cargas de GPU concurrentes abortaron corridas.
 
-**Idea fuerza:** el core rápido sale de motores nativos adecuados detrás de puertos estables, ejecución en paralelo y atribución por palabra, no de sacrificar precisión; cada promoción de motor se decide con evidencia medida contra una referencia humana.
+El dueño decidió el 14/11/2026 **implementar esa recomendación sin nuevas pruebas comparativas** y cerrar la entrega cuando pueda subir una grabación en el portal y ver el resultado final.
 
-**Alcance:** contratos de motor (ASR y diarización) y sus adaptadores nativos macOS y portables; normalización de audio; orquestación del procesamiento posterior a la grabación (paralelismo, atribución por palabra, idioma configurable, prevención de suspensión, admisión de recursos); banco de evaluación con referencia humana; entrega del resumen como borrador revisable; y, en una segunda etapa, procesamiento incremental durante la captura.
+**Idea fuerza:** el core rápido sale de motores nativos adecuados detrás de puertos estables, ejecución en paralelo y atribución por palabra; el portal debe mostrar ese resultado de punta a punta.
 
-**No-alcance:** interfaz del portal y de la extensión (specs `portal-visual-design` y `extension-capture-preferences`); preferencia de idioma por usuario en un panel de administración (requiere enmienda de `PRODUCT_BASELINE.md`); reconocimiento de identidades entre grabaciones (`recording-speaker-review`); despliegue en la nube; edición manual de texto de la transcripción (excluida por el baseline).
+**Alcance:** contratos y adaptadores de motor (ASR, diarización, LLM de resumen); normalización única del audio; orquestación en paralelo con prevención de suspensión y reserva de recursos; atribución por palabra; idioma configurable; resumen automático como borrador con citas; y el recorrido funcional mínimo del portal: subir, seguir el procesamiento y ver transcripción con hablantes y resumen.
 
-**Dependencias:** reutiliza de `performance-observability-pipeline` (#907) la admisión con lease y fencing (T9) y la telemetría de etapas (T6–T7); conserva generaciones, fencing e incertidumbre de `recording-speaker-review`; conserva plantillas e idempotencia de `meeting-summaries-templates`; conserva el original y su reproducción de `meeting-review-playback`.
+**No-alcance:** pulido visual del portal y la extensión (specs `portal-visual-design` y `extension-capture-preferences`); panel de configuración de proveedores de LLM y de idioma por usuario (spec posterior, con referencia del dueño); procesamiento incremental durante la captura (spec posterior, tras la aceptación de esta); reconocimiento de identidades entre grabaciones (`recording-speaker-review`); despliegue en la nube; edición manual del texto de la transcripción (excluida por el baseline).
+
+**Dependencias:** reutiliza de `performance-observability-pipeline` (#907) la admisión con lease y fencing; conserva generaciones, fencing e incertidumbre de `recording-speaker-review`; conserva plantillas e idempotencia de `meeting-summaries-templates`; conserva el original y su reproducción de `meeting-review-playback`; toma la composición del portal aprobada en `portal-visual-design` sin exigir aún su tratamiento visual.
 
 ## Glosario
 
-- **Core_de_Voz**: etapas de procesamiento de una grabación almacenada: normalización, transcripción, diarización, unión y persistencia de la transcripción atribuida.
-- **Puerto_de_Motor**: contrato versionado (`ASREngine`, `DiarizationEngine`) que el worker usa sin conocer el motor concreto.
-- **Adaptador_de_Motor**: implementación de un Puerto_de_Motor para un entorno (p. ej. Senko-CoreML o whisper.cpp-Metal en macOS; pyannote o faster-whisper en Linux/CUDA), seleccionada por configuración.
+- **Core_de_Voz**: etapas de procesamiento de una grabación almacenada: normalización, transcripción, diarización, unión, persistencia de la transcripción atribuida y solicitud del resumen.
+- **Puerto_de_Motor**: contrato versionado (`ASREngine`, `DiarizationEngine`, `SummarizationEngine`) que los workers usan sin conocer el motor concreto.
+- **Adaptador_de_Motor**: implementación de un Puerto_de_Motor para un entorno o proveedor, seleccionada por configuración.
+- **Proveedor_LLM**: servicio que expone la API de chat compatible con OpenAI (p. ej. `llama-server` local; en el futuro Ollama, ChatGPT, Anthropic, Gemini u otros), identificado por URL base, modelo y credencial opcional.
 - **Audio_Normalizado**: PCM mono 16 kHz derivado una sola vez del original para la duración del procesamiento; temporal, no se persiste.
 - **Palabra_Atribuida**: palabra con texto, inicio, fin, probabilidad ASR y hablante asignado, o marca explícita `sin_asignar` o `ambigua`.
 - **Tiempo_Hasta_Transcripcion**: tiempo de pared desde que el worker recibe el trabajo de una grabación almacenada hasta que la transcripción atribuida queda persistida y legible por el portal.
 - **Condiciones_de_Referencia**: Mac Apple M3 de 24 GiB conectado a corriente, modelos ya descargados, sin otra inferencia de Sauri concurrente, corrida continua sin suspensión.
-- **Referencia_Humana**: transcripción y segmentación por hablante de al menos 10 minutos de cada una de 2 grabaciones del dueño, revisadas y validadas por el dueño, usadas solo para evaluación.
-- **Banco_de_Evaluacion**: conjunto versionado de grabaciones autorizadas (José-María, Invesa, SupplyChain, ArgosOKRs), Referencia_Humana y lista de hechos verificados para resúmenes, con un comando que mide tiempos, memoria, WER, DER, cobertura del hablante breve y fidelidad.
-- **Borrador_de_Resumen**: resumen generado localmente con citas a pasajes de la transcripción, presentado como revisable y no como resultado verificado.
+- **Borrador_de_Resumen**: resumen generado con citas a pasajes de la transcripción, presentado como pendiente de revisión.
+- **Recorrido_de_Aceptacion**: subir en el portal una grabación del dueño, ver el avance del procesamiento y abrir la reunión con reproducción, transcripción con hablantes y Borrador_de_Resumen.
 
 ## Requisitos
 
@@ -41,10 +42,10 @@ Entre el 13 y el 14/11/2026 Codex evaluó alternativas en el Mac del dueño (App
 
 #### Criterios de Aceptación
 
-1. THE Puerto_de_Motor de ASR SHALL devolver segmentos y Palabra_Atribuida sin hablante (texto, inicio, fin, probabilidad), el idioma detectado y el identificador de modelo y dispositivo usados.
-2. THE Puerto_de_Motor de diarización SHALL devolver segmentos por hablante anónimo sin el filtro que descarta turnos breves, con el identificador de modelo y dispositivo usados.
-3. WHEN se configure un Adaptador_de_Motor, THE Core_de_Voz SHALL seleccionarlo solo por configuración, sin cambios de código en el worker ni en la API.
-4. THE Core_de_Voz SHALL incluir un Adaptador_de_Motor macOS para Senko (CoreML) y otro para whisper.cpp `large-v3-turbo` (Metal), y conservar un Adaptador_de_Motor Linux funcional para cada puerto.
+1. THE Puerto_de_Motor de ASR SHALL devolver segmentos y palabras con texto, inicio, fin y probabilidad, el idioma usado y los identificadores de modelo y dispositivo.
+2. THE Puerto_de_Motor de diarización SHALL devolver segmentos por hablante anónimo sin el filtro que descarta turnos breves, con identificadores de modelo y dispositivo.
+3. WHEN se configure un Adaptador_de_Motor, THE Core_de_Voz SHALL seleccionarlo solo por configuración, sin cambios en workers ni API.
+4. THE Core_de_Voz SHALL usar por defecto en macOS Senko (CoreML) para diarización y whisper.cpp `large-v3-turbo` GGML Q5_0 (Metal) para transcripción, y conservar un Adaptador_de_Motor Linux funcional para cada puerto.
 5. WHEN cambie la forma de un Puerto_de_Motor, THE Core_de_Voz SHALL versionar el contrato y rechazar respuestas de una versión incompatible con un error categorizado.
 
 ### Requisito 2: Una sola normalización del audio
@@ -54,9 +55,9 @@ Entre el 13 y el 14/11/2026 Codex evaluó alternativas en el Mac del dueño (App
 #### Criterios de Aceptación
 
 1. WHEN comience el procesamiento de una grabación, THE Core_de_Voz SHALL derivar Audio_Normalizado una única vez y entregarlo a transcripción y diarización.
-2. THE Core_de_Voz SHALL conservar la duración y el origen temporal del original; IF la normalización altera la duración en más de 100 ms, THEN THE Core_de_Voz SHALL registrarlo como discrepancia.
+2. IF la normalización altera la duración en más de 100 ms respecto del original, THEN THE Core_de_Voz SHALL registrarlo como discrepancia.
 3. THE Core_de_Voz SHALL eliminar el Audio_Normalizado al terminar o fallar el trabajo y SHALL NOT modificar el original.
-4. THE Core_de_Voz SHALL aislar la preparación por formato detrás de una función de entrada, de modo que agregar un formato nuevo no cambie las etapas siguientes; esta spec solo cubre `.webm` (Opus) y los formatos ya aceptados por la carga.
+4. THE Core_de_Voz SHALL aislar la preparación por formato en una función de entrada, de modo que agregar un formato no cambie las etapas siguientes; esta spec cubre `.webm` (Opus) y los formatos ya aceptados por la carga.
 
 ### Requisito 3: Procesamiento en paralelo con prevención de suspensión
 
@@ -64,11 +65,11 @@ Entre el 13 y el 14/11/2026 Codex evaluó alternativas en el Mac del dueño (App
 
 #### Criterios de Aceptación
 
-1. WHEN haya Audio_Normalizado, THE Core_de_Voz SHALL ejecutar transcripción y diarización en paralelo cuando la admisión de recursos lo permita, y en serie cuando no.
-2. WHILE un Adaptador_de_Motor nativo ejecute un trabajo, THE Core_de_Voz SHALL impedir la suspensión por inactividad del sistema solo durante ese trabajo, sin cambiar la configuración de energía del equipo.
-3. WHEN un trabajo pesado solicite inferencia, THE Core_de_Voz SHALL adquirir la reserva de recursos con lease y fencing definida en `performance-observability-pipeline` T9 y SHALL NOT persistir resultados de un propietario obsoleto.
-4. WHEN se procese una grabación de 60 minutos en Condiciones_de_Referencia, THE Core_de_Voz SHALL lograr un Tiempo_Hasta_Transcripcion de 7 minutos o menos, medido en una corrida continua con tiempo de pared y activo registrados.
-5. THE Core_de_Voz SHALL registrar por etapa: espera de admisión, carga de modelo, normalización, transcripción, diarización, unión y persistencia, declarando ausente lo que no se mida.
+1. WHEN haya Audio_Normalizado, THE Core_de_Voz SHALL ejecutar transcripción y diarización en paralelo cuando la reserva de recursos lo permita, y en serie cuando no.
+2. WHILE un Adaptador_de_Motor nativo ejecute un trabajo, THE Core_de_Voz SHALL impedir la suspensión por inactividad solo durante ese trabajo, sin cambiar la configuración de energía del equipo.
+3. WHEN un trabajo solicite inferencia pesada, THE Core_de_Voz SHALL adquirir una reserva de recursos con lease y fencing y SHALL NOT persistir resultados de un propietario obsoleto.
+4. WHEN se procese una grabación de 60 minutos en Condiciones_de_Referencia, THE Core_de_Voz SHALL lograr un Tiempo_Hasta_Transcripcion de 7 minutos o menos.
+5. THE Core_de_Voz SHALL registrar la duración de cada etapa (espera, carga de modelo, normalización, transcripción, diarización, unión, persistencia), declarando ausente lo no medido.
 
 ### Requisito 4: Atribución de hablante por palabra
 
@@ -77,11 +78,11 @@ Entre el 13 y el 14/11/2026 Codex evaluó alternativas en el Mac del dueño (App
 #### Criterios de Aceptación
 
 1. THE Core_de_Voz SHALL asignar hablante a cada Palabra_Atribuida por intersección temporal con los segmentos de diarización y construir los turnos agrupando palabras consecutivas del mismo hablante.
-2. WHEN una palabra tenga marcas invertidas o fuera de la duración, THE Core_de_Voz SHALL corregirlas con una regla documentada y determinista o marcarlas `sin_asignar`, SHALL NOT inventar tiempos y SHALL contarlas.
+2. WHEN una palabra tenga marcas invertidas o fuera de la duración, THE Core_de_Voz SHALL corregirlas con una regla determinista documentada o marcarlas `sin_asignar`, SHALL NOT inventar tiempos y SHALL contarlas.
 3. IF una palabra intersecta dos hablantes sin un ganador claro, THEN THE Core_de_Voz SHALL marcarla `ambigua` y conservar ambos candidatos.
-4. WHEN se evalúe sobre el Banco_de_Evaluacion, THE Core_de_Voz SHALL dejar `sin_asignar` menos del 3 % de las palabras de ArgosOKRs, frente al 8,69 % de la línea base.
-5. THE Core_de_Voz SHALL conservar todo el texto de la transcripción; la atribución SHALL NOT eliminar palabras para mejorar sus métricas.
-6. THE Core_de_Voz SHALL conservar hablantes breves: un hablante con al menos 5 s de voz en la diarización SHALL aparecer en la transcripción atribuida.
+4. WHEN una palabra no intersecte ningún segmento, THE Core_de_Voz SHALL asignarle el hablante del segmento más cercano dentro de 500 ms o marcarla `sin_asignar`; sobre ArgosOKRs SHALL quedar `sin_asignar` menos del 3 % de las palabras (línea base 8,69 %).
+5. THE Core_de_Voz SHALL conservar todo el texto de la transcripción; la atribución SHALL NOT eliminar palabras.
+6. WHEN un hablante tenga al menos 5 s de voz en la diarización, THE Core_de_Voz SHALL mostrarlo en la transcripción atribuida.
 
 ### Requisito 5: Idioma configurable
 
@@ -89,64 +90,56 @@ Entre el 13 y el 14/11/2026 Codex evaluó alternativas en el Mac del dueño (App
 
 #### Criterios de Aceptación
 
-1. THE Core_de_Voz SHALL tomar el idioma de transcripción de la configuración, con `es` como valor por defecto, y SHALL aceptar un idioma por grabación cuando la solicitud lo indique.
+1. THE Core_de_Voz SHALL tomar el idioma de transcripción de la configuración, con `es` por defecto, y SHALL aceptar un idioma por grabación cuando la solicitud lo indique.
 2. WHERE el idioma configurado sea `auto`, THE Core_de_Voz SHALL usar la detección del Adaptador_de_Motor y persistir el idioma detectado.
 3. THE Core_de_Voz SHALL eliminar el valor `es-CO` fijo del worker y de los valores por defecto de los contratos.
 
-### Requisito 6: Resumen como borrador revisable
+### Requisito 6: Resumen automático como borrador con proveedor configurable
 
-**Historia de Usuario:** Como usuario, quiero un resumen rápido con sus fuentes, sabiendo que es un borrador, para no tomar por cierto algo que el modelo inventó.
-
-#### Criterios de Aceptación
-
-1. WHEN se genere un resumen, THE Core_de_Voz SHALL enviar al modelo la transcripción completa con etiquetas de hablante, sin descartar pasajes.
-2. THE Borrador_de_Resumen SHALL citar cada punto clave con al menos un pasaje y su marca temporal, y SHALL rechazar citas que no existan literalmente en la transcripción.
-3. THE Core_de_Voz SHALL marcar el Borrador_de_Resumen como pendiente de revisión hasta que el usuario lo revise.
-4. WHEN se proponga cambiar el modelo o la estrategia de resumen por defecto, THE Banco_de_Evaluacion SHALL demostrar cobertura de al menos 90 % de los hechos verificados y cero afirmaciones sin respaldo sobre su lista de hechos; mientras ninguna opción lo cumpla, el resumen SHALL seguir marcado como borrador.
-5. THE Core_de_Voz SHALL generar el resumen fuera del camino crítico: el Tiempo_Hasta_Transcripcion SHALL NOT incluir el resumen.
-
-### Requisito 7: Banco de evaluación y regla de promoción
-
-**Historia de Usuario:** Como dueño, quiero saber con números si un cambio es más rápido sin ser menos preciso, para no confundir velocidad con calidad.
+**Historia de Usuario:** Como usuario, quiero un resumen con sus fuentes en cuanto termine la transcripción, sabiendo que es un borrador, para no tomar por cierto algo que el modelo inventó.
 
 #### Criterios de Aceptación
 
-1. THE Banco_de_Evaluacion SHALL medir por motor y grabación: tiempo de pared y activo por etapa, memoria residente máxima, presión de memoria, número de hablantes, palabras sin asignar, permanencia del hablante breve y, sobre la Referencia_Humana, WER y DER.
-2. THE Banco_de_Evaluacion SHALL ejecutarse con un único comando documentado y guardar resultados sin audio ni texto de transcripción fuera de la carpeta privada de evaluación.
-3. WHEN se proponga promover un Adaptador_de_Motor como predeterminado, THE Banco_de_Evaluacion SHALL demostrar WER y DER no peores que el predeterminado vigente en la Referencia_Humana; IF falta la Referencia_Humana, THEN el cambio SHALL declararse con precisión no evaluada y SHALL NOT promoverse.
-4. THE Banco_de_Evaluacion SHALL reservar al menos una grabación fuera de cualquier ajuste de parámetros para validar sin sesgo.
-5. THE Banco_de_Evaluacion SHALL NOT usar el número esperado de hablantes como parámetro de los motores.
+1. WHEN una transcripción atribuida quede persistida, THE Core_de_Voz SHALL solicitar automáticamente un Borrador_de_Resumen con la plantilla por defecto, reutilizando la solicitud idempotente existente.
+2. THE Core_de_Voz SHALL enviar al modelo la transcripción completa con etiquetas de hablante y marcas temporales por pasaje, sin descartar pasajes.
+3. THE Borrador_de_Resumen SHALL contener tema principal y puntos clave, cada punto con al menos una cita a un pasaje existente; THE Core_de_Voz SHALL descartar citas que no correspondan a pasajes de la transcripción.
+4. THE Core_de_Voz SHALL acceder al modelo mediante un Adaptador_de_Motor de Proveedor_LLM configurado por URL base, modelo y credencial opcional, y SHALL usar por defecto `llama-server` local con Qwen3.5-9B Q4_K_M.
+5. THE Core_de_Voz SHALL leer credenciales de Proveedor_LLM solo desde secretos de entorno y SHALL NOT registrarlas ni enviarlas a la telemetría.
+6. THE Core_de_Voz SHALL marcar el Borrador_de_Resumen como pendiente de revisión y SHALL NOT incluir su generación en el Tiempo_Hasta_Transcripcion.
 
-### Requisito 8: Fallos y recuperación
+### Requisito 7: Recorrido funcional en el portal
 
-**Historia de Usuario:** Como usuario, quiero que un fallo del motor no pierda mi grabación ni deje la reunión colgada, para poder reintentar.
+**Historia de Usuario:** Como dueño, quiero subir una grabación y ver el resultado final en el portal, para aceptar el core con mis propios archivos.
 
 #### Criterios de Aceptación
 
-1. IF un Adaptador_de_Motor no responde, se queda sin memoria o devuelve un contrato inválido, THEN THE Core_de_Voz SHALL registrar una causa categorizada, conservar el original y dejar la reunión en un estado reintentable visible.
+1. THE portal SHALL ofrecer una página de carga con selección de archivo, acción «Subir y procesar» y barra de progreso basada en bytes enviados.
+2. WHEN termine la subida, THE portal SHALL abrir la reunión y mostrar su estado de procesamiento real (en cola, transcribiendo, identificando hablantes, completada, fallida) sin porcentajes inventados.
+3. WHEN la transcripción esté lista, THE portal SHALL mostrar el reproductor sobre la transcripción, con turnos con marca temporal y etiqueta de hablante, y saltar al tiempo de un turno al seleccionarlo.
+4. WHEN el Borrador_de_Resumen esté listo, THE portal SHALL mostrarlo en una pestaña Resumen con su marca de borrador y enlaces de cada cita al turno correspondiente.
+5. IF el procesamiento falla, THEN THE portal SHALL mostrar la causa en lenguaje claro y una acción de reintento.
+6. THE portal SHALL listar las reuniones de la más reciente a la más antigua y permitir abrir cualquiera.
+
+### Requisito 8: Fallos, recuperación y verificación
+
+**Historia de Usuario:** Como usuario, quiero que un fallo no pierda mi grabación ni deje la reunión colgada, y como dueño quiero evidencia de que todo funciona.
+
+#### Criterios de Aceptación
+
+1. IF un Adaptador_de_Motor no responde, se queda sin memoria o devuelve un contrato inválido, THEN THE Core_de_Voz SHALL registrar una causa categorizada, conservar el original y dejar la reunión en un estado reintentable.
 2. WHEN se reintente un trabajo, THE Core_de_Voz SHALL reutilizar la generación y el fencing existentes y SHALL NOT duplicar transcripciones ni hablantes.
-3. WHEN una etapa falle, THE Core_de_Voz SHALL conservar los resultados válidos de la otra etapa solo si pertenecen a la misma generación.
+3. THE entrega SHALL pasar las suites de backend, integración, extensión y portal definidas por el proyecto, y el typecheck de TypeScript.
+4. WHEN se cierre la entrega, THE Recorrido_de_Aceptacion SHALL ejecutarse en Condiciones_de_Referencia con una grabación de al menos 60 minutos del dueño, registrando Tiempo_Hasta_Transcripcion, número de hablantes, porcentaje de palabras `sin_asignar` y tiempo del resumen.
+5. THE aceptación de producto SHALL ser del dueño tras el Recorrido_de_Aceptacion; la verificación técnica no la sustituye.
 
-### Requisito 9: Procesamiento incremental durante la captura (segunda etapa)
+### Requisito 9: Exclusiones explícitas
 
-**Historia de Usuario:** Como usuario, quiero que al detener la grabación la transcripción esté lista casi de inmediato, para no esperar después de la reunión.
-
-#### Criterios de Aceptación
-
-1. WHEN la extensión suba fragmentos durante una captura, THE Core_de_Voz SHALL transcribir los fragmentos recibidos mientras la reunión continúa, con una cola acotada y bajo la reserva de recursos.
-2. THE Core_de_Voz SHALL asignar hablantes con una agrupación global sobre toda la grabación al cerrar, para que la misma persona conserve su etiqueta en toda la reunión.
-3. WHEN termine una captura de 60 minutos en Condiciones_de_Referencia, THE Core_de_Voz SHALL tener la transcripción atribuida lista en 2 minutos o menos tras detener.
-4. THE Core_de_Voz SHALL producir el mismo texto y la misma atribución, dentro de las tolerancias del Banco_de_Evaluacion, que el procesamiento posterior de la misma grabación.
-5. Esta etapa SHALL comenzar solo después de que los Requisitos 1–8 estén integrados y medidos.
-
-### Requisito 10: Exclusiones explícitas
-
-**Historia de Usuario:** Como dueño, quiero límites claros, para evitar cambios de producto o gastos no aprobados.
+**Historia de Usuario:** Como dueño, quiero límites claros, para evitar cambios de producto, privacidad o gastos no aprobados.
 
 #### Criterios de Aceptación
 
-1. THE spec SHALL NOT cambiar la interfaz del portal ni de la extensión, salvo exponer el estado y los datos ya definidos por otras specs.
-2. THE spec SHALL NOT enviar audio, transcripciones ni resúmenes a servicios externos; todo el procesamiento es local.
+1. THE spec SHALL NOT agregar el panel de configuración de proveedores de LLM ni de idioma por usuario; el Adaptador_de_Motor de Proveedor_LLM queda listo para que una spec posterior lo configure desde el portal.
+2. THE Core_de_Voz SHALL procesar localmente por defecto y SHALL NOT enviar audio, transcripciones ni resúmenes a un Proveedor_LLM externo salvo configuración explícita del dueño.
 3. THE spec SHALL NOT persistir muestras de voz, embeddings ni Audio_Normalizado más allá del trabajo.
-4. THE spec SHALL NOT agregar la preferencia de idioma por usuario en un panel de administración; queda sujeta a una enmienda aprobada de `PRODUCT_BASELINE.md`.
-5. THE spec SHALL NOT prometer tiempos fuera de las Condiciones_de_Referencia ni extrapolar mediciones de fragmentos a grabaciones completas.
+4. THE spec SHALL NOT incluir procesamiento incremental durante la captura ni pulido visual Terra; ambos quedan para specs posteriores.
+5. THE spec SHALL NOT prometer tiempos fuera de las Condiciones_de_Referencia.
