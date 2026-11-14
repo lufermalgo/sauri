@@ -10,7 +10,7 @@ Fases: requisitos (o `bugfix.md` en correcciones), diseño y tareas, según `.co
 | [`bugfix-migration-009-lineage`](specs/bugfix-migration-009-lineage/) | Bugfix | 3/3 completas | Completada (histórica) |
 | [`chrome-recording-completion`](specs/chrome-recording-completion/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`core-speech-pipeline`](specs/core-speech-pipeline/) | Feature | 3/3 completas | Vigente |
-| [`extension-capture-preferences`](specs/extension-capture-preferences/) | Feature | 1/3 (pendiente: diseño, tareas) | Histórica (pendiente de producto, retomar con nueva unidad) |
+| [`extension-capture-preferences`](specs/extension-capture-preferences/) | Feature | 3/3 completas (diseño y tareas 2026-11-14) | Pendiente de revisión del dueño antes de implementar |
 | [`fix-backend-lint-type-baseline`](specs/fix-backend-lint-type-baseline/) | Bugfix | 3/3 completas | Completada (histórica) |
 | [`fix-meeting-completion-state`](specs/fix-meeting-completion-state/) | Bugfix | 2/3 (pendiente: tareas) | Histórica (fases pendientes, retomar con nueva unidad) |
 | [`fix-stale-meeting-recovery`](specs/fix-stale-meeting-recovery/) | Bugfix | 3/3 completas | Completada (histórica) |
