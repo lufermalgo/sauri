@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
+import { copy } from "./copy/es";
 
 const manifestMethod = api as typeof api & {
   getPlaybackManifest?: (meetingId: string) => Promise<PlaybackManifest>;
@@ -54,12 +55,119 @@ function mockFetch(body: unknown, status = 200) {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 const uploadMethod = api as typeof api & {
   uploadRecording?: (audio: File, data: Record<string, unknown>) => Promise<unknown>;
 };
+
+describe("byte-based recording upload", () => {
+  const file = new File(["synthetic audio"], "sample.webm", { type: "audio/webm" });
+  const data: api.RecordingUploadData = {
+    duration_seconds: 13,
+    meeting_id: "meeting-1",
+    idempotency_key: "retry-key-1",
+    capture_origin: "web_upload",
+    video_presence: "absent",
+  };
+
+  function mockXHR() {
+    mockFetch({});
+    const xhr = new XMLHttpRequest();
+    vi.spyOn(xhr, "open").mockImplementation(() => {});
+    vi.spyOn(xhr, "setRequestHeader").mockImplementation(() => {});
+    vi.spyOn(xhr, "send").mockImplementation(() => {});
+    const constructor = vi.fn(() => xhr);
+    vi.stubGlobal("XMLHttpRequest", constructor);
+    return { xhr, constructor };
+  }
+
+  function reply(xhr: XMLHttpRequest, body: string, status = 200) {
+    Object.defineProperty(xhr, "status", { value: status });
+    Object.defineProperty(xhr, "responseText", { value: body });
+    xhr.dispatchEvent(new Event("load"));
+  }
+
+  it("posts authenticated multipart and reports only actual XHR upload progress before confirmation", async () => {
+    const { xhr } = mockXHR();
+    const progress = vi.fn();
+    const resolved = vi.fn();
+    const request = api.uploadWithProgress(file, data, progress).then(resolved);
+
+    expect(xhr.open).toHaveBeenCalledWith("POST", expect.stringContaining("/api/v1/ingestion/upload"));
+    expect(xhr.setRequestHeader).toHaveBeenCalledTimes(1);
+    expect(xhr.setRequestHeader).toHaveBeenCalledWith("Authorization", "Bearer synthetic-token");
+    const body = vi.mocked(xhr.send).mock.calls[0][0] as FormData;
+    expect(body.get("audio")).toBe(file);
+    expect(body.get("data")).toBe(JSON.stringify(data));
+    expect(progress).not.toHaveBeenCalled();
+
+    xhr.upload.dispatchEvent(new ProgressEvent("progress", { loaded: 128, total: 512, lengthComputable: true }));
+    expect(progress).toHaveBeenLastCalledWith({ loaded: 128, total: 512 });
+    xhr.upload.dispatchEvent(new ProgressEvent("progress", { loaded: 512, total: 512, lengthComputable: true }));
+    await Promise.resolve();
+    expect(resolved).not.toHaveBeenCalled();
+
+    reply(xhr, JSON.stringify({ recording_id: "recording-1", state: "transcribing" }));
+    await request;
+    expect(resolved).toHaveBeenCalledWith({ recording_id: "recording-1", state: "transcribing" });
+  });
+
+  it("does not invent a total when upload length is unknown", async () => {
+    const { xhr } = mockXHR();
+    const progress = vi.fn();
+    const request = api.uploadWithProgress(file, data, progress);
+    xhr.upload.dispatchEvent(new ProgressEvent("progress", { loaded: 128 }));
+    expect(progress).toHaveBeenCalledWith({ loaded: 128, total: null });
+    reply(xhr, JSON.stringify({ recording_id: "recording-1", state: "transcribing" }));
+    await request;
+  });
+
+  it.each([
+    { event: "error", message: copy.upload.errors.network },
+    { event: "timeout", message: copy.upload.errors.timeout },
+    { event: "abort", message: copy.upload.errors.aborted },
+  ])("rejects $event without exposing server data", async ({ event, message }) => {
+    const { xhr } = mockXHR();
+    const request = api.uploadWithProgress(file, data, vi.fn());
+    xhr.dispatchEvent(new Event(event));
+    await expect(request).rejects.toThrow(message);
+  });
+
+  it.each([413, 422, 500])("rejects HTTP %s with a clear retryable error", async (status) => {
+    const { xhr } = mockXHR();
+    const request = api.uploadWithProgress(file, data, vi.fn());
+    reply(xhr, "private server diagnostic", status);
+    await expect(request).rejects.toThrow(copy.upload.errors.http(status));
+  });
+
+  it("invalidates unauthorized sessions like the fetch adapter", async () => {
+    const { xhr } = mockXHR();
+    const unauthorized = vi.fn();
+    window.addEventListener("sauri:unauthorized", unauthorized, { once: true });
+    const request = api.uploadWithProgress(file, data, vi.fn());
+    reply(xhr, "{}", 401);
+    await expect(request).rejects.toThrow(copy.upload.errors.http(401));
+    expect(localStorage.removeItem).toHaveBeenCalledWith("sauri_token");
+    expect(unauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["not JSON", "null", "{}", '{"recording_id":"","state":"transcribing"}', '{"recording_id":"recording-1","state":42}'])("rejects invalid confirmation %s", async (body) => {
+    const { xhr } = mockXHR();
+    const request = api.uploadWithProgress(file, data, vi.fn());
+    reply(xhr, body);
+    await expect(request).rejects.toThrow(copy.upload.errors.invalidResponse);
+  });
+
+  it("does not start a request without authentication", async () => {
+    const { constructor } = mockXHR();
+    vi.mocked(localStorage.getItem).mockReturnValue(null);
+    await expect(api.uploadWithProgress(file, data, vi.fn())).rejects.toThrow(copy.upload.errors.unauthenticated);
+    expect(constructor).not.toHaveBeenCalled();
+  });
+});
 
 describe("authenticated multipart upload API adapter", () => {
   it("sends the audio file and serialized metadata with bearer auth and a browser multipart boundary", async () => {
@@ -245,10 +353,10 @@ describe("meeting playback API adapter", () => {
       supports_turns: true,
       created_at: "2026-10-19T12:00:00Z",
       segments: [
-        { id: "segment-2", text: "Segunda frase", start_ms: 1200, end_ms: 2200, sequence: 2 }, // spanish-sample-data
-        { id: "segment-1", text: "Primera frase", start_ms: 0, end_ms: 1100, sequence: 1 }, // spanish-sample-data
-        { id: "segment-untimed", text: "Texto sin tiempo", start_ms: null, end_ms: null, sequence: 3 }, // spanish-sample-data
-        { id: "segment-invalid", text: "Intervalo inválido", start_ms: 2400, end_ms: 2300, sequence: 4 }, // spanish-sample-data
+        { id: "segment-2", text: "Second phrase", start_ms: 1200, end_ms: 2200, sequence: 2 },
+        { id: "segment-1", text: "First phrase", start_ms: 0, end_ms: 1100, sequence: 1 },
+        { id: "segment-untimed", text: "Untimed text", start_ms: null, end_ms: null, sequence: 3 },
+        { id: "segment-invalid", text: "Invalid interval", start_ms: 2400, end_ms: 2300, sequence: 4 },
       ],
     });
 
@@ -259,20 +367,20 @@ describe("meeting playback API adapter", () => {
       expect.any(Object),
     );
     expect(transcript.segments).toEqual([
-      { id: "segment-2", text: "Segunda frase", startMs: 1200, endMs: 2200, sequence: 2 }, // spanish-sample-data
-      { id: "segment-1", text: "Primera frase", startMs: 0, endMs: 1100, sequence: 1 }, // spanish-sample-data
-      { id: "segment-untimed", text: "Texto sin tiempo", startMs: null, endMs: null, sequence: 3 }, // spanish-sample-data
-      { id: "segment-invalid", text: "Intervalo inválido", startMs: null, endMs: null, sequence: 4 }, // spanish-sample-data
+      { id: "segment-2", text: "Second phrase", startMs: 1200, endMs: 2200, sequence: 2 },
+      { id: "segment-1", text: "First phrase", startMs: 0, endMs: 1100, sequence: 1 },
+      { id: "segment-untimed", text: "Untimed text", startMs: null, endMs: null, sequence: 3 },
+      { id: "segment-invalid", text: "Invalid interval", startMs: null, endMs: null, sequence: 4 },
     ]);
-    expect(transcript.segments[2].text).toBe("Texto sin tiempo"); // spanish-sample-data
+    expect(transcript.segments[2].text).toBe("Untimed text");
     expect(transcript.segments[2].startMs).toBeNull();
-    expect(transcript.segments[3].text).toBe("Intervalo inválido"); // spanish-sample-data
+    expect(transcript.segments[3].text).toBe("Invalid interval");
     expect(transcript.segments[3].endMs).toBeNull();
     expect(transcript.turns).toEqual([
       {
         id: "segment-2",
         transcriptId: "transcript-1",
-        text: "Segunda frase",
+        text: "Second phrase",
         startMs: 1200,
         endMs: 2200,
         sequence: 2,
@@ -280,7 +388,7 @@ describe("meeting playback API adapter", () => {
       {
         id: "segment-1",
         transcriptId: "transcript-1",
-        text: "Primera frase",
+        text: "First phrase",
         startMs: 0,
         endMs: 1100,
         sequence: 1,
