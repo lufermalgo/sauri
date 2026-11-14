@@ -21,8 +21,30 @@ Estado: dirección confirmada por Fer el 12-11-2026 (conversación del 12-11-202
 | Datos | PostgreSQL 16 | Docker `postgres`, volumen `pgdata` | Reuniones, estados, transcripciones, hablantes y propiedad |
 | Archivos | RustFS compatible con S3 | Docker `minio`, volumen `minio-data` | Audio/video y enlaces firmados para acceso temporal |
 | Cola | RabbitMQ 3 | Docker `rabbitmq` | Trabajos asíncronos firmados |
-| Transcripción | MLX Whisper, `mlx-community/whisper-large-v3-turbo` | Host Mac | `POST /transcribe`; adaptador `backend/asr-engine/native_main.py` |
-| Diarización | pyannote `speaker-diarization-3.1`, dispositivo MPS configurado | Host Mac | `POST /diarize`; adaptador `backend/diar-engine/native_main.py` |
+| Transcripción | MLX Whisper `large-v3-turbo` (se reemplaza por whisper.cpp `large-v3-turbo` Q5_0 en la unidad U2 de `core-speech-pipeline`) | Host Mac, puerto 8001 | `POST /transcribe`; `backend/asr-engine/native_main.py` |
+| Diarización | Senko (CoreML), contrato v2 | Host Mac, puerto 8002 | `POST /diarize`; `backend/diar-engine/native_main.py` |
+| Resumen | `llm-engine` + `llama-server` (llama.cpp) con Qwen3.5-9B, o un proveedor compatible con OpenAI configurado explícitamente | Host Mac, puerto 8003 (llama-server interno en 8004) | `POST /v1/chat/completions`; `backend/llm-engine/native_main.py` |
+
+## Entorno local con Docker Desktop
+
+En el Mac, los servicios de Sauri corren en **Docker Desktop** como el proyecto de Compose **`sauri`** (`docker-compose.yml` de la raíz). Los motores de IA no van en Docker: corren nativos en el Mac para usar Metal/CoreML, y los contenedores los alcanzan por `host.docker.internal`.
+
+| Servicio (Compose) | Puerto en el Mac | Datos |
+|---|---|---|
+| `portal` (Nginx con el portal construido) | `127.0.0.1:5173` (`PORTAL_PORT`) | — |
+| `api` (FastAPI) | `8000` | — |
+| `worker` (transcripción, diarización, resumen, retención) | — | — |
+| `postgres` (PostgreSQL 16) | `5432` | volumen `sauri_pgdata` |
+| `minio` (RustFS, compatible S3; conserva el nombre MinIO) | `9000` (API) y `9001` (consola) | volumen `sauri_minio-data` |
+| `rabbitmq` (RabbitMQ 3 con consola de administración) | `5672` y `15672` | — |
+| Motores nativos (fuera de Docker) | `8001` ASR, `8002` diarización, `8003` resumen | modelos en `~/.local/share/sauri/`, credenciales en `~/.config/sauri/` |
+
+Comandos: `make up` (levanta el proyecto `sauri`), `make logs`, `make down`; `make engines-install`, `make engines-up`, `make engines-status`, `make engines-down` para los motores nativos. Instalación paso a paso en `docs/operations/installation-notes.md`.
+
+Reglas del entorno local:
+- Hay **un solo entorno principal**, el proyecto `sauri`, y sus volúmenes guardan los datos reales del dueño: nunca se borran ni se recrean sin su autorización.
+- Las pruebas que necesitan PostgreSQL o RabbitMQ usan bases o contenedores **desechables** con otro nombre (bases `sauri_qa_*`/`sauri_t11_*`, contenedores `sauri-qa-*`), sin publicar puertos fuera de `127.0.0.1`, y se eliminan al terminar.
+- Antes de diagnosticar o probar, se revisa el estado real con `docker compose -p sauri ps` y `make engines-status`; un servicio configurado no demuestra que esté corriendo.
 
 ```mermaid
 graph LR
@@ -35,11 +57,12 @@ graph LR
   Q --> W[Worker Docker]
   W --> D
   W --> S
-  W --> T[Whisper MLX nativo]
-  W --> H[pyannote MPS nativo]
+  W --> T[ASR nativo :8001]
+  W --> H[Senko nativo :8002]
+  W --> L[llm-engine nativo :8003]
 ```
 
-La configuración de API/worker apunta a `host.docker.internal:8001` y `:8002`. Los motores implementan HTTP y controles de credenciales/capacidad por grabación. Su arranque, accesibilidad desde Docker y uso efectivo de GPU deben comprobarse juntos; tener una URL o un modelo configurado no demuestra inferencia. Credenciales fuera del repositorio en `~/.config/sauri`, montadas de solo lectura al worker; modelos compartidos en caché, nunca copiados al repositorio.
+La configuración de API/worker apunta a `host.docker.internal:8001`, `:8002` y `:8003`. Los motores implementan HTTP y controles de credenciales/capacidad por grabación. Su arranque, accesibilidad desde Docker y uso efectivo de GPU deben comprobarse juntos; tener una URL o un modelo configurado no demuestra inferencia. Credenciales fuera del repositorio en `~/.config/sauri`, montadas de solo lectura al worker; modelos compartidos en caché, nunca copiados al repositorio.
 
 ## Mapa de especificaciones del primer recorrido
 
