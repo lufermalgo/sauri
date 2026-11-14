@@ -136,7 +136,7 @@ class RabbitMQJobQueue(JobQueue):
         """Creates a robust connection and a channel with the RabbitMQ broker."""
         self._connection = await aio_pika.connect_robust(self._broker_url)
         self._channel = await self._connection.channel()
-        logger.info("RabbitMQ connection established: %s", self._broker_url)
+        logger.info("RabbitMQ connection established")
 
     async def disconnect(self) -> None:
         """Closes the channel and connection with RabbitMQ."""
@@ -165,7 +165,7 @@ class RabbitMQJobQueue(JobQueue):
             amqp_message,
             routing_key=queue.name,
         )
-        logger.debug("Message published to '%s': %s", topic, message)
+        logger.debug("Message published to '%s'", topic)
 
     async def subscribe(
         self,

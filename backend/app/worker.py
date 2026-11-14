@@ -16,6 +16,7 @@ from app.diarization.worker import start_worker as start_diarization_worker
 from app.infra.database import create_engine, create_session_factory
 from app.infra.object_store import create_object_store
 from app.infra.queue import create_job_queue
+from app.infra.recovery_outbox import dispatch_pending_recoveries
 from app.meetings.speaker_excerpt_service import ExcerptKeyring
 from app.retention.worker import start_retention_worker
 from app.transcription.worker import start_worker as start_transcription_worker
@@ -39,38 +40,47 @@ async def main() -> None:
 
     object_store = create_object_store()
 
-    await queue.connect()
-    logger.info("Queue connection established")
+    retention_task: asyncio.Task[None] | None = None
+    try:
+        await queue.connect()
+        logger.info("Queue connection established")
 
-    # Subscribe transcription worker
-    await start_transcription_worker(queue, session_factory)
+        # Subscribe transcription worker
+        await start_transcription_worker(queue, session_factory)
 
-    # Subscribe diarization worker (topic 'diarize', Req. 1.1)
-    await start_diarization_worker(queue, session_factory)
+        # Subscribe diarization worker (topic 'diarize', Req. 1.1)
+        await start_diarization_worker(queue, session_factory)
 
-    # Start retention worker as a background task
-    retention_task = asyncio.create_task(
-        start_retention_worker(session_factory, object_store)
-    )
+        # Deliver only already-committed explicit recovery intent, never initiate it.
+        await dispatch_pending_recoveries(queue, session_factory)
 
-    # Wait for shutdown signal
-    stop_event = asyncio.Event()
+        # Start retention worker as a background task
+        retention_task = asyncio.create_task(
+            start_retention_worker(session_factory, object_store)
+        )
 
-    def _signal_handler() -> None:
-        logger.info("Shutdown signal received, closing...")
-        stop_event.set()
+        # Wait for shutdown signal
+        stop_event = asyncio.Event()
 
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _signal_handler)
+        def _signal_handler() -> None:
+            logger.info("Shutdown signal received, closing...")
+            stop_event.set()
 
-    await stop_event.wait()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _signal_handler)
 
-    # Cleanup
-    retention_task.cancel()
-    await queue.disconnect()
-    await engine.dispose()
-    logger.info("sauri worker finished")
+        await stop_event.wait()
+    finally:
+        # Startup DB/publish errors must not leak our infrastructure handles.
+        if retention_task is not None:
+            retention_task.cancel()
+            await asyncio.gather(retention_task, return_exceptions=True)
+        try:
+            await queue.disconnect()
+        finally:
+            await engine.dispose()
+        logger.info("sauri worker finished")
 
 
 if __name__ == "__main__":

@@ -73,7 +73,10 @@ async def _process_transcription(
         logger.warning("Message discarded: recording_id missing or empty.")
         return
 
-    if not audio_ref or not isinstance(audio_ref, str) or not audio_ref.strip():
+    # Recovery envelopes carry identifiers only. The persisted recording supplies
+    # media after owner/recording/operation/generation fencing below. Keep the
+    # ordinary ingestion message contract unchanged.
+    if operation_id is None and (not audio_ref or not isinstance(audio_ref, str) or not audio_ref.strip()):
         logger.warning("Message discarded: reason=missing_audio_ref")
         return
 
