@@ -10,7 +10,7 @@ The owner-approved baseline defines a structured summary associated with a meeti
 
 **Out of scope / unresolved boundaries:** The internal structure, schema, and format of templates are deferred. No template name, seed template, category defaults, or fallback behavior is specified. The summary-generation method and accuracy threshold, fixed visual layout, broader access-control mechanisms or policy, and meeting portal layout remain unspecified. The transcript-triggered deletion rule is limited to the persisted structured summary associated with that transcript; it does not define a retention period or any broader deletion guarantee. CRM integration is out of scope.
 
-**Authority and traceability:** These requirements derive from the owner-approved `PRODUCT_BASELINE.md` exact content at commit `26d44ca7b212097c82415d0ae038bd9d096873d4` (blob `3afefd5e3da230cc3e26d7b89e74f48dc01d82ae`), principally §§4.C.5, 5, 7.10, and 9, plus Fer's 2026-10-16 template decision. The latter resolves the baseline's previously open questions about personal templates and defaults. Requirement 6 preserves the approved transcript-triggered deletion rule. No current implementation is used to extend scope.
+**Authority and traceability:** These requirements derive from the owner-approved `docs/product/baseline.md` exact content at commit `26d44ca7b212097c82415d0ae038bd9d096873d4` (blob `3afefd5e3da230cc3e26d7b89e74f48dc01d82ae`), principally §§4.C.5, 5, 7.10, and 9, plus Fer's 2026-10-16 template decision. The latter resolves the baseline's previously open questions about personal templates and defaults. Requirement 6 preserves the approved transcript-triggered deletion rule. No current implementation is used to extend scope.
 
 Existing source code, tests, and prior implementation choices are evidence of current state only; they do not constitute product acceptance or authorization to extend behavior. Future implementation must be evaluated against approved requirements and evidence.
 
@@ -33,7 +33,7 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 2. THE system SHALL make a **Meeting_Summary** available for the meeting and SHALL organize its content clearly so that its main topic and key arguments or points can each be identified.
 3. THE **Meeting_Summary** SHALL be associated with the meeting it summarizes.
 
-**Traceability:** Owner-approved `PRODUCT_BASELINE.md` §4.C.5 and §5 (structured summary capability and content); discovery §2.4 and §2.3 (summary content and distinction from transcript/notes).
+**Traceability:** Owner-approved `docs/product/baseline.md` §4.C.5 and §5 (structured summary capability and content); discovery §2.4 and §2.3 (summary content and distinction from transcript/notes).
 
 ### Requirement 2: Copy or download a meeting summary
 
@@ -44,7 +44,7 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 1. WHEN a **Meeting_Summary** is available, THE user SHALL be able to copy its content.
 2. WHEN a **Meeting_Summary** is available, THE user SHALL be able to download it.
 
-**Traceability:** Owner-approved `PRODUCT_BASELINE.md` §4.C.5 and §5 (copy/download); discovery §2.3–2.4 (copy/download expectation).
+**Traceability:** Owner-approved `docs/product/baseline.md` §4.C.5 and §5 (copy/download); discovery §2.3–2.4 (copy/download expectation).
 
 ### Requirement 3: Create personal templates with specific instructions
 
@@ -59,7 +59,7 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 5. WHEN a user attempts to select a **Summary_Template** owned by another user for a **Meeting_Summary**, THE system SHALL prevent applying that template.
 6. WHEN a **Summary_Template** is applied to a **Meeting_Summary**, THE resulting summary SHALL reflect that template's specific instructions.
 
-**Traceability:** Owner-approved `PRODUCT_BASELINE.md` §5 confirms user-defined, editable templates. Fer's 2026-10-16 decision establishes multiple personal templates, each with specific instructions. Internal template structure, schema, and format remain deferred.
+**Traceability:** Owner-approved `docs/product/baseline.md` §5 confirms user-defined, editable templates. Fer's 2026-10-16 decision establishes multiple personal templates, each with specific instructions. Internal template structure, schema, and format remain deferred.
 
 ### Requirement 4: Optionally group templates by category
 
@@ -71,7 +71,7 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 2. THE system SHALL allow multiple **Summary_Template** instances to be assigned to the same **Template_Category**.
 3. THE system SHALL allow a **Summary_Template** to exist without assignment to a **Template_Category**.
 
-**Traceability:** Owner-approved `PRODUCT_BASELINE.md` §5 confirms optional category grouping and multiple templates per category. Fer's 2026-10-16 decision establishes that a user's personal default is not scoped by category. Category defaults are not defined.
+**Traceability:** Owner-approved `docs/product/baseline.md` §5 confirms optional category grouping and multiple templates per category. Fer's 2026-10-16 decision establishes that a user's personal default is not scoped by category. Category defaults are not defined.
 
 ### Requirement 5: Configure and automatically apply a personal default
 
@@ -89,7 +89,7 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 
 **Constraint:** This requirement does not define behavior when no personal default is configured, category-specific defaults, template fallback behavior, or any additional template-choice flow beyond the stated automatic application. It does not specify how a **Meeting_Summary** is generated.
 
-**Traceability:** Owner-approved `PRODUCT_BASELINE.md` §5 supports user-defined editable templates, a selectable default, and optional category grouping. Fer's 2026-10-16 decision establishes configuration from Sauri web, automatic application without an extra confirmation when no explicit choice is made, and the cross-category personal default. It does not define fallback behavior when no default exists.
+**Traceability:** Owner-approved `docs/product/baseline.md` §5 supports user-defined editable templates, a selectable default, and optional category grouping. Fer's 2026-10-16 decision establishes configuration from Sauri web, automatic application without an extra confirmation when no explicit choice is made, and the cross-category personal default. It does not define fallback behavior when no default exists.
 
 ### Requirement 6: Delete persisted summary with transcript
 
@@ -99,4 +99,4 @@ Existing source code, tests, and prior implementation choices are evidence of cu
 
 1. WHEN a transcript expires or is deleted, THE system SHALL delete the associated **Persisted_Meeting_Summary** together with that transcript.
 
-**Traceability:** Owner-approved `PRODUCT_BASELINE.md` §7.10 and §9, commit `26d44ca7b212097c82415d0ae038bd9d096873d4`, blob `3afefd5e3da230cc3e26d7b89e74f48dc01d82ae` (Fer's 2026-10-16 decision). This rule does not specify a retention period or any broader deletion guarantee.
+**Traceability:** Owner-approved `docs/product/baseline.md` §7.10 and §9, commit `26d44ca7b212097c82415d0ae038bd9d096873d4`, blob `3afefd5e3da230cc3e26d7b89e74f48dc01d82ae` (Fer's 2026-10-16 decision). This rule does not specify a retention period or any broader deletion guarantee.

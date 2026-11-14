@@ -3,7 +3,7 @@
 Spec: `.spectra/specs/meeting-summaries-templates/`
 Requirements source: `requirements.md` @ commit `cdce9c34c566b72f42bb6db5eecdd76bdacb4532`
 (blob `12025987ad4ac44ac52a9acb5373ddf0f5f4520b`), Mira-APPROVED; PR #231 merged to main.
-Baseline source: `PRODUCT_BASELINE.md` @ commit `d738e78d65940f17d209edf9a54af5d34e92e059`
+Baseline source: `docs/product/baseline.md` @ commit `d738e78d65940f17d209edf9a54af5d34e92e059`
 (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`), the owner-approved baseline snapshot.
 Owner decision: Fer, 2026-10-16 — templates are personal; users create multiple templates with
 specific instructions in Sauri web and configure their personal default there. That default is

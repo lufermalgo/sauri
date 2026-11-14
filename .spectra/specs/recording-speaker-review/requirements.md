@@ -14,7 +14,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 
 **Límites abiertos:** no se seleccionan técnicas, modelos, umbrales de confianza ni criterios cuantitativos de calidad; el diseño técnico los deberá definir sin alterar los resultados observables aquí establecidos. Las asociaciones de nombre/identidad, etiquetas y datos de voz pertenecen a la persona usuaria que las guarda y no se comparten con otras personas usuarias; el despliegue multiusuario, la autenticación y los detalles de acceso siguen separados y no se especifican aquí. No se prescribe almacenamiento, gobernanza, política de acceso ni entrenamiento global.
 
-**Autoridad y trazabilidad:** el alcance deriva del `PRODUCT_BASELINE.md` aprobado por Fer el 2026-10-16 para el contenido exacto del commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`), con la anotación de aprobación en el commit `b071a7c6d2c72613aa42543d15e47b81f4999077`, junto con las decisiones pertinentes de `PRODUCT_DISCOVERY.md` indicadas en cada requisito. El estado de desarrollo existente es evidencia del estado actual únicamente: no constituye aceptación de producto ni autorización para ampliar o conservar comportamiento sin evaluarlo frente a estos requisitos y evidencia.
+**Autoridad y trazabilidad:** el alcance deriva del `docs/product/baseline.md` aprobado por Fer el 2026-10-16 para el contenido exacto del commit `f5ff445fd508983740cd6b5a89c08adafcbb9295` (blob `c43cad6515b01a52037ad9cd4e09010a40477fb4`), con la anotación de aprobación en el commit `b071a7c6d2c72613aa42543d15e47b81f4999077`, junto con las decisiones pertinentes de `docs/product/discovery.md` indicadas en cada requisito. El estado de desarrollo existente es evidencia del estado actual únicamente: no constituye aceptación de producto ni autorización para ampliar o conservar comportamiento sin evaluarlo frente a estos requisitos y evidencia.
 
 ## Glosario
 
@@ -37,7 +37,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 #### Criterios de Aceptación
 
 1. WHEN una Grabación_Almacenada queda disponible para procesamiento, THE Sauri SHALL iniciar la transcripción y el intento de identificación automática de hablantes de esa grabación.
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§2, 4.B, 5 (capacidad “Recording storage, transcription, and automatic speaker identification”), 6; `PRODUCT_DISCOVERY.md` §§2.5, 2.6 paso 4 y paso 5, y §7 “Precisiones sobre captura, diarización, notas, portal y CRM” (2026-10-09). El ejemplo de seis asistentes es ilustrativo, no un máximo.
+**Trazabilidad:** `docs/product/baseline.md` §§2, 4.B, 5 (capacidad “Recording storage, transcription, and automatic speaker identification”), 6; `docs/product/discovery.md` §§2.5, 2.6 paso 4 y paso 5, y §7 “Precisiones sobre captura, diarización, notas, portal y CRM” (2026-10-09). El ejemplo de seis asistentes es ilustrativo, no un máximo.
 
 ### Requisito 2: Representación fiel de la atribución
 
@@ -48,7 +48,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 1. WHEN Sauri reconoce a un hablante, THE Sauri SHALL mostrar el nombre asociado a esa identidad en lugar de una etiqueta genérica.
 2. WHEN una voz es desconocida o su atribución es incierta, THE Sauri SHALL mostrar una Etiqueta_Speaker_N para esa atribución hasta que se revise, sin presentar como confirmada una identidad dudosa.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§2 (resultado deseado 2), 3 (“Honest attribution”), 4.B, 5, 6; `PRODUCT_DISCOVERY.md` §2.5, §2.6 paso 5 y §7 “Precisiones sobre captura, diarización, notas, portal y CRM” (2026-10-09).
+**Trazabilidad:** `docs/product/baseline.md` §§2 (resultado deseado 2), 3 (“Honest attribution”), 4.B, 5, 6; `docs/product/discovery.md` §2.5, §2.6 paso 5 y §7 “Precisiones sobre captura, diarización, notas, portal y CRM” (2026-10-09).
 
 ### Requisito 3: Revisión humana de hablantes
 
@@ -64,7 +64,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 6. WHEN todo Hablante_en_Revisión de una Grabación_Almacenada tiene una Disposición_por_Hablante registrada, THE Sauri SHALL tratar esa Revisión_de_Hablantes como Revisión_Completa y mostrar la transcripción con las atribuciones revisadas correspondientes.
 7. WHILE exista al menos un Hablante_en_Revisión sin Disposición_por_Hablante registrada, THE Sauri SHALL tratar esa Revisión_de_Hablantes como Revisión_Pendiente y no como Revisión_Completa.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B paso 3 (“For each speaker, the user can play a clear audio excerpt, replace `Speaker N` with a chosen name/label, or correct an automatically assigned name.”) y 4.B paso 4, 5, 6; `PRODUCT_DISCOVERY.md` §2.5, §2.6 paso 5 y §7 “Precisión de diarización e indicador flotante” (2026-10-09). No se derivan controles, diseño visual ni cantidad fija de hablantes de la imagen/modal de referencia; la forma de registrar cada Disposición_por_Hablante y de presentar los hablantes pendientes queda al diseño.
+**Trazabilidad:** `docs/product/baseline.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B paso 3 (“For each speaker, the user can play a clear audio excerpt, replace `Speaker N` with a chosen name/label, or correct an automatically assigned name.”) y 4.B paso 4, 5, 6; `docs/product/discovery.md` §2.5, §2.6 paso 5 y §7 “Precisión de diarización e indicador flotante” (2026-10-09). No se derivan controles, diseño visual ni cantidad fija de hablantes de la imagen/modal de referencia; la forma de registrar cada Disposición_por_Hablante y de presentar los hablantes pendientes queda al diseño.
 
 ### Requisito 4: Persistencia de una revisión incompleta
 
@@ -77,7 +77,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 3. WHILE exista una Revisión_Pendiente, THE Sauri SHALL NOT tratarla como Revisión_Completa ni cerrarla como terminada, y SHALL NOT dar por revisados los Hablantes_en_Revisión sin Disposición_por_Hablante registrada.
 4. WHEN la persona usuaria registra la Disposición_por_Hablante del último Hablante_en_Revisión pendiente, THE Sauri SHALL dejar de solicitar nuevamente esa Revisión_de_Hablantes al regresar a la grabación.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§3 (“Human correction matters”: “incomplete speaker review remains pending and is requested again when the user returns”), 4.B paso 3 y 4 (“If the user leaves before completing review, the review remains pending and is requested again on returning to the recording. It cannot be dismissed as complete without finishing.”), 5, 6; `PRODUCT_DISCOVERY.md` §2.5 y §2.6 paso 5.
+**Trazabilidad:** `docs/product/baseline.md` §§3 (“Human correction matters”: “incomplete speaker review remains pending and is requested again when the user returns”), 4.B paso 3 y 4 (“If the user leaves before completing review, the review remains pending and is requested again on returning to the recording. It cannot be dismissed as complete without finishing.”), 5, 6; `docs/product/discovery.md` §2.5 y §2.6 paso 5.
 
 ### Requisito 5: Reutilización de identidades ante variación acústica
 
@@ -87,7 +87,7 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 
 1. WHEN una persona con Identidad_Establecida de la persona usuaria actual aparece en una Grabación_Almacenada posterior de esa misma persona usuaria con variaciones acústicas en su voz, THE Sauri SHALL mostrar el nombre previamente establecido para esa atribución; IF la atribución es incierta, THEN THE Sauri SHALL mostrar una Etiqueta_Speaker_N en lugar de asignar otra identidad.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§3 (“Human correction matters”), 4.B paso 5 y 9 (asociaciones por usuario y reutilización para esa misma persona usuaria); la decisión técnica abierta en §7 mantiene sin seleccionar el mecanismo. No se prescribe huella de voz, modelo ni otro mecanismo.
+**Trazabilidad:** `docs/product/baseline.md` §§3 (“Human correction matters”), 4.B paso 5 y 9 (asociaciones por usuario y reutilización para esa misma persona usuaria); la decisión técnica abierta en §7 mantiene sin seleccionar el mecanismo. No se prescribe huella de voz, modelo ni otro mecanismo.
 
 ### Requisito 6: Efecto futuro de las correcciones
 
@@ -98,4 +98,4 @@ La revisión no se considera terminada si la persona usuaria la deja incompleta:
 1. WHEN la persona usuaria corrige una identificación automática equivocada, THE Sauri SHALL considerar esa corrección al evaluar la identidad del hablante en grabaciones posteriores procesadas para esa misma persona usuaria; IF la atribución posterior sigue siendo incierta, THEN THE Sauri SHALL mostrar una Etiqueta_Speaker_N y SHALL NOT presentar la identidad corregida como confirmada.
 2. THE Sauri SHALL NOT compartir con otras personas usuarias las asociaciones de nombre/identidad, etiquetas ni datos de voz guardados por una persona usuaria.
 
-**Trazabilidad:** `PRODUCT_BASELINE.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B paso 5 y 9 (aclaración del 2026-10-16 sobre asociaciones por usuario, uso futuro para esa misma persona usuaria y ausencia de compartición entre usuarios). La influencia en reconocimientos futuros queda limitada a la misma persona usuaria; no se especifican aquí despliegue multiusuario, autenticación ni detalles de acceso, ni se autoriza entrenamiento global.
+**Trazabilidad:** `docs/product/baseline.md` §§2 (resultado deseado 3), 3 (“Human correction matters”), 4.B paso 5 y 9 (aclaración del 2026-10-16 sobre asociaciones por usuario, uso futuro para esa misma persona usuaria y ausencia de compartición entre usuarios). La influencia en reconocimientos futuros queda limitada a la misma persona usuaria; no se especifican aquí despliegue multiusuario, autenticación ni detalles de acceso, ni se autoriza entrenamiento global.

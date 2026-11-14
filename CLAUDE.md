@@ -22,4 +22,4 @@ Lee primero `AGENTS.md` (reglas comunes). Aquí van las reglas propias del orque
 
 ## Memoria y contexto
 - Guarda en la memoria del proyecto las decisiones y aprendizajes durables. Lee `handoff.md` si existe.
-- Las evidencias de Codex están en `~/Proyectos/APX/evidence/codex-*` (privadas: no se copian audios ni transcripciones al repo).
+- Las evidencias de Codex están fuera del repositorio, en la carpeta privada del dueño (no se copian audios ni transcripciones al repo).

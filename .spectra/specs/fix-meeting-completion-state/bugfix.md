@@ -4,7 +4,7 @@
 
 A meeting created in `queued` and then given an uploaded recording can complete transcription and diarization while its meeting record still reports `queued`. The observed rejected transition prevents the meeting state from reflecting completed processing, despite the transcript and speaker assignments being available.
 
-**Expected-behavior authority:** owner-approved `PRODUCT_BASELINE.md` snapshot `f31c1437d002a49849fc577446290ab83d29a584`, §4.B.1–3: after a stopped recording is stored, Sauri transcribes it and attempts speaker identification; when processing finishes, the user is asked to review speaker names. The baseline leaves processing-progress labels and state details open (§5, “Other side-panel tab names/content and processing-progress states”; §6, “Processing experience”). This bugfix therefore does not prescribe a new UI label or exact state vocabulary.
+**Expected-behavior authority:** owner-approved `docs/product/baseline.md` snapshot `f31c1437d002a49849fc577446290ab83d29a584`, §4.B.1–3: after a stopped recording is stored, Sauri transcribes it and attempts speaker identification; when processing finishes, the user is asked to review speaker names. The baseline leaves processing-progress labels and state details open (§5, “Other side-panel tab names/content and processing-progress states”; §6, “Processing experience”). This bugfix therefore does not prescribe a new UI label or exact state vocabulary.
 
 ## Reproduction Steps
 

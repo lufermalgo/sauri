@@ -8,7 +8,7 @@
 - **Approved requirements:** `.spectra/specs/meeting-review-playback/requirements.md`, blob `5d0ba0ca01eba1a82c2bb41d432ccacfa7dbb175`.
 - **Approved design reference:** `.spectra/specs/meeting-review-playback/design.md`, blob `add1950a1c6d28bdc51a022089fd26f2e37b99aa`.
 - **Approved task-plan reference:** `.spectra/specs/meeting-review-playback/tasks.md` at commit `b88a07b64d3a7f0e04ff9e6139d8645bcf9cf10b` (the file blob at that commit is `264fc6d7c2f0ebddd241bd7b5da7ef2865fa435d`). The current file blob is `a089fe5a92dbe1be3abbbae04f93180a10e6b085`; the difference adds only GitHub issue/card/PR tracking lines and does not change task actions or acceptance evidence.
-- **Approved product baseline:** `PRODUCT_BASELINE.md`, blob `1c1b124a1664cec13b7fc6950bb0d30ca98d0899`.
+- **Approved product baseline:** `docs/product/baseline.md`, blob `1c1b124a1664cec13b7fc6950bb0d30ca98d0899`.
 - **Feature evaluated:** T-8 playback controller, as included in the exact candidate above. Issue #306 is closed and PR #313 is merged; neither is product-acceptance evidence.
 
 ## Frozen user-evaluation plan

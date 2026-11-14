@@ -5,7 +5,7 @@ __pycache__/
 .venv/
 venv/
 
-# APX-visible isolated worktrees kept inside the registered project root
+# Isolated git worktrees kept inside the repository root
 .worktrees/
 
 # Build outputs
@@ -23,6 +23,11 @@ Thumbs.db
 # Docker volumes (local)
 pgdata/
 minio-data/
+
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 
 # Python packaging
 *.egg-info/

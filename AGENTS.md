@@ -6,11 +6,11 @@ Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con 
 - **Fer (dueño):** decide producto, privacidad, gastos y seguridad. Acepta el producto al final. Prueba con sus propias grabaciones.
 - **Claude (orquestador):** diseña la arquitectura, toma las decisiones técnicas críticas, revisa la calidad (QA), integra los PR y mantiene el repositorio local y remoto limpio y al día.
 - **Codex y subagentes de Claude:** implementan código y pruebas, en paralelo, siempre en archivos distintos. Los subagentes también pueden revisar y leer código a gran escala.
-- No existe ni se usa APX, ni tarjetas de tarea, ni agentes con nombre propio. La trazabilidad vive en los issues de GitHub, los PR y el `tasks.md` de cada spec.
+- No se usan tarjetas de tarea ni agentes con nombre propio. La trazabilidad vive en los issues de GitHub, los PR y el `tasks.md` de cada spec.
 
 ## Alcance
 - Haz solo el trabajo pedido o aprobado. No crees alternativas paralelas, simuladores, entregas de relleno ni funciones fuera de alcance.
-- `PRODUCT_BASELINE.md` y las decisiones del dueño definen el alcance. Las notas de descubrimiento y las specs históricas no autorizan trabajo nuevo.
+- `docs/product/baseline.md` y las decisiones del dueño definen el alcance. Las notas de descubrimiento y las specs históricas no autorizan trabajo nuevo.
 - Consulta al dueño solo cambios de producto, privacidad, gastos o seguridad. Las decisiones técnicas se resuelven con evidencia y se le explican de forma simple.
 - Nada sale de la máquina: el audio, las transcripciones y los resúmenes se procesan localmente. Un servicio externo (p. ej. un modelo de lenguaje en la nube) solo se usa si el dueño lo configura de forma explícita.
 
@@ -33,9 +33,20 @@ Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con 
 - Identificadores, comentarios y mensajes de commit en inglés, sin acentos. El texto que ve el usuario, en español, vive solo en `frontend/src/copy/` (único lugar exento del verificador de idioma). No se eluden los hooks (`.githooks`, `.claude/hooks/block-main-git.sh`).
 - Cambios acotados, simples y con nombres claros; sin código muerto ni defensas innecesarias; consistentes con el proyecto. Lee antes de editar.
 - Python con `cd backend && uv run --extra dev ...` (el `python3` de esta máquina no es el del proyecto). Secretos solo por archivo o variable de entorno, nunca en registros ni en el repositorio.
-- Los motores de audio corren nativos en el Mac (fuera de Docker) para aprovechar el hardware; el resto, en Docker Compose. La arquitectura es hexagonal: cada motor tras un contrato estable, intercambiable por configuración. Ver `docs/ARCHITECTURE.md`.
+- Los motores de audio corren nativos en el Mac (fuera de Docker) para aprovechar el hardware; el resto, en Docker Compose. La arquitectura es hexagonal: cada motor tras un contrato estable, intercambiable por configuración. Ver `docs/architecture/overview.md`.
 
 ## Seguridad del repositorio (Code changes and Git protection)
 - Antes de borrar una rama o worktree con trabajo sin integrar, se archiva en `~/Proyectos/sauri-archive/`. Nunca se descartan cambios ajenos.
 - No borres rutas que puedan ser enlaces simbólicos a carpetas fuera del repositorio (las skills `~/.agents/library/` ya se vaciaron una vez así). Comprueba con `test -L` antes.
 - No toques archivos del dueño fuera del repositorio ni su entorno de pruebas. No hagas `git push --force`, ni commit directo a `main`.
+
+## Dónde va cada cosa
+- Documentos de producto → `docs/product/` (línea base y descubrimiento).
+- Arquitectura → `docs/architecture/`.
+- Operación y despliegue → `docs/operations/`.
+- Referencias de diseño → `docs/design/`.
+- Informes antiguos → `docs/history/`.
+- Specs → `.spectra/specs/` (índice y estado en `.spectra/README.md`).
+- Scripts → `_tools/` (pasará a `scripts/` en la fase B de la reorganización).
+- Configuración de agentes → `.claude/` (Claude) y `.agents/` (Codex). Las skills son enlaces a la biblioteca del dueño, gestionada con `skills-manager`: no se modifican, copian ni borran.
+- Los archivos generados (cachés, `node_modules`, builds, entornos virtuales) nunca se versionan.

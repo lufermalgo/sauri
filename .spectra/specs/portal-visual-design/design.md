@@ -26,7 +26,7 @@ Este diseño cubre Fase 1; Fase 2 está secuenciada, no excluida, conforme a la 
 
 **Rutas explícitas `/` (biblioteca), `/upload` y `/meetings/:meetingId`.** Usar el router existente si lo hubiera; en su defecto un módulo pequeño con History API, evitando nueva dependencia solo para estas rutas. *Alternativa descartada:* navegación solo en estado React, que no permite URL directa ni apertura desde otra superficie.
 
-**Mantener componentes por pantalla y estado local a cada flujo.** Shell autenticado, biblioteca, carga y vista de reunión se separan bajo `frontend/src/components/`. El checkout verificado no contiene archivos CSS en `frontend/src/`; crear `frontend/src/index.css` como hoja global e importarla desde `frontend/src/main.tsx`, concentrando allí los estilos globales y tokens semánticos que la implementación necesite, sin fijar paleta ni convertir `design/stitch/` en contrato de pantallas, textos o comportamiento. *Alternativas descartadas:* asumir una hoja global inexistente, dispersar estilos globales por componentes o copiar mockups no normativos como contrato visual; un `App.tsx` monolítico también concentra responsabilidades.
+**Mantener componentes por pantalla y estado local a cada flujo.** Shell autenticado, biblioteca, carga y vista de reunión se separan bajo `frontend/src/components/`. El checkout verificado no contiene archivos CSS en `frontend/src/`; crear `frontend/src/index.css` como hoja global e importarla desde `frontend/src/main.tsx`, concentrando allí los estilos globales y tokens semánticos que la implementación necesite, sin fijar paleta ni convertir `docs/design/stitch/` en contrato de pantallas, textos o comportamiento. *Alternativas descartadas:* asumir una hoja global inexistente, dispersar estilos globales por componentes o copiar mockups no normativos como contrato visual; un `App.tsx` monolítico también concentra responsabilidades.
 
 **Login solo cambia en presentación.** Reutilizar la experiencia y llamada de autenticación actuales, sin alterar protocolo, permisos ni estados funcionales. *Alternativa descartada:* recrear el login de Stitch, que no define el acceso aprobado.
 
@@ -126,7 +126,7 @@ sequenceDiagram
 
 ### Límites de la dirección visual
 
-- `design/stitch/` es inspiración visual no normativa, no especificación de pantallas, contenido, comportamiento ni criterios de aceptación.
+- `docs/design/stitch/` es inspiración visual no normativa, no especificación de pantallas, contenido, comportamiento ni criterios de aceptación.
 - Los requisitos y la línea base no fijan breakpoints, paleta, ratios de contraste ni objetivos de accesibilidad específicos; este diseño no los inventa ni los convierte en criterios nuevos de aceptación.
 
 ### Backend / contratos dependientes
@@ -158,7 +158,7 @@ No hay cambio de política de autenticación, permisos, privacidad o retención.
 
 - **Carga web**: `meeting_id`, `idempotency_key` y `title` pertenecen al estado efímero del flujo activo; se generan/derivan al seleccionar el archivo, se envían en `IngestionData` y se reutilizan en el reintento explícito. El backend crea la reunión con ese ID si no existe; no se persisten en el navegador tras abandonar la página.
 - **Resultado de ingesta objetivo**: `{meeting_id, recording_id, state}`; `meeting_id` es el identificador asociado a la grabación, confirmado por backend en respuesta nueva e idempotente. El portal nunca lo deduce de `recording_id`.
-- **Reintento manual**: el archivo seleccionado permanece disponible en el flujo de UI para la acción «Reintentar» según `PRODUCT_BASELINE.md` §4.D.5; no se especifican garantías de almacenamiento o continuidad fuera de ese flujo.
+- **Reintento manual**: el archivo seleccionado permanece disponible en el flujo de UI para la acción «Reintentar» según `docs/product/baseline.md` §4.D.5; no se especifican garantías de almacenamiento o continuidad fuera de ese flujo.
 - En web, reutilizar tipos actuales cuando correspondan; el contrato de resumen es el prerequisito descrito arriba y los contratos de las capacidades secuenciadas a Fase 2 se concretarán en esa fase.
 
 ## Propiedades de Correctitud

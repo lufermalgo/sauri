@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Creates an isolated git worktree + branch for a spec/issue, so concurrent
-# APX/Codex sessions never share a working directory (see AGENTS.md: Code changes and Git protection).
+# agent sessions never share a working directory (see AGENTS.md: Code changes and Git protection).
 #
 # Usage: _tools/new-worktree.sh <branch-name>
 #   e.g.: _tools/new-worktree.sh feature/issue-12-silero-vad
 #         _tools/new-worktree.sh bugfix/issue-34-paste-timing
 #
-# Creates the worktree inside the registered project root, so APX can inspect
-# the worktree while its tools remain confined to this project:
+# Creates the worktree inside the repository root, so tools can inspect it
+# while remaining confined to this project:
 #   .worktrees/<branch-name-with-slashes-replaced-by-dashes>
 # branched fresh from origin/main, and prints the path to cd into.
 
@@ -41,13 +41,9 @@ else
   git -C "$repo_root" worktree add -b "$branch" "$dest" origin/main
 fi
 
-# .apc and .agents/skills are local project configuration (not present in every
-# remote branch). Seed each isolated checkout so APX/Codex sees the same agent
-# instructions and linked Spectra skills; preserve any branch-provided version.
-if [ -d "$repo_root/.apc" ] && [ ! -e "$dest/.apc" ]; then
-  mkdir -p "$dest/.apc"
-  cp -a "$repo_root/.apc/." "$dest/.apc/"
-fi
+# .agents/skills is local project configuration (not present in every remote
+# branch). Seed each isolated checkout so agents see the same linked Spectra
+# skills; preserve any branch-provided version.
 if [ -d "$repo_root/.agents/skills" ] && [ ! -e "$dest/.agents/skills" ]; then
   mkdir -p "$dest/.agents/skills"
   cp -a "$repo_root/.agents/skills/." "$dest/.agents/skills/"

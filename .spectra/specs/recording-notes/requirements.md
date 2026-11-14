@@ -2,11 +2,11 @@
 
 ## Introducción
 
-Este documento especifica el comportamiento aprobado para añadir notas asociadas a una grabación y mantenerlas distinguibles de su transcripción. El recorrido general de captura se conserva como contexto en `PRODUCT_BASELINE.md`, §4, Journey A; no se vuelve a especificar aquí.
+Este documento especifica el comportamiento aprobado para añadir notas asociadas a una grabación y mantenerlas distinguibles de su transcripción. El recorrido general de captura se conserva como contexto en `docs/product/baseline.md`, §4, Journey A; no se vuelve a especificar aquí.
 
 **Alcance:** añadir notas desde la extensión o desde el control flotante cuando está visible, asociarlas con la grabación correspondiente y consultarlas desde esa grabación en el portal web, en un apartado distinto de la transcripción.
 
-**Trazabilidad y autoridad:** el alcance deriva exclusivamente de `PRODUCT_BASELINE.md` en `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`): §2, resultado 4; §3, principio “Keep related content distinct”; §4, Journey A, pasos 4 y 6, y Journey C, paso 5; §5, capacidad “Recording-associated notes, separate from transcript”; y §7, decisión abierta #5. Para rastrear el descubrimiento, véase `PRODUCT_DISCOVERY.md`, §2.1, entrada “Notas de grabación”, y §7, “2026-10-09 — Precisiones sobre captura, diarización, notas, portal y CRM” (apartado “Notas — expectativa”). Las referencias visuales y las ideas que solo constan en el descubrimiento no amplían el alcance aprobado.
+**Trazabilidad y autoridad:** el alcance deriva exclusivamente de `docs/product/baseline.md` en `d738e78d65940f17d209edf9a54af5d34e92e059` (blob `6c6a3c3e7d7c761dc307d2313e8d3e899ce7ae13`): §2, resultado 4; §3, principio “Keep related content distinct”; §4, Journey A, pasos 4 y 6, y Journey C, paso 5; §5, capacidad “Recording-associated notes, separate from transcript”; y §7, decisión abierta #5. Para rastrear el descubrimiento, véase `docs/product/discovery.md`, §2.1, entrada “Notas de grabación”, y §7, “2026-10-09 — Precisiones sobre captura, diarización, notas, portal y CRM” (apartado “Notas — expectativa”). Las referencias visuales y las ideas que solo constan en el descubrimiento no amplían el alcance aprobado.
 
 **Idea fuerza:** una nota se asocia a la grabación que contextualiza y se mantiene aparte de su transcripción.
 

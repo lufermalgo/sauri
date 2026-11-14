@@ -55,7 +55,7 @@ class PortalContainerTests(unittest.TestCase):
             else:
                 shutil.copy2(source, target)
         for relative in ['.env.private', '.git/private', '.worktrees/private',
-                         '.apc/private', 'backend/private', 'node_modules/private',
+                         '.claude/private', 'backend/private', 'node_modules/private',
                          'frontend/.env.local', 'frontend/src/.env.private',
                          'frontend/src/private.wav', 'frontend/dist/private',
                          'packages/shared-types/node_modules/private']:

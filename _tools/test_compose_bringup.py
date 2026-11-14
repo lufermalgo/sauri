@@ -33,7 +33,7 @@ class ComposeBringupTests(unittest.TestCase):
     def test_setup_runs_before_api_and_reports_failed_migration(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             tree = Path(temp_dir) / "tree"
-            shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", ".worktrees", "__pycache__", "node_modules", "dist", ".env*", ".apc"))
+            shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", ".worktrees", "__pycache__", "node_modules", "dist", ".env*"))
             (tree / SCRIPT_NAME).write_text(Path(ROOT / SCRIPT_NAME).read_text())
             (tree / SCRIPT_NAME).chmod(0o755)
             # Set HOME to the temp tree so the "engine token" bind path doesn't touch the host.
@@ -67,7 +67,7 @@ class ComposeBringupTests(unittest.TestCase):
     def test_success_starts_applications_only_after_setup(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             tree = Path(temp_dir) / "tree"
-            shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", ".worktrees", "__pycache__", "node_modules", "dist", ".env*", ".apc"))
+            shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", ".worktrees", "__pycache__", "node_modules", "dist", ".env*"))
             (tree / SCRIPT_NAME).write_text(Path(ROOT / SCRIPT_NAME).read_text())
             (tree / SCRIPT_NAME).chmod(0o755)
             os.chdir(tree)
@@ -98,7 +98,7 @@ class ComposeBringupTests(unittest.TestCase):
     def test_make_up_invokes_bringup_script(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             tree = Path(temp_dir) / "tree"
-            shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", ".worktrees", "__pycache__", "node_modules", "dist", ".env*", ".apc"))
+            shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", ".worktrees", "__pycache__", "node_modules", "dist", ".env*"))
             os.chdir(tree)
             try:
                 docker = tree / "docker"

@@ -2,7 +2,7 @@
 
 ## Upstream traceability
 
-- Approved baseline snapshot: `PRODUCT_BASELINE.md` commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`, blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446` (context only; it does not authorize this extension delta).
+- Approved baseline snapshot: `docs/product/baseline.md` commit `4953b3b4b8a058fd4738342307cc50bfd66814f1`, blob `c6f9ef9bf3fac9eac23763e25e25e1089a16c446` (context only; it does not authorize this extension delta).
 - Requirements: `.spectra/specs/chrome-recording-completion/requirements.md`, Mira APPROVED, snapshot `98e52824d5b8f30f5e1b189c3d4f2ce5aed926f2`, PR #605 (not merged at planning time).
 - Design: `.spectra/specs/chrome-recording-completion/design.md`, Mira APPROVED, corrected snapshot `a477c0bde2ac3f140d04020af06afa05fb96c4f6`, PR #608.
 - Owner direction: 2026-10-30; requirements contain traceability to the source direction and Cyrus reconciliation.
