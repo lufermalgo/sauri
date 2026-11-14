@@ -628,6 +628,7 @@ class SummaryRequestOutbox(Base):
     instructions_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    failure_cause: Mapped[str | None] = mapped_column(String(32), nullable=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

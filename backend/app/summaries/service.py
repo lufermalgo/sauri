@@ -21,9 +21,7 @@ async def accept_request(
     template = await repository.selected_template(session, owner_id, template_id)
     if template is None:
         if template_id is None:
-            # D9: no approved outcome for an absent personal default. Do not
-            # silently create an event or select a fallback template.
-            raise NotImplementedError("D9: no approved outcome without a configured default")
+            raise HTTPException(status_code=503, detail="Default summary template unavailable")
         raise HTTPException(status_code=422, detail="Invalid template_id")
     row = SummaryRequestOutbox(
         event_id=str(uuid4()), meeting_id=meeting_id, transcript_id=transcript.id,
