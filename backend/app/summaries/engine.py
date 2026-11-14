@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import math
 import time
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 from pydantic import ValidationError
@@ -57,6 +58,45 @@ def _record_generation(started: float, outcome: str, envelope: object) -> None:
         logger.info(json.dumps(event, allow_nan=False, separators=(",", ":")))
 
 
+def _request_schema(passage_ids: list[str]) -> dict[str, Any]:
+    """Self-contained strict schema for the provider.
+
+    Local llama.cpp grammars ignore `$ref`/`$defs` and then return free-form JSON,
+    so references are copied in place and every object is closed.
+    """
+    defs = CanonicalSummary.model_json_schema().get("$defs", {})
+
+    def resolve(node: Any) -> Any:
+        if isinstance(node, dict):
+            if "$ref" in node:
+                return resolve(copy.deepcopy(defs[node["$ref"].rsplit("/", 1)[-1]]))
+            return {key: resolve(value) for key, value in node.items() if key != "$defs"}
+        if isinstance(node, list):
+            return [resolve(value) for value in node]
+        return node
+
+    schema: dict[str, Any] = resolve(CanonicalSummary.model_json_schema())
+    schema.pop("$defs", None)
+
+    def close(node: Any) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                node["additionalProperties"] = False
+                node["required"] = list(node.get("properties", {}))
+            for value in node.values():
+                close(value)
+        elif isinstance(node, list):
+            for value in node:
+                close(value)
+
+    close(schema)
+    schema["properties"]["review_state"].pop("default", None)
+    schema["properties"]["key_points"]["items"]["properties"]["sources"]["items"]["properties"][
+        "passage_id"
+    ]["enum"] = passage_ids
+    return schema
+
+
 class SummarizationEngine(Protocol):
     async def generate(self, passages: list[Passage], instructions_snapshot: str) -> CanonicalSummary: ...
 
@@ -77,11 +117,7 @@ class OpenAICompatibleSummarizationEngine:
     async def generate(self, passages: list[Passage], instructions_snapshot: str) -> CanonicalSummary:
         if not passages:
             raise SummaryInvalidError("summary_invalid")
-        schema = CanonicalSummary.model_json_schema()
-        schema["$defs"]["PassageRef"]["properties"]["passage_id"]["enum"] = [p.passage_id for p in passages]
-        # Strict OpenAI schemas require every field, including the literal draft marker.
-        schema["required"] = list(schema["properties"])
-        schema["properties"]["review_state"].pop("default", None)
+        schema = _request_schema([p.passage_id for p in passages])
         request = {
             "model": self.model, "temperature": 0, "stream": False,
             "messages": [

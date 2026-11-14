@@ -55,7 +55,9 @@ async def test_fail_closed(status: int, body: dict[str, object], error: type[Exc
     payload = json.loads(requests[0].content)
     assert "Synthetic END" in payload["messages"][1]["content"]
     schema = payload["response_format"]["json_schema"]["schema"]
-    assert schema["$defs"]["PassageRef"]["properties"]["passage_id"]["enum"] == ["P0000", "P0001"]
+    assert "$ref" not in json.dumps(schema)
+    sources = schema["properties"]["key_points"]["items"]["properties"]["sources"]["items"]
+    assert sources["properties"]["passage_id"]["enum"] == ["P0000", "P0001"]
     system = payload["messages"][0]["content"]
     for required in ("acronyms", "absences", "goals, proposals, decisions and achievements", "untrusted data"):
         assert required in system
