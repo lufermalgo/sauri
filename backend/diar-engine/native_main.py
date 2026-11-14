@@ -57,11 +57,17 @@ async def lifespan(_app: FastAPI):
     try:
         import torch
         from pyannote.audio import Pipeline
+        from pyannote.audio.core.task import Problem, Resolution, Specifications
+        from torch.torch_version import TorchVersion
 
         token = HF_TOKEN_PATH.read_text(encoding="utf-8").strip()
         if not token:
             raise RuntimeError("Hugging Face token file is empty")
-        pipeline = Pipeline.from_pretrained(MODEL_ID, use_auth_token=token)
+        # Torch >=2.6 defaults to weights-only loading. These existing pyannote
+        # checkpoints contain only four additional schema/version types. Scope
+        # that explicit allowlist to loading; never disable weights-only safety.
+        with torch.serialization.safe_globals([Specifications, Problem, Resolution, TorchVersion]):
+            pipeline = Pipeline.from_pretrained(MODEL_ID, use_auth_token=token)
         pipeline.to(torch.device(MODEL_DEVICE))
         diarization_pipeline = pipeline
     except Exception as exc:
