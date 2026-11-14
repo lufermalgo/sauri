@@ -22,8 +22,16 @@ Living record of what each Sauri component needs to be installed, kept as engine
 - Verify: `bash _tools/install-diar-engine.sh --check`; native test: `cd backend && SAURI_RUN_NATIVE_TESTS=1 uv run --extra dev pytest tests/native/test_diar_native.py` (passed, ~63 s).
 - macOS only: Senko uses CoreML. Windows/Linux need another adapter behind the same diarization contract (Senko's CUDA/CPU mode or pyannote); the container engine `backend/diar-engine/main.py` is the current Linux fallback.
 
+## Summary engine (llm-engine + llama.cpp + Qwen3.5-9B) — 2026-11-14
+
+- Command: `bash _tools/install-llm-engine.sh` (Apple Silicon only today). Needs `uv`, `cmake` and `git`.
+- Creates `~/.local/share/sauri/native-engines/llm/` with: a Python 3.11 venv for the gateway (`backend/llm-engine/requirements-native.txt`), a `llama-server` binary compiled from llama.cpp commit `af76639f728c69c74c873cc45f038aaa17afd09e` as a static build with Metal and without OpenSSL (the Homebrew build crashes with this model), and the model `unsloth/Qwen3.5-9B-GGUF` revision `3885219b…` file `Qwen3.5-9B-Q4_K_M.gguf` (~5.5 GB, SHA-256 `03b74727…`). It records `provenance.json` and fails closed on any hash or provenance mismatch.
+- The model download is skipped when a file with the right SHA-256 is already in `models/` (useful for an offline or pre-seeded install).
+- Measured on a MacBook Air M3: compile ~1 min 25 s (model pre-seeded). First request including cold model load: ~16 s for a short transcript; the model unloads after 120 s idle.
+- Verify: `bash _tools/install-llm-engine.sh --check`; start with `bash _tools/native-engines.sh start llm`.
+- Other platforms: llama.cpp builds on Linux (CUDA/CPU) and Windows; the gateway is platform-neutral, but the installer and the build flags (Metal) are macOS-specific today. An external OpenAI-compatible provider can replace the local engine through configuration.
+
 ## Pending to document
 
 - ASR engine (whisper.cpp `large-v3-turbo`, unit U2).
-- Summary engine (`llm-engine`, llama.cpp built at a pinned commit, Qwen3.5-9B model, unit U4).
 - Extension packaging and updates; portal and backend updates.
