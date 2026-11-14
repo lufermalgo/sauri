@@ -54,7 +54,7 @@ El dueño decidió el 14/11/2026 **implementar esa recomendación sin nuevas pru
 
 #### Criterios de Aceptación
 
-1. WHEN comience el procesamiento de una grabación, THE Core_de_Voz SHALL derivar Audio_Normalizado una única vez y entregarlo a transcripción y diarización.
+1. THE Core_de_Voz SHALL derivar el Audio_Normalizado con una única implementación y parámetros idénticos (PCM mono 16 kHz) para transcripción y diarización; cada motor nativo lo deriva del original porque corren como servicios separados (costo medido por Codex: ~5 s por hora de audio).
 2. IF la normalización altera la duración en más de 100 ms respecto del original, THEN THE Core_de_Voz SHALL registrarlo como discrepancia.
 3. THE Core_de_Voz SHALL eliminar el Audio_Normalizado al terminar o fallar el trabajo y SHALL NOT modificar el original.
 4. THE Core_de_Voz SHALL aislar la preparación por formato en una función de entrada, de modo que agregar un formato no cambie las etapas siguientes; esta spec cubre `.webm` (Opus) y los formatos ya aceptados por la carga.
@@ -65,9 +65,9 @@ El dueño decidió el 14/11/2026 **implementar esa recomendación sin nuevas pru
 
 #### Criterios de Aceptación
 
-1. WHEN haya Audio_Normalizado, THE Core_de_Voz SHALL ejecutar transcripción y diarización en paralelo cuando la reserva de recursos lo permita, y en serie cuando no.
+1. THE Core_de_Voz SHALL ejecutar transcripción y diarización en serie; la ejecución en paralelo SHALL activarse solo si una medición real muestra una reducción del Tiempo_Hasta_Transcripcion de al menos 10 % (con Senko la diarización dura ~30 s de ~6 min, así que el beneficio esperado es menor).
 2. WHILE un Adaptador_de_Motor nativo ejecute un trabajo, THE Core_de_Voz SHALL impedir la suspensión por inactividad solo durante ese trabajo, sin cambiar la configuración de energía del equipo.
-3. WHEN un trabajo solicite inferencia pesada, THE Core_de_Voz SHALL adquirir una reserva de recursos con lease y fencing y SHALL NOT persistir resultados de un propietario obsoleto.
+3. THE Core_de_Voz SHALL permitir un único trabajo de motor pesado a la vez por host mediante un bloqueo compartido por todos los motores nativos que se libere si el proceso muere, y SHALL seguir descartando resultados de una generación obsoleta mediante el fencing de generaciones existente; la reserva distribuida con lease (`performance-observability-pipeline` T9) queda para despliegues de varios hosts.
 4. WHEN se procese una grabación de 60 minutos en Condiciones_de_Referencia, THE Core_de_Voz SHALL lograr un Tiempo_Hasta_Transcripcion de 7 minutos o menos.
 5. THE Core_de_Voz SHALL registrar la duración de cada etapa (espera, carga de modelo, normalización, transcripción, diarización, unión, persistencia), declarando ausente lo no medido.
 
