@@ -5,11 +5,12 @@ import {
   getPlaybackManifest,
   getSpeakerReview,
   getTranscript,
-  playSpeakerExcerpt,
+  newIdempotencyKey,
   submitSpeakerDisposition,
 } from "../api";
 import type { MeetingDiarization, MeetingState, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
+import { selectListeningInterval } from "../speaker-review-interval";
 import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
 import { ProcessingStatus } from "./ProcessingStatus";
 import { SummaryPanel } from "./SummaryPanel";
@@ -32,6 +33,10 @@ const UNRESOLVED_SPEAKER_COLOR = "#6b7280";
 // Wall-clock speaker wait limit, including hidden time; repeated polls do not reset it.
 const SPEAKER_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 
+function isReviewFailure(err: unknown, reason: "conflict" | "not_found"): boolean {
+  return err instanceof Error && (err as { reason?: unknown }).reason === reason;
+}
+
 function speakerColor(diarization: MeetingDiarization | null, speakerId: string | undefined): string {
   const sequence = diarization?.speakers.find((speaker) => speaker.id === speakerId)?.sequence;
   if (sequence === undefined) return UNRESOLVED_SPEAKER_COLOR;
@@ -53,6 +58,13 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
     seekToRef.current = seekTo;
   }, []);
+  const playIntervalRef = useRef<((startMs: number, endMs: number) => Promise<void>) | undefined>(undefined);
+  const registerPlayInterval = useCallback(
+    (playInterval: ((startMs: number, endMs: number) => Promise<void>) | undefined) => {
+      playIntervalRef.current = playInterval;
+    },
+    [],
+  );
   const [data, setData] = useState<MeetingTranscript | null>(null);
   const [playbackManifest, setPlaybackManifest] = useState<PlaybackManifest | null>(null);
   const [diarization, setDiarization] = useState<MeetingDiarization | null>(null);
@@ -66,6 +78,9 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [loading, setLoading] = useState(true);
   const [names, setNames] = useState<Record<string, string>>({});
   const [submittingSpeakerId, setSubmittingSpeakerId] = useState<string | null>(null);
+  const playbackRef = useRef<HTMLDivElement>(null);
+  // Idempotency key of the last unsettled action per speaker, reused when that same action is retried.
+  const pendingActions = useRef(new Map<string, { signature: string; key: string }>());
 
   useEffect(() => {
     let cancelled = false;
@@ -109,8 +124,9 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           setReviewError(null);
         }
       } catch (err) {
-        if (!cancelled && !(err instanceof Error && err.message === "Error 404")) {
-          setReviewError(err instanceof Error ? err.message : "Failed to load speaker review");
+        const notFound = isReviewFailure(err, "not_found") || (err instanceof Error && err.message === "Error 404");
+        if (!cancelled && !notFound) {
+          setReviewError(err instanceof Error ? err.message : copy.speakerReview.loadFailed);
         }
       }
     }
@@ -204,9 +220,14 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     if (!review) return;
     const item = review.items.find((candidate) => candidate.speakerId === speakerId);
     if (!item) return;
+    const signature = JSON.stringify([review.revisionId, disposition, label ?? null, item.expectedVersion]);
+    const previous = pendingActions.current.get(speakerId);
+    const action = previous?.signature === signature ? previous : { signature, key: newIdempotencyKey() };
+    pendingActions.current.set(speakerId, action);
     const request: SpeakerDispositionRequest = {
       disposition,
       expectedVersion: item.expectedVersion,
+      idempotencyKey: action.key,
       ...(label === undefined ? {} : { label }),
     };
 
@@ -219,21 +240,35 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         speakerId,
         request
       );
+      pendingActions.current.delete(speakerId);
       setReview(updatedReview);
     } catch (err) {
-      setReviewError(err instanceof Error ? err.message : "Failed to save speaker review");
+      // A conflict or a missing meeting will not succeed on retry; anything else keeps the key.
+      if (isReviewFailure(err, "conflict") || isReviewFailure(err, "not_found")) pendingActions.current.delete(speakerId);
+      setReviewError(err instanceof Error ? err.message : copy.speakerReview.saveFailed);
     } finally {
       setSubmittingSpeakerId(null);
     }
   }
 
-  async function playExcerpt(speakerId: string) {
-    if (!review) return;
+  const intervalTurns = useMemo(() => {
+    if (!data) return [];
+    if (data.presentation === "words") return data.turns;
+    const speakerByTurn = new Map(diarization?.assignments.map(({ turn_id, speaker_id }) => [turn_id, speaker_id]) ?? []);
+    return data.turns.map((turn) => ({ ...turn, speakerId: speakerByTurn.get(turn.id) ?? null }));
+  }, [data, diarization]);
+
+  async function listenToSpeaker(startMs: number, endMs: number) {
     setReviewError(null);
+    const playInterval = playIntervalRef.current;
+    if (!playInterval) {
+      setReviewError(copy.speakerReview.playbackUnavailable);
+      return;
+    }
     try {
-      await playSpeakerExcerpt(meetingId, review.revisionId, speakerId);
-    } catch (err) {
-      setReviewError(err instanceof Error ? err.message : "Failed to play speaker excerpt");
+      await playInterval(startMs, endMs);
+    } catch {
+      setReviewError(copy.speakerReview.playbackFailed);
     }
   }
 
@@ -246,7 +281,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       timestampMs: turn.startMs,
       sequence: turn.sequence,
       speakerId: turn.speakerId ?? undefined,
-      speakerLabel: turn.speakerLabel ?? copy.transcript.unknownSpeaker,
+      speakerLabel: (turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined) ||
+        turn.speakerLabel || copy.transcript.unknownSpeaker,
       hasAmbiguous: turn.hasAmbiguous ?? false,
       color: speakerColor(diarization, turn.speakerId ?? undefined),
     }));
@@ -255,7 +291,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       new Map(diarization?.assignments.map(({ turn_id, speaker_id }) => [turn_id, speaker_id]) ?? []),
     ).map((turn) => {
       const speaker = diarization?.speakers.find((candidate) => candidate.id === turn.speakerId);
-      const reviewedLabel = review?.items.find((item) => item.speakerId === turn.speakerId)?.currentLabel.trim();
+      const reviewedLabel = turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined;
       return {
         ...turn,
         speakerLabel: reviewedLabel || speaker?.label || copy.transcript.legacyUnknownSpeaker,
@@ -305,7 +341,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
       {error && <p role="alert" style={{ color: "red" }}>{error}</p>}
       {!loading && !data && !error && <p>{copy.processing.transcriptPending}</p>}
-      <div id="meeting-playback" onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}>
+      <div id="meeting-playback" ref={playbackRef} onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}>
         <MeetingPlaybackView
           manifest={playbackManifest}
           passages={playbackPassages}
@@ -313,6 +349,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           error={playbackError}
           onRefreshManifest={() => getPlaybackManifest(meetingId)}
           onSeekToReady={registerSeekTo}
+          onPlayIntervalReady={registerPlayInterval}
         />
       </div>
       <div role="tablist" aria-label={copy.summary.tabsLabel} onKeyDown={(event) => {
@@ -392,60 +429,69 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       {reviewError && <p role="alert" style={{ color: "red" }}>{reviewError}</p>}
       {review && (
         <section aria-labelledby="speaker-review-heading">
-          <h3 id="speaker-review-heading">Speaker review</h3>
-          <p role="status">Review {review.status}</p>
-          {review.items.map((item, index) => {
-            const label = item.attributionState === "uncertain"
-              ? item.currentLabel || `Speaker ${index + 1}`
-              : item.currentLabel;
+          <h3 id="speaker-review-heading">{copy.speakerReview.heading}</h3>
+          <p role="status">{review.status === "complete" ? copy.speakerReview.complete : copy.speakerReview.pending}</p>
+          {review.items.map((item) => {
+            const label = review.labelsBySpeakerId[item.speakerId]?.trim() || item.currentLabel ||
+              copy.transcript.legacyUnknownSpeaker;
             const busy = submittingSpeakerId === item.speakerId;
+            const name = names[item.speakerId]?.trim() ?? "";
+            const interval = selectListeningInterval(intervalTurns, item.speakerId);
+            const playbackReady = Boolean(playbackManifest) && !playbackLoading && !playbackError;
+            const inputId = `speaker-name-${item.speakerId}`;
             return (
-              <article key={item.speakerId}>
+              <article key={item.speakerId} aria-busy={busy || undefined}>
                 <h4>{label}</h4>
+                <p>{copy.speakerReview.dispositionLabel(item.disposition)}</p>
                 <button
                   type="button"
-                  onClick={() => void playExcerpt(item.speakerId)}
-                  disabled={busy}
+                  aria-label={copy.speakerReview.listenTo(label)}
+                  onClick={() => { if (interval) void listenToSpeaker(interval.startMs, interval.endMs); }}
+                  disabled={!interval || !playbackReady}
                 >
-                  Play excerpt for {label}
+                  {copy.speakerReview.listen}
                 </button>
-                {item.disposition === null && (
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => void recordDisposition(item.speakerId, "confirmed")}
-                      disabled={busy}
-                    >
-                      Confirm {label}
-                    </button>
-                    <label>
-                      Name for {label}
-                      <input
-                        type="text"
-                        value={names[item.speakerId] ?? ""}
-                        onChange={(event) => setNames((current) => ({
-                          ...current,
-                          [item.speakerId]: event.target.value,
-                        }))}
-                        disabled={busy}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void recordDisposition(item.speakerId, "named", names[item.speakerId]?.trim())}
-                      disabled={busy || !names[item.speakerId]?.trim()}
-                    >
-                      Name {label}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void recordDisposition(item.speakerId, "corrected", names[item.speakerId]?.trim())}
-                      disabled={busy || !names[item.speakerId]?.trim()}
-                    >
-                      Correct {label}
-                    </button>
-                  </div>
-                )}
+                {!interval && <p>{copy.speakerReview.noInterval}</p>}
+                {interval?.short && <p>{copy.speakerReview.shortInterval}</p>}
+                {interval && !playbackReady && !playbackLoading && <p>{copy.speakerReview.playbackUnavailable}</p>}
+                <div>
+                  <label htmlFor={inputId}>{copy.speakerReview.nameFor(label)}</label>
+                  <input
+                    id={inputId}
+                    type="text"
+                    value={names[item.speakerId] ?? ""}
+                    onChange={(event) => setNames((current) => ({
+                      ...current,
+                      [item.speakerId]: event.target.value,
+                    }))}
+                    disabled={busy}
+                  />
+                  <button
+                    type="button"
+                    aria-label={copy.speakerReview.saveNameFor(label)}
+                    onClick={() => void recordDisposition(item.speakerId, "named", name)}
+                    disabled={busy || !name}
+                  >
+                    {copy.speakerReview.saveName}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={copy.speakerReview.confirmFor(label)}
+                    onClick={() => void recordDisposition(item.speakerId, "confirmed")}
+                    disabled={busy}
+                  >
+                    {copy.speakerReview.confirm}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={copy.speakerReview.correctFor(label)}
+                    onClick={() => void recordDisposition(item.speakerId, "corrected", name)}
+                    disabled={busy || !name}
+                  >
+                    {copy.speakerReview.correct}
+                  </button>
+                  {busy && <span role="status">{copy.speakerReview.saving}</span>}
+                </div>
               </article>
             );
           })}

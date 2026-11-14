@@ -90,6 +90,63 @@ describe("PlaybackController state and controls", () => {
     expect(controller.getState()).toMatchObject({ playbackRate: 1.5, volume: 0.4, muted: true });
   });
 
+  it("plays an interval from its start and pauses when the clock reaches its end", async () => {
+    const audio = mediaElement();
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+
+    await controller.playInterval(2000, 5500);
+    expect(audio.currentTime).toBe(2);
+    expect(audio.play).toHaveBeenCalledOnce();
+    audio.currentTime = 5.499;
+    audio.emit("timeupdate");
+    expect(audio.pause).not.toHaveBeenCalled();
+    audio.currentTime = 5.5;
+    audio.emit("timeupdate");
+    expect(audio.pause).toHaveBeenCalledOnce();
+    expect(controller.getState().isPlaying).toBe(false);
+
+    await controller.resume();
+    audio.currentTime = 9;
+    audio.emit("timeupdate");
+    expect(audio.pause).toHaveBeenCalledOnce();
+  });
+
+  it("cancels the interval on a manual seek", async () => {
+    const audio = mediaElement();
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+
+    await controller.playInterval(1000, 3000);
+    controller.seekTo(7000);
+    audio.currentTime = 8;
+    audio.emit("timeupdate");
+    expect(audio.pause).not.toHaveBeenCalled();
+  });
+
+  it("replaces a previous interval with a new one", async () => {
+    const audio = mediaElement();
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+
+    await controller.playInterval(1000, 3000);
+    await controller.playInterval(10000, 12000);
+    expect(audio.currentTime).toBe(10);
+    audio.currentTime = 11;
+    audio.emit("timeupdate");
+    expect(audio.pause).not.toHaveBeenCalled();
+    audio.currentTime = 12;
+    audio.emit("seeked");
+    expect(audio.pause).toHaveBeenCalledOnce();
+  });
+
+  it("ignores an empty or invalid interval", async () => {
+    const audio = mediaElement();
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+
+    await controller.playInterval(3000, 3000);
+    await controller.playInterval(-1, 2000);
+    await controller.playInterval(Number.NaN, 2000);
+    expect(audio.play).not.toHaveBeenCalled();
+  });
+
   it("updates active passage from the authoritative audio clock and clears it on a gap", () => {
     const audio = mediaElement();
     const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });

@@ -23,8 +23,8 @@ vi.mock("../api", () => ({
   getPlaybackManifest: vi.fn(),
   getDiarization: vi.fn(),
   getSpeakerReview: vi.fn(),
-  playSpeakerExcerpt: vi.fn(),
   submitSpeakerDisposition: vi.fn(),
+  newIdempotencyKey: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -210,9 +210,10 @@ describe("TranscriptView — renders the transcript view", () => {
       reviewId: "review-synthetic",
       revisionId: "revision-synthetic",
       status: "complete",
+      labelsBySpeakerId: { "speaker-a": "Synthetic Person A", "speaker-b": "Synthetic Person B" },
       items: [
-        { speakerId: "speaker-a", currentLabel: "Synthetic Person A", attributionState: "recognized", disposition: "named", excerptRef: "synthetic-a", expectedVersion: 1 },
-        { speakerId: "speaker-b", currentLabel: "Synthetic Person B", attributionState: "recognized", disposition: "named", excerptRef: "synthetic-b", expectedVersion: 1 },
+        { speakerId: "speaker-a", currentLabel: "Synthetic Person A", attributionState: "attributed", disposition: "named", expectedVersion: 1 },
+        { speakerId: "speaker-b", currentLabel: "Synthetic Person B", attributionState: "attributed", disposition: "named", expectedVersion: 1 },
       ],
     });
     vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
@@ -308,116 +309,187 @@ describe("TranscriptView — renders the transcript view", () => {
   });
 });
 
-// Synthetic fixtures and typed meeting-API boundary seam for speaker review.
-interface SpeakerReview {
-  reviewId: string;
-  revisionId: string;
-  status: "pending" | "complete";
-  items: Array<{
-    speakerId: string;
-    currentLabel: string;
-    attributionState: "recognized" | "uncertain";
-    disposition: string | null;
-    excerptRef: string;
-    expectedVersion: number;
-  }>;
-}
-interface DispositionRequest {
-  disposition: "confirmed" | "named" | "corrected";
-  label?: string;
-  expectedVersion: number;
-}
-const reviewApi = api as unknown as {
-  getSpeakerReview: (meetingId: string) => Promise<SpeakerReview>;
-  playSpeakerExcerpt: (meetingId: string, revisionId: string, speakerId: string) => Promise<void>;
-  submitSpeakerDisposition: (meetingId: string, revisionId: string, speakerId: string, request: DispositionRequest) => Promise<SpeakerReview>;
-};
-function review(overrides: Partial<SpeakerReview> = {}): SpeakerReview {
+// Synthetic fixtures for speaker review.
+function review(overrides: Partial<api.SpeakerReview> = {}): api.SpeakerReview {
   return {
     reviewId: "review-1", revisionId: "revision-1", status: "pending",
+    labelsBySpeakerId: { "speaker-1": "Speaker 1", "speaker-2": "Known Speaker" },
     items: [
-      { speakerId: "speaker-1", currentLabel: "Speaker 1", attributionState: "uncertain", disposition: null, excerptRef: "opaque-1", expectedVersion: 1 },
-      { speakerId: "speaker-2", currentLabel: "Known Speaker", attributionState: "recognized", disposition: null, excerptRef: "opaque-2", expectedVersion: 1 },
+      { speakerId: "speaker-1", currentLabel: "Speaker 1", attributionState: "uncertain", disposition: null, expectedVersion: 1 },
+      { speakerId: "speaker-2", currentLabel: "Known Speaker", attributionState: "attributed", disposition: null, expectedVersion: 1 },
     ],
     ...overrides,
   };
 }
 
+const sr = copy.speakerReview;
+
+function reviewConflict(): Error {
+  return Object.assign(new Error(sr.conflict), { reason: "conflict" });
+}
+
 describe("TranscriptView — speaker review", () => {
-  const loadReview = () => vi.spyOn(reviewApi, "getSpeakerReview");
-  const playExcerpt = () => vi.spyOn(reviewApi, "playSpeakerExcerpt");
-  const submit = () => vi.spyOn(reviewApi, "submitSpeakerDisposition");
+  const loadReview = () => vi.mocked(api.getSpeakerReview);
+  const submit = () => vi.mocked(api.submitSpeakerDisposition);
   const loadTranscript = () => vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
 
-  it("renders pending and complete states and labels uncertain speakers as Speaker N", async () => {
+  beforeEach(() => {
+    let counter = 0;
+    vi.mocked(api.newIdempotencyKey).mockImplementation(() => `key-${++counter}`);
+  });
+
+  it("shows the pending review with every action, and the complete state", async () => {
     loadTranscript();
     loadReview().mockResolvedValue(review());
     const { unmount } = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    expect(await screen.findByText("Speaker 1")).toBeDefined();
-    expect((await screen.findAllByRole("button", { name: /confirm/i })).length).toBeGreaterThan(0);
-    expect((await screen.findAllByRole("button", { name: /name/i })).length).toBeGreaterThan(0);
-    expect((await screen.findAllByRole("button", { name: /correct/i })).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Speaker 1" })).toBeDefined();
+    expect(screen.getByText(sr.pending)).toBeVisible();
+    for (const label of ["Speaker 1", "Known Speaker"]) {
+      expect(screen.getByRole("button", { name: sr.listenTo(label) })).toBeDefined();
+      expect(screen.getByRole("button", { name: sr.saveNameFor(label) })).toBeDisabled();
+      expect(screen.getByRole("button", { name: sr.confirmFor(label) })).toBeEnabled();
+      expect(screen.getByRole("button", { name: sr.correctFor(label) })).toBeDisabled();
+      expect(screen.getByRole("textbox", { name: sr.nameFor(label) })).toBeDefined();
+    }
     unmount();
 
     loadTranscript();
     loadReview().mockResolvedValue(review({ status: "complete" }));
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    expect(await screen.findByText(/complete/i)).toBeDefined();
+    expect(await screen.findByText(sr.complete)).toBeDefined();
   });
 
-  it("requests playback of the chosen speaker excerpt", async () => {
-    loadTranscript(); loadReview().mockResolvedValue(review());
-    const play = playExcerpt().mockResolvedValue();
+  it("plays the speaker's longest stretch on the original recording", async () => {
+    vi.mocked(api.getTranscript).mockResolvedValue({
+      ...transcript([]),
+      presentation: "words",
+      turns: [
+        { ...turn({ id: "w1", sequence: 1, startMs: 0, endMs: 1000 }), speakerId: "speaker-1", speakerLabel: "Speaker 1", wordCount: 2, hasAmbiguous: false },
+        { ...turn({ id: "w2", sequence: 2, startMs: 1000, endMs: 2000 }), speakerId: "speaker-2", speakerLabel: "Known Speaker", wordCount: 2, hasAmbiguous: false },
+        { ...turn({ id: "w3", sequence: 3, startMs: 2000, endMs: 9000 }), speakerId: "speaker-1", speakerLabel: "Speaker 1", wordCount: 9, hasAmbiguous: false },
+      ],
+    });
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
+    loadReview().mockResolvedValue(review());
+    const play = vi.spyOn(PlaybackController.prototype, "playInterval").mockResolvedValue();
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: /play.*speaker 1|speaker 1.*play/i }));
-    await waitFor(() => expect(play).toHaveBeenCalledWith("r-1", "revision-1", "speaker-1"));
+    const button = await screen.findByRole("button", { name: sr.listenTo("Speaker 1") });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(play).toHaveBeenCalledWith(2000, 9000));
+    // Speaker 2 only has one second of speech: still playable, with a warning.
+    expect(screen.getByRole("button", { name: sr.listenTo("Known Speaker") })).toBeEnabled();
+    expect(screen.getByText(sr.shortInterval)).toBeVisible();
+  });
+
+  it("disables listening and explains why when the speaker has no usable stretch", async () => {
+    loadTranscript();
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
+    vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [{ turn_id: "turn-1", speaker_id: "speaker-2" }] });
+    loadReview().mockResolvedValue(review());
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    await screen.findByTestId("playback-audio");
+    expect(await screen.findByRole("button", { name: sr.listenTo("Speaker 1") })).toBeDisabled();
+    expect(screen.getByText(sr.noInterval)).toBeVisible();
   });
 
   it.each([
-    ["Confirm", { disposition: "confirmed", expectedVersion: 1 }],
-    ["Name", { disposition: "named", label: "Ana", expectedVersion: 1 }],
-    ["Correct", { disposition: "corrected", label: "Ana", expectedVersion: 1 }],
-  ] as const)("submits explicit %s for one item only", async (action, request) => {
+    ["confirm", "confirmed", undefined],
+    ["save name", "named", "Ana"],
+    ["correct", "corrected", "Ana"],
+  ] as const)("submits %s for one speaker only, with version and idempotency key", async (_action, disposition, label) => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     const update = submit().mockResolvedValue(review({ items: [
-      { ...review().items[0], currentLabel: action === "Confirm" ? "Speaker 1" : "Ana", disposition: request.disposition },
+      { ...review().items[0], disposition },
       review().items[1],
     ] }));
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    await screen.findByText("Speaker 1");
-    if (action !== "Confirm") {
-      fireEvent.change(screen.getByRole("textbox", { name: /name for speaker 1/i }), {
-        target: { value: "Ana" },
-      });
+    await screen.findByRole("heading", { name: "Speaker 1" });
+    if (label) {
+      fireEvent.change(screen.getByRole("textbox", { name: sr.nameFor("Speaker 1") }), { target: { value: ` ${label} ` } });
     }
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${action} Speaker 1$`, "i") }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith("r-1", "revision-1", "speaker-1", request));
-    expect(screen.getByText("Known Speaker")).toBeDefined();
+    const buttonName = disposition === "confirmed" ? sr.confirmFor("Speaker 1")
+      : disposition === "named" ? sr.saveNameFor("Speaker 1") : sr.correctFor("Speaker 1");
+    fireEvent.click(screen.getByRole("button", { name: buttonName }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("r-1", "revision-1", "speaker-1", {
+      disposition, expectedVersion: 1, idempotencyKey: "key-1", ...(label ? { label } : {}),
+    }));
+    expect(await screen.findByText(sr.dispositionLabel(disposition))).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Known Speaker" })).toBeDefined();
   });
 
-  it("reloads pending state after remount and exposes failed requests without advancing", async () => {
+  it("shows the chosen name on every turn of that speaker after saving", async () => {
+    vi.mocked(api.getTranscript).mockResolvedValue({
+      ...transcript([]),
+      presentation: "words",
+      turns: [
+        { ...turn({ id: "w1", sequence: 1, startMs: 0, endMs: 1000 }), speakerId: "speaker-1", speakerLabel: "Speaker 1", wordCount: 2, hasAmbiguous: false },
+        { ...turn({ id: "w2", sequence: 2, startMs: 1000, endMs: 2000 }), speakerId: "speaker-2", speakerLabel: "Known Speaker", wordCount: 2, hasAmbiguous: false },
+        { ...turn({ id: "w3", sequence: 3, startMs: 2000, endMs: 3000 }), speakerId: "speaker-1", speakerLabel: "Speaker 1", wordCount: 2, hasAmbiguous: false },
+      ],
+    });
+    loadReview().mockResolvedValue(review());
+    submit().mockResolvedValue(review({
+      labelsBySpeakerId: { "speaker-1": "Ana", "speaker-2": "Known Speaker" },
+      items: [{ ...review().items[0], currentLabel: "Ana", disposition: "named", expectedVersion: 2 }, review().items[1]],
+    }));
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    fireEvent.change(await screen.findByRole("textbox", { name: sr.nameFor("Speaker 1") }), { target: { value: "Ana" } });
+    fireEvent.click(screen.getByRole("button", { name: sr.saveNameFor("Speaker 1") }));
+    const panel = screen.getByRole("tabpanel", { name: copy.summary.transcriptTab });
+    await waitFor(() => expect(within(panel).getAllByText("Ana", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(2));
+    expect(within(panel).getAllByText("Known Speaker", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Ana" })).toBeDefined();
+  });
+
+  it("reuses the idempotency key when the same action is retried after a failure", async () => {
+    loadTranscript(); loadReview().mockResolvedValue(review());
+    const update = submit().mockRejectedValueOnce(new Error("Error 503")).mockResolvedValue(review());
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const confirm = await screen.findByRole("button", { name: sr.confirmFor("Speaker 1") });
+    fireEvent.click(confirm);
+    expect((await screen.findByRole("alert")).textContent).toContain("Error 503");
+    fireEvent.click(confirm);
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(update.mock.calls[0][3].idempotencyKey).toBe("key-1");
+    expect(update.mock.calls[1][3].idempotencyKey).toBe("key-1");
+
+    fireEvent.click(screen.getByRole("button", { name: sr.confirmFor("Known Speaker") }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(3));
+    expect(update.mock.calls[2][3].idempotencyKey).toBe("key-2");
+  });
+
+  it("explains a stale review and uses a new key for the next action", async () => {
+    loadTranscript(); loadReview().mockResolvedValue(review());
+    const update = submit().mockRejectedValueOnce(reviewConflict()).mockResolvedValue(review());
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const confirm = await screen.findByRole("button", { name: sr.confirmFor("Speaker 1") });
+    fireEvent.click(confirm);
+    expect((await screen.findByRole("alert")).textContent).toBe(sr.conflict);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(update.mock.calls[1][3].idempotencyKey).toBe("key-2");
+  });
+
+  it("asks for the review again after remounting", async () => {
     loadTranscript();
     const load = loadReview().mockResolvedValue(review());
     const view = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    expect(await screen.findByText("Speaker 1")).toBeDefined();
+    expect(await screen.findByRole("heading", { name: "Speaker 1" })).toBeDefined();
     view.unmount();
-    load.mockResolvedValue(review()); loadTranscript();
+    loadTranscript();
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    expect(await screen.findByText("Speaker 1")).toBeDefined();
+    expect(await screen.findByRole("heading", { name: "Speaker 1" })).toBeDefined();
     expect(load).toHaveBeenCalledTimes(2);
-
-    submit().mockRejectedValue(new Error("Request failed"));
-    fireEvent.click(screen.getAllByRole("button", { name: /confirm/i })[0]);
-    expect((await screen.findByRole("alert")).textContent).toContain("Request failed");
-    expect(screen.getAllByRole("button", { name: /confirm/i })[0]).toBeDefined();
   });
 
   it("exposes review actions as keyboard-operable native buttons", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    await screen.findByRole("button", { name: /confirm speaker 1/i });
-    const buttons = await screen.findAllByRole("button");
-    expect(buttons.length).toBeGreaterThanOrEqual(4);
+    await screen.findByRole("button", { name: sr.confirmFor("Speaker 1") });
+    const article = screen.getByRole("heading", { name: "Speaker 1" }).closest("article");
+    const buttons = within(article as HTMLElement).getAllByRole("button");
+    expect(buttons).toHaveLength(4);
     for (const button of buttons) expect(button.tagName).toBe("BUTTON");
   });
 });

@@ -424,12 +424,13 @@ export async function getDiarization(meetingId: string): Promise<MeetingDiarizat
   return handleResponse<MeetingDiarization>(response);
 }
 
+export type SpeakerDisposition = "confirmed" | "named" | "corrected";
+
 export interface SpeakerReviewItem {
   speakerId: string;
   currentLabel: string;
-  attributionState: "recognized" | "uncertain";
-  disposition: "confirmed" | "named" | "corrected" | null;
-  excerptRef: string;
+  attributionState: string;
+  disposition: SpeakerDisposition | null;
   expectedVersion: number;
 }
 
@@ -438,14 +439,14 @@ export interface SpeakerReview {
   revisionId: string;
   status: "pending" | "complete";
   items: SpeakerReviewItem[];
+  labelsBySpeakerId: Record<string, string>;
 }
 
 interface SpeakerReviewItemResponse {
   speaker_id: string;
   current_label: string;
-  attribution_state: "recognized" | "uncertain";
-  disposition: "confirmed" | "named" | "corrected" | null;
-  excerpt_ref: string;
+  attribution_state: string;
+  disposition: SpeakerDisposition | null;
   version: number;
 }
 
@@ -454,21 +455,41 @@ interface SpeakerReviewResponse {
   revision_id: string | number;
   status: "pending" | "complete";
   items: SpeakerReviewItemResponse[];
+  labels_by_speaker_id?: Record<string, string>;
 }
-
-export type SpeakerDisposition = "confirmed" | "named" | "corrected";
 
 export interface SpeakerDispositionRequest {
   disposition: SpeakerDisposition;
   label?: string;
   expectedVersion: number;
+  /** One key per user action; resend the same key when retrying that action. */
+  idempotencyKey: string;
 }
 
-export async function getSpeakerReview(meetingId: string): Promise<SpeakerReview> {
-  const response = await fetch(
-    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review`,
-    { method: "GET", headers: getAuthHeaders() }
-  );
+export type SpeakerReviewFailure = "conflict" | "not_found";
+
+/** Raised for the review responses the user must act on: a stale revision (409) or a missing meeting (404). */
+export class SpeakerReviewRequestError extends Error {
+  readonly reason: SpeakerReviewFailure;
+
+  constructor(reason: SpeakerReviewFailure) {
+    super(reason === "conflict" ? copy.speakerReview.conflict : copy.speakerReview.notFound);
+    this.name = "SpeakerReviewRequestError";
+    this.reason = reason;
+  }
+}
+
+export function newIdempotencyKey(): string {
+  return crypto.randomUUID();
+}
+
+function speakerReviewUrl(meetingId: string): string {
+  return `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review`;
+}
+
+async function handleSpeakerReviewResponse(response: Response): Promise<SpeakerReview> {
+  if (response.status === 404) throw new SpeakerReviewRequestError("not_found");
+  if (response.status === 409) throw new SpeakerReviewRequestError("conflict");
   const review = await handleResponse<SpeakerReviewResponse>(response);
   return {
     reviewId: review.review_id,
@@ -479,10 +500,15 @@ export async function getSpeakerReview(meetingId: string): Promise<SpeakerReview
       currentLabel: item.current_label,
       attributionState: item.attribution_state,
       disposition: item.disposition,
-      excerptRef: item.excerpt_ref,
       expectedVersion: item.version,
     })),
+    labelsBySpeakerId: review.labels_by_speaker_id ?? {},
   };
+}
+
+export async function getSpeakerReview(meetingId: string): Promise<SpeakerReview> {
+  const response = await fetch(speakerReviewUrl(meetingId), { method: "GET", headers: getAuthHeaders() });
+  return handleSpeakerReviewResponse(response);
 }
 
 export async function submitSpeakerDisposition(
@@ -492,48 +518,17 @@ export async function submitSpeakerDisposition(
   request: SpeakerDispositionRequest
 ): Promise<SpeakerReview> {
   const response = await fetch(
-    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review/revisions/${encodeURIComponent(revisionId)}/speakers/${encodeURIComponent(speakerId)}`,
+    `${speakerReviewUrl(meetingId)}/revisions/${encodeURIComponent(revisionId)}/speakers/${encodeURIComponent(speakerId)}`,
     {
       method: "PUT",
-      headers: {
-        ...getAuthHeaders(),
-        "Idempotency-Key": crypto.randomUUID(),
-      },
+      headers: getAuthHeaders(),
       body: JSON.stringify({
         disposition: request.disposition,
-        label: request.label,
+        ...(request.label === undefined ? {} : { label: request.label }),
         expected_version: request.expectedVersion,
+        idempotency_key: request.idempotencyKey,
       }),
     }
   );
-  return handleResponse<SpeakerReview>(response);
-}
-
-export async function playSpeakerExcerpt(
-  meetingId: string,
-  revisionId: string,
-  speakerId: string
-): Promise<void> {
-  const response = await fetch(
-    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/speaker-review/revisions/${encodeURIComponent(revisionId)}/speakers/${encodeURIComponent(speakerId)}/excerpt`,
-    { method: "GET", headers: getAuthHeaders() }
-  );
-  if (response.status === 401) {
-    await handleResponse<void>(response);
-  }
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Error ${response.status}: ${body}`);
-  }
-  const audioUrl = URL.createObjectURL(await response.blob());
-  const audio = new Audio(audioUrl);
-  const releaseUrl = () => URL.revokeObjectURL(audioUrl);
-  audio.addEventListener("ended", releaseUrl, { once: true });
-  audio.addEventListener("error", releaseUrl, { once: true });
-  try {
-    await audio.play();
-  } catch (error) {
-    releaseUrl();
-    throw error;
-  }
+  return handleSpeakerReviewResponse(response);
 }
