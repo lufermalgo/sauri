@@ -93,3 +93,18 @@ def test_flags_accented_identifiers(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "añadirNota" in result.stdout  # spanish-sample-data
+
+
+def test_excludes_ui_copy_module(tmp_path: Path) -> None:
+    copy_dir = tmp_path / "backend" / "app" / "copy"
+    copy_dir.mkdir(parents=True)
+    copy_file = copy_dir / "templates_es.py"
+    copy_file.write_text('TITLE = "Identificación del tema principal"\n')  # spanish-sample-data
+    assert run_check(copy_file).returncode == 0
+    logic_file = tmp_path / "backend" / "app" / "logic.py"
+    logic_file.write_text('TITLE = "Identificación del tema principal"\n')  # spanish-sample-data
+    assert run_check(logic_file).returncode == 1
+
+
+def test_scanner_does_not_flag_its_own_prohibited_vocabulary() -> None:
+    assert run_check(CHECK_SCRIPT).returncode == 0

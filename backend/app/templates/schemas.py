@@ -27,6 +27,7 @@ class TemplateOut(BaseModel):
     category_id: str | None
     version: int
     is_default: bool
+    provenance: str | None = None
     created_at: str
     updated_at: str
 

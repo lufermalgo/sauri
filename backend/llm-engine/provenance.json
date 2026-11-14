@@ -1,0 +1,29 @@
+{
+  "llama_cpp_commit": "af76639f728c69c74c873cc45f038aaa17afd09e",
+  "model_repo": "unsloth/Qwen3.5-9B-GGUF",
+  "model_revision": "3885219b6810b007914f3a7950a8d1b469d598a5",
+  "model_file": "Qwen3.5-9B-Q4_K_M.gguf",
+  "model_sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+  "scope": "Reference build verification; the installer writes deployment-specific provenance separately",
+  "cmake_args": [
+    "-DBUILD_SHARED_LIBS=OFF",
+    "-DLLAMA_OPENSSL=OFF",
+    "-DGGML_METAL=ON"
+  ],
+  "reasoning_args": [
+    "--reasoning-budget",
+    "0"
+  ],
+  "reasoning_verified_by": "Compiled llama-server --help: 0 for immediate end",
+  "context_args": [
+    "-c",
+    "32768",
+    "--no-context-shift"
+  ],
+  "cache_args": [
+    "-ctk",
+    "q8_0",
+    "-ctv",
+    "q8_0"
+  ]
+}
