@@ -3,7 +3,8 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { Button, Card, ConfirmDialog, ProgressBar, StatusBadge, Tabs, TextField } from "./index";
+import { Avatar, Button, Card, ConfirmDialog, Menu, MenuItem, ProgressBar, Skeleton, SkeletonLines, StatusBadge, Tabs,
+  TextField, TimeChip } from "./index";
 
 afterEach(() => {
   cleanup();
@@ -153,5 +154,116 @@ describe("presentation primitives", () => {
     expect(screen.getByRole("region", { name: "Recording" }).tagName).toBe("SECTION");
     expect(screen.getByRole("region")).toHaveClass("ui-card", "custom");
     expect(screen.getByText("Ready")).toHaveClass("ui-status-badge--success");
+  });
+});
+
+describe("Skeleton", () => {
+  it("is aria-hidden, textless and applies size and radius", () => {
+    const { container } = render(<Skeleton width={120} height="2rem" radius="full" className="custom" />);
+    const node = container.firstElementChild as HTMLElement;
+    expect(node).toHaveAttribute("aria-hidden", "true");
+    expect(node).toHaveTextContent("");
+    expect(node).toHaveClass("ui-skeleton", "ui-skeleton--full", "custom");
+    expect(node).toHaveStyle({ width: "120px", height: "2rem" });
+  });
+
+  it("renders the requested number of lines with a shorter last line", () => {
+    const { container } = render(<SkeletonLines lines={3} lastWidth="40%" />);
+    expect(container.firstElementChild).toHaveAttribute("aria-hidden", "true");
+    const lines = container.querySelectorAll<HTMLElement>(".ui-skeleton");
+    expect(lines).toHaveLength(3);
+    expect(lines[2]).toHaveStyle({ width: "40%" });
+    expect(container).toHaveTextContent("");
+  });
+});
+
+describe("Menu", () => {
+  function setup() {
+    const onRename = vi.fn();
+    const onDelete = vi.fn();
+    render(<div>
+      <button>Outside</button>
+      <Menu label="More actions">
+        <MenuItem onSelect={onRename}>Rename</MenuItem>
+        <MenuItem onSelect={() => undefined}>Share</MenuItem>
+        <MenuItem tone="danger" onSelect={onDelete}>Delete</MenuItem>
+      </Menu>
+    </div>);
+    return { onRename, onDelete, trigger: screen.getByRole("button", { name: "More actions" }) };
+  }
+
+  it("exposes menu semantics and toggles on click", () => {
+    const { trigger } = setup();
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getAllByRole("menuitem")).toHaveLength(3);
+    expect(screen.getAllByRole("menuitem")[0]).toHaveFocus();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveClass("ui-menu-item--danger");
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("opens with ArrowDown from the trigger and navigates with arrows, Home and End", () => {
+    const { trigger } = setup();
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const items = screen.getAllByRole("menuitem");
+    expect(items[0]).toHaveFocus();
+    for (const [key, index] of [["ArrowDown", 1], ["ArrowDown", 2], ["ArrowDown", 0],
+      ["ArrowUp", 2], ["Home", 0], ["End", 2]] as const) {
+      fireEvent.keyDown(document.activeElement!, { key });
+      expect(items[index]).toHaveFocus();
+    }
+  });
+
+  it("closes on Escape and returns focus to the trigger", () => {
+    const { trigger } = setup();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes on outside click", () => {
+    const { trigger } = setup();
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("fires onSelect and closes after selecting", () => {
+    const { trigger, onRename, onDelete } = setup();
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    expect(onRename).toHaveBeenCalledOnce();
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+});
+
+describe("Avatar", () => {
+  it("shows initials, is aria-hidden and sets the color variable", () => {
+    const { container } = render(<Avatar initials="LF" color="var(--speaker-2)" size="sm" />);
+    const node = container.firstElementChild as HTMLElement;
+    expect(node).toHaveTextContent("LF");
+    expect(node).toHaveAttribute("aria-hidden", "true");
+    expect(node).toHaveClass("ui-avatar--sm");
+    expect(node.style.getPropertyValue("--avatar-color")).toBe("var(--speaker-2)");
+  });
+});
+
+describe("TimeChip", () => {
+  it("shows the timestamp and calls onClick", () => {
+    const onClick = vi.fn();
+    render(<TimeChip label="02:10" ariaLabel="Jump to 02:10" onClick={onClick} />);
+    const chip = screen.getByRole("button", { name: "Jump to 02:10" });
+    expect(chip).toHaveTextContent("02:10");
+    fireEvent.click(chip);
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });
