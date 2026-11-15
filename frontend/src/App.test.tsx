@@ -67,7 +67,7 @@ describe("global authentication gate", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "Meetings" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: copy.library.title })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText(copy.login.emailLabel), {
@@ -78,7 +78,7 @@ describe("global authentication gate", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
 
-    await waitFor(() => expect(screen.getByText("No meetings registered.")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(copy.library.empty)).toBeTruthy());
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       expect.stringContaining("/api/v1/auth/login"),
       expect.stringContaining("/api/v1/meetings"),
