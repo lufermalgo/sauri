@@ -19,6 +19,9 @@ import * as api from "../api";
 
 vi.mock("../api", () => ({
   getMeeting: vi.fn(),
+  listMeetings: vi.fn(),
+  getMeetingSummary: vi.fn(),
+  getLatestSummaryRequest: vi.fn(),
   getTranscript: vi.fn(),
   getPlaybackManifest: vi.fn(),
   getDiarization: vi.fn(),
@@ -28,6 +31,9 @@ vi.mock("../api", () => ({
 }));
 
 beforeEach(() => {
+  vi.mocked(api.listMeetings).mockResolvedValue([{ id: "r-1", title: "Synthetic meeting", createdAt: "2026-11-14T12:00:00Z" } as Awaited<ReturnType<typeof api.listMeetings>>[number]]);
+  vi.mocked(api.getMeetingSummary).mockResolvedValue(null);
+  vi.mocked(api.getLatestSummaryRequest).mockResolvedValue(null);
   vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
   vi.mocked(api.getSpeakerReview).mockResolvedValue(null as unknown as api.SpeakerReview);
   vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(
@@ -72,7 +78,7 @@ function turn(overrides: Partial<SpeechTurn> = {}): SpeechTurn {
 }
 
 describe("TranscriptView — renders the transcript view", () => {
-  it("shows language, provider, and turns with their timestamps", async () => {
+  it("shows the real title, date and turns without technical metadata", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(
       transcript([
         turn({ id: "t1", text: "Hola", startMs: 0, endMs: 1000, sequence: 1 }), // spanish-sample-data
@@ -82,10 +88,11 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
-    await waitFor(() => screen.getByText(/Transcript/));
+    await waitFor(() => screen.getByRole("heading", { name: copy.meeting.transcript }));
 
-    expect(screen.getByText(/es-CO/)).toBeDefined();
-    expect(screen.getByText(/local/)).toBeDefined();
+    expect(await screen.findByRole("heading", { name: "Synthetic meeting" })).toBeVisible();
+    expect(screen.getByText(new Date("2026-11-14T12:00:00Z").toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" }))).toBeVisible();
+    expect(screen.queryByText(/es-CO|Provider|Language/)).not.toBeInTheDocument();
     expect(screen.getByText("Hola")).toBeDefined(); // spanish-sample-data
     expect(screen.getByText("¿Cómo estás?")).toBeDefined(); // spanish-sample-data
     expect(screen.getByText(/00:00.*00:01/)).toBeDefined();
@@ -165,6 +172,8 @@ describe("TranscriptView — renders the transcript view", () => {
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
     const seekButton = await screen.findByRole("button", { name: copy.transcript.playAt("00:00") });
+    await waitFor(() => expect(seekButton).toBeEnabled());
+    await screen.findByTestId("playback-audio");
     fireEvent.click(seekButton);
 
     expect(screen.getByTestId("playback-audio")).toHaveProperty("currentTime", 0.5);
@@ -230,8 +239,8 @@ describe("TranscriptView — renders the transcript view", () => {
     await waitFor(() => expect(screen.getAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(2));
     const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
     const secondLabels = screen.getAllByText("Synthetic Person B", { selector: '[data-testid="transcript-speaker-label"]' });
-    const unresolvedLabels = screen.getAllByText("Speaker N", { selector: '[data-testid="transcript-speaker-label"]' });
-    const passageDetails = screen.getByText("Playback passages (3)").closest("details");
+    const unresolvedLabels = screen.getAllByText(copy.transcript.legacyUnknownSpeaker, { selector: '[data-testid="transcript-speaker-label"]' });
+    const passageDetails = screen.getByText(copy.meeting.passages(3)).closest("details");
     const rawLabels = Array.from(passageDetails?.querySelectorAll('[data-testid="transcript-speaker-label"]') ?? []);
     const groupedLabels = [...firstLabels, ...secondLabels, ...unresolvedLabels]
       .filter((label) => !passageDetails?.contains(label));
@@ -248,7 +257,7 @@ describe("TranscriptView — renders the transcript view", () => {
     expect(firstStyle).toContain("color:");
     expect(secondStyle).toContain("color:");
     expect(secondStyle).not.toBe(firstStyle);
-    fireEvent.click(screen.getByText("Playback passages (3)"));
+    fireEvent.click(screen.getByText(copy.meeting.passages(3)));
     expect(passageDetails).toHaveAttribute("open");
     rawLabels.forEach((label) => expect(label).toBeVisible());
     groupedLabels.forEach((label) => expect(label).toBeVisible());
@@ -272,7 +281,7 @@ describe("TranscriptView — renders the transcript view", () => {
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
     const player = await screen.findByTestId("playback-audio");
-    const transcriptHeading = await screen.findByRole("heading", { name: "Transcript" });
+    const transcriptHeading = await screen.findByRole("heading", { name: copy.meeting.transcript });
     expect(
       player.compareDocumentPosition(transcriptHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -283,7 +292,7 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
-    await waitFor(() => screen.getByText("No transcript segments."));
+    await waitFor(() => screen.getByText(copy.meeting.emptyTranscript));
   });
 
   it("the 'Back to list' button invokes onBack", async () => {
@@ -291,9 +300,9 @@ describe("TranscriptView — renders the transcript view", () => {
     const onBack = vi.fn();
 
     render(<TranscriptView meetingId="r-1" onBack={onBack} />);
-    await waitFor(() => screen.getByText(/Transcript/));
+    await waitFor(() => screen.getByRole("heading", { name: copy.meeting.transcript }));
 
-    fireEvent.click(screen.getByRole("button", { name: /Back to list/i }));
+    fireEvent.click(screen.getByRole("link", { name: copy.meeting.back }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
@@ -305,7 +314,7 @@ describe("TranscriptView — renders the transcript view", () => {
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
     const alert = await waitFor(() => screen.getByRole("alert"));
-    expect(alert.textContent).toMatch(/Not authenticated/);
+    expect(alert).toHaveTextContent(copy.meeting.transcriptLoadFailed);
   });
 });
 
@@ -436,7 +445,7 @@ describe("TranscriptView — speaker review", () => {
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
     fireEvent.change(await screen.findByRole("textbox", { name: sr.nameFor("Speaker 1") }), { target: { value: "Ana" } });
     fireEvent.click(screen.getByRole("button", { name: sr.saveNameFor("Speaker 1") }));
-    const panel = screen.getByRole("tabpanel", { name: copy.summary.transcriptTab });
+    const panel = screen.getByRole("region", { name: copy.meeting.transcript });
     await waitFor(() => expect(within(panel).getAllByText("Ana", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(2));
     expect(within(panel).getAllByText("Known Speaker", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Ana" })).toBeDefined();
@@ -448,7 +457,7 @@ describe("TranscriptView — speaker review", () => {
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
     const confirm = await screen.findByRole("button", { name: sr.confirmFor("Speaker 1") });
     fireEvent.click(confirm);
-    expect((await screen.findByRole("alert")).textContent).toContain("Error 503");
+    expect(await screen.findByRole("alert")).toHaveTextContent(copy.speakerReview.saveFailed);
     fireEvent.click(confirm);
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     expect(update.mock.calls[0][3].idempotencyKey).toBe("key-1");
@@ -525,7 +534,7 @@ describe("TranscriptView — attributed word turns", () => {
   it("shows backend speaker labels, null attribution, ambiguity and exact timestamp seeks", async () => {
     const seek = vi.spyOn(PlaybackController.prototype, "seekTo");
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    const panel = await screen.findByRole("tabpanel", { name: copy.summary.transcriptTab });
+    const panel = await screen.findByRole("region", { name: copy.meeting.transcript });
     const button = await within(panel).findByRole("button", { name: copy.transcript.playAt("01:05") });
     await screen.findByTestId("playback-audio");
     expect(within(panel).getAllByText("Speaker A")).toHaveLength(2);
@@ -541,14 +550,14 @@ describe("TranscriptView — attributed word turns", () => {
   it("highlights and follows the visible word turn using the actual media clock, including seeks and gaps", async () => {
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
-    const panel = screen.getByRole("tabpanel", { name: copy.summary.transcriptTab });
+    const panel = screen.getByRole("region", { name: copy.meeting.transcript });
     const rows = within(panel).getAllByRole("listitem");
     const scroll = vi.fn();
     Object.defineProperty(rows[1], "scrollIntoView", { value: scroll });
     audio.currentTime = 68.25;
     fireEvent.timeUpdate(audio);
     expect(rows[1]).toHaveAttribute("aria-current", "true");
-    expect(rows[1]).toHaveStyle({ backgroundColor: "#fef3c7" });
+    expect(rows[1]).toHaveClass("meeting-turn--active");
     expect(rows[0]).not.toHaveAttribute("aria-current");
     expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
     fireEvent.timeUpdate(audio);
@@ -798,5 +807,62 @@ describe("TranscriptView — processing polling", () => {
     await act(async () => { finish({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" }); });
     expect(screen.getByText(copy.processing.queued)).toBeVisible();
     expect(screen.queryByText(new RegExp(copy.processing.failed))).not.toBeInTheDocument();
+  });
+});
+
+
+describe("TranscriptView — Terra composition", () => {
+  beforeEach(() => {
+    vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
+  });
+
+  it("keeps the transcript visible alongside exactly two side tabs without turn editing", async () => {
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const panel = await screen.findByRole("region", { name: copy.meeting.transcript });
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map(tab => tab.textContent)).toEqual([copy.meeting.summaryTab, copy.meeting.chatTab]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(panel).toBeVisible();
+    const rows = within(panel).getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.querySelector(".meeting-timestamp")).toHaveTextContent(/\d{2}:\d{2}/);
+      expect(row.querySelector(".meeting-speaker")).not.toBeEmptyDOMElement();
+      expect(row.textContent).toContain("Synthetic");
+    }
+    expect(within(panel).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(panel.querySelector("[contenteditable]" )).not.toBeInTheDocument();
+    fireEvent.click(tabs[1]);
+    const chat = screen.getByRole("tabpanel", { name: copy.meeting.chatTab });
+    expect(chat).toHaveTextContent(copy.meeting.chatUnavailable);
+    expect(within(chat).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(chat).queryByRole("button")).not.toBeInTheDocument();
+    expect(panel).toBeVisible();
+    fireEvent.keyDown(tabs[1], { key: "Home" });
+    expect(tabs[0]).toHaveFocus();
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("keeps transcript-following active even when the chat tab is selected", async () => {
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
+    const rows = within(screen.getByRole("region", { name: copy.meeting.transcript })).getAllByRole("listitem");
+    const scroll = vi.fn();
+    Object.defineProperty(rows[1], "scrollIntoView", { value: scroll });
+    fireEvent.click(screen.getByRole("tab", { name: copy.meeting.chatTab }));
+    audio.currentTime = 68.25;
+    fireEvent.timeUpdate(audio);
+    expect(rows[1]).toHaveAttribute("aria-current", "true");
+    expect(rows[1]).toHaveClass("meeting-turn--active");
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("reports unavailable metadata without inventing a title or a date", async () => {
+    vi.mocked(api.listMeetings).mockRejectedValueOnce(new Error("Synthetic failure"));
+    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    expect(await screen.findByText(copy.meeting.metadataFailed)).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(copy.meeting.untitled);
+    expect(document.querySelector("time")).not.toBeInTheDocument();
   });
 });

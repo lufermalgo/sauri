@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   getDiarization,
   getMeeting,
+  listMeetings,
   getPlaybackManifest,
   getSpeakerReview,
   getTranscript,
@@ -14,6 +15,11 @@ import { selectListeningInterval } from "../speaker-review-interval";
 import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
 import { ProcessingStatus } from "./ProcessingStatus";
 import { SummaryPanel } from "./SummaryPanel";
+import { MeetingHeader } from "./MeetingHeader";
+import { ChatTab } from "./ChatTab";
+import { Button, Card, Tabs, TextField } from "./ui";
+import { meeting as text } from "../copy/meeting";
+import "../styles/meeting.css";
 import { copy } from "../copy/es";
 
 interface TranscriptViewProps {
@@ -28,8 +34,7 @@ function formatTimestamp(ms: number): string {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
-const SPEAKER_COLORS = ["#1d4ed8", "#b45309", "#047857", "#7e22ce", "#be123c", "#0e7490"];
-const UNRESOLVED_SPEAKER_COLOR = "#6b7280";
+const UNRESOLVED_SPEAKER_COLOR = "var(--speaker-unresolved)";
 // Wall-clock speaker wait limit, including hidden time; repeated polls do not reset it.
 const SPEAKER_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -40,7 +45,7 @@ function isReviewFailure(err: unknown, reason: "conflict" | "not_found"): boolea
 function speakerColor(diarization: MeetingDiarization | null, speakerId: string | undefined): string {
   const sequence = diarization?.speakers.find((speaker) => speaker.id === speakerId)?.sequence;
   if (sequence === undefined) return UNRESOLVED_SPEAKER_COLOR;
-  return SPEAKER_COLORS[(Math.max(1, sequence) - 1) % SPEAKER_COLORS.length];
+  return `var(--speaker-${(Math.max(1, sequence) - 1) % 6 + 1})`;
 }
 
 export function TranscriptView(props: TranscriptViewProps) {
@@ -49,11 +54,27 @@ export function TranscriptView(props: TranscriptViewProps) {
 
 function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [meeting, setMeeting] = useState<MeetingState | null>(null);
+  const [metadata, setMetadata] = useState<{ title: string | null; createdAt: string | null }>({ title: null, createdAt: null });
+  const [metadataError, setMetadataError] = useState(false);
+  const authorizedMeetingId = meeting?.meetingId;
+
+  useEffect(() => {
+    if (!authorizedMeetingId) return;
+    let cancelled = false;
+    void listMeetings().then(items => {
+      if (cancelled) return;
+      const item = items.find(candidate => candidate.id === meetingId);
+      if (item) setMetadata({ title: item.title ?? null, createdAt: item.createdAt });
+      else setMetadataError(true);
+    }).catch(() => { if (!cancelled) setMetadataError(true); });
+    return () => { cancelled = true; };
+  }, [meetingId, authorizedMeetingId]);
+
   const [statusError, setStatusError] = useState(false);
   const [diarizationError, setDiarizationError] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const turnRefs = useRef(new Map<string, HTMLLIElement>());
-  const [activeTab, setActiveTab] = useState<"transcript" | "summary">("transcript");
+  const [activeTab, setActiveTab] = useState("summary");
   const seekToRef = useRef<((timeMs: number) => void) | undefined>(undefined);
   const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
     seekToRef.current = seekTo;
@@ -108,8 +129,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           setPlaybackManifest(result);
           setPlaybackError(null);
         }
-      } catch (err) {
-        if (!cancelled) setPlaybackError(err instanceof Error ? err.message : "Failed to load playback manifest");
+      } catch {
+        if (!cancelled) setPlaybackError(text.playbackLoadFailed);
       } finally {
         if (!cancelled) setPlaybackLoading(false);
       }
@@ -126,7 +147,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       } catch (err) {
         const notFound = isReviewFailure(err, "not_found") || (err instanceof Error && err.message === "Error 404");
         if (!cancelled && !notFound) {
-          setReviewError(err instanceof Error ? err.message : copy.speakerReview.loadFailed);
+          setReviewError(copy.speakerReview.loadFailed);
         }
       }
     }
@@ -168,7 +189,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           setData(null);
           setError(null);
         } else {
-          setError(transcript.reason instanceof Error ? transcript.reason.message : "Failed to load transcript");
+          setError(text.transcriptLoadFailed);
         }
         if (speakers.status === "fulfilled") {
           setDiarization((current) => current ?? speakers.value);
@@ -245,7 +266,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     } catch (err) {
       // A conflict or a missing meeting will not succeed on retry; anything else keeps the key.
       if (isReviewFailure(err, "conflict") || isReviewFailure(err, "not_found")) pendingActions.current.delete(speakerId);
-      setReviewError(err instanceof Error ? err.message : copy.speakerReview.saveFailed);
+      setReviewError(isReviewFailure(err, "conflict") ? copy.speakerReview.conflict
+        : isReviewFailure(err, "not_found") ? copy.speakerReview.notFound : copy.speakerReview.saveFailed);
     } finally {
       setSubmittingSpeakerId(null);
     }
@@ -317,10 +339,10 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     [data, presentationTurns]);
 
   useEffect(() => {
-    if (activeTurnId && activeTab === "transcript") {
+    if (activeTurnId) {
       turnRefs.current.get(activeTurnId)?.scrollIntoView?.({ block: "nearest" });
     }
-  }, [activeTurnId, activeTab]);
+  }, [activeTurnId]);
 
   function updateActiveTurn(event: React.SyntheticEvent) {
     if (!(event.target instanceof HTMLMediaElement)) return;
@@ -333,14 +355,19 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
   return (
-    <section>
-      <button onClick={onBack}>← Back to list</button>
+    <section className="meeting-view">
+      <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
+        onBack={onBack} manifest={playbackManifest} turns={presentationTurns} />
+      {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
       {speakerWaitExpired ? <p role="status">{copy.processing.speakerWaitExpired}</p> :
         <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
           diarizationNotFound={diarizationNotFound} error={statusError} />}
       {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
-      {error && <p role="alert" style={{ color: "red" }}>{error}</p>}
+      {error && <p role="alert" className="meeting-error">{error}</p>}
       {!loading && !data && !error && <p>{copy.processing.transcriptPending}</p>}
+      <div className="meeting-grid">
+      <div className="meeting-main">
+      <Card className="meeting-playback-card">
       <div id="meeting-playback" ref={playbackRef} onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}>
         <MeetingPlaybackView
           manifest={playbackManifest}
@@ -352,37 +379,14 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           onPlayIntervalReady={registerPlayInterval}
         />
       </div>
-      <div role="tablist" aria-label={copy.summary.tabsLabel} onKeyDown={(event) => {
-        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-        event.preventDefault();
-        const next = event.key === "Home" ? "transcript" : event.key === "End" ? "summary"
-          : activeTab === "transcript" ? "summary" : "transcript";
-        setActiveTab(next);
-        event.currentTarget.querySelector<HTMLButtonElement>(`#${next}-tab`)?.focus();
-      }}>
-        <button type="button" role="tab" id="transcript-tab" aria-controls="transcript-panel"
-          aria-selected={activeTab === "transcript"} tabIndex={activeTab === "transcript" ? 0 : -1}
-          onClick={() => setActiveTab("transcript")}>{copy.summary.transcriptTab}</button>
-        <button type="button" role="tab" id="summary-tab" aria-controls="summary-panel"
-          aria-selected={activeTab === "summary"} tabIndex={activeTab === "summary" ? 0 : -1}
-          onClick={() => setActiveTab("summary")}>{copy.summary.tab}</button>
-      </div>
-      <div role="tabpanel" id="summary-panel" aria-labelledby="summary-tab" hidden={activeTab !== "summary"}>
-        {activeTab === "summary" && (
-          <SummaryPanel meetingId={meetingId} onSeek={(timeMs) => seekToRef.current?.(timeMs)} />
-        )}
-      </div>
-      <div role="tabpanel" id="transcript-panel" aria-labelledby="transcript-tab" hidden={activeTab !== "transcript"}>
+      </Card>
+      <Card className="meeting-transcript" aria-labelledby="meeting-transcript-heading">
+      <h2 id="meeting-transcript-heading">{text.transcript}</h2>
       {data && <>
-      <h2>Transcript</h2>
-      <p>
-        Language: {data.language} | Provider: {data.provider} |
-        Turns: {data.supportsTurns ? "Yes" : "No"}
-      </p>
       {presentationTurns.length === 0 ? (
-        <p>No transcript segments.</p>
+        <p>{text.emptyTranscript}</p>
       ) : (
-        <ol>
+        <ol className="meeting-turns">
           {presentationTurns.map((turn) => {
             const isActive = activeTurnId === turn.id;
             const lastSource = sourceTurnById.get(turn.sourceIds.at(-1) ?? "");
@@ -392,33 +396,33 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
             return (
               <li key={turn.id}
                 aria-current={isActive ? "true" : undefined}
-                style={isActive ? { backgroundColor: "#fef3c7", fontWeight: 600 } : undefined}
+                className={`meeting-turn${isActive ? " meeting-turn--active" : ""}`}
                 ref={(element) => {
                   if (element) turnRefs.current.set(turn.id, element);
                   else turnRefs.current.delete(turn.id);
                 }}
               >
-                <span style={{ color: "#6b7280", marginRight: "0.5rem" }}>
+                <span className="meeting-timestamp">
                   {timestamp}
                 </span>
                 <span
                   data-testid="transcript-speaker-label"
-                  style={{ color: turn.color, fontWeight: 600, marginRight: "0.5rem" }}
+                  className="meeting-speaker" style={{ color: turn.color }}
                 >
                   {turn.speakerLabel}
                 </span>
-                <button
+                <Button variant="secondary"
                   type="button"
                   aria-label={copy.transcript.playAt(formatTimestamp(turn.timestampMs ?? 0))}
-                  disabled={turn.timestampMs === null}
+                  disabled={turn.timestampMs === null || !playbackManifest || playbackLoading || Boolean(playbackError)}
                   onClick={() => {
                     if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs);
                   }}
                 >
                   {copy.transcript.play}
-                </button>
+                </Button>
                 {turn.hasAmbiguous && <span title={copy.transcript.ambiguous}
-                  aria-label={copy.transcript.ambiguous} style={{ color: UNRESOLVED_SPEAKER_COLOR }}> · ? </span>}
+                  aria-label={copy.transcript.ambiguous} className="meeting-ambiguous"> · ? </span>}
                 {turn.text}
               </li>
             );
@@ -426,9 +430,10 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         </ol>
       )}
       </>}
-      {reviewError && <p role="alert" style={{ color: "red" }}>{reviewError}</p>}
+      </Card>
+      {reviewError && <p role="alert" className="meeting-error">{reviewError}</p>}
       {review && (
-        <section aria-labelledby="speaker-review-heading">
+        <Card className="meeting-speaker-review" aria-labelledby="speaker-review-heading">
           <h3 id="speaker-review-heading">{copy.speakerReview.heading}</h3>
           <p role="status">{review.status === "complete" ? copy.speakerReview.complete : copy.speakerReview.pending}</p>
           {review.items.map((item) => {
@@ -440,23 +445,22 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
             const playbackReady = Boolean(playbackManifest) && !playbackLoading && !playbackError;
             const inputId = `speaker-name-${item.speakerId}`;
             return (
-              <article key={item.speakerId} aria-busy={busy || undefined}>
+              <article className="meeting-review-item" key={item.speakerId} aria-busy={busy || undefined}>
                 <h4>{label}</h4>
                 <p>{copy.speakerReview.dispositionLabel(item.disposition)}</p>
-                <button
+                <Button variant="secondary"
                   type="button"
                   aria-label={copy.speakerReview.listenTo(label)}
                   onClick={() => { if (interval) void listenToSpeaker(interval.startMs, interval.endMs); }}
                   disabled={!interval || !playbackReady}
                 >
                   {copy.speakerReview.listen}
-                </button>
+                </Button>
                 {!interval && <p>{copy.speakerReview.noInterval}</p>}
                 {interval?.short && <p>{copy.speakerReview.shortInterval}</p>}
                 {interval && !playbackReady && !playbackLoading && <p>{copy.speakerReview.playbackUnavailable}</p>}
-                <div>
-                  <label htmlFor={inputId}>{copy.speakerReview.nameFor(label)}</label>
-                  <input
+                <div className="meeting-review-actions">
+                  <TextField label={copy.speakerReview.nameFor(label)}
                     id={inputId}
                     type="text"
                     value={names[item.speakerId] ?? ""}
@@ -466,37 +470,45 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
                     }))}
                     disabled={busy}
                   />
-                  <button
+                  <Button variant="secondary"
                     type="button"
                     aria-label={copy.speakerReview.saveNameFor(label)}
                     onClick={() => void recordDisposition(item.speakerId, "named", name)}
                     disabled={busy || !name}
                   >
                     {copy.speakerReview.saveName}
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="secondary"
                     type="button"
                     aria-label={copy.speakerReview.confirmFor(label)}
                     onClick={() => void recordDisposition(item.speakerId, "confirmed")}
                     disabled={busy}
                   >
                     {copy.speakerReview.confirm}
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="secondary"
                     type="button"
                     aria-label={copy.speakerReview.correctFor(label)}
                     onClick={() => void recordDisposition(item.speakerId, "corrected", name)}
                     disabled={busy || !name}
                   >
                     {copy.speakerReview.correct}
-                  </button>
+                  </Button>
                   {busy && <span role="status">{copy.speakerReview.saving}</span>}
                 </div>
               </article>
             );
           })}
-        </section>
+        </Card>
       )}
+      </div>
+      <Card className="meeting-sidebar">
+        <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
+          { id: "summary", label: text.summaryTab, panel: meeting && activeTab === "summary"
+            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} /> : null },
+          { id: "chat", label: text.chatTab, panel: <ChatTab /> },
+        ]} />
+      </Card>
       </div>
     </section>
   );
