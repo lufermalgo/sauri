@@ -264,6 +264,7 @@ async def test_duplicate_retry_drains_only_its_pending_scope_before_success(
     )
 
     assert response == {
+        "meeting_id": meeting_recording.id,
         "recording_id": "recording-synthetic",
         "state": "recording",
     }

@@ -133,6 +133,7 @@ async def upload_recording(
 
     if existing_recording is not None:
         return {
+            "meeting_id": ingestion_data.meeting_id,
             "recording_id": existing_recording.id,
             "state": prior_state,
         }
@@ -265,7 +266,11 @@ async def upload_recording(
                 )
         finally:
             await engine.dispose()
-        return {"recording_id": recording.id, "state": prior_state}
+        return {
+            "meeting_id": ingestion_data.meeting_id,
+            "recording_id": recording.id,
+            "state": prior_state,
+        }
 
     # g. Enqueue only after the state transition and durable generation commit.
     if processing_generation is not None:
@@ -291,6 +296,7 @@ async def upload_recording(
 
     # h. Return the result
     return {
+        "meeting_id": ingestion_data.meeting_id,
         "recording_id": recording.id,
         "state": "transcribing" if transition_result.successful else meeting.process_state,
     }
