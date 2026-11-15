@@ -114,7 +114,8 @@ function topicLine(meeting: MeetingListItem): string | null {
   const topic = meeting.summaryTopic?.trim();
   if (topic) return topic;
   const tone = STATE_TONES[meeting.processState];
-  if (tone === "progress") return text.topicGenerating;
+  // Only the transcription stage is "generating"; a meeting still being recorded has no such text.
+  if (meeting.processState === ProcessState.Transcribing) return text.topicGenerating;
   if (tone === "error") return text.topicFailed;
   return null;
 }
