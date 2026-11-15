@@ -254,3 +254,7 @@
     transform: none;
   }
 }
+
+.library-item-progress {
+  margin-top: var(--space-1);
+}

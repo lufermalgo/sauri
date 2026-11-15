@@ -132,6 +132,15 @@ describe("ProgressBar", () => {
     rerender(<ProgressBar label="Upload progress" value={42} />);
     expect(screen.getByRole("progressbar")).toHaveAttribute("value", "42");
     expect(screen.getByRole("progressbar")).toHaveAttribute("max", "100");
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+  });
+
+  it("speaks a value text only when determinate", () => {
+    const { rerender } = render(<ProgressBar label="Estimate" value={42} valueText="≈ 42 %" />);
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuetext", "≈ 42 %");
+    rerender(<ProgressBar label="Estimate" valueText="≈ 42 %" />);
+    expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuetext");
+    expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
   });
 });
 

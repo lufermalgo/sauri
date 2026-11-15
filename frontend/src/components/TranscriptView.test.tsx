@@ -618,9 +618,18 @@ describe("TranscriptView — processing polling", () => {
     await advance();
     expect(screen.getByText(copy.meeting.ready)).toBeVisible();
     expect(screen.getByText("Synthetic attributed turn")).toBeVisible();
+    // Speakers are done; the automatic summary request is expected next.
+    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status"))
+      .toHaveTextContent(copy.processing.summarizing);
     const calls = vi.mocked(api.getMeeting).mock.calls.length;
+    await advance(10000);
+    // No summary request appeared: the card briefly confirms completion, then goes away.
+    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status"))
+      .toHaveTextContent(copy.processing.completed);
     await advance(20000);
+    expect(document.querySelector(".meeting-processing")).not.toBeInTheDocument();
     expect(api.getMeeting).toHaveBeenCalledTimes(calls);
+    await advance(20000);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -698,7 +707,38 @@ describe("TranscriptView — processing polling", () => {
     await advance(20000);
     expect(api.getMeeting).toHaveBeenCalledTimes(3);
     expect(api.getDiarization).toHaveBeenCalledTimes(3);
+    // The summary wait and the success state end on their own timers.
+    await advance(20000);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("follows the automatic summary after speakers, then confirms completion and hides the card", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    vi.mocked(api.getLatestSummaryRequest).mockResolvedValue(null);
+    vi.mocked(api.getMeetingSummary).mockResolvedValue(null);
+    await open();
+    const card = () => document.querySelector(".meeting-processing") as HTMLElement | null;
+    expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.identifying);
+    vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
+    vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "pending" });
+    await advance();
+    expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.summarizing);
+    expect(card()!.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.steps.summary);
+    // A running summary keeps the card past the short wait for the automatic request.
+    vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "running" });
+    await advance(15000);
+    expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.summarizing);
+    vi.mocked(api.getMeetingSummary).mockResolvedValue({
+      summaryId: "s-1", meetingId: "r-1", templateId: "t", templateName: "General", templateVersion: 1,
+      topic: "Synthetic topic", keyPoints: [], reviewState: "draft", generation: 1,
+      createdAt: "2026-11-14T12:00:00Z", updatedAt: "2026-11-14T12:00:00Z",
+    });
+    vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "succeeded" });
+    await advance();
+    expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.completed);
+    await advance(3000);
+    expect(card()).toBeNull();
   });
 
   it("stops speaker polling at fifteen minutes and explains the wait limit", async () => {
@@ -765,7 +805,8 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     const view = await open();
-    expect(vi.getTimerCount()).toBe(2);
+    // Poll timer, speaker deadline and the one-second progress ticker of the processing card.
+    expect(vi.getTimerCount()).toBe(3);
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" });
     await advance();
     expect(vi.getTimerCount()).toBe(0);
@@ -774,7 +815,7 @@ describe("TranscriptView — processing polling", () => {
     view.unmount();
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
     const next = await open();
-    expect(vi.getTimerCount()).toBe(2);
+    expect(vi.getTimerCount()).toBe(3);
     next.unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -1083,7 +1124,7 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(screen.getByRole("region", { name: copy.meeting.transcript })).toBeVisible();
   });
 
-  it("keeps ghost turns and real indeterminate processing status when no transcript exists yet", async () => {
+  it("keeps ghost turns and an estimated, labelled processing progress when no transcript exists yet", async () => {
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
@@ -1092,7 +1133,11 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(within(panel).getByText(copy.processing.transcriptPending)).toBeVisible();
     expect(panel.querySelector(".meeting-transcript-skeleton")).toHaveAttribute("aria-hidden", "true");
     expect(panel.querySelectorAll(".meeting-skeleton-turn")).toHaveLength(3);
-    expect(screen.getByRole("progressbar", { name: copy.processing.transcribing })).not.toHaveAttribute("value");
+    // The 180 s recording allows an honest estimate: determinate, capped and marked as estimated.
+    const bar = screen.getByRole("progressbar", { name: copy.processing.transcribing });
+    expect(Number(bar.getAttribute("aria-valuenow"))).toBeLessThanOrEqual(95);
+    expect(document.querySelector(".processing-remaining")?.textContent).toMatch(
+      new RegExp(`${copy.processing.remainingUnderMinute}|${copy.processing.remaining(1)}|${copy.processing.remaining(2)}|${copy.processing.overtime}`));
     expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status")).toHaveTextContent(copy.processing.transcribing);
   });
 

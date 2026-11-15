@@ -390,3 +390,60 @@ describe("RecordingLibrary search", () => {
     expect(screen.queryByRole("list", { name: text.listLabel })).toBeNull();
   });
 });
+
+describe("RecordingLibrary processing progress", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function openWith(items: MeetingListItem[]) {
+    const list = vi.spyOn(api, "listMeetings").mockResolvedValue(items);
+    const view = render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
+    await listLoaded();
+    return { view, list };
+  }
+
+  it("shows the stage and an estimated percentage for a recording in transcription", async () => {
+    const now = Date.now();
+    // 20 min of audio: transcription 120 s, speakers 15 s, summary 144 s; 60 s in → ≈ 22 %.
+    const { view } = await openWith([meeting({
+      processState: ProcessState.Transcribing, durationSeconds: 1200,
+      createdAt: new Date(now - 60_000).toISOString(),
+    })]);
+    const progress = view.container.querySelector(".library-item-progress") as HTMLElement;
+    expect(progress.textContent).toBe(copy.processing.libraryProgress(copy.processing.steps.transcription, 22));
+    const bar = within(progress).getByRole("progressbar", { name: copy.processing.libraryProgressLabel });
+    expect(bar.getAttribute("aria-valuenow")).toBe("22");
+  });
+
+  it("says it is taking longer instead of a frozen percentage", async () => {
+    const { view } = await openWith([meeting({
+      processState: ProcessState.Queued, durationSeconds: 600, createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+    })]);
+    expect(view.container.querySelector(".library-item-progress")?.textContent)
+      .toBe(copy.processing.libraryOvertime(copy.processing.steps.transcription));
+  });
+
+  it("shows no estimate without a duration or for finished recordings", async () => {
+    const { view } = await openWith([
+      meeting({ id: "a", processState: ProcessState.Transcribing, durationSeconds: null }),
+      meeting({ id: "b", processState: ProcessState.Completed, durationSeconds: 600 }),
+    ]);
+    expect(view.container.querySelector(".library-item-progress")).toBeNull();
+    expect(view.container.textContent).not.toContain("%");
+  });
+
+  it("refreshes quietly every ten seconds only while a recording is in progress", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { list } = await openWith([meeting({ processState: ProcessState.Transcribing, durationSeconds: 600,
+      createdAt: new Date().toISOString() })]);
+    expect(list).toHaveBeenCalledTimes(1);
+    list.mockResolvedValue([meeting({ processState: ProcessState.Completed, durationSeconds: 600 })]);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(list).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.getByText(text.states.completed)).toBeDefined());
+    expect(screen.queryByText(text.loading)).toBeNull();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+});

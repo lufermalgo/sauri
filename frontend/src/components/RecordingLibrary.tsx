@@ -5,8 +5,10 @@ import { listMeetings } from "../api";
 import { copy } from "../copy/es";
 import { applyLibraryQuery, type LibraryQuery, type LibrarySort } from "../library-query";
 import { navigate } from "../router";
-import { Button, Skeleton, StatusBadge, TextField } from "./ui";
+import { estimateProgress, secondsSince } from "../processing-estimate";
+import { Button, ProgressBar, Skeleton, StatusBadge, TextField } from "./ui";
 import "../styles/library.css";
+import "../styles/processing.css";
 
 const text = copy.library;
 
@@ -34,6 +36,12 @@ const STATE_TONES: Record<ProcessState, BadgeTone> = {
   [ProcessState.Completed]: "success",
   [ProcessState.Failed]: "error",
 };
+
+// Rows still being worked on; while any is visible the list refreshes quietly.
+const IN_PROGRESS_STATES: ReadonlySet<ProcessState> = new Set([
+  ProcessState.Queued, ProcessState.Joining, ProcessState.Recording, ProcessState.Transcribing,
+]);
+const LIBRARY_REFRESH_MS = 10_000;
 
 const EMPTY_QUERY: LibraryQuery = { text: "", from: null, to: null, sort: "newest" };
 
@@ -120,6 +128,26 @@ function topicLine(meeting: MeetingListItem): string | null {
   return null;
 }
 
+/** Compact estimate for rows in transcription; nothing when there is no honest estimate. */
+function RowProgress({ meeting }: { meeting: MeetingListItem }) {
+  if (meeting.processState !== ProcessState.Queued && meeting.processState !== ProcessState.Transcribing) return null;
+  const elapsed = secondsSince(meeting.createdAt, Date.now());
+  if (elapsed === null) return null;
+  const estimate = estimateProgress({
+    stage: "transcription", audioSeconds: meeting.durationSeconds, elapsedSinceUploadSeconds: elapsed,
+  });
+  if (!estimate) return null;
+  const processing = copy.processing;
+  const stage = processing.steps.transcription;
+  const label = estimate.overtime ? processing.libraryOvertime(stage) : processing.libraryProgress(stage, estimate.percent);
+  return (
+    <span className="processing-compact library-item-progress">
+      <ProgressBar label={processing.libraryProgressLabel} value={estimate.percent} valueText={label} />
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function PlusIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -168,6 +196,7 @@ function LibraryRow({ meeting, onSelect }: { meeting: MeetingListItem; onSelect:
             {duration !== null && <span className="library-item-duration">{formatDuration(duration)}</span>}
             {speakers !== null && <span>{text.speakers(speakers)}</span>}
           </span>
+          <RowProgress meeting={meeting} />
         </span>
         <StatusBadge tone={tone}>{STATE_LABELS[meeting.processState]}</StatusBadge>
         <ChevronIcon />
@@ -224,6 +253,22 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibra
 
     return () => { cancelled = true; };
   }, [refreshKey, attempt]);
+
+  const inProgress = meetings.some((meeting) => IN_PROGRESS_STATES.has(meeting.processState));
+  useEffect(() => {
+    if (!inProgress) return;
+    let cancelled = false;
+    // Quiet refresh: no loading state, and a failed refresh keeps the current list.
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      listMeetings()
+        .then((data) => {
+          if (!cancelled) setMeetings(data.map((item) => ({ ...item, title: item.title ?? "" })));
+        })
+        .catch(() => undefined);
+    }, LIBRARY_REFRESH_MS);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [inProgress]);
 
   const goToUpload = () => navigate({ name: "upload" });
 

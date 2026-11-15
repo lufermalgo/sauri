@@ -225,6 +225,45 @@ describe("SummaryPanel", () => {
     expect(callsEndingWith("/summary-requests/latest")).toHaveLength(count + 2);
   });
 
+  it("reports its progress signal to the meeting view", async () => {
+    vi.useFakeTimers();
+    const onSignalChange = vi.fn();
+    latest = pending;
+    await act(async () => { render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} onSignalChange={onSignalChange} />); });
+    expect(onSignalChange).toHaveBeenLastCalledWith("waiting");
+    artifact = summary;
+    latest = { ...pending, status: "succeeded" };
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(onSignalChange).toHaveBeenLastCalledWith("settled");
+  });
+
+  it("reports none when nothing was requested", async () => {
+    const onSignalChange = vi.fn();
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} onSignalChange={onSignalChange} />);
+    await screen.findByText(text.empty);
+    expect(onSignalChange).toHaveBeenLastCalledWith("none");
+  });
+
+  it("looks again when an automatic request is expected and keeps checking until it appears", async () => {
+    vi.useFakeTimers();
+    const view = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    await act(async () => {});
+    const initial = callsEndingWith("/summary-requests/latest").length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    // Nothing requested and nothing expected: no polling.
+    expect(callsEndingWith("/summary-requests/latest")).toHaveLength(initial);
+    await act(async () => { view.rerender(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} expectAutoRequest />); });
+    expect(callsEndingWith("/summary-requests/latest")).toHaveLength(initial + 1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(callsEndingWith("/summary-requests/latest")).toHaveLength(initial + 2);
+    latest = pending;
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText(text.generating)).toBeVisible();
+    await act(async () => { view.rerender(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />); });
+    // Turning the expectation off does not trigger an extra load.
+    expect(callsEndingWith("/summary-requests/latest")).toHaveLength(initial + 3);
+  });
+
   it("polls an accepted POST after five seconds without submitting a duplicate", async () => {
     vi.useFakeTimers();
     await act(async () => { render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />); });

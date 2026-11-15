@@ -18,10 +18,10 @@ import { ProcessingStatus } from "./ProcessingStatus";
 import { SummaryPanel } from "./SummaryPanel";
 import { MeetingHeader } from "./MeetingHeader";
 import { ChatTab } from "./ChatTab";
-import { Avatar, Button, Card, Tabs, TextField, Skeleton, SkeletonLines, ProgressBar } from "./ui";
+import { Avatar, Button, Card, Tabs, TextField, Skeleton, SkeletonLines } from "./ui";
 import { meeting as text } from "../copy/meeting";
 import "../styles/meeting.css";
-import { processing } from "../copy/processing";
+import { detectProcessingStage, type SummarySignal } from "../processing-estimate";
 import { copy } from "../copy/es";
 
 interface TranscriptViewProps {
@@ -39,6 +39,10 @@ function formatTimestamp(ms: number): string {
 const UNRESOLVED_SPEAKER_COLOR = "var(--speaker-unresolved)";
 // Wall-clock speaker wait limit, including hidden time; repeated polls do not reset it.
 const SPEAKER_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
+// After speakers finish, the backend requests the summary on its own; wait this long to see that request.
+const AUTO_SUMMARY_GRACE_MS = 10_000;
+// How long the success state stays before the processing card goes away.
+const SUCCESS_VISIBLE_MS = 3000;
 
 function isReviewFailure(err: unknown, reason: "conflict" | "not_found"): boolean {
   return err instanceof Error && (err as { reason?: unknown }).reason === reason;
@@ -63,7 +67,8 @@ export function TranscriptView(props: TranscriptViewProps) {
 
 function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [meeting, setMeeting] = useState<MeetingState | null>(null);
-  const [metadata, setMetadata] = useState<{ title: string | null; createdAt: string | null }>({ title: null, createdAt: null });
+  const [metadata, setMetadata] = useState<{ title: string | null; createdAt: string | null; durationSeconds: number | null }>(
+    { title: null, createdAt: null, durationSeconds: null });
   const [metadataError, setMetadataError] = useState(false);
   const authorizedMeetingId = meeting?.meetingId;
 
@@ -73,7 +78,10 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     void listMeetings().then(items => {
       if (cancelled) return;
       const item = items.find(candidate => candidate.id === meetingId);
-      if (item) setMetadata({ title: item.title ?? null, createdAt: item.createdAt });
+      if (item) setMetadata({
+        title: item.title ?? null, createdAt: item.createdAt,
+        durationSeconds: typeof item.durationSeconds === "number" ? item.durationSeconds : null,
+      });
       else setMetadataError(true);
     }).catch(() => { if (!cancelled) setMetadataError(true); });
     return () => { cancelled = true; };
@@ -96,6 +104,11 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     }
     setKeyPointTimes(times);
   }, []);
+  const [summarySignal, setSummarySignal] = useState<SummarySignal>("none");
+  const [workSeen, setWorkSeen] = useState(false);
+  const [summaryWatch, setSummaryWatch] = useState<"idle" | "armed" | "over">("idle");
+  const [success, setSuccess] = useState<"pending" | "showing" | "shown">("pending");
+  const handleSummarySignal = useCallback((signal: SummarySignal) => setSummarySignal(signal), []);
   const seekToRef = useRef<((timeMs: number, play?: boolean) => void) | undefined>(undefined);
   const registerSeekTo = useCallback((seekTo: ((timeMs: number, play?: boolean) => void) | undefined) => {
     seekToRef.current = seekTo;
@@ -390,15 +403,39 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
   const completed = meeting?.processState === "completed" && !statusError;
-  const identifying = Boolean(data) && diarizationNotFound;
 
   const pendingCount = review?.items.filter(item => item.disposition === null).length ?? 0;
   const selectedId = selectedSpeakerId ?? review?.items[0]?.speakerId;
-  const processingState = meeting?.processState;
-  const processingLabels: Record<string, string> = {
-    queued: processing.queued, joining: processing.joining, recording: processing.recording,
-    transcribing: processing.transcribing,
-  };
+  const stageSignals = meeting ? {
+    processState: meeting.processState, hasTranscript: Boolean(data), diarizationNotFound,
+    hasDiarization: diarization !== null,
+  } : null;
+  // Stage ignoring the summary: tells whether this visit saw real work and when speakers finished.
+  const workStage = stageSignals ? detectProcessingStage({ ...stageSignals, summary: "none" }) : null;
+  // Render-time updates (React's derived-state pattern); local values keep this render consistent.
+  const sawWork = workSeen || workStage === "transcription" || workStage === "speakers";
+  if (sawWork && !workSeen) setWorkSeen(true);
+  const armNow = sawWork && summaryWatch === "idle" && workStage === "done" && diarization !== null;
+  if (armNow) setSummaryWatch("armed");
+  const expectSummary = summaryWatch === "armed" || armNow;
+  const summaryForStage: SummarySignal = summarySignal === "waiting" ? "waiting"
+    : expectSummary && summarySignal !== "settled" ? "expected" : summarySignal;
+  const stage = stageSignals ? detectProcessingStage({ ...stageSignals, summary: summaryForStage }) : null;
+  // Only work finished during this visit earns the brief success state; a meeting opened done shows none.
+  const successNow = sawWork && stage === "done" && success === "pending";
+  if (successNow) setSuccess("showing");
+  const showProcessing = statusError || stage !== "done" || success === "showing" || successNow;
+
+  useEffect(() => {
+    if (summaryWatch !== "armed") return;
+    const timer = setTimeout(() => setSummaryWatch("over"), AUTO_SUMMARY_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [summaryWatch]);
+  useEffect(() => {
+    if (success !== "showing") return;
+    const timer = setTimeout(() => setSuccess("shown"), SUCCESS_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [success]);
 
   if (loading) return <section className="meeting-view" aria-busy="true">
     <p role="status">{text.opening}</p>
@@ -426,11 +463,12 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       </div>}
       {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
       {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{copy.processing.speakerWaitExpired}</p></div> :
-        (!completed || identifying) && <div className="meeting-processing">
-          {!statusError && processingState !== "failed" && <ProgressBar
-            label={identifying ? processing.identifying : processingLabels[processingState ?? ""] ?? processing.loading} />}
+        showProcessing && <div className="meeting-processing">
           <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
-            diarizationNotFound={diarizationNotFound} error={statusError} />
+            diarizationNotFound={diarizationNotFound} error={statusError}
+            hasDiarization={diarization !== null} summary={summaryForStage}
+            audioSeconds={playbackManifest?.duration_seconds ?? metadata.durationSeconds}
+            createdAt={metadata.createdAt} />
         </div>}
       {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
       {error && <p role="alert" className="meeting-error">{error}</p>}
@@ -455,7 +493,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       <Card className="meeting-sidebar">
         <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
           { id: "summary", label: text.summaryTab, panel: meeting && activeTab === "summary"
-            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange} /> : null },
+            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
+              expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal} /> : null },
           { id: "chat", label: text.chatTab, panel: <ChatTab /> },
         ]} />
       </Card>

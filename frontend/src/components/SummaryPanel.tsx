@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MeetingSummary, SummaryRequestStatus } from "@sauri/shared-types";
+import type { SummarySignal } from "../processing-estimate";
 import { getLatestSummaryRequest, getMeetingSummary, requestMeetingSummary } from "../api";
 import { copy } from "../copy/es";
 import { Button, Skeleton, SkeletonLines, StatusBadge } from "./ui";
@@ -12,6 +13,10 @@ interface SummaryPanelProps {
   transcriptReady?: boolean;
   // Lets the meeting view reuse the loaded summary (e.g. key-point markers) without a second request.
   onSummaryChange?: (summary: MeetingSummary | null) => void;
+  // True right after speaker identification: the automatic request may appear any second, so keep checking.
+  expectAutoRequest?: boolean;
+  // Lets the meeting view show summary progress without a second request.
+  onSignalChange?: (signal: SummarySignal) => void;
 }
 
 const SKELETON_POINT_WIDTHS = ["72%", "58%", "66%"];
@@ -65,7 +70,9 @@ export function SummaryPanel(props: SummaryPanelProps) {
   return <MeetingSummaryPanel key={props.meetingId} {...props} />;
 }
 
-function MeetingSummaryPanel({ meetingId, onSeek, transcriptReady = true, onSummaryChange }: SummaryPanelProps) {
+function MeetingSummaryPanel({
+  meetingId, onSeek, transcriptReady = true, onSummaryChange, expectAutoRequest = false, onSignalChange,
+}: SummaryPanelProps) {
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
   useEffect(() => { onSummaryChange?.(summary); }, [summary, onSummaryChange]);
   const [request, setRequest] = useState<SummaryRequestStatus | null>(null);
@@ -78,6 +85,15 @@ function MeetingSummaryPanel({ meetingId, onSeek, transcriptReady = true, onSumm
   const [copyFeedback, setCopyFeedback] = useState("");
   const mounted = useRef(false);
   const text = copy.summary;
+  const expectRef = useRef(expectAutoRequest);
+  expectRef.current = expectAutoRequest;
+
+  // Look again as soon as an automatic request becomes likely (not on mount: the first load covers it).
+  const expectedBefore = useRef(expectAutoRequest);
+  useEffect(() => {
+    if (expectAutoRequest && !expectedBefore.current) setReload((value) => value + 1);
+    expectedBefore.current = expectAutoRequest;
+  }, [expectAutoRequest]);
 
   useEffect(() => {
     mounted.current = true;
@@ -102,7 +118,8 @@ function MeetingSummaryPanel({ meetingId, onSeek, transcriptReady = true, onSumm
         setSummary(artifact);
         setRequest(latest);
         setLoadError(false);
-        if ((latest?.status === "pending" || latest?.status === "running") && !document.hidden) {
+        const awaitingAuto = expectRef.current && !artifact && !latest;
+        if ((latest?.status === "pending" || latest?.status === "running" || awaitingAuto) && !document.hidden) {
           timer = setTimeout(() => void refresh(), 5000);
         }
       } catch {
@@ -174,6 +191,10 @@ function MeetingSummaryPanel({ meetingId, onSeek, transcriptReady = true, onSumm
   const currentRequest = request && (!summary || request.generation > summary.generation) ? request : null;
   const waiting = currentRequest?.status === "pending" || currentRequest?.status === "running";
   const resultUnavailable = currentRequest?.status === "succeeded";
+  const signal: SummarySignal | null = loading ? null
+    : waiting || submitting ? "waiting"
+      : summary || currentRequest || loadError ? "settled" : "none";
+  useEffect(() => { if (signal) onSignalChange?.(signal); }, [signal, onSignalChange]);
 
   if (loading) return (
     <div className="summary-panel">
