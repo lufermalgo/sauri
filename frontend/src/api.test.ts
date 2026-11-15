@@ -656,3 +656,55 @@ describe("attributed transcript and meeting state adapters", () => {
       expect.objectContaining({ method: "GET" }));
   });
 });
+
+describe("renameMeeting and deleteMeeting", () => {
+  it("PATCHes the encoded URL with the title and maps the response", async () => {
+    const fetchMock = mockFetch({ meeting_id: "m / 1", title: "New title" });
+    await expect(api.renameMeeting("m / 1", "New title")).resolves.toEqual({
+      meetingId: "m / 1",
+      title: "New title",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/meetings/m%20%2F%201"),
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ title: "New title" }),
+        headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }),
+      }),
+    );
+  });
+
+  it("rejects rename on 404 and 422", async () => {
+    mockFetch({}, 404);
+    await expect(api.renameMeeting("m-1", "x")).rejects.toThrow("Error 404");
+    mockFetch({}, 422);
+    await expect(api.renameMeeting("m-1", "")).rejects.toThrow("Error 422");
+  });
+
+  it("DELETEs the encoded URL and resolves on 204 without reading a body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: async () => {
+        throw new Error("no body");
+      },
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn().mockReturnValue("synthetic-token"),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+    });
+    await expect(api.deleteMeeting("m / 1")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/meetings/m%20%2F%201"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("rejects delete on 404", async () => {
+    mockFetch({}, 404);
+    await expect(api.deleteMeeting("m-1")).rejects.toThrow("Error 404");
+  });
+});
