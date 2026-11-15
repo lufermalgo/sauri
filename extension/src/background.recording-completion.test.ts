@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import * as fc from "fast-check";
 import { IDBFactory } from "fake-indexeddb";
 import { createCompletion, settleCapture, getCompletion, claimCompletion } from "./recording-db";
+import { getUploadJob } from "./upload-queue";
 
 // Each property executes 100 real IndexedDB/restart sequences. The default
 // five-second test deadline can expire while those sequences are still running,
@@ -150,6 +151,8 @@ it("meeting-ended preserves active identity and a later tab-close still finalize
     for (let i = 0; i < repeats; i++) await h.event("meeting-ended");
     expect(h.stops()).toBe(0);
     expect(h.state()).toMatchObject({ status: "recording", sessionId: session, tabId: tab });
+    expect(await getCompletion(session)).toMatchObject({ status: "capturing", meetingId: `meeting-${session}` });
+    expect(await getUploadJob(session)).toBeUndefined();
     await h.event("close");
     expect(h.stops()).toBe(1);
   }), { numRuns: 100 });

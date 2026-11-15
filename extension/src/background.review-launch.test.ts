@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import * as fc from "fast-check";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
-import { claimReviewLaunch, createCompletion, getCompletion, type RecordingCompletion } from "./recording-db";
+import { claimReviewLaunch, createCompletion, getCompletion, setProcessingStatus, type RecordingCompletion } from "./recording-db";
 
 type Event = "startup" | "retry" | "restart";
 const sequences = fc.sample(fc.record({
@@ -22,7 +22,7 @@ async function worker(record: RecordingCompletion, crashAfterCreate = false, alr
   const boundaryErrors: string[] = [];
   const create = vi.fn(async (options: { url?: string }) => {
     const saved = await getCompletion(record.sessionId);
-    if (saved?.status !== "review_launch_pending") boundaryErrors.push("tab created before durable claim");
+    if ((saved?.reviewStatus ?? saved?.status) !== "review_launch_pending") boundaryErrors.push("tab created before durable claim");
     if (!options.url) boundaryErrors.push("missing target");
     const tab = { id: 614, url: options.url ?? "" };
     tabs.push(tab);
@@ -57,11 +57,11 @@ async function worker(record: RecordingCompletion, crashAfterCreate = false, alr
   async function drain() {
     // fake-indexeddb transactions advance on task callbacks. Await the actual
     // durable claim/recovery rather than an arbitrary delay under parallel suites.
-    if (record.status !== "processing_succeeded" && record.status !== "review_launch_pending") return;
-    for (let attempt = 0; attempt < 50; attempt++) {
+    const waitForLaunch = record.recordingId && !["capturing", "finalizing", "upload_pending", "uploading", "upload_failed", "upload_outcome_unavailable"].includes(record.status);
+    for (let attempt = 0; waitForLaunch && attempt < 50; attempt++) {
       const saved = await getCompletion(record.sessionId);
-      if (saved?.status === "review_opened") break;
-      if (saved?.status === "review_launch_pending" && saved.reviewCreateAttempted && crashAfterCreate) {
+      if ((saved?.reviewStatus ?? saved?.status) === "review_opened") break;
+      if ((saved?.reviewStatus ?? saved?.status) === "review_launch_pending" && saved?.reviewCreateAttempted && crashAfterCreate) {
         if (!acceptedAmbiguousClaim || tabs.length === 0) { acceptedAmbiguousClaim = true; break; }
       }
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -91,13 +91,13 @@ it("allows exactly one persisted claim across 100 duplicate/concurrent claim seq
     await createCompletion(ready(sessionId));
     const claims = await Promise.all(events.map(() => claimReviewLaunch(sessionId)));
     expect(claims.filter(Boolean), sessionId).toHaveLength(1);
-    expect(await getCompletion(sessionId)).toMatchObject({ ...ready(sessionId), status: "review_launch_pending", updatedAt: expect.any(Number) });
+    expect(await getCompletion(sessionId)).toMatchObject({ ...ready(sessionId), reviewStatus: "review_launch_pending", updatedAt: expect.any(Number) });
     expect(await claimReviewLaunch(sessionId)).toBe(false);
   }
 });
 
 it("never claims or opens review from 100 non-ready recording sequences", async () => {
-  const nonReady: RecordingCompletion["status"][] = ["capturing", "finalizing", "upload_pending", "uploading", "upload_succeeded", "upload_failed", "upload_outcome_unavailable", "processing", "processing_assets_unavailable", "processing_failed"];
+  const nonReady: RecordingCompletion["status"][] = ["capturing", "finalizing", "upload_pending", "uploading", "upload_failed", "upload_outcome_unavailable"];
   for (const [index, { sessionId, events }] of sequences.entries()) {
     const record = { ...ready(sessionId), status: nonReady[index % nonReady.length] };
     const harness = await worker(record);
@@ -114,8 +114,8 @@ it("opens exactly one review after verified success through 100 retry/restart se
     const harness = await worker(ready(sessionId));
     for (const event of events) await harness.event(event);
     const saved = await getCompletion(sessionId);
-    if (harness.create.mock.calls.length !== 1 || saved?.status !== "review_opened" ||
-        saved.reviewTabId !== 614 || harness.boundaryErrors.length ||
+    if (harness.create.mock.calls.length !== 1 || (saved?.reviewStatus ?? saved?.status) !== "review_opened" ||
+        saved?.reviewTabId !== 614 || harness.boundaryErrors.length ||
         new URL(harness.tabs[0].url).searchParams.get("meetingId") !== `meeting-${sessionId}`) {
       failures.push(`${sessionId}: creates=${harness.create.mock.calls.length}, status=${saved?.status}, boundary=${harness.boundaryErrors.join(",")}`);
     }
@@ -132,8 +132,8 @@ it("reconciles a pending launch with the existing exact target after interruptio
     // Recovery must query that actual URL, not manufacture another destination.
     await harness.event("restart");
     const saved = await getCompletion(sessionId);
-    if (harness.tabs.length !== 1 || !harness.query.mock.calls.length || saved?.status !== "review_opened" ||
-        saved.reviewTabId !== 614 || harness.boundaryErrors.length) {
+    if (harness.tabs.length !== 1 || !harness.query.mock.calls.length || (saved?.reviewStatus ?? saved?.status) !== "review_opened" ||
+        saved?.reviewTabId !== 614 || harness.boundaryErrors.length) {
       failures.push(`${sessionId}: tabs=${harness.tabs.length}, queries=${harness.query.mock.calls.length}, status=${saved?.status}`);
     }
   }
@@ -146,8 +146,8 @@ it("recovers a previously pending exact target without creating a tab (100 seque
     const harness = await worker({ ...ready(sessionId), status: "review_launch_pending" }, false, true);
     for (const event of events) await harness.event(event);
     const saved = await getCompletion(sessionId);
-    if (harness.create.mock.calls.length || saved?.status !== "review_opened" ||
-        saved.reviewTabId !== 614 || !harness.query.mock.calls.length) failures.push(sessionId);
+    if (harness.create.mock.calls.length || (saved?.reviewStatus ?? saved?.status) !== "review_opened" ||
+        saved?.reviewTabId !== 614 || !harness.query.mock.calls.length) failures.push(sessionId);
   }
   expect(failures).toEqual([]);
 }, 60000);
@@ -159,8 +159,57 @@ it("never repeats an ambiguous Chrome create after its tab disappeared (100 sequ
     harness.tabs.splice(0); // tab closed between Chrome creating it and worker recovering
     for (const event of events) await harness.event(event);
     const saved = await getCompletion(sessionId);
-    if (harness.create.mock.calls.length !== 1 || saved?.status !== "review_launch_pending" ||
-        !saved.reviewCreateAttempted) failures.push(sessionId);
+    if (harness.create.mock.calls.length !== 1 || (saved?.reviewStatus ?? saved?.status) !== "review_launch_pending" ||
+        !saved?.reviewCreateAttempted) failures.push(sessionId);
   }
   expect(failures).toEqual([]);
 }, 60000);
+
+it("opens the uploaded meeting before processing and never reopens after success or worker restart", async () => {
+  const record = { ...ready("uploaded-session"), status: "upload_succeeded" as const };
+  const harness = await worker(record);
+  expect(harness.create).toHaveBeenCalledTimes(1);
+  expect(harness.create).toHaveBeenCalledWith({ url: "http://localhost:5173/?meetingId=meeting-uploaded-session" });
+  expect(harness.boundaryErrors).toEqual([]);
+  expect(await getCompletion(record.sessionId)).toMatchObject({ status: "processing_status_unavailable", reviewStatus: "review_opened" });
+  // The portal normalizes its URL, and users may close it before processing ends.
+  // Neither an absent nor a changed URL authorizes a second creation attempt.
+  harness.tabs.splice(0);
+  await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId!, "processing_succeeded");
+  for (const event of ["retry", "restart", "startup", "retry"] as Event[]) await harness.event(event);
+  expect(harness.create).toHaveBeenCalledTimes(1);
+  expect(await getCompletion(record.sessionId)).toMatchObject({ status: "processing_succeeded", reviewStatus: "review_opened" });
+});
+
+it.each(["processing", "processing_assets_unavailable", "processing_status_unavailable", "processing_failed"] as const)(
+  "recovers an unclaimed upload launch from persisted %s", async status => {
+    const harness = await worker({ ...ready(status), status });
+    expect(harness.create).toHaveBeenCalledTimes(1);
+    await harness.event("restart");
+    expect(harness.create).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("does not launch an upload without a bound server recording ID", async () => {
+  const record = { ...ready("unbound"), recordingId: undefined, status: "upload_succeeded" as const };
+  const harness = await worker(record);
+  await harness.event("retry");
+  expect(await claimReviewLaunch(record.sessionId)).toBe(false);
+  expect(harness.create).not.toHaveBeenCalled();
+});
+
+it("recovers an interrupted upload launch by exact URL without duplicating after restart", async () => {
+  const record = { ...ready("interrupted-upload"), status: "upload_succeeded" as const };
+  const harness = await worker(record, true);
+  expect(harness.create).toHaveBeenCalledTimes(1);
+  await harness.event("restart");
+  expect(harness.create).toHaveBeenCalledTimes(1);
+  expect(await getCompletion(record.sessionId)).toMatchObject({ reviewStatus: "review_opened", reviewTabId: 614 });
+});
+
+it("reuses the exact uploaded meeting tab instead of creating another", async () => {
+  const record = { ...ready("existing-upload"), status: "upload_succeeded" as const };
+  const harness = await worker(record, false, true);
+  expect(harness.create).not.toHaveBeenCalled();
+  expect(await getCompletion(record.sessionId)).toMatchObject({ reviewStatus: "review_opened", reviewTabId: 614 });
+});

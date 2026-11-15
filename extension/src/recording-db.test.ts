@@ -94,6 +94,6 @@ it("only commits a single review claim after verified success, including concurr
   db.close();
   const claims = await Promise.all(Array.from({ length: 10 }, () => claimReviewLaunch(record.sessionId)));
   expect(claims.filter(Boolean)).toHaveLength(1);
-  expect((await getCompletion(record.sessionId))?.status).toBe("review_launch_pending");
+  expect(await getCompletion(record.sessionId)).toMatchObject({ status: "processing_succeeded", reviewStatus: "review_launch_pending" });
   expect(await claimReviewLaunch(record.sessionId)).toBe(false);
 });
