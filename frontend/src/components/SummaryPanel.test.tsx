@@ -48,6 +48,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  Reflect.deleteProperty(URL, "createObjectURL");
+  Reflect.deleteProperty(URL, "revokeObjectURL");
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -97,6 +99,44 @@ describe("SummaryPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: text.copy }));
     expect(writeText).toHaveBeenCalledWith("Synthetic planning\n- First synthetic point\n- Second synthetic point");
     expect(await screen.findByText(text.copied)).toBeVisible();
+  });
+
+  it("downloads exactly the copied plain text as resumen-<id>.txt and revokes the object URL", async () => {
+    artifact = summary;
+    const expected = "Synthetic planning\n- First synthetic point\n- Second synthetic point";
+    const blobs: Blob[] = [];
+    const createObjectURL = vi.fn((blob: Blob) => { blobs.push(blob); return "blob:synthetic"; });
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL, revokeObjectURL });
+    const downloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      downloads.push(`${this.download}|${this.href}`);
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: text.download }));
+    expect(downloads).toEqual(["resumen-meeting-1.txt|blob:synthetic"]);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:synthetic");
+    expect(document.querySelector("a[download]")).toBeNull();
+    expect(blobs).toHaveLength(1);
+    expect(blobs[0].type).toContain("text/plain");
+    const content = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(blobs[0]);
+    });
+    expect(content).toBe(expected);
+    fireEvent.click(screen.getByRole("button", { name: text.copy }));
+    await screen.findByText(text.copied);
+    expect(writeText).toHaveBeenCalledWith(content);
+  });
+
+  it("offers no download button without a summary", async () => {
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    await screen.findByRole("button", { name: text.generate });
+    expect(screen.queryByRole("button", { name: text.download })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: text.copy })).not.toBeInTheDocument();
   });
 
   it("handles unavailable clipboard without claiming a successful copy", async () => {
