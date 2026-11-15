@@ -73,7 +73,7 @@ describe("SummaryPanel", () => {
   it("posts an empty default-template request and enters pending after acceptance", async () => {
     render(<SummaryPanel meetingId="meeting / 1" onSeek={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: text.generate }));
-    expect(await screen.findByText(text.pending)).toBeVisible();
+    expect(await screen.findByText(text.generating)).toBeVisible();
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/meeting%20%2F%201/summary-requests"), {
       method: "POST", headers: { Authorization: "Bearer synthetic-token", "Content-Type": "application/json" }, body: "{}",
     });
@@ -86,7 +86,7 @@ describe("SummaryPanel", () => {
       render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
       expect(await screen.findByRole("alert")).toHaveTextContent(text.failureCause(cause));
       fireEvent.click(screen.getByRole("button", { name: text.retry }));
-      expect(await screen.findByText(text.pending)).toBeVisible();
+      expect(await screen.findByText(text.generating)).toBeVisible();
       expect(callsEndingWith("/summary-requests")).toHaveLength(1);
     },
   );
@@ -132,6 +132,56 @@ describe("SummaryPanel", () => {
     expect(writeText).toHaveBeenCalledWith(content);
   });
 
+  it("shows the generating skeleton card with an accessible status while the summary is pending", async () => {
+    latest = pending;
+    const view = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    const status = await screen.findByText(text.generating);
+    expect(status).toHaveAttribute("role", "status");
+    expect(screen.getByText(text.generatingBadge)).toBeVisible();
+    expect(screen.getByText(text.generatingHelp)).toBeVisible();
+    const skeletons = view.container.querySelectorAll(".ui-skeleton");
+    expect(skeletons.length).toBeGreaterThan(6);
+    for (const skeleton of skeletons) expect(skeleton).toHaveAttribute("aria-hidden", "true");
+    expect(view.container.querySelectorAll(".summary-skeleton-point")).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: text.generate })).not.toBeInTheDocument();
+  });
+
+  it("removes the skeleton once the summary succeeds", async () => {
+    latest = pending;
+    vi.useFakeTimers();
+    const view = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    await act(async () => {});
+    expect(view.container.querySelector(".ui-skeleton")).not.toBeNull();
+    artifact = summary;
+    latest = { ...pending, status: "succeeded" };
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText(text.draft)).toBeVisible();
+    expect(view.container.querySelector(".ui-skeleton")).toBeNull();
+    expect(screen.queryByText(text.generating)).not.toBeInTheDocument();
+  });
+
+  it("offers Generate by default and when transcriptReady is true", async () => {
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} transcriptReady />);
+    expect(await screen.findByRole("button", { name: text.generate })).toBeVisible();
+    expect(screen.queryByText(text.waitingTitle)).not.toBeInTheDocument();
+  });
+
+  it("does not offer Generate while the transcript is not ready and shows the calm note with skeleton lines", async () => {
+    const view = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} transcriptReady={false} />);
+    expect(await screen.findByText(text.waitingTitle)).toBeVisible();
+    expect(screen.getByText(text.waitingTitle).parentElement).toHaveTextContent(`${text.waitingTitle} ${text.waitingBody}`);
+    expect(screen.queryByRole("button", { name: text.generate })).not.toBeInTheDocument();
+    expect(view.container.querySelectorAll(".ui-skeleton")).toHaveLength(5);
+    expect(callsEndingWith("/summary-requests")).toHaveLength(0);
+  });
+
+  it("does not offer a retry that would generate while the transcript is not ready", async () => {
+    latest = { ...pending, status: "failed", failure_cause: "llm_unavailable" };
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} transcriptReady={false} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(text.failureCause("llm_unavailable"));
+    expect(screen.queryByRole("button", { name: text.retry })).not.toBeInTheDocument();
+  });
+
   it("offers no download button without a summary", async () => {
     render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
     await screen.findByRole("button", { name: text.generate });
@@ -165,7 +215,7 @@ describe("SummaryPanel", () => {
     expect(callsEndingWith("/summary-requests/latest")).toHaveLength(count);
     latest = { ...pending, status: "running" };
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    expect(screen.getByText(text.running)).toBeVisible();
+    expect(screen.getByText(text.generating)).toBeVisible();
     expect(callsEndingWith("/summary-requests/latest")).toHaveLength(count + 1);
     artifact = summary;
     latest = { ...pending, status: "succeeded" };
@@ -179,14 +229,14 @@ describe("SummaryPanel", () => {
     vi.useFakeTimers();
     await act(async () => { render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />); });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: text.generate })); });
-    expect(screen.getByText(text.pending)).toBeVisible();
+    expect(screen.getByText(text.generating)).toBeVisible();
     expect(callsEndingWith("/summary-requests")).toHaveLength(1);
     const count = callsEndingWith("/summary-requests/latest").length;
     await act(async () => { await vi.advanceTimersByTimeAsync(4999); });
     expect(callsEndingWith("/summary-requests/latest")).toHaveLength(count);
     latest = { ...pending, status: "running" };
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    expect(screen.getByText(text.running)).toBeVisible();
+    expect(screen.getByText(text.generating)).toBeVisible();
     expect(callsEndingWith("/summary-requests/latest")).toHaveLength(count + 1);
     expect(callsEndingWith("/summary-requests")).toHaveLength(1);
   });
@@ -213,7 +263,7 @@ describe("SummaryPanel", () => {
     artifact = summary;
     latest = { ...pending, generation: 2, status: "running" };
     render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
-    expect(await screen.findByText(text.running)).toBeVisible();
+    expect(await screen.findByText(text.generating)).toBeVisible();
     expect(screen.queryByText(summary.topic)).not.toBeInTheDocument();
   });
 
@@ -254,7 +304,7 @@ describe("SummaryPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(text.requestFailed);
     expect(screen.queryByText(/private diagnostic/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: text.generate }));
-    expect(await screen.findByText(text.pending)).toBeVisible();
+    expect(await screen.findByText(text.generating)).toBeVisible();
   });
 
   it("does not treat a load failure as an empty summary or generate a new request on reload", async () => {
@@ -311,7 +361,7 @@ describe("meeting summary tab integration", () => {
     fireEvent.keyDown(chatTab, { key: "ArrowLeft" });
     expect(tab).toHaveFocus();
     expect(tab).toHaveAttribute("aria-selected", "true");
-    await screen.findByText(text.running);
+    await screen.findByText(text.generating);
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("tab", { name: copy.meeting.chatTab }));
     const count = callsEndingWith("/summary-requests/latest").length;
