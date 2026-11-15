@@ -30,6 +30,7 @@ from app.infra.database import create_engine, create_session_factory
 from app.infra.models import (
     Diarization,
     Meeting,
+    MeetingSummary,
     SessionRecording,
     Speaker,
     SpeakerReview,
@@ -145,6 +146,59 @@ async def create_meeting(
         await engine.dispose()
 
 
+_EMPTY_LIST_FIELDS: dict[str, Any] = {
+    "duration_seconds": None,
+    "speaker_count": None,
+    "summary_topic": None,
+}
+
+
+async def _list_summary_fields(
+    session: AsyncSession, meeting_ids: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Batch the per-meeting list extras with three queries, whatever the list size.
+
+    `meeting_ids` must already be the authenticated user's meetings; nothing here
+    widens ownership. Missing data stays None.
+    """
+    if not meeting_ids:
+        return {}
+    extras: dict[str, dict[str, Any]] = {
+        meeting_id: dict(_EMPTY_LIST_FIELDS) for meeting_id in meeting_ids
+    }
+
+    recordings = await session.execute(
+        select(SessionRecording.meeting_id, SessionRecording.duration_seconds).where(
+            SessionRecording.meeting_id.in_(meeting_ids)
+        )
+    )
+    for meeting_id, duration_seconds in recordings.all():
+        extras[meeting_id]["duration_seconds"] = duration_seconds
+
+    # Latest completed revision per meeting, same rule as `_latest_completed_diarization`.
+    diarizations = await session.execute(
+        select(Diarization.meeting_id, Diarization.speaker_count)
+        .where(
+            Diarization.meeting_id.in_(meeting_ids),
+            Diarization.diarization_state == "completed",
+        )
+        .order_by(Diarization.processing_revision.asc())
+    )
+    for meeting_id, speaker_count in diarizations.all():
+        extras[meeting_id]["speaker_count"] = speaker_count  # ascending: the last row wins
+
+    # Highest generation per meeting, same rule as `GET /meetings/{id}/summary`.
+    summaries = await session.execute(
+        select(MeetingSummary.meeting_id, MeetingSummary.topic)
+        .where(MeetingSummary.meeting_id.in_(meeting_ids))
+        .order_by(MeetingSummary.generation.asc())
+    )
+    for meeting_id, topic in summaries.all():
+        extras[meeting_id]["summary_topic"] = topic  # ascending: the last row wins
+
+    return extras
+
+
 @router.get("/")
 async def list_meetings(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
@@ -164,6 +218,7 @@ async def list_meetings(
             )
             result = await session.execute(stmt)
             meetings = result.scalars().all()
+            extras = await _list_summary_fields(session, [m.id for m in meetings])
             return [
                 {
                     "meeting_id": m.id,
@@ -173,6 +228,7 @@ async def list_meetings(
                     "failure_cause": m.failure_cause if m.process_state == "failed" else None,
                     "created_at": m.created_at.isoformat() if m.created_at else None,
                     "title": m.title,
+                    **extras.get(m.id, _EMPTY_LIST_FIELDS),
                 }
                 for m in meetings
             ]
