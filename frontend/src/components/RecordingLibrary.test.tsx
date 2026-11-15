@@ -11,7 +11,7 @@ import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/re
 import { ProcessState, MeetingOrigin } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 
-import { MeetingList } from "./MeetingList";
+import { RecordingLibrary } from "./RecordingLibrary";
 import * as api from "../api";
 
 afterEach(() => {
@@ -32,7 +32,7 @@ function meeting(overrides: Partial<MeetingListItem> = {}): MeetingListItem {
   };
 }
 
-describe("MeetingList — renders the list with process states", () => {
+describe("RecordingLibrary — renders the list with process states", () => {
   it("shows each Meeting with its Process_State", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([
       meeting({ id: "r-1", processState: ProcessState.Queued }),
@@ -43,7 +43,7 @@ describe("MeetingList — renders the list with process states", () => {
       }),
     ]);
 
-    render(<MeetingList refreshKey={0} onSelectMeeting={vi.fn()} />);
+    render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
 
     await waitFor(() => screen.getByText("Meetings"));
 
@@ -64,7 +64,7 @@ describe("MeetingList — renders the list with process states", () => {
       completedMeeting,
     ]);
 
-    render(<MeetingList refreshKey={0} onSelectMeeting={onSelectMeeting} />);
+    render(<RecordingLibrary refreshKey={0} onSelectMeeting={onSelectMeeting} />);
     await waitFor(() => screen.getByText("Meetings"));
 
     expect(screen.getByText("Prueba sintetica completa")).toBeDefined();
@@ -79,7 +79,7 @@ describe("MeetingList — renders the list with process states", () => {
   it("shows the empty-state message when there are no meetings", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([]);
 
-    render(<MeetingList refreshKey={0} onSelectMeeting={vi.fn()} />);
+    render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
     await waitFor(() => screen.getByText("No meetings registered."));
   });
 
@@ -88,7 +88,7 @@ describe("MeetingList — renders the list with process states", () => {
       new Error("Not authenticated: token not found")
     );
 
-    render(<MeetingList refreshKey={0} onSelectMeeting={vi.fn()} />);
+    render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
 
     const alert = await waitFor(() => screen.getByRole("alert"));
     expect(alert.textContent).toMatch(/Not authenticated/);

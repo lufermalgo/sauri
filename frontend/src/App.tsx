@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { RegisterForm } from "./components/RegisterForm";
-import { MeetingList } from "./components/MeetingList";
+import { RecordingLibrary } from "./components/RecordingLibrary";
 import { TranscriptView } from "./components/TranscriptView";
 import { SpeakerRecognitionTestScreen } from "./components/SpeakerRecognitionTestScreen";
-import { SpeakerTestLogin } from "./components/SpeakerTestLogin";
+import { LoginScreen } from "./components/LoginScreen";
 import { UploadView } from "./components/UploadView";
 import { copy } from "./copy/es";
 
@@ -52,7 +52,7 @@ export function App() {
         <h1>sauri</h1>
         <p>Commercial meeting intelligence platform</p>
         <hr />
-        <SpeakerTestLogin onLogin={() => setAuthenticated(true)} />
+        <LoginScreen onLogin={() => setAuthenticated(true)} />
       </main>
     );
   }
@@ -73,7 +73,7 @@ export function App() {
           <button type="button" onClick={() => setView({ type: "speaker-test" })}>
             Open speaker recognition test
           </button>
-          <MeetingList
+          <RecordingLibrary
             refreshKey={refreshKey}
             onSelectMeeting={handleSelectMeeting}
           />

@@ -26,12 +26,12 @@ const STATE_COLORS: Record<ProcessState, string> = {
   [ProcessState.Failed]: "#dc2626",
 };
 
-interface MeetingListProps {
+interface RecordingLibraryProps {
   refreshKey: number;
   onSelectMeeting: (meeting: MeetingListItem) => void;
 }
 
-export function MeetingList({ refreshKey, onSelectMeeting }: MeetingListProps) {
+export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibraryProps) {
   const [meetings, setMeetings] = useState<MeetingListItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
