@@ -40,11 +40,11 @@ it("holds a direct meeting review behind portal login, then fetches only that me
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "owner@example.test" } });
-  fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "synthetic-password" } });
-  fireEvent.click(screen.getByRole("button", { name: /log in/i }));
+  fireEvent.change(screen.getByLabelText(copy.login.emailLabel), { target: { value: "owner@example.test" } });
+  fireEvent.change(screen.getByLabelText(copy.login.passwordLabel), { target: { value: "synthetic-password" } });
+  fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
   await waitFor(() => expect(screen.getAllByText("Synthetic private turn").length).toBeGreaterThan(0));
   expect(window.location.pathname).toBe("/meetings/meeting-614");
   expect(window.location.search).toBe("");
@@ -60,7 +60,7 @@ it("does not reveal a direct target denied by the server and preserves the targe
   const fetchMock = vi.fn(async (_input: RequestInfo | URL) => json({ detail: "Unauthorized" }, 401));
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  await waitFor(() => expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy());
   expect(screen.queryByText("Synthetic private turn")).toBeNull();
   expect(localStorage.getItem("sauri_token")).toBeNull();
   expect(window.location.pathname).toBe("/meetings/meeting-614");
@@ -87,10 +87,10 @@ it("opens a clean /meetings/:id route after login and returns to the library wit
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
-  fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "owner@example.test" } });
-  fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "synthetic-password" } });
-  fireEvent.click(screen.getByRole("button", { name: /log in/i }));
+  expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText(copy.login.emailLabel), { target: { value: "owner@example.test" } });
+  fireEvent.change(screen.getByLabelText(copy.login.passwordLabel), { target: { value: "synthetic-password" } });
+  fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
   await waitFor(() => expect(screen.getAllByText("Synthetic private turn").length).toBeGreaterThan(0));
   expect(window.location.pathname).toBe("/meetings/meeting-614");
 
