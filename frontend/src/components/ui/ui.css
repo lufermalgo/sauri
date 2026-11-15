@@ -197,6 +197,14 @@
   border-radius: var(--radius-full);
 }
 
+.ui-progress--determinate::-webkit-progress-value {
+  transition: width 0.9s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-progress--determinate::-webkit-progress-value { transition: none; }
+}
+
 .ui-skeleton {
   display: block;
   max-width: 100%;

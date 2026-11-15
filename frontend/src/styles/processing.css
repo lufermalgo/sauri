@@ -1,0 +1,59 @@
+/* Processing progress: stepper, estimate meter and plain-language explanation. */
+.processing { display: grid; gap: var(--space-4); }
+
+.processing-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.processing-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
+.processing-step { position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); min-width: 0; text-align: center; color: var(--color-on-surface-variant); font-size: 14px; }
+/* Connector from the previous step's marker to this one. */
+.processing-step + .processing-step::before { content: ""; position: absolute; top: 15px; right: calc(50% + 22px); left: calc(-50% + 22px); height: 2px; border-radius: var(--radius-full); background: var(--color-surface-high); }
+.processing-step--done + .processing-step::before { background: var(--color-primary); }
+.processing-step-marker { position: relative; z-index: 1; display: inline-grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border: 2px solid var(--color-outline-variant); border-radius: var(--radius-full); background: var(--color-surface-lowest); font-family: var(--font-mono); font-size: 13px; font-weight: 600; transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast); }
+.processing-step--done .processing-step-marker { border-color: var(--color-primary); background: var(--color-primary); color: var(--color-on-primary); }
+.processing-step--current { color: var(--color-on-surface); font-weight: 700; }
+.processing-step--current .processing-step-marker { border-color: var(--color-primary); background: var(--color-surface-lowest); color: var(--color-primary); animation: processing-breathe 2.4s ease-in-out infinite; }
+.processing-step-label { overflow-wrap: anywhere; }
+
+@keyframes processing-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 28%, transparent); }
+  50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-primary) 0%, transparent); }
+}
+
+@keyframes processing-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+.processing-current { display: grid; gap: var(--space-1); }
+.processing-headline { margin: 0; color: var(--color-on-surface); font-family: var(--font-heading); font-size: 20px; font-weight: 600; }
+.processing-explain { margin: 0; color: var(--color-on-surface-variant); font-size: 15px; }
+
+.processing-meter { display: grid; gap: var(--space-2); }
+/* Without an estimate the bar still shows that work is happening. */
+.processing .ui-progress:indeterminate::-webkit-progress-bar { background: linear-gradient(90deg, var(--color-surface-high) 30%, var(--color-primary-container) 50%, var(--color-surface-high) 70%); background-size: 300% 100%; animation: processing-sweep 1.8s ease-in-out infinite; }
+.processing .ui-progress:indeterminate::-moz-progress-bar { background: var(--color-primary-container); }
+.processing-figures { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-4); color: var(--color-on-surface-variant); font-size: 14px; }
+.processing-percent { color: var(--color-primary); font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
+.processing-elapsed { font-family: var(--font-mono); font-size: 13px; }
+.processing-remaining { margin-left: auto; }
+.processing-remaining--overtime { color: var(--color-tertiary); font-weight: 600; }
+
+.processing-hint { margin: 0; padding-top: var(--space-3); border-top: 1px solid var(--color-surface-high); color: var(--color-on-surface-variant); font-size: 14px; }
+
+.processing--done .processing-headline { color: var(--color-primary); }
+
+@media (max-width: 600px) {
+  .processing-steps { grid-template-columns: 1fr; gap: var(--space-3); }
+  .processing-step { flex-direction: row; text-align: left; }
+  .processing-step + .processing-step::before { top: calc(-1 * var(--space-3)); bottom: auto; left: 15px; right: auto; width: 2px; height: var(--space-3); }
+  .processing-remaining { margin-left: 0; flex-basis: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .processing .ui-progress:indeterminate::-webkit-progress-bar { animation: none; }
+  .processing-step--current .processing-step-marker { animation: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 18%, transparent); }
+}
+
+/* Compact variant used in library rows. */
+.processing-compact { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-primary); font-size: 13px; font-weight: 600; }
+.processing-compact .ui-progress { width: 72px; height: 6px; }
