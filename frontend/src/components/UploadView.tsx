@@ -30,6 +30,22 @@ function UploadIcon() {
   );
 }
 
+function FileIcon({ video }: { video: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"
+      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      {video ? (
+        <>
+          <rect x="3" y="6" width="13" height="12" rx="2.5" />
+          <path d="m16 10.5 5-3v9l-5-3z" />
+        </>
+      ) : (
+        <path d="M5 10v4M9 7v10M13 4v16M17 8v8M21 11v2" />
+      )}
+    </svg>
+  );
+}
+
 export function UploadView({ onUploaded, onBack }: UploadViewProps) {
   const [recording, setRecording] = useState<SelectedRecording | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -128,9 +144,16 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
 
       {recording && (
         <Card className="upload-selected" aria-label={copy.upload.selectedFileHeading}>
+          <span className="upload-file-icon" aria-hidden="true">
+            <FileIcon video={recording.file.type.startsWith("video/") || recording.data?.video_presence === "muxed"} />
+          </span>
           <div className="upload-file">
             <p className="upload-file-name">{recording.file.name}</p>
-            <p className="upload-file-size">{copy.upload.sizeMb(recording.file.size)}</p>
+            <p className="upload-file-size">
+              <span>{copy.upload.sizeMb(recording.file.size)}</span>
+              {recording.data && <span>{` · ${copy.upload.duration(recording.data.duration_seconds)}`}</span>}
+            </p>
+            {!recording.data && !error && <p role="status" className="upload-note">{copy.upload.readingMetadata}</p>}
           </div>
           <video
             key={recording.objectUrl}
@@ -155,7 +178,6 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
             }}
             onError={() => setError(copy.upload.errors.unreadableRecording)}
           />
-          {!recording.data && !error && <p role="status" className="upload-note">{copy.upload.readingMetadata}</p>}
           <div className="upload-actions">
             <Button variant="ghost" onClick={() => selectFile(undefined)} disabled={uploading}>
               {copy.upload.remove}
@@ -170,21 +192,28 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
       )}
 
       {progress && uploading && (
-        <Card className="upload-progress">
+        <Card className="upload-progress" aria-label={copy.upload.progressSectionLabel}>
+          <div className="upload-progress-head">
+            <span className="upload-progress-title">{copy.upload.transferHeading}</span>
+            <span role="status" className="upload-progress-figures">
+              {progress.total && percent !== undefined
+                ? copy.upload.transferred(progress.loaded, progress.total, percent)
+                : copy.upload.bytesSent(progress.loaded)}
+            </span>
+          </div>
           <ProgressBar label={copy.upload.progressLabel} max={100} value={percent} />
-          <p role="status" className="upload-note">
-            {percent === 100
-              ? copy.upload.awaitingConfirmation
-              : percent === undefined ? copy.upload.bytesSent(progress.loaded) : copy.upload.percentUploaded(percent)}
+          <p className="upload-note">
+            {percent === 100 ? copy.upload.awaitingConfirmation : copy.upload.transferHelp}
           </p>
         </Card>
       )}
 
       {error && (
         <Card className="upload-error" role="alert">
-          <p className="upload-error-title">{copy.upload.errorHeading}</p>
-          <p className="upload-error-message">{error}</p>
-          {canRetry && <Button variant="primary" onClick={submitUpload}>{copy.upload.retry}</Button>}
+          <p className="upload-error-text">
+            <strong>{copy.upload.errorHeading}</strong>{" "}{error}
+          </p>
+          {canRetry && <Button variant="secondary" className="upload-retry" onClick={submitUpload}>{copy.upload.retry}</Button>}
         </Card>
       )}
     </section>

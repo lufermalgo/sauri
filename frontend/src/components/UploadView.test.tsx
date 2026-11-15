@@ -91,7 +91,9 @@ describe("UploadView", () => {
     expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
     act(() => report({ loaded: 250, total: 1000 }));
     expect(screen.getByRole("progressbar")).toHaveAttribute("value", "25");
-    expect(screen.getByText(copy.upload.percentUploaded(25))).toBeVisible();
+    expect(screen.getByText(copy.upload.transferred(250, 1000, 25))).toBeVisible();
+    expect(screen.getByText(copy.upload.transferHeading)).toBeVisible();
+    expect(screen.getByText(copy.upload.transferHelp)).toBeVisible();
     expect(screen.getByLabelText(copy.upload.fileLabel)).toBeDisabled();
     expect(screen.getByRole("button", { name: new RegExp(copy.upload.back) })).toBeDisabled();
     act(() => report({ loaded: 1000, total: 1000 }));
@@ -193,7 +195,8 @@ describe("UploadView", () => {
     const report = vi.mocked(api.uploadWithProgress).mock.calls[0][2];
     act(() => report({ loaded: 4096, total: null }));
     expect(screen.getByText(copy.upload.bytesSent(4096))).toBeVisible();
-    expect(screen.queryByText(/% de carga/)).not.toBeInTheDocument();
+    expect(screen.getByText(copy.upload.transferHelp)).toBeVisible();
+    expect(screen.queryByText(/%/, { selector: ".upload-progress-figures" })).not.toBeInTheDocument();
     expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
   });
 
@@ -216,6 +219,32 @@ describe("UploadView", () => {
     fireEvent.click(screen.getByRole("button", { name: copy.upload.remove }));
     expect(screen.queryByText("big.webm")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: copy.upload.submit })).not.toBeInTheDocument();
+  });
+
+  it("formats transfer figures in MB with the percentage only when the total is known", async () => {
+    vi.mocked(api.uploadWithProgress).mockImplementation(() => new Promise(() => {}));
+    render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
+    selectRecording();
+    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    const report = vi.mocked(api.uploadWithProgress).mock.calls[0][2];
+    act(() => report({ loaded: 312 * 1048576, total: 473 * 1048576 }));
+    const figures = screen.getByText(copy.upload.transferred(312 * 1048576, 473 * 1048576, 65));
+    expect(figures).toBeVisible();
+    expect(figures.textContent).toMatch(/^312 MB .* 473 MB .* 65 %$/);
+    expect(screen.getByRole("progressbar")).toHaveAttribute("value", "65");
+  });
+
+  it("shows the duration next to the size only once the metadata is known", () => {
+    render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
+    const file = new File(["synthetic recording"], "sample.webm", { type: "video/webm" });
+    fireEvent.change(screen.getByLabelText(copy.upload.fileLabel), { target: { files: [file] } });
+    expect(screen.queryByText(/\d\d:\d\d/)).not.toBeInTheDocument();
+    const media = document.querySelector("video")!;
+    Object.defineProperty(media, "duration", { configurable: true, value: 3260 });
+    Object.defineProperty(media, "videoWidth", { configurable: true, value: 0 });
+    fireEvent.loadedMetadata(media);
+    expect(screen.getByText(/54:20/)).toBeVisible();
+    expect(screen.getByText(copy.upload.sizeMb(file.size))).toBeVisible();
   });
 
   it("selects a dropped file through the same path as the file input", () => {
