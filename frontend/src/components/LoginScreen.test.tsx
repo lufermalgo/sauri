@@ -3,14 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "../App";
 import * as api from "../api";
+import { copy } from "../copy/es";
 
 vi.mock("../api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api")>();
   return { ...actual, login: vi.fn(), uploadRecording: vi.fn() };
 });
-vi.mock("../components/RegisterForm", () => ({
-  RegisterForm: () => <div>Meeting registration</div>,
-}));
 vi.mock("../components/RecordingLibrary", () => ({
   RecordingLibrary: () => <div>Meeting list</div>,
 }));
@@ -32,10 +30,9 @@ function createLocalStorage(): Storage {
   };
 }
 
-function openSpeakerTest() {
+function openPortal() {
   localStorage.setItem("sauri_token", "synthetic-existing-token");
   render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: /open speaker recognition test/i }));
 }
 
 function enterCredentials() {
@@ -64,18 +61,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("speaker-test login and local session gate", () => {
+describe("login and local session gate", () => {
   it("shows login before mounting the authenticated app when no token exists", () => {
     render(<App />);
 
     expect(screen.getByLabelText(/email/i)).toBeTruthy();
     expect(screen.getByLabelText(/password/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /log in|sign in/i })).toBeTruthy();
-    expect(screen.queryByText("Meeting registration")).toBeNull();
-    expect(screen.queryByRole("heading", { name: /speaker recognition test/i })).toBeNull();
   });
 
-  it("keeps test controls hidden while login is pending and prevents duplicate submission", async () => {
+  it("keeps the portal hidden while login is pending and prevents duplicate submission", async () => {
     const pendingLogin = deferred<{ access_token: string; token_type: string; expires_in: number }>();
     vi.mocked(api.login).mockReturnValue(pendingLogin.promise);
     render(<App />);
@@ -86,18 +81,16 @@ describe("speaker-test login and local session gate", () => {
     expect(api.login).toHaveBeenCalledTimes(1);
     expect(api.login).toHaveBeenCalledWith(credentials.email, credentials.password);
     expect(localStorage.length).toBe(0);
-    expect(screen.queryByRole("heading", { name: /speaker recognition test/i })).toBeNull();
     expect((submit as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(submit);
     expect(api.login).toHaveBeenCalledTimes(1);
 
     pendingLogin.resolve({ access_token: "synthetic-access-token", token_type: "bearer", expires_in: 3600 });
-    fireEvent.click(await screen.findByRole("button", { name: /open speaker recognition test/i }));
-    await screen.findByRole("heading", { name: /speaker recognition test/i });
+    expect(await screen.findByText("Meeting list")).toBeTruthy();
   });
 
-  it("stores only the access token, clears transient password state and reveals test controls on success", async () => {
+  it("stores only the access token, clears transient password state and opens the portal on success", async () => {
     vi.mocked(api.login).mockResolvedValue({
       access_token: "synthetic-access-token",
       token_type: "bearer",
@@ -107,15 +100,13 @@ describe("speaker-test login and local session gate", () => {
     enterCredentials();
     fireEvent.click(screen.getByRole("button", { name: /log in|sign in/i }));
 
-    await screen.findByRole("button", { name: /open speaker recognition test/i });
-    fireEvent.click(screen.getByRole("button", { name: /open speaker recognition test/i }));
-    await screen.findByRole("heading", { name: /speaker recognition test/i });
+    await screen.findByText("Meeting list");
     expect(localStorage.getItem("sauri_token")).toBe("synthetic-access-token");
     expect(localStorage.length).toBe(1);
     expect(localStorage.getItem("synthetic-password")).toBeNull();
     expect(screen.queryByLabelText(/password/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /log out|sign out/i }));
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
     expect(screen.getByLabelText(/password/i)).toHaveProperty("value", "");
   });
 
@@ -131,18 +122,17 @@ describe("speaker-test login and local session gate", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByLabelText(/email/i)).toBeTruthy();
     expect(screen.getByLabelText(/password/i)).toHaveProperty("value", credentials.password);
-    expect(screen.queryByRole("heading", { name: /speaker recognition test/i })).toBeNull();
     expect(localStorage.getItem("sauri_token")).toBeNull();
     expect(localStorage.getItem("synthetic-password")).toBeNull();
   });
 
-  it("allows the test screen when a token already exists", () => {
+  it("opens the portal when a token already exists", () => {
     localStorage.setItem("sauri_token", "synthetic-existing-token");
 
-    openSpeakerTest();
+    openPortal();
 
-    expect(screen.getByRole("heading", { name: /speaker recognition test/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /log out|sign out/i })).toBeTruthy();
+    expect(screen.getByText("Meeting list")).toBeTruthy();
+    expect(screen.getByRole("button", { name: copy.shell.logout })).toBeTruthy();
     expect(screen.queryByLabelText(/password/i)).toBeNull();
   });
 
@@ -151,9 +141,9 @@ describe("speaker-test login and local session gate", () => {
     localStorage.setItem("unrelated_preference", "keep-me");
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    openSpeakerTest();
+    openPortal();
 
-    fireEvent.click(screen.getByRole("button", { name: /log out|sign out/i }));
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
 
     await waitFor(() => expect(screen.getByLabelText(/email/i)).toBeTruthy());
     expect(localStorage.getItem("sauri_token")).toBeNull();

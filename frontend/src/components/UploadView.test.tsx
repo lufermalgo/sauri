@@ -148,11 +148,13 @@ describe("UploadView", () => {
     const upload = vi.mocked(api.uploadWithProgress);
     upload.mockResolvedValue({ recording_id: "recording-not-meeting", state: "transcribing" });
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.title }));
+    fireEvent.click(screen.getByRole("link", { name: copy.shell.upload }));
     selectRecording();
     fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
     const meetingId = upload.mock.calls[0][1].meeting_id;
     expect(await screen.findByRole("heading", { name: `Meeting ${meetingId}` })).toBeVisible();
     expect(screen.queryByRole("heading", { name: copy.upload.title })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/meetings/${meetingId}`);
+    window.history.replaceState({}, "", "/");
   });
 });
