@@ -1,10 +1,33 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { openDB, DB_NAME, createCompletion, getCompletion, claimCompletion, getCapturingCompletion, settleCapture, getPendingFinalizations } from "./recording-db";
+import { openDB, DB_NAME, createCompletion, getCompletion, claimCompletion, getCapturingCompletion, settleCapture, getPendingFinalizations, claimReviewLaunch, claimReviewCreate, markReviewOpened, getProcessingCompletions, setProcessingStatus, getPendingReviewLaunches } from "./recording-db";
 import * as fc from "fast-check";
 
 beforeEach(() => { vi.stubGlobal("indexedDB", new IDBFactory()); });
 afterEach(() => { vi.unstubAllGlobals(); });
+
+it("claims an uploaded meeting once without consuming its processing state", async () => {
+  const record = { sessionId: "uploaded", meetingId: "meeting", recordingId: "recording", provider: "meet" as const,
+    capturedTabId: 42, status: "upload_succeeded" as const, updatedAt: 1 };
+  await createCompletion(record);
+  expect((await Promise.all([claimReviewLaunch(record.sessionId), claimReviewLaunch(record.sessionId)])).filter(Boolean)).toHaveLength(1);
+  expect(await getCompletion(record.sessionId)).toMatchObject({ status: "upload_succeeded", reviewStatus: "review_launch_pending" });
+  expect(await getProcessingCompletions()).toHaveLength(1);
+  await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing");
+  expect(await claimReviewCreate(record.sessionId, record.meetingId, record.recordingId)).toBe(true);
+  await markReviewOpened(record.sessionId, record.meetingId, record.recordingId, 614);
+  expect(await getCompletion(record.sessionId)).toMatchObject({ status: "processing", reviewStatus: "review_opened", reviewTabId: 614 });
+  expect(await getProcessingCompletions()).toHaveLength(1);
+  for (const status of ["processing_assets_unavailable", "processing_status_unavailable", "processing_failed", "processing_succeeded"] as const) {
+    await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, status);
+    expect(await getCompletion(record.sessionId)).toMatchObject({ status, reviewStatus: "review_opened", reviewTabId: 614 });
+    expect(await claimReviewLaunch(record.sessionId)).toBe(false);
+    expect(await getPendingReviewLaunches()).toEqual([]);
+  }
+  await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing");
+  expect(await getCompletion(record.sessionId)).toMatchObject({ status: "processing_succeeded", reviewStatus: "review_opened" });
+  expect(await getProcessingCompletions()).toEqual([]);
+});
 
 it("upgrades populated v1 without changing chunks or synthesizing completion identities", async () => {
   const old = await new Promise<IDBDatabase>((resolve) => {

@@ -200,8 +200,8 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   const state = await getState();
   console.log("[sauri] Service worker started, current state:", state.status);
   await resumeFinalizations();
-  await reconcilePendingProcessing();
   await reconcileReviewLaunches();
+  await reconcilePendingProcessing();
 })();
 
 // --- Message handling ---
@@ -624,6 +624,7 @@ async function processUploadQueue(): Promise<void> {
   }
   try {
     await setUploadOutcome(job.sessionId, job.meetingId!, "upload_succeeded");
+    await reconcileReviewLaunches();
     await clearSession(job.sessionId);
     const record = await getCompletion(job.sessionId);
     if (record) await reconcileProcessing(record);
@@ -690,9 +691,9 @@ async function reconcileReviewLaunches(): Promise<void> {
   for (const candidate of await getPendingReviewLaunches()) {
     try {
       if (!candidate.recordingId) continue;
-      if (candidate.status === "processing_succeeded" && !await claimReviewLaunch(candidate.sessionId)) continue;
+      if ((candidate.reviewStatus ?? candidate.status) !== "review_launch_pending" && !await claimReviewLaunch(candidate.sessionId)) continue;
       const record = await getCompletion(candidate.sessionId);
-      if (!record || record.status !== "review_launch_pending" || record.meetingId !== candidate.meetingId ||
+      if (!record || (record.reviewStatus ?? record.status) !== "review_launch_pending" || record.meetingId !== candidate.meetingId ||
           record.recordingId !== candidate.recordingId) continue;
       const target = reviewDestination(record.meetingId);
       // Query before creation, including on a fresh launch: a lost Chrome result

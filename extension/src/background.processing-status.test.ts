@@ -31,7 +31,11 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
   await storeChunk(sessionId, new Blob(["synthetic media"], { type: "video/webm" }));
 
   const fetched: string[] = [];
-  const createTab = vi.fn(async () => ({ id: 614 }));
+  const launchSnapshots: Array<{ completion: Awaited<ReturnType<typeof getCompletion>>; fetched: string[] }> = [];
+  const createTab = vi.fn(async () => {
+    launchSnapshots.push({ completion: await getCompletion(sessionId), fetched: [...fetched] });
+    return { id: 614 };
+  });
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
     fetched.push(url);
@@ -54,11 +58,12 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
   }));
 
   let listener: Listener | undefined;
+  let alarm: (value: { name: string }) => unknown;
   let state: Record<string, unknown> = { status: "recording", sessionId, tabId: 42 };
   const sent = vi.fn(async () => ({ ok: true }));
   vi.stubGlobal("chrome", {
     action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
-    alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
+    alarms: { create: vi.fn(), onAlarm: { addListener: (fn: typeof alarm) => { alarm = fn; } } },
     runtime: {
       onInstalled: { addListener: vi.fn() }, onStartup: { addListener: vi.fn() },
       onMessage: { addListener: (fn: Listener) => { listener = fn; } },
@@ -108,12 +113,13 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
       expect(fetched).toContain(`http://localhost:8000/api/v1/meetings/${meetingId}`);
       const completion = await getCompletion(sessionId);
       expect(scenario.sameMeeting
-        ? ["processing", "processing_failed", "processing_assets_unavailable", "processing_succeeded", "review_launch_pending", "review_opened"]
+        ? ["processing", "processing_failed", "processing_assets_unavailable", "processing_succeeded"]
         : ["processing_status_unavailable"]).toContain(completion?.status);
     }, { timeout: 2000, interval: 5 });
   }
   return { completion: await getCompletion(sessionId), fetched, meetingId, recordingId,
-    persistedRecordingId: scenario.sameRecording ? undefined : otherRecordingId, job: job!, createTab };
+    persistedRecordingId: scenario.sameRecording ? undefined : otherRecordingId, job: job!, createTab, launchSnapshots,
+    retry: () => alarm!({ name: "sauri-upload-check" }) };
 }
 
 beforeEach(() => {
@@ -126,6 +132,24 @@ const state = fc.constantFrom<ProcessState>("queued", "joining", "recording", "t
 const combinations = fc.record({ state, transcript: fc.boolean(), video: fc.boolean(), sameMeeting: fc.boolean(), sameRecording: fc.boolean() });
 const ready: Scenario = { state: "completed", transcript: true, video: true, sameMeeting: true, sameRecording: true };
 const statusUrl = (id: string) => `http://localhost:8000/api/v1/meetings/${id}`;
+
+it("Stop uploads and opens the confirmed meeting before making any processing request", async () => {
+  const scenario: Scenario = { ...ready, state: "transcribing" };
+  const { meetingId, recordingId, createTab, launchSnapshots, completion, retry } = await runScenario(scenario, "early-launch");
+  expect(createTab).toHaveBeenCalledTimes(1);
+  expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:5173/?meetingId=${meetingId}` });
+  expect(launchSnapshots).toEqual([{
+    completion: expect.objectContaining({ meetingId, recordingId, status: "upload_succeeded", reviewStatus: "review_launch_pending", reviewCreateAttempted: true }),
+    fetched: ["http://localhost:8000/api/v1/ingestion/upload"],
+  }]);
+  expect(completion).toMatchObject({ status: "processing", reviewStatus: "review_opened" });
+  scenario.state = "completed";
+  retry();
+  await vi.waitFor(async () => expect(await getCompletion("early-launch")).toMatchObject({
+    status: "processing_succeeded", reviewStatus: "review_opened", reviewTabId: 614,
+  }), { timeout: 2000, interval: 5 });
+  expect(createTab).toHaveBeenCalledTimes(1);
+});
 
 it("checks the same meeting's status and never marks incomplete or mismatched assets ready (100 generated cases)", async () => {
   // Include each important edge deterministically, then sample 100 more cases.
@@ -145,7 +169,7 @@ it("checks the same meeting's status and never marks incomplete or mismatched as
       ? job.status === "done" || completion?.recordingId !== persistedRecordingId || fetched.some(url => url !== "http://localhost:8000/api/v1/ingestion/upload")
       : !fetched.includes(statusUrl(meetingId));
     if (wrongMapping || completion?.meetingId !== meetingId ||
-        completion?.status === "processing_succeeded" || createTab.mock.calls.length !== 0) {
+        completion?.status === "processing_succeeded" || createTab.mock.calls.length !== (scenario.sameRecording ? 1 : 0)) {
       violations++;
       if (!counterexample) counterexample = `${index}: ${JSON.stringify(scenario)}; status=${completion?.status}; recording=${completion?.recordingId}; queue=${job.status}/${job.retryCount}; tabs=${createTab.mock.calls.length}; reads=${fetched.join(",")}`;
     }
@@ -169,10 +193,10 @@ it("marks success only after checking completed status, transcript and playable 
   let counterexample = "";
   for (const [index, sessionId] of fc.sample(fc.uuid(), 100).entries()) {
     const { fetched, meetingId, recordingId, job, createTab } = await runScenario(ready, sessionId);
-    await vi.waitFor(async () => expect((await getCompletion(sessionId))?.status).toBe("review_opened"), { timeout: 2000, interval: 5 });
+    await vi.waitFor(async () => expect((await getCompletion(sessionId))?.reviewStatus).toBe("review_opened"), { timeout: 2000, interval: 5 });
     const completion = await getCompletion(sessionId);
     const required = [statusUrl(meetingId), `${statusUrl(meetingId)}/transcript`, `${statusUrl(meetingId)}/playback`];
-    if (job.status !== "done" || completion?.status !== "review_opened" || completion.meetingId !== meetingId ||
+    if (job.status !== "done" || completion?.status !== "processing_succeeded" || completion.reviewStatus !== "review_opened" || completion.meetingId !== meetingId ||
         completion.sessionId !== sessionId || completion.recordingId !== recordingId || completion.reviewTabId !== 614 ||
         createTab.mock.calls.length !== 1 || required.some(url => !fetched.includes(url))) {
       violations++;

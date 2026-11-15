@@ -18,6 +18,8 @@ export interface RecordingCompletion {
   status: "capturing" | "finalizing" | "upload_pending" | "uploading" | "upload_succeeded" | "upload_failed" | "upload_outcome_unavailable" | "processing" | "processing_assets_unavailable" | "processing_status_unavailable" | "processing_failed" | "processing_succeeded" | "review_launch_pending" | "review_opened";
   captureError?: boolean;
   trigger?: "stop" | "captured_tab_closed";
+  /** Independent of processing; legacy records may still carry this in status. */
+  reviewStatus?: "review_launch_pending" | "review_opened";
   reviewTabId?: number;
   /** Once Chrome creation is attempted, a missing tab cannot prove creation failed. */
   reviewCreateAttempted?: boolean;
@@ -159,14 +161,21 @@ export async function setProcessingStatus(
   });
 }
 
-/** The caller must independently verify processing and assets before persisting success. */
+function canClaimReviewLaunch(record: RecordingCompletion): boolean {
+  // Processing states also prove upload confirmation if the worker was interrupted
+  // before claiming the launch. Opening the portal never implies assets are ready.
+  return !!record.recordingId && !record.reviewStatus &&
+    ["upload_succeeded", "processing", "processing_assets_unavailable", "processing_status_unavailable", "processing_failed", "processing_succeeded"].includes(record.status);
+}
+
+/** Claim once after confirmed upload, without consuming the processing state. */
 export async function claimReviewLaunch(sessionId: string): Promise<boolean> {
   return completionTransaction("readwrite", (store, result) => {
     const request = store.get(sessionId);
     request.onsuccess = () => {
       const record = request.result as RecordingCompletion | undefined;
-      if (!record || record.status !== "processing_succeeded" || !record.recordingId) { result(false); return; }
-      store.put({ ...record, status: "review_launch_pending", updatedAt: Date.now() });
+      if (!record || !canClaimReviewLaunch(record)) { result(false); return; }
+      store.put({ ...record, reviewStatus: "review_launch_pending", updatedAt: Date.now() });
       result(true);
     };
   });
@@ -178,7 +187,7 @@ export async function claimReviewCreate(sessionId: string, meetingId: string, re
     const request = store.get(sessionId);
     request.onsuccess = () => {
       const record = request.result as RecordingCompletion | undefined;
-      if (!record || record.status !== "review_launch_pending" || record.meetingId !== meetingId ||
+      if (!record || (record.reviewStatus ?? record.status) !== "review_launch_pending" || record.meetingId !== meetingId ||
           record.recordingId !== recordingId || record.reviewCreateAttempted) { result(false); return; }
       store.put({ ...record, reviewCreateAttempted: true, updatedAt: Date.now() });
       result(true);
@@ -193,11 +202,13 @@ export async function markReviewOpened(sessionId: string, meetingId: string, rec
     request.onsuccess = () => {
       const record = request.result as RecordingCompletion | undefined;
       if (!record || record.meetingId !== meetingId || record.recordingId !== recordingId ||
-          !["review_launch_pending", "review_opened"].includes(record.status) ||
+          !["review_launch_pending", "review_opened"].includes(record.reviewStatus ?? record.status) ||
           (record.reviewTabId !== undefined && record.reviewTabId !== tabId)) {
         fail(new Error("Review tab identity mismatch")); return;
       }
-      store.put({ ...record, status: "review_opened", reviewTabId: tabId, updatedAt: Date.now() });
+      store.put({ ...record,
+        status: record.status === "review_launch_pending" ? "review_opened" : record.status,
+        reviewStatus: "review_opened", reviewTabId: tabId, updatedAt: Date.now() });
       result(undefined);
     };
   });
@@ -207,7 +218,7 @@ export async function getPendingReviewLaunches(): Promise<RecordingCompletion[]>
   return completionTransaction("readonly", (store, result) => {
     const request = store.getAll();
     request.onsuccess = () => result((request.result as RecordingCompletion[]).filter(record =>
-      record.status === "review_launch_pending" || record.status === "processing_succeeded"));
+      (record.reviewStatus ?? record.status) === "review_launch_pending" || canClaimReviewLaunch(record)));
   });
 }
 

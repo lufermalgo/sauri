@@ -69,7 +69,7 @@ async function runUpload(fetchImplementation: typeof fetch) {
       session: { get: vi.fn(async () => ({ sauriState: { status: "idle" } })), set: vi.fn(async () => undefined) },
       sync: { get: vi.fn(async () => ({})) },
     },
-    tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined) },
+    tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 614 })), sendMessage: vi.fn(async () => undefined) },
   });
 
   await import("./background");
@@ -90,6 +90,7 @@ describe("upload failures must remain retryable", () => {
     expect(jobs[0]).toMatchObject({ status: "pending", retryCount: 1 });
     expect(jobs[0].errorMessage).toBeTruthy();
     expect(clearSession).not.toHaveBeenCalled();
+    expect(chrome.tabs.create).not.toHaveBeenCalled();
   });
 
   it("persists a successful upload as done and clears its recording", async () => {
@@ -98,5 +99,7 @@ describe("upload failures must remain retryable", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({ status: "done", retryCount: 0 });
     expect(clearSession).toHaveBeenCalledWith("synthetic-session");
+    expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "http://localhost:5173/?meetingId=synthetic-meeting" });
   });
 });
