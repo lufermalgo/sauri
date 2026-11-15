@@ -1,23 +1,17 @@
-import React, { useEffect, useState } from "react";
-import type { MeetingListItem } from "@sauri/shared-types";
-import { RegisterForm } from "./components/RegisterForm";
+import { useEffect, useState } from "react";
 import { RecordingLibrary } from "./components/RecordingLibrary";
 import { TranscriptView } from "./components/TranscriptView";
-import { SpeakerRecognitionTestScreen } from "./components/SpeakerRecognitionTestScreen";
 import { LoginScreen } from "./components/LoginScreen";
 import { UploadView } from "./components/UploadView";
+import { PortalShell } from "./components/PortalShell";
 import { copy } from "./copy/es";
-
-type View = { type: "list" } | { type: "transcript"; meetingId: string } | { type: "speaker-test" } | { type: "upload" };
+import { navigate, routePath, useRoute } from "./router";
+import "./styles/shell.css";
 
 export function App() {
-  // Only the meeting key is carried across tabs. Protected media and transcript
-  // are fetched by the existing authorized API after portal authentication.
-  const [view, setView] = useState<View>(() => {
-    const meetingId = new URLSearchParams(window.location.search).get("meetingId");
-    return meetingId ? { type: "transcript", meetingId } : { type: "list" };
-  });
-  const [refreshKey, setRefreshKey] = useState(0);
+  // The route lives in the URL, so a protected deep link survives sign-in:
+  // the login screen is rendered in place and the same route shows afterwards.
+  const route = useRoute();
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(localStorage.getItem("sauri_token"))
   );
@@ -25,83 +19,65 @@ export function App() {
   useEffect(() => {
     function handleUnauthorized() {
       setAuthenticated(false);
-      // Retain the deep-link target so sign-in can resume this same review.
     }
 
     window.addEventListener("sauri:unauthorized", handleUnauthorized);
     return () => window.removeEventListener("sauri:unauthorized", handleUnauthorized);
   }, []);
 
-  function handleRegistered() {
-    setRefreshKey((key) => key + 1);
-  }
-
-  function handleSelectMeeting(meeting: MeetingListItem) {
-    setView({ type: "transcript", meetingId: meeting.id });
-  }
-
   function handleLogout() {
     localStorage.removeItem("sauri_token");
     setAuthenticated(false);
-    setView({ type: "list" });
+    navigate({ name: "library" });
   }
 
   if (!authenticated) {
     return (
-      <main style={{ maxWidth: "800px", margin: "0 auto", padding: "1rem" }}>
-        <h1>sauri</h1>
-        <p>Commercial meeting intelligence platform</p>
-        <hr />
+      <main className="shell-login-stage">
         <LoginScreen onLogin={() => setAuthenticated(true)} />
       </main>
     );
   }
 
   return (
-    <main style={{ maxWidth: "800px", margin: "0 auto", padding: "1rem" }}>
-      <h1>sauri</h1>
-      <p>Commercial meeting intelligence platform</p>
-      <button type="button" onClick={handleLogout}>Log out</button>
-      <hr />
-
-      {view.type === "list" && (
-        <>
-          <RegisterForm onRegistered={handleRegistered} />
-          <button type="button" onClick={() => setView({ type: "upload" })}>
-            {copy.upload.title}
-          </button>
-          <button type="button" onClick={() => setView({ type: "speaker-test" })}>
-            Open speaker recognition test
-          </button>
-          <RecordingLibrary
-            refreshKey={refreshKey}
-            onSelectMeeting={handleSelectMeeting}
-          />
-        </>
-      )}
-
-      {view.type === "transcript" && (
-        <TranscriptView
-          meetingId={view.meetingId}
-          onBack={() => setView({ type: "list" })}
+    <PortalShell route={route} onLogout={handleLogout}>
+      {route.name === "library" && (
+        <RecordingLibrary
+          refreshKey={0}
+          onSelectMeeting={(meeting) => navigate({ name: "meeting", meetingId: meeting.id })}
         />
       )}
 
-      {view.type === "upload" && (
+      {route.name === "upload" && (
         <UploadView
-          onUploaded={(meetingId) => setView({ type: "transcript", meetingId })}
-          onBack={() => setView({ type: "list" })}
+          onUploaded={(meetingId) => navigate({ name: "meeting", meetingId })}
+          onBack={() => navigate({ name: "library" })}
         />
       )}
 
-      {view.type === "speaker-test" && (
-        <>
-          <button type="button" onClick={() => setView({ type: "list" })}>
-            Back to meetings
-          </button>
-          <SpeakerRecognitionTestScreen />
-        </>
+      {route.name === "meeting" && (
+        <TranscriptView
+          meetingId={route.meetingId}
+          onBack={() => navigate({ name: "library" })}
+        />
       )}
-    </main>
+
+      {route.name === "notFound" && (
+        <section className="shell-not-found" aria-labelledby="shell-not-found-title">
+          <h1 id="shell-not-found-title">{copy.shell.notFound.title}</h1>
+          <p>{copy.shell.notFound.description}</p>
+          <a
+            href={routePath({ name: "library" })}
+            onClick={(event) => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              navigate({ name: "library" });
+            }}
+          >
+            {copy.shell.notFound.backToLibrary}
+          </a>
+        </section>
+      )}
+    </PortalShell>
   );
 }

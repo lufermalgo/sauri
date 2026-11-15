@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
+import { copy } from "./copy/es";
 
 function createLocalStorage(): Storage {
   const values = new Map<string, string>();
@@ -17,6 +18,7 @@ function createLocalStorage(): Storage {
 
 afterEach(() => {
   cleanup();
+  window.history.replaceState({}, "", "/");
   vi.unstubAllGlobals();
 });
 
@@ -81,5 +83,49 @@ describe("global authentication gate", () => {
       expect.stringContaining("/api/v1/auth/login"),
       expect.stringContaining("/api/v1/meetings"),
     ]);
+  });
+
+  it("shows the shell with a library link for an unknown route", () => {
+    window.history.replaceState({}, "", "/nowhere");
+    const storage = createLocalStorage();
+    storage.setItem("sauri_token", "synthetic-token");
+    vi.stubGlobal("localStorage", storage);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: copy.shell.notFound.title })).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: copy.shell.notFound.backToLibrary }));
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("logs out to the library route and removes only the token", async () => {
+    window.history.replaceState({}, "", "/upload");
+    const storage = createLocalStorage();
+    storage.setItem("sauri_token", "synthetic-token");
+    vi.stubGlobal("localStorage", storage);
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy());
+    expect(storage.getItem("sauri_token")).toBeNull();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("navigates with the browser back button between routes", async () => {
+    const storage = createLocalStorage();
+    storage.setItem("sauri_token", "synthetic-token");
+    vi.stubGlobal("localStorage", storage);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("link", { name: copy.shell.upload }));
+    expect(screen.getByRole("link", { name: copy.shell.upload }).getAttribute("aria-current")).toBe("page");
+
+    window.history.back();
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBe("page"));
   });
 });
