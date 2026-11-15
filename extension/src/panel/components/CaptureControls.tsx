@@ -1,163 +1,88 @@
-// Capture_Controls — Req. 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 3.10
 import React from "react";
 import { formatTimestamp } from "../../core/time";
 import type { CaptureState } from "../../core/types";
-import { COLOR_TOKENS, SPACING_TOKENS, TYPOGRAPHY_TOKENS, RADIUS_TOKENS } from "../../core/design/tokens";
+import { panelCopy as copy } from "../copy";
 
-export interface MicOption {
-  deviceId: string | null;
-  label: string;
-}
-
+export interface MicOption { deviceId: string | null; label: string }
 export interface CaptureControlsProps {
   captureState: CaptureState;
   microphones: MicOption[];
   selectedMicrophone?: MicOption;
   onSelectMicrophone?: (mic: MicOption) => void;
+  microphoneEnabled?: boolean;
+  onToggleMicrophone?: () => void;
+  captureMode?: "screen_audio" | "audio_only";
+  onChangeMode?: (mode: "screen_audio" | "audio_only") => void;
   onToggleCapture: () => void;
   onCaptureCurrentTab?: () => void;
   currentTabAvailable?: boolean;
-  onOpenSettings: () => void;
-  elapsedTimeMs: number;
+  onPause?: () => void;
+  onCancel?: () => void;
+  paused?: boolean;
+  tabTitle?: string;
+  recordedMicrophone?: string;
+  recordedVideo?: boolean;
+  commandPending?: boolean;
+  elapsedTimeMs?: number;
   startError?: string | null;
   selecting?: boolean;
   microphoneError?: string | null;
 }
 
-const AUDIO_SOURCES = ["Screen + audio"];
-
-/** Converts the running recording stopwatch to "MM:SS" (Req. 3.9), reusing formatTimestamp. */
-function formatStopwatch(elapsedTimeMs: number): string {
-  return formatTimestamp(elapsedTimeMs);
-}
-
-export function CaptureControls({
-  captureState,
-  microphones,
-  selectedMicrophone,
-  onSelectMicrophone,
-  onToggleCapture,
-  onCaptureCurrentTab,
-  currentTabAvailable,
-  onOpenSettings,
-  elapsedTimeMs,
-  startError,
-  selecting,
-  microphoneError,
+export function CaptureControls({ captureState, microphones, selectedMicrophone, onSelectMicrophone,
+  microphoneEnabled = true, onToggleMicrophone, captureMode = "screen_audio", onChangeMode,
+  onToggleCapture, onCaptureCurrentTab, currentTabAvailable, onPause, onCancel,
+  paused, tabTitle, recordedMicrophone, recordedVideo, commandPending, elapsedTimeMs, startError, selecting, microphoneError,
 }: CaptureControlsProps) {
-  const recording = captureState === "recording";
-
-  return (
-    <section
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: SPACING_TOKENS.space2,
-        padding: `0 ${SPACING_TOKENS.space4}`,
-      }}
-    >
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        <label style={{ fontSize: TYPOGRAPHY_TOKENS.textSm }}>Audio source</label>
-        <select defaultValue={AUDIO_SOURCES[0]} aria-label="Audio source selector">
-          {AUDIO_SOURCES.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
+  if (captureState === "recording" || captureState === "stopping") return <section className="panel-stack panel-recording">
+    <div className="panel-card panel-clock" aria-label={copy.timer}>
+      <span className="panel-stopwatch">{elapsedTimeMs === undefined ? "--:--" : formatTimestamp(elapsedTimeMs)}</span>
+      {tabTitle && <span>{copy.tab} {tabTitle}</span>}
+      {/* Decorative activity animation, not a measured audio level. */}
+      <div className={`panel-activity ${paused ? "panel-activity-paused" : ""}`} aria-hidden="true">
+        {[8,14,22,12,28,18,10,30,20,12,24,16,8,26,14,20,10,18,12,8].map((height, index) => <span key={index} style={{ height, animationDelay: `${index * 0.07}s` }} />)}
       </div>
+    </div>
+    <div className="panel-row panel-actions">
+      <button disabled={commandPending || captureState === "stopping"} onClick={onPause}>{paused ? copy.resume : copy.pause}</button>
+      <button className="panel-primary" disabled={commandPending || captureState === "stopping"} onClick={onToggleCapture}>{captureState === "stopping" ? copy.stopping : copy.stop}</button>
+    </div>
+    <ul className="panel-sources" aria-label={copy.recordingSources}>
+      <li>{copy.tabAudio}</li>
+      {recordedVideo && <li>{copy.tabVideo}</li>}
+      {recordedMicrophone && <li>{recordedMicrophone}</li>}
+    </ul>
+    <p>{copy.recordingHelp}</p>
+    {startError && <p role="alert">{startError}</p>}
+    <button className="panel-danger-link" disabled={commandPending || captureState === "stopping"} onClick={onCancel}>{copy.discard}</button>
+  </section>;
 
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        <label style={{ fontSize: TYPOGRAPHY_TOKENS.textSm }}>Microphone</label>
-        {microphones.length === 0 ? (
-          <p
-            role={microphoneError ? "alert" : undefined}
-            style={{
-              color: microphoneError ? COLOR_TOKENS.error : COLOR_TOKENS.textMuted,
-              fontSize: TYPOGRAPHY_TOKENS.textSm,
-              margin: 0,
-            }}
-          >
-            {microphoneError ?? "No microphones available"}
-          </p>
-        ) : (
-          <select
-            aria-label="Microphone selector"
-            value={selectedMicrophone?.deviceId ?? ""}
-            onChange={(e) => {
-              const selection = microphones.find((m) => (m.deviceId ?? "") === e.target.value);
-              if (selection && onSelectMicrophone) onSelectMicrophone(selection);
-            }}
-          >
-            {microphones.map((m) => (
-              <option key={m.deviceId ?? "none"} value={m.deviceId ?? ""}>
-                {m.label}
-              </option>
-            ))}
+  return <section className="panel-stack">
+    <div><h1>{copy.heading}</h1><p>{copy.introduction}</p></div>
+    <section className="panel-card panel-stack" aria-label={copy.capture}>
+      <div className="panel-segmented" role="radiogroup" aria-label={copy.captureMode}>
+        {(["screen_audio", "audio_only"] as const).map(mode => <button key={mode} role="radio" aria-checked={captureMode === mode} disabled={selecting} onClick={() => onChangeMode?.(mode)}>{mode === "screen_audio" ? copy.screenAudio : copy.audioOnly}</button>)}
+      </div>
+      <div className="panel-row">
+        <button className="panel-switch" role="switch" aria-checked={microphoneEnabled} aria-label={copy.microphone} disabled={selecting} onClick={onToggleMicrophone}><span /></button>
+        <label className="panel-mic-label">{copy.microphone}
+          <select aria-label={copy.microphoneSelector} disabled={!microphoneEnabled || selecting || microphones.length === 0} value={selectedMicrophone?.deviceId ?? ""} onChange={event => {
+            const mic = microphones.find(item => item.deviceId === event.target.value);
+            if (mic) onSelectMicrophone?.(mic);
+          }}>
+            {microphones.length === 0 && <option value="">{copy.noMicrophones}</option>}
+            {microphones.map(mic => <option key={mic.deviceId ?? "none"} value={mic.deviceId ?? ""}>{mic.label}</option>)}
           </select>
-        )}
+        </label>
       </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: SPACING_TOKENS.space2 }}>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={recording}
-          onClick={onToggleCapture}
-          disabled={selecting || captureState === "stopping"}
-          style={{
-            backgroundColor: recording ? COLOR_TOKENS.recording : COLOR_TOKENS.primary,
-            color: COLOR_TOKENS.text,
-            border: "none",
-            borderRadius: RADIUS_TOKENS.radiusMd,
-            padding: `${SPACING_TOKENS.space2} ${SPACING_TOKENS.space3}`,
-            cursor: "pointer",
-          }}
-        >
-          {recording ? "Stop" : "Record"}
-        </button>
-
-        {recording && (
-          <span
-            aria-live="polite"
-            style={{ display: "flex", alignItems: "center", gap: "4px", color: COLOR_TOKENS.recording, fontWeight: TYPOGRAPHY_TOKENS.weightSemibold }}
-          >
-            <span aria-hidden="true">●</span>
-            <span>{formatStopwatch(elapsedTimeMs)}</span>
-          </span>
-        )}
-
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          style={{
-            marginLeft: "auto",
-            background: "none",
-            border: `1px solid ${COLOR_TOKENS.textMuted}`,
-            borderRadius: RADIUS_TOKENS.radiusSm,
-            color: COLOR_TOKENS.text,
-            padding: `${SPACING_TOKENS.space1} ${SPACING_TOKENS.space2}`,
-            cursor: "pointer",
-          }}
-        >
-          Settings
-        </button>
-      </div>
-
-      <button
-        type="button"
-        onClick={onCaptureCurrentTab}
-        disabled={!currentTabAvailable || selecting || captureState !== "idle"}
-        style={{ background: "none", border: "none", color: COLOR_TOKENS.textMuted, textDecoration: "underline", alignSelf: "flex-start" }}
-      >
-        Record this tab
-      </button>
-
-      {startError && (
-        <p role="alert" style={{ color: COLOR_TOKENS.error, fontSize: TYPOGRAPHY_TOKENS.textSm, margin: 0 }}>
-          {startError}
-        </p>
-      )}
+      <p className="panel-small">{copy.microphoneHelp}</p>
+      {microphoneError && <p role="alert">{microphoneError}</p>}
     </section>
-  );
+    <div className="panel-stack panel-start">
+      <button className="panel-primary panel-record-button" disabled={selecting} onClick={onToggleCapture}><span aria-hidden="true">●</span> {copy.record}</button>
+      <p className="panel-small panel-center">{copy.pickerHelp}</p>
+      <button disabled={!currentTabAvailable || selecting} onClick={onCaptureCurrentTab}>{copy.recordTab}</button>
+    </div>
+    {startError && <p role="alert">{startError}</p>}
+  </section>;
 }

@@ -91,3 +91,9 @@ export type CaptureSource = "picker" | "current-tab";
 export type CaptureStartResult =
   | { ok: true; sessionId: string }
   | { ok: false; reason: "cancelled" | "no-tab-audio" | "unsupported-surface" | "busy" | "current-tab-unavailable" | "microphone-permission" | "failed" };
+
+export interface RecordingSettings {
+  countdownSeconds: 0 | 3 | 5 | 10;
+  showControlBar: boolean;
+  skipMicWarning: boolean;
+}

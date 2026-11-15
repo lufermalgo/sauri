@@ -3,15 +3,15 @@
 // Requirements: 12.1, 12.2, 12.4
 
 export const COLOR_TOKENS = {
-  background: "#0f1115",
-  surface: "#181b21",
-  surfaceAlt: "#20242c",
-  primary: "#5b8cff",
-  text: "#f2f4f8",
-  textMuted: "#9aa3b2",
-  error: "#ff6b6b",
-  recording: "#ff5c5c",
-  focus: "#ffd166",
+  background: "#faf6f0",
+  surface: "#ffffff",
+  surfaceAlt: "#f0e8db",
+  primary: "#4a7c59",
+  text: "#2e3230",
+  textMuted: "#4a4e4a",
+  error: "#b83230",
+  recording: "#b83230",
+  focus: "#3b6a49",
 } as const;
 
 /** Individually exported aliases for contrast tests (Req. 12.4) */
@@ -20,7 +20,7 @@ export const SURFACE_COLOR = COLOR_TOKENS.surface;
 
 export const TYPOGRAPHY_TOKENS = {
   baseFont:
-    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    '"Nunito Sans", system-ui, sans-serif',
   textSm: "12px",
   textBase: "14px",
   textLg: "16px",

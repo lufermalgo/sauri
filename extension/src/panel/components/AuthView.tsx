@@ -1,8 +1,8 @@
-// Auth_View — Req. 13.2, 13.3, 13.4, 13.6, 13.7
 import React, { useState } from "react";
 import { isLocked } from "../../core/authLock";
 import type { AuthAttempt } from "../../core/types";
-import { COLOR_TOKENS, SPACING_TOKENS, RADIUS_TOKENS } from "../../core/design/tokens";
+import { PanelHeader } from "./PanelHeader";
+import { panelCopy as copy } from "../copy";
 
 export interface AuthViewProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -14,70 +14,32 @@ export function AuthView({ onLogin, unavailable, sessionExpired }: AuthViewProps
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [attempts, setAttempts] = useState<AuthAttempt[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
+  const [error, setError] = useState(false);
+  const [pending, setPending] = useState(false);
   const locked = isLocked(attempts, Date.now());
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (locked) return;
-    setError(null);
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (locked || pending || unavailable) return;
+    setPending(true);
+    setError(false);
     try {
       await onLogin(email, password);
-      setAttempts((prev) => [...prev, { success: true, atMs: Date.now() }]);
-    } catch (err) {
-      setAttempts((prev) => [...prev, { success: false, atMs: Date.now() }]);
-      setError(err instanceof Error ? err.message : "Could not sign in");
-    }
+      setAttempts(previous => [...previous, { success: true, atMs: Date.now() }]);
+    } catch {
+      setAttempts(previous => [...previous, { success: false, atMs: Date.now() }]);
+      setError(true);
+    } finally { setPending(false); }
   };
-
-  return (
-    <div style={{ padding: SPACING_TOKENS.space4, display: "flex", flexDirection: "column", gap: SPACING_TOKENS.space2 }}>
-      <h2>Sign in</h2>
-
-      {sessionExpired && <p style={{ color: COLOR_TOKENS.error }}>Your session expired. Please sign in again.</p>}
-      {unavailable && <p style={{ color: COLOR_TOKENS.error }}>Service unavailable at this time.</p>}
-      {locked && (
-        <p role="alert" style={{ color: COLOR_TOKENS.error }}>
-          Access temporarily locked after too many failed attempts. Try again in a few seconds.
-        </p>
-      )}
-      {error && !locked && <p role="alert" style={{ color: COLOR_TOKENS.error }}>{error}</p>}
-
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: SPACING_TOKENS.space2 }}>
-        <label htmlFor="auth-email">Email</label>
-        <input
-          id="auth-email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: SPACING_TOKENS.space2, borderRadius: RADIUS_TOKENS.radiusSm }}
-        />
-
-        <label htmlFor="auth-password">Password</label>
-        <input
-          id="auth-password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: SPACING_TOKENS.space2, borderRadius: RADIUS_TOKENS.radiusSm }}
-        />
-
-        <button
-          type="submit"
-          disabled={locked || unavailable}
-          style={{
-            padding: SPACING_TOKENS.space2,
-            borderRadius: RADIUS_TOKENS.radiusMd,
-            border: "none",
-            backgroundColor: COLOR_TOKENS.primary,
-            color: COLOR_TOKENS.text,
-            cursor: locked || unavailable ? "not-allowed" : "pointer",
-          }}
-        >
-          Sign in
-        </button>
-      </form>
-    </div>
-  );
+  return <div className="panel-app"><PanelHeader /><main className="panel-stack panel-auth">
+    <h1>{copy.loginHeading}</h1>
+    {sessionExpired && <><p>{copy.sessionExpired}</p><p className="panel-warning" role="alert">{copy.sessionAlert}</p></>}
+    {unavailable && <p role="alert">{copy.unavailable}</p>}
+    {locked && <p role="alert">{copy.locked}</p>}
+    {error && !locked && <p role="alert">{copy.loginError}</p>}
+    <form className="panel-stack" onSubmit={handleSubmit}>
+      <label className="panel-stack">{copy.email}<input type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required /></label>
+      <label className="panel-stack">{copy.password}<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></label>
+      <button className="panel-primary" type="submit" disabled={locked || unavailable || pending}>{copy.login}</button>
+    </form>
+  </main></div>;
 }

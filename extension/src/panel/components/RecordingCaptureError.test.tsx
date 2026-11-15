@@ -1,3 +1,4 @@
+import { panelCopy as copy } from "../copy";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
@@ -18,8 +19,8 @@ describe("durable capture error feedback", () => {
     await record("capture-b");
     await expect(getCapturingCompletion(41)).rejects.toThrow("Ambiguous");
     const panel = render(<RecordingCompletionStatus sessionId="capture-a" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Recording could not be finalized");
-    expect(screen.getByRole("alert")).toHaveTextContent("Saving has not been confirmed");
+    expect(await screen.findByRole("alert")).toHaveTextContent(copy.captureError);
+    expect(screen.getByRole("alert")).toHaveTextContent(copy.captureErrorHelp);
     expect(screen.getByRole("alert")).toHaveTextContent("capture-a");
     panel.unmount();
     render(<RecordingCompletionStatus sessionId="capture-a" />);
@@ -49,7 +50,7 @@ describe("durable capture error feedback", () => {
   it("reports unavailable persistence rather than a successful save", async () => {
     vi.stubGlobal("indexedDB", { open: () => { throw new Error("unavailable"); } });
     render(<RecordingCompletionStatus sessionId="unavailable" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Recording status unavailable");
-    expect(screen.getByRole("alert")).toHaveTextContent("Saving has not been confirmed");
+    expect(await screen.findByRole("alert")).toHaveTextContent(copy.statusUnavailable);
+    expect(screen.getByRole("alert")).toHaveTextContent(copy.persistenceError);
   });
 });

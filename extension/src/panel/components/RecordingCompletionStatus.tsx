@@ -1,21 +1,23 @@
 import React, { useEffect, useState } from "react";
-import { COMPLETION_STORE, getCompletion, openDB, type RecordingCompletion } from "../../recording-db";
+import { COMPLETION_STORE, getCompletion, getChunksBySession, openDB, type RecordingCompletion } from "../../recording-db";
+
+import { panelCopy as copy } from "../copy";
 
 const outcomes: Record<RecordingCompletion["status"], string> = {
-  capturing: "Recording in progress",
-  finalizing: "Finalizing recording",
-  upload_pending: "Upload pending",
-  uploading: "Upload in progress",
-  upload_succeeded: "Upload succeeded",
-  upload_failed: "Upload failed",
-  upload_outcome_unavailable: "Upload outcome unavailable",
-  processing: "Processing in progress",
-  processing_assets_unavailable: "Processing assets unavailable",
-  processing_status_unavailable: "Processing status unavailable",
-  processing_failed: "Processing failed",
-  processing_succeeded: "Review ready",
-  review_launch_pending: "Review opening pending",
-  review_opened: "Review opened",
+  capturing: copy.recording,
+  finalizing: copy.saving,
+  upload_pending: copy.saving,
+  uploading: copy.saving,
+  upload_succeeded: copy.saved,
+  upload_failed: copy.uploadFailed,
+  upload_outcome_unavailable: copy.uploadUnknown,
+  processing: copy.saved,
+  processing_assets_unavailable: copy.processingUnavailable,
+  processing_status_unavailable: copy.processingUnavailable,
+  processing_failed: copy.processingFailed,
+  processing_succeeded: copy.reviewReady,
+  review_launch_pending: copy.reviewPending,
+  review_opened: copy.reviewOpened,
 };
 
 /** A lost worker projection may recover the latest durable recording, never an
@@ -45,7 +47,10 @@ interface Feedback {
 /** Display only persisted outcomes; never derive upload success from idle/Stop.
  * IndexedDB emits no cross-context storage event, so re-read while open and on
  * reopen. No worker RPC, auth token or raw server error is needed for this UI. */
-export function RecordingCompletionStatus({ sessionId }: { sessionId?: string }) {
+export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sessionId?: string; onVisibleChange?: (visible: boolean) => void }) {
+  const [dismissedSession, setDismissedSession] = useState<string | undefined>();
+  const [actionPending, setActionPending] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -68,22 +73,67 @@ export function RecordingCompletionStatus({ sessionId }: { sessionId?: string })
     return () => { cancelled = true; clearInterval(timer); };
   }, [sessionId]);
 
-  // The effect runs after rendering: guard the render too, so switching sessions
-  // never briefly paints the previous recording's success.
-  if (!feedback || feedback.selection !== sessionId) return null;
-  const { record, unavailable } = feedback;
-  if (!record && !unavailable) return null;
+  const record = feedback && feedback.selection === sessionId ? feedback.record : undefined;
+  const unavailable = feedback && feedback.selection === sessionId && feedback.unavailable;
+  const visible = Boolean(unavailable || (record && (record.status !== "capturing" || record.captureError))) && (!record || dismissedSession !== record.sessionId);
+  useEffect(() => { onVisibleChange?.(visible); }, [visible, onVisibleChange]);
+  useEffect(() => { setActionError(null); }, [sessionId]);
+
+  const retry = async () => {
+    if (!record || actionPending) return;
+    setActionPending(true);
+    setActionError(null);
+    try {
+      // The upload owner handles retries; the panel must not mutate queue state.
+      const result = await chrome.runtime.sendMessage({ type: "retry-upload", sessionId: record.sessionId });
+      if (!result?.ok) throw new Error("Retry rejected");
+    } catch { setActionError(copy.retryError); }
+    finally { setActionPending(false); }
+  };
+
+  const download = async () => {
+    if (!record || actionPending) return;
+    setActionPending(true);
+    setActionError(null);
+    let url: string | undefined;
+    try {
+      const chunks = await getChunksBySession(record.sessionId);
+      if (!chunks.length) throw new Error("Local recording unavailable");
+      const blob = new Blob(chunks, { type: chunks[0].type || "video/webm" });
+      if (!blob.size) throw new Error("Local recording empty");
+      url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `sauri-${record.sessionId}.webm`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+    } catch { setActionError(copy.downloadError); }
+    finally {
+      if (url) { const blobUrl = url; setTimeout(() => URL.revokeObjectURL(blobUrl), 1000); }
+      setActionPending(false);
+    }
+  };
+
+  // Selection guards prevent an old asynchronous read painting another session.
+  if (!visible) return null;
   const failed = unavailable || record?.captureError ||
     (record && ["upload_failed", "upload_outcome_unavailable", "processing_failed", "processing_assets_unavailable", "processing_status_unavailable"].includes(record.status));
-  const title = unavailable ? "Recording status unavailable"
-    : record!.captureError ? "Recording could not be finalized" : outcomes[record!.status];
-  return (
-    <div role={failed ? "alert" : "status"} style={{ margin: "12px", padding: "12px", border: "1px solid currentColor", borderRadius: "8px", overflowWrap: "anywhere" }}>
-      <strong>{title}</strong>
-      {unavailable && <p>The saved recording status could not be read. Saving has not been confirmed.</p>}
-      {record?.captureError && <p>The recording has a capture error. Saving has not been confirmed; no successful upload is implied.</p>}
-      {(record?.sessionId ?? sessionId) && <p>Recording session: {record?.sessionId ?? sessionId}</p>}
-      {record && <p>Meeting: {record.meetingId}</p>}
+  const uploading = record && ["finalizing", "upload_pending", "uploading"].includes(record.status) && !record.captureError;
+  const uploadFailed = record && record.status === "upload_failed" && !record.captureError;
+  const title = unavailable ? copy.statusUnavailable : record!.captureError ? copy.captureError : outcomes[record!.status];
+  return <section className="panel-completion panel-stack">
+    <div className="panel-stack panel-card" role={failed ? "alert" : "status"}>
+      <h1>{title}</h1>
+      {uploading && <><strong>{copy.uploading}</strong><div className="panel-upload-track" role="progressbar" aria-label={copy.uploading}><span /></div><p>{copy.uploadHelp}</p></>}
+      {uploadFailed && <><p>{copy.uploadFailureHelp}</p><button disabled={actionPending} className="panel-primary" onClick={() => { void retry(); }}>{copy.retry}</button><button disabled={actionPending} onClick={() => { void download(); }}>{copy.download}</button></>}
+      {record && ["upload_succeeded", "processing"].includes(record.status) && !record.captureError && <p>{copy.processing}</p>}
+      {unavailable && <p>{copy.persistenceError}</p>}
+      {record?.captureError && <p>{copy.captureErrorHelp}</p>}
+      {(record?.sessionId ?? sessionId) && <small>{copy.session} {record?.sessionId ?? sessionId}</small>}
+      {record && <small>{copy.meeting} {record.meetingId}</small>}
     </div>
-  );
+    {actionError && <p role="alert">{actionError}</p>}
+    {record && !uploading && <button onClick={() => setDismissedSession(record.sessionId)}>{copy.back}</button>}
+  </section>;
 }
