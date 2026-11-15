@@ -11,6 +11,9 @@ function item(id: string, title: string, createdAt: string | null): MeetingListI
     failureCause: null,
     createdAt,
     title,
+    durationSeconds: null,
+    speakerCount: null,
+    summaryTopic: null,
   };
 }
 

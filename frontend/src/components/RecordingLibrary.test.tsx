@@ -31,6 +31,9 @@ function meeting(overrides: Partial<MeetingListItem> = {}): MeetingListItem {
     failureCause: null,
     createdAt: "2026-10-28T17:45:00Z",
     title: "Synthetic meeting",
+    durationSeconds: null,
+    speakerCount: null,
+    summaryTopic: null,
     ...overrides,
   };
 }

@@ -49,6 +49,9 @@ export interface MeetingListApiResponse {
   failure_cause: FailureCause | null;
   created_at: string | null;
   title: string;
+  duration_seconds?: number | null;
+  speaker_count?: number | null;
+  summary_topic?: string | null;
 }
 
 /** Meeting-list record normalized for frontend presentation and selection. */
@@ -60,6 +63,9 @@ export interface MeetingListItem {
   failureCause: FailureCause | null;
   createdAt: string | null;
   title: string;
+  durationSeconds: number | null;
+  speakerCount: number | null;
+  summaryTopic: string | null;
 }
 
 /** Record of a Google Meet meeting in sauri. */
