@@ -284,6 +284,8 @@ describe("meeting summary tab integration", () => {
     latest = { ...pending, status: "running", generation: 2 };
     const summaryFetch = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/meetings/meeting-1")) return response({ meeting_id: "meeting-1", process_state: "completed" });
+      if (url.endsWith("/meetings")) return response([{ meeting_id: "meeting-1", title: "Synthetic meeting", created_at: "2026-11-14T12:00:00Z" }]);
       if (url.endsWith("/transcript")) return response({
         transcript_id: "transcript-1", meeting_id: "meeting-1", language: "es", provider: "local",
         supports_turns: true, created_at: "2026-11-14T12:00:00Z",
@@ -299,19 +301,19 @@ describe("meeting summary tab integration", () => {
       return summaryFetch(url, init);
     });
     const view = render(<TranscriptView meetingId="meeting-1" onBack={vi.fn()} />);
-    const tab = await screen.findByRole("tab", { name: text.tab });
+    const tab = await screen.findByRole("tab", { name: copy.meeting.summaryTab });
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
     Object.defineProperty(audio, "duration", { configurable: true, value: 180 });
     fireEvent.loadedMetadata(audio);
-    expect(callsEndingWith("/summary")).toHaveLength(0);
-    const transcriptTab = screen.getByRole("tab", { name: text.transcriptTab });
-    transcriptTab.focus();
-    fireEvent.keyDown(transcriptTab, { key: "ArrowRight" });
+    expect(callsEndingWith("/summary")).toHaveLength(1);
+    const chatTab = screen.getByRole("tab", { name: copy.meeting.chatTab });
+    chatTab.focus();
+    fireEvent.keyDown(chatTab, { key: "ArrowLeft" });
     expect(tab).toHaveFocus();
     expect(tab).toHaveAttribute("aria-selected", "true");
     await screen.findByText(text.running);
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("tab", { name: text.transcriptTab }));
+    fireEvent.click(screen.getByRole("tab", { name: copy.meeting.chatTab }));
     const count = callsEndingWith("/summary-requests/latest").length;
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(callsEndingWith("/summary-requests/latest")).toHaveLength(count);

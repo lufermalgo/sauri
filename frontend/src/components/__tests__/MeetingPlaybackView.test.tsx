@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { meeting as text } from "../../copy/meeting";
 import type { PlaybackManifest, TimedPassage } from "../../api";
 import { MeetingPlaybackView } from "../MeetingPlaybackView";
 
@@ -89,23 +90,23 @@ describe("MeetingPlaybackView", () => {
     Object.defineProperty(audio, "duration", { configurable: true, value: 30 });
     fireEvent.loadedMetadata(audio);
 
-    const seek = screen.getByRole("slider", { name: /seek/i });
+    const seek = screen.getByRole("slider", { name: text.seek });
     fireEvent.change(seek, { target: { value: "12000" } });
     expect(audio.currentTime).toBe(12);
 
-    fireEvent.click(screen.getByRole("button", { name: /pause/i }));
+    fireEvent.click(screen.getByRole("button", { name: text.pause }));
     expect(pause).toHaveBeenCalledWith();
-    fireEvent.click(screen.getByRole("button", { name: /^play or resume playback$/i }));
+    fireEvent.click(screen.getByRole("button", { name: text.resume }));
     await waitFor(() => expect(play).toHaveBeenCalled());
 
-    fireEvent.change(screen.getByRole("combobox", { name: /playback speed/i }), { target: { value: "1.5" } });
+    fireEvent.change(screen.getByRole("combobox", { name: text.speed }), { target: { value: "1.5" } });
     expect(audio.playbackRate).toBe(1.5);
-    fireEvent.change(screen.getByRole("slider", { name: /volume/i }), { target: { value: "0.4" } });
+    fireEvent.change(screen.getByRole("slider", { name: text.volume }), { target: { value: "0.4" } });
     expect(audio.volume).toBe(0.4);
-    fireEvent.click(screen.getByRole("button", { name: /mute/i }));
+    fireEvent.click(screen.getByRole("button", { name: text.mute }));
     expect(audio.muted).toBe(true);
 
-    fireEvent.click(screen.getByRole("button", { name: /play.*synthetic middle passage/i }));
+    fireEvent.click(screen.getByRole("button", { name: text.playText("Synthetic middle passage") }));
     await waitFor(() => expect(play).toHaveBeenCalled());
     expect(audio.currentTime).toBe(5);
   });
@@ -135,12 +136,12 @@ describe("MeetingPlaybackView", () => {
     expect(screen.getByText("Synthetic grouped turn A1")).toBeVisible();
     expect(screen.getByText("Synthetic grouped turn B")).toBeVisible();
     expect(screen.getByText("Synthetic grouped turn A2")).toBeVisible();
-    const disclosure = screen.getByText("Playback passages (320)").closest("details");
+    const disclosure = screen.getByText(text.passages(320)).closest("details");
     expect(disclosure).not.toHaveAttribute("open");
 
-    fireEvent.click(screen.getByText("Playback passages (320)"));
+    fireEvent.click(screen.getByText(text.passages(320)));
     expect(disclosure).toHaveAttribute("open");
-    const passageList = screen.getByRole("list", { name: "Transcript passages" });
+    const passageList = screen.getByRole("list", { name: text.transcriptPassages });
     expect(passageList.querySelectorAll("[data-passage-id]")).toHaveLength(320);
     expect(screen.getByText("Synthetic grouped turn A1")).toBeVisible();
   });
@@ -161,9 +162,9 @@ describe("MeetingPlaybackView", () => {
     const audio = mediaElement();
     Object.defineProperty(audio, "duration", { configurable: true, value: 320 });
     fireEvent.loadedMetadata(audio);
-    const summary = screen.getByText("Playback passages (320)");
+    const summary = screen.getByText(text.passages(320));
     fireEvent.click(summary);
-    fireEvent.click(screen.getByRole("button", { name: "Play Synthetic passage 18" }));
+    fireEvent.click(screen.getByRole("button", { name: text.playText("Synthetic passage 18") }));
     await waitFor(() => expect(play).toHaveBeenCalled());
     setMediaTime(audio, 17.5);
     fireEvent.click(summary);
@@ -173,7 +174,7 @@ describe("MeetingPlaybackView", () => {
     expect(activePassage).not.toBeNull();
     expect(activePassage).toBeVisible();
     expect(activePassage).toHaveTextContent("Speaker B · 0:17 · Synthetic passage 18");
-    expect(activePassage).toHaveStyle({ backgroundColor: "#fef3c7" });
+    expect(activePassage).toHaveClass("meeting-turn--active");
 
     setMediaTime(audio, 18.5);
     expect(activePassage).toHaveTextContent("Speaker A · 0:18 · Synthetic passage 19");
@@ -188,7 +189,7 @@ describe("MeetingPlaybackView", () => {
       })),
     });
 
-    const rows = screen.getByRole("list", { name: "Transcript passages" }).querySelectorAll("li");
+    const rows = screen.getByRole("list", { name: text.transcriptPassages }).querySelectorAll("li");
     expect(rows).toHaveLength(3);
     rows.forEach((row, index) => {
       const label = row.querySelector('[data-testid="transcript-speaker-label"]');
@@ -209,9 +210,8 @@ describe("MeetingPlaybackView", () => {
     const activePassage = screen.getByText("Synthetic middle passage").closest("[data-passage-id]");
     const inactivePassage = screen.getByText("Synthetic opening passage").closest("[data-passage-id]");
     expect(activePassage).toHaveAttribute("data-active", "true");
-    expect(
-      window.getComputedStyle(activePassage!).backgroundColor,
-    ).not.toBe(window.getComputedStyle(inactivePassage!).backgroundColor);
+    expect(activePassage).toHaveClass("meeting-turn--active");
+    expect(inactivePassage).not.toHaveClass("meeting-turn--active");
     expect(scrollIntoView).toHaveBeenCalled();
   });
 
@@ -229,7 +229,7 @@ describe("MeetingPlaybackView", () => {
     expect(video.src).toBe(MUXED_URL);
     expect(screen.queryByTestId("playback-audio")).toBeNull();
     expect(screen.queryByTestId("playback-video")).toBeNull();
-    expect(screen.queryByRole("combobox", { name: /quality|resolution/i })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: text.quality })).toBeNull();
   });
 
   it("keeps absent and every unknown legacy manifest audio-only, independent of MIME or video rows", () => {
@@ -242,7 +242,7 @@ describe("MeetingPlaybackView", () => {
       expect(mediaElement("audio").src).toBe(legacy.audio_source.url);
       expect(screen.queryByTestId("playback-media")).toBeNull();
       expect(screen.queryByTestId("playback-video")).toBeNull();
-      expect(screen.queryByRole("combobox", { name: /quality|resolution/i })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: text.quality })).toBeNull();
       unmount();
     }
   });
@@ -295,7 +295,7 @@ describe("MeetingPlaybackView", () => {
     const audio = mediaElement("audio");
     Object.defineProperty(audio, "currentTime", { configurable: true, writable: true, value: 7.25 });
     fireEvent.loadedMetadata(audio);
-    const quality = screen.getByRole("combobox", { name: /quality|resolution/i });
+    const quality = screen.getByRole("combobox", { name: text.quality });
     fireEvent.change(quality, { target: { value: "high" } });
     expect(mediaElement("video").src).toBe(VIDEO_HIGH_URL);
     expect(audio.src).toBe(AUDIO_URL);
@@ -304,7 +304,7 @@ describe("MeetingPlaybackView", () => {
 
     for (const video_sources of [[], [source("single", VIDEO_LOW_URL, 0)], [source("unknown-offset", VIDEO_LOW_URL, null)]]) {
       const view = renderView({ manifest: manifest({ video_presence: "separate", video_sources }) });
-      expect(screen.queryByRole("combobox", { name: /quality|resolution/i })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: text.quality })).toBeNull();
       view.unmount();
     }
   });
@@ -349,7 +349,7 @@ describe("MeetingPlaybackView", () => {
     Object.defineProperty(audio, "duration", { configurable: true, value: 30 });
     fireEvent.loadedMetadata(audio);
 
-    fireEvent.click(screen.getByRole("button", { name: /^play or resume playback$/i }));
+    fireEvent.click(screen.getByRole("button", { name: text.resume }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
     expect(play).toHaveBeenCalledTimes(2);
     expect(pause).toHaveBeenCalledTimes(2);
@@ -361,7 +361,7 @@ describe("MeetingPlaybackView", () => {
     const { rerender } = renderView({ manifest: null as unknown as PlaybackManifest, passages: [] });
     expect(screen.getByRole("status")).toBeVisible();
     rerender(<MeetingPlaybackView manifest={manifest()} passages={[]} loading={false} error={null} />);
-    expect(screen.getByText(/no transcript|empty transcript/i)).toBeVisible();
+    expect(screen.getByText(text.emptyPlaybackTranscript)).toBeVisible();
     rerender(<MeetingPlaybackView manifest={manifest()} passages={passages} loading={false} error="synthetic load failure" />);
     expect(screen.getByRole("alert")).toBeVisible();
 
@@ -370,4 +370,23 @@ describe("MeetingPlaybackView", () => {
       expect(screen.queryByRole("link", { name: excluded })).toBeNull();
     }
   });
+});
+
+
+it("shows a localized load failure even when no manifest is available", () => {
+  render(<MeetingPlaybackView manifest={null} passages={[]} loading={false} error="Synthetic network failure" />);
+  expect(screen.getByRole("alert")).toHaveTextContent(text.playbackLoadFailed);
+});
+
+
+it("keeps exactly the existing controls together in one compact toolbar", () => {
+  renderView({ manifest: manifest({ video_presence: "separate", video_sources: [source("low", VIDEO_LOW_URL), source("high", VIDEO_HIGH_URL)] }) });
+  const toolbar = document.querySelector(".meeting-player-controls") as HTMLElement;
+  expect(within(toolbar).getAllByRole("button").map(button => button.getAttribute("aria-label")))
+    .toEqual([text.pause, text.resume, text.mute]);
+  expect(within(toolbar).getAllByRole("slider").map(slider => slider.getAttribute("aria-label")))
+    .toEqual([text.seek, text.volume]);
+  expect(within(toolbar).getAllByRole("combobox").map(select => select.getAttribute("aria-label")))
+    .toEqual([text.speed, text.quality]);
+  expect(toolbar.querySelector(".meeting-control-time")).toHaveTextContent("0:00 / --:--");
 });

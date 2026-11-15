@@ -1,4 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "./ui";
+import { meeting as text } from "../copy/meeting";
+import "../styles/meeting.css";
 import type { PlaybackManifest, TimedPassage } from "../api";
 import {
   PlaybackController,
@@ -17,7 +20,7 @@ interface MeetingPlaybackViewProps {
   loading: boolean;
   error: string | null;
   onRefreshManifest?: (currentTimeMs: number) => Promise<PlaybackManifest>;
-  onSeekToReady?: (seekTo: ((timeMs: number) => void) | undefined) => void;
+  onSeekToReady?: (seekTo: ((timeMs: number, play?: boolean) => void) | undefined) => void;
   onPlayIntervalReady?: (playInterval: ((startMs: number, endMs: number) => Promise<void>) | undefined) => void;
 }
 
@@ -30,11 +33,6 @@ const INITIAL_STATE: PlaybackState = {
   muted: false,
   activePassageId: null,
   selectedSourceId: null,
-};
-
-const ACTIVE_PASSAGE_STYLE: React.CSSProperties = {
-  backgroundColor: "#fef3c7",
-  fontWeight: 600,
 };
 
 function isPlayablePassage(passage: TimedPassage): passage is TimedPassage & { startMs: number; endMs: number } {
@@ -126,12 +124,15 @@ export function MeetingPlaybackView({
       ...(video ? { videoElement: video } : {}),
       passages: passages.filter(isPlayablePassage),
       mediaSources: playableVideoSources,
-      onError: (cause) => {
-        setPlaybackError(cause instanceof Error ? cause.message : "Playback failed");
+      onError: () => {
+        setPlaybackError(text.playbackFailed);
       },
     });
     controllerRef.current = controller;
-    onSeekToReady?.((timeMs) => controller.seekTo(timeMs));
+    onSeekToReady?.((timeMs, play = false) => {
+      controller.seekTo(timeMs);
+      if (play) void controller.resume();
+    });
     onPlayIntervalReady?.((startMs, endMs) => controller.playInterval(startMs, endMs));
     if (savedTimeMs.current > 0) controller.seekTo(savedTimeMs.current);
     setState(controller.getState());
@@ -174,13 +175,13 @@ export function MeetingPlaybackView({
   async function refreshSource() {
     if (refreshAttempted.current) {
       controllerRef.current?.pause();
-      setPlaybackError("Unable to reload meeting media. Playback has stopped.");
+      setPlaybackError(text.playbackReloadFailed);
       return;
     }
     refreshAttempted.current = true;
     if (!onRefreshManifest) {
       controllerRef.current?.pause();
-      setPlaybackError("Unable to load meeting media.");
+      setPlaybackError(text.playbackLoadFailed);
       return;
     }
     const currentTimeMs = controllerRef.current?.getState().currentTimeMs ?? savedTimeMs.current;
@@ -190,7 +191,7 @@ export function MeetingPlaybackView({
       setCurrentManifest(refreshedManifest);
     } catch {
       controllerRef.current?.pause();
-      setPlaybackError("Unable to reload meeting media. Playback has stopped.");
+      setPlaybackError(text.playbackReloadFailed);
     }
   }
 
@@ -199,31 +200,31 @@ export function MeetingPlaybackView({
   }
 
   const controlsDisabled = loading || !mediaReady || !currentManifest || Boolean(error);
-  if (loading && !currentManifest) return <p role="status">Loading meeting playback…</p>;
+  if (loading && !currentManifest) return <p role="status">{text.playbackLoading}</p>;
   if (!currentManifest) {
-    return <p role="status">Meeting media is unavailable.</p>;
+    return <p role={error ? "alert" : "status"}>{error ? text.playbackLoadFailed : text.playbackUnavailable}</p>;
   }
 
-  const activeError = error ?? playbackError;
+  const activeError = error ? text.playbackLoadFailed : playbackError;
   const hasPlayableMedia = isMuxed || needsAudio;
   const durationMs = state.durationMs;
   const activePassage = passages.find((passage) => passage.id === state.activePassageId);
   const activePassagePreview = activePassage
-    ? `${activePassage.speakerLabel ?? "Speaker N"} · ${formatTime(isPlayablePassage(activePassage) ? activePassage.startMs : state.currentTimeMs)} · ${activePassage.text}`
+    ? `${activePassage.speakerLabel ?? text.unknownSpeaker} · ${formatTime(isPlayablePassage(activePassage) ? activePassage.startMs : state.currentTimeMs)} · ${activePassage.text}`
     : null;
 
   return (
-    <section aria-label="Meeting playback">
-      <h2>Meeting playback</h2>
-      {loading && <p role="status">Loading playback metadata…</p>}
+    <section className="meeting-player" aria-label={text.playback}>
+      <h2>{text.playback}</h2>
+      {loading && <p role="status">{text.playbackMetadataLoading}</p>}
       {activeError && <p role="alert">{activeError}</p>}
-      {!hasPlayableMedia && <p role="status">Meeting media is unavailable.</p>}
+      {!hasPlayableMedia && <p role="status">{text.playbackUnavailable}</p>}
       {isMuxed ? (
         <video
           ref={videoRef}
           data-testid="playback-media"
-          aria-label="Meeting recording"
-          controls
+          aria-label={text.recording}
+          playsInline
           onError={handleMediaError}
         />
       ) : (
@@ -231,14 +232,14 @@ export function MeetingPlaybackView({
           <audio
             ref={audioRef}
             data-testid="playback-audio"
-            aria-label="Meeting audio"
+            aria-label={text.audio}
             onError={handleMediaError}
           />
           {isSeparateWithVideo && (
             <video
               ref={videoRef}
               data-testid="playback-video"
-              aria-label="Meeting video"
+              aria-label={text.video}
               muted
               playsInline
               onError={handleMediaError}
@@ -246,43 +247,34 @@ export function MeetingPlaybackView({
           )}
         </>
       )}
-      {!isMuxed && isSeparateWithVideo && playableVideoSources.length > 1 && (
-        <label>
-          Video quality
-          <select
-            aria-label="Video quality"
-            value={state.selectedSourceId ?? playableVideoSources[0]?.id ?? ""}
-            disabled={controlsDisabled}
-            onChange={(event) => controllerRef.current?.selectSource(event.currentTarget.value)}
-          >
-            {playableVideoSources.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}
-          </select>
-        </label>
-      )}
-      <div aria-label="Playback controls">
-        <button
+      <div className="meeting-player-controls" aria-label={text.controls}>
+        <Button variant="ghost" className="meeting-control-button"
           type="button"
-          aria-label="Pause"
+          aria-label={text.pause}
           disabled={controlsDisabled}
           onClick={() => {
             controllerRef.current?.pause();
             setState(controllerRef.current?.getState() ?? INITIAL_STATE);
           }}
-        >Pause</button>
-        <button
+        ><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
+          <path d="M4 3h3v10H4zM9 3h3v10H9z" fill="currentColor" />
+        </svg></Button>
+        <Button variant="ghost" className="meeting-control-button"
           type="button"
-          aria-label="Play or resume playback"
+          aria-label={text.resume}
           disabled={controlsDisabled}
           onClick={() => {
             void controllerRef.current?.resume();
             setState(controllerRef.current?.getState() ?? INITIAL_STATE);
           }}
-        >Play</button>
-        <label>
-          Seek
+        ><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
+          <path d="M5 3 13 8 5 13Z" fill="currentColor" />
+        </svg></Button>
+        <label className="meeting-control-seek">
+          <span className="meeting-sr-only">{text.seek}</span>
           <input
             type="range"
-            aria-label="Seek"
+            aria-label={text.seek}
             min="0"
             max={durationMs ?? 0}
             step="100"
@@ -291,11 +283,11 @@ export function MeetingPlaybackView({
             onChange={(event) => controllerRef.current?.seekTo(Number(event.currentTarget.value))}
           />
         </label>
-        <span aria-live="off">{formatTime(state.currentTimeMs)} / {durationMs === null ? "--:--" : formatTime(durationMs)}</span>
-        <label>
-          Playback speed
+        <span className="meeting-control-time" aria-live="off">{formatTime(state.currentTimeMs)} / {durationMs === null ? "--:--" : formatTime(durationMs)}</span>
+        <label className="meeting-control-speed">
+          <span className="meeting-sr-only">{text.speed}</span>
           <select
-            aria-label="Playback speed"
+            aria-label={text.speed}
             value={state.playbackRate}
             disabled={controlsDisabled}
             onChange={(event) => controllerRef.current?.setPlaybackRate(Number(event.currentTarget.value))}
@@ -303,11 +295,11 @@ export function MeetingPlaybackView({
             {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
           </select>
         </label>
-        <label>
-          Volume
+        <label className="meeting-control-volume">
+          <span className="meeting-sr-only">{text.volume}</span>
           <input
             type="range"
-            aria-label="Volume"
+            aria-label={text.volume}
             min="0"
             max="1"
             step="0.05"
@@ -316,47 +308,55 @@ export function MeetingPlaybackView({
             onChange={(event) => controllerRef.current?.setVolume(Number(event.currentTarget.value))}
           />
         </label>
-        <button
+        <Button variant="ghost" className="meeting-control-button"
           type="button"
-          aria-label={state.muted ? "Unmute" : "Mute"}
+          aria-label={state.muted ? text.unmute : text.mute}
           disabled={controlsDisabled}
           onClick={() => controllerRef.current?.setMuted(!state.muted)}
-        >{state.muted ? "Unmute" : "Mute"}</button>
+        ><svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16">
+          <path d="M2 6h3l4-3v10l-4-3H2Z" fill="currentColor" />
+          <path d={state.muted ? "m11 6 4 4m0-4-4 4" : "M11 5q5 3 0 6"}
+            fill="none" stroke="currentColor" strokeWidth="1.5" />
+        </svg></Button>
+        {!isMuxed && isSeparateWithVideo && playableVideoSources.length > 1 && (
+          <label className="meeting-control-quality">
+            <span className="meeting-sr-only">{text.quality}</span>
+            <select
+              aria-label={text.quality}
+              value={state.selectedSourceId ?? playableVideoSources[0]?.id ?? ""}
+              disabled={controlsDisabled}
+              onChange={(event) => controllerRef.current?.selectSource(event.currentTarget.value)}
+            >
+              {playableVideoSources.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}
+            </select>
+          </label>
+        )}
       </div>
       {passages.length === 0 ? (
-        <p>No transcript or empty transcript.</p>
+        <p>{text.emptyPlaybackTranscript}</p>
       ) : (
         <details>
           <summary>
-            Playback passages ({passages.length})
+            {text.passages(passages.length)}
             {activePassage && activePassagePreview && (
               <span
                 aria-current="true"
                 data-testid="active-playback-passage"
-                title={`Current passage: ${activePassagePreview}`}
-                style={{
-                  ...ACTIVE_PASSAGE_STYLE,
-                  display: "block",
-                  marginTop: "0.25rem",
-                  maxWidth: "min(100%, 48rem)",
-                  overflow: "hidden",
-                  padding: "0.25rem",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
+                title={text.currentPassage(activePassagePreview)}
+                className="meeting-active-preview meeting-turn--active"
               >
                 {activePassagePreview}
               </span>
             )}
           </summary>
-          <ol aria-label="Transcript passages">
+          <ol aria-label={text.transcriptPassages}>
             {passages.map((passage) => {
               const playable = isPlayablePassage(passage);
               const isActive = state.activePassageId === passage.id;
               return (
                 <li
                   key={passage.id}
-                  style={isActive ? ACTIVE_PASSAGE_STYLE : undefined}
+                  className={isActive ? "meeting-turn--active" : undefined}
                   data-passage-id={passage.id}
                   data-active={isActive ? "true" : "false"}
                   ref={(element) => {
@@ -367,19 +367,19 @@ export function MeetingPlaybackView({
                 >
                   <span
                     data-testid="transcript-speaker-label"
-                    style={{ color: passage.speakerColor ?? "#6b7280", fontWeight: 600, marginRight: "0.5rem" }}
+                    className="meeting-speaker" style={{ color: passage.speakerColor ?? "var(--speaker-unresolved)" }}
                   >
-                    {passage.speakerLabel ?? "Speaker N"}
+                    {passage.speakerLabel ?? text.unknownSpeaker}
                   </span>
                   {playable && <span>{formatTime(passage.startMs)} </span>}
                   <span>{passage.text}</span>
                   {playable && (
-                    <button
+                    <Button variant="secondary"
                       type="button"
-                      aria-label={`Play ${passage.text}`}
+                      aria-label={text.playText(passage.text)}
                       disabled={controlsDisabled}
                       onClick={() => void controllerRef.current?.playPassage(passage)}
-                    >Play passage</button>
+                    >{text.playPassage}</Button>
                   )}
                 </li>
               );
