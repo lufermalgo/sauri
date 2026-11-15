@@ -3,7 +3,7 @@ import { deleteMeeting, renameMeeting } from "../api";
 import { processing } from "../copy/processing";
 import { meeting as text } from "../copy/meeting";
 import { navigate } from "../router";
-import { Button, ConfirmDialog, StatusBadge, TextField } from "./ui";
+import { Button, ConfirmDialog, StatusBadge, TextField, Menu, MenuItem } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
 
@@ -12,9 +12,21 @@ interface MeetingHeaderProps extends MeetingDownloadsProps {
   createdAt: string | null;
   onBack: () => void;
   completed?: boolean;
+  processState?: string;
+  speakerCount?: number;
 }
 
-export function MeetingHeader({ title, createdAt, onBack, completed = false, ...downloads }: MeetingHeaderProps) {
+export function MeetingHeader({ title, createdAt, onBack, completed = false, processState, speakerCount, ...downloads }: MeetingHeaderProps) {
+  const state = completed ? "completed" : processState;
+  const statusLabels: Record<string, string> = {
+    queued: processing.queued, joining: processing.joining, recording: processing.recording,
+    transcribing: processing.transcribing, completed: text.ready, failed: processing.failed,
+  };
+  const duration = downloads.manifest?.duration_seconds;
+  const totalSeconds = duration === undefined ? null : Math.max(0, Math.floor(duration));
+  const durationLabel = totalSeconds === null ? null : totalSeconds >= 3600
+    ? `${Math.floor(totalSeconds / 3600)}:${String(Math.floor(totalSeconds / 60) % 60).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`
+    : `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
   const [renamedTitle, setRenamedTitle] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
@@ -77,19 +89,25 @@ export function MeetingHeader({ title, createdAt, onBack, completed = false, ...
           </div>
         </form> : <h1>{currentTitle}</h1>}
         <div className="meeting-details">
+        {state && <StatusBadge tone={state === "completed" ? "success" : state === "failed" ? "error" : "progress"}>
+          {statusLabels[state] ?? processing.unknown}
+        </StatusBadge>}
         {createdAt && <time className="meeting-date" dateTime={createdAt}>
           {new Date(createdAt).toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" })}
         </time>}
-        {completed && <StatusBadge tone="success" role="status">{processing.completed}</StatusBadge>}
+        {durationLabel !== null && <span className="meeting-duration">{durationLabel}</span>}
+        {speakerCount !== undefined && <span>{text.speakerCount(speakerCount)}</span>}
         </div>
       </div>
       <div className="meeting-actions">
+        <MeetingDownloads {...downloads} />
         {!editing && <Button variant="secondary" disabled={busy} onClick={() => {
           setDraft(renamedTitle ?? title ?? ""); setEditing(true); setError(null);
         }}>{text.rename}</Button>}
-        <MeetingDownloads {...downloads} />
-        <Button variant="ghost" className="meeting-delete" disabled={busy || editing}
-          onClick={() => { setConfirming(true); setError(null); }}>{text.delete}</Button>
+        <Menu label={text.moreActions}>
+          <MenuItem tone="danger" disabled={busy || editing}
+            onSelect={() => { setConfirming(true); setError(null); }}>{text.deleteRecording}</MenuItem>
+        </Menu>
       </div>
     </div>
     {busy && <p role="status">{confirming ? text.deleting : text.saving}</p>}

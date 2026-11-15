@@ -1,5 +1,8 @@
 export const speakerReview = {
-  heading: "Revisión de hablantes",
+  heading: "Hablantes",
+  confirmedState: "Confirmada",
+  pendingState: "Pendiente de nombre",
+  selectSpeaker: (label: string) => `Editar ${label}`,
   pending: "Revisión pendiente: escuchá a cada hablante y confirmá o escribí su nombre.",
   complete: "Revisión completa.",
   dispositionLabel: (disposition: "confirmed" | "named" | "corrected" | null) => {
@@ -17,7 +20,7 @@ export const speakerReview = {
   playbackUnavailable: "La grabación original no está disponible para reproducir.",
   playbackFailed: "No se pudo reproducir la grabación original.",
   nameFor: (label: string) => `Nombre para ${label}`,
-  saveName: "Guardar nombre",
+  saveName: "Guardar",
   saveNameFor: (label: string) => `Guardar nombre de ${label}`,
   confirm: "Confirmar",
   confirmFor: (label: string) => `Confirmar ${label}`,

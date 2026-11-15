@@ -10,6 +10,8 @@ interface SummaryPanelProps {
   onSeek: (startMs: number) => void;
   // False while the transcript is still being produced: summary generation starts on its own then.
   transcriptReady?: boolean;
+  // Lets the meeting view reuse the loaded summary (e.g. key-point markers) without a second request.
+  onSummaryChange?: (summary: MeetingSummary | null) => void;
 }
 
 const SKELETON_POINT_WIDTHS = ["72%", "58%", "66%"];
@@ -63,8 +65,9 @@ export function SummaryPanel(props: SummaryPanelProps) {
   return <MeetingSummaryPanel key={props.meetingId} {...props} />;
 }
 
-function MeetingSummaryPanel({ meetingId, onSeek, transcriptReady = true }: SummaryPanelProps) {
+function MeetingSummaryPanel({ meetingId, onSeek, transcriptReady = true, onSummaryChange }: SummaryPanelProps) {
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
+  useEffect(() => { onSummaryChange?.(summary); }, [summary, onSummaryChange]);
   const [request, setRequest] = useState<SummaryRequestStatus | null>(null);
   const [acceptedRequest, setAcceptedRequest] = useState<SummaryRequestStatus | null>(null);
   const [reload, setReload] = useState(0);
