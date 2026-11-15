@@ -5,7 +5,7 @@
  * Spec: portal-visual-design — PV4.2 (Property 2) and PV9.2.
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor, fireEvent, within } from "@testing-library/react";
 import { ProcessState, MeetingOrigin } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
@@ -43,22 +43,32 @@ function renderLibrary(onSelectMeeting = vi.fn()) {
   return onSelectMeeting;
 }
 
+/** The search card only exists once the list has loaded. */
+async function listLoaded() {
+  await screen.findByRole("search");
+}
+
 function renderedTitles(): string[] {
-  return within(screen.getByRole("list", { name: text.listLabel }))
-    .getAllByRole("button")
-    .map((button) => button.querySelector(".library-item-title")?.textContent ?? "");
+  return screen.getAllByRole("button")
+    .map((button) => button.querySelector(".library-item-title")?.textContent)
+    .filter((title): title is string => typeof title === "string");
+}
+
+/** ISO string of a local date/time, so grouping does not depend on the machine time zone. */
+function localIso(year: number, month: number, day: number, hour = 10, minute = 0): string {
+  return new Date(year, month - 1, day, hour, minute).toISOString();
 }
 
 describe("RecordingLibrary list", () => {
-  it("keeps the order received from the API", async () => {
+  it("keeps the order received from the API within a group", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([
-      meeting({ id: "b", title: "Second by name" }),
+      meeting({ id: "b", title: "Second by name", createdAt: "2026-01-02T10:00:00Z" }),
       meeting({ id: "a", title: "First by name", createdAt: "2026-01-01T10:00:00Z" }),
-      meeting({ id: "c", title: "Third by name", createdAt: "2026-12-01T10:00:00Z" }),
+      meeting({ id: "c", title: "Third by name", createdAt: "2026-01-03T10:00:00Z" }),
     ]);
     renderLibrary();
     await screen.findByRole("heading", { name: text.title });
-    await screen.findByRole("list", { name: text.listLabel });
+    await listLoaded();
 
     expect(renderedTitles()).toEqual(["Second by name", "First by name", "Third by name"]);
   });
@@ -73,7 +83,7 @@ describe("RecordingLibrary list", () => {
       meeting({ id: "6", processState: ProcessState.Failed }),
     ]);
     renderLibrary();
-    await screen.findByRole("list", { name: text.listLabel });
+    await listLoaded();
 
     for (const label of Object.values(text.states)) {
       expect(screen.getByText(label)).toBeDefined();
@@ -87,6 +97,15 @@ describe("RecordingLibrary list", () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([meeting({ title: "" })]);
     renderLibrary();
     expect(await screen.findByText(text.untitled)).toBeDefined();
+  });
+
+  it("the header upload button has a plus icon and is the primary action", async () => {
+    vi.spyOn(api, "listMeetings").mockResolvedValue([meeting()]);
+    renderLibrary();
+    await listLoaded();
+    const button = screen.getByRole("button", { name: text.upload });
+    expect(button.className).toContain("ui-button--primary");
+    expect(button.querySelector("svg")).not.toBeNull();
   });
 
   it("treats a null title from the API as untitled", async () => {
@@ -122,16 +141,31 @@ describe("RecordingLibrary list", () => {
   it("the header upload button navigates to /upload", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([meeting()]);
     renderLibrary();
-    await screen.findByRole("list", { name: text.listLabel });
+    await listLoaded();
 
     fireEvent.click(screen.getByRole("button", { name: text.upload }));
     expect(window.location.pathname).toBe("/upload");
   });
 
-  it("shows a loading status while the list is requested", async () => {
+  it("shows a loading status and an aria-hidden skeleton while the list is requested", async () => {
     vi.spyOn(api, "listMeetings").mockReturnValue(new Promise(() => {}));
-    renderLibrary();
+    const { container } = render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
     expect((await screen.findByRole("status")).textContent).toBe(text.loading);
+
+    const skeleton = container.querySelector(".library-skeleton");
+    expect(skeleton?.getAttribute("aria-hidden")).toBe("true");
+    expect(skeleton?.querySelectorAll("li")).toHaveLength(3);
+    expect(screen.queryByRole("search")).toBeNull();
+  });
+
+  it("removes the skeleton once the list has loaded", async () => {
+    vi.spyOn(api, "listMeetings").mockResolvedValue([meeting()]);
+    const { container } = render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
+    expect(container.querySelector(".library-skeleton")).not.toBeNull();
+
+    await listLoaded();
+    expect(container.querySelector(".library-skeleton")).toBeNull();
+    expect(screen.queryByText(text.loading)).toBeNull();
   });
 
   it("shows an alert with Reintentar and asks for the list again", async () => {
@@ -150,6 +184,161 @@ describe("RecordingLibrary list", () => {
   });
 });
 
+describe("RecordingLibrary date groups", () => {
+  beforeEach(() => {
+    // Only Date is faked so Testing Library timers keep working.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 14, 12, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const dated = [
+    meeting({ id: "old", title: "Old one", createdAt: localIso(2026, 10, 28) }),
+    meeting({ id: "week", title: "Week one", createdAt: localIso(2026, 11, 12) }),
+    meeting({ id: "now", title: "Today one", createdAt: localIso(2026, 11, 14, 9, 0) }),
+    meeting({ id: "edge", title: "Six days ago", createdAt: localIso(2026, 11, 8) }),
+    meeting({ id: "limit", title: "Seven days ago", createdAt: localIso(2026, 11, 7) }),
+  ];
+
+  function groupTitles(heading: string): string[] {
+    const section = screen.getByRole("heading", { name: heading }).closest("section") as HTMLElement;
+    return within(section).getAllByRole("button")
+      .map((button) => button.querySelector(".library-item-title")?.textContent ?? "");
+  }
+
+  it("groups by local date under HOY, ESTA SEMANA and ANTERIORES in that order", async () => {
+    vi.spyOn(api, "listMeetings").mockResolvedValue(dated);
+    renderLibrary();
+    await listLoaded();
+
+    const headings = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+    expect(headings).toEqual([text.groups.today, text.groups.thisWeek, text.groups.earlier]);
+    expect(groupTitles(text.groups.today)).toEqual(["Today one"]);
+    expect(groupTitles(text.groups.thisWeek)).toEqual(["Week one", "Six days ago"]);
+    expect(groupTitles(text.groups.earlier)).toEqual(["Old one", "Seven days ago"]);
+  });
+
+  it("does not show empty groups", async () => {
+    vi.spyOn(api, "listMeetings").mockResolvedValue([dated[2]]);
+    renderLibrary();
+    await listLoaded();
+    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent))
+      .toEqual([text.groups.today]);
+  });
+
+  it("puts recordings without a valid date under ANTERIORES", async () => {
+    vi.spyOn(api, "listMeetings").mockResolvedValue([
+      meeting({ id: "n", title: "No date", createdAt: null }),
+      meeting({ id: "bad", title: "Bad date", createdAt: "not-a-date" }),
+    ]);
+    renderLibrary();
+    await listLoaded();
+    expect(groupTitles(text.groups.earlier)).toEqual(["No date", "Bad date"]);
+  });
+
+  it("shows a flat list without group headings while a search is active", async () => {
+    vi.spyOn(api, "listMeetings").mockResolvedValue(dated);
+    renderLibrary();
+    await listLoaded();
+
+    fireEvent.change(screen.getByLabelText(text.search.text), { target: { value: "o" } });
+    expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+    expect(screen.getByRole("list", { name: text.listLabel })).toBeDefined();
+    expect(renderedTitles()).toHaveLength(5);
+
+    fireEvent.click(screen.getByRole("button", { name: text.search.clear }));
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(3);
+  });
+
+  it("shows a flat list when the order is not the default", async () => {
+    vi.spyOn(api, "listMeetings").mockResolvedValue(dated);
+    renderLibrary();
+    await listLoaded();
+
+    fireEvent.change(screen.getByLabelText(text.search.sort), { target: { value: "oldest" } });
+    expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+  });
+});
+
+describe("RecordingLibrary row content", () => {
+  async function openWith(items: MeetingListItem[]) {
+    vi.spyOn(api, "listMeetings").mockResolvedValue(items);
+    const view = render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
+    await listLoaded();
+    return view;
+  }
+
+  it("shows the summary topic, the duration in mm:ss and the speaker count", async () => {
+    await openWith([meeting({
+      processState: ProcessState.Completed,
+      summaryTopic: "Quarterly results and delivery plan",
+      durationSeconds: 3260,
+      speakerCount: 3,
+    })]);
+    expect(screen.getByText("Quarterly results and delivery plan")).toBeDefined();
+    expect(screen.getByText("54:20").className).toContain("library-item-duration");
+    expect(screen.getByText(text.speakers(3))).toBeDefined();
+  });
+
+  it("formats durations of an hour or more as h:mm:ss", async () => {
+    await openWith([meeting({ durationSeconds: 3725 }), meeting({ id: "2", durationSeconds: 59 })]);
+    expect(screen.getByText("1:02:05")).toBeDefined();
+    expect(screen.getByText("00:59")).toBeDefined();
+  });
+
+  it("uses the singular for one speaker", async () => {
+    await openWith([meeting({ speakerCount: 1 })]);
+    expect(screen.getByText(text.speakers(1))).toBeDefined();
+    expect(text.speakers(1)).not.toBe(text.speakers(2));
+    expect(text.speakers(2)).toContain("2");
+  });
+
+  it("omits duration, speakers and topic when they are null", async () => {
+    const { container } = await openWith([meeting({ processState: ProcessState.Completed })]);
+    expect(container.querySelector(".library-item-duration")).toBeNull();
+    expect(container.querySelector(".library-item-topic")).toBeNull();
+    expect(container.textContent).not.toContain(text.speakers(2).slice(2));
+  });
+
+  it("falls back to a generating message for an in-progress recording without topic", async () => {
+    await openWith([meeting({ processState: ProcessState.Transcribing })]);
+    expect(screen.getByText(text.topicGenerating)).toBeDefined();
+  });
+
+  it("falls back to a failure message for a failed recording without topic", async () => {
+    await openWith([meeting({ processState: ProcessState.Failed })]);
+    expect(screen.getByText(text.topicFailed)).toBeDefined();
+  });
+
+  it("does not use a fallback line for a queued recording", async () => {
+    const { container } = await openWith([meeting({ processState: ProcessState.Queued })]);
+    expect(container.querySelector(".library-item-topic")).toBeNull();
+  });
+
+  it("prefers the real topic over the fallback", async () => {
+    await openWith([meeting({ processState: ProcessState.Failed, summaryTopic: "Real topic" })]);
+    expect(screen.getByText("Real topic")).toBeDefined();
+    expect(screen.queryByText(text.topicFailed)).toBeNull();
+  });
+
+  it("colours the left edge by state", async () => {
+    const { container } = await openWith([
+      meeting({ id: "1", processState: ProcessState.Completed }),
+      meeting({ id: "2", processState: ProcessState.Recording }),
+      meeting({ id: "3", processState: ProcessState.Failed }),
+      meeting({ id: "4", processState: ProcessState.Queued }),
+    ]);
+    const edges = Array.from(container.querySelectorAll(".library-item"))
+      .map((item) => Array.from(item.classList).find((name) => name.startsWith("library-item--")));
+    expect(edges).toEqual([
+      "library-item--ready", "library-item--progress", "library-item--failed", "library-item--queued",
+    ]);
+  });
+});
+
 describe("RecordingLibrary search", () => {
   const items = [
     meeting({ id: "1", title: "Planning meeting", createdAt: "2026-10-28T17:45:00Z" }),
@@ -160,7 +349,7 @@ describe("RecordingLibrary search", () => {
   async function openSearch() {
     vi.spyOn(api, "listMeetings").mockResolvedValue(items);
     renderLibrary();
-    await screen.findByRole("list", { name: text.listLabel });
+    await listLoaded();
   }
 
   it("typing filters by title (case insensitive) and Limpiar restores", async () => {

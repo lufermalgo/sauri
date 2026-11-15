@@ -9,6 +9,14 @@ export const library = {
   noDate: "Sin fecha",
   noMatch: "Ninguna grabación coincide con la búsqueda.",
   listLabel: "Grabaciones",
+  groups: {
+    today: "HOY",
+    thisWeek: "ESTA SEMANA",
+    earlier: "ANTERIORES",
+  },
+  speakers: (count: number) => (count === 1 ? "1 hablante" : `${count} hablantes`),
+  topicGenerating: "Se está generando la transcripción…",
+  topicFailed: "No se pudo procesar la grabación.",
   search: {
     regionLabel: "Buscar en la biblioteca",
     text: "Buscar por título",
