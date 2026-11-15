@@ -188,7 +188,7 @@ describe("RecordingLibrary search", () => {
     expect(renderedTitles()).toEqual(["Client interview", "Planning meeting", "Closing notes"]);
 
     fireEvent.change(sort, { target: { value: "title" } });
-    expect(renderedTitles()).toEqual(["Closing notes", "Client interview", "Planning meeting"]);
+    expect(renderedTitles()).toEqual(["Client interview", "Closing notes", "Planning meeting"]);
   });
 
   it("shows the no-match message when nothing matches", async () => {
