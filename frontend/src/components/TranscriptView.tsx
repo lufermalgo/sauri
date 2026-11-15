@@ -48,6 +48,13 @@ function speakerColor(diarization: MeetingDiarization | null, speakerId: string 
   return `var(--speaker-${(Math.max(1, sequence) - 1) % 6 + 1})`;
 }
 
+function displaySpeakerLabel(label: string, speakerId: string | undefined, review: SpeakerReview | null): string {
+  const disposition = review?.items.find(item => item.speakerId === speakerId)?.disposition;
+  const number = /^Speaker (\d+)$/.exec(label)?.[1];
+  return number && disposition !== "named" && disposition !== "corrected"
+    ? copy.transcript.numberedSpeaker(number) : label;
+}
+
 export function TranscriptView(props: TranscriptViewProps) {
   return <MeetingTranscriptView key={props.meetingId} {...props} />;
 }
@@ -75,8 +82,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const turnRefs = useRef(new Map<string, HTMLLIElement>());
   const [activeTab, setActiveTab] = useState("summary");
-  const seekToRef = useRef<((timeMs: number) => void) | undefined>(undefined);
-  const registerSeekTo = useCallback((seekTo: ((timeMs: number) => void) | undefined) => {
+  const seekToRef = useRef<((timeMs: number, play?: boolean) => void) | undefined>(undefined);
+  const registerSeekTo = useCallback((seekTo: ((timeMs: number, play?: boolean) => void) | undefined) => {
     seekToRef.current = seekTo;
   }, []);
   const playIntervalRef = useRef<((startMs: number, endMs: number) => Promise<void>) | undefined>(undefined);
@@ -303,8 +310,9 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       timestampMs: turn.startMs,
       sequence: turn.sequence,
       speakerId: turn.speakerId ?? undefined,
-      speakerLabel: (turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined) ||
-        turn.speakerLabel || copy.transcript.unknownSpeaker,
+      speakerLabel: displaySpeakerLabel(
+        (turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined) ||
+          turn.speakerLabel || copy.transcript.unknownSpeaker, turn.speakerId ?? undefined, review),
       hasAmbiguous: turn.hasAmbiguous ?? false,
       color: speakerColor(diarization, turn.speakerId ?? undefined),
     }));
@@ -316,7 +324,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       const reviewedLabel = turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined;
       return {
         ...turn,
-        speakerLabel: reviewedLabel || speaker?.label || copy.transcript.legacyUnknownSpeaker,
+        speakerLabel: displaySpeakerLabel(reviewedLabel || speaker?.label || copy.transcript.legacyUnknownSpeaker, turn.speakerId, review),
         color: speakerColor(diarization, turn.speakerId),
         hasAmbiguous: false,
       };
@@ -354,14 +362,19 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
 
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
+  const completed = meeting?.processState === "completed" && !statusError;
+  const identifying = Boolean(data) && diarizationNotFound;
+
   return (
     <section className="meeting-view">
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
-        onBack={onBack} manifest={playbackManifest} turns={presentationTurns} />
+        onBack={onBack} completed={completed} manifest={playbackManifest} turns={presentationTurns} />
       {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
-      {speakerWaitExpired ? <p role="status">{copy.processing.speakerWaitExpired}</p> :
-        <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
-          diarizationNotFound={diarizationNotFound} error={statusError} />}
+      {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{copy.processing.speakerWaitExpired}</p></div> :
+        (!completed || identifying) && <div className="meeting-processing">
+          <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
+            diarizationNotFound={diarizationNotFound} error={statusError} />
+        </div>}
       {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
       {error && <p role="alert" className="meeting-error">{error}</p>}
       {!loading && !data && !error && <p>{copy.processing.transcriptPending}</p>}
@@ -397,33 +410,37 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
               <li key={turn.id}
                 aria-current={isActive ? "true" : undefined}
                 className={`meeting-turn${isActive ? " meeting-turn--active" : ""}`}
+                style={{ "--meeting-speaker": turn.color } as React.CSSProperties}
                 ref={(element) => {
                   if (element) turnRefs.current.set(turn.id, element);
                   else turnRefs.current.delete(turn.id);
                 }}
               >
-                <span className="meeting-timestamp">
-                  {timestamp}
-                </span>
-                <span
-                  data-testid="transcript-speaker-label"
-                  className="meeting-speaker" style={{ color: turn.color }}
-                >
-                  {turn.speakerLabel}
-                </span>
-                <Button variant="secondary"
-                  type="button"
+                <button className="meeting-turn-action" type="button"
                   aria-label={copy.transcript.playAt(formatTimestamp(turn.timestampMs ?? 0))}
+                  aria-describedby={`turn-${turn.id}-speaker turn-${turn.id}-text${turn.hasAmbiguous ? ` turn-${turn.id}-ambiguous` : ""}`}
+                  aria-current={isActive ? "true" : undefined}
                   disabled={turn.timestampMs === null || !playbackManifest || playbackLoading || Boolean(playbackError)}
                   onClick={() => {
-                    if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs);
+                    if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs, true);
                   }}
                 >
-                  {copy.transcript.play}
-                </Button>
-                {turn.hasAmbiguous && <span title={copy.transcript.ambiguous}
-                  aria-label={copy.transcript.ambiguous} className="meeting-ambiguous"> · ? </span>}
-                {turn.text}
+                  <span className="meeting-turn-meta">
+                    <span className="meeting-timestamp">{timestamp}</span>
+                    <span id={`turn-${turn.id}-speaker`} data-testid="transcript-speaker-label" className="meeting-speaker">
+                      {turn.speakerLabel}
+                    </span>
+                    {turn.hasAmbiguous && <span title={copy.transcript.ambiguous}
+                      id={`turn-${turn.id}-ambiguous`} aria-label={copy.transcript.ambiguous} className="meeting-ambiguous">
+                      <span aria-hidden="true"> · ? </span>
+                      <span className="meeting-sr-only">{copy.transcript.ambiguous}</span>
+                    </span>}
+                    <svg className="meeting-turn-play" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16">
+                      <path d="M5 3 13 8 5 13Z" fill="currentColor" />
+                    </svg>
+                  </span>
+                  <span id={`turn-${turn.id}-text`} className="meeting-turn-text">{turn.text}</span>
+                </button>
               </li>
             );
           })}
@@ -437,8 +454,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
           <h3 id="speaker-review-heading">{copy.speakerReview.heading}</h3>
           <p role="status">{review.status === "complete" ? copy.speakerReview.complete : copy.speakerReview.pending}</p>
           {review.items.map((item) => {
-            const label = review.labelsBySpeakerId[item.speakerId]?.trim() || item.currentLabel ||
-              copy.transcript.legacyUnknownSpeaker;
+            const label = displaySpeakerLabel(review.labelsBySpeakerId[item.speakerId]?.trim() || item.currentLabel ||
+              copy.transcript.legacyUnknownSpeaker, item.speakerId, review);
             const busy = submittingSpeakerId === item.speakerId;
             const name = names[item.speakerId]?.trim() ?? "";
             const interval = selectListeningInterval(intervalTurns, item.speakerId);

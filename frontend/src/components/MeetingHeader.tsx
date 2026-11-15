@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
 import { deleteMeeting, renameMeeting } from "../api";
+import { processing } from "../copy/processing";
 import { meeting as text } from "../copy/meeting";
 import { navigate } from "../router";
-import { Button, ConfirmDialog, TextField } from "./ui";
+import { Button, ConfirmDialog, StatusBadge, TextField } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
 
@@ -10,9 +11,10 @@ interface MeetingHeaderProps extends MeetingDownloadsProps {
   title: string | null;
   createdAt: string | null;
   onBack: () => void;
+  completed?: boolean;
 }
 
-export function MeetingHeader({ title, createdAt, onBack, ...downloads }: MeetingHeaderProps) {
+export function MeetingHeader({ title, createdAt, onBack, completed = false, ...downloads }: MeetingHeaderProps) {
   const [renamedTitle, setRenamedTitle] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [editing, setEditing] = useState(false);
@@ -74,16 +76,20 @@ export function MeetingHeader({ title, createdAt, onBack, ...downloads }: Meetin
             <Button variant="ghost" disabled={busy} onClick={() => { setEditing(false); setError(null); }}>{text.cancel}</Button>
           </div>
         </form> : <h1>{currentTitle}</h1>}
+        <div className="meeting-details">
         {createdAt && <time className="meeting-date" dateTime={createdAt}>
           {new Date(createdAt).toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" })}
         </time>}
+        {completed && <StatusBadge tone="success" role="status">{processing.completed}</StatusBadge>}
+        </div>
       </div>
       <div className="meeting-actions">
         {!editing && <Button variant="secondary" disabled={busy} onClick={() => {
           setDraft(renamedTitle ?? title ?? ""); setEditing(true); setError(null);
         }}>{text.rename}</Button>}
-        <Button variant="danger" disabled={busy || editing} onClick={() => { setConfirming(true); setError(null); }}>{text.delete}</Button>
         <MeetingDownloads {...downloads} />
+        <Button variant="ghost" className="meeting-delete" disabled={busy || editing}
+          onClick={() => { setConfirming(true); setError(null); }}>{text.delete}</Button>
       </div>
     </div>
     {busy && <p role="status">{confirming ? text.deleting : text.saving}</p>}

@@ -2,6 +2,7 @@ export const transcript = {
   unknownSpeaker: "Hablante ?",
   legacyUnknownSpeaker: "Hablante N",
   ambiguous: "Atribución de hablante incierta",
-  playAt: (time: string) => `Reproducir turno en ${time}`,
+  numberedSpeaker: (number: string) => `Hablante ${number}`,
+  playAt: (time: string) => `Reproducir desde este turno (${time})`,
   play: "Reproducir turno",
 } as const;

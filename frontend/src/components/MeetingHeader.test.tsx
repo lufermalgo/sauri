@@ -106,3 +106,15 @@ describe("MeetingHeader", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
   });
 });
+
+
+it("orders natural-width actions with a subdued delete action last", () => {
+  open();
+  const actions = document.querySelector(".meeting-heading-row > .meeting-actions")!;
+  const buttons = within(actions as HTMLElement).getAllByRole("button");
+  expect(buttons.map(button => button.textContent)).toEqual([
+    text.rename, text.downloadVideo, text.downloadTranscript, text.delete,
+  ]);
+  expect(buttons[3]).toHaveClass("ui-button--ghost", "meeting-delete");
+  expect(buttons[3]).not.toHaveClass("ui-button--danger");
+});

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { meeting as text } from "../../copy/meeting";
@@ -376,4 +376,17 @@ describe("MeetingPlaybackView", () => {
 it("shows a localized load failure even when no manifest is available", () => {
   render(<MeetingPlaybackView manifest={null} passages={[]} loading={false} error="Synthetic network failure" />);
   expect(screen.getByRole("alert")).toHaveTextContent(text.playbackLoadFailed);
+});
+
+
+it("keeps exactly the existing controls together in one compact toolbar", () => {
+  renderView({ manifest: manifest({ video_presence: "separate", video_sources: [source("low", VIDEO_LOW_URL), source("high", VIDEO_HIGH_URL)] }) });
+  const toolbar = document.querySelector(".meeting-player-controls") as HTMLElement;
+  expect(within(toolbar).getAllByRole("button").map(button => button.getAttribute("aria-label")))
+    .toEqual([text.pause, text.resume, text.mute]);
+  expect(within(toolbar).getAllByRole("slider").map(slider => slider.getAttribute("aria-label")))
+    .toEqual([text.seek, text.volume]);
+  expect(within(toolbar).getAllByRole("combobox").map(select => select.getAttribute("aria-label")))
+    .toEqual([text.speed, text.quality]);
+  expect(toolbar.querySelector(".meeting-control-time")).toHaveTextContent("0:00 / --:--");
 });
