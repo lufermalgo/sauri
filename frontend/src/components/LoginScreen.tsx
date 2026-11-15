@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { login } from "../api";
 
-interface SpeakerTestLoginProps {
+interface LoginScreenProps {
   onLogin: () => void;
 }
 
-export function SpeakerTestLogin({ onLogin }: SpeakerTestLoginProps) {
+export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);

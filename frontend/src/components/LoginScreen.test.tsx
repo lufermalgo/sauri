@@ -11,8 +11,8 @@ vi.mock("../api", async (importOriginal) => {
 vi.mock("../components/RegisterForm", () => ({
   RegisterForm: () => <div>Meeting registration</div>,
 }));
-vi.mock("../components/MeetingList", () => ({
-  MeetingList: () => <div>Meeting list</div>,
+vi.mock("../components/RecordingLibrary", () => ({
+  RecordingLibrary: () => <div>Meeting list</div>,
 }));
 vi.mock("../components/TranscriptView", () => ({
   TranscriptView: () => <div>Transcript</div>,
