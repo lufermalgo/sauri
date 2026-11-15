@@ -23,3 +23,16 @@ export function applyCaptureEvent(
 export function newNoteButtonEnabled(state: CaptureState): boolean {
   return state === "idle";
 }
+
+/** Restrict the shortcut to ordinary web tabs, never browser/extension pages. */
+export function canCaptureCurrentTab(url?: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    return ["https:", "http:"].includes(parsed.protocol) &&
+      parsed.hostname !== "chromewebstore.google.com" &&
+      !(parsed.hostname === "chrome.google.com" && parsed.pathname.startsWith("/webstore"));
+  } catch {
+    return false;
+  }
+}

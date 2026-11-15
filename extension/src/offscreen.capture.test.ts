@@ -21,8 +21,10 @@ type MessageListener = (
 
 let registeredListener: MessageListener | undefined;
 
-class FakeTrack {
-  constructor(public kind: "audio" | "video") {}
+class FakeTrack extends EventTarget {
+  constructor(public kind: "audio" | "video") { super(); }
+  getSettings = () => ({ displaySurface: "browser" });
+  readyState = "live";
   stop = vi.fn();
 }
 
@@ -43,6 +45,8 @@ class FakeMediaStream {
 }
 
 class FakeAudioContext {
+  static lastInstance: FakeAudioContext | null = null;
+  constructor() { FakeAudioContext.lastInstance = this; }
   destination = {};
   createMediaStreamSource = vi.fn((_stream: FakeMediaStream) => ({
     connect: vi.fn(),
@@ -81,11 +85,12 @@ async function loadOffscreenWithMocks(getUserMediaImpl: (constraints: unknown) =
           registeredListener = listener;
         },
       },
-      sendMessage: vi.fn(),
+      sendMessage: vi.fn(async () => ({ ok: true })),
     },
   });
   vi.stubGlobal("navigator", {
     mediaDevices: {
+      getDisplayMedia: vi.fn(getUserMediaImpl),
       getUserMedia: vi.fn(getUserMediaImpl),
     },
   });
@@ -99,6 +104,8 @@ async function loadOffscreenWithMocks(getUserMediaImpl: (constraints: unknown) =
 describe("Offscreen document — A/V composition and capture", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    FakeAudioContext.lastInstance = null;
+    FakeMediaRecorder.lastInstance = null;
   });
 
   afterEach(() => {
@@ -106,8 +113,8 @@ describe("Offscreen document — A/V composition and capture", () => {
   });
 
   it("ignores unbound/foreign stops and stops the same recorder only once", async () => {
-    await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio")]));
-    await new Promise(resolve => registeredListener!({ type: "start-recording", streamId: "stream", sessionId: "active" }, {}, resolve));
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]));
+    await new Promise(resolve => registeredListener!({ type: "start-recording", sessionId: "active" }, {}, resolve));
     const recorder = FakeMediaRecorder.lastInstance!;
     registeredListener!({ type: "stop-recording", sessionId: "other" }, {}, vi.fn());
     registeredListener!({ type: "stop-recording" }, {}, vi.fn());
@@ -117,21 +124,21 @@ describe("Offscreen document — A/V composition and capture", () => {
     expect(recorder.stop).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps stop intent while getUserMedia is still starting", async () => {
+  it("keeps stop intent while getDisplayMedia is still starting", async () => {
     let release!: (stream: FakeMediaStream) => void;
     await loadOffscreenWithMocks(() => new Promise(resolve => { release = resolve; }));
-    const started = new Promise(resolve => registeredListener!({ type: "start-recording", streamId: "stream", sessionId: "starting" }, {}, resolve));
+    const started = new Promise(resolve => registeredListener!({ type: "start-recording", sessionId: "starting" }, {}, resolve));
     registeredListener!({ type: "stop-recording", sessionId: "starting" }, {}, vi.fn());
-    release(new FakeMediaStream([new FakeTrack("audio")]));
+    release(new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]));
     await started;
     expect(FakeMediaRecorder.lastInstance!.stop).toHaveBeenCalledTimes(1);
   });
 
   it("waits for the final chunk commit before publishing finalized metadata", async () => {
-    await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio")]));
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]));
     vi.stubGlobal("Blob", NodeBlob);
     await createCompletion({ sessionId: "chunks", provider: "meet", meetingId: "meeting", capturedTabId: 7, status: "finalizing", updatedAt: 1 });
-    await new Promise(resolve => registeredListener!({ type: "start-recording", streamId: "stream", sessionId: "chunks" }, {}, resolve));
+    await new Promise(resolve => registeredListener!({ type: "start-recording", sessionId: "chunks" }, {}, resolve));
     const recorder = FakeMediaRecorder.lastInstance!;
     recorder.ondataavailable!({ data: new NodeBlob(["first"]) });
     recorder.ondataavailable!({ data: new NodeBlob(["final"]) });
@@ -143,8 +150,8 @@ describe("Offscreen document — A/V composition and capture", () => {
   it("persists a failed start and leaves its identity available", async () => {
     await loadOffscreenWithMocks(async () => { throw new Error("capture denied"); });
     await createCompletion({ sessionId: "failed", provider: "meet", meetingId: "meeting", capturedTabId: 7, status: "capturing", updatedAt: 1 });
-    const reply = await new Promise(resolve => registeredListener!({ type: "start-recording", streamId: "stream", sessionId: "failed" }, {}, resolve));
-    expect(reply).toEqual({ ok: false, sessionId: "failed" });
+    const reply = await new Promise(resolve => registeredListener!({ type: "start-recording", sessionId: "failed" }, {}, resolve));
+    expect(reply).toEqual({ ok: false, reason: "failed" });
     expect(await getCompletion("failed")).toMatchObject({ captureError: true, meetingId: "meeting" });
   });
 
@@ -157,7 +164,7 @@ describe("Offscreen document — A/V composition and capture", () => {
     registeredListener!(
       {
         type: "start-recording",
-        streamId: "stream-1",
+
         sessionId: "session-1",
         captureMode: "screen_audio",
         resolution: { width: 1280, height: 720 },
@@ -171,21 +178,22 @@ describe("Offscreen document — A/V composition and capture", () => {
 
     const constraints = getUserMedia.mock.calls[0][0] as any;
     expect(constraints.video).toBeTruthy();
-    expect(constraints.video.mandatory.maxWidth).toBe(1280);
-    expect(constraints.video.mandatory.maxHeight).toBe(720);
+    expect(constraints.video.width.max).toBe(1280);
+    expect(constraints.video.height.max).toBe(720);
+    expect(constraints).toMatchObject({ audio: { suppressLocalAudioPlayback: false }, video: { displaySurface: "browser" }, selfBrowserSurface: "include", preferCurrentTab: false, monitorTypeSurfaces: "exclude", surfaceSwitching: "include", systemAudio: "exclude" });
 
     expect(FakeMediaRecorder.lastInstance?.options.mimeType).toMatch(/^video\/webm/);
   });
 
-  it("audio_only mode: does not request video and uses an audio mimeType", async () => {
-    const tabStream = new FakeMediaStream([new FakeTrack("audio")]);
+  it("audio_only mode: picks a tab but excludes video from the recorded audio file", async () => {
+    const tabStream = new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]);
     const getUserMedia = vi.fn(async (_constraints: unknown) => tabStream);
     await loadOffscreenWithMocks(getUserMedia);
 
     registeredListener!(
       {
         type: "start-recording",
-        streamId: "stream-2",
+
         sessionId: "session-2",
         captureMode: "audio_only",
       },
@@ -195,11 +203,15 @@ describe("Offscreen document — A/V composition and capture", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     const constraints = getUserMedia.mock.calls[0][0] as any;
-    expect(constraints.video).toBe(false);
+    expect(constraints.video.displaySurface).toBe("browser");
+    expect(FakeMediaRecorder.lastInstance?.stream.getVideoTracks()).toHaveLength(0);
+    expect(FakeMediaRecorder.lastInstance?.stream.getAudioTracks()).toHaveLength(1);
+    expect(tabStream.getVideoTracks()[0].stop).not.toHaveBeenCalled();
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "capture-video-presence", videoPresence: "absent" });
     expect(FakeMediaRecorder.lastInstance?.options.mimeType).toMatch(/^audio\/webm/);
   });
 
-  it("with micDeviceId: mixes microphone audio with tab audio via AudioContext", async () => {
+  it.each(["screen_audio", "audio_only"])("%s with micDeviceId: mixes microphone audio with tab audio via AudioContext", async captureMode => {
     const tabStream = new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]);
     const micStream = new FakeMediaStream([new FakeTrack("audio")]);
     const getUserMedia = vi.fn(async (constraints: any) => {
@@ -211,9 +223,9 @@ describe("Offscreen document — A/V composition and capture", () => {
     registeredListener!(
       {
         type: "start-recording",
-        streamId: "stream-3",
+
         sessionId: "session-3",
-        captureMode: "screen_audio",
+        captureMode,
         resolution: { width: 1280, height: 720 },
         micDeviceId: "mic-device-1",
       },
@@ -226,6 +238,15 @@ describe("Offscreen document — A/V composition and capture", () => {
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     const micCallConstraints = getUserMedia.mock.calls[1][0] as any;
     expect(micCallConstraints.audio.deviceId.exact).toBe("mic-device-1");
+    const context = FakeAudioContext.lastInstance!;
+    const destination = context.createMediaStreamDestination.mock.results[0].value;
+    for (const source of context.createMediaStreamSource.mock.results) {
+      expect(source.value.connect).toHaveBeenCalledTimes(1);
+      expect(source.value.connect).toHaveBeenCalledWith(destination);
+      expect(source.value.connect).not.toHaveBeenCalledWith(context.destination);
+    }
+    expect(FakeMediaRecorder.lastInstance?.stream.getAudioTracks()).toEqual(destination.stream.getAudioTracks());
+    expect(FakeMediaRecorder.lastInstance?.stream.getVideoTracks()).toEqual(captureMode === "screen_audio" ? tabStream.getVideoTracks() : []);
   });
 
   it("without micDeviceId: only requests the tab stream", async () => {
@@ -236,7 +257,7 @@ describe("Offscreen document — A/V composition and capture", () => {
     registeredListener!(
       {
         type: "start-recording",
-        streamId: "stream-4",
+
         sessionId: "session-4",
         captureMode: "screen_audio",
         resolution: { width: 1280, height: 720 },
@@ -247,5 +268,124 @@ describe("Offscreen document — A/V composition and capture", () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(FakeAudioContext.lastInstance).toBeNull();
+  });
+});
+
+async function start(sessionId = "picker", extra = {}) {
+  return new Promise(resolve => registeredListener!({ type: "start-recording", sessionId, ...extra }, {}, resolve));
+}
+
+describe("native sharing picker outcomes", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it.each(["NotAllowedError", "AbortError"])("%s cancels without creating or failing a session and allows retry", async name => {
+    await loadOffscreenWithMocks(async () => { throw new DOMException("Picker dismissed", name); });
+    expect(await start()).toEqual({ ok: false, reason: "cancelled" });
+    expect(await getCompletion("picker")).toBeUndefined();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(navigator.mediaDevices.getDisplayMedia).toHaveBeenCalledTimes(1);
+    expect(await start()).toEqual({ ok: false, reason: "cancelled" });
+  });
+
+  it("stops every source track without requesting a microphone or binding a session when tab audio is missing", async () => {
+    const video = new FakeTrack("video");
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([video]));
+    expect(await start("silent", { micDeviceId: "mic" })).toEqual({ ok: false, reason: "no-tab-audio" });
+    expect(video.stop).toHaveBeenCalledTimes(1);
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(await getCompletion("silent")).toBeUndefined();
+  });
+
+  it("reports microphone permission separately from picker cancellation and releases the source", async () => {
+    const video = new FakeTrack("video");
+    const audio = new FakeTrack("audio");
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([audio, video]));
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValueOnce(new DOMException("Microphone denied", "NotAllowedError"));
+    expect(await start("mic-denied", { micDeviceId: "mic" })).toEqual({ ok: false, reason: "microphone-permission" });
+    expect(audio.stop).toHaveBeenCalledOnce();
+    expect(video.stop).toHaveBeenCalledOnce();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+    expect(await getCompletion("mic-denied")).toBeUndefined();
+  });
+
+  it("rejects a window even when Chrome ignores the picker hints and returns audio", async () => {
+    const video = new FakeTrack("video");
+    video.getSettings = () => ({ displaySurface: "window" });
+    const audio = new FakeTrack("audio");
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([audio, video]));
+    expect(await start()).toEqual({ ok: false, reason: "unsupported-surface" });
+    expect(audio.stop).toHaveBeenCalled();
+    expect(video.stop).toHaveBeenCalled();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("retries unsupported optional hints once, without suppressing playback", async () => {
+    const pick = vi.fn().mockRejectedValueOnce(new TypeError("Unsupported option"))
+      .mockResolvedValue(new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]));
+    await loadOffscreenWithMocks(pick);
+    expect(await start()).toEqual({ ok: true, sessionId: "picker" });
+    expect(pick).toHaveBeenCalledTimes(2);
+    expect(pick.mock.calls[1][0]).toEqual({ video: { displaySurface: "browser", width: { max: 1280 }, height: { max: 720 } }, audio: true });
+  });
+
+  it.each(["screen_audio", "audio_only"])("%s source ended claims the durable close path, including while paused", async captureMode => {
+    const video = new FakeTrack("video");
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio"), video]));
+    await createCompletion({ sessionId: "ended", provider: "meet", meetingId: "meeting", capturedTabId: 7, status: "capturing", updatedAt: 1 });
+    expect(await start("ended", { captureMode })).toEqual({ ok: true, sessionId: "ended" });
+    FakeMediaRecorder.lastInstance!.state = "paused";
+    video.dispatchEvent(new Event("ended"));
+    await vi.waitFor(() => expect(FakeMediaRecorder.lastInstance!.stop).toHaveBeenCalledTimes(1));
+    expect(await getCompletion("ended")).toMatchObject({ status: "finalizing", trigger: "captured_tab_closed" });
+    registeredListener!({ type: "stop-recording", sessionId: "ended" }, {}, vi.fn());
+    expect(FakeMediaRecorder.lastInstance!.stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("current-tab acquisition and playback", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it.each(["screen_audio", "audio_only"])("%s requests tab audio/video by stream ID and restores local playback", async captureMode => {
+    const tab = new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]);
+    await loadOffscreenWithMocks(async () => tab);
+    expect(await start("direct", { source: "current-tab", streamId: "direct-stream", captureMode })).toEqual({ ok: true, sessionId: "direct" });
+    expect(navigator.mediaDevices.getDisplayMedia).not.toHaveBeenCalled();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: "direct-stream" } },
+      video: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: "direct-stream", maxWidth: 1280, maxHeight: 720 } },
+    });
+    const context = FakeAudioContext.lastInstance!;
+    const source = context.createMediaStreamSource.mock.results[0].value;
+    expect(source.connect).toHaveBeenCalledTimes(1);
+    expect(source.connect).toHaveBeenCalledWith(context.destination);
+    expect(FakeMediaRecorder.lastInstance?.stream.getVideoTracks()).toHaveLength(captureMode === "audio_only" ? 0 : 1);
+    expect(FakeMediaRecorder.lastInstance?.stream.getAudioTracks()).toHaveLength(1);
+  });
+
+  it("mixes the mic into the file but loops back only tab audio", async () => {
+    const tab = new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]);
+    const mic = new FakeMediaStream([new FakeTrack("audio")]);
+    await loadOffscreenWithMocks(async (constraints: any) => constraints.audio?.deviceId ? mic : tab);
+    expect(await start("mixed-direct", { source: "current-tab", streamId: "stream", micDeviceId: "mic" })).toMatchObject({ ok: true });
+    const context = FakeAudioContext.lastInstance!;
+    const [tabSource, micSource] = context.createMediaStreamSource.mock.results.map(result => result.value);
+    const destination = context.createMediaStreamDestination.mock.results[0].value;
+    expect(tabSource.connect).toHaveBeenCalledTimes(2);
+    expect(tabSource.connect).toHaveBeenCalledWith(context.destination);
+    expect(tabSource.connect).toHaveBeenCalledWith(destination);
+    expect(micSource.connect).toHaveBeenCalledTimes(1);
+    expect(micSource.connect).toHaveBeenCalledWith(destination);
+    expect(micSource.connect).not.toHaveBeenCalledWith(context.destination);
+    expect(FakeMediaRecorder.lastInstance?.stream.getAudioTracks()).toEqual(destination.stream.getAudioTracks());
+  });
+
+  it("a denied direct stream is not treated as a silent picker cancellation", async () => {
+    await loadOffscreenWithMocks(async () => { throw new DOMException("Permission denied", "NotAllowedError"); });
+    expect(await start("denied-direct", { source: "current-tab", streamId: "stream" })).toEqual({ ok: false, reason: "current-tab-unavailable" });
+    expect(await getCompletion("denied-direct")).toBeUndefined();
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,7 @@ import { CaptureControls, type MicOption } from "./components/CaptureControls";
 import { NotesList } from "./components/NotesList";
 import { AuthView } from "./components/AuthView";
 import { RecordingCompletionStatus } from "./components/RecordingCompletionStatus";
-import { applyCaptureEvent } from "../core/capture";
+import { applyCaptureEvent, canCaptureCurrentTab } from "../core/capture";
 import { deriveViewState } from "../core/view";
 import {
   listMeetings,
@@ -15,7 +15,7 @@ import {
   DEFAULT_BACKEND_URL,
 } from "../core/api/client";
 import { buildDetailUrl } from "../core/detailUrl";
-import type { CaptureState, NoteDTO, RemoteRequest } from "../core/types";
+import type { CaptureState, CaptureSource, CaptureStartResult, NoteDTO, RemoteRequest } from "../core/types";
 import "../core/design/tokens.css";
 
 interface SauriBackgroundState {
@@ -31,9 +31,15 @@ function mapCaptureState(status: SauriBackgroundState["status"]): CaptureState {
 export function SidePanelApp() {
   const [sessionActive, setSessionActive] = useState<boolean | null>(null);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
+  const [startingSource, setStartingSource] = useState<CaptureSource | null>(null);
+  const selecting = startingSource !== null;
+  const [currentTabAvailable, setCurrentTabAvailable] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const startPendingRef = useRef(false);
   const [elapsedTimeMs, setElapsedTimeMs] = useState(0);
   const [recordingSessionId, setRecordingSessionId] = useState<string | undefined>();
   const [projectionReady, setProjectionReady] = useState(false);
+  const [microphonesReady, setMicrophonesReady] = useState(false);
   const [microphones, setMicrophones] = useState<MicOption[]>([]);
   const [selectedMicrophone, setSelectedMicrophone] = useState<MicOption | undefined>(undefined);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
@@ -56,12 +62,14 @@ export function SidePanelApp() {
   useEffect(() => {
     let cancelled = false;
     let changed = false;
+    let selectionChanged = false;
     const loadProjection = async () => {
       try {
-        const result = await chrome.storage.session.get("sauriState");
+        const result = await chrome.storage.session.get(["sauriState", "sauriCaptureRequest"]);
         // A newer storage event wins over the initial asynchronous snapshot.
         if (cancelled || changed) return;
         const state = result.sauriState as SauriBackgroundState | undefined;
+        if (!selectionChanged) setStartingSource(result.sauriCaptureRequest ? result.sauriCaptureRequest.state.pickerSource ?? "picker" : null);
         setCaptureState(mapCaptureState(state?.status ?? "idle"));
         setRecordingSessionId(state?.sessionId);
         setProjectionReady(true);
@@ -73,6 +81,11 @@ export function SidePanelApp() {
     void loadProjection();
 
     const listener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+      if (areaName === "session" && changes.sauriCaptureRequest) {
+        selectionChanged = true;
+        const request = changes.sauriCaptureRequest.newValue;
+        setStartingSource(request ? request.state.pickerSource ?? "picker" : null);
+      }
       if (areaName === "session" && changes.sauriState) {
         changed = true;
         const state = changes.sauriState.newValue as SauriBackgroundState | undefined;
@@ -86,35 +99,59 @@ export function SidePanelApp() {
   }, []);
 
   useEffect(() => {
-    // enumerateDevices() only returns real deviceId/label values if the
-    // origin already has microphone permission granted — otherwise they
-    // come back empty and offscreen.ts ends up treating the recording as
-    // "no microphone" even though the panel shows one selected. That's why
-    // the permission is requested first.
-    navigator.mediaDevices
-      ?.getUserMedia({ audio: true })
-      .then((stream) => {
-        stream.getTracks().forEach((track) => track.stop());
-        return navigator.mediaDevices.enumerateDevices();
-      })
-      .then((devices) => {
-        const audioInputs = devices.filter((d) => d.kind === "audioinput");
-        const options = audioInputs.map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${i + 1}` }));
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        // Never prompt from the side panel. Permission is requested in the
+        // full options tab when a capture with a configured microphone starts.
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        if (cancelled) return;
+        const options = devices.filter(device => device.kind === "audioinput").map((device, index) => ({
+          deviceId: device.deviceId || "default", label: device.label || `Microphone ${index + 1}`,
+        }));
         setMicrophones(options);
-        setSelectedMicrophone((prev) => prev ?? options[0]);
-      })
-      .catch((error) => {
-        const name = error instanceof DOMException ? error.name : String(error);
-        console.error("[sauri] Could not access the microphone:", name, error);
-        setMicrophones([]);
-        setMicrophoneError(
-          name === "NotAllowedError"
-            ? "Microphone permission blocked for sauri. Go to chrome://settings/content/microphone, find the sauri extension, set the permission to 'Allow', then reload the extension."
-            : name === "NotFoundError"
-              ? "No microphone was detected."
-              : `Could not access the microphone (${name}).`
-        );
-      });
+        setSelectedMicrophone(previous => previous ?? options[0]);
+        setMicrophoneError(null);
+      } catch (error) {
+        if (cancelled) return;
+        if (error instanceof DOMException && error.name === "NotAllowedError") {
+          const fallback = { deviceId: "default", label: "Default microphone" };
+          setMicrophones([fallback]);
+          setSelectedMicrophone(previous => previous ?? fallback);
+        } else {
+          setMicrophoneError("Could not list microphones. Check Settings and try again.");
+        }
+      } finally {
+        if (!cancelled) setMicrophonesReady(true);
+      }
+    };
+    void refresh();
+    window.addEventListener("focus", refresh);
+    return () => { cancelled = true; window.removeEventListener("focus", refresh); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let latest = 0;
+    const refresh = async () => {
+      const request = ++latest;
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!cancelled && request === latest) setCurrentTabAvailable(canCaptureCurrentTab(tab?.url));
+      } catch {
+        if (!cancelled && request === latest) setCurrentTabAvailable(false);
+      }
+    };
+    void refresh();
+    chrome.tabs.onActivated.addListener(refresh);
+    chrome.tabs.onUpdated.addListener(refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      cancelled = true;
+      chrome.tabs.onActivated.removeListener(refresh);
+      chrome.tabs.onUpdated.removeListener(refresh);
+      window.removeEventListener("focus", refresh);
+    };
   }, []);
 
   // Recording stopwatch (Req. 3.9)
@@ -154,14 +191,55 @@ export function SidePanelApp() {
     previousStateRef.current = captureState;
   }, [captureState, loadNotes]);
 
-  const handleNewNote = useCallback(() => {
-    setCaptureState((prev) => applyCaptureEvent(prev, "start"));
-    chrome.runtime.sendMessage({
-      type: "start-capture",
-      resolution: { width: 1280, height: 720 },
-      micDeviceId: selectedMicrophone?.deviceId ?? null,
-    });
-  }, [selectedMicrophone]);
+  const openMicrophonePermission = useCallback(async () => {
+    setStartError("Allow the microphone in the tab that opened, then click Record again.");
+    try { await chrome.runtime.openOptionsPage(); }
+    catch { setStartError("Open Settings to allow the microphone, then click Record again."); }
+  }, []);
+
+  const handleStartCapture = useCallback(async (source: CaptureSource) => {
+    if (!microphonesReady || !projectionReady || startPendingRef.current || selecting || captureState !== "idle") return;
+    if (source === "current-tab" && !currentTabAvailable) return;
+    startPendingRef.current = true;
+    setStartingSource(source);
+    try {
+      if (selectedMicrophone?.deviceId) {
+        let granted = false;
+        try {
+          const permission = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          granted = permission.state === "granted";
+        } catch { /* Unknown permission must not silently drop the configured microphone. */ }
+        if (!granted) {
+          await openMicrophonePermission();
+          return;
+        }
+      }
+      const result: CaptureStartResult = await chrome.runtime.sendMessage({
+        type: "start-capture", source,
+        resolution: { width: 1280, height: 720 },
+        micDeviceId: selectedMicrophone?.deviceId ?? null,
+      });
+      if (result?.ok) setStartError(null);
+      else if (result?.reason === "microphone-permission") {
+        await openMicrophonePermission();
+      } else if (result?.reason === "current-tab-unavailable" || (source === "current-tab" && result?.reason === "no-tab-audio")) {
+        setStartError("Could not capture this tab. Open sauri from its toolbar icon on a web tab and try again.");
+      } else if (result?.reason === "no-tab-audio") {
+        setStartError('Choose the tab again and leave "Share tab audio" checked.');
+      } else if (result?.reason === "unsupported-surface") {
+        setStartError("Choose a Chrome tab, not a window or screen.");
+      } else if (result?.reason !== "cancelled" && result?.reason !== "busy") {
+        setStartError("Could not start recording. Please try again.");
+      }
+    } catch {
+      setStartError("Could not start recording. Please try again.");
+    } finally {
+      startPendingRef.current = false;
+      setStartingSource(null);
+    }
+  }, [selectedMicrophone, selecting, captureState, currentTabAvailable, openMicrophonePermission, microphonesReady, projectionReady]);
+
+  const handleNewNote = useCallback(() => handleStartCapture("picker"), [handleStartCapture]);
 
   const handleToggleCapture = useCallback(() => {
     if (captureState === "idle") {
@@ -232,16 +310,21 @@ export function SidePanelApp() {
         flexDirection: "column",
       }}
     >
-      <PanelHeader captureState={captureState} onNewNote={handleNewNote} />
+      <PanelHeader captureState={captureState} onNewNote={handleNewNote} selecting={selecting || !microphonesReady || !projectionReady} />
+      {selecting && <p role="status">{startingSource === "picker" ? "Choose the tab to record..." : "Starting recording..."}</p>}
       <CaptureControls
         captureState={captureState}
         microphones={microphones}
         selectedMicrophone={selectedMicrophone}
         onSelectMicrophone={setSelectedMicrophone}
         onToggleCapture={handleToggleCapture}
+        onCaptureCurrentTab={() => { void handleStartCapture("current-tab"); }}
+        currentTabAvailable={currentTabAvailable}
         onOpenSettings={handleOpenSettings}
         elapsedTimeMs={elapsedTimeMs}
         microphoneError={microphoneError}
+        selecting={selecting || !microphonesReady || !projectionReady}
+        startError={selecting ? null : startError}
       />
       {projectionReady && <RecordingCompletionStatus sessionId={recordingSessionId} />}
       <NotesList

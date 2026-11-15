@@ -1,9 +1,10 @@
 // Offscreen document for MediaRecorder.
-// Captures Audio_Track + Video_Track via a tabCapture stream, chunked on a 5s timeslice.
+// Captures Audio_Track + Video_Track via the native sharing picker, chunked on a 5s timeslice.
 // Production: chunks persisted in IndexedDB, assembled by sessionId.
 
-import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME, settleCapture } from "./recording-db";
+import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME, settleCapture, claimCompletion } from "./recording-db";
 import { videoPresenceFromStream } from "./core/capture";
+import type { CaptureSource, CaptureStartResult } from "./core/types";
 
 console.log("[sauri] Offscreen document loaded");
 
@@ -57,22 +58,24 @@ interface Resolution {
 
 chrome.runtime.onMessage.addListener(
   (
-    message: { type: string; streamId?: string; sessionId?: string; captureMode?: CaptureMode; resolution?: Resolution; micDeviceId?: string | null },
+    message: { type: string; source?: CaptureSource; streamId?: string; sessionId?: string; captureMode?: CaptureMode; resolution?: Resolution; micDeviceId?: string | null },
     _sender,
     sendResponse
   ) => {
-    if (message.type === "start-recording" && message.streamId) {
-      const sessionId = message.sessionId ?? crypto.randomUUID();
+    if (_sender.tab) return false;
+    if (message.type === "get-capture-status") {
+      sendResponse({ active: currentSessionId !== null });
+    } else if (message.type === "start-recording" && message.sessionId) {
+      const sessionId = message.sessionId;
       const captureMode: CaptureMode = message.captureMode ?? "screen_audio";
       const resolution: Resolution = message.resolution ?? { width: 1280, height: 720 };
       const micDeviceId: string | null = message.micDeviceId ?? null;
       if (currentSessionId) {
-        sendResponse({ ok: false, error: "Capture already active" });
+        sendResponse({ ok: false, reason: "busy" });
         return false;
       }
       void (async () => {
-        const ok = await startRecording(message.streamId!, sessionId, captureMode, resolution, micDeviceId);
-        sendResponse({ ok, sessionId });
+        sendResponse(await startRecording(sessionId, captureMode, resolution, micDeviceId, message.source ?? "picker", message.streamId));
       })();
       return true;
     } else if (message.type === "stop-recording") {
@@ -97,13 +100,43 @@ chrome.runtime.onMessage.addListener(
 
 // --- Recording logic ---
 
+// Hints not present in the project's DOM typings; older Chrome may ignore them.
+type PickerOptions = DisplayMediaStreamOptions & {
+  selfBrowserSurface: "include";
+  preferCurrentTab: boolean;
+  monitorTypeSurfaces: "exclude";
+  surfaceSwitching: "include";
+  systemAudio: "exclude";
+};
+
+async function chooseTab(resolution: Resolution): Promise<MediaStream> {
+  const video = {
+    displaySurface: "browser", width: { max: resolution.width }, height: { max: resolution.height },
+  };
+  const audio: MediaTrackConstraints & { suppressLocalAudioPlayback: boolean } = {
+    suppressLocalAudioPlayback: false,
+  };
+  const options: PickerOptions = {
+    video, audio, selfBrowserSurface: "include", preferCurrentTab: false,
+    monitorTypeSurfaces: "exclude", surfaceSwitching: "include", systemAudio: "exclude",
+  };
+  try {
+    return await navigator.mediaDevices.getDisplayMedia(options);
+  } catch (error) {
+    // Only retry unsupported options, never a cancellation/permission denial.
+    if (!(error instanceof TypeError)) throw error;
+    return navigator.mediaDevices.getDisplayMedia({ video, audio: true });
+  }
+}
+
 async function startRecording(
-  streamId: string,
   sessionId: string,
   captureMode: CaptureMode,
   resolution: Resolution,
-  micDeviceId: string | null
-): Promise<boolean> {
+  micDeviceId: string | null,
+  source: CaptureSource,
+  streamId?: string
+): Promise<CaptureStartResult> {
   const streams: MediaStream[] = [];
   const cleanup = () => {
     currentSessionId = null;
@@ -112,79 +145,104 @@ async function startRecording(
     streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
   };
   let captureFailed = false;
+  let captureReady = false;
+  let sourceEnded = false;
+  const finalizeEndedCapture = async () => {
+    try {
+      // Same durable claim as the origin-tab fallback; a restart can replay it.
+      await claimCompletion(sessionId, "captured-tab-close");
+      stopRecording(sessionId);
+    } catch {
+      captureFailed = true;
+      stopRecording(sessionId);
+      void chrome.runtime.sendMessage({ type: "recording-error", sessionId, error: "Could not finalize ended capture" });
+    }
+  };
   try {
     currentSessionId = sessionId;
     stopRequested = false;
     let chunkWrites: Promise<void> = Promise.resolve();
 
-    // Build getUserMedia constraints based on capture mode
-    const audioConstraint = {
-      mandatory: {
-        chromeMediaSource: "tab",
-        chromeMediaSourceId: streamId,
-      },
-    } as unknown as MediaTrackConstraints;
-
-    const mediaConstraints: MediaStreamConstraints =
-      captureMode === "audio_only"
-        ? { audio: audioConstraint, video: false }
-        : {
-            audio: audioConstraint,
-            video: {
-              mandatory: {
-                chromeMediaSource: "tab",
-                chromeMediaSourceId: streamId,
-                maxWidth: resolution.width,
-                maxHeight: resolution.height,
-              },
-            } as unknown as MediaTrackConstraints,
-          };
-
-    const tabStream =
-      await navigator.mediaDevices.getUserMedia(mediaConstraints);
-    streams.push(tabStream);
-    const videoPresence = videoPresenceFromStream(tabStream);
-    chrome.runtime.sendMessage({ type: "capture-video-presence", videoPresence: videoPresence });
-
-    // CRITICAL - Audio loopback: connect tab audio to AudioContext destination
-    // so the tab audio is NOT muted for the user
-    audioCtx = new AudioContext();
-    const tabSource = audioCtx.createMediaStreamSource(tabStream);
-    tabSource.connect(audioCtx.destination);
-
-    // Determine the audio stream to use for recording
-    let recordingStream: MediaStream;
-
-    if (micDeviceId) {
-      // Mix mic audio with tab audio for recording
-      const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: micDeviceId } },
-      });
-
-      streams.push(micStream);
-      const micSource = audioCtx.createMediaStreamSource(micStream);
-      const mixDestination = audioCtx.createMediaStreamDestination();
-
-      // Connect both tab audio and mic audio to the mix destination
-      tabSource.connect(mixDestination);
-      micSource.connect(mixDestination);
-
-      // Build the recording stream: mixed audio + video (if present)
-      const videoTrack = tabStream.getVideoTracks()[0];
-      if (videoTrack) {
-        recordingStream = new MediaStream([
-          mixDestination.stream.getAudioTracks()[0],
-          videoTrack,
-        ]);
+    let tabStream: MediaStream;
+    try {
+      if (source === "current-tab") {
+        if (!streamId) throw new Error("Current tab stream ID missing");
+        const tabConstraints = { chromeMediaSource: "tab", chromeMediaSourceId: streamId };
+        tabStream = await navigator.mediaDevices.getUserMedia({
+          audio: { mandatory: tabConstraints } as unknown as MediaTrackConstraints,
+          video: { mandatory: { ...tabConstraints, maxWidth: resolution.width, maxHeight: resolution.height } } as unknown as MediaTrackConstraints,
+        });
       } else {
-        recordingStream = mixDestination.stream;
+        tabStream = await chooseTab(resolution);
       }
-
-      console.log("[sauri] Mic mixed with tab audio for recording");
-    } else {
-      // No mic — use tab stream as-is for recording
-      recordingStream = tabStream;
+    } catch (error) {
+      if (source === "picker" && error instanceof DOMException && ["NotAllowedError", "AbortError"].includes(error.name)) {
+        cleanup();
+        return { ok: false, reason: "cancelled" };
+      }
+      if (source === "current-tab") {
+        cleanup();
+        return { ok: false, reason: "current-tab-unavailable" };
+      }
+      throw error;
     }
+    streams.push(tabStream);
+    if (!tabStream.getAudioTracks().length) {
+      cleanup();
+      return { ok: false, reason: "no-tab-audio" };
+    }
+    const videoTrack = tabStream.getVideoTracks()[0];
+    // displaySurface is only a picker hint: reject windows/monitors even if an
+    // older Chrome ignores the optional exclusion hints.
+    if (!videoTrack || (source === "picker" && videoTrack.getSettings().displaySurface !== "browser")) {
+      cleanup();
+      return { ok: false, reason: "unsupported-surface" };
+    }
+    videoTrack.addEventListener("ended", () => {
+      sourceEnded = true;
+      if (captureReady) void finalizeEndedCapture();
+    }, { once: true });
+
+    let audioTracks = tabStream.getAudioTracks();
+    let tabSource: MediaStreamAudioSourceNode | undefined;
+    if (source === "current-tab" || micDeviceId) {
+      audioCtx = new AudioContext();
+      tabSource = audioCtx.createMediaStreamSource(tabStream);
+      // Direct tab capture mutes local playback; only this source needs loopback.
+      // Display capture requests local playback and must NOT be looped back.
+      // Both playback assumptions remain NOT VERIFIED in the owner's Chrome.
+      if (source === "current-tab") tabSource.connect(audioCtx.destination);
+    }
+    if (micDeviceId) {
+      let micStream: MediaStream;
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: micDeviceId } },
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "NotAllowedError") {
+          cleanup();
+          return { ok: false, reason: "microphone-permission" };
+        }
+        throw error;
+      }
+      streams.push(micStream);
+      const micSource = audioCtx!.createMediaStreamSource(micStream);
+      const mixDestination = audioCtx!.createMediaStreamDestination();
+      tabSource!.connect(mixDestination);
+      micSource.connect(mixDestination);
+      audioTracks = mixDestination.stream.getAudioTracks();
+      streams.push(mixDestination.stream);
+    }
+    // Keep the source video track only as a sharing-lifetime sentinel in
+    // audio_only; it is not passed to MediaRecorder or stored in the file.
+    const recordingStream = new MediaStream([
+      ...audioTracks, ...(captureMode === "audio_only" ? [] : [videoTrack]),
+    ]);
+    const ready = await chrome.runtime.sendMessage({ type: "capture-ready", sessionId });
+    if (!ready?.ok) throw new Error("Could not bind capture identity");
+    captureReady = true;
+    chrome.runtime.sendMessage({ type: "capture-video-presence", videoPresence: videoPresenceFromStream(recordingStream) });
 
     // Determine supported mimeType based on capture mode
     let mimeType: string;
@@ -258,18 +316,19 @@ async function startRecording(
       stopRecording(sessionId);
     };
     recorder.start(5000);
-    if (stopRequested) stopRecording(sessionId);
+    if (sourceEnded || videoTrack.readyState === "ended") await finalizeEndedCapture();
+    else if (stopRequested) stopRecording(sessionId);
     console.log("[sauri] Recording started (5s chunks, IndexedDB persistence)");
-    return true;
+    return { ok: true, sessionId };
   } catch (error) {
     console.error("[sauri] Failed to start recording:", error);
     cleanup();
     await settleCapture(sessionId, true);
-    chrome.runtime.sendMessage({
+    if (captureReady) chrome.runtime.sendMessage({
       type: "recording-error", sessionId,
-      error: String(error),
+      error: "Could not start recording",
     });
-    return false;
+    return { ok: false, reason: "failed" };
   }
 }
 

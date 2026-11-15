@@ -15,9 +15,12 @@ export interface CaptureControlsProps {
   selectedMicrophone?: MicOption;
   onSelectMicrophone?: (mic: MicOption) => void;
   onToggleCapture: () => void;
+  onCaptureCurrentTab?: () => void;
+  currentTabAvailable?: boolean;
   onOpenSettings: () => void;
   elapsedTimeMs: number;
   startError?: string | null;
+  selecting?: boolean;
   microphoneError?: string | null;
 }
 
@@ -34,9 +37,12 @@ export function CaptureControls({
   selectedMicrophone,
   onSelectMicrophone,
   onToggleCapture,
+  onCaptureCurrentTab,
+  currentTabAvailable,
   onOpenSettings,
   elapsedTimeMs,
   startError,
+  selecting,
   microphoneError,
 }: CaptureControlsProps) {
   const recording = captureState === "recording";
@@ -98,9 +104,9 @@ export function CaptureControls({
           role="switch"
           aria-checked={recording}
           onClick={onToggleCapture}
-          disabled={captureState === "stopping"}
+          disabled={selecting || captureState === "stopping"}
           style={{
-            backgroundColor: recording ? COLOR_TOKENS.recording : COLOR_TOKENS.surfaceAlt,
+            backgroundColor: recording ? COLOR_TOKENS.recording : COLOR_TOKENS.primary,
             color: COLOR_TOKENS.text,
             border: "none",
             borderRadius: RADIUS_TOKENS.radiusMd,
@@ -137,6 +143,15 @@ export function CaptureControls({
           Settings
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={onCaptureCurrentTab}
+        disabled={!currentTabAvailable || selecting || captureState !== "idle"}
+        style={{ background: "none", border: "none", color: COLOR_TOKENS.textMuted, textDecoration: "underline", alignSelf: "flex-start" }}
+      >
+        Record this tab
+      </button>
 
       {startError && (
         <p role="alert" style={{ color: COLOR_TOKENS.error, fontSize: TYPOGRAPHY_TOKENS.textSm, margin: 0 }}>
