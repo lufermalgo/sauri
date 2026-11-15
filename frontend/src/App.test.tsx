@@ -41,7 +41,7 @@ describe("global authentication gate", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy());
     expect(storage.getItem("sauri_token")).toBeNull();
     expect(screen.queryByText("Error 401")).toBeNull();
   });
@@ -66,17 +66,17 @@ describe("global authentication gate", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Meetings" })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText(/email/i), {
+    fireEvent.change(screen.getByLabelText(copy.login.emailLabel), {
       target: { value: "owner@example.test" },
     });
-    fireEvent.change(screen.getByLabelText(/password/i), {
+    fireEvent.change(screen.getByLabelText(copy.login.passwordLabel), {
       target: { value: "synthetic-password" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /log in/i }));
+    fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
 
     await waitFor(() => expect(screen.getByText("No meetings registered.")).toBeTruthy());
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
@@ -108,7 +108,7 @@ describe("global authentication gate", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy());
     expect(storage.getItem("sauri_token")).toBeNull();
     expect(window.location.pathname).toBe("/");
   });

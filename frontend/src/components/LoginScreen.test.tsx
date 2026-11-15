@@ -1,22 +1,19 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { App } from "../App";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { LoginScreen } from "./LoginScreen";
 import * as api from "../api";
 import { copy } from "../copy/es";
 
+const text = copy.login;
+
 vi.mock("../api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api")>();
-  return { ...actual, login: vi.fn(), uploadRecording: vi.fn() };
+  return { ...actual, login: vi.fn() };
 });
-vi.mock("../components/RecordingLibrary", () => ({
-  RecordingLibrary: () => <div>Meeting list</div>,
-}));
-vi.mock("../components/TranscriptView", () => ({
-  TranscriptView: () => <div>Transcript</div>,
-}));
 
 const credentials = { email: "owner@example.test", password: "synthetic-password" };
+const tokenResponse = { access_token: "synthetic-access-token", token_type: "bearer", expires_in: 3600 };
 
 function createLocalStorage(): Storage {
   const values = new Map<string, string>();
@@ -30,14 +27,9 @@ function createLocalStorage(): Storage {
   };
 }
 
-function openPortal() {
-  localStorage.setItem("sauri_token", "synthetic-existing-token");
-  render(<App />);
-}
-
 function enterCredentials() {
-  fireEvent.change(screen.getByLabelText(/email/i), { target: { value: credentials.email } });
-  fireEvent.change(screen.getByLabelText(/password/i), { target: { value: credentials.password } });
+  fireEvent.change(screen.getByLabelText(text.emailLabel), { target: { value: credentials.email } });
+  fireEvent.change(screen.getByLabelText(text.passwordLabel), { target: { value: credentials.password } });
 }
 
 function deferred<T>() {
@@ -61,94 +53,98 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("login and local session gate", () => {
-  it("shows login before mounting the authenticated app when no token exists", () => {
-    render(<App />);
+describe("login screen", () => {
+  it("shows the brand, title, and only the email and password fields", () => {
+    const { container } = render(<LoginScreen onLogin={vi.fn()} />);
 
-    expect(screen.getByLabelText(/email/i)).toBeTruthy();
-    expect(screen.getByLabelText(/password/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /log in|sign in/i })).toBeTruthy();
+    expect(screen.getByText(text.brand)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: text.title })).toBeTruthy();
+    expect(screen.getByRole("button", { name: text.submit })).toBeTruthy();
+    const email = screen.getByLabelText(text.emailLabel) as HTMLInputElement;
+    const password = screen.getByLabelText(text.passwordLabel) as HTMLInputElement;
+    expect(email.type).toBe("email");
+    expect(email.autocomplete).toBe("username");
+    expect(email.required).toBe(true);
+    expect(password.type).toBe("password");
+    expect(password.autocomplete).toBe("current-password");
+    expect(password.required).toBe(true);
+    expect(container.querySelectorAll("input")).toHaveLength(2);
+    expect(container.querySelectorAll("a")).toHaveLength(0);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("keeps the portal hidden while login is pending and prevents duplicate submission", async () => {
-    const pendingLogin = deferred<{ access_token: string; token_type: string; expires_in: number }>();
+  it("calls login once with exactly the typed credentials and disables the form while waiting", async () => {
+    const pendingLogin = deferred<typeof tokenResponse>();
     vi.mocked(api.login).mockReturnValue(pendingLogin.promise);
-    render(<App />);
+    const onLogin = vi.fn();
+    render(<LoginScreen onLogin={onLogin} />);
     enterCredentials();
-    const submit = screen.getByRole("button", { name: /log in|sign in/i });
 
-    fireEvent.click(submit);
+    fireEvent.click(screen.getByRole("button", { name: text.submit }));
+    const submit = await screen.findByRole("button", { name: text.submitting }) as HTMLButtonElement;
+
     expect(api.login).toHaveBeenCalledTimes(1);
     expect(api.login).toHaveBeenCalledWith(credentials.email, credentials.password);
+    expect(submit.disabled).toBe(true);
+    expect((screen.getByLabelText(text.emailLabel) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText(text.passwordLabel) as HTMLInputElement).disabled).toBe(true);
     expect(localStorage.length).toBe(0);
-    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    expect(onLogin).not.toHaveBeenCalled();
 
     fireEvent.click(submit);
     expect(api.login).toHaveBeenCalledTimes(1);
 
-    pendingLogin.resolve({ access_token: "synthetic-access-token", token_type: "bearer", expires_in: 3600 });
-    expect(await screen.findByText("Meeting list")).toBeTruthy();
+    pendingLogin.resolve(tokenResponse);
+    await screen.findByRole("button", { name: text.submit });
   });
 
-  it("stores only the access token, clears transient password state and opens the portal on success", async () => {
-    vi.mocked(api.login).mockResolvedValue({
-      access_token: "synthetic-access-token",
-      token_type: "bearer",
-      expires_in: 3600,
-    });
-    render(<App />);
+  it("stores only the access token, clears the password and calls onLogin on success", async () => {
+    vi.mocked(api.login).mockResolvedValue(tokenResponse);
+    const onLogin = vi.fn();
+    render(<LoginScreen onLogin={onLogin} />);
     enterCredentials();
-    fireEvent.click(screen.getByRole("button", { name: /log in|sign in/i }));
 
-    await screen.findByText("Meeting list");
+    fireEvent.click(screen.getByRole("button", { name: text.submit }));
+
+    await vi.waitFor(() => expect(onLogin).toHaveBeenCalledTimes(1));
     expect(localStorage.getItem("sauri_token")).toBe("synthetic-access-token");
     expect(localStorage.length).toBe(1);
-    expect(localStorage.getItem("synthetic-password")).toBeNull();
-    expect(screen.queryByLabelText(/password/i)).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
-    expect(screen.getByLabelText(/password/i)).toHaveProperty("value", "");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByLabelText(text.passwordLabel)).toHaveProperty("value", "");
   });
 
   it.each([
     ["rejected credentials", () => Promise.reject(new Error("synthetic rejection"))],
     ["network failure", () => Promise.reject(new TypeError("synthetic network failure"))],
-  ])("remains unauthenticated and shows a generic error after %s", async (_failure, response) => {
+  ])("stores no token and shows the error after %s", async (_failure, response) => {
     vi.mocked(api.login).mockImplementation(response);
-    render(<App />);
+    const onLogin = vi.fn();
+    render(<LoginScreen onLogin={onLogin} />);
     enterCredentials();
-    fireEvent.click(screen.getByRole("button", { name: /log in|sign in/i }));
 
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.getByLabelText(/email/i)).toBeTruthy();
-    expect(screen.getByLabelText(/password/i)).toHaveProperty("value", credentials.password);
+    fireEvent.click(screen.getByRole("button", { name: text.submit }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(text.error);
+    expect(onLogin).not.toHaveBeenCalled();
     expect(localStorage.getItem("sauri_token")).toBeNull();
-    expect(localStorage.getItem("synthetic-password")).toBeNull();
+    expect(localStorage.length).toBe(0);
+    expect(screen.getByLabelText(text.emailLabel)).toHaveProperty("value", credentials.email);
+    expect(screen.getByLabelText(text.passwordLabel)).toHaveProperty("value", credentials.password);
+    expect((screen.getByRole("button", { name: text.submit }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("opens the portal when a token already exists", () => {
-    localStorage.setItem("sauri_token", "synthetic-existing-token");
+  it("clears a previous error when submitting again", async () => {
+    vi.mocked(api.login).mockRejectedValueOnce(new Error("synthetic rejection"));
+    vi.mocked(api.login).mockResolvedValueOnce(tokenResponse);
+    render(<LoginScreen onLogin={vi.fn()} />);
+    enterCredentials();
 
-    openPortal();
+    fireEvent.click(screen.getByRole("button", { name: text.submit }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: text.submit }));
 
-    expect(screen.getByText("Meeting list")).toBeTruthy();
-    expect(screen.getByRole("button", { name: copy.shell.logout })).toBeTruthy();
-    expect(screen.queryByLabelText(/password/i)).toBeNull();
-  });
-
-  it("logs out locally by removing only sauri_token without making a server request", async () => {
-    localStorage.setItem("sauri_token", "synthetic-existing-token");
-    localStorage.setItem("unrelated_preference", "keep-me");
-    const fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-    openPortal();
-
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
-
-    await waitFor(() => expect(screen.getByLabelText(/email/i)).toBeTruthy());
-    expect(localStorage.getItem("sauri_token")).toBeNull();
-    expect(localStorage.getItem("unrelated_preference")).toBe("keep-me");
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(api.login).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(api.login).toHaveBeenCalledTimes(2);
   });
 });
