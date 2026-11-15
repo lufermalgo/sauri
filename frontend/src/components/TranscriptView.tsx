@@ -17,9 +17,10 @@ import { ProcessingStatus } from "./ProcessingStatus";
 import { SummaryPanel } from "./SummaryPanel";
 import { MeetingHeader } from "./MeetingHeader";
 import { ChatTab } from "./ChatTab";
-import { Button, Card, Tabs, TextField } from "./ui";
+import { Avatar, Button, Card, Tabs, TextField, Skeleton, SkeletonLines, ProgressBar } from "./ui";
 import { meeting as text } from "../copy/meeting";
 import "../styles/meeting.css";
+import { processing } from "../copy/processing";
 import { copy } from "../copy/es";
 
 interface TranscriptViewProps {
@@ -81,6 +82,9 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [diarizationError, setDiarizationError] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const turnRefs = useRef(new Map<string, HTMLLIElement>());
+  const [followPlayback, setFollowPlayback] = useState(true);
+  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>(null);
+  const speakerCardRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState("summary");
   const seekToRef = useRef<((timeMs: number, play?: boolean) => void) | undefined>(undefined);
   const registerSeekTo = useCallback((seekTo: ((timeMs: number, play?: boolean) => void) | undefined) => {
@@ -347,10 +351,10 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     [data, presentationTurns]);
 
   useEffect(() => {
-    if (activeTurnId) {
+    if (followPlayback && activeTurnId) {
       turnRefs.current.get(activeTurnId)?.scrollIntoView?.({ block: "nearest" });
     }
-  }, [activeTurnId]);
+  }, [activeTurnId, followPlayback]);
 
   function updateActiveTurn(event: React.SyntheticEvent) {
     if (!(event.target instanceof HTMLMediaElement)) return;
@@ -360,29 +364,72 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     setActiveTurnId(interval?.presentationTurnId ?? null);
   }
 
+  const timelineTurns = useMemo(() => {
+    const presentationById = new Map(presentationTurns.flatMap(turn => turn.sourceIds.map(id => [id, turn] as const)));
+    return intervalTurns.map(turn => {
+      const presentation = presentationById.get(turn.id);
+      return {
+        id: turn.id, startMs: turn.startMs, endMs: turn.endMs,
+        speakerId: turn.speakerId ?? undefined,
+        speakerLabel: presentation?.speakerLabel ?? copy.transcript.unknownSpeaker,
+        color: presentation?.color ?? UNRESOLVED_SPEAKER_COLOR,
+      };
+    });
+  }, [intervalTurns, presentationTurns]);
+
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
   const completed = meeting?.processState === "completed" && !statusError;
   const identifying = Boolean(data) && diarizationNotFound;
 
+  const pendingCount = review?.items.filter(item => item.disposition === null).length ?? 0;
+  const selectedId = selectedSpeakerId ?? review?.items[0]?.speakerId;
+  const processingState = meeting?.processState;
+  const processingLabels: Record<string, string> = {
+    queued: processing.queued, joining: processing.joining, recording: processing.recording,
+    transcribing: processing.transcribing,
+  };
+
+  if (loading) return <section className="meeting-view" aria-busy="true">
+    <p role="status">{text.opening}</p>
+    <header className="meeting-loading-heading" aria-hidden="true">
+      <Skeleton width="60%" height={34} /><Skeleton width="45%" height={16} />
+    </header>
+    <div className="meeting-grid" aria-hidden="true">
+      <Card className="meeting-playback-card"><Skeleton className="meeting-video-skeleton" /><SkeletonLines lines={1} /></Card>
+      <div className="meeting-side-column"><Card><SkeletonLines lines={6} /></Card></div>
+      <Card className="meeting-transcript"><TranscriptSkeleton /></Card>
+    </div>
+  </section>;
+
   return (
     <section className="meeting-view">
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
-        onBack={onBack} completed={completed} manifest={playbackManifest} turns={presentationTurns} />
+        onBack={onBack} completed={completed} processState={statusError ? undefined : meeting?.processState}
+        speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} />
+      {pendingCount > 0 && <div className="meeting-pending-speakers">
+        <span role="status">{text.pendingSpeakers(pendingCount)}</span>
+        <Button variant="ghost" onClick={() => {
+          speakerCardRef.current?.focus();
+          speakerCardRef.current?.scrollIntoView?.({ block: "nearest" });
+        }}>{text.reviewSpeakers}</Button>
+      </div>}
       {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
       {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{copy.processing.speakerWaitExpired}</p></div> :
         (!completed || identifying) && <div className="meeting-processing">
+          {!statusError && processingState !== "failed" && <ProgressBar
+            label={identifying ? processing.identifying : processingLabels[processingState ?? ""] ?? processing.loading} />}
           <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
             diarizationNotFound={diarizationNotFound} error={statusError} />
         </div>}
       {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
       {error && <p role="alert" className="meeting-error">{error}</p>}
-      {!loading && !data && !error && <p>{copy.processing.transcriptPending}</p>}
       <div className="meeting-grid">
-      <div className="meeting-main">
       <Card className="meeting-playback-card">
       <div id="meeting-playback" ref={playbackRef} onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}>
         <MeetingPlaybackView
+          followPlayback={followPlayback}
+          timelineTurns={timelineTurns}
           manifest={playbackManifest}
           passages={playbackPassages}
           loading={playbackLoading}
@@ -393,66 +440,20 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         />
       </div>
       </Card>
-      <Card className="meeting-transcript" aria-labelledby="meeting-transcript-heading">
-      <h2 id="meeting-transcript-heading">{text.transcript}</h2>
-      {data && <>
-      {presentationTurns.length === 0 ? (
-        <p>{text.emptyTranscript}</p>
-      ) : (
-        <ol className="meeting-turns">
-          {presentationTurns.map((turn) => {
-            const isActive = activeTurnId === turn.id;
-            const lastSource = sourceTurnById.get(turn.sourceIds.at(-1) ?? "");
-            const timestamp = lastSource && turn.sourceIds.length === 1
-              ? `[${formatTimestamp(turn.timestampMs ?? 0)} – ${formatTimestamp(lastSource.endMs)}]`
-              : `[${formatTimestamp(turn.timestampMs ?? 0)}]`;
-            return (
-              <li key={turn.id}
-                aria-current={isActive ? "true" : undefined}
-                className={`meeting-turn${isActive ? " meeting-turn--active" : ""}`}
-                style={{ "--meeting-speaker": turn.color } as React.CSSProperties}
-                ref={(element) => {
-                  if (element) turnRefs.current.set(turn.id, element);
-                  else turnRefs.current.delete(turn.id);
-                }}
-              >
-                <button className="meeting-turn-action" type="button"
-                  aria-label={copy.transcript.playAt(formatTimestamp(turn.timestampMs ?? 0))}
-                  aria-describedby={`turn-${turn.id}-speaker turn-${turn.id}-text${turn.hasAmbiguous ? ` turn-${turn.id}-ambiguous` : ""}`}
-                  aria-current={isActive ? "true" : undefined}
-                  disabled={turn.timestampMs === null || !playbackManifest || playbackLoading || Boolean(playbackError)}
-                  onClick={() => {
-                    if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs, true);
-                  }}
-                >
-                  <span className="meeting-turn-meta">
-                    <span className="meeting-timestamp">{timestamp}</span>
-                    <span id={`turn-${turn.id}-speaker`} data-testid="transcript-speaker-label" className="meeting-speaker">
-                      {turn.speakerLabel}
-                    </span>
-                    {turn.hasAmbiguous && <span title={copy.transcript.ambiguous}
-                      id={`turn-${turn.id}-ambiguous`} aria-label={copy.transcript.ambiguous} className="meeting-ambiguous">
-                      <span aria-hidden="true"> · ? </span>
-                      <span className="meeting-sr-only">{copy.transcript.ambiguous}</span>
-                    </span>}
-                    <svg className="meeting-turn-play" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16">
-                      <path d="M5 3 13 8 5 13Z" fill="currentColor" />
-                    </svg>
-                  </span>
-                  <span id={`turn-${turn.id}-text`} className="meeting-turn-text">{turn.text}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-      </>}
+      <aside className="meeting-side-column">
+      <Card className="meeting-sidebar">
+        <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
+          { id: "summary", label: text.summaryTab, panel: meeting && activeTab === "summary"
+            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} /> : null },
+          { id: "chat", label: text.chatTab, panel: <ChatTab /> },
+        ]} />
       </Card>
       {reviewError && <p role="alert" className="meeting-error">{reviewError}</p>}
       {review && (
         <Card className="meeting-speaker-review" aria-labelledby="speaker-review-heading">
+          <div ref={speakerCardRef} tabIndex={-1}>
           <h3 id="speaker-review-heading">{copy.speakerReview.heading}</h3>
-          <p role="status">{review.status === "complete" ? copy.speakerReview.complete : copy.speakerReview.pending}</p>
+          <p role="status" className="meeting-sr-only">{review.status === "complete" ? copy.speakerReview.complete : copy.speakerReview.pending}</p>
           {review.items.map((item) => {
             const label = displaySpeakerLabel(review.labelsBySpeakerId[item.speakerId]?.trim() || item.currentLabel ||
               copy.transcript.legacyUnknownSpeaker, item.speakerId, review);
@@ -463,8 +464,17 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
             const inputId = `speaker-name-${item.speakerId}`;
             return (
               <article className="meeting-review-item" key={item.speakerId} aria-busy={busy || undefined}>
-                <h4>{label}</h4>
-                <p>{copy.speakerReview.dispositionLabel(item.disposition)}</p>
+                <div className="meeting-review-row">
+                <Avatar initials={speakerInitials(label)} color={speakerColor(diarization, item.speakerId)} size="sm" />
+                <div className="meeting-review-identity">
+                  <h4><button type="button" className="meeting-speaker-select"
+                    aria-label={copy.speakerReview.selectSpeaker(label)} aria-expanded={selectedId === item.speakerId}
+                    aria-controls={`speaker-editor-${item.speakerId}`}
+                    onClick={() => setSelectedSpeakerId(item.speakerId)}>{label}</button></h4>
+                  <span className={item.disposition === null ? "meeting-review-pending" : "meeting-review-confirmed"}>
+                    {item.disposition === null ? copy.speakerReview.pendingState : copy.speakerReview.confirmedState}
+                  </span>
+                </div>
                 <Button variant="secondary"
                   type="button"
                   aria-label={copy.speakerReview.listenTo(label)}
@@ -473,10 +483,11 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
                 >
                   {copy.speakerReview.listen}
                 </Button>
+                </div>
                 {!interval && <p>{copy.speakerReview.noInterval}</p>}
                 {interval?.short && <p>{copy.speakerReview.shortInterval}</p>}
                 {interval && !playbackReady && !playbackLoading && <p>{copy.speakerReview.playbackUnavailable}</p>}
-                <div className="meeting-review-actions">
+                {selectedId === item.speakerId && <div className="meeting-review-actions" id={`speaker-editor-${item.speakerId}`}>
                   <TextField label={copy.speakerReview.nameFor(label)}
                     id={inputId}
                     type="text"
@@ -512,21 +523,94 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
                     {copy.speakerReview.correct}
                   </Button>
                   {busy && <span role="status">{copy.speakerReview.saving}</span>}
-                </div>
+                </div>}
               </article>
             );
           })}
+          </div>
         </Card>
       )}
+      </aside>
+      <Card className="meeting-transcript" aria-labelledby="meeting-transcript-heading">
+      <div className="meeting-transcript-heading">
+        <h2 id="meeting-transcript-heading">{text.transcript}</h2>
+        <label className="meeting-follow"><input type="checkbox" checked={followPlayback}
+          onChange={event => setFollowPlayback(event.target.checked)} />{text.followPlayback}</label>
       </div>
-      <Card className="meeting-sidebar">
-        <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
-          { id: "summary", label: text.summaryTab, panel: meeting && activeTab === "summary"
-            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} /> : null },
-          { id: "chat", label: text.chatTab, panel: <ChatTab /> },
-        ]} />
+      {!data && !error && <>
+        <p role="status">{copy.processing.transcriptPending}</p>
+        <p>{text.transcriptPlaceholder}</p>
+        <span role="status" className="meeting-sr-only">{text.loading}</span>
+        <TranscriptSkeleton />
+      </>}
+      {data && <>
+      {presentationTurns.length === 0 ? (
+        <p>{text.emptyTranscript}</p>
+      ) : (
+        <ol className="meeting-turns">
+          {presentationTurns.map((turn) => {
+            const isActive = activeTurnId === turn.id;
+            const lastSource = sourceTurnById.get(turn.sourceIds.at(-1) ?? "");
+            const timestamp = lastSource && turn.sourceIds.length === 1
+              ? `[${formatTimestamp(turn.timestampMs ?? 0)} – ${formatTimestamp(lastSource.endMs)}]`
+              : `[${formatTimestamp(turn.timestampMs ?? 0)}]`;
+            return (
+              <li key={turn.id}
+                aria-current={isActive ? "true" : undefined}
+                className={`meeting-turn${isActive ? " meeting-turn--active" : ""}`}
+                style={{ "--meeting-speaker": turn.color } as React.CSSProperties}
+                ref={(element) => {
+                  if (element) turnRefs.current.set(turn.id, element);
+                  else turnRefs.current.delete(turn.id);
+                }}
+              >
+                <button className="meeting-turn-action" type="button"
+                  aria-label={copy.transcript.playAt(formatTimestamp(turn.timestampMs ?? 0))}
+                  aria-describedby={`turn-${turn.id}-speaker turn-${turn.id}-text${turn.hasAmbiguous ? ` turn-${turn.id}-ambiguous` : ""}`}
+                  aria-current={isActive ? "true" : undefined}
+                  disabled={turn.timestampMs === null || !playbackManifest || playbackLoading || Boolean(playbackError)}
+                  onClick={() => {
+                    if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs, true);
+                  }}
+                >
+                  <Avatar initials={speakerInitials(turn.speakerLabel)} color={turn.color} />
+                  <span className="meeting-turn-meta">
+                    <span id={`turn-${turn.id}-speaker`} data-testid="transcript-speaker-label" className="meeting-speaker">
+                      {turn.speakerLabel}
+                    </span>
+                    <span className="meeting-timestamp">{timestamp}</span>
+                    {turn.hasAmbiguous && <span title={copy.transcript.ambiguous}
+                      id={`turn-${turn.id}-ambiguous`} aria-label={copy.transcript.ambiguous} className="meeting-ambiguous">
+                      <span aria-hidden="true"> · ? </span>
+                      <span className="meeting-sr-only">{copy.transcript.ambiguous}</span>
+                    </span>}
+                    <svg className="meeting-turn-play" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16">
+                      <path d="M5 3 13 8 5 13Z" fill="currentColor" />
+                    </svg>
+                  </span>
+                  <span id={`turn-${turn.id}-text`} className="meeting-turn-text">{turn.text}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      </>}
       </Card>
       </div>
     </section>
   );
+}
+
+function speakerInitials(label: string): string {
+  return label.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toLocaleUpperCase("es");
+}
+
+function TranscriptSkeleton() {
+  return <div className="meeting-transcript-skeleton" aria-hidden="true">
+    {[0, 1, 2].map(index => <div className="meeting-skeleton-turn" key={index}>
+      <Skeleton width={36} height={36} radius="full" />
+      <div><Skeleton width="40%" height={12} /><SkeletonLines lines={2} /></div>
+    </div>)}
+  </div>;
 }

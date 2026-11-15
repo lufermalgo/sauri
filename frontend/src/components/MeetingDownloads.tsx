@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { PlaybackManifest } from "../api";
 import { meeting as text } from "../copy/meeting";
 import { transcriptToText, type ExportTurn } from "../transcript-export";
-import { Button } from "./ui";
+import { Menu, MenuItem } from "./ui";
 import "../styles/meeting.css";
 
 export interface MeetingDownloadsProps {
@@ -35,10 +35,22 @@ export function MeetingDownloads({ meetingId, manifest, turns }: MeetingDownload
     }
   }
 
+  function downloadMedia() {
+    if (!source?.url) return;
+    setError(false);
+    const link = document.createElement("a");
+    link.href = source.url;
+    link.download = "";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }
+
   return <div className="meeting-downloads">
-    {source?.url ? <a className="ui-button ui-button--secondary" href={source.url} download>{mediaLabel}</a>
-      : <Button variant="secondary" disabled>{mediaLabel}</Button>}
-    <Button variant="secondary" disabled={!turns.length} onClick={downloadTranscript}>{text.downloadTranscript}</Button>
+    <Menu label={text.download} triggerLabel={text.download} triggerVariant="primary">
+      <MenuItem disabled={!source?.url} onSelect={downloadMedia}>{mediaLabel}</MenuItem>
+      <MenuItem disabled={!turns.length} onSelect={downloadTranscript}>{text.downloadTranscript}</MenuItem>
+    </Menu>
     {error && <p role="alert" className="meeting-error">{text.downloadFailed}</p>}
   </div>;
 }

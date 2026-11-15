@@ -19,23 +19,30 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.use
 describe("MeetingDownloads", () => {
   it("disables both downloads without a manifest or turns", () => {
     render(<MeetingDownloads meetingId="m1" manifest={null} turns={[]} />);
-    expect(screen.getByRole("button", { name: text.downloadVideo })).toBeDisabled();
-    expect(screen.getByRole("button", { name: text.downloadTranscript })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    expect(screen.getByRole("menuitem", { name: text.downloadVideo })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("menuitem", { name: text.downloadTranscript })).toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it.each(["muxed", "separate", "absent", "unknown"] as const)("links the primary source for %s media", mode => {
     render(<MeetingDownloads meetingId="m1" manifest={{ ...manifest, video_presence: mode, video_sources: [video] }} turns={turns} />);
     const audioOnly = mode === "absent" || mode === "unknown";
-    const link = screen.getByRole("link", { name: audioOnly ? text.downloadAudio : text.downloadVideo });
+    let link: HTMLAnchorElement | undefined;
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { link = this; });
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    expect(screen.getByRole("menuitem", { name: text.downloadTranscript })).not.toHaveAttribute("aria-disabled");
+    fireEvent.click(screen.getByRole("menuitem", { name: audioOnly ? text.downloadAudio : text.downloadVideo }));
     expect(link).toHaveAttribute("href", audioOnly ? audio.url : video.url);
     expect(link).toHaveAttribute("download");
-    expect(screen.getByRole("button", { name: text.downloadTranscript })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    expect(screen.getByRole("menuitem", { name: text.downloadTranscript })).not.toHaveAttribute("aria-disabled");
   });
 
   it("keeps media disabled when the primary source is unavailable", () => {
     render(<MeetingDownloads meetingId="m1" manifest={{ ...manifest, muxed_video_source: null }} turns={turns} />);
-    expect(screen.getByRole("button", { name: text.downloadVideo })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    expect(screen.getByRole("menuitem", { name: text.downloadVideo })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("downloads the actual text export with a filename and releases the object URL", async () => {
@@ -45,7 +52,8 @@ describe("MeetingDownloads", () => {
     let clicked: HTMLAnchorElement | undefined;
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicked = this; });
     render(<MeetingDownloads meetingId="m1" manifest={manifest} turns={turns} />);
-    fireEvent.click(screen.getByRole("button", { name: text.downloadTranscript }));
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    fireEvent.click(screen.getByRole("menuitem", { name: text.downloadTranscript }));
     const blob = create.mock.calls[0][0];
     expect(blob.type).toBe("text/plain;charset=utf-8");
     const content = await new Promise<string>(resolve => {
@@ -63,8 +71,10 @@ describe("MeetingDownloads", () => {
   it("reports an export failure without disabling retry", () => {
     vi.stubGlobal("URL", { createObjectURL: () => { throw new Error("Synthetic failure"); } });
     render(<MeetingDownloads meetingId="m1" manifest={manifest} turns={turns} />);
-    fireEvent.click(screen.getByRole("button", { name: text.downloadTranscript }));
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    fireEvent.click(screen.getByRole("menuitem", { name: text.downloadTranscript }));
     expect(screen.getByRole("alert")).toHaveTextContent(text.downloadFailed);
-    expect(screen.getByRole("button", { name: text.downloadTranscript })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    expect(screen.getByRole("menuitem", { name: text.downloadTranscript })).not.toHaveAttribute("aria-disabled");
   });
 });

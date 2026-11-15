@@ -22,6 +22,11 @@ function open(title: string | null = "Synthetic meeting") {
     onBack={vi.fn()} manifest={null} turns={[]} />);
 }
 
+function openDelete() {
+  fireEvent.click(screen.getByRole("button", { name: text.moreActions }));
+  fireEvent.click(screen.getByRole("menuitem", { name: text.deleteRecording }));
+}
+
 function edit(value: string) {
   fireEvent.click(screen.getByRole("button", { name: text.rename }));
   fireEvent.change(screen.getByRole("textbox", { name: text.titleLabel }), { target: { value } });
@@ -74,7 +79,7 @@ describe("MeetingHeader", () => {
   });
 
   it("requires confirmation, focuses cancel and never deletes on cancellation", () => {
-    open(); fireEvent.click(screen.getByRole("button", { name: text.delete }));
+    open(); openDelete();
     expect(deleteMeeting).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: text.deleteTitle });
     const cancel = within(dialog).getByRole("button", { name: text.cancel });
@@ -87,7 +92,7 @@ describe("MeetingHeader", () => {
   it("deletes only after confirmation and navigates only after success", async () => {
     let finish!: () => void;
     vi.mocked(deleteMeeting).mockReturnValue(new Promise(resolve => { finish = resolve; }));
-    open(); fireEvent.click(screen.getByRole("button", { name: text.delete }));
+    open(); openDelete();
     const confirm = within(screen.getByRole("dialog")).getByRole("button", { name: text.delete });
     fireEvent.click(confirm); fireEvent.click(confirm);
     expect(deleteMeeting).toHaveBeenCalledTimes(1);
@@ -99,7 +104,7 @@ describe("MeetingHeader", () => {
 
   it("keeps the meeting open after deletion failure", async () => {
     vi.mocked(deleteMeeting).mockRejectedValue(new Error("Error 503"));
-    open(); fireEvent.click(screen.getByRole("button", { name: text.delete }));
+    open(); openDelete();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: text.delete }));
     expect(await screen.findByRole("alert")).toHaveTextContent(text.deleteFailed);
     expect(navigate).not.toHaveBeenCalled();
@@ -108,13 +113,38 @@ describe("MeetingHeader", () => {
 });
 
 
-it("orders natural-width actions with a subdued delete action last", () => {
+it("orders download, rename and more actions, keeping deletion inside the menu", () => {
   open();
   const actions = document.querySelector(".meeting-heading-row > .meeting-actions")!;
   const buttons = within(actions as HTMLElement).getAllByRole("button");
-  expect(buttons.map(button => button.textContent)).toEqual([
-    text.rename, text.downloadVideo, text.downloadTranscript, text.delete,
-  ]);
-  expect(buttons[3]).toHaveClass("ui-button--ghost", "meeting-delete");
-  expect(buttons[3]).not.toHaveClass("ui-button--danger");
+  expect(buttons).toHaveLength(3);
+  expect(buttons[0]).toHaveAccessibleName(text.download);
+  expect(buttons[0]).toHaveClass("ui-menu-trigger--primary");
+  expect(buttons[1]).toHaveAccessibleName(text.rename);
+  expect(buttons[2]).toHaveAccessibleName(text.moreActions);
+  expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
+  fireEvent.click(buttons[2]);
+  expect(screen.getByRole("menuitem", { name: text.deleteRecording })).toHaveClass("ui-menu-item--danger");
+});
+
+it.each([[65, "01:05"], [3605, "1:00:05"], [0, "00:00"]])("formats real duration %s and speaker count", (duration, label) => {
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" onBack={vi.fn()}
+    completed speakerCount={2} turns={[]} manifest={{ meeting_id: "m1", duration_seconds: Number(duration),
+      video_presence: "absent", audio_source: { source_id: "a", url: "/audio", mime_type: "audio/wav" },
+      muxed_video_source: null, video_sources: [] }} />);
+  expect(screen.getByText(label)).toHaveClass("meeting-duration");
+  expect(screen.getByText(text.speakerCount(2))).toBeVisible();
+  expect(screen.getByText(text.ready)).toHaveClass("ui-status-badge--success");
+});
+
+it("omits duration and speaker count without their source data", () => {
+  open();
+  expect(document.querySelector(".meeting-duration")).not.toBeInTheDocument();
+  expect(screen.queryByText(text.speakerCount(0))).not.toBeInTheDocument();
+});
+
+it.each([['transcribing', 'progress'], ['failed', 'error']])("shows the %s badge with its real tone", (processState, tone) => {
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" onBack={vi.fn()}
+    processState={processState} turns={[]} manifest={null} />);
+  expect(document.querySelector(".ui-status-badge")).toHaveClass(`ui-status-badge--${tone}`);
 });

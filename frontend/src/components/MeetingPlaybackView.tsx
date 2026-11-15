@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "./ui";
+import { Button, Skeleton, SkeletonLines } from "./ui";
 import { meeting as text } from "../copy/meeting";
 import "../styles/meeting.css";
+import { SpeakerTimeline, type TimelineTurn } from "./SpeakerTimeline";
 import type { PlaybackManifest, TimedPassage } from "../api";
 import {
   PlaybackController,
@@ -15,6 +16,9 @@ interface PlaybackTranscriptPassage extends TimedPassage {
 }
 
 interface MeetingPlaybackViewProps {
+  timelineTurns?: TimelineTurn[];
+  keyPointTimes?: number[];
+  followPlayback?: boolean;
   manifest: PlaybackManifest | null;
   passages: PlaybackTranscriptPassage[];
   loading: boolean;
@@ -50,6 +54,9 @@ function formatTime(milliseconds: number): string {
 
 export function MeetingPlaybackView({
   manifest,
+  timelineTurns = [],
+  keyPointTimes,
+  followPlayback = true,
   passages,
   loading,
   error,
@@ -169,8 +176,8 @@ export function MeetingPlaybackView({
   useEffect(() => {
     if (state.activePassageId === previousActivePassage.current) return;
     previousActivePassage.current = state.activePassageId;
-    if (state.activePassageId) passageRefs.current.get(state.activePassageId)?.scrollIntoView?.({ block: "nearest" });
-  }, [state.activePassageId]);
+    if (followPlayback && state.activePassageId) passageRefs.current.get(state.activePassageId)?.scrollIntoView?.({ block: "nearest" });
+  }, [state.activePassageId, followPlayback]);
 
   async function refreshSource() {
     if (refreshAttempted.current) {
@@ -200,7 +207,10 @@ export function MeetingPlaybackView({
   }
 
   const controlsDisabled = loading || !mediaReady || !currentManifest || Boolean(error);
-  if (loading && !currentManifest) return <p role="status">{text.playbackLoading}</p>;
+  if (loading && !currentManifest) return <div className="meeting-playback-loading">
+    <p role="status">{text.playbackLoading}</p>
+    <div aria-hidden="true"><Skeleton className="meeting-video-skeleton" radius="md" /><SkeletonLines lines={1} /></div>
+  </div>;
   if (!currentManifest) {
     return <p role={error ? "alert" : "status"}>{error ? text.playbackLoadFailed : text.playbackUnavailable}</p>;
   }
@@ -332,6 +342,9 @@ export function MeetingPlaybackView({
           </label>
         )}
       </div>
+      <SpeakerTimeline turns={timelineTurns} durationMs={currentManifest.duration_seconds * 1000}
+        currentTimeMs={state.currentTimeMs} keyPointTimes={keyPointTimes} disabled={controlsDisabled}
+        onSeek={timeMs => controllerRef.current?.seekTo(timeMs)} />
       {passages.length === 0 ? (
         <p>{text.emptyPlaybackTranscript}</p>
       ) : (

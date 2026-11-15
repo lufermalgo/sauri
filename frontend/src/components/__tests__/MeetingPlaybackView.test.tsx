@@ -318,7 +318,12 @@ describe("MeetingPlaybackView", () => {
       ...screen.getAllByRole("button"),
     ];
     expect(controls.length).toBeGreaterThan(0);
-    for (const control of controls) expect(control).toBeDisabled();
+    for (const control of controls) {
+      if (control.classList.contains("meeting-timeline-slider")) {
+        expect(control).toHaveAttribute("aria-disabled", "true");
+        expect(control).toHaveAttribute("tabindex", "-1");
+      } else expect(control).toBeDisabled();
+    }
   });
 
   it("refreshes an expired signed source once at the saved position and stops after the renewed source fails", async () => {
@@ -389,4 +394,22 @@ it("keeps exactly the existing controls together in one compact toolbar", () => 
   expect(within(toolbar).getAllByRole("combobox").map(select => select.getAttribute("aria-label")))
     .toEqual([text.speed, text.quality]);
   expect(toolbar.querySelector(".meeting-control-time")).toHaveTextContent("0:00 / --:--");
+});
+
+it("seeks timeline markers through the original playback controller and tracks its clock", async () => {
+  render(<MeetingPlaybackView manifest={manifest()} passages={passages} loading={false} error={null}
+    timelineTurns={[{ id: "t1", startMs: 0, endMs: 15000, speakerId: "s1", speakerLabel: "Synthetic speaker", color: "var(--speaker-1)" }]}
+    keyPointTimes={[5000, 10000]} />);
+  const audio = mediaElement();
+  Object.defineProperty(audio, "duration", { configurable: true, value: 30 });
+  fireEvent.loadedMetadata(audio);
+  fireEvent.click(screen.getByRole("button", { name: text.keyPointAt("00:05") }));
+  expect(audio.currentTime).toBe(5);
+  fireEvent.seeked(audio);
+  const timeline = screen.getByRole("slider", { name: text.timeline });
+  expect(timeline).toHaveAttribute("aria-valuenow", "5000");
+  fireEvent.keyDown(timeline, { key: "ArrowRight" });
+  expect(audio.currentTime).toBe(10);
+  fireEvent.timeUpdate(audio);
+  expect(timeline).toHaveAttribute("aria-valuenow", "10000");
 });
