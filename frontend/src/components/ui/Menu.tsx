@@ -6,10 +6,12 @@ const MenuContext = createContext<MenuContextValue | null>(null);
 
 export type MenuProps = {
   label: string;
+  triggerLabel?: string;
+  triggerVariant?: "icon" | "primary" | "secondary";
   children: ReactNode;
 };
 
-export function Menu({ label, children }: MenuProps) {
+export function Menu({ label, triggerLabel, triggerVariant = "icon", children }: MenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -17,7 +19,7 @@ export function Menu({ label, children }: MenuProps) {
   const pendingFocus = useRef<"first" | "last" | null>(null);
   const panelId = useId();
 
-  const items = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+  const items = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? []);
 
   const close = useCallback((restoreFocus: boolean) => {
     setOpen(false);
@@ -84,14 +86,24 @@ export function Menu({ label, children }: MenuProps) {
 
   return (
     <div className="ui-menu" ref={rootRef}>
-      <button ref={triggerRef} type="button" className="ui-menu-trigger" aria-label={label}
+      <button ref={triggerRef} type="button" className={`ui-menu-trigger ui-menu-trigger--${triggerLabel ? triggerVariant : "icon"}`} aria-label={label}
         aria-haspopup="menu" aria-expanded={open} aria-controls={open ? panelId : undefined}
         onClick={() => (open ? close(false) : openMenu("first"))} onKeyDown={onTriggerKeyDown}>
-        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
-          <circle cx="4" cy="9" r="1.6" fill="currentColor" />
-          <circle cx="9" cy="9" r="1.6" fill="currentColor" />
-          <circle cx="14" cy="9" r="1.6" fill="currentColor" />
-        </svg>
+        {triggerLabel ? (
+          <>
+            <span>{triggerLabel}</span>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
+              <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
+                strokeLinejoin="round" />
+            </svg>
+          </>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" focusable="false">
+            <circle cx="4" cy="9" r="1.6" fill="currentColor" />
+            <circle cx="9" cy="9" r="1.6" fill="currentColor" />
+            <circle cx="14" cy="9" r="1.6" fill="currentColor" />
+          </svg>
+        )}
       </button>
       {open && (
         <MenuContext.Provider value={{ close: () => close(true) }}>
@@ -108,14 +120,17 @@ export function Menu({ label, children }: MenuProps) {
 export type MenuItemProps = {
   onSelect: () => void;
   tone?: "default" | "danger";
+  disabled?: boolean;
   children: ReactNode;
 };
 
-export function MenuItem({ onSelect, tone = "default", children }: MenuItemProps) {
+export function MenuItem({ onSelect, tone = "default", disabled = false, children }: MenuItemProps) {
   const menu = useContext(MenuContext);
   return (
     <button type="button" role="menuitem" tabIndex={-1} className={`ui-menu-item ui-menu-item--${tone}`}
+      aria-disabled={disabled || undefined}
       onClick={() => {
+        if (disabled) return;
         onSelect();
         menu?.close();
       }}>

@@ -246,6 +246,50 @@ describe("Menu", () => {
   });
 });
 
+describe("Menu text trigger and disabled items", () => {
+  it("shows visible text with a chevron while keeping label as aria-label", () => {
+    render(<Menu label="Download options" triggerLabel="Download" triggerVariant="primary">
+      <MenuItem onSelect={() => undefined}>One</MenuItem>
+    </Menu>);
+    const trigger = screen.getByRole("button", { name: "Download options" });
+    expect(trigger).toHaveTextContent("Download");
+    expect(trigger).toHaveClass("ui-menu-trigger--primary");
+    expect(trigger.querySelector("svg")).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
+
+  it("supports the secondary variant and defaults to the icon trigger", () => {
+    const { rerender } = render(<Menu label="Options" triggerLabel="Options" triggerVariant="secondary">
+      <MenuItem onSelect={() => undefined}>One</MenuItem></Menu>);
+    expect(screen.getByRole("button", { name: "Options" })).toHaveClass("ui-menu-trigger--secondary");
+    expect(screen.getByRole("button", { name: "Options" })).toHaveTextContent("Options");
+    rerender(<Menu label="Options"><MenuItem onSelect={() => undefined}>One</MenuItem></Menu>);
+    expect(screen.getByRole("button", { name: "Options" })).toHaveClass("ui-menu-trigger--icon");
+    expect(screen.getByRole("button", { name: "Options" })).toHaveTextContent("");
+  });
+
+  it("skips disabled items in navigation and never selects them", () => {
+    const onDisabled = vi.fn();
+    render(<Menu label="Actions">
+      <MenuItem onSelect={() => undefined}>First</MenuItem>
+      <MenuItem disabled onSelect={onDisabled}>Unavailable</MenuItem>
+      <MenuItem onSelect={() => undefined}>Last</MenuItem>
+    </Menu>);
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const disabled = screen.getByRole("menuitem", { name: "Unavailable" });
+    expect(disabled).toHaveAttribute("aria-disabled", "true");
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Last" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(screen.getByRole("menuitem", { name: "First" })).toHaveFocus();
+    fireEvent.click(disabled);
+    expect(onDisabled).not.toHaveBeenCalled();
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
+});
+
 describe("Avatar", () => {
   it("shows initials, is aria-hidden and sets the color variable", () => {
     const { container } = render(<Avatar initials="LF" color="var(--speaker-2)" size="sm" />);
