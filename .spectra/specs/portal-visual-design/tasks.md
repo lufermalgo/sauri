@@ -427,3 +427,7 @@ export function applyLibraryQuery(items: MeetingListItem[], query: LibraryQuery)
 3. **Formato de las descargas.** El alcance pide descargar la transcripción y el resumen pero no dice en qué formato. *Recomiendo* texto simple (`.txt`), que abre en cualquier equipo; Word o PDF se pueden añadir después si los necesitas.
 4. **Etiquetas iniciales.** *Recomiendo* que cada usuario empiece con «GenAI», «Digital Twin» y «Automatización» ya creadas, pueda crear las suyas, y que las etiquetas de cada persona sean solo suyas.
 5. **Cuándo se abre sola la reunión.** Hoy la extensión abre la reunión cuando el procesamiento termina (minutos después). El alcance dice que se abra al detener la grabación. *Recomiendo* abrirla en cuanto la subida queda confirmada, mostrando «Transcribiendo…» mientras tanto.
+
+## Decisiones aplicadas (2026-11-14)
+
+El dueño delegó en el orquestador las preguntas abiertas y pidió empezar el rediseño. Se aplican las recomendaciones: (1) «Notas y resumen» muestra solo el resumen; (2) se retiran del portal «Registrar reunión» y la prueba de reconocimiento de hablantes; (3) las descargas son texto simple `.txt`; (5) la extensión abre la reunión cuando la subida queda confirmada. La Fase E (pregunta 4, etiquetas) queda para después.
