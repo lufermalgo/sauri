@@ -532,3 +532,27 @@ export async function submitSpeakerDisposition(
   );
   return handleSpeakerReviewResponse(response);
 }
+
+export async function renameMeeting(
+  meetingId: string,
+  title: string
+): Promise<{ meetingId: string; title: string }> {
+  const response = await fetch(`${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ title }),
+  });
+  const renamed = await handleResponse<{ meeting_id: string; title: string }>(response);
+  return { meetingId: renamed.meeting_id, title: renamed.title };
+}
+
+export async function deleteMeeting(meetingId: string): Promise<void> {
+  const response = await fetch(`${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    // handleResponse clears the session on 401 and throws "Error <status>".
+    await handleResponse<never>(response);
+  }
+}
