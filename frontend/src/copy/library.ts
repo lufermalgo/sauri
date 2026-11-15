@@ -1,1 +1,31 @@
-export const library = {} as const;
+export const library = {
+  title: "Biblioteca de grabaciones",
+  upload: "Subir grabación",
+  loading: "Cargando grabaciones…",
+  empty: "Todavía no hay grabaciones.",
+  error: "No se pudieron cargar las grabaciones.",
+  retry: "Reintentar",
+  untitled: "Sin título",
+  noDate: "Sin fecha",
+  noMatch: "Ninguna grabación coincide con la búsqueda.",
+  listLabel: "Grabaciones",
+  search: {
+    regionLabel: "Buscar en la biblioteca",
+    text: "Buscar por título",
+    from: "Desde",
+    to: "Hasta",
+    sort: "Ordenar",
+    clear: "Limpiar",
+    sortNewest: "Más recientes",
+    sortOldest: "Más antiguas",
+    sortTitle: "Título",
+  },
+  states: {
+    queued: "En cola",
+    joining: "Uniéndose",
+    recording: "Grabando",
+    transcribing: "Transcribiendo",
+    completed: "Lista",
+    failed: "Con error",
+  },
+} as const;
