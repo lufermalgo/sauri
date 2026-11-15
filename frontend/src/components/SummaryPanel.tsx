@@ -2,12 +2,48 @@ import { useEffect, useRef, useState } from "react";
 import type { MeetingSummary, SummaryRequestStatus } from "@sauri/shared-types";
 import { getLatestSummaryRequest, getMeetingSummary, requestMeetingSummary } from "../api";
 import { copy } from "../copy/es";
-import { Button, StatusBadge } from "./ui";
+import { Button, Skeleton, SkeletonLines, StatusBadge } from "./ui";
 import "../styles/summary.css";
 
 interface SummaryPanelProps {
   meetingId: string;
   onSeek: (startMs: number) => void;
+  // False while the transcript is still being produced: summary generation starts on its own then.
+  transcriptReady?: boolean;
+}
+
+const SKELETON_POINT_WIDTHS = ["72%", "58%", "66%"];
+
+function GeneratingSkeleton() {
+  const text = copy.summary;
+  return (
+    <>
+      <div className="summary-generating">
+        <div className="summary-generating-head">
+          <StatusBadge tone="progress">{text.generatingBadge}</StatusBadge>
+          <span role="status" className="summary-generating-status">{text.generating}</span>
+        </div>
+        <div className="summary-skeleton-block" aria-hidden="true">
+          <Skeleton width={60} height={12} />
+          <Skeleton height={22} />
+          <Skeleton width="70%" height={22} />
+        </div>
+        <ul className="summary-skeleton-points" aria-hidden="true">
+          {SKELETON_POINT_WIDTHS.map((width) => (
+            <li key={width} className="summary-skeleton-point">
+              <Skeleton width={24} height={24} radius="full" className="summary-skeleton-bullet" />
+              <span className="summary-skeleton-body">
+                <Skeleton height={14} />
+                <Skeleton width={width} height={14} />
+                <Skeleton width={130} height={22} radius="full" />
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p className="summary-help">{text.generatingHelp}</p>
+    </>
+  );
 }
 
 function timestamp(ms: number): string {
@@ -27,7 +63,7 @@ export function SummaryPanel(props: SummaryPanelProps) {
   return <MeetingSummaryPanel key={props.meetingId} {...props} />;
 }
 
-function MeetingSummaryPanel({ meetingId, onSeek }: SummaryPanelProps) {
+function MeetingSummaryPanel({ meetingId, onSeek, transcriptReady = true }: SummaryPanelProps) {
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
   const [request, setRequest] = useState<SummaryRequestStatus | null>(null);
   const [acceptedRequest, setAcceptedRequest] = useState<SummaryRequestStatus | null>(null);
@@ -157,14 +193,11 @@ function MeetingSummaryPanel({ meetingId, onSeek }: SummaryPanelProps) {
     <section aria-label={text.tab} className="summary-panel">
       {requestError && <p role="alert" className="summary-notice summary-notice--error">{text.requestFailed}</p>}
       {submitting ? <p role="status" className="summary-state">{text.submitting}</p> : waiting ? (
-        <div className="summary-state">
-          <span className="summary-pulse" aria-hidden="true" />
-          <p role="status">{currentRequest.status === "running" ? text.running : text.pending}</p>
-        </div>
+        <GeneratingSkeleton />
       ) : currentRequest?.status === "failed" ? (
         <div className="summary-notice summary-notice--error">
           <p role="alert">{text.failed} {text.failureCause(currentRequest.failureCause)}</p>
-          <Button variant="secondary" onClick={() => void generate()}>{text.retry}</Button>
+          {transcriptReady && <Button variant="secondary" onClick={() => void generate()}>{text.retry}</Button>}
         </div>
       ) : summary ? (
         <>
@@ -201,10 +234,15 @@ function MeetingSummaryPanel({ meetingId, onSeek }: SummaryPanelProps) {
             ))}
           </ul>
         </>
-      ) : (
+      ) : transcriptReady ? (
         <div className="summary-empty">
           <p>{text.empty}</p>
           <Button variant="primary" onClick={() => void generate()}>{text.generate}</Button>
+        </div>
+      ) : (
+        <div className="summary-waiting">
+          <p className="summary-waiting-note"><strong>{text.waitingTitle}</strong> {text.waitingBody}</p>
+          <SkeletonLines lines={5} lastWidth="84%" />
         </div>
       )}
     </section>

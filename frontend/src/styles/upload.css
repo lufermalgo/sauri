@@ -1,7 +1,7 @@
 .upload-view {
   display: grid;
   gap: var(--space-6);
-  max-width: 760px;
+  max-width: 880px;
   margin: 0 auto;
 }
 
@@ -62,7 +62,7 @@
 .upload-dropzone-title {
   margin: 0;
   font-family: var(--font-heading);
-  font-size: 20px;
+  font-size: 22px;
   color: var(--color-on-surface);
 }
 
@@ -103,8 +103,28 @@
 }
 
 .upload-selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-4);
+}
+
+.upload-file-icon {
   display: grid;
-  gap: var(--space-4);
+  place-items: center;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  color: var(--color-on-surface-variant);
+  background: var(--color-surface-container);
+  border-radius: var(--radius-xl);
+}
+
+.upload-file {
+  display: grid;
+  flex: 1 1 240px;
+  gap: var(--space-1);
+  min-width: 0;
 }
 
 .upload-file-name {
@@ -116,7 +136,7 @@
 }
 
 .upload-file-size {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   font-family: var(--font-mono);
   font-size: 13px;
   color: var(--color-on-surface-variant);
@@ -134,6 +154,23 @@
   gap: var(--space-3);
 }
 
+.upload-progress-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+}
+
+.upload-progress-title {
+  font-weight: 700;
+}
+
+.upload-progress-figures {
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  color: var(--color-on-surface-variant);
+}
+
 .upload-note {
   margin: 0;
   font-size: 15px;
@@ -141,23 +178,25 @@
 }
 
 .upload-error {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   background: var(--color-error-container);
   border-color: var(--color-error);
   color: var(--color-on-error-container);
 }
 
-.upload-error-title {
+.upload-error-text {
   margin: 0;
-  font-family: var(--font-heading);
-  font-size: 18px;
-  font-weight: 700;
+  flex: 1 1 240px;
 }
 
-.upload-error-message {
-  margin: 0 0 var(--space-2);
+.upload-error .upload-retry {
+  background: var(--color-surface-lowest);
+  color: var(--color-error);
+  border-color: var(--color-error);
 }
 
 @media (max-width: 480px) {
@@ -167,6 +206,10 @@
 
   .upload-dropzone {
     padding: var(--space-6) var(--space-4);
+  }
+
+  .upload-actions {
+    flex: 1 1 100%;
   }
 
   .upload-actions > * {
