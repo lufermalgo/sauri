@@ -71,6 +71,7 @@ describe("byte-based recording upload", () => {
     idempotency_key: "retry-key-1",
     capture_origin: "web_upload",
     video_presence: "absent",
+    title: "sample.webm",
   };
 
   function mockXHR() {
@@ -110,9 +111,9 @@ describe("byte-based recording upload", () => {
     await Promise.resolve();
     expect(resolved).not.toHaveBeenCalled();
 
-    reply(xhr, JSON.stringify({ recording_id: "recording-1", state: "transcribing" }));
+    reply(xhr, JSON.stringify({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" }));
     await request;
-    expect(resolved).toHaveBeenCalledWith({ recording_id: "recording-1", state: "transcribing" });
+    expect(resolved).toHaveBeenCalledWith({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" });
   });
 
   it("does not invent a total when upload length is unknown", async () => {
@@ -121,7 +122,7 @@ describe("byte-based recording upload", () => {
     const request = api.uploadWithProgress(file, data, progress);
     xhr.upload.dispatchEvent(new ProgressEvent("progress", { loaded: 128 }));
     expect(progress).toHaveBeenCalledWith({ loaded: 128, total: null });
-    reply(xhr, JSON.stringify({ recording_id: "recording-1", state: "transcribing" }));
+    reply(xhr, JSON.stringify({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" }));
     await request;
   });
 
@@ -154,7 +155,14 @@ describe("byte-based recording upload", () => {
     expect(unauthorized).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["not JSON", "null", "{}", '{"recording_id":"","state":"transcribing"}', '{"recording_id":"recording-1","state":42}'])("rejects invalid confirmation %s", async (body) => {
+  it.each([
+    "not JSON", "null", "{}",
+    '{"recording_id":"recording-1","state":"transcribing"}',
+    '{"meeting_id":42,"recording_id":"recording-1","state":"transcribing"}',
+    '{"meeting_id":"","recording_id":"recording-1","state":"transcribing"}',
+    '{"meeting_id":"meeting-1","recording_id":"","state":"transcribing"}',
+    '{"meeting_id":"meeting-1","recording_id":"recording-1","state":42}',
+])("rejects invalid confirmation %s", async (body) => {
     const { xhr } = mockXHR();
     const request = api.uploadWithProgress(file, data, vi.fn());
     reply(xhr, body);

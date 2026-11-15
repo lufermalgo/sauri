@@ -1,0 +1,175 @@
+.upload-view {
+  display: grid;
+  gap: var(--space-6);
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.upload-header {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.upload-back {
+  margin-left: calc(var(--space-4) * -1);
+}
+
+.upload-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 32px;
+  line-height: 1.2;
+  color: var(--color-on-surface);
+}
+
+.upload-intro {
+  margin: 0;
+  font-size: 18px;
+  color: var(--color-on-surface-variant);
+}
+
+.upload-dropzone {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+  background: var(--color-surface-low);
+  border: 2px dashed var(--color-outline-variant);
+  border-radius: var(--radius-2xl);
+  box-shadow: none;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.upload-dropzone--active,
+.upload-dropzone:focus-within {
+  border-color: var(--color-primary);
+  background: var(--color-primary-fixed);
+}
+
+.upload-dropzone-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: var(--space-2);
+  color: var(--color-primary);
+  background: var(--color-primary-fixed);
+  border-radius: var(--radius-full);
+}
+
+.upload-dropzone-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 20px;
+  color: var(--color-on-surface);
+}
+
+.upload-dropzone-hint {
+  margin: 0 0 var(--space-3);
+  color: var(--color-on-surface-variant);
+}
+
+.upload-pick {
+  position: relative;
+  padding: var(--space-3) var(--space-6);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.upload-pick:not(:has(:disabled)):hover {
+  box-shadow: var(--shadow-soft);
+}
+
+.upload-pick:has(:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.upload-pick:has(:focus-visible) {
+  outline: 3px solid var(--color-primary-container);
+  outline-offset: 2px;
+}
+
+/* Visually hidden but still focusable and labelled by the wrapping label. */
+.upload-file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.upload-selected {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.upload-file-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  color: var(--color-on-surface);
+}
+
+.upload-file-size {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-on-surface-variant);
+}
+
+.upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.upload-progress {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.upload-note {
+  margin: 0;
+  font-size: 15px;
+  color: var(--color-on-surface-variant);
+}
+
+.upload-error {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  background: var(--color-error-container);
+  border-color: var(--color-error);
+  color: var(--color-on-error-container);
+}
+
+.upload-error-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.upload-error-message {
+  margin: 0 0 var(--space-2);
+}
+
+@media (max-width: 480px) {
+  .upload-title {
+    font-size: 28px;
+  }
+
+  .upload-dropzone {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .upload-actions > * {
+    flex: 1 1 100%;
+  }
+}

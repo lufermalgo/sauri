@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import type { DragEvent } from "react";
 import { uploadWithProgress } from "../api";
 import type { RecordingUploadData, UploadProgress } from "../api";
 import { copy } from "../copy/es";
+import { Button, Card, ProgressBar } from "./ui";
+import "../styles/upload.css";
 
 interface SelectedRecording {
   file: File;
@@ -16,9 +19,21 @@ interface UploadViewProps {
   onBack: () => void;
 }
 
+function UploadIcon() {
+  return (
+    <svg className="upload-icon" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor"
+      strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M12 16V5" />
+      <path d="m7 10 5-5 5 5" />
+      <path d="M5 19h14" />
+    </svg>
+  );
+}
+
 export function UploadView({ onUploaded, onBack }: UploadViewProps) {
   const [recording, setRecording] = useState<SelectedRecording | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(false);
@@ -33,6 +48,7 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
   }, [objectUrl]);
 
+  // Single entry point for both the file input and drag-and-drop.
   function selectFile(file: File | undefined) {
     setRecording(file ? {
       file,
@@ -45,17 +61,29 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
     setError(null);
   }
 
+  function handleDragOver(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    if (!uploading) setDragging(true);
+  }
+
+  function handleDrop(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setDragging(false);
+    if (uploading) return;
+    selectFile(event.dataTransfer.files[0]);
+  }
+
   async function submitUpload() {
     if (!recording?.data || uploading) return;
     setUploading(true);
     setError(null);
     setProgress({ loaded: 0, total: null });
     try {
-      await uploadWithProgress(recording.file, recording.data, (next) => {
+      const result = await uploadWithProgress(recording.file, recording.data, (next) => {
         if (mounted.current) setProgress(next);
       });
-      // The ingestion response identifies the recording, not the meeting.
-      if (mounted.current) onUploaded(recording.data.meeting_id);
+      // The server confirms which meeting was created; trust it over the local id.
+      if (mounted.current) onUploaded(result.meeting_id);
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : copy.upload.errors.failed);
     } finally {
@@ -64,23 +92,46 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
   }
 
   const percent = progress?.total ? Math.floor(progress.loaded * 100 / progress.total) : undefined;
+  const canRetry = Boolean(error && recording?.data && !uploading);
 
   return (
-    <section aria-labelledby="upload-heading">
-      <button type="button" onClick={onBack} disabled={uploading}>{copy.upload.back}</button>
-      <h2 id="upload-heading">{copy.upload.title}</h2>
-      <label>
-        {copy.upload.fileLabel}
-        <input
-          type="file"
-          accept="audio/*,video/*"
-          disabled={uploading}
-          onChange={(event) => selectFile(event.currentTarget.files?.[0])}
-        />
-      </label>
+    <section className="upload-view" aria-labelledby="upload-heading">
+      <header className="upload-header">
+        <Button variant="ghost" className="upload-back" onClick={onBack} disabled={uploading}>
+          {`← ${copy.upload.back}`}
+        </Button>
+        <h1 id="upload-heading" className="upload-title">{copy.upload.heading}</h1>
+        <p className="upload-intro">{copy.upload.intro}</p>
+      </header>
+
+      <Card
+        className={`upload-dropzone${dragging ? " upload-dropzone--active" : ""}`}
+        onDragOver={handleDragOver}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        data-testid="upload-dropzone"
+      >
+        <span className="upload-dropzone-icon"><UploadIcon /></span>
+        <p className="upload-dropzone-title">{copy.upload.dropTitle}</p>
+        <p className="upload-dropzone-hint">{copy.upload.dropHint}</p>
+        <label className="ui-button ui-button--primary upload-pick">
+          {copy.upload.fileLabel}
+          <input
+            className="upload-file-input"
+            type="file"
+            accept="audio/*,video/*"
+            disabled={uploading}
+            onChange={(event) => selectFile(event.currentTarget.files?.[0])}
+          />
+        </label>
+      </Card>
+
       {recording && (
-        <>
-          <p>{recording.file.name}</p>
+        <Card className="upload-selected" aria-label={copy.upload.selectedFileHeading}>
+          <div className="upload-file">
+            <p className="upload-file-name">{recording.file.name}</p>
+            <p className="upload-file-size">{copy.upload.sizeMb(recording.file.size)}</p>
+          </div>
           <video
             key={recording.objectUrl}
             src={recording.objectUrl}
@@ -98,28 +149,44 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
                 idempotency_key: recording.idempotencyKey,
                 capture_origin: "web_upload",
                 video_presence: media.videoWidth > 0 ? "muxed" : "absent",
+                title: recording.file.name,
               } });
               setError(null);
             }}
             onError={() => setError(copy.upload.errors.unreadableRecording)}
           />
-          {!recording.data && !error && <p role="status">{copy.upload.readingMetadata}</p>}
-        </>
+          {!recording.data && !error && <p role="status" className="upload-note">{copy.upload.readingMetadata}</p>}
+          <div className="upload-actions">
+            <Button variant="ghost" onClick={() => selectFile(undefined)} disabled={uploading}>
+              {copy.upload.remove}
+            </Button>
+            {!canRetry && (
+              <Button variant="primary" onClick={submitUpload} disabled={!recording.data || uploading}>
+                {uploading ? copy.upload.uploading : copy.upload.submit}
+              </Button>
+            )}
+          </div>
+        </Card>
       )}
-      <button type="button" onClick={submitUpload} disabled={!recording?.data || uploading}>
-        {uploading ? copy.upload.uploading : error && recording?.data ? copy.upload.retry : copy.upload.submit}
-      </button>
+
       {progress && uploading && (
-        <>
-          <progress aria-label={copy.upload.progressLabel} max={100} value={percent} />
-          <p role="status">
+        <Card className="upload-progress">
+          <ProgressBar label={copy.upload.progressLabel} max={100} value={percent} />
+          <p role="status" className="upload-note">
             {percent === 100
               ? copy.upload.awaitingConfirmation
               : percent === undefined ? copy.upload.bytesSent(progress.loaded) : copy.upload.percentUploaded(percent)}
           </p>
-        </>
+        </Card>
       )}
-      {error && <p role="alert">{error}</p>}
+
+      {error && (
+        <Card className="upload-error" role="alert">
+          <p className="upload-error-title">{copy.upload.errorHeading}</p>
+          <p className="upload-error-message">{error}</p>
+          {canRetry && <Button variant="primary" onClick={submitUpload}>{copy.upload.retry}</Button>}
+        </Card>
+      )}
     </section>
   );
 }

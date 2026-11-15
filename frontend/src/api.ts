@@ -131,9 +131,11 @@ export interface RecordingUploadData {
   idempotency_key: string;
   capture_origin: "web_upload";
   video_presence: "absent" | "muxed";
+  title: string;
 }
 
 export interface RecordingUploadResult {
+  meeting_id: string;
   recording_id: string;
   state: string;
 }
@@ -174,10 +176,11 @@ export async function uploadWithProgress(
         const result: unknown = JSON.parse(xhr.responseText);
         if (
           !result || typeof result !== "object" ||
+          !("meeting_id" in result) || typeof result.meeting_id !== "string" || !result.meeting_id.trim() ||
           !("recording_id" in result) || typeof result.recording_id !== "string" || !result.recording_id.trim() ||
           !("state" in result) || typeof result.state !== "string" || !result.state.trim()
         ) throw new Error("Invalid upload response");
-        resolve({ recording_id: result.recording_id, state: result.state });
+        resolve({ meeting_id: result.meeting_id, recording_id: result.recording_id, state: result.state });
       } catch {
         reject(new Error(copy.upload.errors.invalidResponse));
       }
