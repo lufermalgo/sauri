@@ -11,6 +11,7 @@ import {
 } from "../api";
 import type { MeetingDiarization, MeetingState, MeetingTranscript, PlaybackManifest, SpeakerDisposition, SpeakerDispositionRequest, SpeakerReview } from "../api";
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
+import type { MeetingSummary } from "@sauri/shared-types";
 import { selectListeningInterval } from "../speaker-review-interval";
 import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
 import { ProcessingStatus } from "./ProcessingStatus";
@@ -86,6 +87,15 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>(null);
   const speakerCardRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState("summary");
+  const [keyPointTimes, setKeyPointTimes] = useState<number[]>([]);
+  // Key-point markers come from the summary the side panel already loaded.
+  const handleSummaryChange = useCallback((summary: MeetingSummary | null) => {
+    const times: number[] = [];
+    for (const point of summary?.keyPoints ?? []) {
+      if (typeof point !== "string" && point.sources.length > 0) times.push(point.sources[0].startMs);
+    }
+    setKeyPointTimes(times);
+  }, []);
   const seekToRef = useRef<((timeMs: number, play?: boolean) => void) | undefined>(undefined);
   const registerSeekTo = useCallback((seekTo: ((timeMs: number, play?: boolean) => void) | undefined) => {
     seekToRef.current = seekTo;
@@ -428,6 +438,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       <Card className="meeting-playback-card">
       <div id="meeting-playback" ref={playbackRef} onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}>
         <MeetingPlaybackView
+          keyPointTimes={keyPointTimes}
           followPlayback={followPlayback}
           timelineTurns={timelineTurns}
           manifest={playbackManifest}
@@ -444,7 +455,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       <Card className="meeting-sidebar">
         <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
           { id: "summary", label: text.summaryTab, panel: meeting && activeTab === "summary"
-            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} /> : null },
+            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange} /> : null },
           { id: "chat", label: text.chatTab, panel: <ChatTab /> },
         ]} />
       </Card>
