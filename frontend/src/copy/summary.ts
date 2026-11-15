@@ -16,17 +16,19 @@ export const summary = {
   failed: "No se pudo generar el resumen.",
   retry: "Reintentar",
   copy: "Copiar",
+  download: "Descargar",
+  actions: "Acciones del resumen",
   copied: "Resumen copiado.",
-  copyFailed: "No se pudo copiar el resumen. Revisá los permisos del portapapeles.",
-  loadFailed: "No se pudo consultar el resumen. Revisá tu conexión y reintentá.",
-  requestFailed: "No se pudo solicitar el resumen. Revisá tu conexión y reintentá.",
-  resultUnavailable: "La solicitud terminó, pero su resumen todavía no está disponible. Reintentá la consulta.",
+  copyFailed: "No se pudo copiar el resumen. Revisa los permisos del portapapeles.",
+  loadFailed: "No se pudo consultar el resumen. Revisa tu conexión e inténtalo de nuevo.",
+  requestFailed: "No se pudo solicitar el resumen. Revisa tu conexión e inténtalo de nuevo.",
+  resultUnavailable: "La solicitud terminó, pero su resumen todavía no está disponible. Vuelve a consultar.",
   failureCause: (cause?: string | null) => {
     switch (cause) {
       case "context_exceeded": return "La transcripción supera la capacidad del modelo de resumen.";
       case "summary_invalid": return "El modelo no devolvió un resumen con fuentes válidas.";
       case "llm_unavailable": return "El modelo de resumen no está disponible o agotó el tiempo de espera.";
-      default: return "La generación falló sin una causa reconocida. Podés reintentar.";
+      default: return "La generación falló sin una causa reconocida. Puedes reintentar.";
     }
   },
 } as const;
