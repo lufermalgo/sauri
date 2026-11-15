@@ -89,6 +89,7 @@ async function loadOffscreenWithMocks(getUserMediaImpl: (constraints: unknown) =
     },
   });
   vi.stubGlobal("navigator", {
+    permissions: { query: vi.fn(async () => ({ state: "granted" })) },
     mediaDevices: {
       getDisplayMedia: vi.fn(getUserMediaImpl),
       getUserMedia: vi.fn(getUserMediaImpl),
@@ -326,7 +327,7 @@ describe("native sharing picker outcomes", () => {
     const pick = vi.fn().mockRejectedValueOnce(new TypeError("Unsupported option"))
       .mockResolvedValue(new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]));
     await loadOffscreenWithMocks(pick);
-    expect(await start()).toEqual({ ok: true, sessionId: "picker" });
+    expect(await start()).toEqual({ ok: true, sessionId: "picker", segmentStartedAt: expect.any(Number), micLabel: undefined });
     expect(pick).toHaveBeenCalledTimes(2);
     expect(pick.mock.calls[1][0]).toEqual({ video: { displaySurface: "browser", width: { max: 1280 }, height: { max: 720 } }, audio: true });
   });
@@ -335,7 +336,7 @@ describe("native sharing picker outcomes", () => {
     const video = new FakeTrack("video");
     await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio"), video]));
     await createCompletion({ sessionId: "ended", provider: "meet", meetingId: "meeting", capturedTabId: 7, status: "capturing", updatedAt: 1 });
-    expect(await start("ended", { captureMode })).toEqual({ ok: true, sessionId: "ended" });
+    expect(await start("ended", { captureMode })).toEqual({ ok: true, sessionId: "ended", segmentStartedAt: expect.any(Number), micLabel: undefined });
     FakeMediaRecorder.lastInstance!.state = "paused";
     video.dispatchEvent(new Event("ended"));
     await vi.waitFor(() => expect(FakeMediaRecorder.lastInstance!.stop).toHaveBeenCalledTimes(1));
@@ -351,7 +352,7 @@ describe("current-tab acquisition and playback", () => {
   it.each(["screen_audio", "audio_only"])("%s requests tab audio/video by stream ID and restores local playback", async captureMode => {
     const tab = new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]);
     await loadOffscreenWithMocks(async () => tab);
-    expect(await start("direct", { source: "current-tab", streamId: "direct-stream", captureMode })).toEqual({ ok: true, sessionId: "direct" });
+    expect(await start("direct", { source: "current-tab", streamId: "direct-stream", captureMode })).toEqual({ ok: true, sessionId: "direct", segmentStartedAt: expect.any(Number), micLabel: undefined });
     expect(navigator.mediaDevices.getDisplayMedia).not.toHaveBeenCalled();
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
       audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: "direct-stream" } },

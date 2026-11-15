@@ -2,125 +2,45 @@
 // Detects the active meeting via ARIA attributes (es/en), notifies the background service worker.
 // Shows a recording consent banner in Shadow DOM (Recording_Notice).
 
-export {};
-
-console.log("[sauri] Content script loaded on Meet page");
-
-// --- Consent banner (Shadow DOM) ---
-
-let bannerHost: HTMLElement | null = null;
+import { cancelCountdown, hideRecordingUI, showCountdown, showNotice, syncRecordingUI, type RecordingUI } from "./overlay/recording";
 
 function showConsentBanner(): void {
-  // Avoid duplicates
-  if (bannerHost && document.body.contains(bannerHost)) return;
-
-  // Create host element
-  bannerHost = document.createElement("div");
-  bannerHost.id = "sauri-consent-banner-host";
-  document.body.appendChild(bannerHost);
-
-  // Attach Shadow DOM to isolate styles from Meet's CSS
-  const shadow = bannerHost.attachShadow({ mode: "closed" });
-
-  // Banner markup
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = `
-    <style>
-      .sauri-banner {
-        position: fixed;
-        top: 8px;
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 2147483647;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 14px;
-        background: rgba(30, 30, 30, 0.92);
-        color: #fff;
-        font-family: 'Google Sans', Roboto, Arial, sans-serif;
-        font-size: 13px;
-        border-radius: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        backdrop-filter: blur(4px);
-        user-select: none;
-      }
-      .sauri-banner .rec-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #d93025;
-        animation: pulse 1.5s infinite;
-      }
-      @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.4; }
-      }
-      .sauri-banner .dismiss-btn {
-        background: none;
-        border: none;
-        color: #aaa;
-        cursor: pointer;
-        font-size: 16px;
-        line-height: 1;
-        padding: 0 0 0 6px;
-      }
-      .sauri-banner .dismiss-btn:hover {
-        color: #fff;
-      }
-    </style>
-    <div class="sauri-banner">
-      <span class="rec-dot"></span>
-      <span>sauri is recording this meeting</span>
-      <button class="dismiss-btn" aria-label="Close">✕</button>
-    </div>
-  `;
-  shadow.appendChild(wrapper);
-
-  // Dismiss handler
-  const dismissBtn = shadow.querySelector(".dismiss-btn");
-  dismissBtn?.addEventListener("click", () => {
-    bannerHost?.remove();
-    bannerHost = null;
-  });
-
-  // Record the notification emission timestamp
-  const emittedAt = new Date().toISOString();
-  console.log(`[sauri] Consent banner shown, emittedAt: ${emittedAt}`);
-
-  // Notify background of the emission timestamp
-  chrome.runtime.sendMessage({
-    type: "notification-emitted",
-    emittedAt,
-  });
+  if (showNotice()) {
+    void chrome.runtime.sendMessage({ type: "notification-emitted", emittedAt: new Date().toISOString() });
+  }
 }
-
-function hideConsentBanner(): void {
-  bannerHost?.remove();
-  bannerHost = null;
-}
-
-// --- Listen for show/hide-consent-banner messages from background ---
 
 chrome.runtime.onMessage.addListener(
-  (message: { type: string }, _sender, sendResponse) => {
+  (message: { type: string; seconds?: number; requestId?: string; state?: RecordingUI }, _sender, sendResponse) => {
     if (message.type === "show-consent-banner") {
       showConsentBanner();
       sendResponse({ ok: true });
     } else if (message.type === "hide-consent-banner") {
-      hideConsentBanner();
+      hideRecordingUI();
+      sendResponse({ ok: true });
+    } else if (message.type === "show-countdown" && message.seconds && message.requestId) {
+      void (async () => { sendResponse(await showCountdown(message.seconds!, message.requestId!)); })();
+      return true;
+    } else if (message.type === "cancel-countdown") {
+      cancelCountdown();
+      sendResponse({ ok: true });
+    } else if (message.type === "recording-ui" && message.state) {
+      syncRecordingUI(message.state);
       sendResponse({ ok: true });
     } else if (message.type === "get-current-title") {
-      // Re-read document.title on demand: when the meeting is detected
-      // (checkMeetState) Meet is usually still showing the generic
-      // "Meet" title — the real session name settles a few seconds
-      // later. Asking again right when recording starts gives it time
-      // to have already updated.
       sendResponse({ title: extractMeetingTitle() });
     }
     return false;
   }
 );
+
+// A reloaded Meet tab can restore controls without reading extension session storage.
+void (async () => {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "get-recording-ui" });
+    if (response?.state) { showConsentBanner(); syncRecordingUI(response.state); }
+  } catch { /* An older extension worker may not support UI recovery yet. */ }
+})();
 
 // --- ARIA-based detection signals (English / Spanish variants) ---
 

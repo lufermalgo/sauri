@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { Blob as NativeBlob } from "node:buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
-import { COMPLETION_STORE, getCompletion, openDB } from "./recording-db";
+import { cancelCountdown, hideRecordingUI, showCountdown, syncRecordingUI } from "./overlay/recording";
+import { COMPLETION_STORE, getCompletion, getChunksBySession, openDB } from "./recording-db";
 
 // Real muxed test media; browser APIs are synthetic, persistence/upload code is not.
 const media = new NativeBlob([readFileSync("src/fixtures/synthetic-av.webm")], { type: "video/webm" });
@@ -36,6 +37,8 @@ class Recorder {
   onerror?: () => void;
   constructor(public stream: Stream, public options: { mimeType: string }) { Recorder.last = this; }
   start = vi.fn(() => { this.state = "recording"; });
+  pause = vi.fn(() => { this.state = "paused"; });
+  resume = vi.fn(() => { this.state = "recording"; });
   stop = vi.fn(() => {
     this.state = "inactive";
     this.ondataavailable?.({ data: media });
@@ -53,8 +56,9 @@ async function completions() {
   });
 }
 
-async function setup({ url = "https://meet.google.com/test-picker", existing = false, recording = false, liveOffscreen = false, captureMode = "screen_audio" } = {}) {
+async function setup({ url = "https://meet.google.com/test-picker", existing = false, recording = false, liveOffscreen = false, captureMode = "screen_audio", countdownSeconds = 0, showControlBar = true, realUI = false } = {}) {
   vi.resetModules();
+  Recorder.last = undefined as unknown as Recorder;
   vi.stubGlobal("indexedDB", new IDBFactory());
   vi.stubGlobal("IDBKeyRange", IDBKeyRange);
   vi.stubGlobal("Blob", NativeBlob);
@@ -72,6 +76,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
   let locked = false;
   const userMedia = vi.fn(async (_constraints: MediaStreamConstraints) => stream);
   vi.stubGlobal("navigator", {
+    permissions: { query: vi.fn(async () => ({ state: "granted" })) },
     mediaDevices: { getDisplayMedia: display, getUserMedia: userMedia },
     locks: { request: vi.fn(async (_name, _options, callback) => {
       if (locked) return callback(null);
@@ -92,7 +97,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     });
   }
   const send = vi.fn(async (message: Message) => {
-    const toOffscreen = ["start-recording", "stop-recording", "get-capture-status"].includes(message.type);
+    const toOffscreen = ["start-recording", "stop-recording", "pause-recording", "resume-recording", "cancel-recording", "check-microphone-permission", "get-capture-status"].includes(message.type);
     if (message.type === "get-capture-status" && liveOffscreen) return { active: true };
     return dispatch(listeners[toOffscreen ? 0 : 1], message);
   });
@@ -114,6 +119,8 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
       closeDocument: vi.fn(async () => { existing = false; }),
     },
     storage: {
+      // Existing picker tests explicitly opt out of the new countdown.
+      local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds, showControlBar } })) },
       session: {
         get: vi.fn(async () => ({ ...stored })),
         set: vi.fn(async (values: object) => { Object.assign(stored, values); }),
@@ -123,7 +130,13 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     },
     tabs: {
       query: vi.fn(async (query: { active?: boolean }) => query.active ? [{ id: 7, url }] : []),
-      sendMessage: vi.fn(async () => ({ title: "Fresh Meet title" })),
+      sendMessage: vi.fn(async (_tabId: number, message: Message): Promise<any> => {
+        if (realUI && message.type === "show-countdown") return showCountdown(message.seconds as number, message.requestId as string);
+        if (realUI && message.type === "cancel-countdown") { cancelCountdown(); return { ok: true }; }
+        if (realUI && message.type === "recording-ui") syncRecordingUI(message.state as any);
+        if (realUI && message.type === "hide-consent-banner") hideRecordingUI();
+        return { ok: true, title: "Fresh Meet title" };
+      }),
       create: vi.fn(async () => ({ id: 80 })),
       onRemoved: { addListener: (listener: typeof removed) => { removed = listener; } },
     },
@@ -145,7 +158,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
   };
 }
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { cancelCountdown(); hideRecordingUI(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("#994: native picker to durable upload", () => {
   it("creates a DISPLAY_MEDIA + USER_MEDIA offscreen and binds only after selection", async () => {
@@ -332,5 +345,185 @@ describe("#994: current-tab shortcut", () => {
     await h.stop();
     expect(Recorder.last.stop).toHaveBeenCalledOnce();
     expect(h.upload).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("Meet recording controls", () => {
+  it("waits three seconds after selection before recording or creating a durable session", async () => {
+    const h = await setup({ countdownSeconds: 3, realUI: true });
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    const pending = h.start();
+    await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
+    expect(h.display).toHaveBeenCalledOnce();
+    expect(Recorder.last?.state).not.toBe("recording");
+    expect(await completions()).toEqual([]);
+    const countdown = document.getElementById("sauri-countdown-host")!.shadowRoot!;
+    expect(countdown.querySelector("strong")!.textContent).toBe("3");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(countdown.querySelector("strong")!.textContent).toBe("1");
+    expect(await completions()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await pending).toMatchObject({ ok: true });
+    expect(document.getElementById("sauri-countdown-host")).toBeNull();
+  });
+
+  it("zero seconds starts without a countdown", async () => {
+    const h = await setup({ countdownSeconds: 0 });
+    expect(await h.start()).toMatchObject({ ok: true });
+    expect(chrome.tabs.sendMessage).not.toHaveBeenCalledWith(7, expect.objectContaining({ type: "show-countdown" }));
+  });
+
+  it.each(["overlay", "panel"])("cancelling the countdown from %s leaves no capture or session", async source => {
+    const h = await setup({ countdownSeconds: 3, realUI: true });
+    const pending = h.start();
+    await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
+    if (source === "overlay") document.getElementById("sauri-countdown-host")!.shadowRoot!.querySelector("button")!.click();
+    else expect(await h.message({ type: "cancel-capture" }, {})).toEqual({ ok: true });
+    expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+    expect(await completions()).toEqual([]);
+    expect(h.stored.sauriCaptureRequest).toBeUndefined();
+    expect(h.stored.sauriCountdown).toBeUndefined();
+    expect(h.video.stop).toHaveBeenCalledOnce();
+    expect(h.audio.stop).toHaveBeenCalledOnce();
+    expect(h.upload).not.toHaveBeenCalled();
+  });
+
+  it("pauses and resumes the actual media owner and projects an honest timer", async () => {
+    const h = await setup({ realUI: true });
+    const { sessionId } = await h.start();
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    const startAt = h.stored.sauriState.segmentStartedAt;
+    vi.setSystemTime(startAt + 4000);
+    expect(await h.message({ type: "pause-capture", sessionId }, { tab: { id: 7 } as chrome.tabs.Tab })).toEqual({ ok: true });
+    expect(Recorder.last.pause).toHaveBeenCalledOnce();
+    expect(h.stored.sauriState).toMatchObject({ paused: true, elapsedMs: 4000 });
+    const root = document.getElementById("sauri-recording-host")!.shadowRoot!;
+    expect(root.querySelector(".time")!.textContent).toBe("00:04");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(root.querySelector(".time")!.textContent).toBe("00:04");
+    expect(await h.message({ type: "resume-capture" }, {})).toEqual({ ok: true });
+    expect(Recorder.last.resume).toHaveBeenCalledOnce();
+    expect(h.stored.sauriState.paused).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(root.querySelector(".time")!.textContent).toBe("00:06");
+  });
+
+  it("discards committed and final chunks without uploading or leaving a durable record", async () => {
+    const h = await setup();
+    const { sessionId } = await h.start();
+    Recorder.last.ondataavailable!({ data: media });
+    expect(await h.message({ type: "cancel-capture" }, {})).toEqual({ ok: true });
+    expect(Recorder.last.stop).toHaveBeenCalledOnce();
+    expect(await getCompletion(sessionId)).toBeUndefined();
+    expect(await getChunksBySession(sessionId)).toEqual([]);
+    const { getUploadJob } = await import("./upload-queue");
+    expect(await getUploadJob(sessionId)).toBeUndefined();
+    expect(h.send).not.toHaveBeenCalledWith(expect.objectContaining({ type: "recording-stopped" }));
+    h.video.dispatchEvent(new Event("ended"));
+    await h.close();
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(h.stored.sauriState).toMatchObject({ status: "idle", paused: false });
+  });
+
+  it("stop while paused retains the existing upload path and bytes", async () => {
+    const h = await setup();
+    const { sessionId } = await h.start();
+    await h.message({ type: "pause-capture" }, {});
+    expect(await h.stop()).toEqual({ ok: true });
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(h.stored.sauriState.status).toBe("idle"));
+    expect(await getCompletion(sessionId)).toMatchObject({ trigger: "stop", recordingId: "server-picker" });
+    const [, init] = (h.upload.mock.calls as unknown as [string, RequestInit][])[0];
+    expect(((init.body as FormData).get("audio") as Blob).size).toBe(media.size);
+  });
+
+  it("hidden controls do not prevent recording or finalization on sharing ended", async () => {
+    const h = await setup({ showControlBar: false, realUI: true });
+    expect(await h.start()).toMatchObject({ ok: true });
+    expect(document.getElementById("sauri-recording-host")).toBeNull();
+    h.video.dispatchEvent(new Event("ended"));
+    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledOnce());
+  });
+
+  it("rejects controls from other tabs and stale sessions", async () => {
+    const h = await setup();
+    const { sessionId } = await h.start();
+    for (const type of ["pause-capture", "resume-capture", "cancel-capture", "stop-capture"]) {
+      expect(await h.message({ type, sessionId }, { tab: { id: 99 } as chrome.tabs.Tab })).toEqual({ ok: false });
+      expect(await h.message({ type, sessionId: "stale" }, { tab: { id: 7 } as chrome.tabs.Tab })).toEqual({ ok: false });
+      expect(await h.message({ type }, { tab: { id: 7 } as chrome.tabs.Tab })).toEqual({ ok: false });
+    }
+    expect(Recorder.last.pause).not.toHaveBeenCalled();
+    expect(Recorder.last.stop).not.toHaveBeenCalled();
+  });
+
+  it.each(["prompt", "denied"])("microphone permission %s blocks capture without prompting", async permission => {
+    const h = await setup();
+    vi.mocked(navigator.permissions.query).mockResolvedValue({ state: permission } as PermissionStatus);
+    expect(await h.start("picker", "mic")).toEqual({ ok: false, reason: "microphone-permission" });
+    expect(h.display).not.toHaveBeenCalled();
+    expect(h.userMedia).not.toHaveBeenCalled();
+    expect(await completions()).toEqual([]);
+  });
+});
+
+
+describe("recording control edge cases", () => {
+  it.each([undefined, { countdownSeconds: 7, showControlBar: "invalid" }])("uses safe defaults for missing or malformed preferences (%j)", async settings => {
+    const h = await setup({ realUI: true });
+    vi.mocked(chrome.storage.local.get).mockImplementationOnce(async () => ({ recordingSettings: settings }));
+    const pending = h.start();
+    await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
+    expect(document.getElementById("sauri-countdown-host")!.shadowRoot!.querySelector("strong")!.textContent).toBe("3");
+    expect(h.stored.sauriCaptureRequest.state.showControlBar).toBe(true);
+    cancelCountdown();
+    expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+  });
+
+  it("ending sharing during countdown cancels without recording or uploading", async () => {
+    const h = await setup({ countdownSeconds: 3, realUI: true });
+    const pending = h.start();
+    await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
+    h.video.dispatchEvent(new Event("ended"));
+    expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+    expect(await completions()).toEqual([]);
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(Recorder.last).toBeUndefined();
+  });
+
+  it("retains a real recording state when MediaRecorder cannot pause", async () => {
+    const h = await setup();
+    await h.start();
+    Recorder.last.pause.mockImplementationOnce(() => { throw new DOMException("Unsupported pause", "NotSupportedError"); });
+    expect(await h.message({ type: "pause-capture" }, {})).toEqual({ ok: false });
+    expect(h.stored.sauriState.paused).toBe(false);
+    expect(Recorder.last.state).toBe("recording");
+    expect(await h.stop()).toEqual({ ok: true });
+    await vi.waitFor(() => expect(h.stored.sauriState.status).toBe("idle"));
+    expect(h.upload).toHaveBeenCalledOnce();
+  });
+
+  it("keeps discarding when sharing ends concurrently and permits a fresh session", async () => {
+    const h = await setup();
+    const { sessionId } = await h.start();
+    const discarding = h.message({ type: "cancel-capture" }, {});
+    await vi.waitFor(() => expect(h.send).toHaveBeenCalledWith({ type: "cancel-recording", sessionId }));
+    h.video.dispatchEvent(new Event("ended"));
+    expect(await discarding).toEqual({ ok: true });
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(await getCompletion(sessionId)).toBeUndefined();
+    h.display.mockResolvedValueOnce(new Stream([new Track("audio"), new Track("video")]));
+    expect(await h.start()).toMatchObject({ ok: true });
+  });
+
+  it("cannot discard a recording after the media owner has accepted stop", async () => {
+    const h = await setup();
+    const { sessionId } = await h.start();
+    expect(await h.stop()).toEqual({ ok: true });
+    expect(await h.message({ type: "cancel-capture", sessionId }, {})).toEqual({ ok: false });
+    await vi.waitFor(() => expect(h.stored.sauriState.status).toBe("idle"));
+    expect(h.upload).toHaveBeenCalledOnce();
+    expect(await getCompletion(sessionId)).toMatchObject({ trigger: "stop", recordingId: "server-picker" });
   });
 });

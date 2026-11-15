@@ -2,7 +2,7 @@
 // Captures Audio_Track + Video_Track via the native sharing picker, chunked on a 5s timeslice.
 // Production: chunks persisted in IndexedDB, assembled by sessionId.
 
-import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME, settleCapture, claimCompletion } from "./recording-db";
+import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME, settleCapture, claimCompletion, COMPLETION_STORE } from "./recording-db";
 import { videoPresenceFromStream } from "./core/capture";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
 
@@ -12,6 +12,16 @@ let recorder: MediaRecorder | null = null;
 let audioCtx: AudioContext | null = null;
 let currentSessionId: string | null = null;
 let stopRequested = false;
+let discardRequested = false;
+let discardSucceeded = false;
+let finished: Promise<void> = Promise.resolve();
+let elapsedMs = 0;
+let segmentStartedAt: number | undefined;
+
+async function microphoneGranted(): Promise<boolean> {
+  try { return (await navigator.permissions.query({ name: "microphone" as PermissionName })).state === "granted"; }
+  catch { return false; }
+}
 
 // --- Local IndexedDB helpers (not shared — only used in offscreen) ---
 
@@ -63,7 +73,18 @@ chrome.runtime.onMessage.addListener(
     sendResponse
   ) => {
     if (_sender.tab) return false;
-    if (message.type === "get-capture-status") {
+    if (message.type === "check-microphone-permission") {
+      void (async () => { sendResponse({ ok: await microphoneGranted() }); })();
+      return true;
+    } else if (message.type === "pause-recording" || message.type === "resume-recording") {
+      sendResponse(changePause(message.sessionId, message.type === "pause-recording"));
+    } else if (message.type === "cancel-recording") {
+      void (async () => {
+        try { sendResponse({ ok: await cancelRecording(message.sessionId) }); }
+        catch { sendResponse({ ok: false }); }
+      })();
+      return true;
+    } else if (message.type === "get-capture-status") {
       sendResponse({ active: currentSessionId !== null });
     } else if (message.type === "start-recording" && message.sessionId) {
       const sessionId = message.sessionId;
@@ -136,19 +157,23 @@ async function startRecording(
   micDeviceId: string | null,
   source: CaptureSource,
   streamId?: string
-): Promise<CaptureStartResult> {
+): Promise<CaptureStartResult & { segmentStartedAt?: number; micLabel?: string }> {
+  let resolveFinished!: () => void;
+  finished = new Promise(resolve => { resolveFinished = resolve; });
   const streams: MediaStream[] = [];
   const cleanup = () => {
     currentSessionId = null;
     recorder = null;
     if (audioCtx) { void audioCtx.close(); audioCtx = null; }
     streams.forEach(stream => stream.getTracks().forEach(track => track.stop()));
+    resolveFinished();
   };
   let captureFailed = false;
   let captureReady = false;
   let sourceEnded = false;
   const finalizeEndedCapture = async () => {
     try {
+      if (discardRequested) return;
       // Same durable claim as the origin-tab fallback; a restart can replay it.
       await claimCompletion(sessionId, "captured-tab-close");
       stopRecording(sessionId);
@@ -161,6 +186,15 @@ async function startRecording(
   try {
     currentSessionId = sessionId;
     stopRequested = false;
+    discardRequested = false;
+    discardSucceeded = false;
+    elapsedMs = 0;
+    segmentStartedAt = undefined;
+    if (micDeviceId && !await microphoneGranted()) {
+      cleanup();
+      return { ok: false, reason: "microphone-permission" };
+    }
+    let micLabel: string | undefined;
     let chunkWrites: Promise<void> = Promise.resolve();
 
     let tabStream: MediaStream;
@@ -198,9 +232,11 @@ async function startRecording(
       cleanup();
       return { ok: false, reason: "unsupported-surface" };
     }
+    const sharingEnded = () => sourceEnded || videoTrack.readyState === "ended";
     videoTrack.addEventListener("ended", () => {
       sourceEnded = true;
       if (captureReady) void finalizeEndedCapture();
+      else void chrome.runtime.sendMessage({ type: "cancel-capture", sessionId });
     }, { once: true });
 
     let audioTracks = tabStream.getAudioTracks();
@@ -227,6 +263,7 @@ async function startRecording(
         throw error;
       }
       streams.push(micStream);
+      micLabel = micStream.getAudioTracks()[0]?.label;
       const micSource = audioCtx!.createMediaStreamSource(micStream);
       const mixDestination = audioCtx!.createMediaStreamDestination();
       tabSource!.connect(mixDestination);
@@ -239,8 +276,12 @@ async function startRecording(
     const recordingStream = new MediaStream([
       ...audioTracks, ...(captureMode === "audio_only" ? [] : [videoTrack]),
     ]);
+    if (sharingEnded()) { cleanup(); return { ok: false, reason: "cancelled" }; }
     const ready = await chrome.runtime.sendMessage({ type: "capture-ready", sessionId });
-    if (!ready?.ok) throw new Error("Could not bind capture identity");
+    if (!ready?.ok) {
+      if (ready?.reason === "cancelled") { cleanup(); return { ok: false, reason: "cancelled" }; }
+      throw new Error("Could not bind capture identity");
+    }
     captureReady = true;
     chrome.runtime.sendMessage({ type: "capture-video-presence", videoPresence: videoPresenceFromStream(recordingStream) });
 
@@ -268,10 +309,11 @@ async function startRecording(
     recorder = new MediaRecorder(recordingStream, { mimeType });
 
     recorder.ondataavailable = (event: BlobEvent) => {
-      if (event.data.size > 0) {
+      if (!discardRequested && event.data.size > 0) {
         chunkWrites = chunkWrites.then(async () => {
           try { await storeChunk(sessionId, event.data); }
           catch {
+            if (discardRequested) return;
             captureFailed = true;
             await settleCapture(sessionId, true);
             void chrome.runtime.sendMessage({ type: "recording-error", sessionId, error: "Could not persist capture chunk" });
@@ -291,6 +333,23 @@ async function startRecording(
 
       try {
         await chunkWrites;
+        if (discardRequested) {
+          await clearSession(sessionId);
+          // Remove the capture identity only after all pending chunk writes finish.
+          // A crash before deletion leaves a failed tombstone, never an upload intent.
+          const db = await openDB();
+          try {
+            await new Promise<void>((resolve, reject) => {
+              const tx = db.transaction(COMPLETION_STORE, "readwrite");
+              tx.objectStore(COMPLETION_STORE).delete(sessionId);
+              tx.oncomplete = () => resolve();
+              tx.onerror = () => reject(tx.error);
+              tx.onabort = () => reject(tx.error);
+            });
+          } finally { db.close(); }
+          discardSucceeded = true;
+          return;
+        }
         if (captureFailed) return;
         const blobs = await getChunksBySession(sessionId);
         const blob = new Blob(blobs, { type: mimeType });
@@ -310,16 +369,18 @@ async function startRecording(
 
     // Start recording with 5-second chunks
     recorder.onerror = () => {
+      if (discardRequested) return;
       captureFailed = true;
       void settleCapture(sessionId, true);
       void chrome.runtime.sendMessage({ type: "recording-error", sessionId, error: "MediaRecorder failed" });
       stopRecording(sessionId);
     };
     recorder.start(5000);
-    if (sourceEnded || videoTrack.readyState === "ended") await finalizeEndedCapture();
+    segmentStartedAt = Date.now();
+    if (sharingEnded()) await finalizeEndedCapture();
     else if (stopRequested) stopRecording(sessionId);
     console.log("[sauri] Recording started (5s chunks, IndexedDB persistence)");
-    return { ok: true, sessionId };
+    return { ok: true, sessionId, segmentStartedAt, micLabel };
   } catch (error) {
     console.error("[sauri] Failed to start recording:", error);
     cleanup();
@@ -334,10 +395,43 @@ async function startRecording(
 
 function stopRecording(sessionId?: string): boolean {
   if (!sessionId || sessionId !== currentSessionId) return false;
+  if (discardRequested) return false;
   stopRequested = true;
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
     console.log("[sauri] Stopping recorder...");
   }
   return true;
+}
+
+function changePause(sessionId: string | undefined, pause: boolean) {
+  if (sessionId !== currentSessionId || !recorder || stopRequested || recorder.state === "inactive") return { ok: false };
+  try {
+    if (pause && recorder.state === "recording") {
+      recorder.pause();
+      elapsedMs += Math.max(0, Date.now() - (segmentStartedAt ?? Date.now()));
+      segmentStartedAt = undefined;
+    } else if (!pause && recorder.state === "paused") {
+      recorder.resume();
+      segmentStartedAt = Date.now();
+    }
+    return { ok: true, paused: recorder.state === "paused", elapsedMs, segmentStartedAt };
+  } catch {
+    // Do not claim a pause if the browser's MediaRecorder cannot apply it.
+    return { ok: false };
+  }
+}
+
+async function cancelRecording(sessionId?: string): Promise<boolean> {
+  // Whichever disposition reached the media owner first wins. Saving cannot
+  // be converted to discarding after finalization has already started.
+  if (!sessionId || sessionId !== currentSessionId || stopRequested || !recorder || recorder.state === "inactive") return false;
+  stopRequested = true;
+  discardRequested = true;
+  // Disable the existing durable finalization/recovery path before stopping.
+  try { await settleCapture(sessionId, true); }
+  catch (error) { stopRequested = false; discardRequested = false; throw error; }
+  recorder.stop();
+  await finished;
+  return discardSucceeded;
 }
