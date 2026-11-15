@@ -539,6 +539,9 @@ describe("meeting list API adapter", () => {
       failure_cause: null,
       created_at: "2026-10-28T17:45:00Z",
       title: "Synthetic processed meeting",
+      duration_seconds: 1860,
+      speaker_count: 3,
+      summary_topic: "Synthetic topic",
     }]);
 
     await expect(api.listMeetings()).resolves.toEqual([{
@@ -549,7 +552,31 @@ describe("meeting list API adapter", () => {
       failureCause: null,
       createdAt: "2026-10-28T17:45:00Z",
       title: "Synthetic processed meeting",
+      durationSeconds: 1860,
+      speakerCount: 3,
+      summaryTopic: "Synthetic topic",
     }]);
+  });
+
+  it("maps absent or null summary fields to null", async () => {
+    mockFetch([
+      {
+        meeting_id: "m-1", meet_link: null, origin: "manual", process_state: "queued",
+        failure_cause: null, created_at: null, title: "Legacy payload",
+      },
+      {
+        meeting_id: "m-2", meet_link: null, origin: "manual", process_state: "queued",
+        failure_cause: null, created_at: null, title: "Explicit nulls",
+        duration_seconds: null, speaker_count: null, summary_topic: null,
+      },
+    ]);
+
+    const items = await api.listMeetings();
+    for (const item of items) {
+      expect(item.durationSeconds).toBeNull();
+      expect(item.speakerCount).toBeNull();
+      expect(item.summaryTopic).toBeNull();
+    }
   });
 });
 

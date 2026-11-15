@@ -263,6 +263,9 @@ export async function listMeetings(): Promise<MeetingListItem[]> {
     failureCause: meeting.failure_cause,
     createdAt: meeting.created_at,
     title: meeting.title,
+    durationSeconds: meeting.duration_seconds ?? null,
+    speakerCount: meeting.speaker_count ?? null,
+    summaryTopic: meeting.summary_topic ?? null,
   }));
 }
 
