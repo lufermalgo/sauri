@@ -234,10 +234,6 @@
   outline-offset: var(--ds-space-1);
 }
 
-.settings-coming-soon {
-  max-width: 60ch;
-}
-
 .settings-back {
   justify-self: start;
   margin-left: calc(var(--ds-space-3) * -1);

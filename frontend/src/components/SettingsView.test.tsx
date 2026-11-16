@@ -8,6 +8,7 @@ import { copy } from "../copy/es";
 import { SETTINGS_CATEGORIES, SETTINGS_GROUPS, useRoute, type SettingsCategory } from "../router";
 import type { SessionUser } from "../session-user";
 import { THEME_STORAGE_KEY, initTheme } from "../theme";
+import { answerEnginesApi } from "./engineApiStub";
 import { PortalShell } from "./PortalShell";
 import { SettingsView } from "./SettingsView";
 import { SIDEBAR_STORAGE_KEY } from "./useSidebar";
@@ -55,6 +56,10 @@ function Harness({ user = owner, onLogout = () => undefined }: { user?: SessionU
 
 function open(category?: SettingsCategory) {
   window.history.replaceState({}, "", category ? `/settings/${labels[category].slug}` : "/settings");
+}
+
+function stubEngineApi() {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => answerEnginesApi(new URL(String(input)).pathname)!));
 }
 
 const nav = () => screen.getByRole("navigation", { name: copy.settings.navLabel });
@@ -142,17 +147,15 @@ describe("settings navigation groups", () => {
   });
 
   it.each(["transcription", "speakers"] as const)(
-    "shows a quiet placeholder for %s: text only, no controls",
-    (category) => {
+    "shows the engine selector of %s instead of a placeholder",
+    async (category) => {
+      stubEngineApi();
       open(category);
       render(<Harness />);
       expect(screen.getByRole("heading", { level: 2, name: labels[category].label })).toBeInTheDocument();
       const detail = document.querySelector<HTMLElement>(".settings-detail")!;
-      expect(within(detail).getByText(copy.settings.comingSoon[category])).toBeInTheDocument();
-      expect(copy.settings.comingSoon[category]).toMatch(/^Próximamente:/); // spanish-sample-data
-      expect(within(detail).queryAllByRole("button")).toHaveLength(0);
-      expect(within(detail).queryAllByRole("switch")).toHaveLength(0);
-      expect(within(detail).queryAllByRole("textbox")).toHaveLength(0);
+      expect(await within(detail).findByLabelText(copy.engines.process.engineLabel)).toBeInTheDocument();
+      expect(within(detail).getByText(/Hoy usa:/)).toBeInTheDocument(); // spanish-sample-data
     },
   );
 
