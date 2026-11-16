@@ -682,6 +682,18 @@ describe("TranscriptView — processing polling", () => {
     expect(api.getMeeting).toHaveBeenCalledTimes(1);
   });
 
+  it("explains a recording without speech, offers no retry and shows no transcript placeholder", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "no_speech_detected" });
+    await open();
+    expect(screen.getByText(copy.processing.noSpeechTitle)).toBeVisible();
+    expect(screen.getByText(copy.processing.noSpeechBody)).toBeVisible();
+    expect(screen.queryByText(copy.processing.failureCause("engine_failure"))).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.processing.transcriptPending)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reintentar/i })).not.toBeInTheDocument();
+    await advance(20000);
+    expect(api.getMeeting).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps polling completed with missing speakers and reloads word turns after the revision arrives", async () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));

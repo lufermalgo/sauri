@@ -837,7 +837,7 @@ async def test_language_precedence_and_detected_language_persistence(
     ("contract", "engine_contract_mismatch"), ("v1", "engine_contract_mismatch"),
     ("auto_missing", "engine_contract_mismatch"), ("value", "invalid_response"),
     ("normalize_failed", "engine_failed"), ("no_word_timestamps", "engine_failed"),
-    ("engine_failed", "engine_failed"),
+    ("engine_failed", "engine_failed"), ("no_speech", "no_speech_detected"),
 ])
 async def test_engine_failures_are_persisted_without_leaking_content(
     session_factory, monkeypatch, caplog, failure, cause,
@@ -845,6 +845,8 @@ async def test_engine_failures_are_persisted_without_leaking_content(
     from app.infra.models import StateHistory
     from app.transcription.asr_engine import EngineContractError
     from app.transcription.local_provider import LocalProvider
+
+    caplog.set_level("INFO")
 
     meeting_id = str(uuid.uuid4())
     async with session_factory() as session, session.begin():
@@ -857,8 +859,8 @@ async def test_engine_failures_are_persisted_without_leaking_content(
         engine.transcribe.side_effect = EngineContractError(private)
     elif failure == "value":
         engine.transcribe.side_effect = ValueError(private)
-    elif failure in {"normalize_failed", "no_word_timestamps", "engine_failed"}:
-        response = httpx.Response(422 if failure == "normalize_failed" else 500,
+    elif failure in {"normalize_failed", "no_word_timestamps", "engine_failed", "no_speech"}:
+        response = httpx.Response(422 if failure in {"normalize_failed", "no_speech"} else 500,
                                   json={"detail": failure, "private": private})
         engine.transcribe.side_effect = httpx.HTTPStatusError(private,
             request=httpx.Request("POST", "http://engine/transcribe"), response=response)
@@ -883,6 +885,69 @@ async def test_engine_failures_are_persisted_without_leaking_content(
         assert (await session.execute(select(Transcript))).scalars().all() == []
     assert private not in caplog.text
     assert "cause=" + cause in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("status", "body", "cause"), [
+    (422, {"detail": "no_speech"}, "no_speech_detected"),
+    (422, {"detail": "normalize_failed"}, "engine_failed"),
+    (500, {"detail": "no_speech"}, "engine_failed"),
+    (422, {"detail": ["no_speech"]}, "engine_failed"),
+    (422, ["no_speech"], "engine_failed"),
+])
+async def test_only_the_engine_no_speech_result_maps_to_the_no_speech_cause(
+    session_factory, status, body, cause,
+):
+    meeting_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="transcribing"))
+        session.add(_create_recording_in_db(meeting_id))
+    engine = AsyncMock()
+    engine.transcribe.side_effect = httpx.HTTPStatusError(
+        "engine error", request=httpx.Request("POST", "http://engine/transcribe"),
+        response=httpx.Response(status, json=body),
+    )
+    message = {"meeting_id": meeting_id, "audio_ref": "audio/test.webm", "language": "auto"}
+    with patch("app.transcription.worker.create_asr_engine", return_value=engine):
+        await _process_transcription_for_seeded_recording(message, session_factory)
+    async with session_factory() as session:
+        meeting = await session.get(Meeting, meeting_id)
+        assert meeting.process_state == "failed" and meeting.failure_cause == cause
+
+
+@pytest.mark.asyncio
+async def test_no_speech_is_terminal_without_retry_diarization_or_summary(session_factory, caplog):
+    from app.infra.models import StateHistory, SummaryRequestOutbox
+
+    meeting_id = str(uuid.uuid4())
+    async with session_factory() as session, session.begin():
+        session.add(_create_meeting_in_db(meeting_id, state="transcribing"))
+        recording = _create_recording_in_db(meeting_id)
+        session.add(recording)
+    engine = AsyncMock()
+    engine.transcribe.side_effect = httpx.HTTPStatusError(
+        "engine error", request=httpx.Request("POST", "http://engine/transcribe"),
+        response=httpx.Response(422, json={"detail": "no_speech"}),
+    )
+    queue = AsyncMock()
+    message = {"meeting_id": meeting_id, "owner_id": "test-user", "recording_id": recording.id,
+               "audio_ref": "audio/test.webm", "language": "auto"}
+    with caplog.at_level("INFO", logger="app.transcription.worker"), \
+            patch("app.transcription.worker.create_asr_engine", return_value=engine):
+        await _process_transcription_worker(message, session_factory, queue)
+    queue.publish.assert_not_called()
+    assert engine.transcribe.await_count == 1
+    async with session_factory() as session:
+        meeting = await session.get(Meeting, meeting_id)
+        assert meeting.process_state == "failed" and meeting.failure_cause == "no_speech_detected"
+        assert (await session.execute(select(Transcript))).scalars().all() == []
+        assert (await session.execute(select(SummaryRequestOutbox))).scalars().all() == []
+        history = (await session.execute(
+            select(StateHistory).where(StateHistory.meeting_id == meeting_id))).scalar_one()
+        assert history.state == "failed" and history.failure_cause == "no_speech_detected"
+    assert "manual retry" not in caplog.text
+    assert not [record for record in caplog.records if record.levelname in {"ERROR", "WARNING"}]
+    assert "cause=no_speech_detected" in caplog.text
 
 
 @pytest.mark.asyncio

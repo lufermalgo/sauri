@@ -71,6 +71,18 @@ describe("ProcessingStatus — real states", () => {
     },
   );
 
+  it("explains a recording without detected speech instead of a generic failure, with no retry", () => {
+    render(<ProcessingStatus {...base({
+      meeting: { meetingId: "m-1", processState: "failed", failureCause: "no_speech_detected" }, hasTranscript: false,
+    })} />);
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(copy.processing.noSpeechTitle);
+    expect(status).toHaveTextContent(copy.processing.noSpeechBody);
+    expect(status).not.toHaveTextContent(copy.processing.failureCause("engine_failed"));
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
   it("does not turn a state load failure into a processing state", () => {
     render(<ProcessingStatus {...base({ meeting: null, error: true })} />);
     expect(screen.getByRole("alert")).toHaveTextContent(copy.processing.loadFailed);

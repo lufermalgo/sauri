@@ -21,7 +21,7 @@ import { ChatTab } from "./ChatTab";
 import { Avatar, Button, Card, Tabs, TextField, Skeleton, SkeletonLines } from "./ui";
 import { meeting as text } from "../copy/meeting";
 import "../styles/meeting.css";
-import { detectProcessingStage, type SummarySignal } from "../processing-estimate";
+import { NO_SPEECH_CAUSE, detectProcessingStage, type SummarySignal } from "../processing-estimate";
 import { copy } from "../copy/es";
 
 interface TranscriptViewProps {
@@ -403,6 +403,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
   const completed = meeting?.processState === "completed" && !statusError;
+  // Nothing will ever be transcribed: the status card explains it, so no transcript placeholder.
+  const noSpeech = meeting?.processState === "failed" && meeting.failureCause === NO_SPEECH_CAUSE && !statusError;
 
   const pendingCount = review?.items.filter(item => item.disposition === null).length ?? 0;
   const selectedId = selectedSpeakerId ?? review?.items[0]?.speakerId;
@@ -587,7 +589,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         <label className="meeting-follow"><input type="checkbox" checked={followPlayback}
           onChange={event => setFollowPlayback(event.target.checked)} />{text.followPlayback}</label>
       </div>
-      {!data && !error && <>
+      {!data && !error && !noSpeech && <>
         <p role="status">{copy.processing.transcriptPending}</p>
         <p>{text.transcriptPlaceholder}</p>
         <span role="status" className="meeting-sr-only">{text.loading}</span>

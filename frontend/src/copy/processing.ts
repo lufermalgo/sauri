@@ -56,6 +56,8 @@ export const processing = {
     percent === null ? stage : `${stage} · ≈ ${percent} %`,
   libraryOvertime: (stage: string) => `${stage} · tardando más de lo normal`,
   libraryProgressLabel: "Progreso estimado del procesamiento",
+  noSpeechTitle: "No se detectó voz",
+  noSpeechBody: "Esta grabación no tiene voz que transcribir. Revisa que el micrófono o el audio de la pestaña estuvieran activos.",
   failureCause: (cause?: string | null) => {
     switch (cause) {
       case "could_not_join": return "No se pudo entrar a la reunión.";

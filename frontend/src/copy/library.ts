@@ -17,6 +17,7 @@ export const library = {
   speakers: (count: number) => (count === 1 ? "1 hablante" : `${count} hablantes`),
   topicGenerating: "Se está generando la transcripción…",
   topicFailed: "No se pudo procesar la grabación.",
+  topicNoSpeech: "No se detectó voz en la grabación.",
   search: {
     regionLabel: "Buscar en la biblioteca",
     text: "Buscar por título",

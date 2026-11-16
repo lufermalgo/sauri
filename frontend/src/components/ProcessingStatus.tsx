@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { MeetingState } from "../api";
 import { copy } from "../copy/es";
 import {
-  ACTIVE_STAGES, detectProcessingStage, estimateProgress, expectedStageSeconds, formatElapsed,
+  ACTIVE_STAGES, NO_SPEECH_CAUSE, detectProcessingStage, estimateProgress, expectedStageSeconds, formatElapsed,
   roundMinutes, secondsSince, type ActiveStage, type DetectedStage, type SummarySignal,
 } from "../processing-estimate";
 import { ProgressBar } from "./ui";
@@ -115,6 +115,12 @@ export function ProcessingStatus({
 
   if (error) return <p role="alert">{text.loadFailed}</p>;
   if (!meeting || detected === null) return <p role="status">{text.loading}</p>;
+  if (detected === "failed" && meeting.failureCause === NO_SPEECH_CAUSE) return (
+    <div role="status" className="processing-current">
+      <p className="processing-headline">{text.noSpeechTitle}</p>
+      <p className="processing-explain">{text.noSpeechBody}</p>
+    </div>
+  );
   if (detected === "failed") return (
     <p role="status">{text.failed}: {text.failureCause(meeting.failureCause)}</p>
   );

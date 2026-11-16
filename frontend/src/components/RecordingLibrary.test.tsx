@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup, waitFor, fireEvent, within } from "@testing-library/react";
-import { ProcessState, MeetingOrigin } from "@sauri/shared-types";
+import { FailureCause, ProcessState, MeetingOrigin } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 
 import { RecordingLibrary } from "./RecordingLibrary";
@@ -311,6 +311,13 @@ describe("RecordingLibrary row content", () => {
   it("falls back to a failure message for a failed recording without topic", async () => {
     await openWith([meeting({ processState: ProcessState.Failed })]);
     expect(screen.getByText(text.topicFailed)).toBeDefined();
+  });
+
+  it("explains a recording without detected speech in its row, with no retry", async () => {
+    await openWith([meeting({ processState: ProcessState.Failed, failureCause: FailureCause.NoSpeechDetected })]);
+    expect(screen.getByText(text.topicNoSpeech)).toBeDefined();
+    expect(screen.queryByText(text.topicFailed)).toBeNull();
+    expect(screen.queryByRole("button", { name: text.retry })).toBeNull();
   });
 
   it("does not use a fallback line for a queued recording", async () => {

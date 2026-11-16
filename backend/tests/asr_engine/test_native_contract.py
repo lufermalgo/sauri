@@ -108,11 +108,13 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(monke
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("failure", "status"), [
-    ("normalize_failed", 422), ("no_word_timestamps", 500), ("engine_failed", 500),
+    ("normalize_failed", 422), ("no_word_timestamps", 500), ("no_speech", 422), ("engine_failed", 500),
     ("keep_awake_failed", 503), ("download_failed", 500),
 ])
 async def test_failures_are_categorized_private_and_clean(monkeypatch, tmp_path, configured, failure, status):
     before = set(tmp_path.iterdir())
+    def fail_no_speech(*args, **kwargs):
+        raise native.NoSpeechError("private /path/to/audio sensitive text")
     def fail(*args, **kwargs):
         error = {"normalize_failed": native.NormalizeError, "keep_awake_failed": native.KeepAwakeError}.get(
             failure, RuntimeError)
@@ -123,6 +125,8 @@ async def test_failures_are_categorized_private_and_clean(monkeypatch, tmp_path,
         monkeypatch.setattr(native, "KeepAwake", fail)
     elif failure == "download_failed":
         monkeypatch.setattr(native.s3_client, "get_object", fail)
+    elif failure == "no_speech":
+        monkeypatch.setattr(native, "_transcribe_wav", fail_no_speech)
     elif failure == "no_word_timestamps":
         doc = document()
         doc["transcription"][0]["tokens"] = []
