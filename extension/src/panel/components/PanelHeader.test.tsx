@@ -4,14 +4,17 @@ import { PanelHeader } from "./PanelHeader";
 import { panelCopy as copy } from "../copy";
 
 describe("PanelHeader", () => {
-  it("shows the official Sauri logo as the brand, with the name as its accessible name and no settings button", () => {
+  it("shows the official Sauri logo and the panel title, with no settings button", () => {
     const { container } = render(<PanelHeader />);
     const logo = screen.getByRole("img", { name: copy.brandName });
     expect(copy.brandName).toBe("Sauri");
     expect(logo.querySelector('polygon[fill="#4a7c59"]')).toBeTruthy();
     expect(logo.querySelector("path.ui-brand-word")).toBeTruthy();
-    // The word is the outlined artwork, never live text in the interface font.
-    expect(container.querySelector(".panel-brand")!.textContent).toBe("");
+    expect(screen.getByText("Grabar reunión")).toBeInTheDocument(); // spanish-sample-data
+    expect(copy.panelTitle).toBe("Grabar reunión"); // spanish-sample-data
+    // The word "Sauri" is the outlined artwork, never live text in the interface font.
+    expect(screen.queryByText("Sauri")).not.toBeInTheDocument();
+    expect(container.querySelector(".panel-brand svg")).toBe(logo);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
   it.each([false, true])("shows the projected recording badge, paused=%s", paused => {

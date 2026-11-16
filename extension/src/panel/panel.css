@@ -10,7 +10,8 @@
 .panel-app input:not([type="checkbox"]), .panel-app select { min-height: var(--ds-target); padding: 0 var(--ds-space-3); width: 100%; border: 1px solid var(--ds-border-strong); border-radius: var(--ds-radius-sm); background: var(--ds-sidebar); color: var(--ds-fg); font: 400 var(--ds-text-md) var(--ds-font-sans); }
 .panel-app input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--ds-accent); }
 .panel-header { padding: var(--ds-space-3) var(--ds-space-4); border-bottom: 1px solid var(--ds-border); display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-2); }
-.panel-brand { min-width: 0; display: flex; align-items: center; }
+.panel-brand { min-width: 0; display: flex; align-items: center; gap: var(--ds-space-3); }
+.panel-title { padding-inline-start: var(--ds-space-3); border-inline-start: 1px solid var(--ds-border); font: 600 var(--ds-text-lg) var(--ds-font-sans); }
 .panel-app svg, .permission-page svg { flex: 0 0 auto; }
 .panel-app .panel-with-icon, .permission-page .panel-with-icon { display: inline-flex; align-items: center; justify-content: center; gap: var(--ds-space-2); }
 .panel-dot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: var(--ds-radius-pill); background: currentColor; }

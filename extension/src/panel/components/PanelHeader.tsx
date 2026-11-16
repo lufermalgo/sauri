@@ -11,7 +11,8 @@ export interface PanelHeaderProps {
 export function PanelHeader({ captureState = "idle", paused }: PanelHeaderProps) {
   return <header className="panel-header">
     <span className="panel-brand">
-      <BrandLogo height={28} title={copy.brandName} />
+      <BrandLogo height={24} title={copy.brandName} />
+      <span className="panel-title panel-ellipsis">{copy.panelTitle}</span>
     </span>
     {captureState === "recording" && <span className="panel-badge panel-badge-recording"><span className={paused ? "panel-dot" : "panel-dot panel-record-dot"} aria-hidden="true" />{paused ? copy.paused : copy.recording}</span>}
   </header>;
