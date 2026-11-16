@@ -21,11 +21,13 @@ export interface UploadJob {
   title?: string;
   meetLink?: string;
   videoPresence?: "muxed" | "absent";
+  /** Recorded seconds, excluding paused time; absent only on jobs queued before this field existed. */
+  durationSeconds?: number;
 }
 
 export type EnqueueUploadInput = Pick<
   UploadJob,
-  "sessionId" | "meetingId" | "idempotencyKey" | "mimeType" | "notificationEmittedAt" | "title" | "meetLink" | "videoPresence"
+  "sessionId" | "meetingId" | "idempotencyKey" | "mimeType" | "notificationEmittedAt" | "title" | "meetLink" | "videoPresence" | "durationSeconds"
 >;
 
 const DB_NAME = "sauri-upload-queue";
@@ -122,6 +124,7 @@ export async function enqueueUpload(input: EnqueueUploadInput): Promise<UploadJo
     title: input.title,
     meetLink: input.meetLink,
     videoPresence: input.videoPresence,
+    durationSeconds: input.durationSeconds,
   };
 
   return new Promise((resolve, reject) => {
