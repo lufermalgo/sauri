@@ -51,7 +51,7 @@ class LeaseScope:
         self._heartbeat_s = heartbeat_s if heartbeat_s is not None else heartbeat_seconds()
         self._lost = asyncio.Event()
         self._beat: asyncio.Task[None] | None = None
-        self._claim: tuple[str, int, str, ProcessingKind, object] | None = None
+        self._claim: tuple[str, int, str, ProcessingKind, object] | None = None  # holder keeps its reservation
 
     @property
     def lost(self) -> bool:
@@ -113,12 +113,18 @@ class LeaseScope:
         if self._claim is None or exc_type is None or exc_type is ClaimLost or self._lost.is_set():
             return
         meeting_id, generation, holder, kind, operation_id = self._claim
-        try:
+
+        async def release() -> None:
             async with self._factory() as session, session.begin():
                 await release_worker_claim(
                     session, meeting_id=meeting_id, generation=generation, holder=holder, kind=kind,
                     operation_id=operation_id,
                 )
+
+        try:
+            # Shielded: a delivery being cancelled (shutdown, a closed channel) is cancelled again
+            # while it cleans up, and the release must still reach the database.
+            await asyncio.shield(asyncio.ensure_future(release()))
         except Exception:
             # The lease lapses on its own; the release only shortens the wait.
             logger.warning("Could not release the processing claim; meeting_id=%s", meeting_id)

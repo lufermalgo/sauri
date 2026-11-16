@@ -530,11 +530,12 @@ async def start_worker(
                 "meeting_id": meeting_id, "generation": message.get("generation"),
                 "job_id": message.get("job_id"), "operation_id": message.get("operation_id"),
             }
+            meeting = await session.get(Meeting, meeting_id)
+            if meeting is None or meeting.process_state != "transcribing":
+                return  # already settled: a repeated terminal delivery must not wait on the first one's claim
             if await claim_worker_generation(session, kind="transcription", **binding) is None:
                 return
-            meeting = await session.get(Meeting, meeting_id)
-            if meeting is not None and meeting.process_state == "transcribing":
-                await record_transition(session, meeting, "engine_failed", failure_cause="processing_retries_exhausted")
+            await record_transition(session, meeting, "engine_failed", failure_cause="processing_retries_exhausted")
 
     await queue.subscribe("transcribe", handler)
     await queue.subscribe("transcribe.failed", terminal)

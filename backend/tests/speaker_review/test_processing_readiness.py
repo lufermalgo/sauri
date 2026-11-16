@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 
 from app.diarization.repository import DiarizationRepository
 from app.infra.models import Diarization, MeetingProcessingClaim, Speaker, SpeakerReview, SpeakerReviewItem
-from app.infra.processing_claims import claim_worker_generation, verify_worker_generation
+from app.infra.processing_claims import ClaimBusy, claim_worker_generation, verify_worker_generation
 from app.meetings.speaker_review_service import SpeakerReviewService
 from tests.meetings import test_transcript_word_turns as word_tests
 
@@ -79,14 +79,15 @@ async def test_worker_generation_is_consumed_once_and_stale_delivery_is_fenced(f
         await session.flush()
         binding = {"meeting_id": meeting, "generation": 7, "job_id": "synthetic-job", "kind": "diarization"}
         assert await claim_worker_generation(session, **binding)
-        assert not await claim_worker_generation(session, **binding)
+        with pytest.raises(ClaimBusy):  # a second delivery meets the live lease and is deferred, not consumed
+            await claim_worker_generation(session, **binding)
         assert await verify_worker_generation(session, **binding)
         claim.generation = 8
         await session.flush()
         assert not await verify_worker_generation(session, **binding)
 
 
-async def test_expired_worker_claim_cannot_publish(factory: Factory) -> None:
+async def test_expired_worker_claim_cannot_publish_and_is_taken_over_by_the_next_delivery(factory: Factory) -> None:
     meeting, _, _ = await _pending(factory)
     async with factory() as session, session.begin():
         session.add(MeetingProcessingClaim(meeting_id=meeting, generation=7, claim_kind="diarization",
@@ -95,8 +96,13 @@ async def test_expired_worker_claim_cannot_publish(factory: Factory) -> None:
         await session.flush()
         assert not await verify_worker_generation(session, meeting_id=meeting, generation=7,
                                                   job_id="synthetic-job", kind="diarization")
-        assert not await claim_worker_generation(session, meeting_id=meeting, generation=7,
-                                                 job_id="synthetic-job", kind="diarization")
+        holder = await claim_worker_generation(session, meeting_id=meeting, generation=7,
+                                               job_id="synthetic-job", kind="diarization")
+        assert holder and holder != "synthetic-job"
+        assert not await verify_worker_generation(session, meeting_id=meeting, generation=7,
+                                                  job_id="synthetic-job", kind="diarization")
+        assert await verify_worker_generation(session, meeting_id=meeting, generation=7,
+                                              job_id="synthetic-job", kind="diarization", holder=holder)
 
 
 async def test_failed_publication_rolls_back_outputs_and_can_resume(factory: Factory) -> None:

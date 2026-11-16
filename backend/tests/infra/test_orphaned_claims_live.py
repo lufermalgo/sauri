@@ -1,7 +1,7 @@
 """Orphaned processing recovers on a real PostgreSQL and a real RabbitMQ (#1166).
 
 Needs disposable services: SAURI_QA_POSTGRES_URL (database name containing ``sauri_qa``) and
-SAURI_QA_RABBITMQ_URL. Skipped otherwise. The queues named transcribe/diarize are purged first.
+SAURI_QA_RABBITMQ_URL. Skipped otherwise. The queues named transcribe/diarize are deleted before and after.
 """
 
 from __future__ import annotations
@@ -70,8 +70,8 @@ async def broker(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[RabbitMQJobQu
     connection = await aio_pika.connect_robust(url)
     async with connection:
         channel = await connection.channel()
-        for topic in TOPICS:
-            await (await channel.declare_queue(topic, durable=True)).purge()
+        for topic in TOPICS:  # deleted, not purged: the app declares the parking queues with its own arguments
+            await channel.queue_delete(topic)
     queue = RabbitMQJobQueue(url)
     await queue.connect()
     try:
@@ -80,6 +80,10 @@ async def broker(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[RabbitMQJobQu
         await queue.stop_consuming()
         await queue.cancel_in_flight()
         await queue.disconnect()
+        async with await aio_pika.connect_robust(url) as cleanup:
+            channel = await cleanup.channel()
+            for topic in TOPICS:
+                await channel.queue_delete(topic)
 
 
 async def _eventually(check: Callable[[], Awaitable[bool]], timeout_s: float = 20.0) -> None:

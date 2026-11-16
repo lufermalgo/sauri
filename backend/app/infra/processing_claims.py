@@ -42,6 +42,14 @@ DEFAULT_LEGACY_GRACE_SECONDS = 900.0
 UNTRACKED_HOLDER = "untracked"
 
 
+class Holder(str):
+    """The id a worker holds a claim under. A reservation made for a recovery or regeneration operation
+    may carry its own deadline; ``reserved_until`` remembers it so that giving the claim back restores
+    the reservation exactly as its dispatcher left it, never extended."""
+
+    reserved_until: datetime | None = None
+
+
 class ClaimBusy(DeferDelivery):
     """Another worker holds a live lease on this generation; try the delivery again later."""
 
@@ -195,7 +203,7 @@ async def claim_worker_generation(
     job_id: object,
     kind: ProcessingKind,
     operation_id: object = None,
-) -> str | None:
+) -> Holder | None:
     """Take the claim of a generation for one worker and return the holder id, or None when fenced.
 
     The first delivery of a generation holds it under its ``job_id`` (a recovery or regeneration
@@ -228,7 +236,7 @@ async def claim_worker_generation(
     if claim is None:
         if operation_id is not None:
             return None
-        return job_id if isinstance(job_id, str) and job_id else UNTRACKED_HOLDER
+        return Holder(job_id if isinstance(job_id, str) and job_id else UNTRACKED_HOLDER)
     if not isinstance(generation, int) or isinstance(generation, bool) or generation != claim.generation:
         return None
 
@@ -240,6 +248,9 @@ async def claim_worker_generation(
             return None
         first = claim.claim_id is None and claim.claim_kind is None
         holder = job_id
+    reserved_until = claim.claim_expires_at if first and operation_id is not None else None
+    if reserved_until is not None and _is_expired(reserved_until):
+        return None  # the dispatcher's reservation lapsed before any worker started it
     if not first:
         # Taking over needs a worker-held claim of this kind whose lease has run out.
         if claim.claim_id is None or claim.claim_kind != kind:
@@ -261,7 +272,9 @@ async def claim_worker_generation(
         return None
     if not first:
         logger.warning("Processing claim taken over after its lease lapsed; kind=%s meeting_id=%s", kind, meeting_id)
-    return holder
+    held = Holder(holder)
+    held.reserved_until = reserved_until
+    return held
 
 
 async def renew_claim(
@@ -303,9 +316,11 @@ async def release_worker_claim(
     """Give the claim back so the next delivery of this generation can take it at once.
 
     Only the current holder can release; a claim already taken over is left alone. A run driven by
-    an operation returns to the reserved state its dispatcher left, a normal run to unclaimed.
+    an operation returns to the reserved state its dispatcher left (with the deadline it had, see
+    ``Holder``), a normal run to unclaimed.
     """
     reserved = operation_id if isinstance(operation_id, str) else None
+    reserved_until = getattr(holder, "reserved_until", None) if reserved is not None else None
     result = await session.execute(
         update(MeetingProcessingClaim)
         .where(
@@ -315,7 +330,8 @@ async def release_worker_claim(
             MeetingProcessingClaim.claim_kind == kind,
         )
         .values(
-            claim_id=reserved, claim_kind="recovery" if reserved is not None else None, claim_expires_at=None
+            claim_id=reserved, claim_kind="recovery" if reserved is not None else None,
+            claim_expires_at=reserved_until,
         )
         .returning(MeetingProcessingClaim.meeting_id)
     )
