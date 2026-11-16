@@ -18,6 +18,7 @@ import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from
 
 import { canCaptureCurrentTab } from "./core/capture";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
+import { parseDurationSeconds } from "./core/recording-duration";
 
 export {};
 
@@ -113,7 +114,8 @@ async function uploadRecording(job: UploadJob): Promise<void> {
       meeting_id: meetingId,
       idempotency_key: sessionId,
       capture_origin: "chrome_extension",
-      duration_seconds: 0,
+      // Legacy jobs queued before the duration was persisted have no value to send.
+      duration_seconds: job.durationSeconds ?? 0,
       interrupted: false,
       video_presence: videoPresence,
       notice_issued_at: notificationEmittedAt ?? null,
@@ -229,6 +231,7 @@ chrome.runtime.onMessage.addListener(
       meetingTitle?: string;
       url?: string;
       size?: number;
+      durationSeconds?: number;
       mimeType?: string;
       sessionId?: string;
       error?: string;
@@ -304,7 +307,7 @@ chrome.runtime.onMessage.addListener(
         return true;
 
       case "recording-stopped":
-        handleRecordingStopped(message.size!, message.mimeType!, message.sessionId);
+        handleRecordingStopped(message.size!, message.mimeType!, message.sessionId, message.durationSeconds);
         sendResponse({ ok: true });
         break;
 
@@ -632,7 +635,8 @@ async function handleStopCapture(): Promise<boolean> {
 async function handleRecordingStopped(
   size: number,
   mimeType: string,
-  sessionId?: string
+  sessionId?: string,
+  durationSeconds?: number
 ): Promise<void> {
   console.log(`[sauri] Recording complete: ${size} bytes (session: ${sessionId ?? "unknown"})`);
 
@@ -669,6 +673,7 @@ async function handleRecordingStopped(
         title: ownsProjection ? currentState.meetingTitle : undefined,
         meetLink: ownsProjection ? currentState.meetingUrl || undefined : undefined,
         videoPresence: ownsProjection ? currentState.videoPresence ?? "absent" : "absent",
+        durationSeconds: parseDurationSeconds(durationSeconds),
       });
     } catch (error) {
       // A racing recording-stopped may have inserted the same job first.

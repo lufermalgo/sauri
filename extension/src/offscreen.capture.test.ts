@@ -71,6 +71,8 @@ class FakeMediaRecorder {
   }
   start = vi.fn(() => { this.state = "recording"; });
   stop = vi.fn(() => { this.state = "inactive"; });
+  pause = vi.fn(() => { this.state = "paused"; });
+  resume = vi.fn(() => { this.state = "recording"; });
 }
 
 async function loadOffscreenWithMocks(getUserMediaImpl: (constraints: unknown) => Promise<FakeMediaStream>) {
@@ -144,7 +146,7 @@ describe("Offscreen document — A/V composition and capture", () => {
     recorder.ondataavailable!({ data: new NodeBlob(["first"]) });
     recorder.ondataavailable!({ data: new NodeBlob(["final"]) });
     await recorder.onstop!();
-    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "recording-stopped", sessionId: "chunks", size: 10, mimeType: "video/webm;codecs=vp8,opus" });
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "recording-stopped", sessionId: "chunks", size: 10, mimeType: "video/webm;codecs=vp8,opus", durationSeconds: expect.any(Number) });
     expect(await getCompletion("chunks")).toMatchObject({ status: "upload_pending", meetingId: "meeting" });
   });
 
@@ -388,5 +390,48 @@ describe("current-tab acquisition and playback", () => {
     expect(await start("denied-direct", { source: "current-tab", streamId: "stream" })).toEqual({ ok: false, reason: "current-tab-unavailable" });
     expect(await getCompletion("denied-direct")).toBeUndefined();
     expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("recorded duration reported on stop", () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  async function recordWith(sessionId: string, script: (control: { advance: (ms: number) => void; send: (type: string) => unknown }) => void) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    await loadOffscreenWithMocks(async () => new FakeMediaStream([new FakeTrack("audio"), new FakeTrack("video")]));
+    vi.stubGlobal("Blob", NodeBlob);
+    await createCompletion({ sessionId, provider: "meet", meetingId: "meeting", capturedTabId: 7, status: "finalizing", updatedAt: 1 });
+    await start(sessionId);
+    const recorder = FakeMediaRecorder.lastInstance!;
+    recorder.ondataavailable!({ data: new NodeBlob(["media"]) });
+    script({
+      advance: ms => vi.setSystemTime(Date.now() + ms),
+      send: type => { let reply: unknown; registeredListener!({ type, sessionId }, {}, r => { reply = r; }); return reply; },
+    });
+    await recorder.onstop!();
+    const stopped = vi.mocked(chrome.runtime.sendMessage).mock.calls.map(([m]) => m as unknown as Record<string, unknown>).find(m => m.type === "recording-stopped");
+    return stopped?.durationSeconds;
+  }
+
+  it("rounds an uninterrupted recording up to whole seconds", async () => {
+    expect(await recordWith("plain", c => { c.advance(36_100); c.send("stop-recording"); })).toBe(37);
+  });
+
+  it("excludes paused time, including a pause that is still open at stop", async () => {
+    expect(await recordWith("paused", c => {
+      c.advance(10_000); c.send("pause-recording");
+      c.advance(60_000); c.send("resume-recording");
+      c.advance(5_500); c.send("pause-recording");
+      c.advance(120_000); c.send("stop-recording");
+    })).toBe(16);
+  });
+
+  it("does not count time between the stop request and the final chunk commit", async () => {
+    expect(await recordWith("late-commit", c => { c.advance(8_000); c.send("stop-recording"); c.advance(30_000); })).toBe(8);
+  });
+
+  it.each([0, 1, 400])("reports at least one second for a %d ms recording", async ms => {
+    expect(await recordWith(`short-${ms}`, c => { c.advance(ms); c.send("stop-recording"); })).toBe(1);
   });
 });

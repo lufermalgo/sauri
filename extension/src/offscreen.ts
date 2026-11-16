@@ -5,6 +5,7 @@
 import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME, settleCapture, claimCompletion, COMPLETION_STORE } from "./recording-db";
 import { videoPresenceFromStream } from "./core/capture";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
+import { recordedDurationSeconds } from "./core/recording-duration";
 
 console.log("[sauri] Offscreen document loaded");
 
@@ -356,8 +357,10 @@ async function startRecording(
         await settleCapture(sessionId);
 
         // Metadata only. Chunks remain until the upload owner confirms success.
+        closeRunningSegment();
         chrome.runtime.sendMessage({
           type: "recording-stopped", sessionId, size: blob.size, mimeType,
+          durationSeconds: recordedDurationSeconds(elapsedMs),
         });
       } catch {
         await settleCapture(sessionId, true);
@@ -393,10 +396,20 @@ async function startRecording(
   }
 }
 
+// Folds the running segment into elapsedMs. Idempotent: pause and stop both
+// call it, and the recorded total never includes paused time.
+function closeRunningSegment(): void {
+  if (segmentStartedAt === undefined) return;
+  elapsedMs += Math.max(0, Date.now() - segmentStartedAt);
+  segmentStartedAt = undefined;
+}
+
 function stopRecording(sessionId?: string): boolean {
   if (!sessionId || sessionId !== currentSessionId) return false;
   if (discardRequested) return false;
   stopRequested = true;
+  // Measure at the stop request, not after the final chunks are persisted.
+  closeRunningSegment();
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
     console.log("[sauri] Stopping recorder...");
@@ -409,8 +422,7 @@ function changePause(sessionId: string | undefined, pause: boolean) {
   try {
     if (pause && recorder.state === "recording") {
       recorder.pause();
-      elapsedMs += Math.max(0, Date.now() - (segmentStartedAt ?? Date.now()));
-      segmentStartedAt = undefined;
+      closeRunningSegment();
     } else if (!pause && recorder.state === "paused") {
       recorder.resume();
       segmentStartedAt = Date.now();
