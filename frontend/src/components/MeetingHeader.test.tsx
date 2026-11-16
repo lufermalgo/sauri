@@ -355,7 +355,7 @@ describe("inline title edit", () => {
 });
 
 function actionButtons() {
-  const actions = document.querySelector(".meeting-heading-row > .meeting-actions")!;
+  const actions = document.querySelector(".meeting-title-row > .meeting-actions")!;
   return within(actions as HTMLElement).getAllByRole("button");
 }
 
@@ -377,6 +377,19 @@ it("shows Speakers, Download and Delete as icon-only buttons of one style, with 
   expect(buttons).toHaveLength(3);
   expect(document.querySelector(".lucide-ellipsis")).not.toBeInTheDocument();
   expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
+});
+
+it("places the actions in the title row right after the title and the always-visible pencil, with a divider between", () => {
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" manifest={null} turns={[]}
+    speakerReview={{ pendingCount: 0, open: false, onToggle: vi.fn() }} />);
+  const row = screen.getByRole("heading", { level: 1 }).parentElement!;
+  const children = Array.from(row.children);
+  expect(children.map(child => child.tagName.toLowerCase())).toEqual(["h1", "span", "span", "div"]);
+  expect(children[1]).toContainElement(screen.getByRole("button", { name: t("meeting:renameTitle") }));
+  expect(children[2]).toHaveClass("meeting-actions-divider");
+  expect(children[2]).toHaveAttribute("aria-hidden", "true");
+  expect(children[3]).toHaveClass("meeting-actions");
+  expect(screen.getByRole("button", { name: t("meeting:renameTitle") })).toBeEnabled();
 });
 
 it("keeps every download option in the Download menu", () => {

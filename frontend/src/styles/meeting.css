@@ -16,24 +16,27 @@
 .meeting-title-edit { position: relative; flex: none; }
 /*
  * Inline rename: the field sits inside the h1 and inherits its type, so the title does not move. A hidden
- * mirror of the draft (::after) sizes the box, so it grows with the text up to the available width.
+ * mirror of the draft (::after) sizes the box, so it grows with the text up to the available width; the input has zero intrinsic
+ * width so its default 20-character width never widens it.
  */
 .meeting-title-field { display: grid; grid-template-columns: minmax(0, 1fr); width: max-content; max-width: 100%; overflow: hidden; }
 .meeting-title-field::after { content: attr(data-value); grid-area: 1 / 1; visibility: hidden; white-space: pre; }
-.meeting-title-field input { grid-area: 1 / 1; box-sizing: border-box; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: var(--ds-radius-xs); color: inherit; font: inherit; letter-spacing: inherit; background: var(--ds-fill); outline: none; box-shadow: inset 0 -2px 0 var(--ds-focus); text-overflow: clip; }
+.meeting-title-field input { grid-area: 1 / 1; box-sizing: border-box; width: 0; min-width: 100%; margin: 0; padding: 0; border: 0; border-radius: var(--ds-radius-xs); color: inherit; font: inherit; letter-spacing: inherit; background: var(--ds-fill); outline: none; box-shadow: inset 0 -2px 0 var(--ds-focus); text-overflow: clip; }
 .meeting-title-field input::placeholder { color: inherit; opacity: 0.6; }
 .meeting-title-field input[readonly] { opacity: 0.6; cursor: progress; }
 .meeting-title-row--editing .meeting-title-edit { visibility: hidden; }
 .meeting-header > .meeting-title-hint { position: absolute; z-index: var(--ds-z-menu); top: calc(100% + var(--ds-space-1)); left: var(--ds-space-3); max-width: calc(100% - 2 * var(--ds-space-3)); box-sizing: border-box; margin: 0; padding: var(--ds-space-1) var(--ds-space-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); background: var(--ds-surface-raised); box-shadow: var(--ds-shadow-md); color: var(--ds-fg); font-size: var(--ds-text-xs); overflow-wrap: anywhere; }
 .meeting-header > .meeting-title-hint--error { border-color: var(--ds-danger); color: var(--ds-danger-text); }
-@media (hover: hover) {
-  .meeting-title-edit { opacity: 0; transition: opacity var(--ds-duration) var(--ds-ease); }
-  .meeting-title-row:hover .meeting-title-edit, .meeting-title-row:focus-within .meeting-title-edit { opacity: 1; }
-}
+/* The pencil is always there, quiet at rest and as strong as the text on hover or keyboard focus. */
+.meeting-title-edit .ui-icon-button { color: var(--ds-fg-subtle); }
+.meeting-title-edit .ui-icon-button:is(:hover, :focus-visible) { color: var(--ds-fg); }
 .meeting-date { color: var(--ds-fg-muted); font-size: var(--ds-text-xs); }
-.meeting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-1); min-width: 0; max-width: 100%; }
-.meeting-heading-row > .meeting-actions { flex: 0 0 auto; }
-.meeting-downloads { min-width: 0; }
+/* The three actions follow the title and its pencil as one group; the title gives way first, the group never wraps. */
+.meeting-actions { display: flex; flex: none; align-items: center; gap: var(--ds-space-1); }
+.meeting-actions-divider { flex: none; align-self: center; width: 1px; height: 16px; margin-inline: var(--ds-space-1); background: var(--ds-border-strong); }
+.meeting-downloads { flex: none; }
+/* Download progress and errors float under the header's right edge so they never push the group around. */
+.meeting-downloads > p { position: absolute; z-index: var(--ds-z-menu); top: calc(100% + var(--ds-space-1)); right: var(--ds-space-3); max-width: calc(100% - 2 * var(--ds-space-3)); box-sizing: border-box; margin: 0; padding: var(--ds-space-1) var(--ds-space-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-sm); background: var(--ds-surface-raised); box-shadow: var(--ds-shadow-md); }
 .meeting-speakers, .meeting-delete { position: relative; flex: none; }
 .meeting-details { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--ds-space-3); color: var(--ds-fg-muted); font-size: var(--ds-text-xs); line-height: 1.4; }
 .meeting-header > p { margin: 0; padding: 0 var(--ds-space-3) var(--ds-space-2); font-size: var(--ds-text-sm); }
@@ -147,7 +150,6 @@
   .meeting-control-speed { flex-basis: 52px; }
   .meeting-control-volume { flex-basis: 36px; }
   .meeting-control-seek { flex-basis: 24px; }
-  .meeting-actions > *, .meeting-downloads { max-width: 100%; }
 }
 
 /* Loading skeleton */
