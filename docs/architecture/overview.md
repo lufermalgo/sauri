@@ -96,3 +96,60 @@ Orden de ejecución: reconciliar especificaciones y aprobaciones → reparar con
 No ejecutar `docker system prune`, eliminar volúmenes ni limpiar recursos ajenos. Identificar proyecto, propiedad, datos y autorización antes de retirar recursos existentes. La auditoría inicial midió un volumen principal de aproximadamente 2,426 GB; es un dato histórico, no un inventario vigente ni autorización de borrado. Las mediciones globales de Docker pueden incluir otros recursos: verificar siempre su estado y la autorización actual. QA retira contenedores/redes/volúmenes propios al finalizar; no ejecuta limpieza global de imágenes compartidas ni cache.
 
 Todo cambio arquitectónico debe actualizar este documento y la spec afectada en la misma entrega, indicando motivo, alternativas descartadas, impacto de despliegue/datos y evidencia. Registrar decisiones de producto, privacidad, gasto o seguridad aprobadas por Fer; decisiones técnicas no amplían esas autorizaciones. `docs/product/baseline.md` sigue siendo la autoridad de producto, y las fases SDD conservan sus aprobaciones separadas de implementación, merge y aceptación.
+
+## Modos de captura de la extensión (#994)
+
+- **«Record» / Grabar (principal):** selector nativo con `getDisplayMedia` dentro
+  del offscreen, según la [guía de Chrome](https://developer.chrome.com/docs/extensions/how-to/web-platform/screen-capture).
+  Cancelar no cambia el estado previo ni crea sesión. Sin audio se liberan las
+  pistas y se pide volver a elegir con «Share tab audio» activado. Se rechazan
+  ventanas/monitores por `displaySurface`; ante `TypeError` se reintenta una vez
+  sin opciones opcionales, conservando esa validación. No hay loopback: se pide
+  `suppressLocalAudioPlayback: false` para evitar audio duplicado.
+- **«Record this tab» / Grabar esta pestaña (atajo):** `tabCapture.getMediaStreamId`
+  del worker obtiene la pestaña activa; el offscreen consume el ID con fuente
+  `tab` e incluye audio. Aquí sí hay loopback al destino local del AudioContext,
+  porque esta API silencia la pestaña. Se conservan `tabCapture` y `activeTab`;
+  abrir el panel desde `action.onClicked` concede acceso a esa pestaña. Si falta
+  ese permiso, se explica cómo volver a invocar la extensión, sin sesión huérfana.
+  El atajo se deshabilita en páginas internas/extensiones/tienda; admite páginas
+  web HTTP(S). Cambiar de pestaña no concede automáticamente otro `activeTab`.
+
+Ambos modos usan offscreen con razones `DISPLAY_MEDIA` y `USER_MEDIA`: el siguiente
+inicio recrea documentos inactivos para actualizar razones, nunca capturas vivas.
+`pickerSource` registra `picker` o `current-tab` en el estado de sesión, sin contenido
+personal adicional. Comparten MediaRecorder, mezcla de micrófono solo para el
+archivo, WebM, IndexedDB y subida. La identidad durable se crea después de obtener
+los medios válidos. `audio_only` excluye video del archivo, pero conserva su pista
+fuente para detectar `ended`, usando el cierre durable de `captured-tab-close`.
+Cerrar la pestaña de origen también finaliza; en el selector puede ser distinta de
+la elegida. Solo Meet recibe consulta de título y banner. Otros orígenes conservan
+`provider: "meet"` por falta de proveedor genérico, sin título/enlace de Meet.
+
+Con micrófono configurado, el panel consulta su permiso antes de cualquiera de los
+modos. Si no está concedido, o el offscreen recibe `NotAllowedError` del micrófono,
+no inicia MediaRecorder: abre la página de opciones existente y pide autorizarlo
+allí y volver a pulsar Record. El panel enumera dispositivos sin pedir permiso por
+su cuenta; los dispositivos sin ID visible usan el micrófono predeterminado, no se
+convierten silenciosamente en una captura sin micrófono.
+**NO VERIFICADO en Chrome del dueño:** ambos inicios, permisos, selector, audio
+local sin silencio/eco y recorrido real; los mocks no sustituyen aceptación.
+
+### Lista de prueba manual para el dueño
+
+1. Construir y recargar la extensión; abrir Meet en una pestaña nueva e invocar
+   el panel desde el icono de la extensión, con sesión iniciada en Sauri.
+2. Con micrófono sin permiso, probar cada botón: debe abrir opciones sin grabar.
+   Autorizar con «Enable microphone», volver a Meet y pulsar Record otra vez.
+3. Probar «Record»: ver el estado de selección sin contador; elegir una pestaña
+   (también distinta del origen) con audio activado y hablar por el micrófono.
+4. Verificar audio local una sola vez; usar «Dejar de compartir». El portal debe
+   abrir la reunión y reproducir video, audio de pestaña y voz.
+5. Probar Cancelar y desmarcar audio: ninguno debe crear sesión; el segundo debe
+   explicar cómo activar «Share tab audio». Reintentar con audio activado.
+6. Probar «Record this tab»: inicio sin selector, audio local audible una sola vez,
+   micrófono en el archivo; cerrar esa pestaña y comprobar subida/apertura del portal.
+   Repetir deteniendo la captura y con `audio_only` en ambos modos.
+7. Comprobar atajo deshabilitado en `chrome://settings`, y ambos modos desde una web
+   no-Meet sin banner. Reabrir el panel durante una captura: no debe iniciar otra ni
+   destruir la actual. Reinvocar el icono si se cambia de pestaña para usar el atajo.

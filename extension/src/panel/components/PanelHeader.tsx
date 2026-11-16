@@ -8,10 +8,11 @@ export interface PanelHeaderProps {
   captureState: CaptureState;
   onNewNote: () => void;
   startError?: string | null;
+  selecting?: boolean;
 }
 
-export function PanelHeader({ captureState, onNewNote, startError }: PanelHeaderProps) {
-  const enabled = newNoteButtonEnabled(captureState);
+export function PanelHeader({ captureState, onNewNote, startError, selecting }: PanelHeaderProps) {
+  const enabled = !selecting && newNoteButtonEnabled(captureState);
 
   return (
     <header

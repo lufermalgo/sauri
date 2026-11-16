@@ -15,6 +15,9 @@ import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, c
 import { resolveProcessingStatus } from "./core/processing-status";
 import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from "./core/recording-completion";
 
+import { canCaptureCurrentTab } from "./core/capture";
+import type { CaptureSource, CaptureStartResult } from "./core/types";
+
 export {};
 
 // --- State interface ---
@@ -38,6 +41,7 @@ interface SauriState {
   notificationEmittedAt?: string;
   tabId?: number;
   provider?: CaptureHandle["provider"];
+  pickerSource?: CaptureSource;
 }
 
 const DEFAULT_STATE: SauriState = { status: "idle" };
@@ -57,7 +61,7 @@ async function setState(state: SauriState): Promise<void> {
 
 const OFFSCREEN_URL = "src/offscreen.html";
 
-async function ensureOffscreenDocument(): Promise<void> {
+async function ensureOffscreenDocument(): Promise<boolean> {
   // Check if the offscreen document already exists
   const existingContexts = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
@@ -65,15 +69,21 @@ async function ensureOffscreenDocument(): Promise<void> {
   });
 
   if (existingContexts.length > 0) {
-    return; // Already exists
+    // An upgrade must not destroy a live (including legacy) recorder. Idle
+    // documents are recreated so their creation reasons cannot remain stale.
+    if ((await getState()).status === "recording") return false;
+    const capture = await chrome.runtime.sendMessage({ type: "get-capture-status" });
+    if (capture?.active) return false;
+    await chrome.offscreen.closeDocument();
   }
 
   await chrome.offscreen.createDocument({
     url: OFFSCREEN_URL,
-    reasons: [chrome.offscreen.Reason.USER_MEDIA],
+    reasons: [chrome.offscreen.Reason.DISPLAY_MEDIA, chrome.offscreen.Reason.USER_MEDIA],
     justification: "Recording tab audio and video",
   });
   console.log("[sauri] Offscreen document created");
+  return true;
 }
 
 // --- Backend upload (PoC) ---
@@ -150,10 +160,8 @@ async function uploadRecording(job: UploadJob): Promise<void> {
 
 async function configureSidePanel(): Promise<void> {
   try {
-    // Do NOT use openPanelOnActionClick: true — that prevents onClicked from
-    // firing, and without onClicked Chrome never grants activeTab on the
-    // Meet tab (chrome.tabCapture.getMediaStreamId requires it). Instead we
-    // open the panel manually from onClicked (Req. 1.1).
+    // Opening via the action grants activeTab for the current-tab shortcut.
+    // Keep onClicked firing; the picker mode does not need this grant.
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
   } catch (error) {
     console.error("[sauri] Could not configure the Side_Panel:", error);
@@ -210,6 +218,7 @@ chrome.runtime.onMessage.addListener(
   (
     message: {
       type: string;
+      source?: CaptureSource;
       meetingTitle?: string;
       url?: string;
       size?: number;
@@ -227,7 +236,7 @@ chrome.runtime.onMessage.addListener(
   ) => {
     // Page scripts can report discovery, not act as a media owner or a
     // capture control. A different provider tab must not mutate the capture.
-    if (_sender.tab && ["start-capture", "stop-capture", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode"].includes(message.type)) {
+    if (_sender.tab && ["start-capture", "capture-ready", "stop-capture", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode"].includes(message.type)) {
       sendResponse({ ok: false, error: "Message requires an extension capture context" });
       return false;
     }
@@ -249,9 +258,12 @@ chrome.runtime.onMessage.addListener(
         break;
 
       case "start-capture":
-        handleStartCapture(message.resolution, message.micDeviceId);
-        sendResponse({ ok: true });
-        break;
+        void (async () => { sendResponse(await handleStartCapture(message.source ?? "picker", message.resolution, message.micDeviceId)); })();
+        return true;
+
+      case "capture-ready":
+        void (async () => { sendResponse(await handleCaptureReady(message.sessionId)); })();
+        return true;
 
       case "stop-capture":
         void (async () => {
@@ -319,106 +331,121 @@ async function handleMeetEnded(): Promise<void> {
   console.log("[sauri] Meet ended — status: idle");
 }
 
-async function handleStartCapture(resolution?: Resolution, micDeviceId?: string | null): Promise<void> {
-  let startingSessionId: string | undefined;
+// Separate from sauriState: cancellation must not replace the prior projection.
+interface CaptureRequest {
+  state: SauriState & { sessionId: string; tabId: number };
+  meetingId: string;
+}
+
+function isMeetUrl(url?: string): boolean {
+  return !!url?.startsWith("https://meet.google.com/");
+}
+
+async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean }> {
   try {
-    if ((await getState()).status === "recording") return;
-    // Default resolution to 720p if not provided
-    const res: Resolution = resolution ?? { width: 1280, height: 720 };
+    const stored = await chrome.storage.session.get("sauriCaptureRequest");
+    const request = stored.sauriCaptureRequest as CaptureRequest | undefined;
+    if (!request || request.state.sessionId !== sessionId) return { ok: false };
+    const { state, meetingId } = request;
+    await createCompletion({
+      sessionId: state.sessionId, meetingId, provider: "meet",
+      capturedTabId: state.tabId, status: "capturing", updatedAt: Date.now(),
+    });
+    await setState(state);
+    return { ok: true };
+  } catch (error) {
+    console.error("[sauri] Could not bind selected media:", error);
+    return { ok: false };
+  }
+}
 
-    // Get the active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) {
-      console.error("[sauri] No active tab found");
-      return;
-    }
-
-    // Get the media stream ID for the tab
-    // NOTE: this must be called from a user gesture context (panel click counts)
-    // Wrap in promise since @types/chrome only exposes the callback overload
-    const streamId = await new Promise<string>((resolve, reject) => {
-      chrome.tabCapture.getMediaStreamId(
-        { targetTabId: tab.id! },
-        (id) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else {
-            resolve(id);
+async function handleStartCapture(source: CaptureSource, resolution?: Resolution, micDeviceId?: string | null): Promise<CaptureStartResult> {
+  try {
+    // Web Locks serialize competing panels without a stale service-worker flag.
+    return await navigator.locks.request("sauri-capture-start", { ifAvailable: true }, async lock => {
+      if (!lock || (await getState()).status === "recording") return { ok: false, reason: "busy" };
+      let startingSessionId: string | undefined;
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id === undefined) return { ok: false, reason: "failed" };
+        if (source !== "picker" && source !== "current-tab") return { ok: false, reason: "failed" };
+        let streamId: string | undefined;
+        if (source === "current-tab") {
+          if (!canCaptureCurrentTab(tab.url)) return { ok: false, reason: "current-tab-unavailable" };
+          try {
+            streamId = await new Promise<string>((resolve, reject) => {
+              chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id! }, id => {
+                if (chrome.runtime.lastError || !id) reject(new Error("Current tab capture permission unavailable"));
+                else resolve(id);
+              });
+            });
+          } catch {
+            return { ok: false, reason: "current-tab-unavailable" };
           }
         }
-      );
+        if (!await ensureOffscreenDocument()) return { ok: false, reason: "busy" };
+        const currentState = await getState();
+        const captureMode = currentState.captureMode ?? "screen_audio";
+        const res = resolution ?? { width: 1280, height: 720 };
+        const isMeet = isMeetUrl(tab.url);
+        let meetingTitle = isMeet ? currentState.meetingTitle : undefined;
+        if (isMeet) {
+          try {
+            const response = await chrome.tabs.sendMessage(tab.id, { type: "get-current-title" });
+            if (response?.title) meetingTitle = response.title;
+          } catch (error) {
+            console.warn("[sauri] Could not refresh meeting title:", error);
+          }
+        }
+        const sessionId = crypto.randomUUID();
+        startingSessionId = sessionId;
+        const request: CaptureRequest = {
+          meetingId: crypto.randomUUID(),
+          state: {
+            status: "recording", sessionId, provider: "meet", resolution: res, pickerSource: source,
+            captureMode, micDeviceId, tabId: tab.id, meetingTitle,
+            meetingUrl: isMeet ? tab.url : "",
+          },
+        };
+        await chrome.storage.session.set({ sauriCaptureRequest: request });
+        // The offscreen binds this request only after the picker returns valid
+        // media. No durable session or recording projection exists on cancel.
+        const result: CaptureStartResult = await chrome.runtime.sendMessage({
+          type: "start-recording", sessionId, source, ...(streamId ? { streamId } : {}), resolution: res, captureMode,
+          micDeviceId: micDeviceId ?? null,
+        });
+        if (!result?.ok) {
+          if (await getCompletion(sessionId)) await handleRecordingError(sessionId);
+          return result ?? { ok: false, reason: "failed" };
+        }
+        const activeCapture = await getCompletion(sessionId);
+        if (activeCapture?.status !== "capturing" || activeCapture.captureError) return result;
+        if (isMeet) {
+          try { await chrome.tabs.sendMessage(tab.id, { type: "show-consent-banner" }); }
+          catch (error) { console.warn("[sauri] Could not show consent banner:", error); }
+        }
+        // Sharing may have ended while the banner message was in flight.
+        if ((await getCompletion(sessionId))?.status === "capturing") {
+          chrome.action.setBadgeText({ text: "REC" });
+          chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+        }
+        return result;
+      } catch (error) {
+        console.error("[sauri] Failed to start capture:", error);
+        if (startingSessionId && await getCompletion(startingSessionId)) await handleRecordingError(startingSessionId);
+        return { ok: false, reason: "failed" };
+      } finally {
+        if (startingSessionId) {
+          const stored = await chrome.storage.session.get("sauriCaptureRequest");
+          if (stored.sauriCaptureRequest?.state.sessionId === startingSessionId) {
+            await chrome.storage.session.remove("sauriCaptureRequest");
+          }
+        }
+      }
     });
-
-    console.log("[sauri] Got streamId for tab capture");
-
-    // Generate a unique sessionId for this recording session
-    const sessionId = crypto.randomUUID();
-    startingSessionId = sessionId;
-
-    // Ensure offscreen document exists
-    await ensureOffscreenDocument();
-
-    // Send start-recording message to offscreen document with sessionId, resolution, and micDeviceId
-    const currentState = await getState();
-    const captureMode: CaptureMode = currentState.captureMode ?? "screen_audio";
-
-    // Ask the content script for the current title again: the one captured
-    // when the meeting was detected (meet-detected) is usually the generic
-    // "Meet" — Google Meet updates document.title with the real session name
-    // a few seconds later. By the time recording starts it's usually current.
-    let meetingTitle = currentState.meetingTitle;
-    try {
-      const response = (await chrome.tabs.sendMessage(tab.id!, { type: "get-current-title" })) as
-        | { title?: string }
-        | undefined;
-      if (response?.title) meetingTitle = response.title;
-    } catch (error) {
-      console.warn("[sauri] Could not refresh meeting title:", error);
-    }
-
-    await createCompletion({
-      sessionId,
-      provider: "meet",
-      capturedTabId: tab.id,
-      meetingId: crypto.randomUUID(),
-      status: "capturing",
-      updatedAt: Date.now(),
-    });
-
-    // Update state to recording with sessionId, resolution, micDeviceId, and the
-    // captured tab (needed later to dismiss the consent banner on that same tab)
-    await setState({
-      ...currentState,
-      status: "recording",
-      sessionId,
-      provider: "meet",
-      resolution: res,
-      micDeviceId,
-      tabId: tab.id,
-      meetingTitle,
-    });
-    const started = await chrome.runtime.sendMessage({
-      type: "start-recording", streamId, sessionId, resolution: res,
-      captureMode, micDeviceId: micDeviceId ?? null,
-    });
-    if (!started?.ok) throw new Error("Offscreen did not start capture");
-    const activeCapture = await getCompletion(sessionId);
-    if (activeCapture?.status !== "capturing" || activeCapture.captureError) return;
-    console.log(`[sauri] Capture started — status: recording, sessionId: ${sessionId}, resolution: ${res.width}x${res.height}, mode: ${captureMode}, mic: ${micDeviceId ?? "none"}`);
-
-    // Send consent banner to the content script in the active tab. Best-effort:
-    // if the tab's content script isn't listening (e.g. stale after an extension
-    // reload), don't let it surface as an unhandled rejection.
-    chrome.tabs.sendMessage(tab.id!, { type: "show-consent-banner" }).catch((error) => {
-      console.warn("[sauri] Could not show consent banner:", error);
-    });
-
-    // Set REC badge
-    chrome.action.setBadgeText({ text: "REC" });
-    chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
   } catch (error) {
-    console.error("[sauri] Failed to start capture:", error);
-    if (startingSessionId) await handleRecordingError(startingSessionId);
+    console.error("[sauri] Capture request unavailable:", error);
+    return { ok: false, reason: "failed" };
   }
 }
 
@@ -502,7 +529,7 @@ async function handleRecordingStopped(
 
   if (ownsProjection) {
     chrome.action.setBadgeText({ text: "" });
-    await hideConsentBanner(currentState.tabId);
+    await hideConsentBanner(currentState.tabId, currentState.meetingUrl);
   }
 
   // Enqueue upload job — the queue handles retries with the same idempotencyKey
@@ -520,7 +547,7 @@ async function handleRecordingStopped(
         mimeType,
         notificationEmittedAt,
         title: ownsProjection ? currentState.meetingTitle : undefined,
-        meetLink: ownsProjection ? currentState.meetingUrl : undefined,
+        meetLink: ownsProjection ? currentState.meetingUrl || undefined : undefined,
         videoPresence: ownsProjection ? currentState.videoPresence ?? "absent" : "absent",
       });
     } catch (error) {
@@ -548,14 +575,14 @@ async function handleRecordingError(sessionId?: string): Promise<void> {
   chrome.action.setBadgeText({ text: "" });
 
   const currentState = await getState();
-  await hideConsentBanner(currentState.tabId);
+  await hideConsentBanner(currentState.tabId, currentState.meetingUrl);
 
   await setState(DEFAULT_STATE);
   console.log("[sauri] Recording error, state reset to idle");
 }
 
-async function hideConsentBanner(tabId?: number): Promise<void> {
-  if (!tabId) return;
+async function hideConsentBanner(tabId?: number, meetingUrl?: string): Promise<void> {
+  if (!tabId || (meetingUrl !== undefined && !isMeetUrl(meetingUrl))) return;
   try {
     await chrome.tabs.sendMessage(tabId, { type: "hide-consent-banner" });
   } catch (error) {
