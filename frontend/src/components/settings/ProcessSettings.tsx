@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import type {
   EngineKindInfo,
@@ -21,16 +21,17 @@ import {
 } from "../../api";
 import { copy } from "../../copy/es";
 import { navigate } from "../../router";
-import { Button, Card, Icon, Skeleton, StatusBadge, TextField } from "../ui";
+import { Button, Card, Icon, Skeleton, StatusBadge } from "../ui";
 import { formatBytes } from "./engineLabels";
 import { LocalModelCard } from "./LocalModelCard";
+import { ModelPicker } from "./ModelPicker";
+import type { PickerGroup, PickerOption } from "./ModelPicker";
 import { PrivacyNoticeDialog } from "./PrivacyNoticeDialog";
 import { describeEngineError } from "./ProviderDialog";
 import "../../styles/engines.css";
 
 const text = copy.engines.process;
 
-const PROVIDER_PREFIX = "provider:";
 const LOCAL_PREFIX = "local:";
 /** The two processes that send the whole recording to a provider, so one provider on both sends it twice. */
 const AUDIO_PAIR: Partial<Record<EngineProcess, EngineProcess>> = {
@@ -43,26 +44,20 @@ type Load =
   | { status: "error" }
   | { status: "ready"; processes: EngineProcessState[]; providers: EngineProvider[]; kinds: EngineKindInfo[] };
 
-/** What the selector shows before it is saved: `target` is a select value (`local:...` or `provider:<id>`). */
-interface Draft {
-  target: string;
-  /** Model of the external provider; empty until the catalog gives a starter. */
+/** A model list as the picker holds it: `list` stays while it is being asked for again. */
+type PickerCatalog =
+  | { status: "loading"; list?: EngineModelList }
+  | { status: "ready"; list: EngineModelList }
+  | { status: "failed" };
+
+/** A choice of external provider waiting for the person to read and accept the privacy notice. */
+interface PendingChoice {
+  providerId: string;
   model: string;
   fallback: boolean;
-}
-
-type NoticeState = { data: EnginePrivacyNotice; accepting: boolean; error: string | null } | null;
-
-function targetOf(state: EngineProcessState): string {
-  return state.provider_id ? `${PROVIDER_PREFIX}${state.provider_id}` : state.model;
-}
-
-function draftOf(state: EngineProcessState): Draft {
-  return { target: targetOf(state), model: state.provider_id ? state.model : "", fallback: state.local_fallback };
-}
-
-function providerIdOf(target: string): string | null {
-  return target.startsWith(PROVIDER_PREFIX) ? target.slice(PROVIDER_PREFIX.length) : null;
+  data: EnginePrivacyNotice;
+  accepting: boolean;
+  error: string | null;
 }
 
 function servesProcess(kinds: EngineKindInfo[], kind: EngineProvider["kind"], process: EngineProcess): boolean {
@@ -77,28 +72,30 @@ interface ProcessSettingsProps {
   process: EngineProcess;
 }
 
-/** Engine and model of one process: what it uses today, the selector (local first, then each active
- * provider with its live model catalog), the fallback switch and the local models. A change to an
- * external provider is saved only after the person accepts the privacy notice. */
+/** Engine and model of one process: what it uses today, the picker (local first, then each active
+ * provider with its live model catalog), the fallback switch and the local models. Choosing a different
+ * external provider is saved only after the person accepts the privacy notice; a model of the provider
+ * already in use is saved at once, and going back to a local model too. */
 export function ProcessSettings({ process }: ProcessSettingsProps) {
   const ids = useId();
   const [load, setLoad] = useState<Load>({ status: "loading" });
-  const [draft, setDraft] = useState<Draft | null>(null);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [notice, setNotice] = useState<NoticeState>(null);
+  const [pending, setPending] = useState<PendingChoice | null>(null);
+  const [catalogs, setCatalogs] = useState<Record<string, PickerCatalog>>({});
+  const [refreshing, setRefreshing] = useState<Record<string, boolean>>({});
 
   const fetchAll = useCallback(() => {
     let current = true;
     setLoad({ status: "loading" });
+    setCatalogs({});
     Promise.all([listEngineProcesses(), listEngineProviders(), getEngineCapabilities()]).then(
       ([processes, providers, capabilities]) => {
         if (!current) return;
-        const own = processes.find((entry) => entry.capability === process);
-        setDraft(own ? draftOf(own) : null);
-        setLoad(own ? { status: "ready", processes, providers, kinds: capabilities.kinds } : { status: "error" });
+        const known = processes.some((entry) => entry.capability === process);
+        setLoad(known ? { status: "ready", processes, providers, kinds: capabilities.kinds } : { status: "error" });
       },
       () => current && setLoad({ status: "error" }),
     );
@@ -109,6 +106,24 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
 
   useEffect(() => fetchAll(), [fetchAll]);
 
+  /** Asks a provider for its models; the previous list stays on screen while the new one is on its way. */
+  const loadCatalog = useCallback(
+    (providerId: string, refresh: boolean) => {
+      setCatalogs((previous) => {
+        const before = previous[providerId];
+        return { ...previous, [providerId]: { status: "loading", list: before && "list" in before ? before.list : undefined } };
+      });
+      if (refresh) setRefreshing((previous) => ({ ...previous, [providerId]: true }));
+      listEngineModels(providerId, process, refresh)
+        .then(
+          (list) => setCatalogs((previous) => ({ ...previous, [providerId]: { status: "ready", list } })),
+          () => setCatalogs((previous) => ({ ...previous, [providerId]: { status: "failed" } })),
+        )
+        .finally(() => setRefreshing((previous) => ({ ...previous, [providerId]: false })));
+    },
+    [process],
+  );
+
   if (load.status === "loading") {
     return (
       <div role="status" className="settings-loading">
@@ -117,7 +132,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
       </div>
     );
   }
-  if (load.status === "error" || !draft) {
+  if (load.status === "error") {
     return (
       <div className="settings-load-error">
         <p role="alert" className="ui-field-error">{text.loadError}</p>
@@ -127,37 +142,19 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
   }
 
   const saved = load.processes.find((entry) => entry.capability === process)!;
-  const savedTarget = targetOf(saved);
-  const draftProviderId = providerIdOf(draft.target);
-  const draftProvider = load.providers.find((provider) => provider.id === draftProviderId);
   const savedExternal = saved.provider_id !== null;
-  const routeDirty = draft.target !== savedTarget || (draftProviderId !== null && draft.model !== saved.model);
-  const dirty = routeDirty || (draftProviderId !== null && draft.fallback !== saved.local_fallback);
-
   const eligible = load.providers.filter(
     (provider) => provider.enabled && provider.status === "active" && servesProcess(load.kinds, provider.kind, process),
   );
-  const providerOptions = eligible.map((provider) => ({ id: provider.id, label: provider.label }));
-  if (saved.provider_id && !providerOptions.some((option) => option.id === saved.provider_id)) {
-    providerOptions.push({ id: saved.provider_id, label: saved.provider_label ?? saved.provider_id });
-  }
   const installed = localModels.filter(
     (model) => model.process === process && model.kind === "model" && !model.default && model.state === "installed",
   );
-  const localOptions = installed.map((model) => ({
-    value: `${LOCAL_PREFIX}${model.id}`,
-    label: text.localInstalled(model.id, formatBytes(model.size ?? 0)),
-  }));
-  if (!savedExternal && saved.model !== LOCAL_DEFAULT_MODEL && !localOptions.some((option) => option.value === saved.model)) {
-    localOptions.push({ value: saved.model, label: localName(saved.model) });
-  }
 
   function applyState(next: EngineProcessState) {
     setLoad((previous) =>
       previous.status === "ready"
         ? { ...previous, processes: previous.processes.map((entry) => (entry.capability === next.capability ? next : entry)) }
         : previous);
-    setDraft(draftOf(next));
   }
 
   function putChoice(provider: string | null, model: string, fallback: boolean, noticeVersion?: number) {
@@ -171,6 +168,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
 
   /** Back to a local model: saved at once, no confirmation; the API revokes the provider's consent. */
   async function chooseLocal(value: string) {
+    if (!savedExternal && value === saved.model) return;
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -184,92 +182,143 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
     }
   }
 
-  function chooseTarget(value: string) {
-    setError(null);
-    setMessage(null);
-    if (value === savedTarget) {
-      setDraft(draftOf(saved));
-    } else if (value.startsWith(LOCAL_PREFIX)) {
-      void chooseLocal(value);
-    } else {
-      const sameProvider = providerIdOf(value) === saved.provider_id;
-      setDraft({ target: value, model: sameProvider ? saved.model : "", fallback: sameProvider ? saved.local_fallback : true });
-    }
-  }
-
-  async function showNotice(providerId: string): Promise<boolean> {
+  /** Reads the notice for a provider and holds the choice until the person accepts it. Nothing is saved here. */
+  async function showNotice(providerId: string, model: string, fallback: boolean, outdated = false): Promise<void> {
     try {
-      setNotice({ data: await getEnginePrivacyNotice(process, providerId), accepting: false, error: null });
-      return true;
+      const data = await getEnginePrivacyNotice(process, providerId);
+      setPending({
+        providerId, model, fallback, data, accepting: false,
+        error: outdated ? copy.engines.saveErrors.notice_outdated : null,
+      });
     } catch (failure) {
       setError(`${text.saveFailed} ${describeEngineError(failure)}`);
-      return false;
     }
   }
 
-  async function commitExternal(providerId: string, noticeVersion?: number) {
+  async function commitExternal(providerId: string, model: string, fallback: boolean, noticeVersion?: number) {
     try {
-      const next = await putChoice(providerId, draft!.model.trim(), draft!.fallback, noticeVersion);
+      const next = await putChoice(providerId, model, fallback, noticeVersion);
       applyState(next);
-      setNotice(null);
+      setPending(null);
       setMessage(text.saved(text.externalName(next.provider_label ?? providerId, next.model)));
     } catch (failure) {
       const code = failure instanceof EnginesApiError ? failure.code : null;
       if (code === "notice_required" || code === "notice_outdated") {
         // The consent is missing or the notice changed: the person reads the current one first.
-        if (await showNotice(providerId) && code === "notice_outdated") {
-          setNotice((current) => current && { ...current, error: copy.engines.saveErrors.notice_outdated });
-        }
+        await showNotice(providerId, model, fallback, code === "notice_outdated");
       } else if (noticeVersion === undefined) {
         setError(`${text.saveFailed} ${describeEngineError(failure)}`);
       } else {
-        setNotice((current) => current && { ...current, accepting: false, error: describeEngineError(failure) });
+        setPending((current) => current && { ...current, accepting: false, error: describeEngineError(failure) });
       }
     }
   }
 
-  async function save() {
-    if (!draftProviderId || !draft!.model.trim()) return;
-    setBusy(true);
+  /** A model of a provider. The provider already in use needs no new consent; any other asks first. */
+  async function chooseExternal(providerId: string, model: string) {
+    if (providerId === saved.provider_id && model === saved.model) return;
     setError(null);
     setMessage(null);
-    // A different provider needs the person's consent first; a model change within the same one does not.
-    if (draftProviderId !== saved.provider_id) await showNotice(draftProviderId);
-    else await commitExternal(draftProviderId);
+    setBusy(true);
+    if (providerId === saved.provider_id) await commitExternal(providerId, model, saved.local_fallback);
+    else await showNotice(providerId, model, true);
     setBusy(false);
   }
 
   async function accept() {
-    if (!notice || !draftProviderId) return;
-    setNotice({ ...notice, accepting: true, error: null });
-    await commitExternal(draftProviderId, notice.data.notice_version);
-    setNotice((current) => current && { ...current, accepting: false });
+    if (!pending) return;
+    setPending({ ...pending, accepting: true, error: null });
+    await commitExternal(pending.providerId, pending.model, pending.fallback, pending.data.notice_version);
+    setPending((current) => current && { ...current, accepting: false });
   }
 
   async function toggleFallback() {
-    const next = !draft!.fallback;
-    setDraft({ ...draft!, fallback: next });
-    if (routeDirty || !saved.provider_id) return;
+    if (!saved.provider_id) return;
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      applyState(await putChoice(saved.provider_id, saved.model, next));
+      applyState(await putChoice(saved.provider_id, saved.model, !saved.local_fallback));
       setMessage(text.fallbackSaved);
     } catch (failure) {
-      setDraft((current) => current && { ...current, fallback: !next });
       setError(`${text.saveFailed} ${describeEngineError(failure)}`);
     } finally {
       setBusy(false);
     }
   }
 
+  function groupFor(provider: EngineProvider): PickerGroup {
+    const entry = catalogs[provider.id];
+    const list = entry && "list" in entry ? entry.list : undefined;
+    const inUseHere = (model: string) => saved.provider_id === provider.id && saved.model === model;
+    const options: PickerOption[] = (list?.models ?? []).map((model) => ({
+      key: model.id,
+      label: model.label ?? model.id,
+      detail: model.label ? model.id : undefined,
+      suggested: model.id === list?.starter,
+      inUse: inUseHere(model.id),
+    }));
+    if (saved.provider_id === provider.id && !options.some((option) => option.key === saved.model)) {
+      options.unshift({ key: saved.model, label: saved.model, inUse: true });
+    }
+    const failed = entry?.status === "failed" || (list !== undefined && entry?.status !== "loading" && (list.manual_entry || list.models.length === 0));
+    let note: string | undefined;
+    if (entry?.status === "failed") note = text.modelsFailed;
+    else if (list?.error_class) note = `${text.modelsFailed} ${copy.engines.causes[list.error_class]}`;
+    else if (entry?.status === "ready" && list && list.models.length === 0) note = text.modelsEmpty;
+    return {
+      id: provider.id,
+      label: provider.label,
+      logo: { kind: provider.kind, name: copy.engines.kinds[provider.kind].label },
+      options,
+      state: entry?.status ?? "loading",
+      note,
+      onRefresh: () => loadCatalog(provider.id, true),
+      refreshing: refreshing[provider.id] === true || entry?.status === "loading",
+      refreshLabel: text.modelsRefreshLabel(provider.label),
+      manual: failed ? { onSubmit: (model) => void chooseExternal(provider.id, model) } : undefined,
+    };
+  }
+
+  const localOptions: PickerOption[] = [
+    { key: LOCAL_DEFAULT_MODEL, label: text.localRecommended, inUse: !savedExternal && saved.model === LOCAL_DEFAULT_MODEL },
+    ...installed.map((model) => ({
+      key: `${LOCAL_PREFIX}${model.id}`,
+      label: model.id,
+      detail: formatBytes(model.size ?? 0),
+      inUse: !savedExternal && saved.model === `${LOCAL_PREFIX}${model.id}`,
+    })),
+  ];
+  if (!savedExternal && !localOptions.some((option) => option.key === saved.model)) {
+    localOptions.push({ key: saved.model, label: saved.model.slice(LOCAL_PREFIX.length), inUse: true });
+  }
+  const groups: PickerGroup[] = [{ id: "local", label: text.localGroup, options: localOptions }, ...eligible.map(groupFor)];
+
   const savedName = savedExternal ? text.externalName(saved.provider_label ?? "", saved.model) : localName(saved.model);
-  const other = AUDIO_PAIR[process];
-  const otherProviderId = other ? load.processes.find((entry) => entry.capability === other)?.provider_id ?? null : null;
-  const doubleSend = other !== undefined && draftProviderId !== null && draftProviderId === otherProviderId;
-  const providerName = draftProvider?.label ?? saved.provider_label ?? "";
-  const selectId = `${ids}-engine`;
+  const savedKind = load.providers.find((provider) => provider.id === saved.provider_id)?.kind ?? saved.provider_kind;
+  const current = savedExternal
+    ? {
+        title: saved.provider_label ?? "",
+        detail: saved.model,
+        logo: savedKind ? { kind: savedKind, name: copy.engines.kinds[savedKind].label } : undefined,
+      }
+    : saved.model === LOCAL_DEFAULT_MODEL
+      ? { title: text.localRecommended }
+      : { title: text.badgeLocal, detail: saved.model.slice(LOCAL_PREFIX.length) };
+
+  /** Warnings that apply to sending this process to `providerId`, as the person is about to decide or has decided. */
+  function warningsFor(providerId: string | null, providerName: string): string[] {
+    if (!providerId) return [];
+    const notes: string[] = [];
+    const other = AUDIO_PAIR[process];
+    const otherProviderId = other ? load.status === "ready" ? load.processes.find((entry) => entry.capability === other)?.provider_id ?? null : null : null;
+    if (other && providerId === otherProviderId) notes.push(text.doubleSend(providerName, text.otherProcess[other]));
+    if (process === "diarization") notes.push(text.speakersUnvalidated);
+    return notes;
+  }
+  const savedWarnings = warningsFor(saved.provider_id, saved.provider_label ?? "");
+  const pendingProvider = pending ? load.providers.find((provider) => provider.id === pending.providerId) : undefined;
+  const pickerHelpId = `${ids}-picker-help`;
 
   return (
     <div className="settings-stack engines-process">
@@ -288,34 +337,36 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
       </Card>
 
       <div className="engines-selector">
-        <div className="ui-text-field">
-          <label htmlFor={selectId}>{text.engineLabel}</label>
-          <select
-            id={selectId}
-            className="ui-input"
-            value={draft.target}
-            disabled={busy}
-            aria-describedby={`${selectId}-help`}
-            onChange={(event) => chooseTarget(event.target.value)}
-          >
-            <optgroup label={text.localGroup}>
-              <option value={LOCAL_DEFAULT_MODEL}>{text.localRecommended}</option>
-              {localOptions.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </optgroup>
-            {providerOptions.length > 0 && (
-              <optgroup label={text.providersGroup}>
-                {providerOptions.map((option) => (
-                  <option key={option.id} value={`${PROVIDER_PREFIX}${option.id}`}>{option.label}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
-          <span id={`${selectId}-help`} className="settings-help">{text.engineHelp}</span>
-        </div>
+        <ModelPicker
+          label={text.engineLabel}
+          describedBy={pickerHelpId}
+          current={current}
+          groups={groups}
+          disabled={busy}
+          onOpenChange={(open) => {
+            if (open) eligible.forEach((provider) => loadCatalog(provider.id, false));
+          }}
+          onSelect={(groupId, key) => {
+            if (groupId === "local") void chooseLocal(key);
+            else void chooseExternal(groupId, key);
+          }}
+          footer={(close) => (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy || (!savedExternal && saved.model === LOCAL_DEFAULT_MODEL)}
+              onClick={() => {
+                close();
+                void chooseLocal(LOCAL_DEFAULT_MODEL);
+              }}
+            >
+              {text.backToLocal}
+            </Button>
+          )}
+        />
+        <span id={pickerHelpId} className="settings-help">{text.engineHelp}</span>
 
-        {providerOptions.length === 0 && (
+        {eligible.length === 0 && (
           <div className="engines-no-providers">
             <p className="settings-help">{text.noProviders}</p>
             <Button variant="secondary" size="sm" onClick={() => navigate({ name: "settings", category: "engines" })}>
@@ -324,18 +375,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
           </div>
         )}
 
-        {draftProviderId && (
-          <ExternalModelPicker
-            key={draftProviderId}
-            process={process}
-            providerId={draftProviderId}
-            value={draft.model}
-            disabled={busy}
-            onChange={(model) => setDraft((current) => current && { ...current, model })}
-          />
-        )}
-
-        {draftProviderId && (
+        {savedExternal && (
           <>
             <div className="settings-switch-row">
               <span id={`${ids}-fallback`} className="settings-switch-label">{text.fallback}</span>
@@ -343,7 +383,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
                 type="button"
                 role="switch"
                 className="settings-switch"
-                aria-checked={draft.fallback}
+                aria-checked={saved.local_fallback}
                 aria-labelledby={`${ids}-fallback`}
                 aria-describedby={`${ids}-fallback-help`}
                 disabled={busy}
@@ -356,145 +396,29 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
           </>
         )}
 
-        {doubleSend && other && (
-          <p role="note" className="engines-warning">
+        {savedWarnings.map((warning) => (
+          <p key={warning} role="note" className="engines-warning">
             <Icon icon={TriangleAlert} />
-            <span>{text.doubleSend(providerName, text.otherProcess[other])}</span>
+            <span>{warning}</span>
           </p>
-        )}
-        {process === "diarization" && draftProviderId && (
-          <p role="note" className="engines-warning">
-            <Icon icon={TriangleAlert} />
-            <span>{text.speakersUnvalidated}</span>
-          </p>
-        )}
+        ))}
 
-        {dirty && (
-          <div className="engines-save-row">
-            <p className="settings-help">{text.unsaved}</p>
-            <div className="engines-key-actions">
-              <Button variant="primary" disabled={busy || !draftProviderId || !draft.model.trim()} onClick={save}>
-                {busy ? text.saving : text.save}
-              </Button>
-              <Button variant="secondary" disabled={busy} onClick={() => setDraft(draftOf(saved))}>{text.discard}</Button>
-            </div>
-          </div>
-        )}
         <div role="status" className="settings-notice">{message}</div>
         {error && <p role="alert" className="ui-field-error settings-notice">{error}</p>}
       </div>
 
       <LocalModelCard process={process} onModelsChange={setLocalModels} />
 
-      {notice && (
+      {pending && (
         <PrivacyNoticeDialog
-          notice={notice.data}
-          busy={notice.accepting}
-          error={notice.error}
+          notice={pending.data}
+          warnings={warningsFor(pending.providerId, pendingProvider?.label ?? pending.data.provider_name)}
+          busy={pending.accepting}
+          error={pending.error}
           onAccept={accept}
-          onCancel={() => setNotice(null)}
+          onCancel={() => setPending(null)}
         />
       )}
-    </div>
-  );
-}
-
-type Catalog =
-  | { status: "loading" }
-  | { status: "ready"; list: EngineModelList }
-  | { status: "failed" };
-
-interface ExternalModelPickerProps {
-  process: EngineProcess;
-  providerId: string;
-  value: string;
-  disabled: boolean;
-  onChange: (model: string) => void;
-}
-
-/** Model of an external provider: its live catalog (kept 24 hours; "Volver a pedir" asks again) or, when
- * the provider gives no list or fails, a text field for the model name. */
-function ExternalModelPicker({ process, providerId, value, disabled, onChange }: ExternalModelPickerProps) {
-  const id = useId();
-  const [catalog, setCatalog] = useState<Catalog>({ status: "loading" });
-  const [refreshing, setRefreshing] = useState(false);
-  const [requests, setRequests] = useState(0);
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-  const valueRef = useRef(value);
-  valueRef.current = value;
-
-  useEffect(() => {
-    let current = true;
-    setRefreshing(true);
-    listEngineModels(providerId, process, requests > 0)
-      .then(
-        (list) => {
-          if (!current) return;
-          setCatalog({ status: "ready", list });
-          // A new choice starts with the provider's suggested model ("Auto").
-          if (!valueRef.current) onChangeRef.current(list.starter ?? list.models[0]?.id ?? "");
-        },
-        () => current && setCatalog({ status: "failed" }),
-      )
-      .finally(() => current && setRefreshing(false));
-    return () => {
-      current = false;
-    };
-  }, [providerId, process, requests]);
-
-  if (catalog.status === "loading") return <p role="status" className="settings-help">{text.modelsLoading}</p>;
-
-  const list = catalog.status === "ready" ? catalog.list : null;
-  const manual = !list || list.manual_entry || list.models.length === 0;
-  let note: string;
-  if (!list) note = text.modelsFailed;
-  else if (list.error_class) note = `${text.modelsFailed} ${copy.engines.causes[list.error_class]}`;
-  else if (list.models.length === 0) note = text.modelsEmpty;
-  else note = list.from_cache ? text.modelsCached : text.modelsFresh;
-
-  return (
-    <div className="engines-model">
-      {manual || !list ? (
-        <>
-          <TextField
-            id={`${id}-model`}
-            label={text.manualModel}
-            value={value}
-            disabled={disabled}
-            autoComplete="off"
-            spellCheck={false}
-            aria-describedby={`${id}-note`}
-            onChange={(event) => onChange(event.target.value)}
-          />
-          <span className="settings-help">{text.manualModelHelp}</span>
-        </>
-      ) : (
-        <div className="ui-text-field">
-          <label htmlFor={`${id}-model`}>{text.model}</label>
-          <select
-            id={`${id}-model`}
-            className="ui-input"
-            value={value}
-            disabled={disabled}
-            aria-describedby={`${id}-note`}
-            onChange={(event) => onChange(event.target.value)}
-          >
-            {value && !list.models.some((model) => model.id === value) && <option value={value}>{value}</option>}
-            {list.models.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.id === list.starter ? text.modelStarter(model.label ?? model.id) : (model.label ?? model.id)}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      <div className="engines-model-meta">
-        <span id={`${id}-note`} className="settings-help">{note}</span>
-        <Button variant="ghost" size="sm" disabled={disabled || refreshing} onClick={() => setRequests((count) => count + 1)}>
-          {refreshing ? text.modelsRefreshing : text.modelsRefresh}
-        </Button>
-      </div>
     </div>
   );
 }

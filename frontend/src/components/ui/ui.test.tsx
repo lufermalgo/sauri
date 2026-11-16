@@ -176,6 +176,22 @@ describe("presentation primitives", () => {
     expect(screen.getByRole("region")).toHaveClass("ui-card", "custom");
     expect(screen.getByText("Ready")).toHaveClass("ui-status-badge--success");
   });
+
+  it("adds a decorative dot to a badge while the state stays written in its text", () => {
+    const { container } = render(<StatusBadge tone="success" dot>Activo</StatusBadge>);
+    const badge = screen.getByText("Activo");
+    expect(badge).toHaveClass("ui-status-badge--success", "ui-status-badge--dot");
+    expect(badge).toHaveTextContent("Activo");
+    const dot = container.querySelector(".ui-status-badge-dot");
+    expect(dot).toHaveAttribute("aria-hidden", "true");
+    expect(dot).toHaveTextContent("");
+  });
+
+  it("marks a card as dimmed and as dashed without changing its semantics", () => {
+    render(<Card aria-label="Off" dimmed dashed>Content</Card>);
+    expect(screen.getByRole("region", { name: "Off" })).toHaveClass("ui-card", "ui-card--dimmed", "ui-card--dashed");
+    expect(screen.getByRole("region", { name: "Off" })).toHaveTextContent("Content");
+  });
 });
 
 describe("Skeleton", () => {
