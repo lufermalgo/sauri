@@ -1,0 +1,392 @@
+/*
+ * Settings console: category list on the left, the chosen category on the right (one column
+ * under 640px, where the list and the category are separate steps). Cards and forms keep a
+ * readable width and stay left aligned; the screen itself fills the content region.
+ */
+.settings {
+  display: grid;
+  gap: var(--ds-space-6);
+  min-width: 0;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 13.5rem minmax(0, 1fr);
+  gap: var(--ds-space-8);
+  align-items: start;
+  min-width: 0;
+}
+
+.settings-nav-list {
+  display: grid;
+  gap: var(--ds-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  box-sizing: border-box;
+  min-height: var(--ds-target);
+  padding: var(--ds-space-2) var(--ds-space-3);
+  color: var(--ds-fg-muted);
+  font-weight: var(--ds-weight-semibold);
+  text-decoration: none;
+  border-radius: var(--ds-radius-md);
+  transition: background-color var(--ds-duration) var(--ds-ease), color var(--ds-duration) var(--ds-ease);
+}
+
+.settings-nav-link svg {
+  flex: 0 0 auto;
+}
+
+.settings-nav-link:hover {
+  color: var(--ds-fg);
+  background: var(--ds-fill-hover);
+}
+
+.settings-nav-link[aria-current="page"] {
+  color: var(--ds-accent-soft-fg);
+  background: var(--ds-accent-soft);
+}
+
+.settings-nav-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings-nav-description {
+  color: var(--ds-fg-subtle);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-regular);
+}
+
+.settings-detail {
+  display: grid;
+  gap: var(--ds-space-4);
+  min-width: 0;
+  max-width: 44rem;
+}
+
+.settings-detail-title {
+  margin: 0;
+  font-size: var(--ds-text-xl);
+}
+
+.settings-detail-title:focus-visible {
+  outline-offset: var(--ds-space-1);
+}
+
+.settings-back {
+  justify-self: start;
+  margin-left: calc(var(--ds-space-3) * -1);
+}
+
+.settings-stack {
+  display: grid;
+  gap: var(--ds-space-4);
+  min-width: 0;
+}
+
+.settings-card {
+  display: grid;
+  gap: var(--ds-space-3);
+  min-width: 0;
+}
+
+.settings-card-title {
+  margin: 0;
+  font-size: var(--ds-text-lg);
+}
+
+.settings-card-title--icon {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+
+.settings-help {
+  margin: 0;
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-md);
+}
+
+/* Account */
+.settings-account {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  min-width: 0;
+}
+
+.settings-account-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings-account-name {
+  font-size: var(--ds-text-lg);
+  font-weight: var(--ds-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.settings-account-email {
+  color: var(--ds-fg-subtle);
+  font-size: var(--ds-text-md);
+  overflow-wrap: anywhere;
+}
+
+/* Theme: segmented radio group built on native radios (arrow keys and form semantics for free) */
+.settings-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-1);
+  align-self: start;
+  justify-self: start;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: var(--ds-space-1);
+  background: var(--ds-fill);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+}
+
+.settings-segment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  box-sizing: border-box;
+  min-height: calc(var(--ds-target) - var(--ds-space-2));
+  padding: var(--ds-space-1) var(--ds-space-4);
+  color: var(--ds-fg-muted);
+  font-weight: var(--ds-weight-medium);
+  border-radius: var(--ds-radius-sm);
+  cursor: pointer;
+  transition: background-color var(--ds-duration) var(--ds-ease), color var(--ds-duration) var(--ds-ease);
+}
+
+.settings-segment input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.settings-segment:hover {
+  color: var(--ds-fg);
+  background: var(--ds-fill-hover);
+}
+
+.settings-segment:has(input:checked) {
+  color: var(--ds-accent-soft-fg);
+  font-weight: var(--ds-weight-semibold);
+  background: var(--ds-surface);
+  box-shadow: var(--ds-shadow-sm);
+}
+
+.settings-segment:has(input:focus-visible) {
+  outline: var(--ds-focus-width) solid var(--ds-focus);
+  outline-offset: var(--ds-focus-offset);
+}
+
+/* Switch */
+.settings-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-4);
+}
+
+.settings-switch-label {
+  font-weight: var(--ds-weight-medium);
+}
+
+.settings-switch {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 48px;
+  height: 28px;
+  padding: 0;
+  background: var(--ds-fill-strong);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-pill);
+  cursor: pointer;
+  transition: background-color var(--ds-duration) var(--ds-ease), border-color var(--ds-duration) var(--ds-ease);
+}
+
+.settings-switch[aria-checked="true"] {
+  background: var(--ds-accent);
+  border-color: var(--ds-accent);
+}
+
+.settings-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-pill);
+  box-sizing: border-box;
+  transition: transform var(--ds-duration) var(--ds-ease);
+}
+
+.settings-switch[aria-checked="true"] .settings-switch-thumb {
+  transform: translateX(20px);
+}
+
+/* Summaries */
+.settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2);
+}
+
+.settings-notice {
+  margin: 0;
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-md);
+}
+
+.settings-notice:empty {
+  display: none;
+}
+
+.settings-loading,
+.settings-load-error {
+  display: grid;
+  gap: var(--ds-space-3);
+  justify-items: start;
+}
+
+.settings-loading {
+  justify-items: stretch;
+}
+
+.settings-group {
+  display: grid;
+  gap: var(--ds-space-2);
+}
+
+.settings-group-title {
+  margin: 0;
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.settings-template-list {
+  display: grid;
+  gap: var(--ds-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-template {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-4);
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+}
+
+.settings-template-main {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.settings-template-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+
+.settings-template-name {
+  font-weight: var(--ds-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.settings-template-note {
+  margin: var(--ds-space-1) 0 0;
+  color: var(--ds-fg-subtle);
+  font-size: var(--ds-text-sm);
+}
+
+.settings-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2);
+}
+
+/* Template and category dialogs */
+.settings-form {
+  display: grid;
+  gap: var(--ds-space-4);
+}
+
+.settings-form .ui-dialog-actions {
+  margin-top: var(--ds-space-2);
+}
+
+.settings-textarea {
+  resize: vertical;
+  font: inherit;
+  line-height: var(--ds-leading);
+}
+
+@media (max-width: 639px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ds-space-4);
+  }
+
+  .settings-nav-link {
+    padding-block: var(--ds-space-3);
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-lg);
+  }
+
+  .settings-nav-list {
+    gap: var(--ds-space-3);
+  }
+
+  .settings .ui-card {
+    padding: var(--ds-space-4);
+  }
+}
+
+/* Touch: the 28px switch keeps its look and grows its hit area to the 44px target. */
+@media (pointer: coarse) {
+  .settings-switch::before {
+    content: "";
+    position: absolute;
+    inset: calc((var(--ds-target) - 28px) / -2) 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-nav-link,
+  .settings-segment,
+  .settings-switch,
+  .settings-switch-thumb {
+    transition: none;
+  }
+}

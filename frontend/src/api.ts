@@ -96,7 +96,8 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
+/** Ends the session on 401 and throws "Error <status>" for any other failure. */
+function rejectUnlessOk(response: Response): void {
   if (response.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new Event("sauri:unauthorized"));
@@ -104,6 +105,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     throw new Error(`Error ${response.status}`);
   }
+}
+
+async function handleResponse<T>(response: Response): Promise<T> {
+  rejectUnlessOk(response);
   return response.json() as Promise<T>;
 }
 
@@ -579,4 +584,131 @@ export async function deleteMeeting(meetingId: string): Promise<void> {
     // handleResponse clears the session on 401 and throws "Error <status>".
     await handleResponse<never>(response);
   }
+}
+
+/** A summary template owned by the signed-in user. Edits apply to future summaries only. */
+export interface SummaryTemplate {
+  id: string;
+  name: string;
+  instructions: string;
+  categoryId: string | null;
+  version: number;
+  isDefault: boolean;
+  /** Note shown while the starter template is unedited. */
+  provenance: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TemplateCategory {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface TemplateInput {
+  name: string;
+  instructions: string;
+  categoryId: string | null;
+}
+
+interface TemplateResponse {
+  id: string;
+  name: string;
+  instructions: string;
+  category_id: string | null;
+  version: number;
+  is_default: boolean;
+  provenance?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TemplateCategoryResponse {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+function mapTemplate(template: TemplateResponse): SummaryTemplate {
+  return {
+    id: template.id,
+    name: template.name,
+    instructions: template.instructions,
+    categoryId: template.category_id,
+    version: template.version,
+    isDefault: template.is_default,
+    provenance: template.provenance ?? null,
+    createdAt: template.created_at,
+    updatedAt: template.updated_at,
+  };
+}
+
+function mapTemplateCategory(category: TemplateCategoryResponse): TemplateCategory {
+  return { id: category.id, name: category.name, createdAt: category.created_at };
+}
+
+export async function listTemplates(): Promise<SummaryTemplate[]> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates`, { method: "GET", headers: getAuthHeaders() });
+  return (await handleResponse<TemplateResponse[]>(response)).map(mapTemplate);
+}
+
+export async function getTemplate(templateId: string): Promise<SummaryTemplate> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/templates/${encodeURIComponent(templateId)}`,
+    { method: "GET", headers: getAuthHeaders() },
+  );
+  return mapTemplate(await handleResponse<TemplateResponse>(response));
+}
+
+export async function createTemplate(input: TemplateInput): Promise<SummaryTemplate> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ name: input.name, instructions: input.instructions, category_id: input.categoryId }),
+  });
+  return mapTemplate(await handleResponse<TemplateResponse>(response));
+}
+
+/** Sends only the fields present in `changes`; an absent field is left untouched by the API. */
+export async function updateTemplate(
+  templateId: string,
+  changes: Partial<TemplateInput>,
+): Promise<SummaryTemplate> {
+  const body: Record<string, string | null> = {};
+  if (changes.name !== undefined) body.name = changes.name;
+  if (changes.instructions !== undefined) body.instructions = changes.instructions;
+  if (changes.categoryId !== undefined) body.category_id = changes.categoryId;
+  const response = await fetch(`${BASE_URL}/api/v1/templates/${encodeURIComponent(templateId)}`, {
+    method: "PATCH",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+  return mapTemplate(await handleResponse<TemplateResponse>(response));
+}
+
+export async function listTemplateCategories(): Promise<TemplateCategory[]> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates/categories`, {
+    method: "GET",
+    headers: getAuthHeaders(),
+  });
+  return (await handleResponse<TemplateCategoryResponse[]>(response)).map(mapTemplateCategory);
+}
+
+export async function createTemplateCategory(name: string): Promise<TemplateCategory> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates/categories`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ name }),
+  });
+  return mapTemplateCategory(await handleResponse<TemplateCategoryResponse>(response));
+}
+
+export async function setDefaultTemplate(templateId: string): Promise<void> {
+  const response = await fetch(`${BASE_URL}/api/v1/templates/default`, {
+    method: "PUT",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ template_id: templateId }),
+  });
+  rejectUnlessOk(response);
 }

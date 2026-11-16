@@ -1,18 +1,33 @@
 import { useEffect, useState } from "react";
+import { copy } from "./copy/es";
 
 /** Portal routes. The path is the only source of truth; no tokens or content in the URL. */
 export type Route =
   | { name: "library" }
   | { name: "upload" }
-  | { name: "settings" }
+  | { name: "settings"; category?: SettingsCategory }
   | { name: "meeting"; meetingId: string }
   | { name: "notFound" };
+
+/** Settings categories; the URL slugs are product copy (see `copy.settings.categories`). */
+export const SETTINGS_CATEGORIES = ["account", "appearance", "summaries", "recording"] as const;
+export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
+
+/** Category shown on wide screens when the URL names none. */
+export const DEFAULT_SETTINGS_CATEGORY: SettingsCategory = "account";
 
 /** Event dispatched by `navigate` so mounted `useRoute` hooks re-read the location. */
 export const NAVIGATE_EVENT = "sauri:navigate";
 
 const MEETING_PREFIX = "/meetings/";
+const SETTINGS_PATH = "/settings";
+const SETTINGS_PREFIX = "/settings/";
 const NOT_FOUND_PATH = "/not-found";
+
+function settingsRoute(slug: string): Route {
+  const category = SETTINGS_CATEGORIES.find((name) => copy.settings.categories[name].slug === slug);
+  return category ? { name: "settings", category } : { name: "notFound" };
+}
 
 function meetingRoute(rawId: string): Route {
   if (!rawId || rawId.includes("/")) return { name: "notFound" };
@@ -26,7 +41,8 @@ function meetingRoute(rawId: string): Route {
 
 /**
  * Maps a location to a route.
- * `/` -> library, `/upload` -> upload, `/settings` -> settings, `/meetings/<id>` -> meeting,
+ * `/` -> library, `/upload` -> upload, `/settings` -> settings, `/settings/<category slug>` -> settings
+ * with that category, `/meetings/<id>` -> meeting,
  * `/?meetingId=<id>` -> meeting (the extension opens this form), anything else -> notFound.
  */
 export function parseRoute(pathname: string, search: string): Route {
@@ -36,7 +52,8 @@ export function parseRoute(pathname: string, search: string): Route {
     return legacyId ? { name: "meeting", meetingId: legacyId } : { name: "library" };
   }
   if (path === "/upload") return { name: "upload" };
-  if (path === "/settings") return { name: "settings" };
+  if (path === SETTINGS_PATH) return { name: "settings" };
+  if (path.startsWith(SETTINGS_PREFIX)) return settingsRoute(path.slice(SETTINGS_PREFIX.length));
   if (path.startsWith(MEETING_PREFIX)) return meetingRoute(path.slice(MEETING_PREFIX.length));
   return { name: "notFound" };
 }
@@ -49,7 +66,9 @@ export function routePath(route: Route): string {
     case "upload":
       return "/upload";
     case "settings":
-      return "/settings";
+      return route.category
+        ? `${SETTINGS_PREFIX}${copy.settings.categories[route.category].slug}`
+        : SETTINGS_PATH;
     case "meeting":
       return `${MEETING_PREFIX}${encodeURIComponent(route.meetingId)}`;
     case "notFound":
