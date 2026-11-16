@@ -12,6 +12,8 @@ make engines-install    # native Mac engines (once)
 make engines-up         # start the native engines
 ```
 
+Docs are indexed in `docs/README.md`; scripts live in `scripts/{dev,engines,platform,tests}`.
+
 Python commands run through uv: `cd backend && uv run --extra dev <command>`.
 
 ## Workflow
@@ -28,6 +30,7 @@ npm run test
 cd backend && uv run --extra dev pytest -q
 cd backend && uv run --extra dev ruff check .
 cd backend && uv run --extra dev mypy .
+make test-scripts       # only when you touch scripts/
 ```
 
 ## Conventions

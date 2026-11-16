@@ -2,7 +2,7 @@
 # sauri - Makefile para desarrollo local
 # =============================================================================
 
-.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english engines-install engines-up engines-down engines-status
+.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english test-scripts engines-install engines-up engines-down engines-status
 
 SAURI_NATIVE_VENV ?= $(HOME)/.local/share/sauri/native-engines/asr-venv
 NATIVE_PYTHON311 ?= python3.11
@@ -23,6 +23,10 @@ worktree:
 worktree-rm:
 	@test -n "$(BRANCH)" || (echo "Uso: make worktree-rm BRANCH=feature/issue-12-desc" && exit 1)
 	scripts/dev/remove-worktree.sh $(BRANCH)
+
+## Pruebas de los scripts (compose-bringup, validacion de plataforma, admision de pipeline).
+test-scripts:
+	cd backend && uv run --extra dev python -m pytest ../scripts/tests -q
 
 ## Instalar motores nativos en un venv fuera del repositorio (whisper.cpp + Senko/CoreML + Parakeet si hay Swift).
 engines-install:

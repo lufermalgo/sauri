@@ -17,6 +17,26 @@ SCRIPT_NAME = "scripts/platform/compose-bringup.sh"
 MAKEFILE_NAME = "Makefile"
 
 
+def logical_calls(lines, prefix):
+    """Merge continuation lines (multi-line `sh -c` scripts) into the call that started them."""
+    calls = []
+    for line in lines:
+        if line.startswith(prefix):
+            calls.append(line)
+        else:
+            calls[-1] += "\n" + line
+    return calls
+
+
+SETUP_PREFIX = [
+    "stop api worker",
+    "up -d postgres minio rabbitmq",
+    "exec -T postgres pg_isready -U sauri -d sauri -q",
+    "exec -T postgres psql -v ON_ERROR_STOP=1 -q -U sauri -d sauri",
+    "exec -T rabbitmq rabbitmqctl -q await_startup",
+]
+
+
 class ComposeBringupTests(unittest.TestCase):
     def test_volume_repair_has_capabilities_for_fresh_volume_permissions(self):
         compose = (ROOT / "docker-compose.yml").read_text()
@@ -52,16 +72,17 @@ class ComposeBringupTests(unittest.TestCase):
                     "CALL_LOG": str(log),
                 }
                 result = subprocess.run([str(tree / SCRIPT_NAME)], cwd=tree, env=env, text=True, capture_output=True)
-                calls = log.read_text().splitlines()
+                calls = logical_calls(log.read_text().splitlines(), "compose ")
             finally:
                 os.chdir(ROOT)
 
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("migration", result.stderr.lower(), result.stderr)
-        self.assertEqual(calls[0], "compose stop api worker", calls)
-        self.assertEqual(calls[1], "compose up -d postgres minio rabbitmq", calls)
-        self.assertEqual(calls[2], "compose run --rm api python -m app.infra.ensure_bucket", calls)
-        self.assertEqual(calls[3], "compose run --rm api alembic upgrade head", calls)
+        commands = [call.removeprefix("compose ") for call in calls]
+        self.assertEqual(commands[:len(SETUP_PREFIX)], SETUP_PREFIX, calls)
+        self.assertTrue(commands[len(SETUP_PREFIX)].startswith("exec -T rabbitmq sh -c"), calls)
+        self.assertEqual(commands[len(SETUP_PREFIX) + 1], "run --rm api python -m app.infra.ensure_bucket", calls)
+        self.assertEqual(commands[len(SETUP_PREFIX) + 2], "run --rm api alembic upgrade head", calls)
         self.assertNotIn("compose up -d api worker portal", calls)
 
     def test_success_starts_applications_only_after_setup(self):
@@ -172,9 +193,11 @@ echo 200
         result, calls, http_calls = self.run_bringup()
         self.assertEqual(result.returncode, 0, result.stderr)
         prefix = "sauri-local-qa-123456abcdef|base.yml:qa.yml|compose "
-        self.assertTrue(all(line.startswith(prefix) for line in calls), calls)
+        calls = logical_calls(calls, prefix)
         commands = [line.removeprefix(prefix) for line in calls]
-        self.assertEqual(commands, ["stop api worker", "up -d postgres minio rabbitmq",
+        self.assertTrue(commands[len(SETUP_PREFIX)].startswith("exec -T rabbitmq sh -c"), calls)
+        del commands[len(SETUP_PREFIX)]
+        self.assertEqual(commands, SETUP_PREFIX + [
                          "run --rm api python -m app.infra.ensure_bucket",
                          "run --rm api alembic upgrade head",
                          "run --rm api python -m app.auth.seed_admin --retire-legacy",
