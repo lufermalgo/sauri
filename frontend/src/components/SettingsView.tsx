@@ -32,6 +32,7 @@ import { filterSettingsGroups } from "./settings/settingsSearch";
 import { SummarySettings } from "./settings/SummarySettings";
 import { Button, Icon } from "./ui";
 import { useMediaQuery } from "./useMediaQuery";
+import { SETTINGS_PANE_ID, SETTINGS_PANE_STORAGE_KEY, hiddenPaneAttributes, useSecondaryPane } from "./useSecondaryPane";
 import "../styles/settings.css";
 
 type SettingsRoute = Extract<Route, { name: "settings" }>;
@@ -65,6 +66,10 @@ function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
  */
 export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
   const compact = useMediaQuery(COMPACT_QUERY);
+  // The sidebar's gear hides the category pane to give the category the full width; it stays
+  // mounted, so the search text is still there. Under 640px the list is a step of its own.
+  const { hidden: paneHidden } = useSecondaryPane(SETTINGS_PANE_STORAGE_KEY);
+  const hidden = !compact && paneHidden;
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const navRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -117,6 +122,7 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
       </header>
       <div className="settings-layout">
         {showList && (
+          <div id={SETTINGS_PANE_ID} className="settings-nav-slot" {...hiddenPaneAttributes(hidden)}>
           <nav ref={navRef} className="settings-nav" aria-label={copy.settings.navLabel} onKeyDown={onNavKeyDown}>
             <div className="settings-search">
               <Icon icon={Search} size={16} className="settings-search-icon" />
@@ -185,6 +191,7 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
               );
             })}
           </nav>
+          </div>
         )}
         {category && (
           <div className="settings-content">
