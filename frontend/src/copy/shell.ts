@@ -6,6 +6,10 @@ export const shell = {
     hide: "Ocultar biblioteca",
     show: "Mostrar biblioteca",
   },
+  settingsPane: {
+    hide: "Ocultar categorías",
+    show: "Mostrar categorías",
+  },
   upload: "Subir grabación",
   logout: "Cerrar sesión",
   sidebar: {

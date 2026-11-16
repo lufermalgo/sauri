@@ -7,7 +7,15 @@ import { copy } from "../copy/es";
 import { ProfileCard } from "./ProfileCard";
 import { useSidebar } from "./useSidebar";
 import { useMediaQuery } from "./useMediaQuery";
-import { WORKSPACE_WIDE_QUERY, useLibraryPaneHidden } from "./useLibraryPane";
+import { WORKSPACE_WIDE_QUERY } from "./useLibraryPane";
+import {
+  LIBRARY_PANE_ID,
+  LIBRARY_PANE_STORAGE_KEY,
+  SETTINGS_PANE_ID,
+  SETTINGS_PANE_STORAGE_KEY,
+  useSecondaryPane,
+  type SecondaryPaneControl,
+} from "./useSecondaryPane";
 import { Icon, useTooltip } from "./ui";
 import "../styles/shell.css";
 
@@ -19,8 +27,6 @@ interface PortalShellProps {
 }
 
 const LIBRARY_ROUTE: Route = { name: "library" };
-/** `id` of the library list pane (see RecordingLibrary), the region the Library item shows or hides. */
-const LIBRARY_PANE_ID = "library-pane";
 const FOCUSABLE = "a[href], button:not([disabled])";
 
 function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
@@ -51,11 +57,22 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
   const closerRef = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
   const drawer = mode === "drawer";
-  // With a recording open beside the list, the Library item shows or hides that list.
+  // A sidebar item whose section has a secondary pane shows or hides it, but only while that pane
+  // exists beside the content: the library list with a recording open on a wide screen, the settings
+  // categories on any screen wide enough for two panes. Everywhere else the item is a plain link.
   const wide = useMediaQuery(WORKSPACE_WIDE_QUERY);
-  const { hidden: paneHidden, toggle: togglePane } = useLibraryPaneHidden();
-  const paneToggle = route.name === "meeting" && wide;
-  const paneTip = useTooltip(paneToggle ? (paneHidden ? copy.shell.libraryPane.show : copy.shell.libraryPane.hide) : undefined);
+  const library = useSecondaryPane(LIBRARY_PANE_STORAGE_KEY);
+  const settings = useSecondaryPane(SETTINGS_PANE_STORAGE_KEY);
+  const libraryPane: SecondaryPaneControl | null =
+    route.name === "meeting" && wide ? { id: LIBRARY_PANE_ID, hidden: library.hidden, toggle: library.toggle } : null;
+  const settingsPane: SecondaryPaneControl | null =
+    route.name === "settings" && !drawer ? { id: SETTINGS_PANE_ID, hidden: settings.hidden, toggle: settings.toggle } : null;
+  // A plain link says its name (the rail already pops its label out beside the icon).
+  const libraryTip = useTooltip(
+    libraryPane
+      ? (libraryPane.hidden ? copy.shell.libraryPane.show : copy.shell.libraryPane.hide)
+      : mode === "rail" ? undefined : copy.shell.library,
+  );
 
   // Focus moves into the drawer when it opens and back to its opener when it closes.
   useEffect(() => {
@@ -165,35 +182,39 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
           )}
         </div>
         <nav className="shell-nav" aria-label={copy.shell.navLabel}>
-          {paneToggle ? (
+          {libraryPane ? (
             <span className="shell-link-wrap">
               <button
                 type="button"
                 className="shell-link shell-link--pane"
                 aria-label={copy.shell.library}
-                aria-expanded={!paneHidden}
-                aria-controls={LIBRARY_PANE_ID}
-                {...paneTip.triggerProps}
-                onClick={() => { paneTip.hide(); togglePane(); }}
+                aria-expanded={!libraryPane.hidden}
+                aria-controls={libraryPane.id}
+                {...libraryTip.triggerProps}
+                onClick={() => { libraryTip.hide(); libraryPane.toggle(); }}
               >
                 <Icon icon={Library} />
                 <span className="shell-link-label" aria-hidden="true">{copy.shell.library}</span>
               </button>
-              {paneTip.tooltip}
+              {libraryTip.tooltip}
             </span>
           ) : (
-            <a
-              className="shell-link"
-              href={routePath(LIBRARY_ROUTE)}
-              aria-current={libraryActive ? "page" : undefined}
-              onClick={(event) => go(event, LIBRARY_ROUTE)}
-            >
-              <Icon icon={Library} />
-              <span className="shell-collapsible">{copy.shell.library}</span>
-            </a>
+            <span className="shell-link-wrap">
+              <a
+                className="shell-link"
+                href={routePath(LIBRARY_ROUTE)}
+                aria-current={libraryActive ? "page" : undefined}
+                {...libraryTip.triggerProps}
+                onClick={(event) => { libraryTip.hide(); go(event, LIBRARY_ROUTE); }}
+              >
+                <Icon icon={Library} />
+                <span className="shell-collapsible">{copy.shell.library}</span>
+              </a>
+              {libraryTip.tooltip}
+            </span>
           )}
         </nav>
-        <ProfileCard user={user} route={route} onNavigate={go} onLogout={onLogout} />
+        <ProfileCard user={user} route={route} settingsPane={settingsPane} onNavigate={go} onLogout={onLogout} />
       </aside>
       <div className="shell-content">
         <main className="shell-main">{children}</main>

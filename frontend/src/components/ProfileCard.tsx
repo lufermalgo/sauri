@@ -3,11 +3,14 @@ import { Settings, User } from "lucide-react";
 import { copy } from "../copy/es";
 import { routePath, type Route } from "../router";
 import { userInitials, type SessionUser } from "../session-user";
-import { Avatar, Icon, Menu, MenuItem } from "./ui";
+import { Avatar, Icon, Menu, MenuItem, useTooltip } from "./ui";
+import type { SecondaryPaneControl } from "./useSecondaryPane";
 
 interface ProfileCardProps {
   user: SessionUser | null;
   route: Route;
+  /** The settings categories pane when it can be hidden (on settings, two panes): the gear toggles it. */
+  settingsPane?: SecondaryPaneControl | null;
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, target: Route) => void;
   onLogout: () => void;
 }
@@ -22,10 +25,11 @@ function profileLines(user: SessionUser | null): { primary: string; secondary: s
 }
 
 /** Account card at the bottom of the sidebar: a menu with sign-out plus the settings link. */
-export function ProfileCard({ user, route, onNavigate, onLogout }: ProfileCardProps) {
+export function ProfileCard({ user, route, settingsPane = null, onNavigate, onLogout }: ProfileCardProps) {
   const { primary, secondary } = profileLines(user);
   const menuLabel = user ? copy.shell.profile.menu(secondary ? `${primary}, ${secondary}` : primary) : primary;
   const settingsActive = route.name === "settings";
+  const gearTip = useTooltip(settingsPane ? (settingsPane.hidden ? copy.shell.settingsPane.show : copy.shell.settingsPane.hide) : undefined);
 
   return (
     <div className="shell-profile">
@@ -45,16 +49,34 @@ export function ProfileCard({ user, route, onNavigate, onLogout }: ProfileCardPr
       >
         <MenuItem onSelect={onLogout}>{copy.shell.logout}</MenuItem>
       </Menu>
-      <a
-        className="shell-gear"
-        href={routePath(SETTINGS_ROUTE)}
-        aria-label={copy.shell.profile.settings}
-        aria-current={settingsActive ? "page" : undefined}
-        onClick={(event) => onNavigate(event, SETTINGS_ROUTE)}
-      >
-        <Icon icon={Settings} />
-        <span className="shell-tip-only" aria-hidden="true">{copy.shell.profile.settings}</span>
-      </a>
+      {settingsPane ? (
+        <span className="shell-gear-wrap">
+          <button
+            type="button"
+            className="shell-gear"
+            aria-label={copy.shell.profile.settings}
+            aria-current="page"
+            aria-expanded={!settingsPane.hidden}
+            aria-controls={settingsPane.id}
+            {...gearTip.triggerProps}
+            onClick={() => { gearTip.hide(); settingsPane.toggle(); }}
+          >
+            <Icon icon={Settings} />
+          </button>
+          {gearTip.tooltip}
+        </span>
+      ) : (
+        <a
+          className="shell-gear"
+          href={routePath(SETTINGS_ROUTE)}
+          aria-label={copy.shell.profile.settings}
+          aria-current={settingsActive ? "page" : undefined}
+          onClick={(event) => onNavigate(event, SETTINGS_ROUTE)}
+        >
+          <Icon icon={Settings} />
+          <span className="shell-tip-only" aria-hidden="true">{copy.shell.profile.settings}</span>
+        </a>
+      )}
     </div>
   );
 }

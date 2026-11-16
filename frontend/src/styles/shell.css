@@ -110,6 +110,26 @@
   color: var(--ds-fg);
 }
 
+/* The gear is a button while the settings categories can be hidden; its tooltip opens above the row. */
+.shell-gear-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.shell-gear-wrap .ui-tooltip {
+  top: auto;
+  bottom: calc(100% + var(--ds-space-1));
+  white-space: nowrap;
+}
+
+.shell-root[data-mode="rail"] .shell-gear-wrap .ui-tooltip {
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  left: calc(100% + var(--ds-space-2));
+  transform: translateY(-50%);
+}
+
 .shell-gear[aria-current="page"] {
   background: var(--ds-accent-soft);
   color: var(--ds-accent-soft-fg);

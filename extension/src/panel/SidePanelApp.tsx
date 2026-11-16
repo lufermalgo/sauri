@@ -16,9 +16,9 @@ import {
 import { isSignInRequired, onSessionChanged, readSessionToken } from "../core/session-token";
 import { portalDestination } from "./portal";
 import { panelCopy as copy } from "./copy";
-import { RecordingSettingsView } from "./components/RecordingSettingsView";
 import { MicrophoneWarning } from "./components/MicrophoneWarning";
-import { DEFAULT_RECORDING_SETTINGS, parseRecordingSettings } from "./recordingSettings";
+import { DEFAULT_RECORDING_SETTINGS, parseRecordingSettings, readRecordingSettings, RECORDING_SETTINGS_KEY, writeRecordingSettings } from "./recordingSettings";
+import { RESOLUTION_DIMENSIONS } from "../core/resolution";
 import type { RecordingSettings } from "../core/types";
 import "./panel.css";
 import type { CaptureState, CaptureSource, CaptureStartResult, NoteDTO, RemoteRequest } from "../core/types";
@@ -44,10 +44,10 @@ export function SidePanelApp() {
   const [sessionExpired, setSessionExpired] = useState(false);
   const [settings, setSettings] = useState(DEFAULT_RECORDING_SETTINGS);
   const [settingsReady, setSettingsReady] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPending, setSettingsPending] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const settingsPendingRef = useRef(false);
+  const settingsPendingCount = useRef(0);
+  const settingsQueue = useRef<Promise<boolean>>(Promise.resolve(true));
   const [microphoneEnabled, setMicrophoneEnabled] = useState(true);
   const [captureMode, setCaptureMode] = useState<"screen_audio" | "audio_only">("screen_audio");
   const [currentTabSelected, setCurrentTabSelected] = useState(false);
@@ -99,15 +99,15 @@ export function SidePanelApp() {
     let changed = false;
     const load = async () => {
       try {
-        const result = await chrome.storage.local.get("recordingSettings");
-        if (!cancelled && !changed) setSettings(parseRecordingSettings(result.recordingSettings));
+        const loaded = await readRecordingSettings();
+        if (!cancelled && !changed) setSettings(loaded);
       } catch { if (!cancelled) setSettingsError(copy.settingsLoadError); }
       finally { if (!cancelled) setSettingsReady(true); }
     };
     const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-      if (area === "local" && changes.recordingSettings) {
+      if (area === "local" && changes[RECORDING_SETTINGS_KEY]) {
         changed = true;
-        setSettings(parseRecordingSettings(changes.recordingSettings.newValue));
+        setSettings(parseRecordingSettings(changes[RECORDING_SETTINGS_KEY].newValue));
       }
     };
     chrome.storage.onChanged.addListener(listener);
@@ -115,19 +115,24 @@ export function SidePanelApp() {
     return () => { cancelled = true; chrome.storage.onChanged.removeListener(listener); };
   }, []);
 
-  const saveSettings = async (change: Partial<RecordingSettings>): Promise<boolean> => {
-    if (settingsPendingRef.current || !settingsReady) return false;
-    settingsPendingRef.current = true;
+  // Changes are written one after another so a quick second choice never overwrites the first.
+  const saveSettings = (change: Partial<RecordingSettings>): Promise<boolean> => {
+    if (!settingsReady) return Promise.resolve(false);
+    settingsPendingCount.current += 1;
     setSettingsPending(true);
     setSettingsError(null);
-    try {
-      const result = await chrome.storage.local.get("recordingSettings");
-      const next = { ...parseRecordingSettings(result.recordingSettings), ...change };
-      await chrome.storage.local.set({ recordingSettings: next });
-      setSettings(next);
-      return true;
-    } catch { setSettingsError(copy.settingsError); return false; }
-    finally { settingsPendingRef.current = false; setSettingsPending(false); }
+    const task = settingsQueue.current.then(async () => {
+      try {
+        setSettings(await writeRecordingSettings(change));
+        return true;
+      } catch { setSettingsError(copy.settingsError); return false; }
+      finally {
+        settingsPendingCount.current -= 1;
+        if (settingsPendingCount.current === 0) setSettingsPending(false);
+      }
+    });
+    settingsQueue.current = task;
+    return task;
   };
 
   useEffect(() => {
@@ -143,7 +148,6 @@ export function SidePanelApp() {
         if (!selectionChanged) setStartingSource(result.sauriCaptureRequest ? result.sauriCaptureRequest.state.pickerSource ?? "picker" : null);
         setCaptureMode(state?.captureMode ?? "screen_audio");
         setBackgroundState(state ?? { status: "idle" });
-        if (state?.status === "recording") setSettingsOpen(false);
         setCaptureState(mapCaptureState(state?.status ?? "idle"));
         setRecordingSessionId(state?.sessionId);
         setProjectionReady(true);
@@ -168,7 +172,6 @@ export function SidePanelApp() {
         else if (changes.sauriState.oldValue?.status !== "recording") setTimerAvailable(true);
         setBackgroundState(state ?? { status: "idle" });
         if (state?.captureMode) setCaptureMode(state.captureMode);
-        if (state?.status === "recording") setSettingsOpen(false);
         setCaptureState(mapCaptureState(state?.status ?? "idle"));
         setRecordingSessionId(state?.sessionId);
         setProjectionReady(true);
@@ -313,7 +316,7 @@ export function SidePanelApp() {
       }
       const result: CaptureStartResult = await chrome.runtime.sendMessage({
         type: "start-capture", source,
-        resolution: { width: 1280, height: 720 },
+        resolution: RESOLUTION_DIMENSIONS[settings.resolution],
         micDeviceId: enableMicrophone ? selectedMicrophone?.deviceId ?? "default" : null,
       });
       if (result?.ok) setStartError(null);
@@ -335,6 +338,15 @@ export function SidePanelApp() {
       setStartingSource(null);
     }
   }, [selectedMicrophone, selecting, captureState, currentTabAvailable, openMicrophonePermission, microphonesReady, projectionReady, microphoneEnabled, settings, settingsReady]);
+
+  const changeSettings = (change: Partial<RecordingSettings>) => {
+    void saveSettings(change).then(saved => {
+      // The floating bar lives on the recorded page: tell the service worker so it shows or hides at once.
+      if (saved && captureState === "recording" && "showControlBar" in change) {
+        void Promise.resolve(chrome.runtime.sendMessage({ type: "recording-settings-changed" })).catch(() => undefined);
+      }
+    });
+  };
 
   const handleNewNote = useCallback(() => handleStartCapture(currentTabSelected ? "current-tab" : "picker"), [handleStartCapture, currentTabSelected]);
 
@@ -401,37 +413,37 @@ export function SidePanelApp() {
   return <div className="panel-app">
     <PanelHeader captureState={captureState} paused={backgroundState.paused} />
     <main className="panel-main panel-stack">
-      {settingsOpen ? <RecordingSettingsView settings={settings} onChange={change => { void saveSettings(change); }} onBack={() => setSettingsOpen(false)} pending={settingsPending || !settingsReady} error={settingsError} /> : <>
-        {selecting && <p role="status">{startingSource === "picker" ? copy.choosing : copy.starting}</p>}
-        {projectionReady && captureState === "idle" && <RecordingCompletionStatus sessionId={recordingSessionId} onVisibleChange={setCompletionVisible} />}
-        {(!completionVisible || captureState !== "idle") && <CaptureControls
-          captureState={captureState}
-          microphones={microphones}
-          selectedMicrophone={selectedMicrophone}
-          onSelectMicrophone={setSelectedMicrophone}
-          microphoneEnabled={microphoneEnabled}
-          onToggleMicrophone={() => setMicrophoneEnabled(value => !value)}
-          source={currentTabSelected ? "current-tab" : captureMode}
-          onChangeSource={changeSource}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onToggleCapture={() => { if (captureState === "idle") void handleNewNote(); else void sendControl("stop-capture"); }}
-          currentTabAvailable={currentTabAvailable}
-          onPause={() => { void sendControl(backgroundState.paused ? "resume-capture" : "pause-capture"); }}
-          onCancel={() => { void sendControl("cancel-capture"); }}
-          paused={backgroundState.paused}
-          tabTitle={backgroundState.meetingTitle}
-          overlayUnavailable={backgroundState.overlayAvailable === false}
-          recordedVideo={backgroundState.videoPresence === "muxed"}
-          recordedMicrophone={backgroundState.micDeviceId ? microphones.find(mic => mic.deviceId === backgroundState.micDeviceId)?.label ?? copy.microphone : undefined}
-          commandPending={commandPending}
-          elapsedTimeMs={timerAvailable ? elapsedTimeMs : undefined}
-          microphoneError={microphoneError}
-          selecting={selecting || !microphonesReady || !projectionReady || !settingsReady || settingsPending || modePending}
-          startError={selecting ? null : startError}
-        />}
-        {!completionVisible && captureState === "idle" && <NotesList state={notesViewState} notes={notesRequest.data ?? notesRequest.previous ?? []} onRetry={loadNotes} onOpenNote={handleOpenNote} />}
-        {settingsError && <p role="alert">{settingsError}</p>}
-      </>}
+      {selecting && <p role="status">{startingSource === "picker" ? copy.choosing : copy.starting}</p>}
+      {projectionReady && captureState === "idle" && <RecordingCompletionStatus sessionId={recordingSessionId} onVisibleChange={setCompletionVisible} />}
+      {(!completionVisible || captureState !== "idle") && <CaptureControls
+        captureState={captureState}
+        microphones={microphones}
+        selectedMicrophone={selectedMicrophone}
+        onSelectMicrophone={setSelectedMicrophone}
+        microphoneEnabled={microphoneEnabled}
+        onToggleMicrophone={() => setMicrophoneEnabled(value => !value)}
+        source={currentTabSelected ? "current-tab" : captureMode}
+        onChangeSource={changeSource}
+        settings={settings}
+        onChangeSettings={changeSettings}
+        settingsDisabled={!settingsReady || selecting}
+        settingsError={settingsError}
+        onToggleCapture={() => { if (captureState === "idle") void handleNewNote(); else void sendControl("stop-capture"); }}
+        currentTabAvailable={currentTabAvailable}
+        onPause={() => { void sendControl(backgroundState.paused ? "resume-capture" : "pause-capture"); }}
+        onCancel={() => { void sendControl("cancel-capture"); }}
+        paused={backgroundState.paused}
+        tabTitle={backgroundState.meetingTitle}
+        overlayUnavailable={backgroundState.overlayAvailable === false}
+        recordedVideo={backgroundState.videoPresence === "muxed"}
+        recordedMicrophone={backgroundState.micDeviceId ? microphones.find(mic => mic.deviceId === backgroundState.micDeviceId)?.label ?? copy.microphone : undefined}
+        commandPending={commandPending}
+        elapsedTimeMs={timerAvailable ? elapsedTimeMs : undefined}
+        microphoneError={microphoneError}
+        selecting={selecting || !microphonesReady || !projectionReady || !settingsReady || settingsPending || modePending}
+        startError={selecting ? null : startError}
+      />}
+      {!completionVisible && captureState === "idle" && <NotesList state={notesViewState} notes={notesRequest.data ?? notesRequest.previous ?? []} onRetry={loadNotes} onOpenNote={handleOpenNote} />}
     </main>
     {warningSource && <MicrophoneWarning pending={settingsPending} error={settingsError} skip={skipWarning} onSkip={setSkipWarning} onDismiss={() => setWarningSource(null)} onContinue={enable => { void (async () => {
       if (skipWarning && !await saveSettings({ skipMicWarning: true })) return;

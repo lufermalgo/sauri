@@ -15,10 +15,11 @@ interface LibraryBulkDialogProps {
 }
 
 function resultSentence(run: BulkRun): string {
-  if (run.ids.length === 0) return text.noneReady;
+  if (run.ids.length === 0) return run.kind === "downloadSummary" ? text.noneWithSummary : text.noneReady;
   const done = run.succeeded.length;
   const failed = run.failed.length;
-  return run.kind === "delete" ? text.deleted(done, failed) : text.downloaded(done, failed);
+  if (run.kind === "delete") return text.deleted(done, failed);
+  return run.kind === "downloadSummary" ? text.downloadedSummaries(done, failed) : text.downloaded(done, failed);
 }
 
 /**
@@ -36,12 +37,15 @@ export function LibraryBulkDialog({ run, onStop, onRetry, onClose, returnFocus }
     if (!running) closeButton.current?.focus();
   }, [running]);
 
+  const runningDownloadTitle = run.kind === "downloadSummary" ? text.runningDownloadSummariesTitle : text.runningDownloadTitle;
   const title = running
-    ? (run.kind === "delete" ? text.runningDeleteTitle : text.runningDownloadTitle)
+    ? (run.kind === "delete" ? text.runningDeleteTitle : runningDownloadTitle)
     : (run.kind === "delete" ? text.doneDeleteTitle : text.doneDownloadTitle);
   const progress = run.kind === "delete" ? text.deleting(run.current, total) : text.downloading(run.current, total);
   const notes = running ? [] : [
-    run.skipped > 0 ? text.skippedNotReady(run.skipped) : null,
+    run.skipped > 0
+      ? (run.kind === "downloadSummary" ? text.skippedNoSummary(run.skipped) : text.skippedNotReady(run.skipped))
+      : null,
     run.notProcessed.length > 0 ? text.notProcessed(run.notProcessed.length) : null,
     run.failed.length > 0 && run.kind === "delete" ? text.failedKept : null,
   ].filter((note): note is string => note !== null);

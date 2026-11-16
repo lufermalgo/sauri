@@ -92,8 +92,11 @@ export type CaptureStartResult =
   | { ok: true; sessionId: string }
   | { ok: false; reason: "cancelled" | "no-tab-audio" | "unsupported-surface" | "busy" | "current-tab-unavailable" | "microphone-permission" | "failed" };
 
+export type RecordingResolution = "480p" | "720p" | "1080p";
+
 export interface RecordingSettings {
   countdownSeconds: 0 | 3 | 5 | 10;
+  resolution: RecordingResolution;
   showControlBar: boolean;
   skipMicWarning: boolean;
 }

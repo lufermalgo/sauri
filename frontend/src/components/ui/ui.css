@@ -450,6 +450,12 @@ textarea.ui-input {
   background: transparent;
 }
 
+.ui-menu-separator {
+  height: 1px;
+  margin: var(--ds-space-1) 0;
+  background: var(--ds-border);
+}
+
 .ui-menu-item--danger {
   color: var(--ds-danger-text);
 }

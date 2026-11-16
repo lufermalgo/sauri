@@ -155,7 +155,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
   await startupProcessing.mock.results[0].value;
   return {
     display, userMedia, original, stored, stream, audio, video, upload, send,
-    start: (source: "picker" | "current-tab" = "picker", micDeviceId?: string) => dispatch(listeners[1], { type: "start-capture", source, micDeviceId }),
+    start: (source: "picker" | "current-tab" = "picker", micDeviceId?: string, resolution?: unknown) => dispatch(listeners[1], { type: "start-capture", source, micDeviceId, ...(resolution === undefined ? {} : { resolution }) }),
     stop: () => dispatch(listeners[1], { type: "stop-capture" }),
     close: (id = 7) => removed(id),
     executeScript,
@@ -483,6 +483,16 @@ describe("Meet recording controls", () => {
     expect(document.getElementById("sauri-countdown-host")).toBeNull();
   });
 
+  it.each([5, 10])("shows a %s second countdown from the stored setting", async seconds => {
+    const h = await setup({ countdownSeconds: seconds, realUI: true });
+    const pending = h.start();
+    await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
+    expect(document.getElementById("sauri-countdown-host")!.shadowRoot!.querySelector("strong")!.textContent).toBe(String(seconds));
+    expect(h.stored.sauriCaptureRequest.countdownSeconds).toBe(seconds);
+    cancelCountdown();
+    expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+  });
+
   it("zero seconds starts without a countdown", async () => {
     const h = await setup({ countdownSeconds: 0 });
     expect(await h.start()).toMatchObject({ ok: true });
@@ -583,6 +593,49 @@ describe("Meet recording controls", () => {
   });
 });
 
+
+describe("recording resolution", () => {
+  const recordedResolution = (h: Awaited<ReturnType<typeof setup>>) => h.send.mock.calls.find(([message]) => message.type === "start-recording")![0].resolution;
+
+  it.each([[{ width: 854, height: 480 }], [{ width: 1280, height: 720 }], [{ width: 1920, height: 1080 }]])("passes the allowed size %j to the recorder and the session state", async size => {
+    const h = await setup();
+    expect(await h.start("picker", undefined, size)).toMatchObject({ ok: true });
+    expect(recordedResolution(h)).toEqual(size);
+    expect(h.stored.sauriState.resolution).toEqual(size);
+  });
+
+  it.each([undefined, { width: 3840, height: 2160 }, { width: 1280, height: 1080 }, "1080p", null])("falls back to 720p for %j", async size => {
+    const h = await setup();
+    expect(await h.start("picker", undefined, size)).toMatchObject({ ok: true });
+    expect(recordedResolution(h)).toEqual({ width: 1280, height: 720 });
+  });
+});
+
+describe("recording control bar setting changed mid-recording", () => {
+  const storeControlBar = (showControlBar: boolean) => vi.mocked(chrome.storage.local.get).mockImplementation(async () => ({ recordingSettings: { countdownSeconds: 0, showControlBar } }));
+
+  it("hides and shows the floating bar without touching the recording", async () => {
+    const h = await setup({ realUI: true });
+    expect(await h.start()).toMatchObject({ ok: true });
+    expect(document.getElementById("sauri-recording-host")).not.toBeNull();
+    storeControlBar(false);
+    expect(await h.message({ type: "recording-settings-changed" }, {})).toEqual({ ok: true });
+    expect(document.getElementById("sauri-recording-host")).toBeNull();
+    expect(h.stored.sauriState).toMatchObject({ status: "recording", showControlBar: false });
+    expect(Recorder.last.stop).not.toHaveBeenCalled();
+    storeControlBar(true);
+    expect(await h.message({ type: "recording-settings-changed" }, {})).toEqual({ ok: true });
+    expect(document.getElementById("sauri-recording-host")).not.toBeNull();
+  });
+
+  it("does nothing while idle and ignores page senders", async () => {
+    const h = await setup({ realUI: true });
+    storeControlBar(false);
+    expect(await h.message({ type: "recording-settings-changed" }, {})).toEqual({ ok: true });
+    expect(h.stored.sauriState).toEqual(h.original);
+    expect(await h.message({ type: "recording-settings-changed" }, { tab: { id: 7 } as chrome.tabs.Tab })).toEqual({ ok: false, error: "Message requires an extension capture context" });
+  });
+});
 
 describe("recording control edge cases", () => {
   it.each([undefined, { countdownSeconds: 7, showControlBar: "invalid" }])("uses safe defaults for missing or malformed preferences (%j)", async settings => {
