@@ -117,6 +117,22 @@ start_engine() {
   echo "$ENGINE_LABEL started (PID $server_pid, port $ENGINE_PORT; log $LOG_FILE)"
 }
 
+# Helper programs the engine started (whisper-cli, ffmpeg, llama-server...) can outlive it: once the
+# server is gone they are children of launchd (PID 1), and are ended here. Only PIDs seen as children
+# of this server before it was signalled, and orphaned now, are touched.
+reap_orphans() {
+  local child
+  for child in $1; do
+    [[ "$(ps -o ppid= -p "$child" 2>/dev/null | tr -d ' ')" == 1 ]] || continue
+    kill -TERM -- "-$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null || true
+    sleep 1
+    if kill -0 "$child" 2>/dev/null && [[ "$(ps -o ppid= -p "$child" 2>/dev/null | tr -d ' ')" == 1 ]]; then
+      kill -KILL -- "-$child" 2>/dev/null || kill -KILL "$child" 2>/dev/null || true
+    fi
+    echo "$ENGINE_LABEL helper process $child ended"
+  done
+}
+
 stop_engine() {
   engine_config "$1"
   if [[ ! -f "$PID_FILE" ]]; then
@@ -140,16 +156,14 @@ stop_engine() {
     return 1
   fi
 
+  local helpers
+  helpers="$(pgrep -P "$server_pid" 2>/dev/null || true)"
   kill -TERM "$server_pid"
   for _ in {1..10}; do
-    if ! kill -0 "$server_pid" 2>/dev/null; then
+    if ! kill -0 "$server_pid" 2>/dev/null || ! is_expected_process "$server_pid"; then
       rm -f "$PID_FILE"
       echo "$ENGINE_LABEL stopped (PID $server_pid)"
-      return
-    fi
-    if ! is_expected_process "$server_pid"; then
-      rm -f "$PID_FILE"
-      echo "$ENGINE_LABEL stopped (PID $server_pid)"
+      reap_orphans "$helpers"
       return
     fi
     sleep 1
@@ -157,9 +171,11 @@ stop_engine() {
 
   if is_expected_process "$server_pid"; then
     kill -KILL "$server_pid"
+    sleep 0.5
   fi
   rm -f "$PID_FILE"
   echo "$ENGINE_LABEL stopped (PID $server_pid)"
+  reap_orphans "$helpers"
 }
 
 status_engine() {

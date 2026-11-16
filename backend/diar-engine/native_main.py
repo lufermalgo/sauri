@@ -24,6 +24,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
+from sauri_engine_common import cancellation
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
 from sauri_engine_common.credentials import object_store_credentials
 from sauri_engine_common.external.asr_common import AdapterCancelled
@@ -219,7 +220,20 @@ async def diarize(
         return await _diarize_external(request, http_request, provider_route)
     if diarization_pipeline is None:
         raise HTTPException(status_code=503, detail="Diarization pipeline not loaded")
-    return await run_in_threadpool(_diarize_serialized, request.audio_ref)
+    # Stops at the next checkpoint once the worker disconnects (the Senko call itself cannot be interrupted).
+    left = threading.Event()
+    token = cancellation.bind(left)
+    watcher = asyncio.create_task(cancellation.cancel_on_disconnect(http_request.is_disconnected, left))
+    try:
+        return await run_in_threadpool(_diarize_serialized, request.audio_ref)
+    except cancellation.JobCancelled as exc:
+        logger.info("Diarization stopped: the caller left")
+        raise HTTPException(status_code=499, detail="client_closed") from exc
+    finally:
+        left.set()
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+        cancellation.unbind(token)
 
 
 def _provider_failure(error: ProviderError) -> JSONResponse:
@@ -322,8 +336,11 @@ async def _run_external(request: DiarizeRequest, route: Route, cancel: asyncio.E
 
 def _diarize_serialized(audio_ref: str) -> DiarizeResponse:
     # Senko mutates per-run state; keep jobs serial while freeing the event loop.
-    with _job_lock:
+    cancellation.acquire(_job_lock, float("inf"))
+    try:
         return _diarize_audio(audio_ref)
+    finally:
+        _job_lock.release()
 
 
 def _diarize_audio(audio_ref: str) -> DiarizeResponse:
@@ -332,6 +349,7 @@ def _diarize_audio(audio_ref: str) -> DiarizeResponse:
     try:
         with KeepAwake():
             started = time.monotonic()
+            cancellation.checkpoint()
             try:
                 audio_path = _download_audio(audio_ref)
             except Exception as exc:
@@ -342,6 +360,7 @@ def _diarize_audio(audio_ref: str) -> DiarizeResponse:
                 report = normalize_to_wav(Path(audio_path), wav_path)
             except NormalizeError as exc:
                 raise HTTPException(status_code=422, detail=exc.code) from exc
+            cancellation.checkpoint()  # nothing started yet that cannot be stopped
             started = time.monotonic()
             try:
                 segments, dropped_segments = _run_diarization(str(wav_path))
