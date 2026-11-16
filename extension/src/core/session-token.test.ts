@@ -1,28 +1,40 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
+  clearAllSessionTokens,
+  clearRefreshToken,
+  clearRefreshTokenIf,
   clearSessionToken,
   clearSessionTokenIf,
   isSignInRequired,
   onSessionChanged,
   purgeLegacyToken,
+  readRefreshToken,
   readSessionToken,
   restrictSessionStorageToTrustedContexts,
   setSignInRequired,
+  storeRefreshToken,
+  storeSessionCredentials,
   storeSessionToken,
 } from "./session-token";
 
 let session: Record<string, unknown>;
-let areas: { sync: { remove: Mock; set: Mock }; local: { remove: Mock; set: Mock } };
+let local: Record<string, unknown>;
+let areas: { sync: { remove: Mock; set: Mock }; local: { get: Mock; remove: Mock; set: Mock } };
 let changeListeners: Array<(changes: Record<string, unknown>, area: string) => void>;
 let setAccessLevel: Mock;
 
 beforeEach(() => {
   session = {};
+  local = {};
   changeListeners = [];
   setAccessLevel = vi.fn(async () => undefined);
   areas = {
     sync: { remove: vi.fn(async () => undefined), set: vi.fn(async () => undefined) },
-    local: { remove: vi.fn(async () => undefined), set: vi.fn(async () => undefined) },
+    local: {
+      get: vi.fn(async (key: string) => (key in local ? { [key]: local[key] } : {})),
+      set: vi.fn(async (values: Record<string, unknown>) => { Object.assign(local, values); }),
+      remove: vi.fn(async (key: string) => { delete local[key]; }),
+    },
   };
   vi.stubGlobal("chrome", {
     storage: {
@@ -48,6 +60,7 @@ describe("session token storage", () => {
     expect(await readSessionToken()).toBeUndefined();
     await storeSessionToken("token-1");
     expect(await readSessionToken()).toBe("token-1");
+    expect(local).toEqual({});
     expect(areas.sync.set).not.toHaveBeenCalled();
     expect(areas.local.set).not.toHaveBeenCalled();
     await clearSessionToken();
@@ -76,6 +89,65 @@ describe("session token storage", () => {
   });
 });
 
+describe("refresh token storage (survives a reload and a restart)", () => {
+  it("lives only in chrome.storage.local: never in session or synced storage", async () => {
+    await storeRefreshToken("refresh-1");
+    expect(await readRefreshToken()).toBe("refresh-1");
+    expect(local).toEqual({ sauriRefreshToken: "refresh-1" });
+    expect(session).toEqual({});
+    expect(areas.sync.set).not.toHaveBeenCalled();
+    await clearRefreshToken();
+    expect(await readRefreshToken()).toBeUndefined();
+  });
+
+  it("ignores values that are not a non-empty string", async () => {
+    for (const bad of ["", 7, null, {}, true]) {
+      local = { sauriRefreshToken: bad };
+      expect(await readRefreshToken()).toBeUndefined();
+    }
+  });
+
+  it("is removed only when it is still the one a rejection was about", async () => {
+    await storeRefreshToken("new-refresh");
+    expect(await clearRefreshTokenIf("old-refresh")).toBe(false);
+    expect(await clearRefreshTokenIf(undefined)).toBe(false);
+    expect(await readRefreshToken()).toBe("new-refresh");
+    expect(await clearRefreshTokenIf("new-refresh")).toBe(true);
+    expect(await readRefreshToken()).toBeUndefined();
+  });
+
+  it("storing credentials writes the refresh token before the access token, each in its own area", async () => {
+    const order: string[] = [];
+    areas.local.set.mockImplementation(async (values: Record<string, unknown>) => { order.push("local"); Object.assign(local, values); });
+    const original = chrome.storage.session.set as Mock;
+    original.mockImplementation(async (values: Record<string, unknown>) => { order.push("session"); Object.assign(session, values); });
+    await storeSessionCredentials("access-1", "refresh-1");
+    expect(order).toEqual(["local", "session"]);
+    expect(session).toEqual({ sauriSessionToken: "access-1" });
+    expect(local).toEqual({ sauriRefreshToken: "refresh-1" });
+  });
+
+  it("storing credentials without a refresh token drops a stale one", async () => {
+    await storeRefreshToken("stale-refresh");
+    await storeSessionCredentials("access-1");
+    expect(await readRefreshToken()).toBeUndefined();
+    expect(await readSessionToken()).toBe("access-1");
+  });
+
+  it("signing out removes both", async () => {
+    await storeSessionCredentials("access-1", "refresh-1");
+    await clearAllSessionTokens();
+    expect(await readSessionToken()).toBeUndefined();
+    expect(await readRefreshToken()).toBeUndefined();
+  });
+
+  it("a freshly loaded module instance sees the refresh token (a restarted service worker starts empty)", async () => {
+    await storeRefreshToken("refresh-1");
+    vi.resetModules();
+    expect(await (await import("./session-token")).readRefreshToken()).toBe("refresh-1");
+  });
+});
+
 describe("legacy token cleanup", () => {
   it("deletes the legacy key from synced and local storage and copies nothing", async () => {
     session = {};
@@ -100,7 +172,11 @@ describe("session change notifications", () => {
     const stop = onSessionChanged(listener);
     changeListeners.forEach((fn) => fn({ sauriState: {} }, "session"));
     changeListeners.forEach((fn) => fn({ sauriSessionToken: {} }, "local"));
+    changeListeners.forEach((fn) => fn({ recordingSettings: {} }, "local"));
     expect(listener).not.toHaveBeenCalled();
+    changeListeners.forEach((fn) => fn({ sauriRefreshToken: {} }, "local"));
+    expect(listener).toHaveBeenCalledTimes(1);
+    listener.mockClear();
     changeListeners.forEach((fn) => fn({ sauriSessionToken: {} }, "session"));
     changeListeners.forEach((fn) => fn({ sauriSignInRequired: {} }, "session"));
     expect(listener).toHaveBeenCalledTimes(2);

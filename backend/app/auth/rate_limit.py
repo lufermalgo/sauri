@@ -11,6 +11,9 @@ Two counters apply to every attempt, whether or not the account exists:
 * ``email``: normalized email alone, a higher bar that still stops a distributed guesser. It is high
   on purpose: it lets an attacker lock an account for at most ``MAX_LOCKOUT_SECONDS`` at a time.
 
+The refresh endpoint (#1123) uses a third counter, ``refresh_ip``, keyed on the client address alone
+(there is no email in a refresh request), with the same lock, backoff and forgetting rules.
+
 The failure that reaches the threshold locks the key for ``BASE_LOCKOUT_SECONDS``; every further failure
 doubles the lock up to ``MAX_LOCKOUT_SECONDS``. A key forgets its failures after ``WINDOW_SECONDS``
 without a new failure, and a successful login clears both keys.
@@ -33,9 +36,14 @@ from app.infra.models import LoginAttempt
 
 SCOPE_PAIR = "ip_email"
 SCOPE_EMAIL = "email"
+SCOPE_REFRESH = "refresh_ip"
 
 PAIR_THRESHOLD = 5
 EMAIL_THRESHOLD = 20
+# Refresh failures are rare for a well-behaved client (it drops a rejected token), so a sustained run
+# from one address is a guesser or a replay. The bar is higher than for passwords because every
+# extension behind one proxy address shares it.
+REFRESH_THRESHOLD = 10
 BASE_LOCKOUT_SECONDS = 60
 MAX_LOCKOUT_SECONDS = 15 * 60
 WINDOW_SECONDS = 30 * 60
@@ -74,10 +82,22 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
+def _refresh_keys(client_ip: str) -> list[_Key]:
+    return [_Key(SCOPE_REFRESH, hashlib.sha256(f"refresh|{client_ip}".encode()).hexdigest(), REFRESH_THRESHOLD)]
+
+
 async def lockout_remaining(session: AsyncSession, client_ip: str, email: str) -> int:
     """Seconds left on the longest active lock for this attempt, 0 when it may proceed."""
+    return await _lockout_remaining(session, _keys(client_ip, email))
+
+
+async def refresh_lockout_remaining(session: AsyncSession, client_ip: str) -> int:
+    """Seconds left on the refresh lock for this client address, 0 when it may proceed."""
+    return await _lockout_remaining(session, _refresh_keys(client_ip))
+
+
+async def _lockout_remaining(session: AsyncSession, keys: list[_Key]) -> int:
     now = utcnow()
-    keys = _keys(client_ip, email)
     rows = (
         await session.execute(
             select(LoginAttempt).where(LoginAttempt.key_hash.in_([key.key_hash for key in keys]))
@@ -92,9 +112,18 @@ async def lockout_remaining(session: AsyncSession, client_ip: str, email: str) -
 
 async def record_failure(session: AsyncSession, client_ip: str, email: str) -> int:
     """Count a failed attempt on both keys; return the lock (seconds) it started, 0 if none."""
+    return await _record_failure(session, _keys(client_ip, email))
+
+
+async def record_refresh_failure(session: AsyncSession, client_ip: str) -> int:
+    """Count a rejected refresh attempt for this address; return the lock (seconds) it started, 0 if none."""
+    return await _record_failure(session, _refresh_keys(client_ip))
+
+
+async def _record_failure(session: AsyncSession, keys: list[_Key]) -> int:
     now = utcnow()
     longest = 0
-    for key in _keys(client_ip, email):
+    for key in keys:
         await _ensure_row(session, key, now)
         row = (
             await session.execute(

@@ -1,7 +1,7 @@
 """Pydantic schemas for the authentication module."""
 
 import re
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
@@ -39,11 +39,29 @@ class LoginRequest(BaseModel):
 
     email: Annotated[str, Field(min_length=3, max_length=MAX_EMAIL_LENGTH), AfterValidator(_check_email)]
     password: Annotated[str, Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)]
+    # Only the Chrome extension asks for a refreshable session (#1123); the portal never sends this.
+    client: Literal["extension"] | None = None
 
 
 class LoginResponse(BaseModel):
-    """Authentication_Service response with the User_Session (Req. 13.3)."""
+    """Authentication_Service response with the User_Session (Req. 13.3).
+
+    The refresh fields are present only for ``client="extension"``; they are omitted, not null, otherwise.
+    """
 
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    refresh_token: str | None = None
+    refresh_expires_in: int | None = None
+
+
+MAX_REFRESH_TOKEN_LENGTH = 512
+
+
+class RefreshRequest(BaseModel):
+    """Refresh request: the opaque refresh token and nothing else."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    refresh_token: Annotated[str, Field(min_length=1, max_length=MAX_REFRESH_TOKEN_LENGTH)]

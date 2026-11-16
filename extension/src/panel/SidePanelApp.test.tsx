@@ -20,7 +20,7 @@ function mockTabs() {
 function mockChrome(sessionActive: boolean) {
   (globalThis as unknown as { chrome: unknown }).chrome = {
     storage: {
-      local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds: 3, showControlBar: true, skipMicWarning: false } })), set: vi.fn(async () => {}) },
+      local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds: 3, showControlBar: true, skipMicWarning: false } })), set: vi.fn(async () => {}), remove: vi.fn(async () => {}) },
       session: {
         get: vi.fn(async () => ({ sauriState: { status: "idle" }, ...(sessionActive ? { sauriSessionToken: "token-x" } : {}) })),
       },
@@ -97,6 +97,42 @@ describe("SidePanelApp", () => {
     render(<SidePanelApp />);
     expect(await screen.findByText(copy.recordings)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: copy.loginHeading })).not.toBeInTheDocument();
+  });
+
+  /** Only a refresh token on disk, as after a browser restart; the server answers `refresh` for the exchange. */
+  function restartWithRefreshToken(refresh: (init?: RequestInit) => Response) {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    mockChrome(false);
+    const session: Record<string, unknown> = {};
+    const local: Record<string, unknown> = { sauriRefreshToken: "refresh-1" };
+    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "idle" }, ...session }));
+    (chrome.storage.session as unknown as { set: unknown }).set = vi.fn(async (value: Record<string, unknown>) => { Object.assign(session, value); });
+    (chrome.storage.session as unknown as { remove: unknown }).remove = vi.fn(async (key: string) => { delete session[key]; });
+    vi.mocked(chrome.storage.local.get).mockImplementation((async (key: string) =>
+      key === "sauriRefreshToken" ? (key in local ? { [key]: local[key] } : {}) : { recordingSettings: { countdownSeconds: 3, showControlBar: true, skipMicWarning: false } }) as never);
+    vi.mocked(chrome.storage.local.set).mockImplementation((async (value: Record<string, unknown>) => { Object.assign(local, value); }) as never);
+    (chrome.storage.local as unknown as { remove: unknown }).remove = vi.fn(async (key: string) => { delete local[key]; });
+    global.fetch = vi.fn(async (url: string, init?: RequestInit) => String(url).endsWith("/auth/refresh")
+      ? refresh(init)
+      : new Response("[]", { status: 200 })) as unknown as typeof fetch;
+    return { session, local };
+  }
+
+  it("signs back in silently when only the refresh token is left, without showing the login", async () => {
+    const { session, local } = restartWithRefreshToken(() => new Response(JSON.stringify({ access_token: "access-2", refresh_token: "refresh-2", expires_in: 3600 }), { status: 200 }));
+    render(<SidePanelApp />);
+    expect(await screen.findByText(copy.recordings)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: copy.loginHeading })).not.toBeInTheDocument();
+    expect(session.sauriSessionToken).toBe("access-2");
+    expect(local.sauriRefreshToken).toBe("refresh-2");
+  });
+
+  it("shows the login when the refresh token is refused, and removes it", async () => {
+    const { session, local } = restartWithRefreshToken(() => new Response("{}", { status: 401 }));
+    render(<SidePanelApp />);
+    expect(await screen.findByRole("heading", { name: copy.loginHeading })).toBeInTheDocument();
+    expect(session.sauriSessionToken).toBeUndefined();
+    expect(local.sauriRefreshToken).toBeUndefined();
   });
 
   it("switches to sign-in when the token disappears while the panel is open (e.g. an upload got a 401)", async () => {
@@ -441,7 +477,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
     listeners = [];
     vi.stubGlobal("chrome", {
       storage: {
-      local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds: 3, showControlBar: true, skipMicWarning: false } })), set: vi.fn(async () => {}) },
+      local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds: 3, showControlBar: true, skipMicWarning: false } })), set: vi.fn(async () => {}), remove: vi.fn(async () => {}) },
         session: { get: vi.fn(async () => ({ sauriState: projection, sauriSessionToken: "synthetic-618" })) },
         onChanged: {
           addListener: vi.fn((listener) => listeners.push(listener)),

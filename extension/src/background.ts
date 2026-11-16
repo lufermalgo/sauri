@@ -25,12 +25,13 @@ import { readRecordingSettings } from "./panel/recordingSettings";
 import { parseDurationSeconds } from "./core/recording-duration";
 import {
   SessionRequiredError,
-  clearSessionTokenIf,
   purgeLegacyToken,
   readSessionToken,
   restrictSessionStorageToTrustedContexts,
   setSignInRequired,
 } from "./core/session-token";
+import { authorizedRequest, InvalidSessionError } from "./core/api/authorized-fetch";
+import { ensureAccessToken } from "./core/api/session-refresh";
 
 export {};
 
@@ -152,22 +153,20 @@ async function uploadRecording(job: UploadJob): Promise<void> {
     formData.append("audio", blob, "recording.webm");
     formData.append("data", JSON.stringify(ingestionData));
 
-    // The token comes from chrome.storage.session (set by the sign-in flow). Without it the
-    // job is released back to the queue and the panel asks the user to sign in again.
-    const token = await readSessionToken();
-    if (!token) throw new SessionRequiredError();
-
-    const response = await fetch(`${BACKEND_URL}/api/v1/ingestion/upload`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-
-    if (response.status === 401) {
-      // Only the token this upload used is dropped: the user may have signed in again while
-      // the (long) upload was running.
-      await clearSessionTokenIf(token);
-      throw new SessionRequiredError();
+    // The access token comes from chrome.storage.session; after a browser restart it is renewed
+    // silently from the refresh token. A 401 renews it once and retries the upload. Only when the
+    // session is really over is the job released back to the queue and the panel asks for a sign-in.
+    let response: Response;
+    try {
+      response = await authorizedRequest(
+        BACKEND_URL,
+        "/api/v1/ingestion/upload",
+        { method: "POST", body: formData },
+        async (reply) => reply,
+      );
+    } catch (error) {
+      if (error instanceof InvalidSessionError) throw new SessionRequiredError();
+      throw error;
     }
 
     if (response.ok) {
@@ -212,6 +211,16 @@ chrome.action.onClicked.addListener(async (tab) => {
 // copied) and session storage stays out of reach of content scripts.
 void restrictSessionStorageToTrustedContexts();
 void purgeLegacyToken();
+
+// After an extension reload or a browser restart the access token is gone but the refresh token is
+// not: sign back in silently and resume the uploads that were waiting for a session.
+async function restoreSession(): Promise<void> {
+  if (await readSessionToken()) return;
+  if ((await ensureAccessToken(BACKEND_URL)).status === "ok") await processUploadQueue();
+}
+void restoreSession().catch(() => {
+  console.warn("[sauri] Silent sign-in unavailable; the panel will ask if it is still needed");
+});
 
 chrome.runtime.onInstalled.addListener(async () => {
   // Updates must not detach a still-live legacy offscreen capture.
@@ -831,11 +840,15 @@ async function processUploadQueue(): Promise<void> {
     return;
   }
 
-  // No token (browser restarted, session expired): the job stays pending and uncounted, and
-  // the panel asks the user to sign in. Signing in resumes the queue.
-  if (!await readSessionToken()) {
-    await setSignInRequired();
-    console.warn("[sauri] Upload waiting for the user to sign in");
+  // No usable session (the refresh token was refused or there never was one): the job stays pending
+  // and uncounted, and the panel asks the user to sign in. Signing in resumes the queue. When the
+  // session merely cannot be renewed right now (offline), the next alarm tries again silently.
+  const session = await ensureAccessToken(BACKEND_URL);
+  if (session.status !== "ok") {
+    if (session.status === "rejected") {
+      await setSignInRequired();
+      console.warn("[sauri] Upload waiting for the user to sign in");
+    }
     return;
   }
 
@@ -882,17 +895,16 @@ async function processUploadQueue(): Promise<void> {
 // Only authenticated reads of the persisted meeting can establish processing success.
 async function reconcileProcessing(record: RecordingCompletion): Promise<void> {
   if (!record.recordingId) return;
-  const token = await readSessionToken();
-  if (!token) {
+  if ((await ensureAccessToken(BACKEND_URL)).status !== "ok") {
     await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing_status_unavailable");
     return;
   }
-  const base = `${BACKEND_URL}/api/v1/meetings/${encodeURIComponent(record.meetingId)}`;
-  const headers = { Authorization: `Bearer ${token}` };
+  const base = `/api/v1/meetings/${encodeURIComponent(record.meetingId)}`;
   async function read(path: string): Promise<unknown> {
-    const response = await fetch(`${base}${path}`, { headers });
-    if (!response.ok) throw new Error(`Protected recording asset unavailable (${response.status})`);
-    return response.json();
+    return authorizedRequest(BACKEND_URL, `${base}${path}`, {}, async (response) => {
+      if (!response.ok) throw new Error(`Protected recording asset unavailable (${response.status})`);
+      return response.json();
+    });
   }
   let status: ReturnType<typeof resolveProcessingStatus>;
   try {

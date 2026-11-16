@@ -1,5 +1,6 @@
-// Source-level guards for the session token (security hardening). These fail when a change
-// puts the token back into synced storage, logs it, puts it in a URL, or exposes it to pages.
+// Source-level guards for the session credentials (security hardening). These fail when a change
+// puts a token into synced storage, logs it, puts it in a URL, or exposes it to pages. The access token
+// lives in chrome.storage.session; the refresh token is the only thing allowed in chrome.storage.local.
 import { describe, expect, it } from "vitest";
 import fs from "fs";
 import path from "path";
@@ -29,6 +30,8 @@ function expressionsOnly(text: string): string {
 
 const sources = walk(srcDir).map((file) => ({ file: path.relative(root, file), text: stripComments(fs.readFileSync(file, "utf-8")) }));
 const TOKEN_MODULE = "src/core/session-token.ts";
+const REFRESH_MODULE = "src/core/api/session-refresh.ts";
+const FETCH_MODULE = "src/core/api/authorized-fetch.ts";
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf-8"));
 
 describe("the session token never reaches synced storage", () => {
@@ -44,18 +47,50 @@ describe("the session token never reaches synced storage", () => {
 
   it("touches storage areas for the token only through session-token.ts", () => {
     const offenders = sources
-      .filter((source) => source.file !== TOKEN_MODULE && /["'](authToken|sauriSessionToken)["']/.test(source.text))
+      .filter((source) => source.file !== TOKEN_MODULE && /["'](authToken|sauriSessionToken|sauriRefreshToken)["']/.test(source.text))
       .map((source) => source.file);
     expect(offenders).toEqual([]);
   });
 
   it("only ever removes the legacy key from the synced and local areas (never reads or writes it)", () => {
     const module = sources.find((source) => source.file === TOKEN_MODULE)!.text;
-    expect(module).not.toMatch(/storage\.(local|sync)\s*\.\s*(get|set)\b/);
     expect(module).not.toMatch(/storage\[area\]\s*\.\s*(get|set)\b/);
     expect(module).not.toMatch(/localStorage|sessionStorage|indexedDB/);
     // The only legacy-area call is the removal loop.
     expect([...module.matchAll(/storage\[area\]\.(\w+)/g)].map((match) => match[1])).toEqual(["remove"]);
+  });
+});
+
+describe("the refresh token is the only credential on disk, and only in chrome.storage.local", () => {
+  it("is read and written through session-token.ts alone, always under its own key", () => {
+    const module = sources.find((source) => source.file === TOKEN_MODULE)!.text;
+    const localCalls = [...module.matchAll(/storage\.local\s*\.\s*(\w+)\(([^)]*)\)/g)];
+    expect(localCalls.length).toBeGreaterThan(0);
+    for (const call of localCalls) expect(call[2], call[0]).toMatch(/REFRESH_KEY/);
+  });
+
+  it("is never kept in session storage", () => {
+    const module = sources.find((source) => source.file === TOKEN_MODULE)!.text;
+    for (const call of module.matchAll(/storage\.session\s*\.\s*(\w+)\(([^)]*)\)/g)) expect(call[2], call[0]).not.toMatch(/REFRESH_KEY|refresh/i);
+  });
+
+  it("is handled only by the session modules and the sign-in call", () => {
+    const users = sources.filter((source) => /refresh_?token|RefreshToken/i.test(source.text)).map((source) => source.file).sort();
+    expect(users).toEqual(["src/core/api/client.ts", REFRESH_MODULE, TOKEN_MODULE].sort());
+  });
+
+  it("is never put in a runtime or window message", () => {
+    const offenders = sources.filter((source) =>
+      [...source.text.matchAll(/(?:sendMessage|postMessage)\(([^;]*?)\);/g)].some((call) => /refresh|token/i.test(expressionsOnly(call[1])))).map((source) => source.file);
+    expect(offenders).toEqual([]);
+  });
+
+  it("is only sent to the refresh and revoke endpoints of the backend", () => {
+    const sendsToken = sources.filter((source) => /JSON\.stringify\(\{\s*refresh_token/.test(source.text)).map((source) => source.file);
+    expect(sendsToken).toEqual([REFRESH_MODULE]);
+    const module = sources.find((source) => source.file === REFRESH_MODULE)!.text;
+    expect([...module.matchAll(/fetch\(`\$\{backendUrl\}([^`]*)`/g)].map((match) => match[1]).sort())
+      .toEqual(["/api/v1/auth/refresh", "/api/v1/auth/refresh/revoke"]);
   });
 });
 
@@ -73,15 +108,15 @@ describe("the session token is never leaked", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("is only attached as an Authorization header by the API client and the service worker", () => {
+  it("is only attached as an Authorization header by the shared authorized fetch", () => {
     const users = sources.filter((source) => /Bearer\s*\$\{/.test(source.text)).map((source) => source.file).sort();
-    expect(users).toEqual(["src/background.ts", "src/core/api/client.ts"]);
+    expect(users).toEqual([FETCH_MODULE]);
   });
 
   it("is unreachable for content scripts and the injected overlay", () => {
     const pageFacing = sources.filter((source) => source.file === "src/content.ts" || source.file.startsWith("src/overlay/") || source.file === "src/overlay-injection.ts");
     expect(pageFacing.length).toBeGreaterThan(3);
-    const offenders = pageFacing.filter((source) => /session-token|core\/api|chrome\.storage|authToken|sauriSessionToken|Authorization/.test(source.text) && source.file !== "src/overlay-injection.ts")
+    const offenders = pageFacing.filter((source) => /session-token|core\/api|chrome\.storage|authToken|sauriSessionToken|sauriRefreshToken|refresh_token|Authorization/.test(source.text) && source.file !== "src/overlay-injection.ts")
       .map((source) => source.file);
     expect(offenders).toEqual([]);
   });

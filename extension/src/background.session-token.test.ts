@@ -1,5 +1,6 @@
-// Session token policy in the service worker: the token lives only in chrome.storage.session,
-// uploads without a valid token stay queued (never lost, never counted as failures), and the
+// Session credential policy in the service worker: the access token lives only in chrome.storage.session
+// and the refresh token only in chrome.storage.local, uploads without a valid session stay queued
+// (never lost, never counted as failures), an expired access token is renewed silently, and the
 // legacy synced token is deleted on start.
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
@@ -35,6 +36,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 60));
 const uploaded = new Response(JSON.stringify({ recording_id: "synthetic-recording", state: "queued" }), { status: 200 });
 
 let session: Record<string, unknown>;
+let local: Record<string, unknown>;
 let listener: Listener;
 let fetchMock: Mock;
 let syncRemove: Mock;
@@ -42,12 +44,17 @@ let syncSet: Mock;
 let localRemove: Mock;
 let setAccessLevel: Mock;
 
-async function boot(initialSession: Record<string, unknown>) {
+type FetchHandler = (url: string, init?: RequestInit) => Promise<Response>;
+
+const bearerOf = (init?: RequestInit) => (init?.headers as Record<string, string> | undefined)?.Authorization;
+
+async function boot(initialSession: Record<string, unknown>, initialLocal: Record<string, unknown> = {}, handler?: FetchHandler) {
   vi.resetModules();
   globalThis.indexedDB = new IDBFactory();
   globalThis.IDBKeyRange = IDBKeyRange;
   session = { sauriState: { status: "idle" }, ...initialSession };
-  fetchMock = vi.fn(async () => uploaded.clone());
+  local = { ...initialLocal };
+  fetchMock = vi.fn(handler ?? (async () => uploaded.clone()));
   syncRemove = vi.fn(async () => undefined);
   syncSet = vi.fn(async () => undefined);
   localRemove = vi.fn(async () => undefined);
@@ -74,7 +81,11 @@ async function boot(initialSession: Record<string, unknown>) {
         setAccessLevel,
       },
       sync: { remove: syncRemove, set: syncSet, get: vi.fn() },
-      local: { remove: localRemove },
+      local: {
+        get: vi.fn(async (key: string) => (key in local ? { [key]: local[key] } : {})),
+        set: vi.fn(async (values: Record<string, unknown>) => { Object.assign(local, values); }),
+        remove: vi.fn(async (key: string) => { localRemove(key); delete local[key]; }),
+      },
     },
     tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 1 })), sendMessage: vi.fn(async () => undefined) },
   });
@@ -148,7 +159,8 @@ describe("service worker session token policy", () => {
 
   it("keeps a token the user signed in with while the upload was in flight when the old one is rejected (#1113)", async () => {
     await boot({ sauriSessionToken: "expired-token" });
-    fetchMock.mockImplementation(async () => {
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (bearerOf(init) !== "Bearer expired-token") return uploaded.clone();
       session.sauriSessionToken = "fresh-token"; // Signed in again during the (long) upload.
       return new Response("", { status: 401 });
     });
@@ -157,7 +169,9 @@ describe("service worker session token policy", () => {
     await settle();
     expect(session.sauriSessionToken).toBe("fresh-token");
     expect(session.sauriSignInRequired).toBeUndefined();
-    expect(await readJobs()).toEqual(expect.arrayContaining([expect.objectContaining({ status: "pending", retryCount: 0 })]));
+    // The retry used the newer token without asking the server to refresh anything.
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/auth/refresh"))).toHaveLength(0);
+    expect(await readJobs()).toEqual(expect.arrayContaining([expect.objectContaining({ status: "done", retryCount: 0 })]));
   });
 
   it("deletes the legacy synced token on start without copying it anywhere", async () => {
@@ -174,5 +188,63 @@ describe("service worker session token policy", () => {
     const response = vi.fn();
     listener({ type: "session-restored" }, { tab: { id: 3 } }, response);
     expect(response).toHaveBeenCalledWith(expect.objectContaining({ ok: false }));
+  });
+
+  describe("refresh token (silent sign-in)", () => {
+    const refreshCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/api/v1/auth/refresh"));
+    const refreshReply = (access: string, refresh: string) =>
+      new Response(JSON.stringify({ access_token: access, refresh_token: refresh, expires_in: 3600 }), { status: 200 });
+
+    it("after a restart only the refresh token is left: it signs in silently and resumes the queued upload", async () => {
+      await boot({}, { sauriRefreshToken: "refresh-1" }, async (url, init) => {
+        if (url.endsWith("/auth/refresh")) {
+          expect(JSON.parse(String(init?.body))).toEqual({ refresh_token: "refresh-1" });
+          return refreshReply("access-2", "refresh-2");
+        }
+        return uploaded.clone();
+      });
+      expect(refreshCalls()).toHaveLength(1);
+      expect(session.sauriSessionToken).toBe("access-2");
+      expect(local.sauriRefreshToken).toBe("refresh-2");
+      expect(session.sauriSignInRequired).toBeUndefined();
+      const [[, init]] = ingestionCalls();
+      expect(bearerOf(init as RequestInit)).toBe("Bearer access-2");
+      expect(await readJobs()).toEqual([expect.objectContaining({ status: "done", retryCount: 0 })]);
+    });
+
+    it("an expired access token is renewed once and the upload is retried once with the new one", async () => {
+      await boot({ sauriSessionToken: "expired-token" }, { sauriRefreshToken: "refresh-1" }, async (url, init) => {
+        if (url.endsWith("/auth/refresh")) return refreshReply("access-2", "refresh-2");
+        return bearerOf(init) === "Bearer access-2" ? uploaded.clone() : new Response("", { status: 401 });
+      });
+      expect(ingestionCalls().map(([, init]) => bearerOf(init as RequestInit))).toEqual(["Bearer expired-token", "Bearer access-2"]);
+      expect(refreshCalls()).toHaveLength(1);
+      expect(local.sauriRefreshToken).toBe("refresh-2");
+      expect(await readJobs()).toEqual([expect.objectContaining({ status: "done", retryCount: 0 })]);
+    });
+
+    it("a refused refresh clears both credentials and the queued upload waits for sign-in without a retry penalty", async () => {
+      await boot({ sauriSessionToken: "expired-token" }, { sauriRefreshToken: "refresh-1" }, async (url) =>
+        new Response(url.endsWith("/auth/refresh") ? "{}" : "", { status: 401 }));
+      expect(session.sauriSessionToken).toBeUndefined();
+      expect(local.sauriRefreshToken).toBeUndefined();
+      expect(session.sauriSignInRequired).toBe(true);
+      expect(ingestionCalls()).toHaveLength(1); // Never retried without a session.
+      expect(await readJobs()).toEqual([expect.objectContaining({ status: "pending", retryCount: 0 })]);
+    });
+
+    it("an unreachable server keeps both credentials and does not ask for sign-in", async () => {
+      await boot({}, { sauriRefreshToken: "refresh-1" }, async () => { throw new TypeError("offline"); });
+      expect(local.sauriRefreshToken).toBe("refresh-1");
+      expect(session.sauriSignInRequired).toBeUndefined();
+      expect(await readJobs()).toEqual([expect.objectContaining({ status: "pending", retryCount: 0 })]);
+    });
+
+    it("never writes the refresh token to synced or session storage", async () => {
+      await boot({}, { sauriRefreshToken: "refresh-1" }, async (url) =>
+        url.endsWith("/auth/refresh") ? refreshReply("access-2", "refresh-2") : uploaded.clone());
+      expect(syncSet).not.toHaveBeenCalled();
+      expect(JSON.stringify(session)).not.toMatch(/refresh-/);
+    });
   });
 });

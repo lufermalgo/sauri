@@ -20,6 +20,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.passwords import hash_password
+from app.auth.refresh import revoke_user_tokens
 from app.auth.seed import ADMIN_EMAIL, seed_users
 from app.infra.database import create_engine, create_session_factory
 from app.infra.models import (
@@ -76,6 +77,7 @@ async def ensure_admin(session: AsyncSession, password: str, *, reset_password: 
     if reset_password:
         admin.password_hash = hash_password(password)
         admin.token_version += 1  # A reset signs the account out everywhere.
+        await revoke_user_tokens(session, admin.id)
         await session.flush()
         return admin, "password reset"
     return admin, "unchanged"

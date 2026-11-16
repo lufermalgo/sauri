@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.stubGlobal("chrome", {
     runtime: { openOptionsPage: vi.fn(async () => {}), sendMessage: vi.fn(async () => ({ ok: true })) },
     storage: {
-      local: { get: vi.fn(async () => ({ recordingSettings: settings })), set: vi.fn(async (value: { recordingSettings: RecordingSettings }) => { settings = value.recordingSettings; }) },
+      local: { get: vi.fn(async () => ({ recordingSettings: settings })), set: vi.fn(async (value: { recordingSettings: RecordingSettings }) => { settings = value.recordingSettings; }), remove: vi.fn(async () => undefined) },
       session: {
         get: vi.fn(async () => ({ sauriState: { status: "idle" }, ...sessionStore })),
         set: vi.fn(async (value: Record<string, unknown>) => { Object.assign(sessionStore, value); }),
