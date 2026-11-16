@@ -10,8 +10,27 @@ export type Route =
   | { name: "notFound" };
 
 /** Settings categories; the URL slugs are product copy (see `copy.settings.categories`). */
-export const SETTINGS_CATEGORIES = ["account", "appearance", "summaries", "recording"] as const;
+export const SETTINGS_CATEGORIES = [
+  "account",
+  "appearance",
+  "engines",
+  "transcription",
+  "speakers",
+  "summaries",
+  "recording",
+] as const;
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
+
+/** Navigation groups, in display order; the group labels are product copy (`copy.settings.groups`). */
+export const SETTINGS_GROUPS = [
+  { id: "general", categories: ["account", "appearance"] },
+  { id: "models", categories: ["engines", "transcription", "speakers", "summaries"] },
+  { id: "recording", categories: ["recording"] },
+] as const satisfies ReadonlyArray<{ id: string; categories: readonly SettingsCategory[] }>;
+export type SettingsGroupId = (typeof SETTINGS_GROUPS)[number]["id"];
+
+/** Reserved for a later chat category: declared so its name is not reused, but not routed or listed. */
+export const RESERVED_SETTINGS_CATEGORIES = ["chat"] as const;
 
 /** Category shown on wide screens when the URL names none. */
 export const DEFAULT_SETTINGS_CATEGORY: SettingsCategory = "account";

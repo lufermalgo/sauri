@@ -2,8 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { copy } from "../copy/es";
-import { SETTINGS_CATEGORIES, useRoute, type SettingsCategory } from "../router";
+import { SETTINGS_CATEGORIES, SETTINGS_GROUPS, useRoute, type SettingsCategory } from "../router";
 import type { SessionUser } from "../session-user";
 import { THEME_STORAGE_KEY, initTheme } from "../theme";
 import { PortalShell } from "./PortalShell";
@@ -72,7 +74,7 @@ afterEach(() => {
 });
 
 describe("settings navigation", () => {
-  it("lists the four categories and shows the account by default", () => {
+  it("lists every category in group order and shows the account by default", () => {
     open();
     render(<Harness />);
     const links = within(nav()).getAllByRole("link");
@@ -116,6 +118,180 @@ describe("settings navigation", () => {
     for (const name of SETTINGS_CATEGORIES) {
       expect(screen.getByRole("link", { name: labels[name].label })).toHaveAttribute("href", `/settings/${labels[name].slug}`);
     }
+  });
+});
+
+describe("settings navigation groups", () => {
+  it("names each group with a small label and lists its categories under it", () => {
+    open();
+    render(<Harness />);
+    const groups = within(nav()).getAllByRole("group");
+    expect(groups).toHaveLength(SETTINGS_GROUPS.length);
+    SETTINGS_GROUPS.forEach((group, index) => {
+      expect(groups[index]).toHaveAccessibleName(copy.settings.groups[group.id]);
+      expect(within(groups[index]).getAllByRole("link").map((link) => link.textContent))
+        .toEqual(group.categories.map((name) => labels[name].label));
+    });
+  });
+
+  it("marks only the open category with aria-current", () => {
+    open("transcription");
+    render(<Harness />);
+    const current = within(nav()).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page");
+    expect(current.map((link) => link.textContent)).toEqual([labels.transcription.label]);
+  });
+
+  it.each(["engines", "transcription", "speakers"] as const)(
+    "shows a quiet placeholder for %s: text only, no controls",
+    (category) => {
+      open(category);
+      render(<Harness />);
+      expect(screen.getByRole("heading", { level: 2, name: labels[category].label })).toBeInTheDocument();
+      const detail = document.querySelector<HTMLElement>(".settings-detail")!;
+      expect(within(detail).getByText(copy.settings.comingSoon[category])).toBeInTheDocument();
+      expect(copy.settings.comingSoon[category]).toMatch(/^Próximamente:/); // spanish-sample-data
+      expect(within(detail).queryAllByRole("button")).toHaveLength(0);
+      expect(within(detail).queryAllByRole("switch")).toHaveLength(0);
+      expect(within(detail).queryAllByRole("textbox")).toHaveLength(0);
+    },
+  );
+
+  it("does not list or route the reserved chat category", () => {
+    open();
+    render(<Harness />);
+    expect(within(nav()).queryByRole("link", { name: /chat/i })).toBeNull();
+  });
+});
+
+describe("settings search", () => {
+  const search = () => screen.getByRole("searchbox", { name: copy.settings.search.label });
+  const shown = () => within(nav()).queryAllByRole("link").map((link) => link.textContent);
+  const type = (value: string) => fireEvent.change(search(), { target: { value } });
+
+  it("has a labelled field with a visible «Buscar» placeholder", () => {
+    open();
+    render(<Harness />);
+    expect(search()).toHaveAttribute("placeholder", copy.settings.search.placeholder);
+    expect(within(nav()).getByRole("searchbox")).toBe(search());
+  });
+
+  it.each([
+    ["claves", ["engines"]],
+    ["whisper", ["transcription"]],
+    ["privacidad", ["engines", "transcription", "speakers"]],
+    ["modelo", ["engines", "transcription", "speakers", "summaries"]],
+  ] as const)("filters by keyword «%s»", (query, expected) => {
+    open();
+    render(<Harness />);
+    type(query);
+    expect(shown()).toEqual(expected.map((name) => labels[name].label));
+  });
+
+  it("ignores accents and case, and matches label and description", () => {
+    open();
+    render(<Harness />);
+    type("TRANSCRIPCION"); // spanish-sample-data
+    expect(shown()).toEqual([labels.transcription.label]);
+    type("resumen");
+    expect(shown()).toEqual([labels.summaries.label]);
+    type("sesion");
+    expect(shown()).toEqual([labels.account.label]);
+    type("quien habla");
+    expect(shown()).toEqual([labels.speakers.label]);
+  });
+
+  it("hides empty groups and announces the count politely", () => {
+    open();
+    render(<Harness />);
+    type("claves");
+    expect(within(nav()).getAllByRole("group")).toHaveLength(1);
+    expect(within(nav()).getByRole("group")).toHaveAccessibleName(copy.settings.groups.models);
+    expect(within(nav()).getByRole("status")).toHaveTextContent(copy.settings.search.resultCount(1));
+  });
+
+  it("says «Sin resultados» and lists nothing when nothing matches", () => {
+    open();
+    render(<Harness />);
+    type("zzzz");
+    expect(shown()).toEqual([]);
+    expect(within(nav()).queryAllByRole("group")).toHaveLength(0);
+    expect(within(nav()).getByRole("status")).toHaveTextContent(copy.settings.search.noResultsFor("zzzz"));
+    expect(within(nav()).getByRole("status").textContent).toMatch(/^Sin resultados/);
+  });
+
+  it("clears with Escape and with the clear button, keeping the focus in the field", () => {
+    open();
+    render(<Harness />);
+    type("claves");
+    fireEvent.keyDown(search(), { key: "Escape" });
+    expect(search()).toHaveValue("");
+    expect(shown()).toHaveLength(SETTINGS_CATEGORIES.length);
+
+    type("whisper");
+    fireEvent.click(screen.getByRole("button", { name: copy.settings.search.clear }));
+    expect(search()).toHaveValue("");
+    expect(search()).toHaveFocus();
+    expect(screen.queryByRole("button", { name: copy.settings.search.clear })).toBeNull();
+  });
+
+  it("keeps the open category selected while it still matches, and the page unchanged when it does not", () => {
+    open("summaries");
+    render(<Harness />);
+    type("resumen");
+    expect(screen.getByRole("link", { name: labels.summaries.label })).toHaveAttribute("aria-current", "page");
+    type("whisper");
+    expect(window.location.pathname).toBe(`/settings/${labels.summaries.slug}`);
+    expect(screen.getByRole("heading", { level: 2, name: labels.summaries.label })).toBeInTheDocument();
+  });
+
+  it("opens the first result with Enter", () => {
+    open();
+    render(<Harness />);
+    type("whisper");
+    fireEvent.keyDown(search(), { key: "Enter" });
+    expect(window.location.pathname).toBe(`/settings/${labels.transcription.slug}`);
+    expect(screen.getByRole("heading", { level: 2, name: labels.transcription.label })).toBeInTheDocument();
+  });
+
+  it("moves between the field and the rows with the arrow keys", () => {
+    open();
+    render(<Harness />);
+    search().focus();
+    fireEvent.keyDown(search(), { key: "ArrowDown" });
+    expect(screen.getByRole("link", { name: labels.account.label })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+    expect(screen.getByRole("link", { name: labels.appearance.label })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(search()).toHaveFocus();
+  });
+
+  it("filters the small-screen list too, and keeps the filter when coming back", () => {
+    stubViewport(500);
+    open();
+    render(<Harness />);
+    type("hablantes"); // spanish-sample-data
+    expect(shown()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("link", { name: new RegExp(labels.speakers.label) }));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: copy.settings.backLabel }));
+    expect(search()).toHaveValue("hablantes"); // spanish-sample-data
+    expect(shown()).toHaveLength(1);
+  });
+});
+
+describe("settings navigation sizing", () => {
+  const css = readFileSync(join(__dirname, "../styles/settings.css"), "utf8");
+  const tokens = readFileSync(join(__dirname, "../design/tokens.css"), "utf8");
+
+  it("sizes rows and the search field from the touch-aware tokens: 32px on desktop, 44px on touch", () => {
+    expect(/\.settings-nav-link\s*\{[^}]*min-height:\s*var\(--ds-nav-row-h\)/.test(css)).toBe(true);
+    expect(/\.settings-search\s*\{[^}]*min-height:\s*var\(--ds-control-h-md\)/.test(css)).toBe(true);
+    expect(tokens).toMatch(/--ds-nav-row-h:\s*32px/);
+    const coarse = /@media \(pointer: coarse\)\s*\{([\s\S]*?)\n\}/.exec(tokens)?.[1] ?? "";
+    expect(coarse).toMatch(/--ds-nav-row-h:\s*44px/);
+    expect(coarse).toMatch(/--ds-control-h-md:\s*44px/);
+    expect(coarse).toMatch(/--ds-control-h-lg:\s*44px/);
   });
 });
 

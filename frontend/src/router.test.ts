@@ -3,7 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { copy } from "./copy/es";
-import { SETTINGS_CATEGORIES, navigate, parseRoute, routePath, useRoute, type Route } from "./router";
+import { RESERVED_SETTINGS_CATEGORIES, SETTINGS_CATEGORIES, SETTINGS_GROUPS, navigate, parseRoute, routePath, useRoute, type Route } from "./router";
 
 afterEach(() => {
   window.history.replaceState(null, "", "/");
@@ -28,6 +28,27 @@ describe("parseRoute", () => {
     expect(parseRoute(`/settings/${slug}/`, "")).toEqual({ name: "settings", category });
     expect(parseRoute(`/settings/${slug}/more`, "")).toEqual({ name: "notFound" });
     expect(parseRoute(`/settings/${slug.toUpperCase()}`, "")).toEqual({ name: "notFound" });
+  });
+
+  it("keeps the slugs that already shipped and adds the model categories", () => {
+    const slugs = Object.fromEntries(SETTINGS_CATEGORIES.map((name) => [name, copy.settings.categories[name].slug]));
+    expect(slugs).toEqual({
+      account: "cuenta",
+      appearance: "apariencia",
+      engines: "motores",
+      transcription: "transcripcion", // spanish-sample-data
+      speakers: "hablantes", // spanish-sample-data
+      summaries: "resumenes",
+      recording: "grabacion", // spanish-sample-data
+    });
+  });
+
+  it("groups every category once, in navigation order, and does not route the reserved chat", () => {
+    expect(SETTINGS_GROUPS.map((group) => group.id)).toEqual(["general", "models", "recording"]);
+    expect(SETTINGS_GROUPS.flatMap((group) => group.categories)).toEqual([...SETTINGS_CATEGORIES]);
+    expect(RESERVED_SETTINGS_CATEGORIES).toEqual(["chat"]);
+    expect(SETTINGS_CATEGORIES).not.toContain("chat");
+    expect(parseRoute("/settings/chat", "")).toEqual({ name: "notFound" });
   });
 
   it("treats a trailing slash like the plain path", () => {

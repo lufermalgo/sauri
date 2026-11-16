@@ -3,11 +3,68 @@ export const settings = {
   navLabel: "Categorías de configuración",
   back: "Configuración",
   backLabel: "Volver a Configuración",
+  search: {
+    label: "Buscar en la configuración",
+    placeholder: "Buscar",
+    clear: "Borrar búsqueda",
+    noResultsFor: (query: string) => `Sin resultados para «${query}»`,
+    resultCount: (count: number) => (count === 1 ? "1 resultado" : `${count} resultados`),
+  },
+  groups: {
+    general: "General",
+    models: "Modelos",
+    recording: "Grabación",
+  },
+  // Slugs are the ASCII URL of each category (`/settings/<slug>`); keywords feed the search only.
   categories: {
-    account: { slug: "cuenta", label: "Cuenta", description: "Tu sesión en Sauri" },
-    appearance: { slug: "apariencia", label: "Apariencia", description: "Tema y panel lateral" },
-    summaries: { slug: "resumenes", label: "Resúmenes", description: "Plantillas con las que se redactan" },
-    recording: { slug: "grabacion", label: "Grabación", description: "Opciones de la extensión de Chrome" },
+    account: {
+      slug: "cuenta",
+      label: "Cuenta",
+      description: "Tu sesión en Sauri",
+      keywords: "sesión correo nombre usuario perfil cerrar sesión",
+    },
+    appearance: {
+      slug: "apariencia",
+      label: "Apariencia",
+      description: "Tema y panel lateral",
+      keywords: "tema claro oscuro sistema colores panel lateral plegar",
+    },
+    engines: {
+      slug: "motores",
+      label: "Motores y modelos",
+      description: "Proveedores, claves y modelos",
+      keywords: "proveedores claves api conexión openai groq ollama lm studio externos locales privacidad",
+    },
+    transcription: {
+      slug: "transcripcion",
+      label: "Transcripción",
+      description: "Qué motor convierte el audio en texto",
+      keywords: "whisper voz audio texto motor modelo idioma privacidad",
+    },
+    speakers: {
+      slug: "hablantes",
+      label: "Hablantes",
+      description: "Qué motor distingue quién habla",
+      keywords: "diarización voces participantes quién habla motor modelo privacidad",
+    },
+    summaries: {
+      slug: "resumenes",
+      label: "Resúmenes",
+      description: "Plantillas con las que se redactan",
+      keywords: "plantillas instrucciones categorías redactar modelo",
+    },
+    recording: {
+      slug: "grabacion",
+      label: "Grabación",
+      description: "Opciones de la extensión de Chrome",
+      keywords: "extensión chrome meet cuenta regresiva micrófono barra de control",
+    },
+  },
+  // Quiet placeholders until each screen exists (no controls that do nothing).
+  comingSoon: {
+    engines: "Próximamente: aquí vincularás proveedores externos con sus claves y verás los modelos que usa Sauri.",
+    transcription: "Próximamente: aquí elegirás el motor y el modelo que transcriben tus reuniones.",
+    speakers: "Próximamente: aquí elegirás el motor y el modelo que identifican a los hablantes.",
   },
   account: {
     fallbackName: "Cuenta",
