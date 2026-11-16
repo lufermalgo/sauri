@@ -279,6 +279,12 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 - Decorativo: `aria-hidden="true"`; acción solo con icono: nombre accesible (`aria-label`).
 - El color de un icono lo da el texto que lo rodea (`fg-muted`, `accent-text`, `danger-text`).
 
+## 8b. Marca
+
+- El isotipo de Sauri (dos mitades verdes separadas por una diagonal, con un rombo al centro) y el logo horizontal viven en `brand/`; las reglas de uso, la variante pequeña (32px o menos) y el espacio libre están en `brand/README.md`.
+- Sus dos verdes (`#4a7c59`, `#78a886`) son fijos en todos los temas y no forman parte de la paleta de la sección 3: no se convierten en tokens ni se recolorean.
+- En la interfaz se dibuja con `BrandMark` (`frontend/src/components/ui/BrandMark.tsx` en el portal, `extension/src/core/design/BrandMark.tsx` en la extensión), decorativo junto al nombre «Sauri» visible; con `title` expone ese nombre. En el carril del portal queda solo el isotipo.
+
 ## 9. Estados, feedback y movimiento
 
 | Estado | Regla |
