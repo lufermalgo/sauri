@@ -33,7 +33,7 @@ def migration() -> ModuleType:
 def test_language_migration_changes_only_the_default() -> None:
     module = migration()
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["025_auth_hardening"]
+    assert script.get_heads() == ["026_engine_providers"]
     assert script.get_revision("019_failed_summary_request").down_revision == REVISION
     assert module.down_revision == "017_transcript_words"
     for action, default in [("upgrade", "es"), ("downgrade", "es-CO")]:
