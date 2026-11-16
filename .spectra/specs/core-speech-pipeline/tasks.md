@@ -213,10 +213,12 @@ Evidencia de origen (rutas privadas, no se copian al repo): `~/Proyectos/APX/evi
 **Archivo:** `.spectra/specs/core-speech-pipeline/acceptance-run.md`
 **Acción:** En Condiciones_de_Referencia (Mac conectado a corriente, motores nativos arrancados con `make engines-up`, sin otras cargas), subir por el portal una grabación del dueño de ≥ 60 min y registrar: `Tiempo_Hasta_Transcripcion` por etapa, número de hablantes, % de palabras `unassigned`, duración del resumen, memoria y presión del host. Sin audio ni texto de transcripción en el archivo.
 **Criterio de Completado:** archivo con los valores medidos frente a las metas (≤ 7 min, < 3 %); el dueño abre la reunión en el portal y ve transcripción con hablantes y resumen borrador.
+**Estado (16-11-2026):** parcial. `acceptance-run.md` registra dos corridas reales (55 y 94 min): palabras sin asignar 0,25 % y 0,29 % (meta < 3 % cumplida); `Tiempo_Hasta_Transcripcion` 6,3 min para 55 min y 14,2 min para 94 min (meta ≤ 7 min para 60 min **no demostrada**); memoria y presión del host y Condiciones_de_Referencia no registradas. Pendiente: que el dueño confirme la apertura en el portal, y una corrida de ≥ 60 min en condiciones controladas con memoria registrada.
 **Dependencias:** U1–U7
 
 #### Tarea U8.2: Actualizar arquitectura
 **Archivo:** `docs/architecture/overview.md`, `docs/operations/local-deployment.md`
 **Acción:** Registrar los motores nativos nuevos (puertos 8001–8003), el slot, el contrato v2, las alternativas descartadas y la evidencia, y el mapa de specs con `core-speech-pipeline`.
 **Criterio de Completado:** documento revisado en el PR; sin afirmaciones de despliegue o aceptación no comprobadas.
+**Estado (16-11-2026):** hecho en `docs/architecture/overview.md` (motores y puertos 8001–8005, contrato v2, slot, enrutamiento, alternativas descartadas con evidencia, mapa de specs) y `docs/operations/local-deployment.md` (resumen local, enrutamiento y modelos locales, estado de las mediciones); pendiente solo la revisión del PR.
 **Dependencias:** U8.1
