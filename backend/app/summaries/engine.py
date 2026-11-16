@@ -157,6 +157,11 @@ def _request_schema(passage_ids: list[str]) -> dict[str, Any]:
     return schema
 
 
+def probe_schema() -> dict[str, Any]:
+    """The summary schema with one stand-in passage, for the connection test (same shape a real request sends)."""
+    return _request_schema(["P0000"])
+
+
 class SummarizationEngine(Protocol):
     async def generate(
         self, passages: list[Passage], instructions_snapshot: str, route: Route | None = None,

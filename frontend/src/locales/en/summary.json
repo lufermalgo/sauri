@@ -34,6 +34,7 @@
     "provider_timeout": "The provider took too long.",
     "provider_unavailable": "We couldn't connect to the provider.",
     "provider_bad_request": "The provider didn't accept the request.",
+    "provider_model_unavailable": "This model isn't available for your provider account. Choose another model.",
     "provider_invalid_output": "The model didn't return a valid summary.",
     "too_long": "The meeting is too long for that model.",
     "provider_unsupported": "That provider can't be used to generate summaries.",

@@ -390,6 +390,32 @@ async def test_neither_the_key_nor_meeting_text_reach_the_logs(
     assert KEY not in response.text and "private meeting words" not in response.text
 
 
+async def test_a_provider_refusal_is_logged_scrubbed_and_never_returned(
+    gateway: Gateway, serve: Serve, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    message = f"Unknown name maxItems at response_format. Key {KEY}. Transcript: private meeting words"
+    google = [{"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": message}}]
+    fake = await serve(failing(400, google))
+    gateway.store_key(fake)
+    response = await gateway.chat(gateway.route(fake))
+    assert response.status_code == 400
+    assert response.json() == {"error": {"code": "provider_bad_request", "retryable": False, "retry_after_s": None}}
+    logged = "\n".join(record.getMessage() for record in caplog.records if record.name == "sauri.llm_engine")
+    assert "code=provider_bad_request reason=http_400" in logged
+    assert "status=INVALID_ARGUMENT" in logged and "Unknown name maxItems" in logged
+    assert KEY not in logged and "private meeting words" not in logged and "Bearer" not in logged
+
+
+async def test_a_model_the_account_cannot_use_has_its_own_code(gateway: Gateway, serve: Serve) -> None:
+    body = [{"error": {"code": 404, "status": "NOT_FOUND", "message": "models/gemini-2.5-flash is not found"}}]
+    fake = await serve(failing(404, body))
+    gateway.store_key(fake)
+    response = await gateway.chat(gateway.route(fake))
+    assert response.status_code == 400
+    assert response.json()["error"] == {"code": "provider_model_unavailable", "retryable": False, "retry_after_s": None}
+
+
 # --- disconnect watcher (Property 12) -----------------------------------------------------------------------------
 
 

@@ -45,6 +45,7 @@ DISCONNECT_POLL_S: Final = 0.5
 # HTTP status per classified error. 401 is reserved for the engine token, so a provider rejecting the key is a 502.
 ERROR_STATUS: Final = {
     "provider_bad_request": 400,
+    "provider_model_unavailable": 400,
     "provider_context_exceeded": 400,
     "provider_unsupported": 400,
     "consent_missing": 403,
@@ -217,8 +218,12 @@ _secret_store: SecretStore | None = None
 
 @app.exception_handler(ProviderError)
 async def provider_error_response(_request: Request, error: ProviderError) -> JSONResponse:
-    """``{"error": {"code", "retryable", "retry_after_s"}}``; only the closed code and sub-code are ever logged."""
-    logger.warning("external_chat_failed code=%s reason=%s", error.code, error.reason)
+    """``{"error": {"code", "retryable", "retry_after_s"}}``.
+
+    The log carries the closed code and sub-code plus, for a provider 4xx, its status and message already scrubbed
+    and capped by ``chat_common.provider_detail`` (no key, header, request body or transcript text).
+    """
+    logger.warning("external_chat_failed code=%s reason=%s detail=%s", error.code, error.reason, error.detail or "-")
     headers = {"Retry-After": str(error.retry_after_s)} if error.retry_after_s is not None else None
     return JSONResponse(
         status_code=ERROR_STATUS.get(error.code, DEFAULT_ERROR_STATUS), content=error.to_payload(), headers=headers

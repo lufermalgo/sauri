@@ -34,6 +34,7 @@ export type EngineErrorClass =
   | "provider_timeout"
   | "provider_unavailable"
   | "provider_bad_request"
+  | "provider_model_unavailable"
   | "provider_invalid_output"
   | "provider_context_exceeded"
   | "provider_unsupported"
@@ -99,7 +100,10 @@ export interface EngineProviderDeleted {
   reverted_processes: EngineProcess[];
 }
 
-/** Body of `POST /providers/{id}/test`; `capability` picks the transport to try. */
+/**
+ * Body of `POST /providers/{id}/test`; `capability` picks the transport to try. With `summary` the API tests the model
+ * chosen for the summary (when it is this provider's) with the real summary schema.
+ */
 export interface EngineProbeIn {
   capability?: EngineProcess;
 }
@@ -108,7 +112,12 @@ export interface EngineProbeResult {
   ok: boolean;
   latency_ms: number | null;
   error_class: EngineErrorClass | null;
+  /** `false` only when the provider refused the summary schema (incompatible); `null` when it was not decided. */
   json_schema_ok: boolean | null;
+  /** Why the schema check was not decided: `provider_timeout` means slow, `provider_model_unavailable` a model the account cannot use. */
+  schema_error_class: EngineErrorClass | null;
+  /** The model the schema check used. */
+  schema_model: string | null;
 }
 
 /** Why the last ChatGPT sign-in did not end connected. */

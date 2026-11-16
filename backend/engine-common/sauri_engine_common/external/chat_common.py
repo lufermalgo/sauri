@@ -1,7 +1,9 @@
 """Pieces shared by the chat adapters: bounded SSE reading, timeouts, error mapping and aggregation.
 
-Nothing here returns or logs a key, a header, a provider body or generated text in an error: every failure is a
-``ProviderError`` with a closed class and a short ``reason`` code.
+Nothing here returns a key, a header, a provider body or generated text in an error: every failure is a
+``ProviderError`` with a closed class and a short ``reason`` code. The one exception is ``ProviderError.detail``
+on a 4xx: the provider's own status and message, scrubbed and capped by ``provider_detail``, meant for the
+gateway log so a refusal such as an unsupported schema keyword can be diagnosed.
 """
 
 from __future__ import annotations
@@ -36,6 +38,15 @@ _CONTEXT_PHRASES: Final = (
     "exceeds the available context",
     "context window",
 )
+_MAX_DETAIL_CHARS: Final = 200
+_SECRET_LIKE: Final = re.compile(
+    r"Bearer\s+\S+"  # an echoed Authorization header
+    r"|\b(?:sk|pk|rk|gsk|xai|AIza|ya29|key)[-_.]?[A-Za-z0-9_-]{8,}"  # well-known key prefixes
+    r"|[A-Za-z0-9_-]{32,}",  # any long opaque token
+    re.IGNORECASE,
+)
+_LONG_QUOTE: Final = re.compile(r"""(["'`])[^"'`]{48,}?\1""")  # content echoed back inside quotes
+_MODEL_HINTS: Final = ("model_not_found", "model_not_available", "model_unavailable", "model_not_supported")
 _QUOTA_HINTS: Final = ("insufficient_quota", "billing", "credit_balance", "quota_exceeded", "usage_limit")
 _STREAM_ERROR_STATUS: Final = {
     "overloaded_error": 529,
@@ -128,12 +139,91 @@ class SseParser:
 
 def error_hint(body: bytes, key: str | None) -> str | None:
     """A provider error code such as ``invalid_api_key``; never free text, never anything containing the key."""
+    error = _error_object(body)
+    return _hint_from(error, key)
+
+
+def _error_object(body: bytes) -> Any:
+    """The ``error`` member of a provider error body (Google's OpenAI route wraps it in a one-item list)."""
     try:
         data = json.loads(body)
     except ValueError:
         return None
-    error = data.get("error") if isinstance(data, dict) else None
-    return _hint_from(error, key)
+    if isinstance(data, list) and data:
+        data = data[0]
+    return data.get("error") if isinstance(data, dict) else None
+
+
+def _words(text: str) -> str:
+    return " ".join(re.findall(r"\w+", text.lower()))
+
+
+def _texts(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [text for part in value for text in _texts(part)]
+    if isinstance(value, dict):
+        return _texts(value.get("text")) + _texts(value.get("content"))
+    return []
+
+
+def sent_text(payload: dict[str, Any]) -> str:
+    """The words the caller sent as user or assistant content (the transcript lives here), normalized for matching."""
+    parts: list[str] = []
+    for message in payload.get("messages") or payload.get("input") or []:
+        if isinstance(message, dict) and message.get("role") in ("user", "assistant"):
+            parts += _texts(message.get("content"))
+    return _words("\n".join(parts))
+
+
+def _without_echo(text: str, sent: str) -> str:
+    """Replace every run of three or more words that the request itself contained (providers sometimes quote it)."""
+    tokens = text.split()
+    hidden = [False] * len(tokens)
+    for start in range(len(tokens) - 2):
+        window = _words(" ".join(tokens[start : start + 3]))
+        if window.count(" ") >= 2 and window in sent:
+            hidden[start : start + 3] = [True] * 3
+    kept: list[str] = []
+    for token, is_hidden in zip(tokens, hidden, strict=True):
+        if not is_hidden:
+            kept.append(token)
+        elif not kept or kept[-1] != "[..]":
+            kept.append("[..]")
+    return " ".join(kept)
+
+
+def scrub(text: str, key: str | None, sent: str = "") -> str:
+    """One line of at most ``_MAX_DETAIL_CHARS`` characters with the key, key-like tokens, long quotes and anything
+    the request itself said (``sent``, from ``sent_text``) removed."""
+    if key:
+        text = re.sub(re.escape(key), "[redacted]", text, flags=re.IGNORECASE)
+    text = _SECRET_LIKE.sub("[redacted]", text)
+    text = _LONG_QUOTE.sub("[..]", text)
+    if sent:
+        text = _without_echo(text, sent)
+    text = "".join(ch if ch.isprintable() else " " for ch in text)
+    return " ".join(text.split())[:_MAX_DETAIL_CHARS]
+
+
+def provider_detail(body: bytes, key: str | None, sent: str = "") -> str | None:
+    """The provider's own error status and message, scrubbed, for the gateway log (never for a caller)."""
+    error = _error_object(body)
+    parts: list[str] = []
+    if isinstance(error, dict):
+        for name in ("status", "type", "code"):
+            value = error.get(name)
+            if isinstance(value, int) and not isinstance(value, bool):
+                value = str(value)
+            if isinstance(value, str) and _HINT.fullmatch(value):
+                parts.append(f"{name}={value}")
+        message = error.get("message")
+        if isinstance(message, str) and message.strip():
+            parts.append(f"message={message}")
+    elif isinstance(error, str):
+        parts.append(f"message={error}")
+    return scrub(" ".join(parts), key, sent) or None
 
 
 def _hint_from(error: Any, key: str | None) -> str | None:
@@ -158,15 +248,37 @@ def _hint_from(error: Any, key: str | None) -> str | None:
     return None
 
 
-def error_from_http(status: int, body: bytes, retry_after: str | None, key: str | None) -> ProviderError:
+def model_unavailable(status: int, hint: str | None, body: bytes) -> bool:
+    """A 4xx saying the chosen model does not exist or is not open to this account.
+
+    A bare 404 (a wrong address, say) is not enough: the provider has to name the model.
+    """
+    if not 400 <= status < 500:
+        return False
+    if hint is not None and any(marker in hint for marker in _MODEL_HINTS):
+        return True
+    if status != 404:
+        return False
+    error = _error_object(body)
+    message = error.get("message") if isinstance(error, dict) else error
+    return "model" in (message.lower() if isinstance(message, str) else "") or "model" in (hint or "")
+
+
+def error_from_http(
+    status: int, body: bytes, retry_after: str | None, key: str | None, sent: str = ""
+) -> ProviderError:
     hint = error_hint(body, key)
     base = classify(status, hint, retry_after=retry_after)
     reason = "redirect_refused" if 300 <= status < 400 else f"http_{status}"
+    # Only a refusal carries the provider's wording; a 5xx body is not worth logging.
+    detail = provider_detail(body, key, sent) if 400 <= status < 500 else None
     if status == 413:  # classify() reads 413 as an oversized audio upload; for chat it is the prompt
-        return ProviderError("provider_context_exceeded", reason=reason)
+        return ProviderError("provider_context_exceeded", reason=reason, detail=detail)
     if status == 400 and hint is not None and any(marker in hint for marker in _QUOTA_HINTS):
-        return ProviderError("provider_quota", reason=reason)
-    return ProviderError(base.code, retry_after_s=base.retry_after_s, reason=reason)
+        return ProviderError("provider_quota", reason=reason, detail=detail)
+    if base.code == "provider_bad_request" and model_unavailable(status, hint, body):
+        return ProviderError("provider_model_unavailable", reason=reason, detail=detail)
+    return ProviderError(base.code, retry_after_s=base.retry_after_s, reason=reason, detail=detail)
 
 
 def error_from_stream_error(error: Any, key: str | None) -> ProviderError:
@@ -263,7 +375,7 @@ async def stream_events(
                 deadline=deadline,
                 phase="idle",
             )
-            raise error_from_http(response.status, error_body, response.retry_after, key)
+            raise error_from_http(response.status, error_body, response.retry_after, key, sent_text(payload))
         if response.content_type != "text/event-stream":
             raise bad_response()
         parser = SseParser()

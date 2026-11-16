@@ -53,6 +53,7 @@ from app.engines.schemas import (
 from app.engines.urls import BaseUrlError, is_loopback_name, origin_of, validate_base_url
 from app.infra.http_errors import CONFLICT, NOT_FOUND, api_error
 from app.infra.models import EnginePrivacyConsent, EngineProcessSetting, EngineProvider
+from app.summaries.engine import probe_schema
 
 logger = logging.getLogger(__name__)
 
@@ -425,6 +426,19 @@ async def test_provider(
     if data.capability is not None and matrix.get_support(row.kind, data.capability) is None:
         raise api_error(UNPROCESSABLE, "unsupported_provider")
     payload = _host_payload(row, data.capability)
+    if data.capability == "summary":
+        # Test what a real summary will meet: the model chosen for the process (when it is this provider's)
+        # with the real summary schema, so an incompatible model shows up before a meeting.
+        chosen = await session.scalar(
+            select(EngineProcessSetting.model).where(
+                EngineProcessSetting.owner_id == owner_id,
+                EngineProcessSetting.capability == "summary",
+                EngineProcessSetting.provider_id == row.id,
+            )
+        )
+        if chosen:
+            payload["model"] = chosen
+        payload["response_schema"] = probe_schema()
     await session.commit()
     try:
         raw = await host.probe(payload)
@@ -435,11 +449,15 @@ async def test_provider(
     ok = raw.get("ok") is True
     latency = raw.get("latency_ms")
     schema_ok = raw.get("json_schema_ok")
+    schema_model = raw.get("schema_model")
+    schema_class = raw.get("schema_error_class")
     return ProbeOut(
         ok=ok,
         latency_ms=latency if isinstance(latency, int) and not isinstance(latency, bool) and latency >= 0 else None,
         error_class=None if ok else _error_class(raw.get("error_class"), "provider_unavailable"),
         json_schema_ok=schema_ok if isinstance(schema_ok, bool) else None,
+        schema_error_class=schema_class if ok and schema_class in ERROR_CLASSES else None,
+        schema_model=schema_model if isinstance(schema_model, str) and 0 < len(schema_model) <= 200 else None,
     )
 
 

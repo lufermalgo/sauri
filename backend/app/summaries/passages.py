@@ -128,10 +128,42 @@ def build_passages(turns: Sequence[Turn], window_ms: int = 60_000) -> list[Passa
     ]
 
 
+def _max_items(model: type[BaseModel], field: str) -> int:
+    """The ``max_length`` the model declares for a list field, so the limits live in one place."""
+    for constraint in model.model_fields[field].metadata:
+        limit = getattr(constraint, "max_length", None)
+        if isinstance(limit, int):
+            return limit
+    raise LookupError(f"{model.__name__}.{field} has no max_length")  # pragma: no cover - guarded by a test
+
+
+MAX_KEY_POINTS = _max_items(CanonicalSummary, "key_points")
+MAX_ITEMS = _max_items(KeyPointBlock, "items")
+MAX_SOURCES = _max_items(KeyPointBlock, "sources")
+MAX_SUB_ITEMS = _max_items(SummaryItem, "sub_items")
+
+
+def _clamp_items(items: Any) -> Any:
+    """Cut ``items`` and each item's ``sub_items`` to the schema's caps; anything malformed is left to validation."""
+    if not isinstance(items, list):
+        return items
+    clamped = []
+    for item in items[:MAX_ITEMS]:
+        if isinstance(item, dict) and isinstance(item.get("sub_items"), list):
+            item = {**item, "sub_items": item["sub_items"][:MAX_SUB_ITEMS]}
+        clamped.append(item)
+    return clamped
+
+
 def validate_citations(
     summary: CanonicalSummary | dict[str, Any], passages: Sequence[Passage],
 ) -> CanonicalSummary:
-    """Drop invented IDs and unsourced points; derive times from trusted source data."""
+    """Drop invented IDs and unsourced points; derive times from trusted source data.
+
+    Lists longer than the schema allows are cut to its caps first: a provider whose structured output cannot
+    enforce ``maxItems`` (Gemini) may answer a little long, and that should not discard an otherwise valid summary.
+    Everything else (types, lengths, required fields) is still validated strictly.
+    """
     by_id = {passage.passage_id: passage for passage in passages}
     data = summary.model_dump() if isinstance(summary, CanonicalSummary) else summary
     points = []
@@ -149,7 +181,7 @@ def validate_citations(
                     ))
                     seen.add(passage.passage_id)
             if sources:
-                points.append({**point, "sources": sources[:4]})
-        return CanonicalSummary.model_validate({**data, "key_points": points[:12]})
+                points.append({**point, "sources": sources[:MAX_SOURCES], "items": _clamp_items(point.get("items"))})
+        return CanonicalSummary.model_validate({**data, "key_points": points[:MAX_KEY_POINTS]})
     except (ValidationError, KeyError, TypeError, AttributeError):
         raise SummaryInvalidError("summary_invalid") from None

@@ -26,6 +26,7 @@ from sauri_engine_common.external.chat_common import (
 )
 from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.external.safe_http import SafeHttp
+from sauri_engine_common.external.schema import adapt_schema_for, is_gemini
 from sauri_engine_common.route import Route, RouteTimeouts
 from sauri_engine_common.secrets import SecretRecord
 
@@ -47,12 +48,30 @@ def is_openrouter(route: Route) -> bool:
     return route.kind == "openrouter" or host == "openrouter.ai" or host.endswith(".openrouter.ai")
 
 
+def _adapt_response_format(payload: dict[str, Any], route: Route) -> None:
+    """Send Gemini the strict schema without the keywords its structured output refuses (see ``schema.py``).
+
+    Every other provider gets the caller's ``response_format`` untouched. The caller keeps the original schema
+    and checks the answer against it, so a dropped constraint is still enforced locally.
+    """
+    if not is_gemini(route.kind, route.base_url):
+        return
+    response_format = payload.get("response_format")
+    spec = response_format.get("json_schema") if isinstance(response_format, dict) else None
+    schema = spec.get("schema") if isinstance(spec, dict) else None
+    if not isinstance(response_format, dict) or not isinstance(spec, dict) or not isinstance(schema, dict):
+        return
+    adapted = adapt_schema_for("openai-chat", schema, kind=route.kind, base_url=route.base_url)
+    payload["response_format"] = {**response_format, "json_schema": {**spec, "schema": adapted.schema}}
+
+
 def build_payload(request: dict[str, Any], route: Route) -> dict[str, Any]:
     messages = request.get("messages")
     if not isinstance(messages, list) or not messages:
         raise ProviderError("provider_bad_request", reason="messages_missing")
     payload: dict[str, Any] = {name: request[name] for name in _FORWARDED if name in request}
     payload["model"] = route.model
+    _adapt_response_format(payload, route)
     payload["stream"] = True
     payload["stream_options"] = {"include_usage": True}
     if is_openrouter(route):

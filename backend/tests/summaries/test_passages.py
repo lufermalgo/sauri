@@ -128,3 +128,60 @@ def test_stored_v2_roundtrips_and_v1_lists_still_decode() -> None:
     for unknown in ('{"schema_version": 3, "key_points": []}', '"text"', "{}"):
         with pytest.raises(ValueError):
             decode_key_points(unknown)
+
+
+def _schema_caps() -> dict[str, int]:
+    from app.summaries.engine import _request_schema
+
+    block = _request_schema(["P0000"])["properties"]["key_points"]
+    props = block["items"]["properties"]
+    return {
+        "key_points": _request_schema(["P0000"])["properties"]["key_points"]["maxItems"],
+        "items": props["items"]["maxItems"],
+        "sources": props["sources"]["maxItems"],
+        "sub_items": props["items"]["items"]["properties"]["sub_items"]["maxItems"],
+    }
+
+
+def test_the_clamp_limits_are_the_schema_caps_not_a_second_copy() -> None:
+    from app.summaries import passages
+
+    caps = _schema_caps()
+    used = {
+        "key_points": passages.MAX_KEY_POINTS, "items": passages.MAX_ITEMS,
+        "sources": passages.MAX_SOURCES, "sub_items": passages.MAX_SUB_ITEMS,
+    }
+    assert used == caps
+
+
+def test_a_provider_that_ignores_max_items_is_clamped_instead_of_discarded() -> None:
+    caps = _schema_caps()
+    passages = build_passages([Turn("Synthetic", 0, 1000)])
+    long_block = {
+        "title": "long",
+        "items": [
+            {"text": f"item {i}", "sub_items": [f"sub {j}" for j in range(caps["sub_items"] + 5)]}
+            for i in range(caps["items"] + 4)
+        ],
+        "sources": [{"passage_id": "P0000"}],
+    }
+    result = validate_citations(_summary([long_block]), passages)
+    items = result.key_points[0].items
+    assert [item.text for item in items] == [f"item {i}" for i in range(caps["items"])]  # the first ones, in order
+    assert all(item.sub_items == [f"sub {j}" for j in range(caps["sub_items"])] for item in items)
+
+
+def test_clamping_leaves_every_other_rule_strict() -> None:
+    passages = build_passages([Turn("synthetic", 0, 1000)])
+    block = _block("t", [{"passage_id": "P0000"}])
+    too_long = {**block, "items": [{"text": "x" * 801, "sub_items": []}] * 20}
+    with pytest.raises(SummaryInvalidError, match="summary_invalid"):
+        validate_citations(_summary([too_long]), passages)
+    not_a_list = {**block, "items": "nope"}
+    with pytest.raises(SummaryInvalidError, match="summary_invalid"):
+        validate_citations(_summary([not_a_list]), passages)
+    bad_sub = {**block, "items": [{"text": "ok", "sub_items": [1] + ["x"] * 20}]}
+    with pytest.raises(SummaryInvalidError, match="summary_invalid"):
+        validate_citations(_summary([bad_sub]), passages)
+    with pytest.raises(SummaryInvalidError, match="summary_invalid"):  # an empty list is still below the minimum
+        validate_citations(_summary([{**block, "items": []}]), passages)

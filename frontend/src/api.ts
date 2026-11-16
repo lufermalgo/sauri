@@ -833,8 +833,9 @@ export function disconnectEngineAccount(providerId: string): Promise<EngineAccou
   return enginesRequest(`${providerPath(providerId)}/account`, "DELETE");
 }
 
-export function testEngineProvider(providerId: string): Promise<EngineProbeResult> {
-  return enginesRequest(`${providerPath(providerId)}/test`, "POST");
+/** `capability: "summary"` also checks the model chosen for summaries with the real summary schema. */
+export function testEngineProvider(providerId: string, capability?: EngineProcess): Promise<EngineProbeResult> {
+  return enginesRequest(`${providerPath(providerId)}/test`, "POST", capability ? { capability } : undefined);
 }
 
 // --- Engines: the engine and model chosen for each process, privacy notices and local models ---

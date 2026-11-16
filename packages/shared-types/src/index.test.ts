@@ -90,7 +90,7 @@ import type {
   // A provider as returned by the API never has a field that could hold the key value.
   type NoKeyValue = Assert<Equal<Extract<keyof EngineProvider, "key" | "api_key" | "secret" | "secret_ref">, never>>;
   type NoKeyValueInState = Assert<Equal<Extract<keyof EngineKeyState, "key" | "api_key" | "secret">, never>>;
-  type ProbeShape = Assert<Equal<keyof EngineProbeResult, "ok" | "latency_ms" | "error_class" | "json_schema_ok">>;
+  type ProbeShape = Assert<Equal<keyof EngineProbeResult, "ok" | "latency_ms" | "error_class" | "json_schema_ok" | "schema_error_class" | "schema_model">>;
   const choice: EngineProcessChoice = { provider_id: null, model: LOCAL_DEFAULT_MODEL, local_fallback: true };
   const create: EngineProviderCreate = { kind: "openai", label: "Work account" };
   // @ts-expect-error unknown kinds are rejected
