@@ -7,8 +7,8 @@ import { DetailApp } from "./DetailApp";
 function mockChrome() {
   (globalThis as unknown as { chrome: unknown }).chrome = {
     storage: {
-      sync: {
-        get: vi.fn(async () => ({ authToken: "token-x" })),
+      session: {
+        get: vi.fn(async () => ({ sauriSessionToken: "token-x" })),
         set: vi.fn(async () => {}),
         remove: vi.fn(async () => {}),
       },

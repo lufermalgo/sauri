@@ -36,8 +36,7 @@ function profile() {
       alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
       tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 80 })), sendMessage: vi.fn() },
       storage: {
-        session: { get: vi.fn(async () => ({ sauriState: { status: "idle", paused: false } })), set: vi.fn(async () => undefined) },
-        sync: { get: vi.fn(async () => ({})) },
+        session: { get: vi.fn(async () => ({ sauriState: { status: "idle", paused: false }, sauriSessionToken: "synthetic-token" })), set: vi.fn(async () => undefined) },
       },
     });
     const db = await import("./recording-db");
@@ -46,7 +45,7 @@ function profile() {
     return { db, queue };
   }
 
-  const sentDurations = () => fetchMock.mock.calls.map(([, init]) => JSON.parse(((init.body as unknown as { get(n: string): string }).get("data"))).duration_seconds);
+  const sentDurations = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/ingestion/upload")).map(([, init]) => JSON.parse(((init.body as unknown as { get(n: string): string }).get("data"))).duration_seconds);
   return {
     boot, fetchMock, sentDurations,
     message: (message: Message) => new Promise(resolve => listener(message, {}, resolve)),

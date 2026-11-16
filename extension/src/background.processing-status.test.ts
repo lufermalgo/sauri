@@ -72,8 +72,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
     },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
-      session: { get: vi.fn(async () => ({ sauriState: state })), set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = value.sauriState; }) },
-      sync: { get: vi.fn(async () => ({ authToken: "synthetic-token" })) },
+      session: { get: vi.fn(async () => ({ sauriState: state, sauriSessionToken: "synthetic-token" })), set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = value.sauriState; }) },
     },
     tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined), create: createTab },
   });

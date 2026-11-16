@@ -1,10 +1,10 @@
 // Shared API client (Side Panel + Detail View) — Req. 13.1, 13.3,
 // 13.4, 13.5, 14.1, 14.4, 14.5
 import type { NoteDTO, TranscriptDTO, DiarizationDTO } from "../types";
+import { clearSessionToken, readSessionToken, storeSessionToken } from "../session-token";
 
 export const DEFAULT_BACKEND_URL = "http://localhost:8000";
 const TIMEOUT_MS = 10_000;
-const SESSION_KEY = "authToken";
 
 export class InvalidSessionError extends Error {
   constructor() {
@@ -28,8 +28,8 @@ export class NotFoundError extends Error {
   }
 }
 
-/** Requires https:// except on http://localhost (development) — Req. 13.5 */
-function validateTransport(backendUrl: string): void {
+/** Requires https:// except on http://localhost or 127.0.0.1 (development) — Req. 13.5 */
+export function validateTransport(backendUrl: string): void {
   const url = new URL(backendUrl);
   const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
   if (url.protocol === "https:") return;
@@ -37,24 +37,13 @@ function validateTransport(backendUrl: string): void {
   throw new InsecureTransportError(backendUrl);
 }
 
-async function readSession(): Promise<string | undefined> {
-  const result = await chrome.storage.sync.get(SESSION_KEY);
-  return result[SESSION_KEY] as string | undefined;
-}
-
-async function discardSession(): Promise<void> {
-  await chrome.storage.sync.remove(SESSION_KEY);
-}
-
-/** Stores the user session in chrome.storage (Req. 13.3) */
-export async function storeSession(token: string): Promise<void> {
-  await chrome.storage.sync.set({ [SESSION_KEY]: token });
-}
+/** Stores the user session in chrome.storage.session, never in synced storage (Req. 13.3) */
+export const storeSession = storeSessionToken;
 
 async function request<T>(backendUrl: string, path: string, init?: RequestInit): Promise<T> {
   validateTransport(backendUrl);
 
-  const session = await readSession();
+  const session = await readSessionToken();
   const headers: Record<string, string> = {
     ...(init?.headers as Record<string, string> | undefined),
   };
@@ -73,7 +62,7 @@ async function request<T>(backendUrl: string, path: string, init?: RequestInit):
     });
 
     if (response.status === 401) {
-      await discardSession();
+      await clearSessionToken();
       throw new InvalidSessionError();
     }
 
@@ -197,7 +186,7 @@ export async function deleteMeeting(
 ): Promise<void> {
   validateTransport(backendUrl);
 
-  const session = await readSession();
+  const session = await readSessionToken();
   const headers: Record<string, string> = {};
   if (session) {
     headers["Authorization"] = `Bearer ${session}`;
@@ -216,7 +205,7 @@ export async function deleteMeeting(
     });
 
     if (response.status === 401) {
-      await discardSession();
+      await clearSessionToken();
       throw new InvalidSessionError();
     }
     if (response.status === 404) {

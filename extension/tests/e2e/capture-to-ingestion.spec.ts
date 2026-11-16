@@ -117,7 +117,7 @@ for (const [provider, outcome] of [["meet", "ready"], ["teams", "ready"],
       const token = await login();
       const other = await login("other@synthetic.invalid");
       const { worker, panel } = await extensionSession(context);
-      await panel.evaluate(token => chrome.storage.sync.set({ authToken: token }),
+      await panel.evaluate(token => chrome.storage.session.set({ sauriSessionToken: token }),
         outcome === "upload_failed" ? "invalid-synthetic-token" : token);
       // A synthetic provider page supplies only a captured tab handle. No Teams capture pipeline.
       const providerPage = await context.newPage();

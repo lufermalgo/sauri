@@ -35,6 +35,12 @@ To load the extension, build it and open `chrome://extensions/` with developer m
 cd extension && npm run build   # then load extension/dist/ as an unpacked extension
 ```
 
+Extension security notes:
+
+- The sign-in token is kept in `chrome.storage.session` (memory only, never synced to the user's Google account, unreadable by content scripts and web pages). Signing in is required again after every browser restart; recordings waiting to upload stay queued and resume after signing in.
+- The extension talks to the backend only over `https://`, or over `http://localhost` / `http://127.0.0.1` for local development.
+- The built manifest exposes web-accessible resources only to `https://meet.google.com/*` (the Meet content script chunks that CRXJS requires); `build/minimal-war.ts` removes the entries it would otherwise add for every website and fails the build if one reappears.
+
 ## Repository layout
 
 ```text

@@ -86,10 +86,9 @@ async function setup() {
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
       session: {
-        get: vi.fn(async () => ({ sauriState: { ...state } })),
+        get: vi.fn(async () => ({ sauriState: { ...state }, sauriSessionToken: "synthetic-token" })),
         set: vi.fn(async (value: { sauriState: typeof state }) => { state = { ...value.sauriState }; }),
       },
-      sync: { get: vi.fn(async () => ({})) },
     },
     tabs: {
       onRemoved: { addListener: (listener: RemovedListener) => { onRemoved = listener; } },
