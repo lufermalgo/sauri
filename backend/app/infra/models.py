@@ -646,6 +646,24 @@ class User(Base):
         String(36), ForeignKey("summary_templates.id", ondelete="SET NULL", use_alter=True,
                                name="fk_users_default_summary_template_id_summary_templates"), nullable=True
     )
+    # Embedded in every JWT as `tv`; incrementing it (logout, password reset) revokes all the user's sessions.
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class LoginAttempt(Base):
+    """Failed-login counter used for rate limiting; keys are SHA-256 digests, never raw emails or IPs.
+
+    One row per (scope, key_hash): scope `ip_email` keys on client IP + normalized email, scope `email`
+    on the normalized email alone.
+    """
+
+    __tablename__ = "login_attempts"
+
+    scope: Mapped[str] = mapped_column(String(16), primary_key=True)
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_failure_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ---------------------------------------------------------------------------

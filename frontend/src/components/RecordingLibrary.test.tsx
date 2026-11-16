@@ -359,7 +359,19 @@ describe("RecordingLibrary row content", () => {
       expect(item.querySelector(".library-item-topic")).toBeNull();
     }
     expect(screen.queryByRole("button", { name: text.retry })).toBeNull();
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    // The cause of a failure is not lost: it is the row's tooltip (the chip itself says "Con error").
+    const tooltips = Array.from(container.querySelectorAll(".library-row-tip")).map((tip) => tip.textContent);
+    expect(tooltips).toEqual([text.failedCause, text.noSpeechCause]);
+    expect(screen.getAllByText(text.states.failed)).toHaveLength(2);
+  });
+
+  it("puts the failure cause before the summary in the tooltip of a failed row", async () => {
+    const { container } = await openWith([
+      meeting({ processState: ProcessState.Failed, summaryTopic: "Partial notes" }),
+    ]);
+    expect(container.querySelector(".library-row-tip")?.textContent).toBe(`${text.failedCause} Partial notes`);
+    const row = container.querySelector(".library-item") as HTMLElement;
+    expect(row.getAttribute("aria-describedby")).toBe(container.querySelector(".library-row-tip")?.id);
   });
 
   it("does not use a fallback line for a queued recording", async () => {

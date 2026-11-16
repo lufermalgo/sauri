@@ -90,7 +90,7 @@ async def test_get_meeting_denials_are_audited(
     response = await api_client.get(f"{BASE_PATH}/{meeting_id}", headers=_headers(user_id, is_sales))
     assert response.status_code == status_code
     expected_detail = (
-        "Meeting not found" if status_code == 404 else "Access restricted to authorized sales users"
+        "not_found" if status_code == 404 else "forbidden"
     )
     assert response.json()["detail"] == expected_detail
     assert "Private synthetic title" not in response.text
@@ -125,7 +125,7 @@ async def test_request_join_owner_keeps_success_and_nonqueued_conflict(
     completed_id = await _create_meeting(api_db_url, state="completed")
     conflict = await api_client.post(f"{BASE_PATH}/{completed_id}/request-join", headers=_headers(OWNER_ID))
     assert conflict.status_code == 409
-    assert conflict.json()["detail"] == "Cannot request join: the meeting is in state 'completed'"
+    assert conflict.json()["detail"] == "conflict"
 
 
 @pytest.mark.asyncio
@@ -168,7 +168,7 @@ async def test_request_join_with_unknown_meeting_id_is_non_disclosing_404(
     response = await api_client.post(f"{BASE_PATH}/{unknown_id}/request-join", headers=_headers(OWNER_ID))
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Meeting not found"
+    assert response.json()["detail"] == "not_found"
     assert unknown_id not in response.text
     queue.publish.assert_not_awaited()
     queue.connect.assert_not_awaited()

@@ -8,9 +8,11 @@ import { DEFAULT_RECORDING_SETTINGS, parseRecordingSettings } from "./recordingS
 import type { RecordingSettings } from "../core/types";
 
 let settings: RecordingSettings;
+let sessionStore: Record<string, unknown>;
 let listeners: Array<(changes: Record<string, chrome.storage.StorageChange>, area: string) => void>;
 
 beforeEach(() => {
+  sessionStore = { sauriSessionToken: "synthetic" };
   settings = { ...DEFAULT_RECORDING_SETTINGS };
   listeners = [];
   vi.stubGlobal("indexedDB", new IDBFactory());
@@ -24,8 +26,11 @@ beforeEach(() => {
     runtime: { openOptionsPage: vi.fn(async () => {}), sendMessage: vi.fn(async () => ({ ok: true })) },
     storage: {
       local: { get: vi.fn(async () => ({ recordingSettings: settings })), set: vi.fn(async (value: { recordingSettings: RecordingSettings }) => { settings = value.recordingSettings; }) },
-      sync: { get: vi.fn(async () => ({ authToken: "synthetic" })), remove: vi.fn(async () => {}), set: vi.fn(async () => {}) },
-      session: { get: vi.fn(async () => ({ sauriState: { status: "idle" } })) },
+      session: {
+        get: vi.fn(async () => ({ sauriState: { status: "idle" }, ...sessionStore })),
+        set: vi.fn(async (value: Record<string, unknown>) => { Object.assign(sessionStore, value); }),
+        remove: vi.fn(async (key: string) => { delete sessionStore[key]; }),
+      },
       onChanged: { addListener: vi.fn(listener => listeners.push(listener)), removeListener: vi.fn() },
     },
     tabs: { query: vi.fn(async () => [{ url: "https://meet.google.com/test" }]), create: vi.fn(async () => ({})), onActivated: { addListener: vi.fn(), removeListener: vi.fn() }, onUpdated: { addListener: vi.fn(), removeListener: vi.fn() } },
@@ -51,7 +56,8 @@ describe("Terra recording journey", () => {
     expect(screen.getByText(copy.sessionExpired)).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent(copy.sessionAlert);
     expect(screen.queryByText(copy.listError)).not.toBeInTheDocument();
-    expect(chrome.storage.sync.remove).toHaveBeenCalledWith("authToken");
+    expect(chrome.storage.session.remove).toHaveBeenCalledWith("sauriSessionToken");
+    expect(sessionStore.sauriSessionToken).toBeUndefined();
     fireEvent.change(screen.getByLabelText(copy.email), { target: { value: "test@example.com" } });
     fireEvent.change(screen.getByLabelText(copy.password), { target: { value: "test" } });
     vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "synthetic-new", expires_in: 3600 }), { status: 200 })).mockResolvedValue(new Response("[]", { status: 200 }));
@@ -149,7 +155,7 @@ describe("Terra recording journey", () => {
     expect(screen.getByLabelText(copy.countdown)).toHaveValue("3");
   });
   it("does not invent elapsed time when reopening an active recording", async () => {
-    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "recording", sessionId: "already-active" } }));
+    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "recording", sessionId: "already-active" }, ...sessionStore }));
     render(<SidePanelApp />);
     await screen.findByRole("button", { name: copy.stop });
     expect(screen.getByText("--:--")).toBeInTheDocument();

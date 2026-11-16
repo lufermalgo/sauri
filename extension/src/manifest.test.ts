@@ -47,3 +47,18 @@ describe("manifest.json — recording any browser tab with least privilege", () 
     expect(manifest.permissions).toEqual(expect.arrayContaining(["scripting", "activeTab", "tabs"]));
   });
 });
+
+describe("manifest.json — minimal exposure to web pages", () => {
+  it("declares no new permissions (only the ones the recorder already needs)", () => {
+    expect([...manifest.permissions].sort()).toEqual(
+      ["activeTab", "alarms", "notifications", "offscreen", "scripting", "sidePanel", "storage", "tabCapture", "tabs"],
+    );
+  });
+
+  it("declares no web_accessible_resources: extension pages are opened by the extension itself", () => {
+    // The detail page is never fetched by a website, and the overlay is injected with
+    // chrome.scripting.executeScript({ files }), which needs no web-accessible entry. CRXJS adds
+    // the Meet content script chunks it needs at build time (see build/minimal-war.ts).
+    expect(manifest.web_accessible_resources).toBeUndefined();
+  });
+});

@@ -19,7 +19,7 @@ Las variables privadas deben estar configuradas mediante un archivo privado de e
 
 - `QUEUE_MESSAGE_SIGNING_KEY`: firma de trabajos, mínimo 32 bytes.
 - `SPEAKER_EXCERPT_ACTIVE_KEY_ID` y `SPEAKER_EXCERPT_KEYRING`: identificador y llavero versionado AES-256. Formato del llavero: pares `id:base64`, separados por comas; **no JSON**.
-- `JWT_SECRET_FILE`: ruta del archivo con el secreto que firma las sesiones. En el entorno personal `make up` lo genera al azar (ver "Puertos y credenciales locales"); ya no existe un valor predeterminado.
+- `JWT_SECRET_FILE`: ruta del archivo con el secreto que firma las sesiones. En el entorno personal `make up` lo genera al azar (ver "Puertos y credenciales locales"); ya no existe un valor predeterminado. Debe tener al menos 32 bytes: sin él (o si es más corto) la API se niega a arrancar. Cambiarlo cierra todas las sesiones.
 - `AUTH_DISABLED=false` en validación. El bypass heredado solo opera con `APP_ENV=test`; no se habilita en este procedimiento.
 - `OBJECT_STORE_PUBLIC_ENDPOINT`: dirección S3 accesible desde el navegador, por defecto `http://localhost:9000`.
 

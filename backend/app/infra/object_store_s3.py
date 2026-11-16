@@ -6,7 +6,7 @@ import asyncio
 import functools
 import time
 from contextlib import suppress
-from typing import Any
+from typing import Any, BinaryIO
 
 import boto3
 from botocore.config import Config
@@ -57,6 +57,25 @@ class S3ObjectStore(ObjectStore):
         content_type: str = "application/octet-stream",
     ) -> str:
         """Uploads an object to the bucket and returns the key as reference."""
+        await asyncio.to_thread(
+            functools.partial(
+                self._client.put_object,
+                Bucket=self._bucket,
+                Key=key,
+                Body=content,
+                ContentType=content_type,
+            )
+        )
+        return key
+
+    async def save_stream(
+        self,
+        key: str,
+        content: BinaryIO,
+        content_type: str = "application/octet-stream",
+    ) -> str:
+        """Uploads a spooled file in one PUT, reading it in chunks instead of loading it."""
+        content.seek(0)
         await asyncio.to_thread(
             functools.partial(
                 self._client.put_object,

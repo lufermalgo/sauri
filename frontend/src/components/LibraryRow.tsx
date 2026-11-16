@@ -4,7 +4,7 @@ import { AudioLines, Download, Ellipsis, Pencil, Trash2, Video } from "lucide-re
 import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { copy } from "../copy/es";
-import { estimateProgress, secondsSince } from "../processing-estimate";
+import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
 import { Icon, Menu, MenuItem, ProgressBar, StatusBadge, useTooltip } from "./ui";
 
 const text = copy.library;
@@ -194,6 +194,10 @@ export function LibraryRow({
   const tone = STATE_TONES[meeting.processState];
   const title = meeting.title.trim() || text.untitled;
   const topic = meeting.summaryTopic?.trim() || undefined;
+  // A failed row keeps its cause out of the row's lines but not out of reach: it leads the tooltip.
+  const cause = meeting.processState !== ProcessState.Failed ? undefined
+    : meeting.failureCause === NO_SPEECH_CAUSE ? text.noSpeechCause : text.failedCause;
+  const tooltipText = [cause, topic].filter(Boolean).join(" ") || undefined;
   // The API may omit these fields for older recordings.
   const duration = typeof meeting.durationSeconds === "number" ? meeting.durationSeconds : null;
   const speakers = typeof meeting.speakerCount === "number" && meeting.speakerCount > 0
@@ -206,7 +210,7 @@ export function LibraryRow({
   const [placement, setPlacement] = useState<CSSProperties>();
   // The row's scroll pane would clip a tooltip drawn inside it, so it is fixed to the window,
   // below the row or above it when there is no room.
-  const tip = useTooltip(topic, {
+  const tip = useTooltip(tooltipText, {
     delayMs: SUMMARY_TOOLTIP_DELAY_MS,
     className: "ui-tooltip--wrap library-row-tip",
     style: placement,

@@ -16,6 +16,8 @@ export const library = {
     earlier: "ANTERIORES",
   },
   speakers: (count: number) => (count === 1 ? "1 hablante" : `${count} hablantes`),
+  failedCause: "No se pudo procesar la grabación.",
+  noSpeechCause: "No se detectó voz en la grabación.",
   row: {
     actions: (title: string) => `Acciones de «${title}»`,
     select: (title: string) => `Seleccionar «${title}»`,

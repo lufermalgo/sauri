@@ -2,9 +2,10 @@ import { defineConfig } from "vite";
 import { crx } from "@crxjs/vite-plugin";
 import { resolve } from "path";
 import manifest from "./manifest.json";
+import { minimalWebAccessibleResources } from "./build/minimal-war";
 
 export default defineConfig({
-  plugins: [crx({ manifest })],
+  plugins: [crx({ manifest }), minimalWebAccessibleResources()],
   build: {
     outDir: "dist",
     rollupOptions: {

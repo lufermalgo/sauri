@@ -228,6 +228,27 @@ export async function markDone(jobId: string): Promise<void> {
 }
 
 /**
+ * Returns a claimed job to 'pending' without counting an attempt. Used when the
+ * upload could not even start (no valid session): that is not a failure of the job.
+ */
+export async function releaseProcessing(jobId: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const getRequest = store.get(jobId);
+    getRequest.onsuccess = () => {
+      const job = getRequest.result as UploadJob | undefined;
+      if (job?.status !== "processing") return;
+      job.status = "pending";
+      store.put(job);
+    };
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onabort = tx.onerror = () => { db.close(); reject(tx.error ?? new Error("Upload release failed")); };
+  });
+}
+
+/**
  * Increments retryCount; if retryCount >= maxRetries sets status='failed',
  * else sets status='pending' (for retry on next cycle).
  */
