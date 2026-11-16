@@ -7,7 +7,7 @@ import { BrandMark } from "./ui";
 export function LoginBrand() {
   return (
     <div className="login-brand">
-      <BrandMark size={48} />
+      <BrandMark size={40} />
     </div>
   );
 }

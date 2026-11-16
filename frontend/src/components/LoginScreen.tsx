@@ -51,6 +51,7 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
         <form className="login-form" onSubmit={handleSubmit} aria-busy={pending}>
           <TextField
             label={text.emailLabel}
+            placeholder={text.emailLabel}
             type="email"
             autoComplete="username"
             value={email}
@@ -61,6 +62,7 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
           />
           <TextField
             label={text.passwordLabel}
+            placeholder={text.passwordLabel}
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
             value={password}
@@ -74,7 +76,7 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
                 aria-label={showPassword ? text.hidePassword : text.showPassword}
                 onClick={() => setShowPassword((visible) => !visible)}
               >
-                <Icon icon={showPassword ? EyeOff : Eye} size={16} />
+                <Icon icon={showPassword ? EyeOff : Eye} size={20} />
               </button>
             }
           />
