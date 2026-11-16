@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent, ReactNode } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import type { EngineProviderKind } from "@sauri/shared-types";
@@ -19,6 +19,8 @@ export interface PickerOption {
   detail?: string;
   inUse?: boolean;
   suggested?: boolean;
+  /** Short word shown in the option, for example «Activo». */
+  tag?: string;
 }
 
 export interface PickerGroup {
@@ -54,6 +56,11 @@ interface ModelPickerProps {
   footer?: ReactNode | ((close: () => void) => ReactNode);
 }
 
+/** Lets the screen open the panel from elsewhere (the «Servicios externos» row of the local card). */
+export interface ModelPickerHandle {
+  open: () => void;
+}
+
 function matches(option: PickerOption, group: PickerGroup, needle: string): boolean {
   return `${option.label} ${option.detail ?? ""} ${group.label}`.toLowerCase().includes(needle);
 }
@@ -62,7 +69,10 @@ function matches(option: PickerOption, group: PickerGroup, needle: string): bool
  * provider, with the one in use marked in words. It never saves: it reports the choice and the screen decides
  * (an external provider asks for the privacy notice first). Escape closes the popover and returns focus to
  * the trigger; arrow keys move through the options. */
-export function ModelPicker({ label, describedBy, current, groups, disabled, onSelect, onOpenChange, footer }: ModelPickerProps) {
+export const ModelPicker = forwardRef<ModelPickerHandle, ModelPickerProps>(function ModelPicker(
+  { label, describedBy, current, groups, disabled, onSelect, onOpenChange, footer },
+  handle,
+) {
   const ids = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -80,6 +90,13 @@ export function ModelPicker({ label, describedBy, current, groups, disabled, onS
       if (restoreFocus) triggerRef.current?.focus();
     }
   }
+
+  useImperativeHandle(handle, () => ({
+    open: () => {
+      triggerRef.current?.scrollIntoView?.({ block: "nearest" });
+      setOpen(true);
+    },
+  }));
 
   useEffect(() => {
     openChange.current?.(open);
@@ -255,6 +272,7 @@ export function ModelPicker({ label, describedBy, current, groups, disabled, onS
                     <span className="engines-picker-option-name">{option.label}</span>
                     {option.detail && <span className="engines-picker-option-detail">{option.detail}</span>}
                     {option.suggested && <span className="engines-picker-mark">{text.suggested}</span>}
+                    {option.tag && <span className="engines-picker-mark">{option.tag}</span>}
                     {option.inUse && (
                       <span className="engines-picker-mark engines-picker-mark--use">
                         <Icon icon={Check} size={12} />
@@ -273,7 +291,7 @@ export function ModelPicker({ label, describedBy, current, groups, disabled, onS
       )}
     </div>
   );
-}
+});
 
 /** Text field for a provider that gave no list: the person types the model name exactly as the provider shows it. */
 function ManualModel({ onSubmit }: { onSubmit: (model: string) => void }) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import type {
   EngineKindInfo,
@@ -22,10 +22,10 @@ import {
 import { copy } from "../../copy/es";
 import { navigate } from "../../router";
 import { Button, Card, Icon, Skeleton, StatusBadge } from "../ui";
-import { formatBytes } from "./engineLabels";
+import { availabilityOf, formatBytes } from "./engineLabels";
 import { LocalModelCard } from "./LocalModelCard";
 import { ModelPicker } from "./ModelPicker";
-import type { PickerGroup, PickerOption } from "./ModelPicker";
+import type { ModelPickerHandle, PickerGroup, PickerOption } from "./ModelPicker";
 import { PrivacyNoticeDialog } from "./PrivacyNoticeDialog";
 import { describeEngineError } from "./ProviderDialog";
 import "../../styles/engines.css";
@@ -86,6 +86,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
   const [pending, setPending] = useState<PendingChoice | null>(null);
   const [catalogs, setCatalogs] = useState<Record<string, PickerCatalog>>({});
   const [refreshing, setRefreshing] = useState<Record<string, boolean>>({});
+  const pickerRef = useRef<ModelPickerHandle>(null);
 
   const fetchAll = useCallback(() => {
     let current = true;
@@ -147,7 +148,10 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
     (provider) => provider.enabled && provider.status === "active" && servesProcess(load.kinds, provider.kind, process),
   );
   const installed = localModels.filter(
-    (model) => model.process === process && model.kind === "model" && !model.default && model.state === "installed",
+    (model) => model.process === process && model.kind === "model" && !model.default && availabilityOf(model) === "installed",
+  );
+  const defaultModel = localModels.find(
+    (model) => model.process === process && model.kind === "model" && model.default && availabilityOf(model) === "installed",
   );
 
   function applyState(next: EngineProcessState) {
@@ -281,13 +285,18 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
   }
 
   const localOptions: PickerOption[] = [
-    { key: LOCAL_DEFAULT_MODEL, label: text.localRecommended, inUse: !savedExternal && saved.model === LOCAL_DEFAULT_MODEL },
-    ...installed.map((model) => ({
-      key: `${LOCAL_PREFIX}${model.id}`,
-      label: model.id,
-      detail: formatBytes(model.size ?? 0),
-      inUse: !savedExternal && saved.model === `${LOCAL_PREFIX}${model.id}`,
-    })),
+    {
+      key: LOCAL_DEFAULT_MODEL,
+      label: text.localRecommended,
+      detail: defaultModel?.size ? formatBytes(defaultModel.size) : undefined,
+      inUse: !savedExternal && saved.model === LOCAL_DEFAULT_MODEL,
+      tag: defaultModel?.active && saved.model !== LOCAL_DEFAULT_MODEL ? text.activeTag : undefined,
+    },
+    ...installed.map((model) => {
+      const key = `${LOCAL_PREFIX}${model.id}`;
+      const inUse = !savedExternal && saved.model === key;
+      return { key, label: model.id, detail: formatBytes(model.size ?? 0), inUse, tag: model.active && !inUse ? text.activeTag : undefined };
+    }),
   ];
   if (!savedExternal && !localOptions.some((option) => option.key === saved.model)) {
     localOptions.push({ key: saved.model, label: saved.model.slice(LOCAL_PREFIX.length), inUse: true });
@@ -338,6 +347,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
 
       <div className="engines-selector">
         <ModelPicker
+          ref={pickerRef}
           label={text.engineLabel}
           describedBy={pickerHelpId}
           current={current}
@@ -366,14 +376,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
         />
         <span id={pickerHelpId} className="settings-help">{text.engineHelp}</span>
 
-        {eligible.length === 0 && (
-          <div className="engines-no-providers">
-            <p className="settings-help">{text.noProviders}</p>
-            <Button variant="secondary" size="sm" onClick={() => navigate({ name: "settings", category: "engines" })}>
-              {text.goToEngines}
-            </Button>
-          </div>
-        )}
+        {eligible.length === 0 && <p className="settings-help">{text.noProviders}</p>}
 
         {savedExternal && (
           <>
@@ -407,7 +410,19 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
         {error && <p role="alert" className="ui-field-error settings-notice">{error}</p>}
       </div>
 
-      <LocalModelCard process={process} onModelsChange={setLocalModels} />
+      <LocalModelCard
+        process={process}
+        selection={{ external: savedExternal, key: saved.model }}
+        onModelsChange={setLocalModels}
+        onUse={(key) => void chooseLocal(key)}
+        choosing={busy}
+        external={{
+          current: savedExternal ? savedName : null,
+          hasProviders: eligible.length > 0,
+          onChoose: () => pickerRef.current?.open(),
+          onSetup: () => navigate({ name: "settings", category: "engines" }),
+        }}
+      />
 
       {pending && (
         <PrivacyNoticeDialog

@@ -466,6 +466,105 @@ describe("privacy notice before an external provider", () => {
   });
 });
 
+const SMALL_INSTALLED = localModel({
+  id: "whisper-small", process: "transcription", state: "installed", availability: "installed", active: false, in_use: false,
+  location: "models_dir", verified_by: "hash", install: null, installed_size: 190_000_000,
+});
+const TURBO_ACTIVE = localModel({
+  id: "whisper-turbo", process: "transcription", default: true, state: "installed", availability: "installed", active: true, in_use: true,
+  in_use_by: ["transcription"], location: "legacy", verified_by: "hash", install: null, size: 574_000_000, installed_size: 574_000_000,
+});
+
+describe("local options of the process", () => {
+  it("shows the local card of each process with only its own models", async () => {
+    const models = [
+      TURBO_ACTIVE,
+      SMALL_INSTALLED,
+      localModel({ id: "qwen-9b", process: "summary", engine: "llama.cpp", state: "installed", availability: "installed", active: true, in_use: true }),
+    ];
+    await renderReady("summary", { models });
+    const card = await screen.findByRole("heading", { name: copy.engines.local.title });
+    expect(card).toBeInTheDocument();
+    await screen.findByRole("listitem", { name: "qwen-9b" });
+    expect(screen.queryByRole("listitem", { name: "whisper-small" })).toBeNull();
+    expect(screen.getByRole("listitem", { name: "qwen-9b" })).toHaveTextContent(copy.engines.local.states.active);
+  });
+
+  it("saves a local model at once with «Usar este», without a privacy notice, and re-reads which one is active", async () => {
+    await renderReady("transcription", { models: [TURBO_ACTIVE, SMALL_INSTALLED] });
+    const small = await screen.findByRole("listitem", { name: "whisper-small" });
+    const readsBefore = backend.calls.filter((call) => call.path === "/local/models").length;
+    fireEvent.click(within(small).getByRole("button", { name: copy.engines.local.useLabel("whisper-small") }));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0].body).toMatchObject({ provider_id: null, model: "local:whisper-small" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(backend.calls.some((call) => call.path.endsWith("/notice"))).toBe(false);
+    expect(await screen.findByText(text.savedLocal)).toBeInTheDocument();
+    await waitFor(() => expect(backend.calls.filter((call) => call.path === "/local/models").length).toBeGreaterThan(readsBefore));
+  });
+
+  it("shows no model as active while an external provider serves the process, and offers the local ones", async () => {
+    await renderReady("transcription", {
+      models: [TURBO_ACTIVE],
+      processes: [external("transcription", "p1", "Work OpenAI", "openai", "gpt-a"), localState("diarization"), localState("summary")],
+      consents: ["transcription:p1"],
+    });
+    const turbo = await screen.findByRole("listitem", { name: "whisper-turbo" });
+    expect(within(turbo).queryByText(copy.engines.local.states.active)).toBeNull();
+    const group = screen.getByRole("region", { name: copy.engines.local.external.title });
+    expect(within(group).getByText(text.externalName("Work OpenAI", "gpt-a"))).toBeInTheDocument();
+    expect(within(group).getByText(copy.engines.local.states.active)).toBeInTheDocument();
+  });
+
+  it("opens the engine selector from «Elegir un proveedor externo…» and still asks for the notice before saving", async () => {
+    await renderReady("transcription", { models: [TURBO_ACTIVE] });
+    fireEvent.click(await screen.findByRole("button", { name: copy.engines.local.external.choose }));
+    expect(panel()).toBeInTheDocument();
+    expect(writes()).toHaveLength(0);
+    fireEvent.click(await screen.findByRole("option", { name: /gpt-a/ }));
+    expect(await screen.findByRole("dialog", { name: "Notice title" })).toBeInTheDocument();
+    expect(writes()).toHaveLength(0);
+  });
+
+  it("points to the provider setup when no provider can serve the process", async () => {
+    await renderReady("diarization", { providers: [], models: [] });
+    expect(await screen.findByRole("button", { name: copy.engines.local.external.setup })).toBeInTheDocument();
+    expect(screen.getByText(text.noProviders)).toBeInTheDocument();
+  });
+
+  it("shows size and the active tag of the local models in the selector", async () => {
+    await renderReady("transcription", {
+      models: [TURBO_ACTIVE, SMALL_INSTALLED, localModel({ ...SMALL_INSTALLED, id: "whisper-base", active: true })],
+    });
+    await screen.findByRole("listitem", { name: "whisper-small" });
+    openPicker();
+    const group = within(panel()).getAllByRole("group")[0];
+    const options = within(group).getAllByRole("option");
+    expect(options[0]).toHaveTextContent(text.localRecommended);
+    expect(options[0]).toHaveTextContent("574 MB");
+    expect(options[0]).toHaveTextContent(text.inUse);
+    const base = within(group).getByRole("option", { name: /whisper-base/ });
+    expect(base).toHaveTextContent("190 MB");
+    expect(base).toHaveTextContent(text.activeTag);
+    expect(within(group).getByRole("option", { name: /whisper-small/ })).not.toHaveTextContent(text.activeTag);
+  });
+
+  it("never renders a key or secret, only what the API returns for display", async () => {
+    const leaky = provider("p1", "Work OpenAI", "openai", { key_hint: "1234", ...({ key: "sk-LIVE-SECRET-9999", api_key: "sk-LIVE-SECRET-9999" } as object) });
+    await renderReady("transcription", {
+      providers: [leaky],
+      models: [TURBO_ACTIVE],
+      processes: [external("transcription"), localState("diarization"), localState("summary")],
+      consents: ["transcription:p1"],
+    });
+    await screen.findByRole("listitem", { name: "whisper-turbo" });
+    openPicker();
+    await screen.findByRole("option", { name: /gpt-a/ });
+    expect(document.body.textContent).not.toContain("SECRET");
+    expect(document.body.innerHTML).not.toContain("SECRET");
+  });
+});
+
 describe("fallback switch and warnings", () => {
   it("appears only for an external route and saves at once", async () => {
     await renderReady("transcription");

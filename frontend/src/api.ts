@@ -865,6 +865,11 @@ export function removeLocalModel(modelId: string): Promise<void> {
   return enginesRequest(localModelPath(modelId), "DELETE");
 }
 
+/** Starts a run that recognizes the models already on this computer (installed by hand or earlier). */
+export function adoptLocalModels(): Promise<LocalJob> {
+  return enginesRequest("/local/adopt", "POST");
+}
+
 export function getLocalJob(jobId: string): Promise<LocalJob> {
   return enginesRequest(`/local/jobs/${encodeURIComponent(jobId)}`);
 }
