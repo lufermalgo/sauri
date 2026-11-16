@@ -59,11 +59,4 @@ export const meeting = {
   mute: "Silenciar",
   unmute: "Activar sonido",
   quality: "Calidad de video",
-  unknownSpeaker: "Hablante N",
-  emptyPlaybackTranscript: "No hay transcripción disponible.",
-  passages: (count: number) => `Fragmentos de reproducción (${count})`,
-  currentPassage: (preview: string) => `Fragmento actual: ${preview}`,
-  transcriptPassages: "Fragmentos de la transcripción",
-  playPassage: "Reproducir fragmento",
-  playText: (text: string) => `Reproducir ${text}`,
 } as const;

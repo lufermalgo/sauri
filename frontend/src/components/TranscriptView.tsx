@@ -376,18 +376,6 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
     });
   }, [data, diarization, review]);
 
-  const playbackPassages = useMemo(() => {
-    if (!data) return [];
-    const source = data.presentation === "words" ? data.turns : data.segments;
-    return source.map((passage) => {
-      const turn = presentationTurns.find((candidate) => candidate.sourceIds.includes(passage.id));
-      return {
-        ...passage,
-        speakerLabel: turn?.speakerLabel ?? copy.transcript.legacyUnknownSpeaker,
-        speakerColor: turn?.color ?? UNRESOLVED_SPEAKER_COLOR,
-      };
-    });
-  }, [data, presentationTurns]);
   const playbackIntervals = useMemo(() => createPlaybackIntervals(data?.turns ?? [], presentationTurns),
     [data, presentationTurns]);
 
@@ -490,10 +478,8 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
         onPause={() => setPlayingSpeakerId(null)} onEnded={() => setPlayingSpeakerId(null)}>
         <MeetingPlaybackView
           keyPointTimes={keyPointTimes}
-          followPlayback={followPlayback}
           timelineTurns={timelineTurns}
           manifest={playbackManifest}
-          passages={playbackPassages}
           loading={playbackLoading}
           error={playbackError}
           onRefreshManifest={() => getPlaybackManifest(meetingId)}

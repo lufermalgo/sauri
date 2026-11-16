@@ -3,24 +3,17 @@ import { Button, Skeleton, SkeletonLines } from "./ui";
 import { meeting as text } from "../copy/meeting";
 import "../styles/meeting.css";
 import { SpeakerTimeline, type TimelineTurn } from "./SpeakerTimeline";
-import type { PlaybackManifest, TimedPassage } from "../api";
+import type { PlaybackManifest } from "../api";
 import {
   PlaybackController,
   type MediaSourceOption,
   type PlaybackState,
 } from "./PlaybackController";
 
-interface PlaybackTranscriptPassage extends TimedPassage {
-  speakerLabel?: string;
-  speakerColor?: string;
-}
-
 interface MeetingPlaybackViewProps {
   timelineTurns?: TimelineTurn[];
   keyPointTimes?: number[];
-  followPlayback?: boolean;
   manifest: PlaybackManifest | null;
-  passages: PlaybackTranscriptPassage[];
   loading: boolean;
   error: string | null;
   onRefreshManifest?: (currentTimeMs: number) => Promise<PlaybackManifest>;
@@ -36,15 +29,8 @@ const INITIAL_STATE: PlaybackState = {
   playbackRate: 1,
   volume: 1,
   muted: false,
-  activePassageId: null,
   selectedSourceId: null,
 };
-
-function isPlayablePassage(passage: TimedPassage): passage is TimedPassage & { startMs: number; endMs: number } {
-  return passage.startMs !== null && passage.endMs !== null &&
-    Number.isFinite(passage.startMs) && Number.isFinite(passage.endMs) &&
-    passage.startMs >= 0 && passage.endMs > passage.startMs;
-}
 
 function formatTime(milliseconds: number): string {
   const totalSeconds = Math.floor(milliseconds / 1000);
@@ -57,8 +43,6 @@ export function MeetingPlaybackView({
   manifest,
   timelineTurns = [],
   keyPointTimes,
-  followPlayback = true,
-  passages,
   loading,
   error,
   onRefreshManifest,
@@ -73,8 +57,6 @@ export function MeetingPlaybackView({
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const controllerRef = useRef<PlaybackController | null>(null);
-  const passageRefs = useRef(new Map<string, HTMLLIElement>());
-  const previousActivePassage = useRef<string | null>(null);
   const savedTimeMs = useRef(0);
   const refreshAttempted = useRef(false);
 
@@ -131,7 +113,6 @@ export function MeetingPlaybackView({
       videoPresence: currentManifest.video_presence,
       audioElement: isMuxed ? clock : audio!,
       ...(video ? { videoElement: video } : {}),
-      passages: passages.filter(isPlayablePassage),
       mediaSources: playableVideoSources,
       onError: () => {
         setPlaybackError(text.playbackFailed);
@@ -175,13 +156,7 @@ export function MeetingPlaybackView({
         onPauseReady?.(undefined);
       }
     };
-  }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, onSeekToReady, onPlayIntervalReady, onPauseReady, passages, playableVideoSources]);
-
-  useEffect(() => {
-    if (state.activePassageId === previousActivePassage.current) return;
-    previousActivePassage.current = state.activePassageId;
-    if (followPlayback && state.activePassageId) passageRefs.current.get(state.activePassageId)?.scrollIntoView?.({ block: "nearest" });
-  }, [state.activePassageId, followPlayback]);
+  }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, onSeekToReady, onPlayIntervalReady, onPauseReady, playableVideoSources]);
 
   async function refreshSource() {
     if (refreshAttempted.current) {
@@ -222,10 +197,6 @@ export function MeetingPlaybackView({
   const activeError = error ? text.playbackLoadFailed : playbackError;
   const hasPlayableMedia = isMuxed || needsAudio;
   const durationMs = state.durationMs;
-  const activePassage = passages.find((passage) => passage.id === state.activePassageId);
-  const activePassagePreview = activePassage
-    ? `${activePassage.speakerLabel ?? text.unknownSpeaker} · ${formatTime(isPlayablePassage(activePassage) ? activePassage.startMs : state.currentTimeMs)} · ${activePassage.text}`
-    : null;
 
   return (
     <div className="meeting-player">
@@ -348,61 +319,6 @@ export function MeetingPlaybackView({
       <SpeakerTimeline turns={timelineTurns} durationMs={currentManifest.duration_seconds * 1000}
         currentTimeMs={state.currentTimeMs} keyPointTimes={keyPointTimes} disabled={controlsDisabled}
         onSeek={timeMs => controllerRef.current?.seekTo(timeMs)} />
-      {passages.length === 0 ? (
-        <p>{text.emptyPlaybackTranscript}</p>
-      ) : (
-        <details>
-          <summary>
-            {text.passages(passages.length)}
-            {activePassage && activePassagePreview && (
-              <span
-                aria-current="true"
-                data-testid="active-playback-passage"
-                title={text.currentPassage(activePassagePreview)}
-                className="meeting-active-preview meeting-turn--active"
-              >
-                {activePassagePreview}
-              </span>
-            )}
-          </summary>
-          <ol aria-label={text.transcriptPassages}>
-            {passages.map((passage) => {
-              const playable = isPlayablePassage(passage);
-              const isActive = state.activePassageId === passage.id;
-              return (
-                <li
-                  key={passage.id}
-                  className={isActive ? "meeting-turn--active" : undefined}
-                  data-passage-id={passage.id}
-                  data-active={isActive ? "true" : "false"}
-                  ref={(element) => {
-                    if (element) passageRefs.current.set(passage.id, element);
-                    else passageRefs.current.delete(passage.id);
-                  }}
-                  aria-current={isActive ? "true" : undefined}
-                >
-                  <span
-                    data-testid="transcript-speaker-label"
-                    className="meeting-speaker" style={{ color: passage.speakerColor ?? "var(--ds-speaker-unresolved)" }}
-                  >
-                    {passage.speakerLabel ?? text.unknownSpeaker}
-                  </span>
-                  {playable && <span>{formatTime(passage.startMs)} </span>}
-                  <span>{passage.text}</span>
-                  {playable && (
-                    <Button variant="secondary"
-                      type="button"
-                      aria-label={text.playText(passage.text)}
-                      disabled={controlsDisabled}
-                      onClick={() => void controllerRef.current?.playPassage(passage)}
-                    >{text.playPassage}</Button>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
-        </details>
-      )}
     </div>
   );
 }

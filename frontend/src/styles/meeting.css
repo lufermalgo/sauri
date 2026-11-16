@@ -37,11 +37,6 @@
 .meeting-duration, .meeting-control-time, .meeting-timestamp { font-family: var(--ds-font-mono); color: var(--ds-fg-muted); }
 .meeting-control-time { font-size: var(--ds-text-xs); }
 .meeting-timestamp { font-size: var(--ds-text-sm); }
-.meeting-player details { margin-top: var(--ds-space-4); overflow-wrap: anywhere; }
-.meeting-player summary { cursor: pointer; }
-.meeting-player ol { padding-left: var(--ds-space-6); }
-.meeting-player li { margin-block: var(--ds-space-2); padding: var(--ds-space-2); border-radius: var(--ds-radius-sm); }
-.meeting-active-preview { display: block; margin-top: var(--ds-space-1); max-width: 100%; overflow: hidden; padding: var(--ds-space-1); text-overflow: ellipsis; white-space: nowrap; }
 .meeting-turns { list-style: none; padding: 0; margin: 0; }
 .meeting-turn { border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent); border-left: 3px solid transparent; overflow-wrap: anywhere; }
 .meeting-turn:last-child { }
