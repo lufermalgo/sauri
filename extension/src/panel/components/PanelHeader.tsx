@@ -1,61 +1,24 @@
-// Panel_Header — Req. 2.1, 2.2, 2.3, 2.4, 2.5, 2.6
 import React from "react";
-import { newNoteButtonEnabled } from "../../core/capture";
 import type { CaptureState } from "../../core/types";
-import { COLOR_TOKENS, SPACING_TOKENS, TYPOGRAPHY_TOKENS, RADIUS_TOKENS } from "../../core/design/tokens";
+import { panelCopy as copy } from "../copy";
 
 export interface PanelHeaderProps {
-  captureState: CaptureState;
-  onNewNote: () => void;
-  startError?: string | null;
-  selecting?: boolean;
+  captureState?: CaptureState;
+  paused?: boolean;
+  onOpenSettings?: () => void;
 }
 
-export function PanelHeader({ captureState, onNewNote, startError, selecting }: PanelHeaderProps) {
-  const enabled = !selecting && newNoteButtonEnabled(captureState);
-
-  return (
-    <header
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: SPACING_TOKENS.space2,
-        padding: SPACING_TOKENS.space4,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h1
-          style={{
-            fontSize: TYPOGRAPHY_TOKENS.textXl,
-            fontWeight: TYPOGRAPHY_TOKENS.weightSemibold,
-            margin: 0,
-          }}
-        >
-          REC Notes
-        </h1>
-        <button
-          type="button"
-          onClick={onNewNote}
-          disabled={!enabled}
-          style={{
-            backgroundColor: enabled ? COLOR_TOKENS.primary : COLOR_TOKENS.textMuted,
-            color: COLOR_TOKENS.text,
-            border: "none",
-            borderRadius: RADIUS_TOKENS.radiusMd,
-            padding: `${SPACING_TOKENS.space2} ${SPACING_TOKENS.space3}`,
-            fontSize: TYPOGRAPHY_TOKENS.textSm,
-            fontWeight: TYPOGRAPHY_TOKENS.weightMedium,
-            cursor: enabled ? "pointer" : "not-allowed",
-          }}
-        >
-          + New Note REC
-        </button>
-      </div>
-      {startError && (
-        <p role="alert" style={{ color: COLOR_TOKENS.error, fontSize: TYPOGRAPHY_TOKENS.textSm, margin: 0 }}>
-          {startError}
-        </p>
-      )}
-    </header>
-  );
+export function PanelHeader({ captureState = "idle", paused, onOpenSettings }: PanelHeaderProps) {
+  return <header className="panel-header">
+    <span className="panel-brand">
+      <svg width="24" height="24" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+        <circle cx="13" cy="13" r="13" fill="currentColor" />
+        <path d="M8 13v0M11 9.5v7M14 7v12M17 10.5v5" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>{copy.brand}
+    </span>
+    {captureState === "recording" ? <span className="panel-badge panel-badge-recording"><span className={paused ? "" : "panel-record-dot"} aria-hidden="true">●</span>{paused ? copy.paused : copy.recording}</span>
+      : onOpenSettings && <button className="panel-icon-button" aria-label={copy.settings} onClick={onOpenSettings}>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="2.6" stroke="currentColor" strokeWidth="1.6" /><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+      </button>}
+  </header>;
 }

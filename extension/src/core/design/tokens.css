@@ -1,20 +1,72 @@
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(./fonts/jetbrains-mono-400.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Literata';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(./fonts/literata-600.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Nunito Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-stretch: normal;
+  font-display: swap;
+  src: url(./fonts/nunito-sans-400.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Nunito Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-stretch: normal;
+  font-display: swap;
+  src: url(./fonts/nunito-sans-600.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Nunito Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-stretch: normal;
+  font-display: swap;
+  src: url(./fonts/nunito-sans-700.ttf) format('truetype');
+}
+
 /* Design_System: CSS variables shared by the Side_Panel and the Detail_View. */
 /* Requirements: 12.1, 12.2, 12.4 */
 
 :root {
   /* Color */
-  --color-background: #0f1115;
-  --color-surface: #181b21;
-  --color-surface-alt: #20242c;
-  --color-primary: #5b8cff;
-  --color-text: #f2f4f8;
-  --color-text-muted: #9aa3b2;
-  --color-error: #ff6b6b;
-  --color-recording: #ff5c5c;
-  --color-focus: #ffd166;
+  --color-background: #faf6f0;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f0e8db;
+  --color-primary: #4a7c59;
+  --color-text: #2e3230;
+  --color-text-muted: #4a4e4a;
+  --color-error: #b83230;
+  --color-recording: #b83230;
+  --color-focus: #3b6a49;
+
+  --color-border: #c4c8bc;
+  --color-input-border: #74796e;
+  --color-input: #f5f1ea;
+  --color-track: #f0ece4;
+  --color-success-bg: #c8e8d0;
+  --color-success-text: #1f4a2d;
+  --color-progress-bg: #f4e7c7;
+  --color-progress-text: #4d3f1c;
+  --color-error-bg: #fce8e6;
+  --color-error-text: #690005;
+  --font-heading: "Literata", Georgia, serif;
+  --font-mono: "JetBrains Mono", monospace;
 
   /* Typography */
-  --base-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --base-font: "Nunito Sans", system-ui, sans-serif;
   --text-sm: 12px;
   --text-base: 14px;
   --text-lg: 16px;
@@ -47,6 +99,7 @@
 }
 
 body {
+  margin: 0;
   background: var(--color-background);
   color: var(--color-text);
   font-family: var(--base-font);

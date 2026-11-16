@@ -1,3 +1,4 @@
+import { panelCopy as copy } from "../copy";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -13,20 +14,19 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("RecordingCompletionStatus — durable outcomes", () => {
   it.each<[db.RecordingCompletion["status"], string, "status" | "alert"]>([
-    ["capturing", "Recording in progress", "status"],
-    ["finalizing", "Finalizing recording", "status"],
-    ["upload_pending", "Upload pending", "status"],
-    ["uploading", "Upload in progress", "status"],
-    ["upload_succeeded", "Upload succeeded", "status"],
-    ["upload_failed", "Upload failed", "alert"],
-    ["upload_outcome_unavailable", "Upload outcome unavailable", "alert"],
-    ["processing", "Processing in progress", "status"],
-    ["processing_assets_unavailable", "Processing assets unavailable", "alert"],
-    ["processing_status_unavailable", "Processing status unavailable", "alert"],
-    ["processing_failed", "Processing failed", "alert"],
-    ["processing_succeeded", "Review ready", "status"],
-    ["review_launch_pending", "Review opening pending", "status"],
-    ["review_opened", "Review opened", "status"],
+    ["finalizing", copy.saving, "status"],
+    ["upload_pending", copy.saving, "status"],
+    ["uploading", copy.saving, "status"],
+    ["upload_succeeded", copy.saved, "status"],
+    ["upload_failed", copy.uploadFailed, "alert"],
+    ["upload_outcome_unavailable", copy.uploadUnknown, "alert"],
+    ["processing", copy.saved, "status"],
+    ["processing_assets_unavailable", copy.processingUnavailable, "alert"],
+    ["processing_status_unavailable", copy.processingUnavailable, "alert"],
+    ["processing_failed", copy.processingFailed, "alert"],
+    ["processing_succeeded", copy.reviewReady, "status"],
+    ["review_launch_pending", copy.reviewPending, "status"],
+    ["review_opened", copy.reviewOpened, "status"],
   ])("shows %s from the selected durable record", async (status, title, role) => {
     await db.createCompletion(record(status));
     render(<RecordingCompletionStatus sessionId="session-current" />);
@@ -40,8 +40,8 @@ describe("RecordingCompletionStatus — durable outcomes", () => {
   it("capture error overrides even a stale successful outcome", async () => {
     await db.createCompletion(record("processing_succeeded", { captureError: true }));
     render(<RecordingCompletionStatus sessionId="session-current" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Saving has not been confirmed");
-    expect(screen.queryByText("Review ready")).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(copy.captureErrorHelp);
+    expect(screen.queryByText(copy.reviewReady)).not.toBeInTheDocument();
   });
 
   it("does not fall back to another recording when the selected record is missing", async () => {
@@ -59,20 +59,20 @@ describe("RecordingCompletionStatus — durable outcomes", () => {
     await db.createCompletion(record("upload_failed", { sessionId: "session-latest", meetingId: "meeting-latest", recordingId: "recording-latest", updatedAt: 300 }));
     render(<RecordingCompletionStatus />);
     expect(await screen.findByRole("alert")).toHaveTextContent("session-latest");
-    expect(screen.queryByText("Review opened")).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.reviewOpened)).not.toBeInTheDocument();
   });
 
   it("removes a previously successful result if the next durable read fails, then recovers", async () => {
     await db.createCompletion(record("processing_succeeded"));
     const read = vi.spyOn(db, "getCompletion");
     render(<RecordingCompletionStatus sessionId="session-current" />);
-    await screen.findByText("Review ready");
+    await screen.findByText(copy.reviewReady);
     read.mockRejectedValue(new Error("synthetic storage failure — not user-facing"));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Recording status unavailable"), { timeout: 2200 });
-    expect(screen.queryByText("Review ready")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(copy.statusUnavailable), { timeout: 2200 });
+    expect(screen.queryByText(copy.reviewReady)).not.toBeInTheDocument();
     expect(screen.queryByText(/synthetic storage/)).not.toBeInTheDocument();
     read.mockResolvedValue(record("processing_failed"));
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Processing failed"), { timeout: 2200 });
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(copy.processingFailed), { timeout: 2200 });
   });
 
   it("discards a late read for the old selection after switching sessions", async () => {
@@ -85,7 +85,17 @@ describe("RecordingCompletionStatus — durable outcomes", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("session-next");
     await act(async () => resolveOld(record("review_opened")));
     expect(screen.getByRole("alert")).toHaveTextContent("session-next");
-    expect(screen.queryByText("Review opened")).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.reviewOpened)).not.toBeInTheDocument();
     view.unmount();
   });
+});
+
+it("keeps a healthy active capture out of completion feedback", async () => {
+  await db.createCompletion(record("capturing"));
+  const read = vi.spyOn(db, "getCompletion");
+  render(<RecordingCompletionStatus sessionId="session-current" />);
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

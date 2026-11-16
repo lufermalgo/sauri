@@ -32,6 +32,9 @@ EXCLUDED_PATH_PARTS = (
     # product language (and later selected per user) without weakening the
     # identifier check anywhere else.
     "/frontend/src/copy/",
+    # Extension UI copy follows the same localization boundary as the portal.
+    "/extension/src/panel/copy/",
+    "/extension/src/options/copy/",
     # A rename migration (and the test that verifies it happened) must name
     # both the old and new identifiers — that's not leftover Spanish code,
     # it's the record of the rename itself.
