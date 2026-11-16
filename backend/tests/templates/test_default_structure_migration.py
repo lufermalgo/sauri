@@ -31,7 +31,7 @@ def test_revision_chain_has_a_single_head() -> None:
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["027_engine_fallback_reason"]
+    assert script.get_heads() == ["028_auth_refresh_tokens"]  # The refresh-token revision follows.
     assert script.get_revision("022_recording_thumbnail").down_revision == "021_default_summary_legacy_default"
     assert script.get_revision("021_default_summary_legacy_default").down_revision == "020_default_summary_structure"
 

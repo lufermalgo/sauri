@@ -683,6 +683,35 @@ class LoginAttempt(Base):
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AuthRefreshToken(Base):
+    """Rotating refresh token of the Chrome extension session (#1123).
+
+    Only the SHA-256 digest of the random token is stored, never the token. Every successful refresh marks
+    the presented row `rotated_at` and inserts a successor in the same `family_id`; presenting a rotated
+    row again revokes the whole family. `token_version` is the `users.token_version` the family was issued
+    under: a mismatch (logout, password reset) invalidates it. No client metadata is kept.
+    """
+
+    __tablename__ = "auth_refresh_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_auth_refresh_token_hash"),
+        Index("ix_auth_refresh_tokens_family_id", "family_id"),
+        Index("ix_auth_refresh_tokens_user_id", "user_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    family_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    idle_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 # ---------------------------------------------------------------------------
 # Summary templates and generated summaries
 # ---------------------------------------------------------------------------

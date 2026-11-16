@@ -1,24 +1,15 @@
 // Shared API client (Side Panel + Detail View) — Req. 13.1, 13.3,
 // 13.4, 13.5, 14.1, 14.4, 14.5
 import type { NoteDTO, TranscriptDTO, DiarizationDTO } from "../types";
-import { clearSessionTokenIf, readSessionToken, storeSessionToken } from "../session-token";
+import { storeSessionCredentials } from "../session-token";
+import { authorizedRequest, InvalidSessionError } from "./authorized-fetch";
+import { signOut, withSessionLock } from "./session-refresh";
+import { InsecureTransportError, validateTransport } from "./transport";
 
 export const DEFAULT_BACKEND_URL = "http://localhost:8000";
 const TIMEOUT_MS = 10_000;
 
-export class InvalidSessionError extends Error {
-  constructor() {
-    super("Invalid or expired session");
-    this.name = "InvalidSessionError";
-  }
-}
-
-export class InsecureTransportError extends Error {
-  constructor(url: string) {
-    super(`The backend must be used over HTTPS (or http://localhost in development): ${url}`);
-    this.name = "InsecureTransportError";
-  }
-}
+export { InvalidSessionError, InsecureTransportError, validateTransport, signOut };
 
 /** Missing resource (404) — distinct from a real failure, to derive ViewState "empty" (Req. 7.6, 8.8, 10.5) */
 export class NotFoundError extends Error {
@@ -28,56 +19,22 @@ export class NotFoundError extends Error {
   }
 }
 
-/** Requires https:// except on http://localhost or 127.0.0.1 (development) — Req. 13.5 */
-export function validateTransport(backendUrl: string): void {
-  const url = new URL(backendUrl);
-  const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-  if (url.protocol === "https:") return;
-  if (url.protocol === "http:" && isLocalhost) return;
-  throw new InsecureTransportError(backendUrl);
-}
-
-/** Stores the user session in chrome.storage.session, never in synced storage (Req. 13.3) */
-export const storeSession = storeSessionToken;
-
 async function request<T>(backendUrl: string, path: string, init?: RequestInit): Promise<T> {
-  validateTransport(backendUrl);
-
-  const session = await readSessionToken();
-  const headers: Record<string, string> = {
-    ...(init?.headers as Record<string, string> | undefined),
-  };
-  if (session) {
-    headers["Authorization"] = `Bearer ${session}`;
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  try {
-    const response = await fetch(`${backendUrl}${path}`, {
-      ...init,
-      headers,
-      signal: controller.signal,
-    });
-
-    if (response.status === 401) {
-      await clearSessionTokenIf(session);
-      throw new InvalidSessionError();
-    }
-
-    if (response.status === 404) {
-      throw new NotFoundError();
-    }
-
-    if (!response.ok) {
-      throw new Error(`Request failed: ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return authorizedRequest(
+    backendUrl,
+    path,
+    init ?? {},
+    async (response) => {
+      if (response.status === 404) {
+        throw new NotFoundError();
+      }
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+      }
+      return (await response.json()) as T;
+    },
+    TIMEOUT_MS,
+  );
 }
 
 /** GET /api/v1/meetings/ — Note history (Req. 4.1) */
@@ -184,42 +141,29 @@ export async function deleteMeeting(
   meetingId: string,
   backendUrl: string = DEFAULT_BACKEND_URL
 ): Promise<void> {
-  validateTransport(backendUrl);
-
-  const session = await readSessionToken();
-  const headers: Record<string, string> = {};
-  if (session) {
-    headers["Authorization"] = `Bearer ${session}`;
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  try {
-    // 204 response with no body — doesn't reuse request<T>() because that
-    // function always tries to parse the response as JSON.
-    const response = await fetch(`${backendUrl}/api/v1/meetings/${meetingId}`, {
-      method: "DELETE",
-      headers,
-      signal: controller.signal,
-    });
-
-    if (response.status === 401) {
-      await clearSessionTokenIf(session);
-      throw new InvalidSessionError();
-    }
-    if (response.status === 404) {
-      throw new NotFoundError();
-    }
-    if (!response.ok) {
-      throw new Error(`Request failed: ${response.status}`);
-    }
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  // 204 response with no body — doesn't reuse request<T>() because that
+  // function always tries to parse the response as JSON.
+  await authorizedRequest(
+    backendUrl,
+    `/api/v1/meetings/${meetingId}`,
+    { method: "DELETE" },
+    async (response) => {
+      if (response.status === 404) {
+        throw new NotFoundError();
+      }
+      if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+      }
+    },
+    TIMEOUT_MS,
+  );
 }
 
-/** POST /api/v1/auth/login (Req. 13.2, 13.3) */
+/**
+ * POST /api/v1/auth/login (Req. 13.2, 13.3). The extension asks for a refreshable session:
+ * the access token goes to chrome.storage.session and the rotating refresh token to
+ * chrome.storage.local, so the user stays signed in across reloads and restarts.
+ */
 export async function login(
   email: string,
   password: string,
@@ -233,7 +177,7 @@ export async function login(
     const response = await fetch(`${backendUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, client: "extension" }),
       signal: controller.signal,
     });
 
@@ -241,8 +185,9 @@ export async function login(
       throw new Error("Invalid credentials");
     }
 
-    const body = (await response.json()) as { access_token: string; expires_in: number };
-    await storeSession(body.access_token);
+    const body = (await response.json()) as { access_token: string; expires_in: number; refresh_token?: string };
+    // Held back while another context refreshes, so a late refresh cannot overwrite the new sign-in.
+    await withSessionLock(() => storeSessionCredentials(body.access_token, body.refresh_token));
     return { accessToken: body.access_token, expiresIn: body.expires_in };
   } finally {
     clearTimeout(timeoutId);

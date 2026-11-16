@@ -14,6 +14,7 @@ import {
   DEFAULT_BACKEND_URL,
 } from "../core/api/client";
 import { isSignInRequired, onSessionChanged, readSessionToken } from "../core/session-token";
+import { ensureAccessToken } from "../core/api/session-refresh";
 import { portalDestination } from "./portal";
 import { panelCopy as copy } from "./copy";
 import { MicrophoneWarning } from "./components/MicrophoneWarning";
@@ -82,7 +83,8 @@ export function SidePanelApp() {
   const recordingElapsedRef = useRef(0);
 
   const loadSession = useCallback(async () => {
-    const active = Boolean(await readSessionToken());
+    // After a reload or a browser restart only the refresh token is left: sign back in silently.
+    const active = Boolean(await readSessionToken()) || (await ensureAccessToken(DEFAULT_BACKEND_URL)).status === "ok";
     // Queued uploads that found no valid token reuse the session-expired prompt.
     if (!active && await isSignInRequired()) setSessionExpired(true);
     setSessionActive(active);

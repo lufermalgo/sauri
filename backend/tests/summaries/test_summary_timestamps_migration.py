@@ -22,7 +22,7 @@ PARENT = "022_recording_thumbnail"
 
 def test_revision_chain_keeps_a_single_head() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["027_engine_fallback_reason"]  # The regeneration and auth revisions follow.
+    assert script.get_heads() == ["028_auth_refresh_tokens"]  # The refresh-token revision follows.
     assert script.get_revision("024_regeneration_operations").down_revision == REVISION
     assert script.get_revision(REVISION).down_revision == PARENT
     assert len(REVISION) <= 32  # alembic_version.version_num is VARCHAR(32) unless widened
