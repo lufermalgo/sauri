@@ -5,7 +5,7 @@ export function isBlock(point: SummaryKeyPoint | SummaryBlock | string): point i
   return typeof point !== "string" && "title" in point;
 }
 
-// The exact plain text that "Copy" puts on the clipboard and every summary download saves. It never
+// The exact plain text every summary download saves. It never
 // carries minutes or timestamps: sources are only offered as links in the panel.
 export function summaryPlainText(summary: MeetingSummary): string {
   if (summary.schemaVersion !== 2) {

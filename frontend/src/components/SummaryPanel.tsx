@@ -3,8 +3,7 @@ import type { MeetingSummary, SummaryRequestStatus, SummarySource } from "@sauri
 import type { SummarySignal } from "../processing-estimate";
 import { getLatestSummaryRequest, getMeetingSummary, requestMeetingSummary } from "../api";
 import { summaryFailureText } from "../summary-failure";
-import { isBlock, summaryPlainText } from "../summary-export";
-import { saveSummary } from "../summary-download";
+import { isBlock } from "../summary-export";
 import { StageProgress } from "./StageProgress";
 import { Button, Skeleton, SkeletonLines, StatusBadge } from "./ui";
 import "../styles/summary.css";
@@ -12,8 +11,6 @@ import { useT } from "../i18n";
 
 interface SummaryPanelProps {
   meetingId: string;
-  /** Current meeting title: names the downloaded file. */
-  title?: string | null;
   onSeek: (startMs: number) => void;
   // False while the transcript is still being produced: summary generation starts on its own then.
   transcriptReady?: boolean;
@@ -123,13 +120,13 @@ function StructuredSummary({ summary, onSeek }: { summary: MeetingSummary; onSee
   );
 }
 
-// A meeting change also cancels pending requests and clears clipboard feedback.
+// A meeting change also cancels pending requests.
 export function SummaryPanel(props: SummaryPanelProps) {
   return <MeetingSummaryPanel key={props.meetingId} {...props} />;
 }
 
 function MeetingSummaryPanel({
-  meetingId, title, onSeek, transcriptReady = true, onSummaryChange, expectAutoRequest = false, onSignalChange,
+  meetingId, onSeek, transcriptReady = true, onSummaryChange, expectAutoRequest = false, onSignalChange,
   progress = { audioSeconds: null, createdAt: null, stageStartedAt: null },
 }: SummaryPanelProps) {
   const { t } = useT();
@@ -142,7 +139,6 @@ function MeetingSummaryPanel({
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [requestError, setRequestError] = useState(false);
-  const [copyFeedback, setCopyFeedback] = useState("");
   const mounted = useRef(false);
   const expectRef = useRef(expectAutoRequest);
   expectRef.current = expectAutoRequest;
@@ -216,26 +212,11 @@ function MeetingSummaryPanel({
       setRequest(accepted);
       setAcceptedRequest(accepted);
       setLoading(false);
-      setCopyFeedback("");
     } catch {
       if (mounted.current) setRequestError(true);
     } finally {
       if (mounted.current) setSubmitting(false);
     }
-  }
-
-  async function copySummary() {
-    if (!summary) return;
-    try {
-      await navigator.clipboard.writeText(summaryPlainText(summary));
-      if (mounted.current) setCopyFeedback(t("summary:copied"));
-    } catch {
-      if (mounted.current) setCopyFeedback(t("summary:copyFailed"));
-    }
-  }
-
-  function downloadSummary() {
-    if (summary) saveSummary(summary, title);
   }
 
   const currentRequest = request && (!summary || request.generation > summary.generation) ? request : null;
@@ -277,12 +258,7 @@ function MeetingSummaryPanel({
         <>
           <div className="summary-toolbar">
             <StatusBadge tone="neutral">{t("summary:draft")}</StatusBadge>
-            <div className="summary-actions" role="group" aria-label={t("summary:actions")}>
-              <Button variant="secondary" size="sm" onClick={() => void copySummary()}>{t("summary:copy")}</Button>
-              <Button variant="secondary" size="sm" onClick={downloadSummary}>{t("summary:download")}</Button>
-            </div>
           </div>
-          {copyFeedback && <p role="status" className="summary-feedback">{copyFeedback}</p>}
           {summary.schemaVersion === 2 ? <StructuredSummary summary={summary} onSeek={onSeek} /> : (
             <>
               <h3 className="summary-label">{t("summary:topic")}</h3>

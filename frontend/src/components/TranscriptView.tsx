@@ -613,7 +613,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
         <Tabs aria-label={t("meeting:sideTabs")} activeId={activeTab} onChange={setActiveTab} tabs={[
           { id: "summary", label: t("meeting:summaryTab"), panel: meeting
             // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
-            ? <SummaryPanel meetingId={meetingId} title={metadata.title} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
+            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
               expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal}
               progress={{ audioSeconds: playbackManifest?.duration_seconds ?? metadata.durationSeconds,
                 createdAt: metadata.createdAt, stageStartedAt: stage === "summary" ? stageStartedAt : null }} /> : null },

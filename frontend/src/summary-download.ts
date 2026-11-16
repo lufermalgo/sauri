@@ -16,12 +16,7 @@ export class NoSummaryError extends Error {
   }
 }
 
-/** Saves an already loaded summary as the same plain text the summary panel copies and downloads. */
-export function saveSummary(summary: MeetingSummary, title: string | null | undefined): void {
-  saveTextFile(summaryFilename(summary.meetingId, title), summaryPlainText(summary));
-}
-
-/** Fetches the latest summary and downloads it. Rejects with `NoSummaryError` when there is none yet. */
+/** Fetches the latest summary and downloads it as plain text. Rejects with `NoSummaryError` when there is none yet. */
 export async function downloadMeetingSummary(meetingId: string, title: string | null | undefined): Promise<void> {
   const summary = await getMeetingSummary(meetingId);
   if (summary === null) throw new NoSummaryError();
