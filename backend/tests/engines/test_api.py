@@ -864,6 +864,20 @@ async def test_models_are_filtered_through_the_host_and_shaped_here(api: AsyncCl
     assert (await api.get(f"{BASE}/providers/{provider['id']}/models", headers=auth_headers())).status_code == 422
 
 
+async def test_plan_models_that_the_host_cannot_list_come_back_classified_for_the_card(
+    api: AsyncClient, fake_host: FakeHost
+) -> None:
+    plan = await _plan(api)
+    fake_host.models_status = 502  # the host asks for a sign-in: login_required, class provider_auth
+    fake_host.models_answer = {"error": {"code": "provider_auth", "retryable": False, "cause": "login_required"}}
+    body = (
+        await api.get(f"{BASE}/providers/{plan['id']}/models?capability=summary", headers=auth_headers())
+    ).json()
+    assert (body["models"], body["manual_entry"], body["error_class"]) == ([], True, "provider_auth")
+    payload = next(p for m, path, p in fake_host.calls if path == "/v1/providers/models")
+    assert payload["kind"] == "chatgpt_plan" and "secret_ref" not in payload  # the account branch, never a key
+
+
 async def test_gemini_lists_serve_summary_only_and_fixed_model_providers_follow_the_matrix(
     api: AsyncClient, fake_host: FakeHost
 ) -> None:
@@ -942,7 +956,7 @@ CONNECTED = {"state": "connected", "account": "owner@example.com", "plan": "plus
 
 
 async def _plan(api: AsyncClient, user: str = OWNER) -> dict[str, Any]:
-    return await _create(api, "chatgpt_plan", label="ChatGPT (plan)", user=user)
+    return await _create(api, "chatgpt_plan", label="Codex (plan ChatGPT)", user=user)
 
 
 async def test_a_plan_provider_needs_no_key_and_has_a_fixed_address(api: AsyncClient) -> None:
@@ -1036,7 +1050,7 @@ async def test_the_notice_names_the_plan_and_the_unofficial_path(api: AsyncClien
         await api.get(f"{BASE}/processes/summary/notice?provider_id={plan['id']}", headers=auth_headers())
     ).json()
     text = " ".join(notice["paragraphs"])
-    assert notice["provider_name"] == "ChatGPT (plan)" and "https://chatgpt.com" in notice["address"]
+    assert notice["provider_name"] == "Codex (plan ChatGPT)" and "https://chatgpt.com" in notice["address"]
     assert "tu plan de ChatGPT" in text and "no documenta" in text
 
 

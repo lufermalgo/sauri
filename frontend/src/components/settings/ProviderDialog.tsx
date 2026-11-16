@@ -59,7 +59,7 @@ interface ProviderDialogProps {
 export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged, onClose }: ProviderDialogProps) {
   const { t } = useT();
   const ids = useId();
-  // An account kind is linked from its own card («Conectar con ChatGPT»), not from the key-and-address form.
+  // An account kind is linked from its own card («Conectar con Codex»), not from the key-and-address form.
   const linkable = kinds.filter((info) => info.linkable && info.auth !== "account");
   const [current, setCurrent] = useState<EngineProvider | null>(provider);
   const [kind, setKind] = useState<EngineProviderKind>(provider?.kind ?? initialKind ?? linkable[0]?.kind ?? "openai");

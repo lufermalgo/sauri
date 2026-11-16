@@ -9,12 +9,18 @@ export type CatalogEntry =
   | { status: "failed"; cause: EngineErrorClass };
 
 /** Providers whose lists are requested: switched on, with their key where one is needed, and able to
- * serve at least one process. A provider without a key is never asked, so nothing leaves without one. */
-export function catalogProviders(providers: EngineProvider[], kinds: EngineKindInfo[]): EngineProvider[] {
-  return providers.filter(
-    (provider) =>
-      provider.status === "active" && (kinds.find((info) => info.kind === provider.kind)?.capabilities.length ?? 0) > 0,
-  );
+ * serve at least one process. A provider without a key is never asked, so nothing leaves without one.
+ * One that signs in with an account is asked only once that account is connected (`connectedAccounts`). */
+export function catalogProviders(
+  providers: EngineProvider[],
+  kinds: EngineKindInfo[],
+  connectedAccounts: ReadonlySet<string> = new Set(),
+): EngineProvider[] {
+  return providers.filter((provider) => {
+    const info = kinds.find((candidate) => candidate.kind === provider.kind);
+    if (provider.status !== "active" || (info?.capabilities.length ?? 0) === 0) return false;
+    return info?.auth !== "account" || connectedAccounts.has(provider.id);
+  });
 }
 
 const PROCESS_ORDER: EngineProcess[] = ["transcription", "diarization", "summary"];
@@ -33,13 +39,18 @@ function merge(lists: PromiseSettledResult<EngineModelList>[]): CatalogEntry {
 }
 
 /** Model lists of the given providers, asked once each (the API keeps them a day) and again on `refreshAll`. */
-export function useModelCatalogs(providers: EngineProvider[], kinds: EngineKindInfo[], enabled: boolean) {
+export function useModelCatalogs(
+  providers: EngineProvider[],
+  kinds: EngineKindInfo[],
+  enabled: boolean,
+  connectedAccounts: ReadonlySet<string> = new Set(),
+) {
   const [entries, setEntries] = useState<Record<string, CatalogEntry>>({});
   const [refreshing, setRefreshing] = useState(false);
   const asked = useRef(new Set<string>());
   const generation = useRef(0);
 
-  const targets = useMemo(() => catalogProviders(providers, kinds), [providers, kinds]);
+  const targets = useMemo(() => catalogProviders(providers, kinds, connectedAccounts), [providers, kinds, connectedAccounts]);
   const signature = targets.map((provider) => provider.id).join("|");
 
   const request = useCallback(
@@ -56,6 +67,13 @@ export function useModelCatalogs(providers: EngineProvider[], kinds: EngineKindI
   useEffect(() => {
     if (!enabled) return;
     const run = generation.current;
+    // A provider that stopped being a target (its account was disconnected) is asked again when it returns.
+    const current = new Set(targets.map((provider) => provider.id));
+    const dropped = Array.from(asked.current).filter((id) => !current.has(id));
+    dropped.forEach((id) => asked.current.delete(id));
+    if (dropped.length > 0) {
+      setEntries((previous) => Object.fromEntries(Object.entries(previous).filter(([id]) => !dropped.includes(id))));
+    }
     const fresh = targets.filter((provider) => !asked.current.has(provider.id));
     fresh.forEach((provider) => asked.current.add(provider.id));
     if (fresh.length === 0) return;

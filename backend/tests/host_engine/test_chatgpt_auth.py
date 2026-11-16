@@ -152,6 +152,18 @@ def test_models_without_a_sign_in_ask_for_one(client: TestClient) -> None:
     assert (probe["ok"], probe["error_class"], probe["cause"]) == (False, "provider_auth", "login_required")
 
 
+def test_a_plan_without_a_key_reference_lists_models_with_the_account_token(
+    client: TestClient, store: FileSecretStore, http: ScriptedHttp
+) -> None:
+    connect(store)
+    assert "secret_ref" not in models_body()  # an account provider has no key: the account branch must be taken
+    response = client.post("/v1/providers/models", json=models_body())
+    assert response.status_code == 200, response.text
+    (sent,) = http.calls("GET", "/backend-api/codex/models")
+    assert sent.url.split("?")[1].startswith("client_version=")
+    assert sent.headers["authorization"] == f"Bearer {ACCESS}" and sent.headers["chatgpt-account-id"] == ACCOUNT
+
+
 def test_a_refused_refresh_clears_the_sign_in_and_the_list_fails_cleanly(
     client: TestClient, store: FileSecretStore, http: ScriptedHttp, clock: Clock
 ) -> None:
