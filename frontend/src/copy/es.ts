@@ -8,6 +8,7 @@ import { login } from "./login";
 import { library } from "./library";
 import { meeting } from "./meeting";
 import { settings } from "./settings";
+import { engines } from "./engines";
 
 export const copy = {
   processing,
@@ -20,4 +21,5 @@ export const copy = {
   library,
   meeting,
   settings,
+  engines,
 } as const;

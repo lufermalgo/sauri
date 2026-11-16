@@ -141,7 +141,7 @@ describe("settings navigation groups", () => {
     expect(current.map((link) => link.textContent)).toEqual([labels.transcription.label]);
   });
 
-  it.each(["engines", "transcription", "speakers"] as const)(
+  it.each(["transcription", "speakers"] as const)(
     "shows a quiet placeholder for %s: text only, no controls",
     (category) => {
       open(category);

@@ -911,3 +911,33 @@ describe("summary templates API client", () => {
     expect(unauthorizedAgain).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("engines API adapter", () => {
+  it("sends the key once in the body of PUT /key and returns only the hint", async () => {
+    const fetchMock = mockFetch({ key_set: true, key_hint: "WXYZ", reverted_processes: [] });
+    await expect(api.putEngineKey("p 1", "sk-test-0123456789abcdefWXYZ"))
+      .resolves.toEqual({ key_set: true, key_hint: "WXYZ", reverted_processes: [] });
+    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/api/v1/engines/providers/p%201/key");
+    expect(request.method).toBe("PUT");
+    expect(request.body).toBe(JSON.stringify({ key: "sk-test-0123456789abcdefWXYZ" }));
+    expect((request.headers as Record<string, string>).Authorization).toBe("Bearer synthetic-token");
+  });
+
+  it("keeps the machine code of a refused request", async () => {
+    mockFetch({ detail: "key_bound_to_origin" }, 409);
+    const error = await api.updateEngineProvider("p1", { base_url: "https://other.example" }).catch((caught) => caught);
+    expect(error).toBeInstanceOf(api.EnginesApiError);
+    expect(error).toMatchObject({ status: 409, code: "key_bound_to_origin", message: "Error 409" });
+  });
+
+  it("has no code when the error body is not JSON, and ends the session on 401", async () => {
+    const unauthorized = vi.fn();
+    window.addEventListener("sauri:unauthorized", unauthorized, { once: true });
+    const fetchMock = mockFetch(null, 401);
+    fetchMock.mockResolvedValue({ ok: false, status: 401, json: async () => { throw new SyntaxError("not json"); } } as unknown as Response);
+    await expect(api.listEngineProviders()).rejects.toMatchObject({ status: 401, code: null });
+    expect(unauthorized).toHaveBeenCalledTimes(1);
+    expect(localStorage.removeItem).toHaveBeenCalledWith(api.TOKEN_KEY);
+  });
+});
