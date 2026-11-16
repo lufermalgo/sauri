@@ -39,6 +39,7 @@ from app.infra.models import (
 )
 from app.infra.queue_rabbitmq import RabbitMQJobQueue
 from app.main import app
+from app.summaries.engine import SummaryAnswer
 from app.summaries.passages import CanonicalSummary
 
 
@@ -547,15 +548,15 @@ async def test_request_to_persisted_content_uses_frozen_lineage(
     calls: list[tuple[str, str]] = []
 
     class Engine:
-        async def generate(self, text: str, instructions: str) -> CanonicalSummary:
+        async def generate(self, text: str, instructions: str, route: object = None) -> SummaryAnswer:
             calls.append((text, instructions))
-            return CanonicalSummary.model_validate({
+            return SummaryAnswer(CanonicalSummary.model_validate({
                 "topic": "Identifiable topic", "conclusion": "Identifiable conclusion",
                 "key_points": [{
                     "title": "Identifiable block", "items": [{"text": "Identifiable point"}],
                     "sources": [{"passage_id": "P0000", "start_ms": 0, "end_ms": 1000}],
                 }],
-            })
+            }), "llama.cpp", "synthetic-model")
 
     class Queue:
         def __init__(self) -> None:

@@ -25,6 +25,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.engines.repository import apply_provenance
 from app.engines.routing import (
     Provenance,
     ProviderError,
@@ -53,7 +54,7 @@ from app.transcription.asr_engine import (
 )
 from app.transcription.factory import create_asr_engine
 from app.transcription.local_provider import LocalProvider
-from app.transcription.repository import TranscriptRepository, apply_provenance, replace_transcript_content
+from app.transcription.repository import TranscriptRepository, replace_transcript_content
 
 logger = logging.getLogger(__name__)
 

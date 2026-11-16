@@ -24,6 +24,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.copy.speaker_labels import unknown_speaker_label
+from app.engines.routing import Route
 from app.infra.database import Base
 from app.infra.models import (
     Meeting,
@@ -36,9 +37,8 @@ from app.infra.models import (
     User,
 )
 from app.infra.queue import JobQueue
-from app.summaries.engine import ContextExceededError, SummaryProviderError
+from app.summaries.engine import ContextExceededError, SummaryAnswer, SummaryProviderError
 from app.summaries.passages import (
-    CanonicalSummary,
     Passage,
     SummaryInvalidError,
     Turn,
@@ -75,17 +75,21 @@ class Case:
     message: dict[str, Any]
     owner: str
     engine_calls: list[tuple[list[Passage], str]] = field(default_factory=list)
+    engine_routes: list[Route | None] = field(default_factory=list)
     failure: bool = False
 
-    async def generate(self, passages: list[Passage], instructions_snapshot: str) -> CanonicalSummary:
+    async def generate(
+        self, passages: list[Passage], instructions_snapshot: str, route: Route | None = None
+    ) -> SummaryAnswer:
         # Read through a separate connection: running must be durable before generation.
         async with self.factory() as session:
             request = await session.get(SummaryRequestOutbox, self.message["event_id"])
             assert request is not None and request.status == "running"
         self.engine_calls.append((passages, instructions_snapshot))
+        self.engine_routes.append(route)
         if self.failure:
             raise SummaryProviderError("llm_unavailable")
-        return validate_citations(
+        summary = validate_citations(
             {
                 "topic": "Synthetic topic",
                 "key_points": [{
@@ -97,6 +101,7 @@ class Case:
             },
             passages,
         )
+        return SummaryAnswer(summary, "llama.cpp", "synthetic-model")
 
 
 @pytest.fixture
@@ -440,7 +445,8 @@ async def test_openai_adapter_sends_only_frozen_inputs_and_parses_canonical_cont
         result = await engine.generate(
             build_passages([Turn("Synthetic transcript.", 0, 1000)]), "  Opaque instruction\n"
         )
-    assert (result.topic, [i.text for p in result.key_points for i in p.items], result.conclusion) == (
+    summary = result.summary
+    assert (summary.topic, [i.text for p in summary.key_points for i in p.items], summary.conclusion) == (
         "Synthetic topic", ["Synthetic point"], "Synthetic conclusion",
     )
     assert len(requests) == 1 and requests[0]["model"] == "local-model"
@@ -493,7 +499,7 @@ async def test_deterministic_failure_is_terminal_without_retry(
 
     calls = []
 
-    async def fail(passages: list[Passage], instructions: str) -> CanonicalSummary:
+    async def fail(passages: list[Passage], instructions: str, route: Route | None = None) -> SummaryAnswer:
         calls.append(passages)
         if cause == "context_exceeded":
             raise ContextExceededError("context_exceeded")
@@ -526,7 +532,7 @@ async def test_provider_failure_persists_retryable_cause_and_clears_on_success(
 
     from app.summaries.worker import start_worker
 
-    async def fail(passages: list[Passage], instructions: str) -> CanonicalSummary:
+    async def fail(passages: list[Passage], instructions: str, route: Route | None = None) -> SummaryAnswer:
         raise error
 
     monkeypatch.setattr("app.summaries.worker.create_summarization_engine", lambda: SimpleNamespace(generate=fail))
@@ -544,12 +550,11 @@ async def test_provider_failure_persists_retryable_cause_and_clears_on_success(
         assert request is not None and request.status == "succeeded" and request.failure_cause is None
 
 
-async def test_external_missing_credential_prevents_subscription(case: Case, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_external_base_url_prevents_subscription(case: Case, monkeypatch: pytest.MonkeyPatch) -> None:
     from app.summaries.worker import start_worker
 
     monkeypatch.setenv("SUMMARIZATION_BASE_URL", "https://provider.example/v1")
-    monkeypatch.delenv("SUMMARIZATION_API_KEY_FILE", raising=False)
     queue = CapturedQueue()
-    with pytest.raises(ValueError, match="SUMMARIZATION_API_KEY_FILE.*external"):
+    with pytest.raises(ValueError, match="local engine gateway"):
         await start_worker(queue, case.factory)
     assert queue.handlers == {}

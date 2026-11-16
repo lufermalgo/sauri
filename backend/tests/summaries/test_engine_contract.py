@@ -71,29 +71,31 @@ def test_defaults_and_https_compatibility(monkeypatch: pytest.MonkeyPatch, tmp_p
         monkeypatch.delenv(key, raising=False)
     engine = create_summarization_engine()
     assert engine.base_url == "http://host.docker.internal:8003/v1" and engine.model == "qwen3.5-9b"
+    monkeypatch.setenv("SUMMARIZATION_BASE_URL", "http://localhost:11434/v1/")
+    assert create_summarization_engine().base_url == "http://localhost:11434/v1"
     monkeypatch.setenv("SUMMARIZATION_BASE_URL", "https://example.test/v1/")
-    with pytest.raises(ValueError, match="SUMMARIZATION_API_KEY_FILE.*external"):
+    with pytest.raises(ValueError, match="local engine gateway"):
         create_summarization_engine()
     credential = tmp_path / "provider-key"
     credential.write_text("synthetic-external-key")
-    monkeypatch.setenv("SUMMARIZATION_API_KEY_FILE", str(credential))
-    assert create_summarization_engine().base_url == "https://example.test/v1"
-    monkeypatch.setenv("SUMMARIZATION_API_KEY", "ignored-inline-secret")
-    assert create_summarization_engine()._api_key == "synthetic-external-key"
+    monkeypatch.setenv("SUMMARIZATION_API_KEY_FILE", str(credential))  # No longer read: the key lives on the host.
+    with pytest.raises(ValueError, match="local engine gateway"):
+        create_summarization_engine()
 
 
 @pytest.mark.parametrize("value", ["", "secret\nheader", "non-ascii-\u00f1"])
-def test_bad_key_file_fails_without_leaking(
+def test_bad_engine_token_file_fails_without_leaking(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     value: str,
 ) -> None:
-    monkeypatch.setenv("SUMMARIZATION_BASE_URL", "https://provider.example/v1")
+    monkeypatch.setenv("SUMMARIZATION_BASE_URL", "http://localhost:8003/v1")
     path = tmp_path / "credential"
     path.write_text(value)
-    monkeypatch.setenv("SUMMARIZATION_API_KEY_FILE", str(path))
-    with pytest.raises(ValueError, match="SUMMARIZATION_API_KEY_FILE"):
+    monkeypatch.setenv("SAURI_ENGINE_TOKEN_FILE", str(path))
+    with pytest.raises(ValueError, match="SAURI_ENGINE_TOKEN_FILE") as caught:
         create_summarization_engine()
+    assert value.strip() not in str(caught.value) or not value.strip()
     path.unlink()
-    with pytest.raises(ValueError, match="SUMMARIZATION_API_KEY_FILE"):
+    with pytest.raises(ValueError, match="SAURI_ENGINE_TOKEN_FILE"):
         create_summarization_engine()

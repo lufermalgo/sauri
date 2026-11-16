@@ -43,7 +43,8 @@ from app.infra.models import (
     User,
     WordSpeakerAssignment,
 )
-from app.summaries.passages import CanonicalSummary, validate_citations
+from app.summaries.engine import SummaryAnswer
+from app.summaries.passages import validate_citations
 from app.summaries.service import accept_request
 from app.summaries.worker import start_worker
 from app.transcription.asr_engine import TranscriptionResult, TranscriptionSegment, TranscriptionWord
@@ -114,9 +115,9 @@ class Engines:
         async with self.call("diarization"):
             return DiarizationResult(segments=SEGMENTS, speaker_count=2)
 
-    async def generate(self, passages: Any, _: str) -> CanonicalSummary:
+    async def generate(self, passages: Any, _: str, route: Any = None) -> SummaryAnswer:
         async with self.call("summary"):
-            return validate_citations(
+            summary = validate_citations(
                 {
                     "topic": "Synthetic topic", "conclusion": "Synthetic conclusion",
                     "key_points": [{
@@ -126,6 +127,7 @@ class Engines:
                 },
                 passages,
             )
+            return SummaryAnswer(summary, "llama.cpp", "synthetic-model")
 
     def capabilities(self) -> SimpleNamespace:
         return SimpleNamespace(is_local=True, supports_turns=True, provider_name="synthetic")
