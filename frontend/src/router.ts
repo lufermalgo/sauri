@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 export type Route =
   | { name: "library" }
   | { name: "upload" }
+  | { name: "settings" }
   | { name: "meeting"; meetingId: string }
   | { name: "notFound" };
 
@@ -25,7 +26,7 @@ function meetingRoute(rawId: string): Route {
 
 /**
  * Maps a location to a route.
- * `/` -> library, `/upload` -> upload, `/meetings/<id>` -> meeting,
+ * `/` -> library, `/upload` -> upload, `/settings` -> settings, `/meetings/<id>` -> meeting,
  * `/?meetingId=<id>` -> meeting (the extension opens this form), anything else -> notFound.
  */
 export function parseRoute(pathname: string, search: string): Route {
@@ -35,6 +36,7 @@ export function parseRoute(pathname: string, search: string): Route {
     return legacyId ? { name: "meeting", meetingId: legacyId } : { name: "library" };
   }
   if (path === "/upload") return { name: "upload" };
+  if (path === "/settings") return { name: "settings" };
   if (path.startsWith(MEETING_PREFIX)) return meetingRoute(path.slice(MEETING_PREFIX.length));
   return { name: "notFound" };
 }
@@ -46,6 +48,8 @@ export function routePath(route: Route): string {
       return "/";
     case "upload":
       return "/upload";
+    case "settings":
+      return "/settings";
     case "meeting":
       return `${MEETING_PREFIX}${encodeURIComponent(route.meetingId)}`;
     case "notFound":

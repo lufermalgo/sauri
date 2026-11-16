@@ -8,10 +8,14 @@ export type MenuProps = {
   label: string;
   triggerLabel?: string;
   triggerVariant?: "icon" | "primary" | "secondary";
+  /** Custom trigger content (e.g. a profile card). The caller styles it through `triggerClassName`. */
+  trigger?: ReactNode;
+  triggerClassName?: string;
+  className?: string;
   children: ReactNode;
 };
 
-export function Menu({ label, triggerLabel, triggerVariant = "icon", children }: MenuProps) {
+export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, triggerClassName, className, children }: MenuProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -85,11 +89,12 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", children }:
   };
 
   return (
-    <div className="ui-menu" ref={rootRef}>
-      <button ref={triggerRef} type="button" className={`ui-menu-trigger ui-menu-trigger--${triggerLabel ? triggerVariant : "icon"}`} aria-label={label}
+    <div className={className ? `ui-menu ${className}` : "ui-menu"} ref={rootRef}>
+      <button ref={triggerRef} type="button"
+        className={trigger ? triggerClassName : `ui-menu-trigger ui-menu-trigger--${triggerLabel ? triggerVariant : "icon"}`} aria-label={label}
         aria-haspopup="menu" aria-expanded={open} aria-controls={open ? panelId : undefined}
         onClick={() => (open ? close(false) : openMenu("first"))} onKeyDown={onTriggerKeyDown}>
-        {triggerLabel ? (
+        {trigger ? trigger : triggerLabel ? (
           <>
             <span>{triggerLabel}</span>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">

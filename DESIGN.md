@@ -48,7 +48,7 @@ Mapeo de roles: `accent` = primary `#4a7c59`; `accent-hover` = verde derivado `#
 | `bg` | `#faf6f0` | `#181b19` | Lienzo de página (Terra surface) |
 | `surface` | `#ffffff` | `#1f2321` | Tarjetas, campos, contenido principal |
 | `surface-raised` | `#ffffff` | `#272c29` | Menús, diálogos, barra del overlay |
-| `sidebar` | `#f5f1ea` | `#1c201e` | Barra superior y fondos de grupo suaves |
+| `sidebar` | `#f5f1ea` | `#1c201e` | Panel lateral, barra superior móvil y fondos de grupo suaves |
 | `fill` | `#f0ece4` | `#262b28` | Pistas, fondos neutros |
 | `fill-hover` | `#f0e8db` | `#2e3430` | Hover y botón secundario (Terra secondary-container) |
 | `fill-strong` | `#eae6de` | `#373e3a` | Selección, pista de progreso |
@@ -195,11 +195,12 @@ Mediciones (Chrome en macOS, 14px): con `font-variant-numeric: tabular-nums`, `0
 - Bordes de 1px; el borde de acento de estado en tarjetas de lista mide 5–6px a la izquierda y siempre acompaña a un texto de estado.
 - Sombras: `shadow-sm` (controles elevados, selector segmentado) y `shadow-md` (menús y diálogos). No hay más niveles.
 - Objetivo táctil: `--ds-target` 44px para botones, campos, pestañas y filas de menú. Controles densos en línea (interruptor de 28px, botones del reproductor) miden al menos 24px y suben a 44px con puntero táctil (`@media (pointer: coarse)`).
-- Capas: `z-sticky` 10 (barra superior), `z-menu` 20. El overlay de Meet usa el máximo z-index porque convive con una página ajena.
+- Capas: `z-sticky` 10 (panel lateral), `z-menu` 20. El overlay de Meet usa el máximo z-index porque convive con una página ajena.
 
 ## 6. Layout por superficie
 
-**Portal.** Contenedor central de `--ds-layout-max` (1200) con 32px laterales (16 en móvil). Barra superior pegajosa, fondo `sidebar`, borde inferior de 1px, sin transparencia ni desenfoque.
+**Portal.** Contenedor central de `--ds-layout-max` (1200) con 32px laterales (16 en móvil). Panel lateral izquierdo (fondo `sidebar`, borde derecho de 1px, sin transparencia ni desenfoque) y región de contenido con desplazamiento propio; el contenedor central y sus máximos de ancho no cambian.
+- *Panel lateral:* 236px expandido; carril de 60px (solo iconos, con tooltip al pasar el cursor o enfocar) y botón `PanelLeft` para alternar. La elección se recuerda por dispositivo en `localStorage` (si el almacenamiento está bloqueado, solo dura la visita); bajo 1320px arranca contraído. Bajo 640px es un cajón fuera de pantalla que se abre desde una barra superior delgada: foco dentro al abrir y de vuelta al cerrar, Escape y velo lo cierran, `aria-expanded` en el botón. Contenido: «Biblioteca» (fila seleccionada con `accent-soft`) y, abajo, la tarjeta de perfil (avatar con iniciales, nombre con elipsis, correo en `fg-subtle`) con un menú de «Cerrar sesión» y el engranaje hacia `/settings`.
 - *Biblioteca:* título, tarjeta de búsqueda, grupos por fecha y filas-tarjeta en una columna. Cada fila lleva borde izquierdo de estado, título, tema, metadatos, insignia y chevron.
 - *Subir:* columna de máximo 880px; zona de arrastre con borde discontinuo 2px, un único botón primario.
 - *Reunión:* una columna hasta 1023px; desde 1024px, rejilla 2fr/1fr con reproductor y transcripción a la izquierda y resumen/hablantes a la derecha. La transcripción son turnos de lectura (16px, interlineado 1.7) con avatar, hablante en su color y marca de tiempo.
@@ -222,7 +223,7 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 - **Insignias.** Pastilla con texto siempre presente: éxito (`accent-soft`/`accent-soft-fg`), progreso (`warning-soft`/`warning-soft-fg`), error (`danger-soft`/`danger-soft-fg`), neutral (`fill`/`fg-muted`).
 - **Diálogos.** `<dialog>` nativo: borde, radio `lg`, `shadow-md`, velo `scrim`, título, acción secundaria antes de la principal, foco inicial dentro, cierre con Escape y retorno del foco al disparador.
 - **Menús.** Panel `surface`, borde, `shadow-md`, filas de 44px, hover `fill-hover`, elemento destructivo en `danger-text`, navegación por teclado.
-- **Tooltips.** (Regla para cuando se creen; hoy no hay componente.) Solo texto breve, complemento (no reemplazo) del nombre accesible. Sin botones dentro.
+- **Tooltips.** (Hoy solo los de los iconos del carril del panel lateral, hechos con CSS a partir de la etiqueta oculta; sin componente propio.) Solo texto breve, complemento (no reemplazo) del nombre accesible. Sin botones dentro.
 - **Avisos (toasts).** (Regla para cuando se creen.) Esquina inferior, `surface-raised`, borde y `shadow-md`; se anuncian con `role="status"` (error: `role="alert"`).
 - **Progreso y pasos.** Barra de 12px, pista `fill-strong`, relleno `accent`. Sin estimación, la barra indeterminada pulsa en `accent-muted` (sin degradados). El paso actual se marca con número, contorno de acento y texto en negrita, no solo color.
 
