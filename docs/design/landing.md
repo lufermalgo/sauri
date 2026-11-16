@@ -88,7 +88,7 @@ Glosario fijo: «grabación» (no «sesión»), «reunión», «transcripción»
 
 - **Estructura:** `landing/index.html` + `styles.css` + `tokens.css` + `motion.js` + `assets/`. Sin compilación ni dependencias; se abre con cualquier servidor estático (`python3 -m http.server --directory landing`).
 - **Tokens:** `tokens.css` copia los `--ds-*` de `frontend/src/design/tokens.css` (claro/oscuro con `light-dark()`, Chrome 123+). La escala propia de la página usa el prefijo `--lp-*`. Si cambia el diseño del portal, actualizar `tokens.css`.
-- **Una sola acción primaria** por grupo; el mismo texto «Solicitar acceso anticipado» en cabecera, portada y cierre. El botón abre un `mailto:` (sin servicios externos); el destino está pendiente (`CORREO_POR_DEFINIR`).
+- **Una sola acción primaria** por grupo; el mismo texto «Solicitar acceso anticipado» en cabecera, portada y cierre. El botón abre un `mailto:` (sin servicios externos); el destino está pendiente (`lufermalgo@gmail.com`).
 - **Imágenes:** capturas reales de la reunión de demostración «Hortalia» (personas y voces ficticias), PNG + WebP con `width`/`height`. Sin datos de reuniones reales ni del perfil del usuario. El video `follow.webm` no tiene audio, solo se reproduce a la vista, respeta `prefers-reduced-motion` y tiene botón de pausa (WCAG 2.2.2).
 - **Accesibilidad:** `lang="es"`, un solo `h1`, enlace para saltar al contenido, `alt` en todas las capturas, logo decorativo con nombre en el enlace, sin desbordamiento horizontal a 375 px. Pendiente: revisión de contraste con herramienta externa.
 - **Inglés:** el texto vive en `index.html`; para traducir, duplicar a `landing/en/` con el mismo marcado y enlazar ambos con `hreflang`.
