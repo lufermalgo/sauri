@@ -460,11 +460,7 @@ describe("row summary download", () => {
 });
 
 describe("row media download", () => {
-  const source = (url: string, mime: string) => ({ source_id: url, url, mime_type: mime });
-  const manifest = (overrides: Partial<api.PlaybackManifest>): api.PlaybackManifest => ({
-    meeting_id: "a", duration_seconds: 600, video_presence: "muxed", audio_source: source("http://store.test/a.m4a", "audio/mp4"),
-    muxed_video_source: source("http://store.test/v.webm", "video/webm"), video_sources: [], ...overrides,
-  });
+  const link = { url: "http://store.test/v.webm?response-content-disposition=attachment", filename: "Weekly sync.webm", expires_in_seconds: 300 };
 
   function captureAnchor() {
     const anchors: HTMLAnchorElement[] = [];
@@ -474,63 +470,42 @@ describe("row media download", () => {
     return anchors;
   }
 
-  it("downloads the muxed video as <title>.webm from a fresh manifest", async () => {
+  it("follows a fresh server download link for the recording", async () => {
     await renderList([item("a", "Weekly sync")]);
     const anchors = captureAnchor();
-    const get = vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(manifest({}));
+    const get = vi.spyOn(api, "getMediaDownloadLink").mockResolvedValue(link);
     chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
     await waitFor(() => expect(anchors).toHaveLength(1));
     expect(get).toHaveBeenCalledWith("a");
-    expect(anchors[0]).toHaveAttribute("href", "http://store.test/v.webm");
-    expect(anchors[0]).toHaveAttribute("download", "Weekly sync.webm");
+    expect(anchors[0]).toHaveAttribute("href", link.url);
+    expect(anchors[0]).not.toHaveAttribute("target");
   });
 
-  it("takes the video source when audio and video are separate", async () => {
-    await renderList([item("a", "Weekly sync")]);
-    const anchors = captureAnchor();
-    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(manifest({
-      video_presence: "separate", muxed_video_source: null, video_sources: [source("http://store.test/v.mp4", "video/mp4")],
-    }));
-    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
-    await waitFor(() => expect(anchors).toHaveLength(1));
-    expect(anchors[0]).toHaveAttribute("href", "http://store.test/v.mp4");
-    expect(anchors[0]).toHaveAttribute("download", "Weekly sync.mp4");
-  });
-
-  it("downloads the audio of an audio-only recording with its own extension", async () => {
+  it("offers the same link for an audio-only recording", async () => {
     await renderList([item("a", "Podcast", { mediaKind: "audio" })]);
     const anchors = captureAnchor();
-    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(manifest({ video_presence: "absent", muxed_video_source: null }));
+    const get = vi.spyOn(api, "getMediaDownloadLink").mockResolvedValue(link);
     chooseFromMenu("Podcast", t("library:row.downloadAudio"));
     await waitFor(() => expect(anchors).toHaveLength(1));
-    expect(anchors[0]).toHaveAttribute("href", "http://store.test/a.m4a");
-    expect(anchors[0]).toHaveAttribute("download", "Podcast.m4a");
+    expect(get).toHaveBeenCalledWith("a");
   });
 
-  it("tells the user when the browser opened the file in a tab instead of saving it", async () => {
-    await renderList([item("a", "Weekly sync")]);
-    captureAnchor();
-    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(manifest({}));
-    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
-    expect(await screen.findByText(t("meeting:mediaOpened"))).toHaveAttribute("role", "status");
-  });
-
-  it("shows an inline error when there is no manifest or no source", async () => {
+  it("shows an inline error when the API refuses the link, and lets the user retry", async () => {
     await renderList([item("a", "Weekly sync")]);
     const anchors = captureAnchor();
-    const get = vi.spyOn(api, "getPlaybackManifest").mockRejectedValue(new Error("Error 404"));
+    const get = vi.spyOn(api, "getMediaDownloadLink").mockRejectedValue(new Error("Error 404"));
     chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
-    expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.downloadMediaFailed"));
-    get.mockResolvedValue(manifest({ muxed_video_source: null }));
-    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.downloadMediaFailed"));
     expect(anchors).toHaveLength(0);
+    get.mockResolvedValue(link);
+    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
+    await waitFor(() => expect(anchors).toHaveLength(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("does nothing for a recording that is not ready", async () => {
     await renderList([item("p", "Processing one", { processState: ProcessState.Transcribing })]);
-    const get = vi.spyOn(api, "getPlaybackManifest");
+    const get = vi.spyOn(api, "getMediaDownloadLink");
     chooseFromMenu("Processing one", t("library:row.downloadVideo"));
     expect(get).not.toHaveBeenCalled();
   });

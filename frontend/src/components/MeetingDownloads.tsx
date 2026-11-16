@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { PlaybackManifest } from "../api";
 import { transcriptToText, type ExportTurn } from "../transcript-export";
-import { downloadMeetingMedia, mediaProgressText, pickMediaSource } from "../media-download";
+import { downloadMeetingMedia, pickMediaSource } from "../media-download";
 import { downloadMeetingSummary } from "../summary-download";
 import { saveTextFile, transcriptFilename } from "../transcript-download";
 import { Download } from "lucide-react";
@@ -22,8 +22,7 @@ export interface MeetingDownloadsProps {
 export function MeetingDownloads({ meetingId, title, manifest, turns, hasSummary = false }: MeetingDownloadsProps) {
   const { t } = useT();
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  // A second click while a file is being saved must not open a second file picker.
+  // A second click while the link is being requested must not start a second download.
   const savingMedia = useRef(false);
   const choice = pickMediaSource(manifest);
   const audioOnly = manifest?.video_presence === "absent" || manifest?.video_presence === "unknown";
@@ -51,12 +50,9 @@ export function MeetingDownloads({ meetingId, title, manifest, turns, hasSummary
     if (!choice || savingMedia.current) return;
     savingMedia.current = true;
     setError(null);
-    setNotice(mediaProgressText(null));
     try {
-      const outcome = await downloadMeetingMedia(meetingId, title, percent => setNotice(mediaProgressText(percent)));
-      setNotice(outcome === "opened" ? t("meeting:mediaOpened") : null);
+      await downloadMeetingMedia(meetingId);
     } catch {
-      setNotice(null);
       setError(t("meeting:downloadFailed"));
     } finally {
       savingMedia.current = false;
@@ -71,7 +67,6 @@ export function MeetingDownloads({ meetingId, title, manifest, turns, hasSummary
       <MenuItem disabled={!hasSummary} hint={hasSummary ? undefined : t("meeting:summaryUnavailable")}
         onSelect={() => void downloadSummary()}>{t("meeting:downloadSummary")}</MenuItem>
     </Menu>
-    {notice && <p role="status" className="meeting-notice">{notice}</p>}
     {error && <p role="alert" className="meeting-error">{error}</p>}
   </div>;
 }

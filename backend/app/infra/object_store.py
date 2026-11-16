@@ -17,6 +17,7 @@ class ObjectStore(ABC):
     - get: retrieves the content of an object by reference.
     - delete: deletes an object by reference.
     - temporary_read_url: generates a pre-signed read URL with a TTL.
+    - temporary_download_url: the same, forcing a download under a given file name.
     """
 
     @abstractmethod
@@ -78,6 +79,15 @@ class ObjectStore(ABC):
     ) -> str:
         """Generates a temporary pre-signed URL for reading the object."""
         ...
+
+    async def temporary_download_url(
+        self,
+        reference: str,
+        filename: str,
+        ttl_seconds: int = 300,
+    ) -> str:
+        """Pre-signed read URL that makes the browser save the object as ``filename``."""
+        raise NotImplementedError("attachment download links are not supported by this object store")
 
 
 def create_object_store() -> ObjectStore:

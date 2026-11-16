@@ -139,7 +139,6 @@
 .meeting-speaker { font-weight: var(--ds-weight-semibold); }
 .meeting-ambiguous { color: var(--ds-speaker-unresolved); }
 .meeting-error { color: var(--ds-danger-text); overflow-wrap: anywhere; }
-.meeting-notice { color: var(--ds-fg-muted); font-size: var(--ds-text-xs); overflow-wrap: anywhere; }
 .meeting-chat-notice { color: var(--ds-fg-muted); font-size: var(--ds-text-sm); }
 
 @media (max-width: 480px) {

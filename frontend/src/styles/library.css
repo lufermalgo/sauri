@@ -406,14 +406,6 @@
   pointer-events: none;
 }
 
-.library-row-notice {
-  margin: 0;
-  padding: 2px var(--ds-space-2) var(--ds-space-1);
-  color: var(--ds-fg-muted);
-  font-size: var(--ds-text-xs);
-  line-height: 1.3;
-}
-
 .library-row-error,
 .library-rename-error {
   margin: 0;

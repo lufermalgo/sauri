@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import re
 import time
+import unicodedata
 from contextlib import suppress
 from typing import Any, BinaryIO
+from urllib.parse import quote
 
 import boto3
 from botocore.config import Config
@@ -264,3 +267,31 @@ class S3ObjectStore(ObjectStore):
             )
         )
         return url
+
+    async def temporary_download_url(
+        self,
+        reference: str,
+        filename: str,
+        ttl_seconds: int = 300,
+    ) -> str:
+        """Pre-signed read URL whose response carries ``Content-Disposition: attachment``."""
+        url: str = await asyncio.to_thread(
+            functools.partial(
+                self._presign_client.generate_presigned_url,
+                ClientMethod="get_object",
+                Params={
+                    "Bucket": self._bucket,
+                    "Key": reference,
+                    "ResponseContentDisposition": attachment_content_disposition(filename),
+                },
+                ExpiresIn=ttl_seconds,
+            )
+        )
+        return url
+
+
+def attachment_content_disposition(filename: str) -> str:
+    """``attachment`` header with an ASCII fallback and the exact name as RFC 5987 ``filename*``."""
+    fallback = unicodedata.normalize("NFKD", filename).encode("ascii", "ignore").decode("ascii")
+    fallback = re.sub(r'[^A-Za-z0-9 ._()\[\]+@&#~-]', "_", fallback).strip() or "download"
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
