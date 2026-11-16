@@ -1,13 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import type { EngineKindInfo, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
-import { copy } from "../../copy/es";
 import { Button, Card, Icon, StatusBadge, useTooltip } from "../ui";
 import { isLocalApp, processList } from "./engineLabels";
 import { ProviderLogo } from "./ProviderLogo";
 import type { CatalogEntry } from "./useModelCatalogs";
-
-const text = copy.engines.card;
+import { t, useT } from "../../i18n";
 
 const BADGE_TONE = {
   active: "success",
@@ -36,22 +34,22 @@ function IconAction({ icon, label, onClick, disabled }: { icon: LucideIcon; labe
 }
 
 function keyLine(provider: EngineProvider, info: EngineKindInfo | undefined): string {
-  if (provider.key_set) return text.keyShown(provider.key_hint);
-  return info?.key_required === false && isLocalApp(provider.kind) ? text.keyNotNeeded : text.keyNone;
+  if (provider.key_set) return provider.key_hint ? t("engines:card.keyShown", { hint: provider.key_hint }) : t("engines:card.keySaved");
+  return info?.key_required === false && isLocalApp(provider.kind) ? t("engines:card.keyNotNeeded") : t("engines:card.keyNone");
 }
 
 /** What the provider can do for Sauri: read from the models it listed, or, when its type serves nothing yet, said so. */
 function servesLine(info: EngineKindInfo | undefined, catalog: CatalogEntry | undefined): string | null {
-  if (info && info.capabilities.length === 0) return text.servesNone;
+  if (info && info.capabilities.length === 0) return t("engines:card.servesNone");
   if (catalog?.status !== "ready") return null;
-  return catalog.serves.length > 0 ? text.serves(processList(catalog.serves)) : text.servesNone;
+  return catalog.serves.length > 0 ? t("engines:card.serves", { list: processList(catalog.serves) }) : t("engines:card.servesNone");
 }
 
 function modelsLine(provider: EngineProvider, catalog: CatalogEntry | undefined): string {
-  if (!catalog) return text.modelsNotAsked;
-  if (catalog.status === "loading") return text.modelsLoading;
-  if (catalog.status === "failed" || catalog.models.length === 0) return text.modelsNoList;
-  return text.modelsCount(catalog.models.length);
+  if (!catalog) return t("engines:card.modelsNotAsked");
+  if (catalog.status === "loading") return t("engines:card.modelsLoading");
+  if (catalog.status === "failed" || catalog.models.length === 0) return t("engines:card.modelsNoList");
+  return t("engines:card.modelsCount", { count: catalog.models.length });
 }
 
 interface ProviderCardProps {
@@ -68,10 +66,11 @@ interface ProviderCardProps {
 /** A provider the person linked: logo and name, state in words, address, key hint and model count,
  * the processes using it, and an on/off switch with edit and delete. Off providers are dimmed. */
 export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit, onDelete }: ProviderCardProps) {
+  const { t } = useT();
   const titleId = `engines-card-${provider.id}`;
   const switchLabelId = `${titleId}-switch`;
   const info = kinds.find((candidate) => candidate.kind === provider.kind);
-  const kindLabel = copy.engines.kinds[provider.kind].label;
+  const kindLabel = t(`engines:kinds.${provider.kind}.label`);
   const dimmed = provider.status === "disabled";
   const serves = servesLine(info, catalog);
 
@@ -83,24 +82,24 @@ export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit,
           <h4 id={titleId} className="engines-card-title">{provider.label}</h4>
           {provider.label !== kindLabel && <p className="engines-card-kind">{kindLabel}</p>}
         </div>
-        <StatusBadge tone={BADGE_TONE[provider.status]} dot>{copy.engines.statuses[provider.status]}</StatusBadge>
+        <StatusBadge tone={BADGE_TONE[provider.status]} dot>{t(`engines:statuses.${provider.status}`)}</StatusBadge>
       </div>
       <dl className="engines-kv">
         <div>
-          <dt>{text.address}</dt>
-          <dd className="engines-kv-mono" title={provider.base_url ?? undefined}>{provider.base_url ?? text.noAddress}</dd>
+          <dt>{t("engines:card.address")}</dt>
+          <dd className="engines-kv-mono" title={provider.base_url ?? undefined}>{provider.base_url ?? t("engines:card.noAddress")}</dd>
         </div>
         <div>
-          <dt>{text.key}</dt>
+          <dt>{t("engines:card.key")}</dt>
           <dd className={provider.key_set ? "engines-kv-mono" : undefined}>{keyLine(provider, info)}</dd>
         </div>
         <div>
-          <dt>{text.models}</dt>
+          <dt>{t("engines:card.models")}</dt>
           <dd>{modelsLine(provider, catalog)}</dd>
         </div>
       </dl>
       {serves && <p className="engines-card-usage">{serves}</p>}
-      <p className="engines-card-usage">{provider.used_by.length > 0 ? text.usedBy(processList(provider.used_by)) : text.unused}</p>
+      <p className="engines-card-usage">{provider.used_by.length > 0 ? t("engines:card.usedBy", { list: processList(provider.used_by) }) : t("engines:card.unused")}</p>
       <div className="engines-card-actions">
         <span className="engines-card-switch">
           <button
@@ -114,11 +113,11 @@ export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit,
           >
             <span className="settings-switch-thumb" aria-hidden="true" />
           </button>
-          <span id={switchLabelId}>{text.active}</span>
+          <span id={switchLabelId}>{t("engines:card.active")}</span>
         </span>
         <span className="engines-card-icons">
-          <IconAction icon={Pencil} label={text.edit(provider.label)} disabled={busy} onClick={onEdit} />
-          <IconAction icon={Trash2} label={text.remove(provider.label)} disabled={busy} onClick={onDelete} />
+          <IconAction icon={Pencil} label={t("engines:card.edit", { name: provider.label })} disabled={busy} onClick={onEdit} />
+          <IconAction icon={Trash2} label={t("engines:card.remove", { name: provider.label })} disabled={busy} onClick={onDelete} />
         </span>
       </div>
     </Card>
@@ -131,15 +130,16 @@ interface UnconfiguredCardProps {
 }
 
 function unconfiguredHelp(kind: EngineProviderKind): string {
-  if (isLocalApp(kind)) return text.unconfiguredLocal;
-  return kind === "openai_compatible" ? text.unconfiguredCompatible : text.unconfiguredKey;
+  if (isLocalApp(kind)) return t("engines:card.unconfiguredLocal");
+  return kind === "openai_compatible" ? t("engines:card.unconfiguredCompatible") : t("engines:card.unconfiguredKey");
 }
 
 /** A kind Sauri can link that the person has not set up: dashed and dimmed, with one way forward and
  * no delete, because there is nothing to delete yet. */
 export function UnconfiguredCard({ info, onConfigure }: UnconfiguredCardProps) {
+  const { t } = useT();
   const titleId = `engines-kind-${info.kind}`;
-  const label = copy.engines.kinds[info.kind].label;
+  const label = t(`engines:kinds.${info.kind}.label`);
   return (
     <Card className="engines-card" dimmed dashed aria-labelledby={titleId}>
       <div className="engines-card-head">
@@ -147,12 +147,12 @@ export function UnconfiguredCard({ info, onConfigure }: UnconfiguredCardProps) {
         <div className="engines-card-names">
           <h4 id={titleId} className="engines-card-title">{label}</h4>
         </div>
-        <StatusBadge tone="neutral">{copy.engines.statuses.unconfigured}</StatusBadge>
+        <StatusBadge tone="neutral">{t("engines:statuses.unconfigured")}</StatusBadge>
       </div>
       <p className="engines-card-help">{unconfiguredHelp(info.kind)}</p>
       <div className="engines-card-actions">
-        <Button variant="secondary" size="sm" aria-label={text.configureLabel(label)} onClick={onConfigure}>
-          {text.configure}
+        <Button variant="secondary" size="sm" aria-label={t("engines:card.configureLabel", { name: label })} onClick={onConfigure}>
+          {t("engines:card.configure")}
         </Button>
       </div>
     </Card>
@@ -161,10 +161,11 @@ export function UnconfiguredCard({ info, onConfigure }: UnconfiguredCardProps) {
 
 /** The last tile of the grid: the way to link a provider of any kind. */
 export function AddProviderCard({ onAdd }: { onAdd: () => void }) {
+  const { t } = useT();
   return (
     <button type="button" className="engines-add-card" onClick={onAdd}>
       <Icon icon={Plus} />
-      {copy.engines.add}
+      {t("engines:add")}
     </button>
   );
 }

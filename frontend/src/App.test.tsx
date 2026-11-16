@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
-import { copy } from "./copy/es";
 import { t } from "./i18n";
 
 function createLocalStorage(): Storage {
@@ -110,8 +109,8 @@ describe("global authentication gate", () => {
     fireEvent.click(screen.getByRole("link", { name: t("shell:profile.settings") }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/settings"));
-    expect(screen.getByRole("heading", { name: copy.settings.title })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: copy.settings.categories.account.label })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: t("settings:title") })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: t("settings:categories.account.label") })).toBeTruthy();
     // On settings the gear becomes the toggle of the categories pane and stays the current item.
     expect(screen.getByRole("button", { name: t("shell:profile.settings") }).getAttribute("aria-current")).toBe("page");
 
@@ -120,7 +119,7 @@ describe("global authentication gate", () => {
       window.dispatchEvent(new Event("sauri:navigate"));
     });
     expect(screen.getByRole("heading", { name: t("shell:notFound.title") })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: copy.settings.title })).toBeNull();
+    expect(screen.queryByRole("heading", { name: t("settings:title") })).toBeNull();
   });
 
   it("shows the name and email carried by the signed-in token", () => {

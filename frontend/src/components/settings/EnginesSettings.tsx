@@ -6,7 +6,6 @@ import {
   listEngineProviders,
   updateEngineProvider,
 } from "../../api";
-import { copy } from "../../copy/es";
 import { Button, ConfirmDialog, Skeleton } from "../ui";
 import { processList } from "./engineLabels";
 import { ModelsCatalog } from "./ModelsCatalog";
@@ -14,6 +13,7 @@ import { ProviderDialog, describeEngineError } from "./ProviderDialog";
 import { AddProviderCard, ProviderCard, UnconfiguredCard } from "./ProviderCard";
 import { useModelCatalogs } from "./useModelCatalogs";
 import "../../styles/engines.css";
+import { useT } from "../../i18n";
 
 type Load =
   | { status: "loading" }
@@ -23,8 +23,6 @@ type Load =
 type OpenDialog = { provider: EngineProvider | null; kind?: EngineProviderKind } | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
 
-const text = copy.engines;
-
 /** Cards are listed by state: working ones first, then incomplete, then off. */
 const STATE_ORDER: Record<EngineProvider["status"], number> = { active: 0, no_key: 1, disabled: 2, unconfigured: 3 };
 
@@ -32,6 +30,7 @@ const STATE_ORDER: Record<EngineProvider["status"], number> = { active: 0, no_ke
  * kind not set up yet, and a last tile to add any provider. Keys never reach this screen, only their last
  * four characters. Below, the models each active provider offers. */
 export function EnginesSettings() {
+  const { t } = useT();
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [deleting, setDeleting] = useState<EngineProvider | null>(null);
@@ -81,13 +80,13 @@ export function EnginesSettings() {
       setNotice({
         kind: "success",
         text: enabled
-          ? text.turnOff.turnedOn(provider.label)
+          ? t("engines:turnOff.turnedOn", { name: provider.label })
           : reverted.length > 0
-            ? text.turnOff.doneReverted(provider.label, processList(reverted))
-            : text.turnOff.done(provider.label),
+            ? t("engines:turnOff.doneReverted", { name: provider.label, list: processList(reverted) })
+            : t("engines:turnOff.done", { name: provider.label }),
       });
     } catch (error) {
-      setNotice({ kind: "error", text: `${text.turnOff.failed} ${describeEngineError(error)}` });
+      setNotice({ kind: "error", text: `${t("engines:turnOff.failed")} ${describeEngineError(error)}` });
     } finally {
       setPending(null);
     }
@@ -112,11 +111,11 @@ export function EnginesSettings() {
       setNotice({
         kind: "success",
         text: reverted.length > 0
-          ? text.remove.doneReverted(provider.label, processList(reverted))
-          : text.remove.done(provider.label),
+          ? t("engines:remove.doneReverted", { name: provider.label, list: processList(reverted) })
+          : t("engines:remove.done", { name: provider.label }),
       });
     } catch (error) {
-      setNotice({ kind: "error", text: `${text.remove.failed} ${describeEngineError(error)}` });
+      setNotice({ kind: "error", text: `${t("engines:remove.failed")} ${describeEngineError(error)}` });
     } finally {
       setPending(null);
       // The card that held focus is gone or still there; either way focus returns to a stable control.
@@ -132,21 +131,21 @@ export function EnginesSettings() {
   return (
     <div className="settings-stack engines">
       <div className="engines-intro">
-        <p className="settings-help">{text.subtitle}</p>
-        <p className="settings-help">{text.help}</p>
+        <p className="settings-help">{t("engines:subtitle")}</p>
+        <p className="settings-help">{t("engines:help")}</p>
       </div>
 
       <section className="engines-section" aria-labelledby="engines-providers-title">
         <div className="engines-section-head">
-          <h3 id="engines-providers-title" className="engines-section-title">{text.providersTitle}</h3>
-          <p className="settings-help">{text.providersHelp}</p>
+          <h3 id="engines-providers-title" className="engines-section-title">{t("engines:providersTitle")}</h3>
+          <p className="settings-help">{t("engines:providersHelp")}</p>
         </div>
         <div role="status" className="settings-notice">{notice?.kind === "success" ? notice.text : null}</div>
         {notice?.kind === "error" && <p role="alert" className="ui-field-error settings-notice">{notice.text}</p>}
 
         {load.status === "loading" && (
           <div role="status" className="settings-loading">
-            <p className="settings-help">{text.loading}</p>
+            <p className="settings-help">{t("engines:loading")}</p>
             <div className="engines-grid" aria-hidden="true">
               <Skeleton width="100%" height="9rem" radius="md" />
               <Skeleton width="100%" height="9rem" radius="md" />
@@ -155,12 +154,12 @@ export function EnginesSettings() {
         )}
         {load.status === "error" && (
           <div className="settings-load-error">
-            <p role="alert" className="ui-field-error">{text.loadError}</p>
-            <Button variant="secondary" onClick={fetchAll}>{text.retry}</Button>
+            <p role="alert" className="ui-field-error">{t("engines:loadError")}</p>
+            <Button variant="secondary" onClick={fetchAll}>{t("engines:retry")}</Button>
           </div>
         )}
         {load.status === "ready" && (
-          <ul ref={grid} className="engines-grid" aria-label={text.listLabel}>
+          <ul ref={grid} className="engines-grid" aria-label={t("engines:listLabel")}>
             {providers.map((provider) => (
               <li key={provider.id} className="engines-grid-item">
                 <ProviderCard
@@ -207,30 +206,30 @@ export function EnginesSettings() {
       )}
       {turningOff && (
         <ConfirmDialog
-          title={text.turnOff.title}
+          title={t("engines:turnOff.title")}
           body={
             <>
-              <p>{text.turnOff.body(turningOff.label)}</p>
-              <p>{text.turnOff.reverts(processList(turningOff.used_by))}</p>
+              <p>{t("engines:turnOff.body", { name: turningOff.label })}</p>
+              <p>{t("engines:turnOff.reverts", { list: processList(turningOff.used_by) })}</p>
             </>
           }
-          confirmLabel={text.turnOff.confirm}
-          cancelLabel={text.turnOff.cancel}
+          confirmLabel={t("engines:turnOff.confirm")}
+          cancelLabel={t("engines:turnOff.cancel")}
           onConfirm={() => void setEnabled(turningOff, false)}
           onCancel={() => setTurningOff(null)}
         />
       )}
       {deleting && (
         <ConfirmDialog
-          title={text.remove.title}
+          title={t("engines:remove.title")}
           body={
             <>
-              <p>{text.remove.body(deleting.label)}</p>
-              <p>{deleting.used_by.length > 0 ? text.remove.reverts(processList(deleting.used_by)) : text.remove.noReverts}</p>
+              <p>{t("engines:remove.body", { name: deleting.label })}</p>
+              <p>{deleting.used_by.length > 0 ? t("engines:remove.reverts", { list: processList(deleting.used_by) }) : t("engines:remove.noReverts")}</p>
             </>
           }
-          confirmLabel={text.remove.confirm}
-          cancelLabel={text.remove.cancel}
+          confirmLabel={t("engines:remove.confirm")}
+          cancelLabel={t("engines:remove.cancel")}
           onConfirm={() => confirmDelete(deleting)}
           onCancel={() => setDeleting(null)}
         />

@@ -2,12 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { copy } from "../copy/es";
 import { answerEnginesApi } from "./engineApiStub";
 import { SummarySettings } from "./settings/SummarySettings";
-
-const text = copy.settings.summaries;
-const dialogText = copy.settings.templateDialog;
+import { t } from "../i18n";
 
 interface FakeTemplate {
   id: string;
@@ -108,7 +105,7 @@ async function renderReady(data = initial()) {
 }
 
 const row = (name: string) => screen.getByText(name, { selector: ".settings-template-name" }).closest("li")!;
-const templatesSection = () => screen.getByRole("region", { name: text.templatesTitle });
+const templatesSection = () => screen.getByRole("region", { name: t("settings:summaries.templatesTitle") });
 const writes = () => backend.calls.filter((call) => call.method !== "GET");
 
 beforeEach(() => {
@@ -128,26 +125,26 @@ afterEach(() => {
 describe("summary templates list", () => {
   it("explains the default template and that edits only affect future summaries", async () => {
     await renderReady();
-    expect(screen.getByText(text.help)).toBeInTheDocument();
-    expect(text.help).toMatch(/por defecto/);
-    expect(text.help).toMatch(/futuros/);
+    expect(screen.getByText(t("settings:summaries.help"))).toBeInTheDocument();
+    expect(t("settings:summaries.help")).toMatch(/por defecto/);
+    expect(t("settings:summaries.help")).toMatch(/futuros/);
   });
 
   it("groups templates by category, then without category, and marks the default", async () => {
     await renderReady();
     const headings = within(templatesSection()).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
-    expect(headings).toEqual([text.templatesTitle, "Sales", "Support", text.uncategorized]);
+    expect(headings).toEqual([t("settings:summaries.templatesTitle"), "Sales", "Support", t("settings:summaries.uncategorized")]);
 
     const commercial = screen.getByRole("region", { name: "Sales" });
     expect(within(commercial).getAllByRole("listitem").map((item) => item.querySelector(".settings-template-name")?.textContent))
       .toEqual(["Key results", "Follow-up"]);
-    expect(within(commercial).queryByText(text.emptyCategory)).toBeNull();
-    expect(within(screen.getByRole("region", { name: "Support" })).getByText(text.emptyCategory)).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: text.uncategorized })).getByText("Free notes")).toBeInTheDocument();
+    expect(within(commercial).queryByText(t("settings:summaries.emptyCategory"))).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Support" })).getByText(t("settings:summaries.emptyCategory"))).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: t("settings:summaries.uncategorized") })).getByText("Free notes")).toBeInTheDocument();
 
-    expect(within(row("Key results")).getByText(text.defaultBadge)).toBeInTheDocument();
-    expect(within(row("Follow-up")).queryByText(text.defaultBadge)).toBeNull();
-    expect(screen.getAllByText(text.defaultBadge)).toHaveLength(1);
+    expect(within(row("Key results")).getByText(t("settings:summaries.defaultBadge"))).toBeInTheDocument();
+    expect(within(row("Follow-up")).queryByText(t("settings:summaries.defaultBadge"))).toBeNull();
+    expect(screen.getAllByText(t("settings:summaries.defaultBadge"))).toHaveLength(1);
   });
 
   it("shows the provenance note as muted text", async () => {
@@ -158,9 +155,9 @@ describe("summary templates list", () => {
 
   it("offers 'use as default' only on templates that are not the default, with accessible names", async () => {
     await renderReady();
-    expect(screen.queryByRole("button", { name: text.useAsDefaultLabel("Key results") })).toBeNull();
-    expect(screen.getByRole("button", { name: text.useAsDefaultLabel("Follow-up") })).toHaveTextContent(text.useAsDefault);
-    expect(screen.getByRole("button", { name: text.editLabel("Key results") })).toHaveTextContent(text.edit);
+    expect(screen.queryByRole("button", { name: t("settings:summaries.useAsDefaultLabel", { name: "Key results" }) })).toBeNull();
+    expect(screen.getByRole("button", { name: t("settings:summaries.useAsDefaultLabel", { name: "Follow-up" }) })).toHaveTextContent(t("settings:summaries.useAsDefault"));
+    expect(screen.getByRole("button", { name: t("settings:summaries.editLabel", { name: "Key results" }) })).toHaveTextContent(t("settings:summaries.edit"));
   });
 
   it("shows an empty state, and a load error that can be retried", async () => {
@@ -168,13 +165,13 @@ describe("summary templates list", () => {
     vi.stubGlobal("fetch", backend.handler);
     backend.failing.add("GET /");
     render(<SummarySettings />);
-    expect(await within(templatesSection()).findByRole("alert")).toHaveTextContent(text.loadError);
-    expect(screen.getByRole("button", { name: text.newTemplate })).toBeDisabled();
+    expect(await within(templatesSection()).findByRole("alert")).toHaveTextContent(t("settings:summaries.loadError"));
+    expect(screen.getByRole("button", { name: t("settings:summaries.newTemplate") })).toBeDisabled();
 
     backend.failing.clear();
-    fireEvent.click(screen.getByRole("button", { name: text.retry }));
-    expect(await screen.findByText(text.empty)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: text.newTemplate })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.retry") }));
+    expect(await screen.findByText(t("settings:summaries.empty"))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("settings:summaries.newTemplate") })).toBeEnabled();
   });
 
   it("sends the stored token and never lists with a body", async () => {
@@ -189,53 +186,53 @@ describe("summary templates list", () => {
 describe("choosing the default template", () => {
   it("moves the mark at once and confirms, calling PUT /default with the template id", async () => {
     await renderReady();
-    fireEvent.click(screen.getByRole("button", { name: text.useAsDefaultLabel("Follow-up") }));
-    expect(within(row("Follow-up")).getByText(text.defaultBadge)).toBeInTheDocument();
-    expect(within(row("Key results")).queryByText(text.defaultBadge)).toBeNull();
-    await waitFor(() => expect(within(templatesSection()).getByRole("status")).toHaveTextContent(text.defaultSaved("Follow-up")));
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.useAsDefaultLabel", { name: "Follow-up" }) }));
+    expect(within(row("Follow-up")).getByText(t("settings:summaries.defaultBadge"))).toBeInTheDocument();
+    expect(within(row("Key results")).queryByText(t("settings:summaries.defaultBadge"))).toBeNull();
+    await waitFor(() => expect(within(templatesSection()).getByRole("status")).toHaveTextContent(t("settings:summaries.defaultSaved", { name: "Follow-up" })));
     expect(writes()).toEqual([{ method: "PUT", path: "/default", body: { template_id: "t2" } }]);
   });
 
   it("rolls back and says so when the API refuses", async () => {
     await renderReady();
     backend.failing.add("PUT /default");
-    fireEvent.click(screen.getByRole("button", { name: text.useAsDefaultLabel("Follow-up") }));
-    expect(await within(templatesSection()).findByRole("alert")).toHaveTextContent(text.defaultError);
-    expect(within(row("Key results")).getByText(text.defaultBadge)).toBeInTheDocument();
-    expect(within(row("Follow-up")).queryByText(text.defaultBadge)).toBeNull();
-    expect(screen.getAllByText(text.defaultBadge)).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.useAsDefaultLabel", { name: "Follow-up" }) }));
+    expect(await within(templatesSection()).findByRole("alert")).toHaveTextContent(t("settings:summaries.defaultError"));
+    expect(within(row("Key results")).getByText(t("settings:summaries.defaultBadge"))).toBeInTheDocument();
+    expect(within(row("Follow-up")).queryByText(t("settings:summaries.defaultBadge"))).toBeNull();
+    expect(screen.getAllByText(t("settings:summaries.defaultBadge"))).toHaveLength(1);
   });
 });
 
 describe("editing a template", () => {
   async function openEditor(name: string) {
-    fireEvent.click(screen.getByRole("button", { name: text.editLabel(name) }));
-    return screen.findByRole("dialog", { name: dialogText.editTitle });
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.editLabel", { name }) }));
+    return screen.findByRole("dialog", { name: t("settings:templateDialog.editTitle") });
   }
 
   it("fills the form, sends only the changed fields and updates the list", async () => {
     await renderReady();
     const dialog = await openEditor("Follow-up");
-    expect(within(dialog).getByLabelText(dialogText.name)).toHaveValue("Follow-up");
-    expect(within(dialog).getByLabelText(dialogText.category)).toHaveValue("c1");
-    expect(within(dialog).getByLabelText(dialogText.instructions)).toHaveValue("Follow-up instructions");
+    expect(within(dialog).getByLabelText(t("settings:templateDialog.name"))).toHaveValue("Follow-up");
+    expect(within(dialog).getByLabelText(t("settings:templateDialog.category"))).toHaveValue("c1");
+    expect(within(dialog).getByLabelText(t("settings:templateDialog.instructions"))).toHaveValue("Follow-up instructions");
 
-    fireEvent.change(within(dialog).getByLabelText(dialogText.name), { target: { value: "Weekly follow-up" } });
-    fireEvent.change(within(dialog).getByLabelText(dialogText.category), { target: { value: "" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.save }));
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.name")), { target: { value: "Weekly follow-up" } });
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.category")), { target: { value: "" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.save") }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(writes()).toEqual([{ method: "PATCH", path: "/t2", body: { name: "Weekly follow-up", category_id: null } }]);
-    const uncategorized = screen.getByRole("region", { name: text.uncategorized });
+    const uncategorized = screen.getByRole("region", { name: t("settings:summaries.uncategorized") });
     expect(within(uncategorized).getByText("Weekly follow-up")).toBeInTheDocument();
-    expect(within(templatesSection()).getByRole("status")).toHaveTextContent(text.templateSaved("Weekly follow-up"));
+    expect(within(templatesSection()).getByRole("status")).toHaveTextContent(t("settings:summaries.templateSaved", { name: "Weekly follow-up" }));
   });
 
   it("sends the new instructions when they change", async () => {
     await renderReady();
     const dialog = await openEditor("Free notes");
-    fireEvent.change(within(dialog).getByLabelText(dialogText.instructions), { target: { value: "New text" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.save }));
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.instructions")), { target: { value: "New text" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.save") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(writes()[0].body).toEqual({ instructions: "New text" });
   });
@@ -243,7 +240,7 @@ describe("editing a template", () => {
   it("closes without calling the API when nothing changed", async () => {
     await renderReady();
     const dialog = await openEditor("Follow-up");
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.save }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.save") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(writes()).toEqual([]);
   });
@@ -252,12 +249,12 @@ describe("editing a template", () => {
     await renderReady();
     backend.failing.add("PATCH /t2");
     const dialog = await openEditor("Follow-up");
-    fireEvent.change(within(dialog).getByLabelText(dialogText.name), { target: { value: "Changed" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.save }));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(dialogText.error);
-    expect(screen.getByRole("dialog", { name: dialogText.editTitle })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: dialogText.save })).toBeEnabled();
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.cancel }));
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.name")), { target: { value: "Changed" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.save") }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(t("settings:templateDialog.error"));
+    expect(screen.getByRole("dialog", { name: t("settings:templateDialog.editTitle") })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("settings:templateDialog.save") })).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.cancel") }));
     expect(screen.queryByText("Changed", { selector: ".settings-template-name" })).toBeNull();
     expect(screen.getByText("Follow-up", { selector: ".settings-template-name" })).toBeInTheDocument();
   });
@@ -265,24 +262,24 @@ describe("editing a template", () => {
   it("validates the name and instructions against the schema limits before calling the API", async () => {
     await renderReady();
     const dialog = await openEditor("Follow-up");
-    const name = within(dialog).getByLabelText(dialogText.name);
-    const instructions = within(dialog).getByLabelText(dialogText.instructions);
+    const name = within(dialog).getByLabelText(t("settings:templateDialog.name"));
+    const instructions = within(dialog).getByLabelText(t("settings:templateDialog.instructions"));
 
     fireEvent.change(name, { target: { value: "   " } });
     fireEvent.change(instructions, { target: { value: "" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.save }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.save") }));
     expect(name).toHaveAttribute("aria-invalid", "true");
-    expect(name).toHaveAccessibleDescription(dialogText.nameRequired);
+    expect(name).toHaveAccessibleDescription(t("settings:templateDialog.nameRequired"));
     expect(instructions).toHaveAttribute("aria-invalid", "true");
-    expect(instructions).toHaveAccessibleDescription(new RegExp(dialogText.instructionsRequired));
+    expect(instructions).toHaveAccessibleDescription(new RegExp(t("settings:templateDialog.instructionsRequired")));
 
     fireEvent.change(name, { target: { value: "x".repeat(129) } });
     fireEvent.change(instructions, { target: { value: "ok" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.save }));
-    expect(name).toHaveAccessibleDescription(dialogText.nameTooLong);
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.save") }));
+    expect(name).toHaveAccessibleDescription(t("settings:templateDialog.nameTooLong"));
 
     fireEvent.change(name, { target: { value: "x".repeat(128) } });
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.save }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.save") }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(writes()).toHaveLength(1);
   });
@@ -299,12 +296,12 @@ describe("editing a template", () => {
 describe("creating templates and categories", () => {
   it("creates a template in a category and shows it in that group", async () => {
     await renderReady();
-    fireEvent.click(screen.getByRole("button", { name: text.newTemplate }));
-    const dialog = await screen.findByRole("dialog", { name: dialogText.createTitle });
-    fireEvent.change(within(dialog).getByLabelText(dialogText.name), { target: { value: "  Support meeting " } });
-    fireEvent.change(within(dialog).getByLabelText(dialogText.category), { target: { value: "c2" } });
-    fireEvent.change(within(dialog).getByLabelText(dialogText.instructions), { target: { value: "Summarize the ticket" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.create }));
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.newTemplate") }));
+    const dialog = await screen.findByRole("dialog", { name: t("settings:templateDialog.createTitle") });
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.name")), { target: { value: "  Support meeting " } });
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.category")), { target: { value: "c2" } });
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.instructions")), { target: { value: "Summarize the ticket" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.create") }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(writes()).toEqual([{
@@ -312,51 +309,51 @@ describe("creating templates and categories", () => {
       body: { name: "Support meeting", instructions: "Summarize the ticket", category_id: "c2" },
     }]);
     expect(within(screen.getByRole("region", { name: "Support" })).getByText("Support meeting")).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Support" })).queryByText(text.emptyCategory)).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Support" })).queryByText(t("settings:summaries.emptyCategory"))).toBeNull();
   });
 
   it("does not add anything when creating fails", async () => {
     await renderReady();
     backend.failing.add("POST /");
-    fireEvent.click(screen.getByRole("button", { name: text.newTemplate }));
-    const dialog = await screen.findByRole("dialog", { name: dialogText.createTitle });
-    fireEvent.change(within(dialog).getByLabelText(dialogText.name), { target: { value: "Draft" } });
-    fireEvent.change(within(dialog).getByLabelText(dialogText.instructions), { target: { value: "Text" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.create }));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(dialogText.error);
-    fireEvent.click(within(dialog).getByRole("button", { name: dialogText.cancel }));
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.newTemplate") }));
+    const dialog = await screen.findByRole("dialog", { name: t("settings:templateDialog.createTitle") });
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.name")), { target: { value: "Draft" } });
+    fireEvent.change(within(dialog).getByLabelText(t("settings:templateDialog.instructions")), { target: { value: "Text" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.create") }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(t("settings:templateDialog.error"));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:templateDialog.cancel") }));
     expect(screen.queryByText("Draft", { selector: ".settings-template-name" })).toBeNull();
   });
 
   it("creates a category, which then appears as an empty group and in the template form", async () => {
     await renderReady();
-    fireEvent.click(screen.getByRole("button", { name: text.newCategory }));
-    const dialog = await screen.findByRole("dialog", { name: copy.settings.categoryDialog.title });
-    fireEvent.change(within(dialog).getByLabelText(copy.settings.categoryDialog.name), { target: { value: "Management" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: copy.settings.categoryDialog.create }));
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.newCategory") }));
+    const dialog = await screen.findByRole("dialog", { name: t("settings:categoryDialog.title") });
+    fireEvent.change(within(dialog).getByLabelText(t("settings:categoryDialog.name")), { target: { value: "Management" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:categoryDialog.create") }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(writes()).toEqual([{ method: "POST", path: "/categories", body: { name: "Management" } }]);
     const group = screen.getByRole("region", { name: "Management" });
-    expect(within(group).getByText(text.emptyCategory)).toBeInTheDocument();
+    expect(within(group).getByText(t("settings:summaries.emptyCategory"))).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: text.newTemplate }));
-    const select = within(await screen.findByRole("dialog")).getByLabelText(dialogText.category);
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.newTemplate") }));
+    const select = within(await screen.findByRole("dialog")).getByLabelText(t("settings:templateDialog.category"));
     expect(within(select).getByRole("option", { name: "Management" })).toBeInTheDocument();
   });
 
   it("validates the category name and reports a failed creation", async () => {
     await renderReady();
-    fireEvent.click(screen.getByRole("button", { name: text.newCategory }));
+    fireEvent.click(screen.getByRole("button", { name: t("settings:summaries.newCategory") }));
     const dialog = await screen.findByRole("dialog");
-    const name = within(dialog).getByLabelText(copy.settings.categoryDialog.name);
-    fireEvent.click(within(dialog).getByRole("button", { name: copy.settings.categoryDialog.create }));
-    expect(name).toHaveAccessibleDescription(copy.settings.categoryDialog.nameRequired);
+    const name = within(dialog).getByLabelText(t("settings:categoryDialog.name"));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:categoryDialog.create") }));
+    expect(name).toHaveAccessibleDescription(t("settings:categoryDialog.nameRequired"));
     expect(writes()).toEqual([]);
 
     backend.failing.add("POST /categories");
     fireEvent.change(name, { target: { value: "Management" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: copy.settings.categoryDialog.create }));
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent(copy.settings.categoryDialog.error);
+    fireEvent.click(within(dialog).getByRole("button", { name: t("settings:categoryDialog.create") }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(t("settings:categoryDialog.error"));
   });
 });

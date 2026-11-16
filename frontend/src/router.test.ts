@@ -2,8 +2,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { copy } from "./copy/es";
-import { RESERVED_SETTINGS_CATEGORIES, SETTINGS_CATEGORIES, SETTINGS_GROUPS, navigate, parseRoute, routePath, useRoute, type Route } from "./router";
+import { RESERVED_SETTINGS_CATEGORIES, SETTINGS_CATEGORIES, SETTINGS_GROUPS, SETTINGS_SLUGS, navigate, parseRoute, routePath, useRoute, type Route } from "./router";
 
 afterEach(() => {
   window.history.replaceState(null, "", "/");
@@ -23,7 +22,7 @@ describe("parseRoute", () => {
   });
 
   it.each(SETTINGS_CATEGORIES)("resolves the %s settings category from its ASCII slug", (category) => {
-    const slug = copy.settings.categories[category].slug;
+    const slug = SETTINGS_SLUGS[category];
     expect(slug).toMatch(/^[a-z]+$/);
     expect(parseRoute(`/settings/${slug}`, "")).toEqual({ name: "settings", category });
     expect(parseRoute(`/settings/${slug}/`, "")).toEqual({ name: "settings", category });
@@ -32,7 +31,7 @@ describe("parseRoute", () => {
   });
 
   it("keeps the slugs that already shipped and adds the model categories", () => {
-    const slugs = Object.fromEntries(SETTINGS_CATEGORIES.map((name) => [name, copy.settings.categories[name].slug]));
+    const slugs = Object.fromEntries(SETTINGS_CATEGORIES.map((name) => [name, SETTINGS_SLUGS[name]]));
     expect(slugs).toEqual({
       account: "cuenta",
       appearance: "apariencia",

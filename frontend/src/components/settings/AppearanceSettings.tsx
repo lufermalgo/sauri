@@ -1,7 +1,6 @@
 import { useId, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { copy } from "../../copy/es";
 import { THEME_CHOICES, readAppliedTheme, setTheme, type ThemeChoice } from "../../theme";
 import { useT } from "../../i18n";
 import { LanguageSelect } from "../LanguageSelect";
@@ -31,8 +30,8 @@ export function AppearanceSettings() {
         <p className="settings-help">{t("language:help")}</p>
       </Card>
       <Card className="settings-card" aria-labelledby={`${name}-theme-title`}>
-        <h3 id={`${name}-theme-title`} className="settings-card-title">{copy.settings.appearance.themeTitle}</h3>
-        <fieldset className="settings-segmented" aria-label={copy.settings.appearance.themeLabel}>
+        <h3 id={`${name}-theme-title`} className="settings-card-title">{t("settings:appearance.themeTitle")}</h3>
+        <fieldset className="settings-segmented" aria-label={t("settings:appearance.themeLabel")}>
           {THEME_CHOICES.map((choice) => (
             <label key={choice} className="settings-segment">
               <input
@@ -43,16 +42,16 @@ export function AppearanceSettings() {
                 onChange={() => choose(choice)}
               />
               <Icon icon={THEME_ICONS[choice]} />
-              <span>{copy.settings.appearance.themes[choice]}</span>
+              <span>{t(`settings:appearance.themes.${choice}`)}</span>
             </label>
           ))}
         </fieldset>
-        <p className="settings-help">{copy.settings.appearance.themeHelp}</p>
+        <p className="settings-help">{t("settings:appearance.themeHelp")}</p>
       </Card>
       <Card className="settings-card" aria-labelledby={`${name}-sidebar-title`}>
-        <h3 id={`${name}-sidebar-title`} className="settings-card-title">{copy.settings.appearance.sidebarTitle}</h3>
+        <h3 id={`${name}-sidebar-title`} className="settings-card-title">{t("settings:appearance.sidebarTitle")}</h3>
         <div className="settings-switch-row">
-          <span id={`${name}-sidebar-label`} className="settings-switch-label">{copy.settings.appearance.sidebarSwitch}</span>
+          <span id={`${name}-sidebar-label`} className="settings-switch-label">{t("settings:appearance.sidebarSwitch")}</span>
           <button
             type="button"
             role="switch"
@@ -65,7 +64,7 @@ export function AppearanceSettings() {
             <span className="settings-switch-thumb" aria-hidden="true" />
           </button>
         </div>
-        <p id={sidebarHelpId} className="settings-help">{copy.settings.appearance.sidebarHelp}</p>
+        <p id={sidebarHelpId} className="settings-help">{t("settings:appearance.sidebarHelp")}</p>
       </Card>
     </div>
   );

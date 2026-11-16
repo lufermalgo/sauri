@@ -4,8 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { copy } from "../copy/es";
-import { SETTINGS_CATEGORIES, SETTINGS_GROUPS, useRoute, type SettingsCategory } from "../router";
+import { SETTINGS_CATEGORIES, SETTINGS_GROUPS, SETTINGS_SLUGS, useRoute, type SettingsCategory } from "../router";
 import type { SessionUser } from "../session-user";
 import { THEME_STORAGE_KEY, initTheme } from "../theme";
 import { answerEnginesApi } from "./engineApiStub";
@@ -15,7 +14,6 @@ import { SIDEBAR_STORAGE_KEY } from "./useSidebar";
 import { t } from "../i18n";
 
 const owner = { name: "Ana Maria Perez", email: "ana@example.test" };
-const labels = copy.settings.categories;
 
 function createLocalStorage(initial: Record<string, string> = {}): Storage {
   const values = new Map<string, string>(Object.entries(initial));
@@ -56,14 +54,14 @@ function Harness({ user = owner, onLogout = () => undefined }: { user?: SessionU
 }
 
 function open(category?: SettingsCategory) {
-  window.history.replaceState({}, "", category ? `/settings/${labels[category].slug}` : "/settings");
+  window.history.replaceState({}, "", category ? `/settings/${SETTINGS_SLUGS[category]}` : "/settings");
 }
 
 function stubEngineApi() {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => answerEnginesApi(new URL(String(input)).pathname)!));
 }
 
-const nav = () => screen.getByRole("navigation", { name: copy.settings.navLabel });
+const nav = () => screen.getByRole("navigation", { name: t("settings:navLabel") });
 
 beforeEach(() => {
   mediaListeners.clear();
@@ -84,23 +82,23 @@ describe("settings navigation", () => {
     open();
     render(<Harness />);
     const links = within(nav()).getAllByRole("link");
-    expect(links.map((link) => link.textContent)).toEqual(SETTINGS_CATEGORIES.map((name) => labels[name].label));
-    expect(screen.getByRole("heading", { level: 1, name: copy.settings.title })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: labels.account.label })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: labels.account.label })).toHaveAttribute("aria-current", "page");
+    expect(links.map((link) => link.textContent)).toEqual(SETTINGS_CATEGORIES.map((name) => t(`settings:categories.${name}.label`)));
+    expect(screen.getByRole("heading", { level: 1, name: t("settings:title") })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: t("settings:categories.account.label") })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: t("settings:categories.account.label") })).toHaveAttribute("aria-current", "page");
   });
 
   it.each(SETTINGS_CATEGORIES)("opens %s from its deep link and from the list without reloading", (category) => {
     open(category);
     render(<Harness />);
-    expect(screen.getByRole("heading", { level: 2, name: labels[category].label })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: labels[category].label })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { level: 2, name: t(`settings:categories.${category}.label`) })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: t(`settings:categories.${category}.label`) })).toHaveAttribute("aria-current", "page");
 
     const other = SETTINGS_CATEGORIES.find((name) => name !== category)!;
-    fireEvent.click(screen.getByRole("link", { name: labels[other].label }));
-    expect(window.location.pathname).toBe(`/settings/${labels[other].slug}`);
-    expect(screen.getByRole("heading", { level: 2, name: labels[other].label })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { level: 2, name: labels[category].label })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: t(`settings:categories.${other}.label`) }));
+    expect(window.location.pathname).toBe(`/settings/${SETTINGS_SLUGS[other]}`);
+    expect(screen.getByRole("heading", { level: 2, name: t(`settings:categories.${other}.label`) })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: t(`settings:categories.${category}.label`) })).toBeNull();
   });
 
   it("leaves modified clicks on a category link to the browser", () => {
@@ -112,7 +110,7 @@ describe("settings navigation", () => {
       event.preventDefault(); // keeps jsdom from trying to navigate
     };
     window.addEventListener("click", onWindowClick);
-    fireEvent.click(screen.getByRole("link", { name: labels.summaries.label }), { ctrlKey: true });
+    fireEvent.click(screen.getByRole("link", { name: t("settings:categories.summaries.label") }), { ctrlKey: true });
     window.removeEventListener("click", onWindowClick);
     expect(componentPrevented).toBe(false);
     expect(window.location.pathname).toBe("/settings");
@@ -122,7 +120,7 @@ describe("settings navigation", () => {
     open();
     render(<Harness />);
     for (const name of SETTINGS_CATEGORIES) {
-      expect(screen.getByRole("link", { name: labels[name].label })).toHaveAttribute("href", `/settings/${labels[name].slug}`);
+      expect(screen.getByRole("link", { name: t(`settings:categories.${name}.label`) })).toHaveAttribute("href", `/settings/${SETTINGS_SLUGS[name]}`);
     }
   });
 });
@@ -134,9 +132,9 @@ describe("settings navigation groups", () => {
     const groups = within(nav()).getAllByRole("group");
     expect(groups).toHaveLength(SETTINGS_GROUPS.length);
     SETTINGS_GROUPS.forEach((group, index) => {
-      expect(groups[index]).toHaveAccessibleName(copy.settings.groups[group.id]);
+      expect(groups[index]).toHaveAccessibleName(t(`settings:groups.${group.id}`));
       expect(within(groups[index]).getAllByRole("link").map((link) => link.textContent))
-        .toEqual(group.categories.map((name) => labels[name].label));
+        .toEqual(group.categories.map((name) => t(`settings:categories.${name}.label`)));
     });
   });
 
@@ -144,7 +142,7 @@ describe("settings navigation groups", () => {
     open("transcription");
     render(<Harness />);
     const current = within(nav()).getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page");
-    expect(current.map((link) => link.textContent)).toEqual([labels.transcription.label]);
+    expect(current.map((link) => link.textContent)).toEqual([t("settings:categories.transcription.label")]);
   });
 
   it.each(["transcription", "speakers"] as const)(
@@ -153,9 +151,9 @@ describe("settings navigation groups", () => {
       stubEngineApi();
       open(category);
       render(<Harness />);
-      expect(screen.getByRole("heading", { level: 2, name: labels[category].label })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: t(`settings:categories.${category}.label`) })).toBeInTheDocument();
       const detail = document.querySelector<HTMLElement>(".settings-detail")!;
-      expect(await within(detail).findByLabelText(copy.engines.process.engineLabel)).toBeInTheDocument();
+      expect(await within(detail).findByLabelText(t("engines:process.engineLabel"))).toBeInTheDocument();
       expect(within(detail).getByText(/Hoy usa:/)).toBeInTheDocument(); // spanish-sample-data
     },
   );
@@ -168,14 +166,14 @@ describe("settings navigation groups", () => {
 });
 
 describe("settings search", () => {
-  const search = () => screen.getByRole("searchbox", { name: copy.settings.search.label });
+  const search = () => screen.getByRole("searchbox", { name: t("settings:search.label") });
   const shown = () => within(nav()).queryAllByRole("link").map((link) => link.textContent);
   const type = (value: string) => fireEvent.change(search(), { target: { value } });
 
   it("has a labelled field with a visible «Buscar» placeholder", () => {
     open();
     render(<Harness />);
-    expect(search()).toHaveAttribute("placeholder", copy.settings.search.placeholder);
+    expect(search()).toHaveAttribute("placeholder", t("settings:search.placeholder"));
     expect(within(nav()).getByRole("searchbox")).toBe(search());
   });
 
@@ -188,20 +186,20 @@ describe("settings search", () => {
     open();
     render(<Harness />);
     type(query);
-    expect(shown()).toEqual(expected.map((name) => labels[name].label));
+    expect(shown()).toEqual(expected.map((name) => t(`settings:categories.${name}.label`)));
   });
 
   it("ignores accents and case, and matches label and description", () => {
     open();
     render(<Harness />);
     type("TRANSCRIPCION"); // spanish-sample-data
-    expect(shown()).toEqual([labels.transcription.label]);
+    expect(shown()).toEqual([t("settings:categories.transcription.label")]);
     type("resumen");
-    expect(shown()).toEqual([labels.summaries.label]);
+    expect(shown()).toEqual([t("settings:categories.summaries.label")]);
     type("sesion");
-    expect(shown()).toEqual([labels.account.label]);
+    expect(shown()).toEqual([t("settings:categories.account.label")]);
     type("quien habla");
-    expect(shown()).toEqual([labels.speakers.label]);
+    expect(shown()).toEqual([t("settings:categories.speakers.label")]);
   });
 
   it("hides empty groups and announces the count politely", () => {
@@ -209,8 +207,8 @@ describe("settings search", () => {
     render(<Harness />);
     type("claves");
     expect(within(nav()).getAllByRole("group")).toHaveLength(1);
-    expect(within(nav()).getByRole("group")).toHaveAccessibleName(copy.settings.groups.models);
-    expect(within(nav()).getByRole("status")).toHaveTextContent(copy.settings.search.resultCount(1));
+    expect(within(nav()).getByRole("group")).toHaveAccessibleName(t("settings:groups.models"));
+    expect(within(nav()).getByRole("status")).toHaveTextContent(t("settings:search.resultCount", { count: 1 }));
   });
 
   it("says «Sin resultados» and lists nothing when nothing matches", () => {
@@ -219,7 +217,7 @@ describe("settings search", () => {
     type("zzzz");
     expect(shown()).toEqual([]);
     expect(within(nav()).queryAllByRole("group")).toHaveLength(0);
-    expect(within(nav()).getByRole("status")).toHaveTextContent(copy.settings.search.noResultsFor("zzzz"));
+    expect(within(nav()).getByRole("status")).toHaveTextContent(t("settings:search.noResultsFor", { query: "zzzz" }));
     expect(within(nav()).getByRole("status").textContent).toMatch(/^Sin resultados/);
   });
 
@@ -232,20 +230,20 @@ describe("settings search", () => {
     expect(shown()).toHaveLength(SETTINGS_CATEGORIES.length);
 
     type("whisper");
-    fireEvent.click(screen.getByRole("button", { name: copy.settings.search.clear }));
+    fireEvent.click(screen.getByRole("button", { name: t("settings:search.clear") }));
     expect(search()).toHaveValue("");
     expect(search()).toHaveFocus();
-    expect(screen.queryByRole("button", { name: copy.settings.search.clear })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("settings:search.clear") })).toBeNull();
   });
 
   it("keeps the open category selected while it still matches, and the page unchanged when it does not", () => {
     open("summaries");
     render(<Harness />);
     type("resumen");
-    expect(screen.getByRole("link", { name: labels.summaries.label })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: t("settings:categories.summaries.label") })).toHaveAttribute("aria-current", "page");
     type("whisper");
-    expect(window.location.pathname).toBe(`/settings/${labels.summaries.slug}`);
-    expect(screen.getByRole("heading", { level: 2, name: labels.summaries.label })).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/settings/${SETTINGS_SLUGS.summaries}`);
+    expect(screen.getByRole("heading", { level: 2, name: t("settings:categories.summaries.label") })).toBeInTheDocument();
   });
 
   it("opens the first result with Enter", () => {
@@ -253,8 +251,8 @@ describe("settings search", () => {
     render(<Harness />);
     type("whisper");
     fireEvent.keyDown(search(), { key: "Enter" });
-    expect(window.location.pathname).toBe(`/settings/${labels.transcription.slug}`);
-    expect(screen.getByRole("heading", { level: 2, name: labels.transcription.label })).toBeInTheDocument();
+    expect(window.location.pathname).toBe(`/settings/${SETTINGS_SLUGS.transcription}`);
+    expect(screen.getByRole("heading", { level: 2, name: t("settings:categories.transcription.label") })).toBeInTheDocument();
   });
 
   it("moves between the field and the rows with the arrow keys", () => {
@@ -262,9 +260,9 @@ describe("settings search", () => {
     render(<Harness />);
     search().focus();
     fireEvent.keyDown(search(), { key: "ArrowDown" });
-    expect(screen.getByRole("link", { name: labels.account.label })).toHaveFocus();
+    expect(screen.getByRole("link", { name: t("settings:categories.account.label") })).toHaveFocus();
     fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
-    expect(screen.getByRole("link", { name: labels.appearance.label })).toHaveFocus();
+    expect(screen.getByRole("link", { name: t("settings:categories.appearance.label") })).toHaveFocus();
     fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
     fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
     expect(search()).toHaveFocus();
@@ -276,9 +274,9 @@ describe("settings search", () => {
     render(<Harness />);
     type("hablantes"); // spanish-sample-data
     expect(shown()).toHaveLength(1);
-    fireEvent.click(screen.getByRole("link", { name: new RegExp(labels.speakers.label) }));
+    fireEvent.click(screen.getByRole("link", { name: new RegExp(t("settings:categories.speakers.label")) }));
     expect(screen.queryByRole("searchbox")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: copy.settings.backLabel }));
+    fireEvent.click(screen.getByRole("button", { name: t("settings:backLabel") }));
     expect(search()).toHaveValue("hablantes"); // spanish-sample-data
     expect(shown()).toHaveLength(1);
   });
@@ -307,15 +305,15 @@ describe("settings on a small screen", () => {
     render(<Harness />);
     expect(within(nav()).getAllByRole("link")).toHaveLength(SETTINGS_CATEGORIES.length);
     expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
-    expect(screen.queryByRole("button", { name: copy.settings.backLabel })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("settings:backLabel") })).toBeNull();
 
-    fireEvent.click(screen.getByRole("link", { name: new RegExp(labels.appearance.label) }));
-    expect(window.location.pathname).toBe(`/settings/${labels.appearance.slug}`);
-    expect(screen.queryByRole("navigation", { name: copy.settings.navLabel })).toBeNull();
-    const heading = screen.getByRole("heading", { level: 2, name: labels.appearance.label });
+    fireEvent.click(screen.getByRole("link", { name: new RegExp(t("settings:categories.appearance.label")) }));
+    expect(window.location.pathname).toBe(`/settings/${SETTINGS_SLUGS.appearance}`);
+    expect(screen.queryByRole("navigation", { name: t("settings:navLabel") })).toBeNull();
+    const heading = screen.getByRole("heading", { level: 2, name: t("settings:categories.appearance.label") });
     expect(heading).toHaveFocus();
 
-    fireEvent.click(screen.getByRole("button", { name: copy.settings.backLabel }));
+    fireEvent.click(screen.getByRole("button", { name: t("settings:backLabel") }));
     expect(window.location.pathname).toBe("/settings");
     expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
     expect(within(nav()).getAllByRole("link")).toHaveLength(SETTINGS_CATEGORIES.length);
@@ -324,8 +322,8 @@ describe("settings on a small screen", () => {
   it("opens a deep link straight on its category", () => {
     open("summaries");
     render(<Harness />);
-    expect(screen.getByRole("heading", { level: 2, name: labels.summaries.label })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: copy.settings.backLabel })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: t("settings:categories.summaries.label") })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("settings:backLabel") })).toBeInTheDocument();
   });
 });
 
@@ -336,7 +334,7 @@ describe("account", () => {
     render(<Harness onLogout={onLogout} />);
     expect(screen.getByText(owner.name)).toBeInTheDocument();
     expect(screen.getByText(owner.email)).toBeInTheDocument();
-    expect(screen.getByText(copy.settings.account.note)).toBeInTheDocument();
+    expect(screen.getByText(t("settings:account.note"))).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: t("shell:logout") }));
     expect(onLogout).toHaveBeenCalledTimes(1);
@@ -349,36 +347,35 @@ describe("account", () => {
     expect(document.querySelector(".settings-account-email")).toBeNull();
     unmount();
     render(<Harness user={null} />);
-    expect(document.querySelector(".settings-account-name")?.textContent).toBe(copy.settings.account.fallbackName);
+    expect(document.querySelector(".settings-account-name")?.textContent).toBe(t("settings:account.fallbackName"));
     expect(document.querySelector(".ui-avatar svg")).toBeTruthy();
   });
 });
 
 describe("appearance: theme", () => {
   const radio = (name: string) => screen.getByRole("radio", { name });
-  const themes = copy.settings.appearance.themes;
 
   it("offers system, light and dark as one labelled radio group, system first", () => {
     open("appearance");
     render(<Harness />);
-    const group = screen.getByRole("group", { name: copy.settings.appearance.themeLabel });
+    const group = screen.getByRole("group", { name: t("settings:appearance.themeLabel") });
     expect(within(group).getAllByRole("radio").map((item) => item.closest("label")?.textContent))
-      .toEqual([themes.system, themes.light, themes.dark]);
-    expect(radio(themes.system)).toBeChecked();
+      .toEqual([t("settings:appearance.themes.system"), t("settings:appearance.themes.light"), t("settings:appearance.themes.dark")]);
+    expect(radio(t("settings:appearance.themes.system"))).toBeChecked();
   });
 
   it("applies the choice at once, remembers it, and clears the override for system", () => {
     open("appearance");
     render(<Harness />);
-    fireEvent.click(radio(themes.dark));
+    fireEvent.click(radio(t("settings:appearance.themes.dark")));
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
-    expect(radio(themes.dark)).toBeChecked();
+    expect(radio(t("settings:appearance.themes.dark"))).toBeChecked();
 
-    fireEvent.click(radio(themes.light));
+    fireEvent.click(radio(t("settings:appearance.themes.light")));
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
 
-    fireEvent.click(radio(themes.system));
+    fireEvent.click(radio(t("settings:appearance.themes.system")));
     expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("system");
   });
@@ -389,7 +386,7 @@ describe("appearance: theme", () => {
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
     open("appearance");
     render(<Harness />);
-    expect(radio(themes.dark)).toBeChecked();
+    expect(radio(t("settings:appearance.themes.dark"))).toBeChecked();
   });
 
   it("works with blocked storage: it applies for this visit and nothing throws", () => {
@@ -397,15 +394,15 @@ describe("appearance: theme", () => {
     initTheme();
     open("appearance");
     render(<Harness />);
-    expect(radio(themes.system)).toBeChecked();
-    fireEvent.click(radio(themes.dark));
+    expect(radio(t("settings:appearance.themes.system"))).toBeChecked();
+    fireEvent.click(radio(t("settings:appearance.themes.dark")));
     expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-    expect(radio(themes.dark)).toBeChecked();
+    expect(radio(t("settings:appearance.themes.dark"))).toBeChecked();
   });
 });
 
 describe("appearance: side panel", () => {
-  const sidebarSwitch = () => screen.getByRole("switch", { name: copy.settings.appearance.sidebarSwitch });
+  const sidebarSwitch = () => screen.getByRole("switch", { name: t("settings:appearance.sidebarSwitch") });
 
   it("reflects and changes the stored sidebar preference", () => {
     open("appearance");
@@ -466,6 +463,6 @@ describe("settings inside the app shell", () => {
       );
     });
     expect(screen.getByRole("button", { name: t("shell:profile.settings") })).toHaveAttribute("aria-current", "page");
-    await waitFor(() => expect(screen.getByText(copy.settings.summaries.empty)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(t("settings:summaries.empty"))).toBeInTheDocument());
   });
 });

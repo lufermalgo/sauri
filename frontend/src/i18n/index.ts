@@ -29,6 +29,15 @@ export type TranslateFn = TFunction<Namespace[]>;
 export const t = i18n.t.bind(i18n) as TranslateFn;
 
 /**
+ * The translation for a key built from a code the backend sends (an error class, a job error), or null
+ * when that code has no text yet. Keys built this way are not checked by `tsc`; the caller supplies the
+ * generic sentence.
+ */
+export function translateIfKnown(key: string): string | null {
+  return i18n.exists(key) ? i18n.t(key as never) : null;
+}
+
+/**
  * `useTranslation` for the whole app: `const { t } = useT()` re-renders the component when the language
  * changes and accepts keys of every namespace, written `"area:path"`.
  */

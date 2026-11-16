@@ -14,7 +14,6 @@ import type { MeetingListItem } from "@sauri/shared-types";
 import { RecordingLibrary } from "./RecordingLibrary";
 import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import * as api from "../api";
-import { copy } from "../copy/es";
 import { t } from "../i18n";
 
 afterEach(() => {

@@ -21,12 +21,10 @@ import {
   removeLocalModel,
   verifyLocalModel,
 } from "../../api";
-import { copy } from "../../copy/es";
 import { Button, Card, ConfirmDialog, Icon, Menu, MenuItem, ProgressBar, Skeleton, StatusBadge } from "../ui";
 import { availabilityOf, formatBytes, formatMemory, processList } from "./engineLabels";
 import "../../styles/engines.css";
-
-const text = copy.engines.local;
+import { t, translateIfKnown, useT } from "../../i18n";
 
 /** Wait between two looks at a running install or check; the host answers each look at once. */
 export const JOB_POLL_INTERVAL_MS = 1000;
@@ -76,13 +74,13 @@ function describeLocalError(error: unknown): string {
   if (code === "insufficient_disk") {
     const needed = figure(error, "needed_bytes");
     const free = figure(error, "free_bytes");
-    if (needed !== null && free !== null) return text.insufficientDisk(formatBytes(needed), formatBytes(free));
+    if (needed !== null && free !== null) return t("engines:local.insufficientDisk", { needed: formatBytes(needed), free: formatBytes(free) });
   }
   if (code === "model_in_use") {
     const processes = error instanceof EnginesApiError ? error.figures.processes : null;
-    if (Array.isArray(processes)) return text.modelInUse(processList(processes as EngineProcess[]));
+    if (Array.isArray(processes)) return t("engines:local.modelInUse", { list: processList(processes as EngineProcess[]) });
   }
-  return (code && text.errors[code]) || text.errors.generic;
+  return (code && translateIfKnown(`engines:local.errors.${code}`)) || t("engines:local.errors.generic");
 }
 
 function percentOf(job: LocalJob): number {
@@ -95,15 +93,15 @@ function reasonText(recommendation: LocalRecommendation, hardware: LocalHardware
   const minimum = Number(params.min_ram_gib ?? 0);
   switch (recommendation.reason_key) {
     case "fits":
-      return text.reasons.fits(memory, minimum);
+      return minimum > 0 ? t("engines:local.reasons.fitsMinimum", { memory, minimum }) : t("engines:local.reasons.fits", { memory });
     case "reduced": {
-      const limited = params.limited_by === "metal" ? text.limits.metal : text.limits.memory;
-      return text.reasons.reduced(memory, String(params.better_id ?? ""), limited);
+      const limited = params.limited_by === "metal" ? t("engines:local.limits.metal") : t("engines:local.limits.memory");
+      return t("engines:local.reasons.reduced", { memory, better: String(params.better_id ?? ""), limit: limited });
     }
     case "no_local_model":
-      return params.needs === "metal" ? text.reasons.noModelMetal : text.reasons.noModelMemory(memory, minimum);
+      return params.needs === "metal" ? t("engines:local.reasons.noModelMetal") : t("engines:local.reasons.noModelMemory", { memory, minimum });
     default:
-      return text.reasons.generic;
+      return t("engines:local.reasons.generic");
   }
 }
 
@@ -157,6 +155,7 @@ export function LocalModelCard({
   external,
   pollIntervalMs = JOB_POLL_INTERVAL_MS,
 }: LocalModelCardProps) {
+  const { t } = useT();
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [job, setJob] = useState<LocalJob | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -228,15 +227,15 @@ export function LocalModelCard({
       setJob(null);
       setCancelling(false);
       const id = finished.model_id;
-      if (finished.state === "cancelled") setOutcome({ kind: "success", text: text.outcome.cancelled });
+      if (finished.state === "cancelled") setOutcome({ kind: "success", text: t("engines:local.outcome.cancelled") });
       else if (finished.state === "failed") {
-        const cause = (finished.error && text.jobErrors[finished.error]) || text.errors.generic;
-        setOutcome({ kind: "error", text: text.outcome.failed(cause) });
+        const cause = (finished.error && translateIfKnown(`engines:local.jobErrors.${finished.error}`)) || t("engines:local.errors.generic");
+        setOutcome({ kind: "error", text: t("engines:local.outcome.failed", { cause }) });
       } else if (finished.type === "adopt") {
-        setOutcome({ kind: "success", text: finished.result === "adopted" ? text.adoption.done : text.adoption.nothing });
-      } else if (finished.type === "install") setOutcome({ kind: "success", text: text.outcome.installed(id) });
-      else if (finished.result === "corrupt") setOutcome({ kind: "error", text: text.outcome.corrupt(id) });
-      else setOutcome({ kind: "success", text: text.outcome.verified(id) });
+        setOutcome({ kind: "success", text: finished.result === "adopted" ? t("engines:local.adoption.done") : t("engines:local.adoption.nothing") });
+      } else if (finished.type === "install") setOutcome({ kind: "success", text: t("engines:local.outcome.installed", { id }) });
+      else if (finished.result === "corrupt") setOutcome({ kind: "error", text: t("engines:local.outcome.corrupt", { id }) });
+      else setOutcome({ kind: "success", text: t("engines:local.outcome.verified", { id }) });
       void reloadModels();
     },
     [reloadModels],
@@ -265,7 +264,7 @@ export function LocalModelCard({
         failures += 1;
         if (failures >= MAX_POLL_FAILURES) {
           setJob(null);
-          setOutcome({ kind: "error", text: text.outcome.lost });
+          setOutcome({ kind: "error", text: t("engines:local.outcome.lost") });
           return;
         }
       }
@@ -332,7 +331,7 @@ export function LocalModelCard({
     setBusyModel(model.id);
     try {
       await removeLocalModel(model.id);
-      setOutcome({ kind: "success", text: text.outcome.removed(model.id) });
+      setOutcome({ kind: "success", text: t("engines:local.outcome.removed", { id: model.id }) });
     } catch (error) {
       setOutcome({ kind: "error", text: describeLocalError(error) });
     } finally {
@@ -351,11 +350,11 @@ export function LocalModelCard({
   return (
     <Card className="engines-local" aria-labelledby={`engines-local-${process}`}>
       <div className="engines-local-head">
-        <h3 id={`engines-local-${process}`} className="engines-card-title">{text.title}</h3>
+        <h3 id={`engines-local-${process}`} className="engines-card-title">{t("engines:local.title")}</h3>
         {load.status === "ready" && (
-          <Menu label={text.cardMenu} className="engines-local-menu">
-            <MenuItem onSelect={() => void scan()} disabled={jobRunning} hint={jobRunning ? text.busy : undefined}>
-              {text.scan}
+          <Menu label={t("engines:local.cardMenu")} className="engines-local-menu">
+            <MenuItem onSelect={() => void scan()} disabled={jobRunning} hint={jobRunning ? t("engines:local.busy") : undefined}>
+              {t("engines:local.scan")}
             </MenuItem>
           </Menu>
         )}
@@ -363,16 +362,16 @@ export function LocalModelCard({
 
       {load.status === "loading" && (
         <div role="status" className="settings-loading">
-          <p className="settings-help">{text.loading}</p>
+          <p className="settings-help">{t("engines:local.loading")}</p>
           <Skeleton width="100%" height="4rem" radius="md" />
         </div>
       )}
       {load.status === "error" && (
         <div className="settings-load-error">
           {load.hostDown ? <EngineMissing process={process} host /> : (
-            <p role="alert" className="ui-field-error">{text.loadError}</p>
+            <p role="alert" className="ui-field-error">{t("engines:local.loadError")}</p>
           )}
-          <Button variant="secondary" onClick={fetchAll}>{text.retry}</Button>
+          <Button variant="secondary" onClick={fetchAll}>{t("engines:local.retry")}</Button>
         </div>
       )}
 
@@ -381,9 +380,9 @@ export function LocalModelCard({
           <HardwareSummary hardware={load.hardware} recommendation={load.list.recommendations[process]} />
           {load.engineRunning === false && <EngineMissing process={process} />}
           <div role="status" className="engines-local-recognizing">
-            {recognizing || job?.type === "adopt" ? text.adoption.recognizing : null}
+            {recognizing || job?.type === "adopt" ? t("engines:local.adoption.recognizing") : null}
           </div>
-          {adoptionAttention && <p className="settings-help">{text.adoption.attention}</p>}
+          {adoptionAttention && <p className="settings-help">{t("engines:local.adoption.attention")}</p>}
           <ModelList
             process={process}
             models={load.list.models.filter((model) => model.process === process)}
@@ -407,10 +406,10 @@ export function LocalModelCard({
 
       {pendingRemoval && (
         <ConfirmDialog
-          title={text.removeTitle}
-          body={<p>{text.removeBody(pendingRemoval.id, formatBytes(pendingRemoval.installed_size ?? pendingRemoval.size ?? 0))}</p>}
-          confirmLabel={text.removeConfirm}
-          cancelLabel={text.removeCancel}
+          title={t("engines:local.removeTitle")}
+          body={<p>{t("engines:local.removeBody", { id: pendingRemoval.id, size: formatBytes(pendingRemoval.installed_size ?? pendingRemoval.size ?? 0) })}</p>}
+          confirmLabel={t("engines:local.removeConfirm")}
+          cancelLabel={t("engines:local.removeCancel")}
           onConfirm={() => confirmRemoval(pendingRemoval)}
           onCancel={() => setPendingRemoval(null)}
         />
@@ -419,29 +418,36 @@ export function LocalModelCard({
   );
 }
 
+/** «Mac with Apple silicon chip», «Mac with Intel processor» or the system name and architecture. */
+function chipName(arch: string, system: string): string {
+  if (system === "Darwin") return arch === "arm64" ? t("engines:local.chipAppleSilicon") : t("engines:local.chipIntelMac");
+  return t("engines:local.chipOther", { system: system || t("engines:local.chipUnknownSystem"), arch });
+}
+
 function HardwareSummary({ hardware, recommendation }: { hardware: LocalHardware; recommendation: LocalRecommendation | undefined }) {
+  const { t } = useT();
   const warnings = recommendation?.warnings ?? [];
   return (
-    <section className="engines-local-section" aria-label={text.hardwareTitle}>
+    <section className="engines-local-section" aria-label={t("engines:local.hardwareTitle")}>
       <p>
-        {text.hardware(
-          text.chip(hardware.arch, hardware.system),
-          formatMemory(hardware.memory_gib),
-          hardware.cores,
-          formatBytes(hardware.disk_free_bytes),
-        )}
+        {t("engines:local.hardware", {
+          chip: chipName(hardware.arch, hardware.system),
+          memory: formatMemory(hardware.memory_gib),
+          count: hardware.cores,
+          free: formatBytes(hardware.disk_free_bytes),
+        })}
       </p>
-      <p className="settings-help">{hardware.metal ? text.metalYes : text.metalNo}</p>
+      <p className="settings-help">{hardware.metal ? t("engines:local.metalYes") : t("engines:local.metalNo")}</p>
       {recommendation && (
         <p className="settings-help">
-          {recommendation.model_id ? "" : `${text.noRecommendation} `}
+          {recommendation.model_id ? "" : `${t("engines:local.noRecommendation")} `}
           {reasonText(recommendation, hardware)}
         </p>
       )}
       {warnings.length > 0 && (
         <ul className="engines-local-warnings">
           {warnings.map((warning) => (
-            <li key={warning}>{text.warnings[warning as keyof typeof text.warnings] ?? warning}</li>
+            <li key={warning}>{translateIfKnown(`engines:local.warnings.${warning}`) ?? warning}</li>
           ))}
         </ul>
       )}
@@ -452,18 +458,18 @@ function HardwareSummary({ hardware, recommendation }: { hardware: LocalHardware
 /** The engine does not answer: either it was never installed or it is stopped. The portal cannot tell
  * which tools are missing, so it names the ones this engine needs along with the command. */
 function EngineMissing({ process, host = false }: { process: EngineProcess; host?: boolean }) {
-  const missing = text.engineMissing;
+  const { t } = useT();
   return (
-    <section className="engines-missing" aria-label={missing.title}>
+    <section className="engines-missing" aria-label={t("engines:local.engineMissing.title")}>
       <h4 className="engines-missing-title">
         <Icon icon={CircleAlert} />
-        {missing.title}
+        {t("engines:local.engineMissing.title")}
       </h4>
-      <p>{host ? missing.hostBody : missing.body(text.engineNames[process])}</p>
-      <p>{missing.installIntro}</p>
-      <p><code className="engines-command"><Icon icon={Terminal} size={14} />{missing.installCommand}</code></p>
-      <p className="settings-help">{missing.tools(text.engineTools[process])}</p>
-      <p className="settings-help">{missing.startIntro} <code className="engines-command">{missing.startCommand}</code></p>
+      <p>{host ? t("engines:local.engineMissing.hostBody") : t("engines:local.engineMissing.body", { engine: t(`engines:local.engineNames.${process}`) })}</p>
+      <p>{t("engines:local.engineMissing.installIntro")}</p>
+      <p><code className="engines-command"><Icon icon={Terminal} size={14} />{t("engines:local.engineMissing.installCommand")}</code></p>
+      <p className="settings-help">{t("engines:local.engineMissing.tools", { list: t(`engines:local.engineTools.${process}`) })}</p>
+      <p className="settings-help">{t("engines:local.engineMissing.startIntro")} <code className="engines-command">{t("engines:local.engineMissing.startCommand")}</code></p>
     </section>
   );
 }
@@ -485,15 +491,16 @@ interface ModelListProps {
 
 /** The options of the process (models and managed engines), then the supporting files in one line each. */
 function ModelList(props: ModelListProps) {
+  const { t } = useT();
   const { process, models, job } = props;
   const options = models.filter((model) => model.kind !== "auxiliary");
   const supporting = models.filter((model) => model.kind === "auxiliary");
   const jobRunning = job?.state === "running" && job.type !== "adopt";
   return (
-    <section className="engines-local-section" aria-label={text.modelsTitle}>
-      {options.length === 0 && <p className="settings-help">{text.noModels}</p>}
-      {jobRunning && <p className="settings-help">{text.busy}</p>}
-      <ul className="engines-local-models" aria-label={text.modelsTitle}>
+    <section className="engines-local-section" aria-label={t("engines:local.modelsTitle")}>
+      {options.length === 0 && <p className="settings-help">{t("engines:local.noModels")}</p>}
+      {jobRunning && <p className="settings-help">{t("engines:local.busy")}</p>}
+      <ul className="engines-local-models" aria-label={t("engines:local.modelsTitle")}>
         {options.map((model) => <ModelRow key={model.id} {...props} model={model} />)}
       </ul>
       {supporting.map((model) => <SupportLine key={model.id} {...props} model={model} idPrefix={`engines-model-${process}`} />)}
@@ -515,25 +522,26 @@ function stateOf(model: LocalModel, running: LocalJob | null, externalActive: bo
 
 function unverifiedText(model: LocalModel): string {
   const reason = model.reason ?? (model.state === "corrupt" ? "hash_mismatch" : null);
-  return text.unverifiedReason[reason ?? "generic"] ?? text.unverifiedReason.generic;
+  return translateIfKnown(`engines:local.unverifiedReason.${reason ?? "generic"}`) ?? t("engines:local.unverifiedReason.generic");
 }
 
 /** The reason removal is not offered, or null when it is. */
 function removalBlock(model: LocalModel): string | null {
-  if (model.location === "legacy") return text.manualNote;
+  if (model.location === "legacy") return t("engines:local.manualNote");
   const inUse = model.in_use ?? model.in_use_by.length > 0;
   if (!inUse) return null;
-  return model.in_use_by.length > 0 ? text.removeBlocked(processList(model.in_use_by)) : text.removeBlockedGeneric;
+  return model.in_use_by.length > 0 ? t("engines:local.removeBlocked", { list: processList(model.in_use_by) }) : t("engines:local.removeBlockedGeneric");
 }
 
 function ModelRow(props: RowProps) {
+  const { t } = useT();
   const { process, model, job, cancelling, busyModel, choosing, externalActive, onUse, onInstall, onVerify, onRemove, onCancel } = props;
   const jobRunning = job?.state === "running";
   const running = jobRunning && job.model_id === model.id ? job : null;
   const state = stateOf(model, running, externalActive);
   const blocked = jobRunning || busyModel !== null;
   const managed = model.kind === "managed_engine" || model.state === "managed" || model.install?.method === "managed_command";
-  const name = (model.kind === "managed_engine" && text.managedTitle[process]) || model.id;
+  const name = (model.kind === "managed_engine" && translateIfKnown(`engines:local.managedTitle.${process}`)) || model.id;
   const titleId = `engines-model-${process}-${model.id}`;
   const size = model.size ?? model.installed_size;
   const installed = availabilityOf(model) === "installed";
@@ -554,60 +562,60 @@ function ModelRow(props: RowProps) {
           {size !== null && <span className="engines-local-size">{formatBytes(size)}</span>}
         </div>
         <div className="engines-local-badges">
-          {state === "active" && <StatusBadge tone="success">{text.states.installed}</StatusBadge>}
-          <StatusBadge tone={STATE_TONE[state]} dot={state === "active"}>{text.states[state]}</StatusBadge>
-          {model.location === "legacy" && <StatusBadge tone="neutral">{text.manual}</StatusBadge>}
-          {model.recommended && <StatusBadge tone="success">{text.recommended}</StatusBadge>}
+          {state === "active" && <StatusBadge tone="success">{t("engines:local.states.installed")}</StatusBadge>}
+          <StatusBadge tone={STATE_TONE[state]} dot={state === "active"}>{t(`engines:local.states.${state}`)}</StatusBadge>
+          {model.location === "legacy" && <StatusBadge tone="neutral">{t("engines:local.manual")}</StatusBadge>}
+          {model.recommended && <StatusBadge tone="success">{t("engines:local.recommended")}</StatusBadge>}
           {model.kind !== "managed_engine" && (
-            <StatusBadge tone={model.status === "measured" ? "success" : "progress"}>{text.marks[model.status]}</StatusBadge>
+            <StatusBadge tone={model.status === "measured" ? "success" : "progress"}>{t(`engines:local.marks.${model.status}`)}</StatusBadge>
           )}
         </div>
         <p className="settings-help">
-          {managed && installed ? text.managedInstalled : text.description(model.engine, model.min_ram_gib)}
-          {installed && model.verified_by && ` ${text.verifiedBy[model.verified_by]}`}
+          {managed && installed ? t("engines:local.managedInstalled") : (model.min_ram_gib > 0 ? t("engines:local.descriptionMinRam", { engine: model.engine, minRam: model.min_ram_gib }) : t("engines:local.description", { engine: model.engine }))}
+          {installed && model.verified_by && ` ${t(`engines:local.verifiedBy.${model.verified_by}`)}`}
         </p>
         {(state === "unverified" || state === "corrupt") && <p className="settings-help">{unverifiedText(model)}</p>}
         {inUse && model.in_use_by.length > 0 && state !== "available" && (
-          <p className="settings-help">{text.inUse(processList(model.in_use_by))}</p>
+          <p className="settings-help">{t("engines:local.inUse", { list: processList(model.in_use_by) })}</p>
         )}
-        {managed && !installed && !running && command && <p className="settings-help">{text.managedHow(`bash ${command}`)}</p>}
+        {managed && !installed && !running && command && <p className="settings-help">{t("engines:local.managedHow", { command: `bash ${command}` })}</p>}
         {noRoom && !running && needed !== null && (
-          <p id={`${titleId}-room`} className="settings-help">{text.notEnoughSpace(formatBytes(needed))}</p>
+          <p id={`${titleId}-room`} className="settings-help">{t("engines:local.notEnoughSpace", { size: formatBytes(needed) })}</p>
         )}
       </div>
 
       {!running && (
         <div className="engines-local-row-actions">
           {state === "installed" && (
-            <Button variant="secondary" size="sm" aria-label={text.useLabel(name)} disabled={choosing || blocked} onClick={() => onUse(model)}>
-              {text.use}
+            <Button variant="secondary" size="sm" aria-label={t("engines:local.useLabel", { name })} disabled={choosing || blocked} onClick={() => onUse(model)}>
+              {t("engines:local.use")}
             </Button>
           )}
           {state === "available" && !managed && (
             <>
-              {needed !== null && !noRoom && <span className="settings-help">{text.spaceNeeded(formatBytes(needed))}</span>}
+              {needed !== null && !noRoom && <span className="settings-help">{t("engines:local.spaceNeeded", { size: formatBytes(needed) })}</span>}
               <Button
                 variant="primary"
                 size="sm"
-                aria-label={text.installLabel(name)}
+                aria-label={t("engines:local.installLabel", { id: name })}
                 aria-describedby={noRoom ? `${titleId}-room` : undefined}
                 disabled={blocked || noRoom}
                 onClick={() => onInstall(model)}
               >
-                {text.install}
+                {t("engines:local.install")}
               </Button>
             </>
           )}
           {(state === "unverified" || state === "corrupt") && (
-            <Button variant="secondary" size="sm" aria-label={text.verifyLabel(name)} disabled={blocked} onClick={() => onVerify(model)}>
-              {text.verify}
+            <Button variant="secondary" size="sm" aria-label={t("engines:local.verifyLabel", { id: name })} disabled={blocked} onClick={() => onVerify(model)}>
+              {t("engines:local.verify")}
             </Button>
           )}
           {!managed && availabilityOf(model) !== "available" && state !== "verifying" && (
-            <Menu label={text.moreLabel(name)}>
-              <MenuItem onSelect={() => onVerify(model)} disabled={blocked}>{text.verify}</MenuItem>
+            <Menu label={t("engines:local.moreLabel", { name })}>
+              <MenuItem onSelect={() => onVerify(model)} disabled={blocked}>{t("engines:local.verify")}</MenuItem>
               <MenuItem tone="danger" onSelect={() => onRemove(model)} disabled={blocked || removal !== null} hint={removal ?? undefined}>
-                {text.remove}
+                {t("engines:local.remove")}
               </MenuItem>
               {removal && <p role="presentation" className="engines-local-menu-note">{removal}</p>}
             </Menu>
@@ -622,18 +630,19 @@ function ModelRow(props: RowProps) {
 
 /** A file that supports the process (voice detection): one line, not a choice. Offers to install it when missing. */
 function SupportLine({ model, job, busyModel, cancelling, onInstall, onCancel, idPrefix }: RowProps & { idPrefix: string }) {
+  const { t } = useT();
   const jobRunning = job?.state === "running";
   const running = jobRunning && job.model_id === model.id ? job : null;
   const availability = availabilityOf(model);
   const name = model.id;
-  const state = running ? text.states.installing : availability === "installed" ? text.states.installed : availability === "available" ? text.states.available : text.states.unverified;
+  const state = running ? t("engines:local.states.installing") : availability === "installed" ? t("engines:local.states.installed") : availability === "available" ? t("engines:local.states.available") : t("engines:local.states.unverified");
   const canInstall = availability === "available" && !running;
   return (
     <div className="engines-local-support" id={`${idPrefix}-${model.id}`}>
-      <p className="settings-help">{text.auxiliaryLine(name, state)}</p>
+      <p className="settings-help">{t("engines:local.auxiliaryLine", { name, state })}</p>
       {canInstall && (
-        <Button variant="secondary" size="sm" aria-label={text.installLabel(name)} disabled={jobRunning || busyModel !== null} onClick={() => onInstall(model)}>
-          {text.install}
+        <Button variant="secondary" size="sm" aria-label={t("engines:local.installLabel", { id: name })} disabled={jobRunning || busyModel !== null} onClick={() => onInstall(model)}>
+          {t("engines:local.install")}
         </Button>
       )}
       {running && <JobProgress job={running} cancelling={cancelling} onCancel={onCancel} />}
@@ -642,23 +651,24 @@ function SupportLine({ model, job, busyModel, cancelling, onInstall, onCancel, i
 }
 
 function ExternalGroup({ external }: { external: ExternalChoice }) {
+  const { t } = useT();
   const titleId = "engines-external-title";
   return (
     <section className="engines-local-section engines-local-external" aria-labelledby={titleId}>
-      <h4 id={titleId} className="settings-group-title">{text.external.title}</h4>
+      <h4 id={titleId} className="settings-group-title">{t("engines:local.external.title")}</h4>
       <div className={`engines-local-row${external.current ? " engines-local-row--active" : ""}`}>
         <div className="engines-local-row-main">
           {external.current && (
             <div className="engines-local-badges">
               <span className="engines-local-model-name">{external.current}</span>
-              <StatusBadge tone="success" dot>{text.states.active}</StatusBadge>
+              <StatusBadge tone="success" dot>{t("engines:local.states.active")}</StatusBadge>
             </div>
           )}
-          <p className="settings-help">{text.external.help}</p>
+          <p className="settings-help">{t("engines:local.external.help")}</p>
         </div>
         <div className="engines-local-row-actions">
           <Button variant="secondary" size="sm" onClick={external.hasProviders ? external.onChoose : external.onSetup}>
-            {external.hasProviders ? text.external.choose : text.external.setup}
+            {external.hasProviders ? t("engines:local.external.choose") : t("engines:local.external.setup")}
           </Button>
         </div>
       </div>
@@ -667,15 +677,16 @@ function ExternalGroup({ external }: { external: ExternalChoice }) {
 }
 
 function JobProgress({ job, cancelling, onCancel }: { job: LocalJob; cancelling: boolean; onCancel: () => void }) {
+  const { t } = useT();
   const percent = percentOf(job);
-  const sentence = job.type === "install" ? text.installing(job.model_id, percent) : text.verifying(job.model_id, percent);
+  const sentence = job.type === "install" ? t("engines:local.installing", { id: job.model_id, percent }) : t("engines:local.verifying", { id: job.model_id, percent });
   return (
     <div className="engines-local-progress">
       <p role="status">{sentence}</p>
-      <ProgressBar label={text.progressLabel(job.model_id)} value={percent} valueText={`${percent} %`} />
-      <p className="settings-help">{text.bytes(formatBytes(job.bytes_done), formatBytes(job.bytes_total))}</p>
-      <Button variant="secondary" size="sm" aria-label={text.cancelLabel(job.model_id)} disabled={cancelling} onClick={onCancel}>
-        {cancelling ? text.cancelling : text.cancel}
+      <ProgressBar label={t("engines:local.progressLabel", { id: job.model_id })} value={percent} valueText={`${percent} %`} />
+      <p className="settings-help">{t("engines:local.bytes", { done: formatBytes(job.bytes_done), total: formatBytes(job.bytes_total) })}</p>
+      <Button variant="secondary" size="sm" aria-label={t("engines:local.cancelLabel", { id: job.model_id })} disabled={cancelling} onClick={onCancel}>
+        {cancelling ? t("engines:local.cancelling") : t("engines:local.cancel")}
       </Button>
     </div>
   );

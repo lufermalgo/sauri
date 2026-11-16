@@ -4,12 +4,12 @@ import { useT } from "../i18n";
 
 /**
  * One external sign-in option (e.g. "Continue with Google") shown below the password form.
- * `label` is user-facing Spanish text and must come from `frontend/src/copy/`.
+ * `label` is user-facing text and must come from `frontend/src/locales/`.
  */
 export interface LoginProvider {
   /** Stable key, e.g. "google". */
   id: string;
-  /** Visible button text, e.g. copy.login.continueWithGoogle. */
+  /** Visible button text, e.g. t("login:continueWithGoogle"). */
   label: string;
   /** Decorative brand glyph shown before the label. */
   icon?: ReactNode;

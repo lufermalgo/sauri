@@ -19,7 +19,6 @@ import {
   hiddenPaneAttributes,
   useSecondaryPane,
 } from "./useSecondaryPane";
-import { copy } from "../copy/es";
 import { SETTINGS_CATEGORIES, type Route } from "../router";
 import { t } from "../i18n";
 
@@ -151,18 +150,18 @@ describe("settings categories pane toggle in the side panel", () => {
     expect(slot()).toHaveAttribute("data-hidden");
     expect(slot()).toHaveAttribute("aria-hidden", "true");
     expect(slot()).toHaveAttribute("inert");
-    expect(screen.queryByRole("navigation", { name: copy.settings.navLabel })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: t("settings:navLabel") })).toBeNull();
     expect(gear()).toHaveAttribute("aria-expanded", "false");
     expect(gear()).toHaveFocus();
     expect(localStorage.getItem(SETTINGS_PANE_STORAGE_KEY)).toBe("1");
     // The category stays open and the library pane is untouched.
-    expect(screen.getByRole("heading", { level: 2, name: copy.settings.categories.appearance.label })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: t("settings:categories.appearance.label") })).toBeInTheDocument();
     expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBeNull();
 
     fireEvent.click(gear());
     expect(slot()).not.toHaveAttribute("data-hidden");
     expect(slot()).not.toHaveAttribute("inert");
-    expect(screen.getByRole("navigation", { name: copy.settings.navLabel })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: t("settings:navLabel") })).toBeInTheDocument();
     expect(gear()).toHaveAttribute("aria-expanded", "true");
     expect(gear()).toHaveFocus();
     expect(localStorage.getItem(SETTINGS_PANE_STORAGE_KEY)).toBe("0");
@@ -188,13 +187,13 @@ describe("settings categories pane toggle in the side panel", () => {
 
   it("keeps the pane mounted while hidden, so the search text is still there", () => {
     renderShell(settingsRoute());
-    const search = screen.getByRole("searchbox", { name: copy.settings.search.label });
+    const search = screen.getByRole("searchbox", { name: t("settings:search.label") });
     fireEvent.change(search, { target: { value: "tema" } });
     fireEvent.click(gear());
     expect(search.isConnected).toBe(true);
     expect(slot().contains(search)).toBe(true);
     fireEvent.click(gear());
-    expect(screen.getByRole("searchbox", { name: copy.settings.search.label })).toHaveValue("tema");
+    expect(screen.getByRole("searchbox", { name: t("settings:search.label") })).toHaveValue("tema");
   });
 
   it("remembers a hidden pane on the next visit and keeps it hidden when a deep link changes the category", () => {
@@ -203,7 +202,7 @@ describe("settings categories pane toggle in the side panel", () => {
     expect(slot()).toHaveAttribute("data-hidden");
     expect(gear()).toHaveAttribute("aria-expanded", "false");
     rerender(shellFor(settingsRoute("summaries")));
-    expect(screen.getByRole("heading", { level: 2, name: copy.settings.categories.summaries.label })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: t("settings:categories.summaries.label") })).toBeInTheDocument();
     expect(slot()).toHaveAttribute("data-hidden");
     expect(gear()).toHaveAttribute("aria-expanded", "false");
   });
@@ -228,7 +227,7 @@ describe("settings categories pane toggle in the side panel", () => {
     stubViewport(600);
     localStorage.setItem(SETTINGS_PANE_STORAGE_KEY, "1");
     renderShell({ name: "settings" });
-    expect(screen.getByRole("link", { name: new RegExp(`^${copy.settings.categories.account.label}`) })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: new RegExp(`^${t("settings:categories.account.label")}`) })).toBeInTheDocument();
     expect(slot()).not.toHaveAttribute("data-hidden");
     expect(slot()).not.toHaveAttribute("inert");
     // The drawer holds the gear while it is closed; its item is a link with no toggle semantics.

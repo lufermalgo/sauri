@@ -1,19 +1,20 @@
 import type { EngineProcess, EngineProviderKind, LocalModel, LocalModelAvailability } from "@sauri/shared-types";
-import { copy } from "../../copy/es";
+import { t } from "../../i18n";
+import { formatDate, formatList, formatNumber } from "../../i18n/format";
 
-/** Comma separated display names of the processes, in the order the API gave them. */
+/** Display names of the processes as a list ("Transcription, Speakers and Summaries"), in the order the API gave them. */
 export function processList(processes: readonly EngineProcess[]): string {
-  return processes.map((process) => copy.engines.processes[process]).join(", ");
+  return formatList(processes.map((process) => t(`engines:processes.${process}`)));
 }
 
 const BYTES_PER_MB = 1_000_000;
 const BYTES_PER_GB = 1_000_000_000;
-const decimals = new Intl.NumberFormat("es", { maximumFractionDigits: 1 });
+const oneDecimal = (value: number) => formatNumber(value, { maximumFractionDigits: 1 });
 
 /** File and disk sizes in the units the download page shows: MB below one GB, GB above. */
 export function formatBytes(bytes: number): string {
-  if (bytes >= BYTES_PER_GB) return `${decimals.format(bytes / BYTES_PER_GB)} GB`;
-  return `${decimals.format(Math.max(Math.round(bytes / BYTES_PER_MB), bytes > 0 ? 1 : 0))} MB`;
+  if (bytes >= BYTES_PER_GB) return `${oneDecimal(bytes / BYTES_PER_GB)} GB`;
+  return `${oneDecimal(Math.max(Math.round(bytes / BYTES_PER_MB), bytes > 0 ? 1 : 0))} MB`;
 }
 
 /** Memory as people read it on the machine's spec sheet: whole gigabytes. */
@@ -21,15 +22,12 @@ export function formatMemory(gib: number): string {
   return `${Math.round(gib)} GB`;
 }
 
-const clock = new Intl.DateTimeFormat("es", { hour: "2-digit", minute: "2-digit", hour12: false });
-const calendarDay = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
-
-/** When a model list was asked for: "hoy 03:08" for today, "16 nov, 03:08" for another day. */
+/** When a model list was asked for: "today 03:08" for today, "Nov 16, 03:08" for another day. */
 export function formatFetchedAt(iso: string, now: Date = new Date()): string {
   const moment = new Date(iso);
-  const time = clock.format(moment);
-  if (moment.toDateString() === now.toDateString()) return copy.engines.catalog.today(time);
-  return copy.engines.catalog.otherDay(calendarDay.format(moment), time);
+  const time = formatDate(moment, { hour: "2-digit", minute: "2-digit" });
+  if (moment.toDateString() === now.toDateString()) return t("engines:catalog.today", { time });
+  return t("engines:catalog.otherDay", { day: formatDate(moment, { day: "numeric", month: "short" }), time });
 }
 
 /** Kinds that run as a program on this computer: no key is asked for and the usual address is filled in. */
