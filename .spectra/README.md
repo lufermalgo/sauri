@@ -18,6 +18,7 @@ Fases: requisitos (o `bugfix.md` en correcciones), diseño y tareas, según `.co
 | [`local-platform-deployment`](specs/local-platform-deployment/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`meeting-review-playback`](specs/meeting-review-playback/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`meeting-summaries-templates`](specs/meeting-summaries-templates/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
+| [`model-engines`](specs/model-engines/) | Feature | 3/3 completas (2026-11-16) | Pendiente de aprobación del dueño antes de implementar (#1050) |
 | [`performance-observability-pipeline`](specs/performance-observability-pipeline/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`portal-visual-design`](specs/portal-visual-design/) | Feature | 3/3 completas | Plan listo; implementación pendiente de revisión del dueño |
 | [`recording-library-metadata`](specs/recording-library-metadata/) | Feature | 1/3 (pendiente: diseño, tareas) | Histórica (pendiente de producto, retomar con nueva unidad) |

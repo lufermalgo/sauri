@@ -1,0 +1,19 @@
+{
+  "specId": "08ea2d28-f28d-4143-9507-815c63a9d0ce",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-11-16",
+  "idea": "Replicar «Motores y modelos» de APX en Sauri: los procesos principales (transcripción, detección de hablantes, resumen y, a futuro, chat) usan por defecto los modelos locales del Mac del dueño; al vincular proveedores externos (Codex con plan de ChatGPT, OpenAI, Anthropic, Gemini, OpenRouter, Ollama/LM Studio, compatibles con OpenAI, y AssemblyAI/Deepgram para hablantes) el usuario elige por proceso qué motor y modelo usar, con aviso de privacidad por proceso y claves guardadas de forma segura. Además, ayudar a elegir e instalar con un botón un modelo local según el hardware, y reorganizar el menú de configuración como en APX (navegación con grupos y buscador). Issue #1050.",
+  "phases": {
+    "requirements": "complete",
+    "design": "complete",
+    "tasks": "complete"
+  },
+  "phaseAuthorization": "Pendiente de revisión y aprobación del dueño. Las decisiones de privacidad, proveedores y almacenamiento de claves del 16/11/2026 provienen de sus respuestas en el issue #1050. Documentación terminada no es implementación ni aceptación de producto.",
+  "relatedSpecs": [
+    "core-speech-pipeline",
+    "meeting-summaries-templates",
+    "portal-visual-design",
+    "recording-speaker-review"
+  ]
+}
