@@ -118,7 +118,7 @@
 .meeting-turn-meta .meeting-speaker { color: var(--meeting-speaker); font-size: var(--ds-text-xs); }
 .meeting-turn-play { position: absolute; right: var(--ds-space-2); top: 6px; padding: 4px; border-radius: var(--ds-radius-pill); color: var(--ds-accent-text); background: var(--ds-surface); border: 1px solid var(--ds-border); opacity: 0; transition: opacity var(--ds-duration) var(--ds-ease); }
 .meeting-turn-action:is(:hover, :focus-visible):not(:disabled) .meeting-turn-play { opacity: 1; }
-.meeting-turn-text { grid-column: 2; max-width: 80ch; box-sizing: border-box; display: block; width: 100%; font-size: var(--ds-text-md); line-height: var(--ds-leading-relaxed); overflow-wrap: anywhere; }
+.meeting-turn-text { grid-column: 2; box-sizing: border-box; display: block; width: 100%; font-size: var(--ds-text-md); line-height: var(--ds-leading-relaxed); overflow-wrap: anywhere; }
 .meeting-turn--active { background: var(--ds-highlight); }
 .meeting-timestamp { font-size: var(--ds-text-2xs); }
 .meeting-speaker { font-weight: var(--ds-weight-semibold); }
