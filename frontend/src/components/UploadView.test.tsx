@@ -150,7 +150,7 @@ describe("UploadView", () => {
     const upload = vi.mocked(api.uploadWithProgress);
     upload.mockResolvedValue({ meeting_id: "server-meeting-id", recording_id: "recording-not-meeting", state: "transcribing" });
     render(<App />);
-    fireEvent.click(screen.getByRole("link", { name: copy.shell.upload }));
+    fireEvent.click(screen.getAllByRole("button", { name: copy.shell.upload })[0]);
     selectRecording();
     fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
     expect(upload.mock.calls[0][1].meeting_id).not.toBe("server-meeting-id");

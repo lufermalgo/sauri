@@ -16,7 +16,6 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { label: copy.shell.library, target: { name: "library" } },
-  { label: copy.shell.upload, target: { name: "upload" } },
 ];
 
 function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
