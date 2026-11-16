@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import type { FormEvent } from "react";
 import { CircleAlert, CircleCheck, Info } from "lucide-react";
-import type { EngineKindInfo, EngineProcess, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
+import type { EngineKindInfo, EngineProbeResult, EngineProcess, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
 import {
   EnginesApiError,
   createEngineProvider,
@@ -20,7 +20,7 @@ import { t, translateIfKnown, useT } from "../../i18n";
 const LABEL_MAX_LENGTH = 64;
 
 type Outcome =
-  | { tone: "ok"; latencyMs: number | null }
+  | { tone: "ok"; latencyMs: number | null; schema?: { tone: "ok" | "warn"; text: string } }
   | { tone: "fail"; cause: string }
   | { tone: "info"; text: string };
 
@@ -157,10 +157,11 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
       setOutcome({ tone: "info", text: t("engines:dialog.savedNoKey") });
     } else {
       try {
-        const result = await testEngineProvider(saved.id);
+        // A provider that writes summaries is also tested with the model chosen for them and the real summary format.
+        const result = await testEngineProvider(saved.id, servedBy.includes("summary") ? "summary" : undefined);
         setOutcome(
           result.ok
-            ? { tone: "ok", latencyMs: result.latency_ms }
+            ? { tone: "ok", latencyMs: result.latency_ms, schema: schemaOutcome(result) }
             : { tone: "fail", cause: t(`engines:causes.${result.error_class ?? "provider_unavailable"}`) },
         );
       } catch (error) {
@@ -342,6 +343,21 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
   );
 }
 
+/** What the summary-format check of a working connection says; nothing when it was not run or decided nothing. */
+function schemaOutcome(result: EngineProbeResult): { tone: "ok" | "warn"; text: string } | undefined {
+  const model = result.schema_model;
+  if (!model) return undefined;
+  if (result.json_schema_ok === true) return { tone: "ok", text: t("engines:dialog.testSchemaOk", { model }) };
+  // Incompatible (the provider refused the format) is told apart from slow and from a model the account cannot use.
+  if (result.json_schema_ok === false) return { tone: "warn", text: t("engines:dialog.testSchemaIncompatible", { model }) };
+  if (result.schema_error_class === "provider_timeout") return { tone: "warn", text: t("engines:dialog.testSchemaSlow", { model }) };
+  if (result.schema_error_class === "provider_model_unavailable") return { tone: "warn", text: t("engines:dialog.testSchemaUnavailable", { model }) };
+  if (result.schema_error_class) {
+    return { tone: "warn", text: t("engines:dialog.testSchemaUnknown", { model, cause: t(`engines:causes.${result.schema_error_class}`) }) };
+  }
+  return undefined;
+}
+
 /** The test result: an icon and words, never color alone. */
 function OutcomeLine({ outcome }: { outcome: Outcome }) {
   const { t } = useT();
@@ -355,13 +371,21 @@ function OutcomeLine({ outcome }: { outcome: Outcome }) {
   }
   if (outcome.tone === "ok") {
     return (
-      <p className="engines-outcome engines-outcome--ok">
-        <Icon icon={CircleCheck} />
-        <span>
-          <strong>{t("engines:dialog.testOk")}</strong>
-          {outcome.latencyMs !== null && ` · ${t("engines:dialog.latency", { ms: outcome.latencyMs })}`}
-        </span>
-      </p>
+      <>
+        <p className="engines-outcome engines-outcome--ok">
+          <Icon icon={CircleCheck} />
+          <span>
+            <strong>{t("engines:dialog.testOk")}</strong>
+            {outcome.latencyMs !== null && ` · ${t("engines:dialog.latency", { ms: outcome.latencyMs })}`}
+          </span>
+        </p>
+        {outcome.schema && (
+          <p className={`engines-outcome engines-outcome--${outcome.schema.tone}`}>
+            <Icon icon={outcome.schema.tone === "ok" ? CircleCheck : CircleAlert} />
+            <span>{outcome.schema.text}</span>
+          </p>
+        )}
+      </>
     );
   }
   return (

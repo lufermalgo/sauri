@@ -669,6 +669,139 @@ def test_schema_check_for_anthropic_uses_output_config(
     assert "response_format" not in sent
 
 
+# The summary's strict schema in miniature: nested arrays with caps, a closed object, a required list.
+SUMMARY_SHAPE: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "topic": {"type": "string", "maxLength": 1200},
+        "key_points": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+                "type": "object",
+                "properties": {"title": {"type": "string"}, "sources": {"type": "array", "maxItems": 4}},
+                "required": ["title", "sources"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["topic", "key_points"],
+    "additionalProperties": False,
+}
+SUMMARY_OK = Reply(200, {"choices": [{"message": {"content": '{"topic": "t", "key_points": []}'}}]})
+
+
+def nodes(node: Any) -> Iterator[dict[str, Any]]:
+    if isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from nodes(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from nodes(value)
+
+
+def test_schema_check_tests_the_chosen_model_with_the_real_schema(client: TestClient, fake: FakeProvider) -> None:
+    fake.routes["GET /v1/models"] = models_reply("starter-mini", "chosen-model")
+    fake.routes["POST /v1/chat/completions"] = SUMMARY_OK
+    result = schema_probe(client, fake, model="chosen-model", response_schema=SUMMARY_SHAPE)
+    assert (result["ok"], result["json_schema_ok"], result["schema_model"]) == (True, True, "chosen-model")
+    sent = json.loads(fake.seen[-1].body)
+    assert sent["model"] == "chosen-model"
+    assert sent["response_format"]["json_schema"]["name"] == "summary"
+    assert sent["response_format"]["json_schema"]["schema"] == SUMMARY_SHAPE  # a plain provider gets it untouched
+    assert "synthetic transcript" in sent["messages"][0]["content"]
+
+
+def test_schema_check_adapts_the_real_schema_for_gemini_like_the_gateway(
+    client: TestClient, fake: FakeProvider
+) -> None:
+    fake.routes["GET /v1/models"] = models_reply("gemini-x")
+    fake.routes["POST /v1/chat/completions"] = SUMMARY_OK
+    result = schema_probe(client, fake, kind="gemini", model="gemini-x", response_schema=SUMMARY_SHAPE)
+    assert result["json_schema_ok"] is True
+    sent = json.loads(fake.seen[-1].body)["response_format"]["json_schema"]["schema"]
+    assert not any("maxItems" in node for node in nodes(sent))
+    assert sent["properties"]["key_points"]["minItems"] == 1 and sent["properties"]["topic"]["maxLength"] == 1200
+
+
+def test_schema_check_for_anthropic_with_the_real_schema_allows_a_real_answer(
+    client: TestClient, fake: FakeProvider, store: FileSecretStore
+) -> None:
+    bind_key(store, fake.url)
+    fake.routes["GET /v1/models"] = Reply(200, {"data": [{"id": "claude-haiku-4-5", "display_name": "Haiku"}]})
+    fake.routes["POST /v1/messages"] = Reply(
+        200, {"content": [{"type": "text", "text": '{"topic": "t", "key_points": []}'}]}
+    )
+    result = schema_probe(
+        client, fake, transport="anthropic-messages", base_url=fake.url, secret_ref=REF, kind="anthropic",
+        response_schema=SUMMARY_SHAPE,
+    )  # fmt: skip
+    assert result["json_schema_ok"] is True
+    sent = json.loads(fake.seen[-1].body)
+    assert sent["max_tokens"] >= 1024 and not any("maxItems" in node for node in nodes(sent["output_config"]))
+
+
+@pytest.mark.parametrize("content", ['{"topic": "t"}', "not json", '{"topic": "t", "key_points": [], "extra": 1}'])
+def test_schema_check_rejects_an_answer_that_misses_the_real_shape(
+    client: TestClient, fake: FakeProvider, content: str
+) -> None:
+    fake.routes["GET /v1/models"] = models_reply("m")
+    fake.routes["POST /v1/chat/completions"] = Reply(200, {"choices": [{"message": {"content": content}}]})
+    result = schema_probe(client, fake, model="m", response_schema=SUMMARY_SHAPE)
+    assert (result["json_schema_ok"], result["schema_cause"]) == (False, "output_not_schema")
+
+
+def test_a_refused_real_schema_is_incompatible_and_the_log_says_why_without_leaking(
+    client: TestClient, fake: FakeProvider, store: FileSecretStore, caplog: pytest.LogCaptureFixture
+) -> None:
+    bind_key(store, fake.url)
+    caplog.set_level(logging.INFO)
+    fake.routes["GET /v1/models"] = models_reply("m")
+    fake.routes["POST /v1/chat/completions"] = Reply(
+        400, [{"error": {"code": 400, "status": "INVALID_ARGUMENT", "message": f'Unknown name "maxItems" {KEY}'}}]
+    )
+    result = schema_probe(client, fake, model="m", response_schema=SUMMARY_SHAPE, secret_ref=REF)
+    assert (result["ok"], result["json_schema_ok"], result["schema_error_class"]) == (
+        True, False, "provider_bad_request",
+    )  # fmt: skip
+    assert "Unknown name" in caplog.text and "INVALID_ARGUMENT" in caplog.text
+    assert KEY not in caplog.text and KEY not in json.dumps(result)
+
+
+def test_a_model_the_account_cannot_use_is_neither_incompatible_nor_slow(
+    client: TestClient, fake: FakeProvider
+) -> None:
+    fake.routes["GET /v1/models"] = models_reply("m")
+    fake.routes["POST /v1/chat/completions"] = Reply(
+        404, [{"error": {"code": 404, "status": "NOT_FOUND", "message": "models/old-one is not found"}}]
+    )
+    result = schema_probe(client, fake, model="old-one", response_schema=SUMMARY_SHAPE)
+    assert (result["ok"], result["json_schema_ok"], result["schema_error_class"]) == (
+        True, None, "provider_model_unavailable",
+    )  # fmt: skip
+
+
+def test_a_slow_model_is_reported_as_slow_not_incompatible(store: FileSecretStore, fake: FakeProvider) -> None:
+    service = ProviderService(probe_timeout_s=2.0, schema_timeout_s=0.3, models_timeout_s=2.0, local_timeout_s=0.5)
+    fake.routes["GET /v1/models"] = models_reply("m")
+    fake.routes["POST /v1/chat/completions"] = Reply(200, {"choices": []}, delay_s=1.5)
+    result = schema_probe(make_client(store, service), fake, model="m", response_schema=SUMMARY_SHAPE)
+    assert (result["ok"], result["json_schema_ok"], result["schema_error_class"]) == (True, None, "provider_timeout")
+
+
+def test_the_real_schema_check_has_a_longer_budget_than_the_connection_check(
+    store: FileSecretStore, fake: FakeProvider
+) -> None:
+    service = ProviderService(probe_timeout_s=0.3, schema_timeout_s=3.0, models_timeout_s=2.0, local_timeout_s=0.5)
+    fake.routes["GET /v1/models"] = models_reply("m")
+    fake.routes["POST /v1/chat/completions"] = Reply(200, SUMMARY_OK.body, delay_s=0.8)
+    client = make_client(store, service)
+    assert schema_probe(client, fake, model="m", response_schema=SUMMARY_SHAPE)["json_schema_ok"] is True
+    assert schema_probe(client, fake, model="m")["json_schema_ok"] is None  # the plain check keeps the short budget
+
+
 def test_no_schema_check_for_processes_that_do_not_chat(client: TestClient, fake: FakeProvider) -> None:
     fake.routes["GET /v1/models"] = models_reply("whisper-large-v3")
     result = probe(client, fake, capability="transcription", transport="openai-audio")

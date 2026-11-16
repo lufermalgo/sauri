@@ -490,6 +490,11 @@
   background: var(--ds-accent-soft);
 }
 
+.engines-outcome--warn {
+  color: var(--ds-warning-soft-fg);
+  background: var(--ds-warning-soft);
+}
+
 .engines-outcome--fail {
   color: var(--ds-danger-soft-fg);
   background: var(--ds-danger-soft);

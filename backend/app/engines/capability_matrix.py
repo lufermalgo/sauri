@@ -116,7 +116,10 @@ _GEMINI = Support(
     "gemini-3.1-flash-lite, gemini-3.5-flash-lite and gemini-flash-lite-latest. Gemini 2.5 ids answered 404 "
     "for that key, the larger flash ids exceeded the 10 s probe budget and some answered 429/503. Streaming "
     "with stream_options.include_usage is not checked yet. Transcription and diarization are not offered: "
-    "audio goes through generateContent (not an adapter Sauri has) and returns no word times or speakers.",
+    "audio goes through generateContent (not an adapter Sauri has) and returns no word times or speakers. "
+    "Checked again 2026-11-16 with the real summary schema: json_schema strict with maxItems is refused (400), "
+    "so the gateway sends it without maxItems and const as a one-value enum (gemini-3.1-flash-lite and "
+    "gemini-4-hydrogen answered valid summaries); gemini-2.5-* answers 404 \"no longer available to new users\".",
 )
 _CODEX = Support(
     "chatgpt-responses",

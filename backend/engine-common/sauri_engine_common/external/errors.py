@@ -17,6 +17,7 @@ RETRYABLE: Final[dict[str, bool]] = {
     "provider_timeout": True,
     "provider_unavailable": True,
     "provider_bad_request": False,
+    "provider_model_unavailable": False,
     "provider_invalid_output": False,
     "provider_context_exceeded": False,
     "provider_unsupported": False,
@@ -41,9 +42,11 @@ _QUOTA_MARKERS: Final = ("insufficient_quota", "billing", "credit_balance", "quo
 
 
 class ProviderError(Exception):
-    """A classified failure. ``str(error)`` is the class code only."""
+    """A classified failure. ``str(error)`` is the class code only; ``detail`` is for the gateway log."""
 
-    def __init__(self, code: str, *, retry_after_s: int | None = None, reason: str | None = None) -> None:
+    def __init__(
+        self, code: str, *, retry_after_s: int | None = None, reason: str | None = None, detail: str | None = None
+    ) -> None:
         if code not in ERROR_CODES:
             raise ValueError("unknown_error_code")
         super().__init__(code)
@@ -52,6 +55,9 @@ class ProviderError(Exception):
         self.retry_after_s = retry_after_s
         # Short machine-readable sub-code (for example ``route_too_large``); never content.
         self.reason = reason
+        # Sanitized, length-capped provider status/message for the gateway log only (see ``chat_common``);
+        # it never reaches ``to_payload`` and never contains a key or request content.
+        self.detail = detail
 
     def to_payload(self) -> dict[str, dict[str, object]]:
         """Body returned by gateways: ``{"error": {"code", "retryable", "retry_after_s"}}``."""

@@ -69,7 +69,14 @@ function fakeBackend(initial: EngineProvider[]) {
   const calls: Call[] = [];
   const failing = new Set<string>();
   const catalogs: Record<string, EngineModelList> = {};
-  const probe = { ok: true, latency_ms: 120, error_class: null as EngineErrorClass | null, json_schema_ok: null };
+  const probe = {
+    ok: true,
+    latency_ms: 120,
+    error_class: null as EngineErrorClass | null,
+    json_schema_ok: null as boolean | null,
+    schema_error_class: null as EngineErrorClass | null,
+    schema_model: null as string | null,
+  };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
   const handler = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -507,6 +514,31 @@ describe("adding a provider", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(within(card(t("engines:kinds.openai.label"))).getByText(t("engines:card.keyShown", { hint: SECRET_HINT }))).toBeInTheDocument();
     expect(renderedKeyTraces(SECRET)).toEqual([]);
+  });
+
+  it("asks the API to test the summary with the real format and says what it found", async () => {
+    await renderReady([]);
+    backend.probe.json_schema_ok = true;
+    backend.probe.schema_model = "model-a";
+    openAdd();
+    fireEvent.change(within(dialog()).getByLabelText(t("engines:dialog.key")), { target: { value: SECRET } });
+    fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
+    expect(await within(dialog()).findByText(t("engines:dialog.testSchemaOk", { model: "model-a" }))).toBeInTheDocument();
+    expect(writes().find((call) => call.path === "/providers/p1/test")?.body).toEqual({ capability: "summary" });
+  });
+
+  it.each([
+    ["incompatible", { json_schema_ok: false, schema_error_class: "provider_bad_request" as const }, () => t("engines:dialog.testSchemaIncompatible", { model: "model-b" })],
+    ["slow", { json_schema_ok: null, schema_error_class: "provider_timeout" as const }, () => t("engines:dialog.testSchemaSlow", { model: "model-b" })],
+    ["unavailable", { json_schema_ok: null, schema_error_class: "provider_model_unavailable" as const }, () => t("engines:dialog.testSchemaUnavailable", { model: "model-b" })],
+  ])("tells a %s model apart when the connection itself responds", async (_name, found, expected) => {
+    await renderReady([]);
+    Object.assign(backend.probe, found, { schema_model: "model-b" });
+    openAdd();
+    fireEvent.change(within(dialog()).getByLabelText(t("engines:dialog.key")), { target: { value: SECRET } });
+    fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
+    expect(await within(dialog()).findByText(expected())).toBeInTheDocument();
+    expect(within(dialog()).getByText(t("engines:dialog.testOk"))).toBeInTheDocument();
   });
 
   it("names the cause in words when the connection does not respond", async () => {

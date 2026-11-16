@@ -34,6 +34,7 @@
     "provider_timeout": "El proveedor tardó demasiado.",
     "provider_unavailable": "No pudimos conectar con el proveedor.",
     "provider_bad_request": "El proveedor no aceptó la petición.",
+    "provider_model_unavailable": "Este modelo no está disponible para tu cuenta del proveedor. Elige otro modelo.",
     "provider_invalid_output": "El modelo no devolvió un resumen válido.",
     "too_long": "La reunión es demasiado larga para ese modelo.",
     "provider_unsupported": "Ese proveedor no sirve para generar resúmenes.",

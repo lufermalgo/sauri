@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.copy.engine_notices_es import NOTICE_VERSIONS, PROCESS_NAMES
 from app.infra.models import EnginePrivacyConsent, EngineProcessSetting, EngineProvider
+from app.summaries.engine import probe_schema
 from tests.engines.conftest import OTHER, OWNER, FakeHost, auth_headers
 
 BASE = "/api/v1/engines"
@@ -687,8 +688,12 @@ async def test_connection_test_sends_a_reference_not_a_key(api: AsyncClient, fak
     response = await api.post(
         f"{BASE}/providers/{provider['id']}/test", json={"capability": "summary"}, headers=auth_headers()
     )
-    assert response.json() == {"ok": True, "latency_ms": 123, "error_class": None, "json_schema_ok": True}
+    assert response.json() == {
+        "ok": True, "latency_ms": 123, "error_class": None, "json_schema_ok": True,
+        "schema_error_class": None, "schema_model": None,
+    }  # fmt: skip
     method, path, body = [call for call in fake_host.calls if call[1] == "/v1/providers/probe"][-1]
+    assert body.pop("response_schema") == probe_schema()  # the real summary shape, no key and no transcript
     assert body == {
         "kind": "anthropic",
         "transport": "anthropic-messages",
@@ -706,6 +711,67 @@ async def test_connection_test_sends_a_reference_not_a_key(api: AsyncClient, fak
     ).status_code == 422
 
 
+async def _last_probe(fake_host: FakeHost) -> dict[str, Any]:
+    return [call for call in fake_host.calls if call[1] == "/v1/providers/probe"][-1][2]
+
+
+async def test_connection_test_uses_the_model_chosen_for_the_summary(api: AsyncClient, fake_host: FakeHost) -> None:
+    provider = await _with_key(api, "gemini")
+    other = await _with_key(api, "anthropic")
+    probe = f"{BASE}/providers/{provider['id']}/test"
+    # Nothing chosen yet: no model is named, so the host falls back to the provider's starter model.
+    await api.post(probe, json={"capability": "summary"}, headers=auth_headers())
+    assert "model" not in await _last_probe(fake_host)
+    # A model chosen on ANOTHER provider is not this provider's.
+    assert (await _accepted(api, "summary", other, "claude-x")).status_code == 200
+    await api.post(probe, json={"capability": "summary"}, headers=auth_headers())
+    assert "model" not in await _last_probe(fake_host)
+    # The owner's choice for this provider is the model under test, with the real (unadapted) summary schema.
+    assert (await _accepted(api, "summary", provider, "gemini-3.1-flash-lite")).status_code == 200
+    await api.post(probe, json={"capability": "summary"}, headers=auth_headers())
+    body = await _last_probe(fake_host)
+    assert body["model"] == "gemini-3.1-flash-lite" and body["capability"] == "summary"
+    assert body["response_schema"] == probe_schema() and "P0000" in json.dumps(body["response_schema"])
+    assert KEY not in json.dumps(body)
+    # Another owner's choice never leaks in.
+    stranger = await _with_key(api, "gemini", user=OTHER)
+    await api.post(
+        f"{BASE}/providers/{stranger['id']}/test", json={"capability": "summary"}, headers=auth_headers(OTHER)
+    )
+    assert "model" not in await _last_probe(fake_host)
+    # A test without a capability stays the plain connection test: no schema, no model.
+    await api.post(probe, json={}, headers=auth_headers())
+    body = await _last_probe(fake_host)
+    assert "response_schema" not in body and "model" not in body
+
+
+@pytest.mark.parametrize(
+    ("answer", "schema_ok", "schema_class"),
+    [
+        ({"json_schema_ok": True, "schema_model": "m1"}, True, None),
+        ({"json_schema_ok": False, "schema_error_class": "provider_bad_request", "schema_model": "m1"}, False,
+         "provider_bad_request"),  # incompatible
+        ({"json_schema_ok": None, "schema_error_class": "provider_timeout", "schema_model": "m1"}, None,
+         "provider_timeout"),  # slow
+        ({"json_schema_ok": None, "schema_error_class": "provider_model_unavailable"}, None,
+         "provider_model_unavailable"),
+        ({"json_schema_ok": None, "schema_error_class": f"Bearer {KEY}"}, None, None),  # unknown values are dropped
+    ],
+    ids=["ok", "incompatible", "slow", "model-unavailable", "unknown-class"],
+)
+async def test_connection_test_tells_slow_from_incompatible(
+    api: AsyncClient, fake_host: FakeHost, answer: dict[str, Any], schema_ok: bool | None, schema_class: str | None
+) -> None:
+    provider = await _with_key(api, "gemini")
+    fake_host.probe_answer = {"ok": True, "latency_ms": 5, **answer}
+    response = await api.post(
+        f"{BASE}/providers/{provider['id']}/test", json={"capability": "summary"}, headers=auth_headers()
+    )
+    body = response.json()
+    assert (body["ok"], body["json_schema_ok"], body["schema_error_class"]) == (True, schema_ok, schema_class)
+    assert KEY not in json.dumps(body)
+
+
 async def test_connection_test_classifies_failures_and_drops_unknown_values(
     api: AsyncClient, fake_host: FakeHost
 ) -> None:
@@ -716,10 +782,15 @@ async def test_connection_test_classifies_failures_and_drops_unknown_values(
         "latency_ms": 9,
         "error_class": "provider_auth",
         "json_schema_ok": None,
+        "schema_error_class": None,
+        "schema_model": None,
     }
     fake_host.probe_answer = {"ok": False, "error_class": f"Bearer {KEY}", "latency_ms": -4}
     body = (await api.post(f"{BASE}/providers/{provider['id']}/test", json={}, headers=auth_headers())).json()
-    assert body == {"ok": False, "latency_ms": None, "error_class": "provider_unavailable", "json_schema_ok": None}
+    assert body == {
+        "ok": False, "latency_ms": None, "error_class": "provider_unavailable", "json_schema_ok": None,
+        "schema_error_class": None, "schema_model": None,
+    }  # fmt: skip
     fake_host.probe_status = 422
     fake_host.probe_answer = {"error": {"code": "provider_bad_request"}}
     assert (await api.post(f"{BASE}/providers/{provider['id']}/test", json={}, headers=auth_headers())).json()[

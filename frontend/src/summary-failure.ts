@@ -11,6 +11,7 @@ const SUMMARY_FAILURE_KEYS = {
   provider_timeout: "provider_timeout",
   provider_unavailable: "provider_unavailable",
   provider_bad_request: "provider_bad_request",
+  provider_model_unavailable: "provider_model_unavailable",
   provider_invalid_output: "provider_invalid_output",
   provider_context_exceeded: "too_long",
   audio_too_large: "too_long",

@@ -943,3 +943,180 @@ async def test_a_local_app_without_a_key_gets_no_credentials_header(
     )
     assert completion["choices"][0]["message"]["content"] == "hello"
     assert not {"authorization", "x-api-key"} & fake.seen[0].headers.keys()
+
+
+# --- Gemini: strict schema without maxItems --------------------------------------------------------------------
+
+
+def gemini_route(
+    kind: str = "gemini", base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+) -> Route:
+    return Route(
+        version=1, capability="summary", kind=kind, transport="openai-chat", base_url=base_url,
+        model="gemini-3.1-flash-lite", secret_ref=None, consent_version=1, timeouts=FAST,
+    )  # fmt: skip
+
+
+def test_gemini_gets_the_strict_schema_without_maxitems_and_keeps_every_other_constraint() -> None:
+    request = chat_request()
+    before = copy.deepcopy(request)
+    sent = chat_openai.build_payload(request, gemini_route())
+    assert request == before  # the caller's request (and so its original schema) is untouched
+    schema = sent["response_format"]["json_schema"]["schema"]
+    assert not any("maxItems" in node for node in walk(schema))
+    points = schema["properties"]["key_points"]
+    assert "maxItems=12" in points["description"]  # the model still reads the cap
+    sources = points["items"]["properties"]["sources"]
+    assert sources["minItems"] == 2 and "maxItems=4" in sources["description"]
+    assert schema["properties"]["title"]["maxLength"] == 120
+    assert points["items"]["properties"]["text"]["minLength"] == 1
+    assert sources["items"]["properties"]["passage_id"]["enum"] == sorted(PASSAGES)
+    assert schema["required"] == ["title", "key_points"] and schema["additionalProperties"] is False
+    assert sent["response_format"]["json_schema"]["strict"] is True
+    assert sent["response_format"]["type"] == "json_schema"
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        gemini_route("openai_compatible", "https://generativelanguage.googleapis.com/v1beta/openai"),
+        gemini_route("gemini", "https://example.test/v1"),
+    ],
+    ids=["by-host", "by-kind"],
+)
+def test_gemini_is_recognized_by_kind_or_by_host(route: Route) -> None:
+    schema = chat_openai.build_payload(chat_request(), route)["response_format"]["json_schema"]["schema"]
+    assert not any("maxItems" in node for node in walk(schema))
+
+
+@pytest.mark.parametrize(
+    ("kind", "base_url"),
+    [
+        ("openai", "https://api.openai.com/v1"),
+        ("openrouter", "https://openrouter.ai/api/v1"),
+        ("groq", "https://api.groq.com/openai/v1"),
+        ("ollama", "http://127.0.0.1:11434/v1"),
+        ("openai_compatible", "https://llm.example.test/v1"),
+    ],
+)
+def test_other_openai_chat_providers_get_the_request_byte_identical(kind: str, base_url: str) -> None:
+    request = chat_request()
+    sent = chat_openai.build_payload(request, gemini_route(kind, base_url))
+    assert json.dumps(sent["response_format"], sort_keys=True) == json.dumps(request["response_format"], sort_keys=True)
+    assert sent["response_format"]["json_schema"]["schema"]["properties"]["key_points"]["maxItems"] == 12
+
+
+def test_gemini_requests_without_a_schema_pass_through() -> None:
+    plain = chat_request(structured=False)
+    assert "response_format" not in chat_openai.build_payload(plain, gemini_route())
+    json_object = {**plain, "response_format": {"type": "json_object"}}
+    assert chat_openai.build_payload(json_object, gemini_route())["response_format"] == {"type": "json_object"}
+
+
+def test_gemini_gets_const_as_a_one_value_enum_because_it_does_not_enforce_const() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"state": {"type": "string", "const": "draft"}, "kind": {"type": "string", "enum": ["a"]}},
+        "required": ["state", "kind"],
+        "additionalProperties": False,
+    }
+    adapted = adapt_schema_for("openai-chat", schema, kind="gemini")
+    assert adapted.schema["properties"]["state"] == {"type": "string", "enum": ["draft"]}
+    assert adapted.schema["properties"]["kind"] == {"type": "string", "enum": ["a"]}
+    assert schema["properties"]["state"]["const"] == "draft"  # the caller's schema still says const
+    assert adapt_schema_for("openai-chat", schema, kind="openai").schema == schema
+
+
+def test_the_gemini_record_lists_only_maxitems() -> None:
+    adapted = adapt_schema_for("openai-chat", summary_schema(), kind="gemini")
+    assert {r.keyword for r in adapted.removed} == {"maxItems"}
+    assert {r.path for r in adapted.removed} == {
+        "/properties/key_points",
+        "/properties/key_points/items/properties/sources",
+    }
+    # openai-chat without Gemini, and Anthropic's own rules, are unchanged
+    assert adapt_schema_for("openai-chat", summary_schema(), kind="openai").removed == ()
+    assert adapt_schema_for("openai-chat", summary_schema()).schema == summary_schema()
+
+
+# --- provider 4xx: diagnosable, scrubbed, classified -----------------------------------------------------------
+
+
+GOOGLE_400 = [
+    {
+        "error": {
+            "code": 400,
+            "message": "Invalid JSON payload received. Unknown name \"maxItems\" at 'response_format'.",
+            "status": "INVALID_ARGUMENT",
+        }
+    }
+]
+
+
+async def test_a_provider_refusal_carries_its_scrubbed_status_and_message(
+    serve: Callable[[Handler], Awaitable[FakeProvider]],
+) -> None:
+    fake = await serve(failing(400, GOOGLE_400))
+    error = await error_of(OPENAI, fake)
+    assert error.code == "provider_bad_request" and error.reason == "http_400"
+    assert error.detail is not None
+    assert "status=INVALID_ARGUMENT" in error.detail and "Unknown name" in error.detail and "maxItems" in error.detail
+    assert error.detail not in json.dumps(error.to_payload())  # never in what a caller gets
+    assert error.retryable is False
+
+
+async def test_the_detail_never_holds_the_key_headers_or_request_text_and_is_capped(
+    serve: Callable[[Handler], Awaitable[FakeProvider]],
+) -> None:
+    message = (
+        f"Incorrect API key {KEY} sent as Bearer {KEY}. Authorization: Bearer abcdefghijklmnop. "
+        "You said: 'Transcript: p1 said ship it.' and also AIzaSyA1234567890abcdefghijklmnopqrstu "
+        + "x" * 500
+    )
+    fake = await serve(failing(401, {"error": {"message": message, "type": "invalid_request_error"}}))
+    error = await error_of(OPENAI, fake)
+    detail = error.detail or ""
+    assert KEY not in detail and "Bearer" not in detail and "AIza" not in detail
+    assert "p1 said ship it" not in detail  # the request's own words are not echoed into the log
+    assert len(detail) <= 200
+    assert "\n" not in detail
+
+
+async def test_long_quoted_content_and_multiline_messages_are_neutralized(
+    serve: Callable[[Handler], Awaitable[FakeProvider]],
+) -> None:
+    quoted = "'" + "words from the meeting " * 5 + "'"
+    fake = await serve(failing(400, {"error": {"message": f"Bad value {quoted}\nINJECTED line\r\n", "code": "bad"}}))
+    detail = (await error_of(OPENAI, fake)).detail or ""
+    assert "words from the meeting" not in detail and "\n" not in detail and "\r" not in detail
+
+
+async def test_a_server_error_does_not_log_the_provider_body(
+    serve: Callable[[Handler], Awaitable[FakeProvider]],
+) -> None:
+    fake = await serve(failing(503, {"error": {"message": "overloaded, try later"}}))
+    error = await error_of(OPENAI, fake)
+    assert error.code == "provider_unavailable" and error.detail is None
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "code"),
+    [
+        (404, [{"error": {"code": 404, "message": "models/gemini-2.5-flash is not found for API version v1beta",
+                          "status": "NOT_FOUND"}}], "provider_model_unavailable"),
+        (404, {"error": {"message": "The model `gpt-9` does not exist", "type": "invalid_request_error",
+                         "code": "model_not_found"}}, "provider_model_unavailable"),
+        (400, {"error": {"message": "nope", "code": "model_not_found"}}, "provider_model_unavailable"),
+        (404, {"error": {"message": "Not Found"}}, "provider_bad_request"),  # a wrong address is not the model
+        (404, "<html>nothing here</html>", "provider_bad_request"),
+        (400, GOOGLE_400, "provider_bad_request"),
+        (401, {"error": {"message": "model refused the key"}}, "provider_auth"),
+    ],
+    ids=["google-404", "openai-404", "model-code-400", "bare-404", "html-404", "schema-400", "auth-401"],
+)
+async def test_a_missing_model_has_its_own_class(
+    serve: Callable[[Handler], Awaitable[FakeProvider]], status: int, body: Any, code: str
+) -> None:
+    fake = await serve(failing(status, body))
+    error = await error_of(OPENAI, fake)
+    assert error.code == code and error.retryable is False

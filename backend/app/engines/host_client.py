@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 MAX_RESPONSE_BYTES: Final = 1024 * 1024
 SECRET_TIMEOUT_S: Final = 10.0
-PROBE_TIMEOUT_S: Final = 30.0
+# Listing the models (up to 10 s) plus the schema check, which asks a model for a small summary (up to 60 s).
+PROBE_TIMEOUT_S: Final = 85.0
 MODELS_TIMEOUT_S: Final = 45.0
 STATUS_TIMEOUT_S: Final = 10.0
 LOCAL_TIMEOUT_S: Final = 15.0

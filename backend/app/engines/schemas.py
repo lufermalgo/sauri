@@ -49,6 +49,7 @@ ERROR_CLASSES = frozenset(
         "provider_timeout",
         "provider_unavailable",
         "provider_bad_request",
+        "provider_model_unavailable",
         "provider_invalid_output",
         "provider_context_exceeded",
         "provider_unsupported",
@@ -152,6 +153,11 @@ class ProbeOut(BaseModel):
     latency_ms: int | None = Field(default=None, ge=0, le=3_600_000)
     error_class: str | None = None
     json_schema_ok: bool | None = None
+    # Why the schema check did not pass when the connection did: ``provider_timeout`` means slow (not
+    # incompatible), ``provider_model_unavailable`` that the chosen model is not open to this account.
+    schema_error_class: str | None = None
+    # The model the schema check used (the one chosen for the process, else the provider's starter model).
+    schema_model: str | None = Field(default=None, max_length=MAX_MODEL_CHARS)
 
 
 class ModelOut(BaseModel):

@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sauri_engine_common.chatgpt_login import ALLOWED_HOSTS, ChatGptLogin
 from sauri_engine_common.external import chat_responses
 from sauri_engine_common.external.allowlist_http import AllowlistedHttp
+from sauri_engine_common.external.chat_common import model_unavailable, provider_detail
 from sauri_engine_common.external.errors import ProviderError, classify
 from sauri_engine_common.external.safe_http import (
     CONNECT_TIMEOUT_S,
@@ -39,12 +40,16 @@ from sauri_engine_common.external.safe_http import (
     parse_ip_literal,  # noqa: F401
     parse_target,  # noqa: F401
 )
+from sauri_engine_common.external.schema import adapt_schema_for
 from sauri_engine_common.route import Capability, RouteError, Transport, origin_of
 from sauri_engine_common.secrets import SecretError, SecretRecord, SecretStore, validate_ref
 
 logger = logging.getLogger("sauri.host_engine.providers")
 
 PROBE_TIMEOUT_S: Final = 10.0
+# The schema check with the real summary schema asks a model to write a (tiny) summary: slow models need longer
+# than a model listing. Past this the answer is "slow", not "incompatible".
+SCHEMA_TIMEOUT_S: Final = 60.0
 MODELS_TIMEOUT_S: Final = 15.0
 LOCAL_TIMEOUT_S: Final = 1.5
 MAX_REQUEST_BYTES: Final = 16 * 1024
@@ -190,6 +195,8 @@ class _Target(BaseModel):
 class ProbeBody(_Target):
     capability: Capability | None = None
     model: str | None = Field(default=None, min_length=1, max_length=256)
+    # The strict schema the process really sends (the summary one). Without it the check uses ``PROBE_SCHEMA``.
+    response_schema: dict[str, Any] | None = None
 
 
 class ModelsBody(_Target):
@@ -200,8 +207,17 @@ class ModelsBody(_Target):
 class UpstreamError(ProviderError):
     """A classified provider failure with the HTTP status and a bounded, key-free provider code."""
 
-    def __init__(self, code: str, *, reason: str, status: int, hint: str | None, retry_after_s: int | None) -> None:
-        super().__init__(code, reason=reason, retry_after_s=retry_after_s)
+    def __init__(
+        self,
+        code: str,
+        *,
+        reason: str,
+        status: int,
+        hint: str | None,
+        retry_after_s: int | None,
+        detail: str | None = None,
+    ) -> None:
+        super().__init__(code, reason=reason, retry_after_s=retry_after_s, detail=detail)
         self.status = status
         self.hint = hint
 
@@ -269,18 +285,36 @@ def _raise_for_status(result: HttpResult, key: str | None) -> None:
     hint = _error_hint(result.body, key)
     base = classify(result.status, hint, retry_after=result.retry_after)
     reason = "redirect_refused" if 300 <= result.status < 400 else f"http_{result.status}"
-    raise UpstreamError(base.code, reason=reason, status=result.status, hint=hint, retry_after_s=base.retry_after_s)
+    code = base.code
+    if code == "provider_bad_request" and model_unavailable(result.status, hint, result.body):
+        code = "provider_model_unavailable"
+    detail = provider_detail(result.body, key) if 400 <= result.status < 500 else None
+    raise UpstreamError(
+        code, reason=reason, status=result.status, hint=hint, retry_after_s=base.retry_after_s, detail=detail
+    )
+
+
+_PROBE_TRANSCRIPT: Final = (
+    "Summarize this synthetic transcript.\n"
+    "[P0000 00:00:00–00:00:20] Speaker 1: We agreed to review the maintenance budget on Friday.\n"
+    "Speaker 2: I will send the figures before then."
+)
 
 
 def _schema_request(body: ProbeBody, model: str) -> tuple[str, dict[str, Any]]:
-    prompt = 'Reply with the JSON object {"ok": true}.'
+    custom = body.response_schema is not None
+    prompt = _PROBE_TRANSCRIPT if custom else 'Reply with the JSON object {"ok": true}.'
     messages = [{"role": "user", "content": prompt}]
+    schema = PROBE_SCHEMA
+    if body.response_schema is not None:
+        # The same adaptation the gateway applies, so the check sees what a real summary would meet.
+        schema = adapt_schema_for(body.transport, body.response_schema, kind=body.kind, base_url=body.base_url).schema
     if body.transport == "anthropic-messages":
         payload: dict[str, Any] = {
             "model": model,
-            "max_tokens": 64,
+            "max_tokens": 1024 if custom else 64,
             "messages": messages,
-            "output_config": {"format": {"type": "json_schema", "schema": PROBE_SCHEMA}},
+            "output_config": {"format": {"type": "json_schema", "schema": schema}},
         }
         return _anthropic_url(body.base_url, "/messages"), payload
     payload = {
@@ -289,7 +323,7 @@ def _schema_request(body: ProbeBody, model: str) -> tuple[str, dict[str, Any]]:
         "stream": False,
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"name": "probe", "strict": True, "schema": PROBE_SCHEMA},
+            "json_schema": {"name": "summary" if custom else "probe", "strict": True, "schema": schema},
         },
     }
     if body.kind == "openrouter":
@@ -310,13 +344,18 @@ def _schema_text(transport: Transport, body: bytes) -> str | None:
     return text if isinstance(text, str) else None
 
 
-def _matches_probe_schema(text: str | None) -> bool:
+def _matches_probe_schema(text: str | None, schema: dict[str, Any] | None = None) -> bool:
     if text is None:
         return False
     try:
         value = json.loads(text)
     except ValueError:
         return False
+    if schema is not None:  # the real schema: its top-level shape, not the whole contract (the worker validates)
+        required, properties = schema.get("required"), schema.get("properties")
+        names = set(required) if isinstance(required, list) else set()
+        allowed = set(properties) if isinstance(properties, dict) else set()
+        return isinstance(value, dict) and bool(names) and names <= set(value) and set(value) <= allowed
     return isinstance(value, dict) and set(value) == {"ok"} and isinstance(value["ok"], bool)
 
 
@@ -349,6 +388,7 @@ class ProviderService:
         clock: Callable[[], float] = time.monotonic,
         local_apps: tuple[tuple[str, str, int], ...] = LOCAL_APPS,
         probe_timeout_s: float = PROBE_TIMEOUT_S,
+        schema_timeout_s: float = SCHEMA_TIMEOUT_S,
         models_timeout_s: float = MODELS_TIMEOUT_S,
         local_timeout_s: float = LOCAL_TIMEOUT_S,
         connect_timeout_s: float = CONNECT_TIMEOUT_S,
@@ -358,6 +398,7 @@ class ProviderService:
         self._clock = clock
         self._local_apps = local_apps
         self._probe_timeout_s = probe_timeout_s
+        self._schema_timeout_s = schema_timeout_s
         self._models_timeout_s = models_timeout_s
         self._local_timeout_s = local_timeout_s
         self._connect_timeout_s = connect_timeout_s
@@ -433,25 +474,46 @@ class ProviderService:
         return result
 
     async def _check_schema(self, body: ProbeBody, key: str | None, models: list[ModelInfo]) -> dict[str, Any]:
-        """One minimal request with a JSON schema; ``False`` only when the provider cannot honor it."""
+        """One small request with a JSON schema.
+
+        ``json_schema_ok`` is ``False`` only when the provider refuses the schema (incompatible). A model that
+        does not exist, a timeout (slow) or any other failure leaves it ``None`` and names the class in
+        ``schema_error_class``, so the portal can tell «lento» from «incompatible».
+        """
         model = body.model or starter_model([m.id for m in filter_models(models, "chat")])
         if model is None:
             return {"json_schema_ok": None, "schema_cause": "no_chat_model"}
-        url, payload = _schema_request(body, model)
+        timeout_s = self._schema_timeout_s if body.response_schema is not None else self._probe_timeout_s
         try:
+            url, payload = _schema_request(body, model)
             result = await self._call(
                 "POST", url, key, body.transport, json.dumps(payload).encode(),
-                allow_local=body.allow_local, timeout_s=self._probe_timeout_s,
+                allow_local=body.allow_local, timeout_s=timeout_s,
             )  # fmt: skip
         except UpstreamError as exc:
-            if exc.status in (400, 404, 422):
-                return {"json_schema_ok": False, "schema_cause": exc.reason, "schema_hint": exc.hint}
-            return {"json_schema_ok": None, "schema_cause": exc.reason, "schema_error_class": exc.code}
+            logger.info("probe schema ok=false class=%s cause=%s detail=%s", exc.code, exc.reason, exc.detail or "-")
+            if exc.status in (400, 422) and exc.code != "provider_model_unavailable":
+                return {
+                    "json_schema_ok": False, "schema_cause": exc.reason, "schema_hint": exc.hint,
+                    "schema_error_class": exc.code, "schema_model": model,
+                }  # fmt: skip
+            return {
+                "json_schema_ok": None, "schema_cause": exc.reason, "schema_error_class": exc.code,
+                "schema_model": model,
+            }  # fmt: skip
         except ProviderError as exc:
-            return {"json_schema_ok": None, "schema_cause": exc.reason, "schema_error_class": exc.code}
-        if _matches_probe_schema(_schema_text(body.transport, result.body)):
+            logger.info("probe schema ok=false class=%s cause=%s", exc.code, exc.reason)
+            return {
+                "json_schema_ok": None, "schema_cause": exc.reason, "schema_error_class": exc.code,
+                "schema_model": model,
+            }  # fmt: skip
+        # Adaptation never changes ``required`` or ``properties``, so the caller's schema says what to expect.
+        if _matches_probe_schema(_schema_text(body.transport, result.body), body.response_schema):
             return {"json_schema_ok": True, "schema_model": model}
-        return {"json_schema_ok": False, "schema_cause": "output_not_schema", "schema_model": model}
+        return {
+            "json_schema_ok": False, "schema_cause": "output_not_schema", "schema_model": model,
+            "schema_error_class": "provider_invalid_output",
+        }  # fmt: skip
 
     async def models(
         self, store: SecretStore, body: ModelsBody, login: ChatGptLogin | None = None

@@ -17,6 +17,7 @@ SUMMARY_FAILURE_MESSAGES: dict[str, str] = {
     "provider_timeout": "El proveedor tardó demasiado.",
     "provider_unavailable": "No pudimos conectar con el proveedor.",
     "provider_bad_request": "El proveedor no aceptó la petición.",
+    "provider_model_unavailable": "Este modelo no está disponible para tu cuenta del proveedor. Elige otro modelo.",
     "provider_invalid_output": "El modelo no devolvió un resumen válido.",
     "provider_context_exceeded": "La reunión es demasiado larga para ese modelo.",
     "audio_too_large": "La reunión es demasiado larga para ese modelo.",
