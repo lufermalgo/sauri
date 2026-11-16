@@ -7,6 +7,8 @@ Two classes of link, two settings:
   with HTTP range requests; once it expires, buffering and seeking get 403. A recording
   can exceed an hour (the longest measured is 94 min), so the link must outlive a whole
   viewing session until the player can refresh its own links.
+* Download links: ``DOWNLOAD_URL_TTL_SECONDS`` (5 min). The browser follows the link the
+  moment the API returns it; the signature is only checked when the transfer starts.
 """
 
 from __future__ import annotations
@@ -20,6 +22,10 @@ MAX_SIGNED_URL_TTL_SECONDS = 3600
 DEFAULT_PLAYBACK_URL_TTL_SECONDS = 14_400
 MIN_PLAYBACK_URL_TTL_SECONDS = 300
 MAX_PLAYBACK_URL_TTL_SECONDS = 43_200
+
+DEFAULT_DOWNLOAD_URL_TTL_SECONDS = 300
+MIN_DOWNLOAD_URL_TTL_SECONDS = 60
+MAX_DOWNLOAD_URL_TTL_SECONDS = 3600
 
 
 def _ttl_from_env(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -56,4 +62,14 @@ def playback_url_ttl_seconds() -> int:
         DEFAULT_PLAYBACK_URL_TTL_SECONDS,
         MIN_PLAYBACK_URL_TTL_SECONDS,
         MAX_PLAYBACK_URL_TTL_SECONDS,
+    )
+
+
+def download_url_ttl_seconds() -> int:
+    """Lifetime of the signed attachment download links."""
+    return _ttl_from_env(
+        "DOWNLOAD_URL_TTL_SECONDS",
+        DEFAULT_DOWNLOAD_URL_TTL_SECONDS,
+        MIN_DOWNLOAD_URL_TTL_SECONDS,
+        MAX_DOWNLOAD_URL_TTL_SECONDS,
     )

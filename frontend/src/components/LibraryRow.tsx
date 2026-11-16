@@ -184,7 +184,6 @@ export interface LibraryRowProps {
   /** Last failed action on this row (download, delete). */
   error: string | null;
   /** Progress or outcome of a download in flight, shown under the row. */
-  notice: string | null;
   onOpen: (meeting: MeetingListItem, modifiers: { range: boolean; toggle: boolean }) => void;
   onToggleChecked: (id: string, range: boolean) => void;
   onFocusRow: (id: string) => void;
@@ -197,7 +196,7 @@ export interface LibraryRowProps {
 
 /** One recording: title line, meta line and status chip; selection checkbox and actions menu beside it. */
 export function LibraryRow({
-  meeting, dateField = "recorded", open, checked, tabbable, renaming, error, notice, onOpen, onToggleChecked, onFocusRow,
+  meeting, dateField = "recorded", open, checked, tabbable, renaming, error, onOpen, onToggleChecked, onFocusRow,
   onStartRename, onRename, onCancelRename, onDownload, onDelete,
 }: LibraryRowProps) {
   const { t } = useT();
@@ -314,7 +313,6 @@ export function LibraryRow({
           {tip.tooltip}
         </>
       )}
-      {notice && <p role="status" className="library-row-notice">{notice}</p>}
       {error && <p role="alert" className="library-row-error">{error}</p>}
     </li>
   );

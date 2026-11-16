@@ -82,33 +82,43 @@ describe("MeetingDownloads", () => {
     expect(click).not.toHaveBeenCalled();
   });
 
-  it.each(["muxed", "separate", "absent", "unknown"] as const)("opens the primary source of a fresh manifest for %s media", async mode => {
+  it.each(["muxed", "separate", "absent", "unknown"] as const)("follows a fresh server download link for %s media", async mode => {
     const fresh = { ...manifest, video_presence: mode, video_sources: [video] };
-    vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(fresh);
+    const get = vi.spyOn(api, "getMediaDownloadLink").mockResolvedValue({
+      url: "http://localhost/signed-attachment", filename: "Weekly sync.webm", expires_in_seconds: 300,
+    });
     render(<MeetingDownloads meetingId="m1" title="Weekly sync" manifest={fresh} turns={turns} />);
     const audioOnly = mode === "absent" || mode === "unknown";
     let link: HTMLAnchorElement | undefined;
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { link = this; });
     fireEvent.click(screen.getByRole("button", { name: t("meeting:download") }));
-    expect(screen.getByRole("menuitem", { name: t("meeting:downloadTranscript") })).not.toHaveAttribute("aria-disabled");
     fireEvent.click(screen.getByRole("menuitem", { name: audioOnly ? t("meeting:downloadAudio") : t("meeting:downloadVideo") }));
     await waitFor(() => expect(link).toBeDefined());
-    // Without a file picker the signed link opens in a tab; the file name still follows the title.
-    expect(link).toHaveAttribute("href", audioOnly ? audio.url : video.url);
-    expect(link).toHaveAttribute("download", audioOnly ? "Weekly sync.wav" : "Weekly sync.webm");
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(await screen.findByRole("status")).toHaveTextContent(t("meeting:mediaOpened"));
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:download") }));
-    expect(screen.getByRole("menuitem", { name: t("meeting:downloadTranscript") })).not.toHaveAttribute("aria-disabled");
+    expect(get).toHaveBeenCalledWith("m1");
+    expect(link).toHaveAttribute("href", "http://localhost/signed-attachment");
+    expect(link).not.toHaveAttribute("target");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("shows an error when the manifest cannot be fetched", async () => {
-    vi.spyOn(api, "getPlaybackManifest").mockRejectedValue(new Error("Error 500"));
+  it("starts one download for a double click", async () => {
+    const get = vi.spyOn(api, "getMediaDownloadLink").mockResolvedValue({ url: "http://localhost/x", filename: "x.webm", expires_in_seconds: 300 });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    render(<MeetingDownloads meetingId="m1" manifest={manifest} turns={turns} />);
+    for (let i = 0; i < 2; i++) {
+      fireEvent.click(screen.getByRole("button", { name: t("meeting:download") }));
+      fireEvent.click(screen.getByRole("menuitem", { name: t("meeting:downloadVideo") }));
+    }
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an error when the download link cannot be fetched", async () => {
+    vi.spyOn(api, "getMediaDownloadLink").mockRejectedValue(new Error("Error 500"));
     render(<MeetingDownloads meetingId="m1" manifest={manifest} turns={turns} />);
     fireEvent.click(screen.getByRole("button", { name: t("meeting:download") }));
     fireEvent.click(screen.getByRole("menuitem", { name: t("meeting:downloadVideo") }));
     expect(await screen.findByRole("alert")).toHaveTextContent(t("meeting:downloadFailed"));
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("keeps media disabled when the primary source is unavailable", () => {

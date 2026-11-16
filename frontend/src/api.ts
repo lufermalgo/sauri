@@ -324,6 +324,21 @@ export async function getPlaybackManifest(
   return handleResponse<PlaybackManifest>(response);
 }
 
+export interface MediaDownloadLink {
+  url: string;
+  filename: string;
+  expires_in_seconds: number;
+}
+
+/** A short-lived signed link that makes the browser save the recording's video (audio when it has none). */
+export async function getMediaDownloadLink(meetingId: string): Promise<MediaDownloadLink> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/media-download`,
+    { method: "GET", headers: getAuthHeaders() }
+  );
+  return handleResponse<MediaDownloadLink>(response);
+}
+
 interface MeetingSummaryResponse {
   summary_id: string;
   meeting_id: string;
