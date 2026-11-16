@@ -773,3 +773,126 @@ describe("renameMeeting and deleteMeeting", () => {
     await expect(api.deleteMeeting("m-1")).rejects.toThrow("Error 404");
   });
 });
+
+describe("summary templates API client", () => {
+  const wireTemplate = {
+    id: "t1",
+    name: "Resultados clave",
+    instructions: "Instructions",
+    owner_user_id: "u1",
+    category_id: "c1",
+    version: 3,
+    is_default: true,
+    provenance: "Note",
+    created_at: "2026-11-01T10:00:00+00:00",
+    updated_at: "2026-11-02T10:00:00+00:00",
+  };
+  const mapped = {
+    id: "t1",
+    name: "Resultados clave",
+    instructions: "Instructions",
+    categoryId: "c1",
+    version: 3,
+    isDefault: true,
+    provenance: "Note",
+    createdAt: "2026-11-01T10:00:00+00:00",
+    updatedAt: "2026-11-02T10:00:00+00:00",
+  };
+
+  it("lists and gets templates, mapping the wire fields and defaulting a missing provenance", async () => {
+    const fetchMock = mockFetch([wireTemplate, { ...wireTemplate, id: "t2", provenance: undefined }]);
+    const listed = await api.listTemplates();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/v1\/templates$/),
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(listed[0]).toEqual(mapped);
+    expect(listed[1].provenance).toBeNull();
+
+    mockFetch(wireTemplate);
+    expect(await api.getTemplate("t 1")).toEqual(mapped);
+  });
+
+  it("encodes the id when getting one template", async () => {
+    const fetchMock = mockFetch(wireTemplate);
+    await api.getTemplate("t / 1");
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/v1\/templates\/t%20%2F%201$/);
+  });
+
+  it("creates a template with the snake_case body", async () => {
+    const fetchMock = mockFetch(wireTemplate);
+    await api.createTemplate({ name: "N", instructions: "I", categoryId: null });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/v1\/templates$/);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ name: "N", instructions: "I", category_id: null });
+  });
+
+  it("PATCHes only the supplied fields, keeping an explicit null category", async () => {
+    const fetchMock = mockFetch(wireTemplate);
+    await api.updateTemplate("t1", { categoryId: null });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/v1\/templates\/t1$/);
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body)).toEqual({ category_id: null });
+
+    await api.updateTemplate("t1", { name: "N", instructions: "I" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ name: "N", instructions: "I" });
+  });
+
+  it("lists and creates categories", async () => {
+    mockFetch([{ id: "c1", name: "Comercial", created_at: "2026-11-01T10:00:00+00:00" }]);
+    expect(await api.listTemplateCategories()).toEqual([
+      { id: "c1", name: "Comercial", createdAt: "2026-11-01T10:00:00+00:00" },
+    ]);
+
+    const fetchMock = mockFetch({ id: "c2", name: "Soporte", created_at: "2026-11-03T10:00:00+00:00" });
+    expect(await api.createTemplateCategory("Soporte")).toEqual({
+      id: "c2", name: "Soporte", createdAt: "2026-11-03T10:00:00+00:00",
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/v1\/templates\/categories$/);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ name: "Soporte" });
+  });
+
+  it("PUTs the default template and resolves on 204 without reading a body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: async () => {
+        throw new Error("no body");
+      },
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn().mockReturnValue("synthetic-token"),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+    });
+    await expect(api.setDefaultTemplate("t1")).resolves.toBeUndefined();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/api\/v1\/templates\/default$/);
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(init.body)).toEqual({ template_id: "t1" });
+  });
+
+  it("rejects with the status and ends the session on 401", async () => {
+    mockFetch({}, 422);
+    await expect(api.setDefaultTemplate("t1")).rejects.toThrow("Error 422");
+
+    mockFetch({}, 401);
+    const unauthorized = vi.fn();
+    window.addEventListener("sauri:unauthorized", unauthorized, { once: true });
+    await expect(api.listTemplates()).rejects.toThrow("Error 401");
+    expect(unauthorized).toHaveBeenCalledTimes(1);
+    expect(localStorage.removeItem).toHaveBeenCalledWith("sauri_token");
+
+    mockFetch({}, 401);
+    const unauthorizedAgain = vi.fn();
+    window.addEventListener("sauri:unauthorized", unauthorizedAgain, { once: true });
+    await expect(api.setDefaultTemplate("t1")).rejects.toThrow("Error 401");
+    expect(unauthorizedAgain).toHaveBeenCalledTimes(1);
+  });
+});

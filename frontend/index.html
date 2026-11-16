@@ -4,6 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sauri</title>
+    <script>
+      // Applies the stored theme before the first paint (same rule as src/theme.ts).
+      try {
+        var theme = localStorage.getItem("sauri_theme");
+        if (theme === "light" || theme === "dark") document.documentElement.setAttribute("data-theme", theme);
+      } catch (error) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

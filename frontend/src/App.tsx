@@ -59,7 +59,7 @@ export function App() {
         />
       )}
 
-      {route.name === "settings" && <SettingsView />}
+      {route.name === "settings" && <SettingsView route={route} user={user} onLogout={handleLogout} />}
 
       {route.name === "meeting" && (
         <TranscriptView meetingId={route.meetingId} />

@@ -1,43 +1,65 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useMediaQuery } from "./useMediaQuery";
 
-const STORAGE_KEY = "sauri_sidebar_collapsed";
+export const SIDEBAR_STORAGE_KEY = "sauri_sidebar_collapsed";
 const DRAWER_QUERY = "(max-width: 639px)";
 const NARROW_QUERY = "(max-width: 1319px)";
 
 export type SidebarMode = "full" | "rail" | "drawer";
 
-function matches(query: string): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia(query).matches;
-}
+// The collapsed/expanded choice is shared by every hook instance (the shell and the settings
+// switch), so a change anywhere shows up everywhere. localStorage is the source of truth;
+// `unsaved` only holds a choice the browser refused to store (blocked storage), so it lasts for
+// this visit. It is tied to the storage object it failed on, so a different storage starts clean.
+const subscribers = new Set<() => void>();
+let unsaved: { storage: Storage | null; collapsed: boolean } | null = null;
 
-function useMediaQuery(query: string): boolean {
-  const [value, setValue] = useState(() => matches(query));
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const list = window.matchMedia(query);
-    const onChange = () => setValue(list.matches);
-    onChange();
-    list.addEventListener("change", onChange);
-    return () => list.removeEventListener("change", onChange);
-  }, [query]);
-  return value;
+function currentStorage(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null; // some browsers throw on access when site data is blocked
+  }
 }
 
 function readStoredChoice(): boolean | null {
+  const storage = currentStorage();
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored === "1" ? true : stored === "0" ? false : null;
+    const stored = storage?.getItem(SIDEBAR_STORAGE_KEY);
+    if (stored === "1") return true;
+    if (stored === "0") return false;
   } catch {
-    return null; // blocked storage: fall back to the viewport default
+    // blocked storage: fall through to the unsaved choice
   }
+  return unsaved && unsaved.storage === storage ? unsaved.collapsed : null;
 }
 
 function storeChoice(collapsed: boolean): void {
+  const storage = currentStorage();
   try {
-    localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0");
+    if (!storage) throw new Error("storage unavailable");
+    storage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? "1" : "0");
+    unsaved = null;
   } catch {
-    // blocked storage: the choice only lasts for this visit
+    unsaved = { storage, collapsed };
   }
+  subscribers.forEach((notify) => notify());
+}
+
+function subscribe(notify: () => void): () => void {
+  subscribers.add(notify);
+  return () => subscribers.delete(notify);
+}
+
+/**
+ * The remembered sidebar choice. Without a stored choice, narrow screens (under 1320px) start
+ * collapsed. `setCollapsed` stores the choice per device.
+ */
+export function useSidebarCollapsed() {
+  const narrowViewport = useMediaQuery(NARROW_QUERY);
+  const choice = useSyncExternalStore(subscribe, readStoredChoice);
+  const collapsed = choice ?? narrowViewport;
+  return { collapsed, setCollapsed: storeChoice };
 }
 
 /**
@@ -46,21 +68,16 @@ function storeChoice(collapsed: boolean): void {
  */
 export function useSidebar() {
   const drawerViewport = useMediaQuery(DRAWER_QUERY);
-  const narrowViewport = useMediaQuery(NARROW_QUERY);
-  const [choice, setChoice] = useState<boolean | null>(readStoredChoice);
+  const { collapsed, setCollapsed } = useSidebarCollapsed();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const collapsed = choice ?? narrowViewport;
   const mode: SidebarMode = drawerViewport ? "drawer" : collapsed ? "rail" : "full";
 
   useEffect(() => {
     if (!drawerViewport) setDrawerOpen(false);
   }, [drawerViewport]);
 
-  const toggleCollapsed = useCallback(() => {
-    setChoice(!collapsed);
-    storeChoice(!collapsed);
-  }, [collapsed]);
+  const toggleCollapsed = useCallback(() => setCollapsed(!collapsed), [collapsed, setCollapsed]);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 

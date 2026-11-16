@@ -2,7 +2,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { navigate, parseRoute, routePath, useRoute, type Route } from "./router";
+import { copy } from "./copy/es";
+import { SETTINGS_CATEGORIES, navigate, parseRoute, routePath, useRoute, type Route } from "./router";
 
 afterEach(() => {
   window.history.replaceState(null, "", "/");
@@ -15,8 +16,18 @@ describe("parseRoute", () => {
     expect(parseRoute("/settings", "")).toEqual({ name: "settings" });
     expect(parseRoute("/settings/", "")).toEqual({ name: "settings" });
     expect(parseRoute("/settings/extra", "")).toEqual({ name: "notFound" });
+    expect(parseRoute("/settings/account", "")).toEqual({ name: "notFound" });
     expect(parseRoute("/meetings/m1", "")).toEqual({ name: "meeting", meetingId: "m1" });
     expect(parseRoute("/anything-else", "")).toEqual({ name: "notFound" });
+  });
+
+  it.each(SETTINGS_CATEGORIES)("resolves the %s settings category from its ASCII slug", (category) => {
+    const slug = copy.settings.categories[category].slug;
+    expect(slug).toMatch(/^[a-z]+$/);
+    expect(parseRoute(`/settings/${slug}`, "")).toEqual({ name: "settings", category });
+    expect(parseRoute(`/settings/${slug}/`, "")).toEqual({ name: "settings", category });
+    expect(parseRoute(`/settings/${slug}/more`, "")).toEqual({ name: "notFound" });
+    expect(parseRoute(`/settings/${slug.toUpperCase()}`, "")).toEqual({ name: "notFound" });
   });
 
   it("treats a trailing slash like the plain path", () => {
@@ -42,6 +53,7 @@ describe("routePath", () => {
     { name: "library" },
     { name: "upload" },
     { name: "settings" },
+    ...SETTINGS_CATEGORIES.map((category): Route => ({ name: "settings", category })),
     { name: "meeting", meetingId: "m1" },
     { name: "notFound" },
   ];
