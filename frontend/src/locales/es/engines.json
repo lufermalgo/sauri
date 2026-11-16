@@ -38,7 +38,7 @@
       "description": "Tu propio servidor o uno de terceros con el mismo formato."
     },
     "chatgpt_plan": {
-      "label": "ChatGPT (plan)",
+      "label": "Codex (plan ChatGPT)",
       "description": "Usa tu plan de ChatGPT, sin clave de API."
     },
     "assemblyai": {
@@ -98,7 +98,7 @@
     "unsupported_provider": "Ese proveedor no puede servir este proceso.",
     "invalid_model": "El nombre del modelo no es válido.",
     "host_unavailable": "El servicio de este equipo que guarda las claves y consulta a los proveedores no responde.",
-    "provider_account_missing": "ChatGPT no está conectado. Conéctalo en Motores y modelos.",
+    "provider_account_missing": "Codex no está conectado. Conéctalo en Motores y modelos.",
     "base_url_fixed": "La dirección de este proveedor es fija.",
     "provider_has_no_key": "Este proveedor no usa clave: se conecta con tu cuenta.",
     "provider_has_no_account": "Este proveedor no se conecta con una cuenta.",
@@ -472,8 +472,8 @@
     "checking": "Revisando…",
     "unconfigured": "Inicia sesión con tu cuenta de ChatGPT. No hace falta clave.",
     "unofficial": "OpenAI no documenta esta vía de forma oficial y podría dejar de funcionar.",
-    "connect": "Conectar con ChatGPT",
-    "connectLabel": "Conectar «{{name}}» con ChatGPT",
+    "connect": "Conectar con Codex",
+    "connectLabel": "Conectar «{{name}}»",
     "disconnect": "Desconectar",
     "disconnectLabel": "Desconectar «{{name}}»",
     "errors": {
@@ -483,7 +483,7 @@
       "session_expired": "La sesión con ChatGPT venció. Conecta de nuevo."
     },
     "dialog": {
-      "title": "Conectar con ChatGPT",
+      "title": "Conectar con Codex",
       "close": "Cerrar",
       "starting": "Pidiendo el código…",
       "openPage": "Abrir la página de ChatGPT",
@@ -499,7 +499,7 @@
       "done": "Listo"
     },
     "disconnectDialog": {
-      "title": "Desconectar ChatGPT",
+      "title": "Desconectar Codex",
       "body": "Sauri olvidará la sesión de «{{name}}» en este equipo. Podrás conectarla de nuevo cuando quieras.",
       "reverts": "Estos procesos volverán a usar el motor local: {{list}}.",
       "confirm": "Desconectar",
@@ -509,6 +509,7 @@
     "disconnectedReverted": "Desconectamos «{{name}}». Volvieron al motor local: {{list}}.",
     "disconnectFailed": "No pudimos desconectar. No se cambió nada.",
     "createFailed": "No pudimos preparar el proveedor.",
-    "notNeeded": "No hace falta clave: se conecta con tu cuenta."
+    "notNeeded": "No hace falta clave: se conecta con tu cuenta.",
+    "modelsFailed": "No pudimos leer los modelos de tu cuenta. Vuelve a intentarlo."
   }
 }

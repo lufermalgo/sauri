@@ -59,9 +59,10 @@ function servesLine(info: EngineKindInfo | undefined, catalog: CatalogEntry | un
   return catalog.serves.length > 0 ? t("engines:card.serves", { list: processList(catalog.serves) }) : t("engines:card.servesNone");
 }
 
-function modelsLine(provider: EngineProvider, catalog: CatalogEntry | undefined): string {
+function modelsLine(catalog: CatalogEntry | undefined, byAccount: boolean): string {
   if (!catalog) return t("engines:card.modelsNotAsked");
   if (catalog.status === "loading") return t("engines:card.modelsLoading");
+  if (catalog.status === "failed" && byAccount) return t("engines:account.modelsFailed");
   if (catalog.status === "failed" || catalog.models.length === 0) return t("engines:card.modelsNoList");
   return t("engines:card.modelsCount", { count: catalog.models.length });
 }
@@ -119,7 +120,7 @@ export function ProviderCard({
         </div>
         <div>
           <dt>{t("engines:card.models")}</dt>
-          <dd>{modelsLine(provider, catalog)}</dd>
+          <dd>{modelsLine(catalog, byAccount)}</dd>
         </div>
       </dl>
       {serves && <p className="engines-card-usage">{serves}</p>}

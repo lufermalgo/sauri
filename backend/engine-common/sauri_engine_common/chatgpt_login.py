@@ -78,7 +78,7 @@ _CODE: Final = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
 
 
 def login_required() -> ProviderError:
-    """The user has to sign in again; the portal shows «Conectar con ChatGPT»."""
+    """The user has to sign in again; the portal shows «Conectar con Codex»."""
     return ProviderError("provider_auth", reason="login_required")
 
 
