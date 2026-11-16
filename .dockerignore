@@ -11,10 +11,14 @@
 !frontend/vite.config.ts
 !frontend/Dockerfile
 !frontend/nginx.conf
+!frontend/security-headers.conf
 !frontend/src/
 !frontend/src/**
 !frontend/public/
 !frontend/public/**
+!scripts/
+!scripts/platform/
+!scripts/platform/inline-script-hash.mjs
 !packages/
 !packages/shared-types/
 !packages/shared-types/package.json

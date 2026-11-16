@@ -8,13 +8,19 @@ fragments of private payloads into logs and proxies.
 
 Routers opt in with ``APIRouter(route_class=SafeErrorRoute)``, which replaces the 422
 response for that router only. ``request_validation_exception_handler`` is the same
-behaviour as an application-wide handler; ``app.main`` may register it with
+behaviour as an application-wide handler; ``app.main`` registers it with
 ``app.add_exception_handler(RequestValidationError, request_validation_exception_handler)``.
+
+Any other unhandled exception answers 500 ``{"detail": "internal_error", "request_id": ...}``
+(``unhandled_exception_handler``); the traceback is logged server-side under the same
+``request_id`` for correlation. ``HTTPException`` keeps FastAPI's own handling.
 """
 
 from __future__ import annotations
 
+import logging
 import re
+import uuid
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from typing import Any
 
@@ -22,6 +28,11 @@ from fastapi import HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from starlette.datastructures import MutableHeaders
+
+from app.infra.http_security import apply_security_headers
+
+logger = logging.getLogger(__name__)
 
 INVALID_REQUEST = "invalid_request"
 UNAUTHORIZED = "unauthorized"
@@ -78,6 +89,27 @@ async def request_validation_exception_handler(
     """Application-wide handler for ``RequestValidationError`` (see module docstring)."""
     assert isinstance(exc, RequestValidationError)
     return validation_error_response(exc)
+
+
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """500 with a correlation id; the traceback stays in the server log."""
+    request_id = uuid.uuid4().hex
+    # The path only: query strings and bodies can carry tokens or personal data.
+    logger.error(
+        "Unhandled exception request_id=%s method=%s path=%s",
+        request_id,
+        request.method,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    response = JSONResponse(status_code=500, content={"detail": "internal_error", "request_id": request_id})
+    # Starlette runs this handler outside the middleware stack, so add the headers here.
+    apply_security_headers(
+        MutableHeaders(raw=response.raw_headers),
+        https=request.url.scheme == "https",
+        path=request.url.path,
+    )
+    return response
 
 
 class SafeErrorRoute(APIRoute):

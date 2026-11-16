@@ -50,6 +50,53 @@ Los motores nativos ASR y diarización leen las llaves del almacén desde `~/.co
 
 **Ver o rotar un valor.** Para abrir la consola de RabbitMQ o RustFS, o usar `psql`, el dueño ejecuta él mismo `cat ~/.config/sauri/<archivo>`; ningún script imprime ni versiona los valores. Rotar = borrar el archivo y volver a ejecutar `make up`: base de datos y cola se resincronizan en el arranque, las llaves raíz de RustFS siguen al archivo y la contraseña de administrador se cambia con `python -m app.auth.seed_admin --reset-password`. Cambiar `jwt_secret` cierra la sesión de todos los usuarios.
 
+## Seguridad de red y contenedores (#1071)
+
+**Qué cambió.** El API solo acepta llamadas de navegador de orígenes explícitos, todas las respuestas llevan cabeceras de seguridad, `/docs` está apagado, los errores no revelan detalles, las contraseñas ya no tienen valores de reserva en el código y los contenedores corren sin privilegios y con imágenes fijadas.
+
+| Variable | Dónde | Por defecto | Efecto |
+|---|---|---|---|
+| `CORS_ALLOWED_ORIGINS` | api | `http://localhost:5173,http://127.0.0.1:5173` | Orígenes web (separados por comas, sin ruta) que el navegador puede usar para llamar al API. Nunca `*`: el API se niega a arrancar con un comodín. El portal Docker usa `/api/` del mismo origen y no necesita CORS. |
+| `EXTENSION_ORIGINS` | api | `chrome-extension://ilnkkojmkfnbdilogldabpodoobfigce` | Orígenes de la extensión (`chrome-extension://<id>` o solo el id de 32 letras). Variable definida pero vacía = ninguna extensión. |
+| `APP_ENV` | api | `production` en Compose | `development` o `test` activan `/docs`; `test` además permite el atajo `AUTH_DISABLED`. |
+| `ENABLE_API_DOCS` | api | `false` | `true` expone `/docs`, `/redoc` y `/openapi.json` fuera de desarrollo (solo para depurar; apagar después). |
+| `AUTH_DISABLED` | api | `false` | Debe seguir en `false`. |
+| `OBJECT_STORE_PUBLIC_ENDPOINT` | api y portal | `http://localhost:9000` | También entra en la política CSP del portal (`img-src` y `media-src`) como único origen externo permitido; debe ser un origen sin ruta. |
+
+**Extensión nueva o con otro id.** El id de una extensión sin empaquetar depende de la carpeta desde la que se carga (y del `key` del manifiesto). Si cambia, copiar el id desde `chrome://extensions` y reiniciar el API con `EXTENSION_ORIGINS=chrome-extension://<id>` (varios, separados por comas). Sin esto Chrome bloquea las llamadas de la extensión que no pasen por permisos de host.
+
+**Cabeceras.** API: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy` y `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`. Portal (Nginx): las mismas más una CSP estricta (`default-src 'self'`; `script-src 'self'` más el hash `sha256` del único script en línea, el que aplica el tema antes del primer pintado, calculado en la construcción de la imagen con `scripts/platform/inline-script-hash.mjs`; `style-src 'self'`; `img-src`/`media-src` con el origen del almacén de objetos; `connect-src 'self'`; `object-src 'none'`; `frame-ancestors 'none'`; `base-uri` y `form-action` en `'self'`). `Strict-Transport-Security` solo se envía si la petición llegó por HTTPS (directa o con `X-Forwarded-Proto: https` de un proxy TLS); por HTTP plano no se envía. `server_tokens off` oculta la versión de Nginx y uvicorn arranca con `--no-server-header`. Nginx acepta cuerpos de hasta 4 GiB (`client_max_body_size 4g`): las cargas del portal pasan por Nginx hacia `/api/v1/ingestion/upload`; las de la extensión van directo al API, que impone su propio tope.
+
+**Verificar** (con la pila arriba; para una QA usar otro proyecto Compose y otros puertos):
+
+```bash
+curl -si http://127.0.0.1:5173/ | grep -iE 'content-security|x-frame|x-content|referrer|permissions|strict|^server'
+curl -si http://127.0.0.1:8000/health | grep -iE 'x-frame|x-content|content-security|^server'
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/docs        # 404
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/api/v1/meetings/   # 401
+curl -si -X OPTIONS http://127.0.0.1:8000/api/v1/meetings/ -H 'Origin: https://evil.example' \
+  -H 'Access-Control-Request-Method: GET' | head -1                            # 400, sin access-control-allow-origin
+docker compose -p sauri exec -T api id                                          # uid=10001(sauri)
+```
+
+**Errores.** Un fallo no controlado responde `500 {"detail":"internal_error","request_id":"<id>"}` y el detalle completo queda en el registro del API con ese mismo `request_id` (`docker compose -p sauri logs api | grep <id>`). Los 422 de validación no devuelven el valor enviado.
+
+**Credenciales.** Ya no hay contraseñas de reserva: `DATABASE_URL` y `QUEUE_BROKER_URL` son obligatorios y, salvo `APP_ENV=test`, una URL sin contraseña (por `*_PASSWORD_FILE` o dentro de la URL) impide arrancar con un mensaje que no muestra valores. Al arrancar, el API y el worker registran una línea `Secret sources: database_password=file, ...` con el origen (`file`, `env`, `missing`) de cada credencial, nunca su valor. El worker no usa `jwt_secret`, por lo que ahí figura `missing`. Los archivos de `/run/secrets` aparecen con el uid del usuario del contenedor en Docker Desktop para Mac; en un anfitrión Linux habría que ajustar su dueño al uid 10001.
+
+**Contenedores.**
+- Imagen del backend: base `python:3.11-slim` fijada por digest, dependencias instaladas desde `uv.lock` (`uv sync --frozen --no-dev`, con `uv` fijado por digest), usuario `sauri` (uid/gid 10001), código de solo lectura para ese usuario, `ffmpeg` estático conservado.
+- `api`: no root, `cap_drop: ALL`, `no-new-privileges`, healthcheck sobre `/health`. **No** es `read_only`: las cargas se escriben en `/tmp` en disco y pueden pesar varios GiB, algo que un tmpfs (memoria) no soporta y que exigiría un volumen nuevo.
+- `worker`: no root, `read_only` con `/tmp` en tmpfs, `cap_drop: ALL`, `no-new-privileges`.
+- `portal`: `read_only` con tmpfs para la configuración renderizada y las cachés, `cap_drop: ALL` salvo `CHOWN`, `SETGID`, `SETUID` y `NET_BIND_SERVICE` (Nginx arranca como root solo para abrir el puerto 80 y pasar a su usuario).
+- `postgres:16`, `rabbitmq:3-management` y `alpine:3.22` quedan fijados por digest en `docker-compose.yml` (con la fecha de resolución). Son el mismo contenido que ya usa el dueño (PostgreSQL 16.x; mismo formato de datos). Para actualizar uno: resolver el digest nuevo con `docker buildx imagetools inspect <imagen:etiqueta>`, probar con un proyecto QA y cambiarlo en el Compose.
+- Reconstruir sin riesgo: `make build` conserva los volúmenes. Para validar antes, una QA aparte: `python3 scripts/platform/validate-local-platform.py create --directory <carpeta externa>` y `check`.
+
+**Qué debe hacer el dueño al desplegar (lo ejecuta el orquestador).**
+1. `make build` (o `make up`): reconstruye `api`, `worker` y `portal` y recrea `postgres` y `rabbitmq` con las imágenes fijadas (mismos volúmenes, sin pérdida de datos). Hace falta recrear el portal tras cada recreación del API: Nginx resuelve la dirección del API al arrancar.
+2. Confirmar que el id de la extensión cargada coincide con `EXTENSION_ORIGINS` (ver arriba); si no, exportarlo antes de `make up`.
+3. Verificar con los comandos de arriba y `docker compose -p sauri ps` (api en `healthy`).
+4. `.env.example` aún conserva valores antiguos de ejemplo (`sauri_dev`, `minioadmin`, `guest:guest`, `dev-secret-change-in-production`); el entorno de agentes no podía editarlo. Limpiarlo es un paso pendiente aparte.
+
 ## Voz, vocabulario y fallos del motor ASR
 
 `SAURI_ASR_VAD=on` (predeterminado) detecta voz con el ejecutable externo
