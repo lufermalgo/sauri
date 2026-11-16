@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.diarization.remap import Span, remap_spans
+from app.engines.routing import Provenance
 from app.infra.models import (
     Diarization,
     SpeakerAssignment,
@@ -18,6 +19,14 @@ from app.infra.models import (
     WordSpeakerAssignment,
 )
 from app.transcription.asr_engine import TranscriptionSegment, TranscriptionWord
+
+
+def apply_provenance(transcript: Transcript, provenance: Provenance) -> None:
+    """Record which engine really produced the transcript (names only; never content or keys)."""
+    transcript.engine_name = provenance.engine_name[:64] if provenance.engine_name else None
+    transcript.engine_model = provenance.engine_model[:256] if provenance.engine_model else None
+    transcript.engine_external = provenance.external
+    transcript.engine_fallback_reason = provenance.fallback_reason
 
 
 class TranscriptRepository:
@@ -67,6 +76,7 @@ async def replace_transcript_content(
     segments: Sequence[TranscriptionSegment],
     words: Sequence[TranscriptionWord],
     now: datetime,
+    provenance: Provenance | None = None,
 ) -> None:
     """Swap a regenerated transcript's text into the same Transcript row (#1053).
 
@@ -111,6 +121,8 @@ async def replace_transcript_content(
 
     transcript.language, transcript.provider, transcript.supports_turns = language, provider, supports_turns
     transcript.created_at = now
+    if provenance is not None:
+        apply_provenance(transcript, provenance)
     turns = [
         SpeechTurn(
             id=str(uuid.uuid4()), transcript_id=transcript.id, text=segment.text,

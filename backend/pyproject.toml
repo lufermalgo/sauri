@@ -40,6 +40,8 @@ packages = ["app"]
 strict = true
 python_version = "3.11"
 plugins = ["pydantic.mypy"]
+# The worker shares the route contract with the host gateways (``app/engines/routing.py`` adds it to the path).
+mypy_path = "engine-common"
 exclude = ["^asr-engine/", "^diar-engine/"]
 
 [[tool.mypy.overrides]]
