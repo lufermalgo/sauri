@@ -1,8 +1,6 @@
 .upload-view {
   display: grid;
   gap: var(--ds-space-6);
-  max-width: 880px;
-  margin: 0 auto;
 }
 
 .upload-header {
@@ -31,8 +29,10 @@
 
 .upload-dropzone {
   display: grid;
+  align-content: center;
   justify-items: center;
   gap: var(--ds-space-2);
+  min-height: clamp(260px, 40vh, 440px);
   padding: var(--ds-space-8) var(--ds-space-6);
   text-align: center;
   background: var(--ds-sidebar);

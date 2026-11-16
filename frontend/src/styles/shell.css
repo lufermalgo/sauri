@@ -1,13 +1,16 @@
 /*
- * Portal shell: left side panel + independently scrolling content region.
+ * Portal shell: a desktop-application frame. The root is pinned to the window (fixed, inset 0), so
+ * its size never depends on viewport units or on the document's height and the document itself
+ * never scrolls. Inside it: the side panel (flex: none) and ONE content region (flex: 1) that owns
+ * the vertical scroll. Pages fill that region; they never center themselves in a max-width column.
  * Modes (data-mode on .shell-root): full (236px), rail (60px, icons only), drawer (under 640px, off-canvas).
  */
 .shell-root {
   --shell-sidebar-width: 236px;
   --shell-rail-width: 60px;
+  position: fixed;
+  inset: 0;
   display: flex;
-  height: 100vh;
-  height: 100dvh;
   background: var(--ds-bg);
 }
 
@@ -23,6 +26,7 @@
   flex-direction: column;
   gap: var(--ds-space-4);
   box-sizing: border-box;
+  min-height: 0;
   width: var(--shell-sidebar-width);
   padding: var(--ds-space-3);
   background: var(--ds-sidebar);
@@ -115,6 +119,16 @@
   flex-direction: column;
   gap: var(--ds-space-1);
   min-height: 0;
+  /* The only part of the side panel that scrolls, and only when its links overflow. The padding
+     leaves room for the focus ring, which this box would otherwise clip. */
+  padding: var(--ds-space-1);
+  margin: calc(var(--ds-space-1) * -1);
+  overflow-y: auto;
+}
+
+/* The rail shows labels as tooltips outside the panel, so it cannot clip them. */
+.shell-root[data-mode="rail"] .shell-nav {
+  overflow: visible;
 }
 
 .shell-link {
@@ -266,18 +280,30 @@
   pointer-events: none;
 }
 
-/* Content region: scrolls on its own, pages keep their own max widths */
+/*
+ * Content region: the single scroll container of the portal. It is the containing block of
+ * absolutely positioned descendants (position: relative), so nothing inside can extend the
+ * document. Pages fill its full width; the gutter is the only horizontal inset.
+ */
 .shell-content {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .shell-main {
-  max-width: var(--ds-layout-max);
-  margin: 0 auto;
-  padding: var(--ds-space-8) var(--ds-space-6);
+  --shell-gutter: var(--ds-space-6);
+  box-sizing: border-box;
+  padding: var(--shell-gutter);
+}
+
+@media (max-width: 1023px) {
+  .shell-main {
+    --shell-gutter: var(--ds-space-4);
+  }
 }
 
 /* Drawer (under 640px): slim top bar + off-canvas panel */
@@ -369,7 +395,7 @@
   }
 
   .shell-main {
-    padding: var(--ds-space-6) var(--ds-space-4);
+    --shell-gutter: var(--ds-space-3);
   }
 }
 

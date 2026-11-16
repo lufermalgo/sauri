@@ -113,7 +113,6 @@
   --ds-ease: cubic-bezier(0.2, 0, 0, 1);
 
   /* Layout */
-  --ds-layout-max: 1200px;
   --ds-z-sticky: 10;
   --ds-z-menu: 20;
 }
