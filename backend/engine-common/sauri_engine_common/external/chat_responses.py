@@ -3,11 +3,26 @@
 ``POST {base_url}/responses`` with ``store: false`` and ``stream: true`` (the backend only streams), the system
 prompt as ``instructions``, and the account's bearer token plus ``chatgpt-account-id`` and ``originator``
 headers. Structured output is ``text.format = {"type": "json_schema", ...}``. This is not a documented path
-(owner decision of 2026-11-16, see ``chatgpt_login.py``): whether the backend honors ``json_schema`` is NOT
-VERIFIED until the live acceptance, and the caller validates the answer anyway (``validate_output``).
+(owner decision of 2026-11-16, see ``chatgpt_login.py``); the caller validates the answer anyway
+(``validate_output``).
 
-Sampling and length fields of the chat request (``temperature``, ``max_tokens``...) are not forwarded: the
-backend rejects some of them for its models. Models come from ``GET {base_url}/models?client_version=...``.
+Checked live on 2026-11-16 (``gpt-6-luna``, ``gpt-6.1-terra``, synthetic text):
+
+* The event stream comes back WITHOUT a ``Content-Type`` header (``stream_events`` must accept a missing one;
+  rejecting it was the ``bad_response`` that made the first summary fail). Errors do carry
+  ``application/json`` or no type at all.
+* ``text.format`` json_schema with ``strict: true`` is honored, including ``minItems``/``maxItems``, ``minLength``
+  and ``enum``; the backend only requires every object to be closed (``additionalProperties: false``, a ``400``
+  ``invalid_json_schema`` otherwise), which the summary schema already is.
+* Events seen: ``response.created``, ``response.in_progress``, ``response.output_item.added``/``done`` (a
+  ``reasoning`` item then the ``message`` item), ``response.content_part.added``/``done``,
+  ``response.output_text.delta``/``done``, ``response.metadata`` and ``response.completed`` (``usage`` with
+  ``input_tokens``/``output_tokens``).
+* ``temperature`` is refused (``400`` ``{"detail": "Unsupported parameter: temperature"}``), and an unknown model is
+  ``400`` ``model_not_found``.
+
+Sampling and length fields of the chat request (``temperature``, ``max_tokens``...) are not forwarded.
+Models come from ``GET {base_url}/models?client_version=...``.
 """
 
 from __future__ import annotations
@@ -20,6 +35,7 @@ from typing import Any, Final, Protocol
 
 from sauri_engine_common.chatgpt_login import CLIENT_VERSION, ChatGptCredentials, login_required
 from sauri_engine_common.external.chat_common import (
+    EVENT_STREAM,
     ChatChunk,
     ChatUsage,
     bad_response,
@@ -29,8 +45,11 @@ from sauri_engine_common.external.chat_common import (
     is_structured,
     join_url,
     parse_event_json,
+    provider_detail,
+    sent_text,
     stream_cut,
     stream_events,
+    token,
 )
 from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.external.safe_http import SafeHttp
@@ -40,6 +59,8 @@ DEFAULT_INSTRUCTIONS: Final = "You are a helpful assistant."
 MODELS_TIMEOUT_S: Final = 15.0
 MAX_MODELS: Final = 200
 _INCOMPLETE_FINISH: Final = {"max_output_tokens": "length", "content_filter": "content_filter"}
+# The backend sends its event stream with no Content-Type header at all.
+_STREAM_TYPES: Final = EVENT_STREAM | {""}
 
 
 class CredentialSource(Protocol):
@@ -102,8 +123,11 @@ def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _stream_failure(error: Any) -> ProviderError:
-    """An error that arrived inside the stream, reduced to a class from its code (never its message)."""
+def _stream_failure(error: Any, sent: str = "") -> ProviderError:
+    """An error that arrived inside the stream, reduced to a class from its code (never its message).
+
+    The scrubbed status, type, code and message go to the gateway log as ``detail``, like a ``4xx`` body.
+    """
     probe = " ".join(str(_dict(error).get(name, "")) for name in ("code", "type")).lower()
     synthetic: dict[str, Any] | None = None
     if "usage_limit" in probe or "quota" in probe:
@@ -114,7 +138,9 @@ def _stream_failure(error: Any) -> ProviderError:
         synthetic = {"code": 400, "type": "context_length_exceeded"}
     elif "invalid_prompt" in probe or "invalid_request" in probe:
         synthetic = {"code": 400}
-    return error_from_stream_error(synthetic if synthetic is not None else error, None)
+    failure = error_from_stream_error(synthetic if synthetic is not None else error, None)
+    detail = provider_detail(json.dumps({"error": error}, default=str).encode(), None, sent)
+    return ProviderError(failure.code, retry_after_s=failure.retry_after_s, reason=failure.reason, detail=detail)
 
 
 def _message_text(item: Any) -> tuple[str, bool]:
@@ -143,23 +169,30 @@ async def stream_chat(
     if route.base_url is None:
         raise ProviderError("provider_bad_request", reason="base_url_missing")
     headers = {**credentials.headers(), "accept": "text/event-stream"}
+    payload = build_payload(request, route)
+    sent = sent_text(payload)
     streamed = False
     whole, refused = "", False
     completed = False
+    last = "-"  # last event type seen, for the log when the stream stops early
     async with aclosing(
         stream_events(
             http,
             join_url(route.base_url, "/responses"),
             headers=headers,
-            payload=build_payload(request, route),
+            payload=payload,
             key=credentials.token,
             allow_local=allow_local,
             timeouts=timeouts or route.timeouts,
+            content_types=_STREAM_TYPES,
         )
     ) as events:
         async for event in events:
+            if event.data.strip() == "[DONE]":
+                continue
             data = parse_event_json(event)
             kind = data.get("type")
+            last = token(kind)
             if kind == "response.created":
                 response = _dict(data.get("response"))
                 ident, model = response.get("id"), response.get("model")
@@ -171,6 +204,8 @@ async def stream_chat(
                 if isinstance(delta, str) and delta:
                     streamed = True
                     yield ChatChunk(delta=delta)
+            elif kind in ("response.refusal.delta", "response.refusal.done"):
+                refused = True
             elif kind == "response.output_item.done":
                 item = _dict(data.get("item"))
                 if item.get("type") == "message":
@@ -187,7 +222,7 @@ async def stream_chat(
                 if not streamed and whole:
                     yield ChatChunk(delta=whole)
                 elif not streamed and refused:
-                    raise ProviderError("provider_invalid_output", reason="refused")
+                    raise ProviderError("provider_invalid_output", reason="refused", detail="refusal")
                 yield ChatChunk(
                     finish_reason=finish,
                     usage=ChatUsage(_count(usage.get("input_tokens")), _count(usage.get("output_tokens"))),
@@ -195,11 +230,12 @@ async def stream_chat(
                 completed = True
                 break
             elif kind in ("response.failed", "error"):
+                # ``response.failed`` nests it; ``error`` carries it flat (code and message beside the type).
                 error = _dict(data.get("response")).get("error") or data.get("error") or data
-                raise _stream_failure(error)
-            # every other event type (reasoning, item added, ping...) is ignored on purpose
+                raise _stream_failure(error, sent)
+            # every other event type (reasoning, item added, metadata, ping...) is ignored on purpose
     if not completed:
-        raise stream_cut()
+        raise stream_cut(f"last_event={last}")
 
 
 def _is_unauthorized(error: ProviderError) -> bool:

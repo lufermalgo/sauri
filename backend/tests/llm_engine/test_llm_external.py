@@ -553,6 +553,19 @@ async def test_chatgpt_route_uses_the_account_and_never_reads_a_key(
     assert gateway.module.server.process is None
 
 
+async def test_chatgpt_route_logs_why_an_answer_was_unusable_without_its_content(
+    chatgpt_gateway: tuple[Gateway, _Login], serve: Serve, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    gateway, _login = chatgpt_gateway
+    fake = await serve(failing(200, {"private": "meeting words"}))  # a JSON body where a stream was expected
+    response = await gateway.chat(_chatgpt_route(gateway, fake))
+    assert_error(response, 502, "provider_invalid_output", retryable=False)
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert "reason=bad_response detail=content_type=application/json" in logged
+    assert "meeting words" not in logged
+
+
 async def test_chatgpt_route_without_consent_is_refused_before_any_connection(
     chatgpt_gateway: tuple[Gateway, _Login], serve: Serve
 ) -> None:
