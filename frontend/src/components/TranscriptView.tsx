@@ -106,8 +106,10 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [playingSpeakerId, setPlayingSpeakerId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("summary");
   const [keyPointTimes, setKeyPointTimes] = useState<number[]>([]);
-  // Key-point markers come from the summary the side panel already loaded.
+  // The summary the side panel already loaded feeds the key-point markers and the header's download.
+  const [hasSummary, setHasSummary] = useState(false);
   const handleSummaryChange = useCallback((summary: MeetingSummary | null) => {
+    setHasSummary(summary !== null);
     const times: number[] = [];
     for (const point of summary?.keyPoints ?? []) {
       if (typeof point !== "string" && point.sources.length > 0) times.push(point.sources[0].startMs);
@@ -497,7 +499,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     <section className="meeting-view" tabIndex={-1}>
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
         stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
-        speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns}
+        speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} hasSummary={hasSummary}
         speakerReview={speakerReview} onBack={onBack} />
       {hasNotices && <div className="meeting-notices">
         {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
@@ -604,7 +606,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
           { id: "summary", label: text.summaryTab, panel: meeting
             // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
-            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
+            ? <SummaryPanel meetingId={meetingId} title={metadata.title} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
               expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal}
               progress={{ audioSeconds: playbackManifest?.duration_seconds ?? metadata.durationSeconds,
                 createdAt: metadata.createdAt, stageStartedAt: stage === "summary" ? stageStartedAt : null }} /> : null },

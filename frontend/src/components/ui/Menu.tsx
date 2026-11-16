@@ -186,3 +186,8 @@ export function MenuItem({ onSelect, hint, tone = "default", disabled = false, c
     </button>
   );
 }
+
+/** Thin rule between groups of items; not focusable, so arrow keys skip it. */
+export function MenuSeparator() {
+  return <div role="separator" className="ui-menu-separator" />;
+}
