@@ -10,6 +10,7 @@ import pytest
 
 BACKEND = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(BACKEND / "engine-common"))
+sys.path.insert(0, str(BACKEND / "host-engine"))
 
 MANAGEMENT_TOKEN = "synthetic-management-token-0123456789"
 ENGINE_TOKEN = "synthetic-engine-token-abcdefghijk"
