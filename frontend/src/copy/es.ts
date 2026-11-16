@@ -7,6 +7,7 @@ import { shell } from "./shell";
 import { login } from "./login";
 import { library } from "./library";
 import { meeting } from "./meeting";
+import { settings } from "./settings";
 
 export const copy = {
   processing,
@@ -18,4 +19,5 @@ export const copy = {
   login,
   library,
   meeting,
+  settings,
 } as const;

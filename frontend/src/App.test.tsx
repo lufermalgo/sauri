@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
 import { copy } from "./copy/es";
 
@@ -99,6 +99,41 @@ describe("global authentication gate", () => {
     expect(window.location.pathname).toBe("/");
   });
 
+  it("opens the settings page from the gear and keeps unknown nearby paths not found", async () => {
+    const storage = createLocalStorage();
+    storage.setItem("sauri_token", "synthetic-token");
+    vi.stubGlobal("localStorage", storage);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("link", { name: copy.shell.profile.settings }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/settings"));
+    expect(screen.getByRole("heading", { name: copy.settings.title })).toBeTruthy();
+    expect(screen.getByText(copy.settings.empty)).toBeTruthy();
+    expect(screen.getByRole("link", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBe("page");
+
+    act(() => {
+      window.history.pushState(null, "", "/settings/extra");
+      window.dispatchEvent(new Event("sauri:navigate"));
+    });
+    expect(screen.getByRole("heading", { name: copy.shell.notFound.title })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: copy.settings.title })).toBeNull();
+  });
+
+  it("shows the name and email carried by the signed-in token", () => {
+    const payload = btoa(JSON.stringify({ name: "Synthetic Owner", email: "owner@example.test" }));
+    const storage = createLocalStorage();
+    storage.setItem("sauri_token", `header.${payload}.signature`);
+    vi.stubGlobal("localStorage", storage);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
+
+    render(<App />);
+
+    expect(screen.getByText("Synthetic Owner")).toBeTruthy();
+    expect(screen.getByText("owner@example.test")).toBeTruthy();
+  });
+
   it("logs out to the library route and removes only the token", async () => {
     window.history.replaceState({}, "", "/upload");
     const storage = createLocalStorage();
@@ -106,7 +141,8 @@ describe("global authentication gate", () => {
     vi.stubGlobal("localStorage", storage);
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.profile.fallbackName }));
+    fireEvent.click(screen.getByRole("menuitem", { name: copy.shell.logout }));
 
     await waitFor(() => expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy());
     expect(storage.getItem("sauri_token")).toBeNull();

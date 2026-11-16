@@ -83,7 +83,7 @@ export interface MeetingDiarization {
 }
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-const TOKEN_KEY = "sauri_token";
+export const TOKEN_KEY = "sauri_token";
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem(TOKEN_KEY);

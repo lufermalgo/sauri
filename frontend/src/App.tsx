@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RecordingLibrary } from "./components/RecordingLibrary";
 import { TranscriptView } from "./components/TranscriptView";
 import { LoginScreen } from "./components/LoginScreen";
 import { UploadView } from "./components/UploadView";
 import { PortalShell } from "./components/PortalShell";
+import { SettingsView } from "./components/SettingsView";
 import { copy } from "./copy/es";
 import { navigate, routePath, useRoute } from "./router";
+import { readSessionUser } from "./session-user";
 import "./styles/shell.css";
 
 export function App() {
@@ -15,6 +17,8 @@ export function App() {
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(localStorage.getItem("sauri_token"))
   );
+
+  const user = useMemo(() => (authenticated ? readSessionUser() : null), [authenticated]);
 
   useEffect(() => {
     function handleUnauthorized() {
@@ -40,7 +44,7 @@ export function App() {
   }
 
   return (
-    <PortalShell route={route} onLogout={handleLogout}>
+    <PortalShell route={route} user={user} onLogout={handleLogout}>
       {route.name === "library" && (
         <RecordingLibrary
           refreshKey={0}
@@ -54,6 +58,8 @@ export function App() {
           onBack={() => navigate({ name: "library" })}
         />
       )}
+
+      {route.name === "settings" && <SettingsView />}
 
       {route.name === "meeting" && (
         <TranscriptView

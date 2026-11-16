@@ -106,7 +106,8 @@ describe("login and local session gate", () => {
     expect(localStorage.getItem("synthetic-password")).toBeNull();
     expect(screen.queryByLabelText(copy.login.passwordLabel)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.profile.fallbackName }));
+    fireEvent.click(screen.getByRole("menuitem", { name: copy.shell.logout }));
     expect(screen.getByLabelText(copy.login.passwordLabel)).toHaveProperty("value", "");
   });
 
@@ -132,7 +133,7 @@ describe("login and local session gate", () => {
     openPortal();
 
     expect(screen.getByText("Meeting list")).toBeTruthy();
-    expect(screen.getByRole("button", { name: copy.shell.logout })).toBeTruthy();
+    expect(screen.getByRole("button", { name: copy.shell.profile.fallbackName })).toBeTruthy();
     expect(screen.queryByLabelText(copy.login.passwordLabel)).toBeNull();
   });
 
@@ -143,7 +144,8 @@ describe("login and local session gate", () => {
     vi.stubGlobal("fetch", fetchMock);
     openPortal();
 
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.profile.fallbackName }));
+    fireEvent.click(screen.getByRole("menuitem", { name: copy.shell.logout }));
 
     await waitFor(() => expect(screen.getByLabelText(copy.login.emailLabel)).toBeTruthy());
     expect(localStorage.getItem("sauri_token")).toBeNull();

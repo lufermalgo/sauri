@@ -1,7 +1,7 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export type AvatarProps = {
-  initials: string;
+  initials: ReactNode;
   color: string;
   size?: "sm" | "md";
 };
