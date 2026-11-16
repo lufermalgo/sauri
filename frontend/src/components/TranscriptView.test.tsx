@@ -238,34 +238,25 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" />);
 
-    await waitFor(() => expect(screen.getAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(1));
     const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
     const secondLabels = screen.getAllByText("Synthetic Person B", { selector: '[data-testid="transcript-speaker-label"]' });
     const unresolvedLabels = screen.getAllByText(copy.transcript.legacyUnknownSpeaker, { selector: '[data-testid="transcript-speaker-label"]' });
-    const passageDetails = screen.getByText(copy.meeting.passages(3)).closest("details");
-    const rawLabels = Array.from(passageDetails?.querySelectorAll('[data-testid="transcript-speaker-label"]') ?? []);
-    const groupedLabels = [...firstLabels, ...secondLabels, ...unresolvedLabels]
-      .filter((label) => !passageDetails?.contains(label));
-    expect(passageDetails).not.toHaveAttribute("open");
-    expect(rawLabels).toHaveLength(3);
-    expect(groupedLabels).toHaveLength(3);
-    groupedLabels.forEach((label) => expect(label).toBeVisible());
-    rawLabels.forEach((label) => expect(label).not.toBeVisible());
-    expect(firstLabels).toHaveLength(2);
-    expect(secondLabels).toHaveLength(2);
-    expect(unresolvedLabels).toHaveLength(2);
-    const firstStyle = firstLabels[0].getAttribute("style");
-    const secondStyle = secondLabels[0].getAttribute("style");
-    expect(firstStyle).toContain("color:");
-    expect(secondStyle).toContain("color:");
-    expect(secondStyle).not.toBe(firstStyle);
-    fireEvent.click(screen.getByText(copy.meeting.passages(3)));
-    expect(passageDetails).toHaveAttribute("open");
-    rawLabels.forEach((label) => expect(label).toBeVisible());
-    groupedLabels.forEach((label) => expect(label).toBeVisible());
+    const labels = [...firstLabels, ...secondLabels, ...unresolvedLabels];
+    expect(document.querySelector("details")).toBeNull();
+    expect(labels).toHaveLength(3);
+    labels.forEach((label) => expect(label).toBeVisible());
+    expect(firstLabels).toHaveLength(1);
+    expect(secondLabels).toHaveLength(1);
+    expect(unresolvedLabels).toHaveLength(1);
+    const firstColor = firstLabels[0].closest("li")!.style.getPropertyValue("--meeting-speaker");
+    const secondColor = secondLabels[0].closest("li")!.style.getPropertyValue("--meeting-speaker");
+    expect(firstColor).toMatch(/^var\(--ds-speaker-/);
+    expect(secondColor).toMatch(/^var\(--ds-speaker-/);
+    expect(secondColor).not.toBe(firstColor);
   });
 
-  it("renders the playback player before the transcript passages", async () => {
+  it("renders the playback player before the transcript", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
     vi.spyOn(api, "getPlaybackManifest").mockResolvedValue({
       meeting_id: "r-1",
@@ -1018,7 +1009,7 @@ describe("TranscriptView — visual QA refinements", () => {
     render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     const labels = screen.getAllByTestId("transcript-speaker-label");
-    expect(labels).toHaveLength(2);
+    expect(labels).toHaveLength(1);
     labels.forEach(label => expect(label).toHaveTextContent(copy.transcript.numberedSpeaker("4")));
     expect(data.turns[0].speakerLabel).toBe("Speaker 4");
     const row = within(screen.getByRole("region", { name: copy.meeting.transcript })).getByRole("listitem");
@@ -1201,32 +1192,22 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(screen.getByRole("textbox", { name: sr.nameFor(first) })).toHaveValue("Synthetic draft");
   });
 
-  it("disables both transcript and playback-passage following without disabling active highlighting", async () => {
+  it("disables transcript following without disabling active highlighting", async () => {
     render(<TranscriptView meetingId="r-1" />);
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
     const panel = screen.getByRole("region", { name: copy.meeting.transcript });
     const rows = within(panel).getAllByRole("listitem");
-    const passage = document.querySelector('[data-passage-id="word-turn-2"]')!;
     const rowScroll = vi.fn();
-    const passageScroll = vi.fn();
     Object.defineProperty(rows[1], "scrollIntoView", { value: rowScroll });
-    Object.defineProperty(passage, "scrollIntoView", { value: passageScroll });
     const follow = screen.getByRole("checkbox", { name: copy.meeting.followPlayback });
     expect(follow).toBeChecked();
     fireEvent.click(follow);
     audio.currentTime = 68.25;
     fireEvent.timeUpdate(audio);
     expect(rows[1]).toHaveAttribute("aria-current", "true");
-    expect(passage).toHaveAttribute("aria-current", "true");
     expect(rowScroll).not.toHaveBeenCalled();
-    expect(passageScroll).not.toHaveBeenCalled();
     fireEvent.click(follow);
     expect(rowScroll).toHaveBeenCalledWith({ block: "nearest" });
-    audio.currentTime = 65.5;
-    fireEvent.timeUpdate(audio);
-    audio.currentTime = 68.5;
-    fireEvent.timeUpdate(audio);
-    expect(passageScroll).toHaveBeenCalledWith({ block: "nearest" });
   });
 
   it("renders hidden skeletons for the header, player, transcript and panel while opening", async () => {

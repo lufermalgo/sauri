@@ -1,12 +1,5 @@
 export type VideoPresence = "muxed" | "separate" | "absent" | "unknown";
 
-export interface TimedPassage {
-  id: string;
-  startMs: number;
-  endMs: number;
-  text: string;
-}
-
 export interface MediaSourceOption {
   id: string;
   label: string;
@@ -23,7 +16,6 @@ export interface PlaybackState {
   playbackRate: number;
   volume: number;
   muted: boolean;
-  activePassageId: string | null;
   selectedSourceId: string | null;
 }
 
@@ -31,7 +23,6 @@ export interface PlaybackControllerOptions {
   videoPresence: VideoPresence;
   audioElement: HTMLMediaElement;
   videoElement?: HTMLMediaElement;
-  passages: readonly TimedPassage[];
   videoOffsetMs?: number | null;
   mediaSources?: readonly MediaSourceOption[];
   onError?: (error: unknown) => void;
@@ -39,22 +30,9 @@ export interface PlaybackControllerOptions {
 
 const DRIFT_THRESHOLD_SECONDS = 0.25;
 
-export function findPassageAt(
-  passages: readonly TimedPassage[],
-  currentTimeMs: number,
-): TimedPassage | null {
-  if (!Number.isFinite(currentTimeMs)) return null;
-  return passages.find(
-    ({ startMs, endMs }) =>
-      Number.isFinite(startMs) && Number.isFinite(endMs) && startMs < endMs &&
-      currentTimeMs >= startMs && currentTimeMs < endMs,
-  ) ?? null;
-}
-
 export class PlaybackController {
   private readonly audio: HTMLMediaElement;
   private readonly video: HTMLMediaElement | undefined;
-  private readonly passages: readonly TimedPassage[];
   private readonly onError: ((error: unknown) => void) | undefined;
   private readonly sources: readonly MediaSourceOption[];
   private readonly listeners: Array<[string, EventListener]> = [];
@@ -64,7 +42,6 @@ export class PlaybackController {
 
   constructor(options: PlaybackControllerOptions) {
     this.audio = options.audioElement;
-    this.passages = options.passages;
     this.onError = options.onError;
     this.video = options.videoPresence === "separate" ? options.videoElement : undefined;
     this.sources = options.videoPresence === "separate"
@@ -87,7 +64,6 @@ export class PlaybackController {
       playbackRate: this.audio.playbackRate,
       volume: this.audio.volume,
       muted: this.audio.muted,
-      activePassageId: findPassageAt(this.passages, this.toMilliseconds(this.audio.currentTime))?.id ?? null,
       selectedSourceId: this.isVideoPlayable() ? initialSource?.id ?? null : null,
     };
 
@@ -117,11 +93,6 @@ export class PlaybackController {
     this.audio.currentTime = Math.max(0, timeMs) / 1000;
     this.synchronizeVideo();
     this.refreshState();
-  }
-
-  async playPassage(passage: TimedPassage): Promise<void> {
-    this.seekTo(passage.startMs);
-    await this.resume();
   }
 
   /** Seeks to `startMs`, plays and pauses at `endMs`; replaces any previous interval. */
@@ -218,7 +189,6 @@ export class PlaybackController {
       playbackRate: this.audio.playbackRate,
       volume: this.audio.volume,
       muted: this.audio.muted,
-      activePassageId: findPassageAt(this.passages, currentTimeMs)?.id ?? null,
       selectedSourceId: this.isVideoPlayable() ? this.state.selectedSourceId : null,
     };
   }

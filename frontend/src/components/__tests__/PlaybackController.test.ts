@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { findPassageAt, PlaybackController } from "../PlaybackController";
-import type { TimedPassage } from "../PlaybackController";
-
-function passage(id: string, startMs: number, endMs: number): TimedPassage {
-  return { id, startMs, endMs, text: `Synthetic passage ${id}` };
-}
+import { PlaybackController } from "../PlaybackController";
 
 function mediaElement() {
   const listeners = new Map<string, Array<() => void>>();
@@ -34,42 +29,12 @@ function mediaElement() {
   return media as unknown as HTMLMediaElement & { emit(name: string): void };
 }
 
-const passages = [passage("first", 0, 1000), passage("second", 1000, 2000)];
-
-describe("findPassageAt", () => {
-  it("matches valid half-open intervals, including adjacent boundaries", () => {
-    expect(findPassageAt(passages, 0)?.id).toBe("first");
-    expect(findPassageAt(passages, 999)?.id).toBe("first");
-    expect(findPassageAt(passages, 1000)?.id).toBe("second");
-    expect(findPassageAt(passages, 2000)).toBeNull();
-  });
-
-  it("returns the first matching passage in supplied order when intervals overlap", () => {
-    const overlapping = [passage("later-start", 500, 1500), passage("earlier-start", 0, 1000)];
-
-    expect(findPassageAt(overlapping, 750)?.id).toBe("later-start");
-    expect(overlapping.map(({ id }) => id)).toEqual(["later-start", "earlier-start"]);
-  });
-
-  it("returns no passage for gaps, empty input, or invalid intervals", () => {
-    expect(findPassageAt([passage("before", 0, 100), passage("after", 200, 300)], 150)).toBeNull();
-    expect(findPassageAt([], 0)).toBeNull();
-    expect(
-      findPassageAt(
-        [passage("zero", 100, 100), passage("reversed", 200, 100), passage("nan", Number.NaN, 300)],
-        150,
-      ),
-    ).toBeNull();
-  });
-});
-
 describe("PlaybackController state and controls", () => {
   it("seeks, pauses, resumes, and reflects rate, volume, and mute state", async () => {
     const audio = mediaElement();
     const controller = new PlaybackController({
       videoPresence: "absent",
       audioElement: audio,
-      passages,
     });
 
     controller.seekTo(1200);
@@ -92,7 +57,7 @@ describe("PlaybackController state and controls", () => {
 
   it("plays an interval from its start and pauses when the clock reaches its end", async () => {
     const audio = mediaElement();
-    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio });
 
     await controller.playInterval(2000, 5500);
     expect(audio.currentTime).toBe(2);
@@ -113,7 +78,7 @@ describe("PlaybackController state and controls", () => {
 
   it("cancels the interval on a manual seek", async () => {
     const audio = mediaElement();
-    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio });
 
     await controller.playInterval(1000, 3000);
     controller.seekTo(7000);
@@ -124,7 +89,7 @@ describe("PlaybackController state and controls", () => {
 
   it("replaces a previous interval with a new one", async () => {
     const audio = mediaElement();
-    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio });
 
     await controller.playInterval(1000, 3000);
     await controller.playInterval(10000, 12000);
@@ -139,7 +104,7 @@ describe("PlaybackController state and controls", () => {
 
   it("ignores an empty or invalid interval", async () => {
     const audio = mediaElement();
-    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio });
 
     await controller.playInterval(3000, 3000);
     await controller.playInterval(-1, 2000);
@@ -147,19 +112,16 @@ describe("PlaybackController state and controls", () => {
     expect(audio.play).not.toHaveBeenCalled();
   });
 
-  it("updates active passage from the authoritative audio clock and clears it on a gap", () => {
+  it("reports the authoritative audio clock in its state as playback advances", () => {
     const audio = mediaElement();
-    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio, passages });
+    const controller = new PlaybackController({ videoPresence: "absent", audioElement: audio });
 
     audio.currentTime = 0.5;
     audio.emit("timeupdate");
-    expect(controller.getState().activePassageId).toBe("first");
+    expect(controller.getState().currentTimeMs).toBe(500);
     audio.currentTime = 1.5;
     audio.emit("timeupdate");
-    expect(controller.getState().activePassageId).toBe("second");
-    audio.currentTime = 3;
-    audio.emit("timeupdate");
-    expect(controller.getState().activePassageId).toBeNull();
+    expect(controller.getState().currentTimeMs).toBe(1500);
   });
 
   it("keeps playback paused and reports a rejected play request", async () => {
@@ -169,7 +131,6 @@ describe("PlaybackController state and controls", () => {
     const controller = new PlaybackController({
       videoPresence: "absent",
       audioElement: audio,
-      passages,
       onError,
     });
 
@@ -184,7 +145,7 @@ describe("PlaybackController state and controls", () => {
 describe("PlaybackController media modes and synchronization", () => {
   it("uses one element and its clock for muxed playback, and audio only for absent or unknown video", () => {
     const muxedAudio = mediaElement();
-    const muxed = new PlaybackController({ videoPresence: "muxed", audioElement: muxedAudio, passages });
+    const muxed = new PlaybackController({ videoPresence: "muxed", audioElement: muxedAudio });
     expect(muxed.getState().isPlaying).toBe(false);
 
     muxedAudio.currentTime = 7.25;
@@ -195,7 +156,7 @@ describe("PlaybackController media modes and synchronization", () => {
 
     for (const videoPresence of ["absent", "unknown"] as const) {
       const audio = mediaElement();
-      const controller = new PlaybackController({ videoPresence, audioElement: audio, passages });
+      const controller = new PlaybackController({ videoPresence, audioElement: audio });
       expect(controller.getState().selectedSourceId).toBeNull();
       controller.seekTo(500);
       expect(audio.currentTime).toBe(0.5);
@@ -209,7 +170,6 @@ describe("PlaybackController media modes and synchronization", () => {
       videoPresence: "separate",
       audioElement: audio,
       videoElement: video,
-      passages,
     });
 
     expect(controller.getState().selectedSourceId).toBeNull();
@@ -230,7 +190,6 @@ describe("PlaybackController media modes and synchronization", () => {
       videoPresence: "separate",
       audioElement: audio,
       videoElement: video,
-      passages,
       mediaSources: [
         { id: "low", label: "Low", videoSrc: "video-low", audioSrc: "ignored-audio", mimeType: "video/webm", videoOffsetMs: -250 },
         { id: "high", label: "High", videoSrc: "video-high", audioSrc: "ignored-audio", mimeType: "video/webm", videoOffsetMs: -250 },
@@ -255,7 +214,6 @@ describe("PlaybackController media modes and synchronization", () => {
       videoPresence: "separate",
       audioElement: audio,
       videoElement: video,
-      passages,
       videoOffsetMs: -100,
       onError,
     });
@@ -275,7 +233,6 @@ describe("PlaybackController media modes and synchronization", () => {
       videoPresence: "separate",
       audioElement: audio,
       videoElement: video,
-      passages,
       videoOffsetMs: null,
     });
 
@@ -295,7 +252,6 @@ describe("PlaybackController media modes and synchronization", () => {
       videoPresence: "separate",
       audioElement: audio,
       videoElement: video,
-      passages,
       videoOffsetMs: 2000,
     });
 
@@ -324,7 +280,6 @@ describe("PlaybackController media modes and synchronization", () => {
       videoPresence: "separate",
       audioElement: audio,
       videoElement: video,
-      passages,
       videoOffsetMs: -500,
     });
 
