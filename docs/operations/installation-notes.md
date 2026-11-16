@@ -43,6 +43,16 @@ Living record of what each Sauri component needs to be installed, kept as engine
 - One-time migration of an existing installation, no data loss: the next `make up` sets the database role password from the file (`ALTER ROLE` inside the container, nothing printed), creates the RabbitMQ user `sauri` with the file password and deletes `guest`, and starts RabbitMQ with the new named volume `rabbitmq-data` and a fixed hostname (users and durable queues survive container recreation). RustFS starts with the new root keys over the same data volume. Afterwards restart the native engines once: `make engines-down && make engines-up`.
 - Reading a value: the owner runs `cat ~/.config/sauri/<file>`; scripts never print or commit values. Rotating: delete the file and run `make up` (database and queue are re-synced, RustFS keys follow the file, the admin password uses `python -m app.auth.seed_admin --reset-password`). Changing `jwt_secret` logs everyone out.
 
+## Local model choice in the gateways (U6.3)
+
+- The ASR and LLM gateways accept `X-Sauri-Route` with `local:<id>`. No header, or `local:default`, keeps the built-in model, unchanged (LLM alias `qwen3.5-9b`). `local:<id>` resolves the catalog file in `SAURI_MODELS_DIR` (default `~/.local/share/sauri/models`) and requires its `*.manifest.json` (written by `host-engine` after a hash-verified install) to say `installed` with the catalog SHA-256, the catalog size, the size on disk and the same `mtime_ns`. The hash is not recomputed per request.
+- Unified directory without moving files: the process default model may live at the engine's legacy location (the 9B LLM model in `native-engines/llm/models`, the ASR model without a manifest). `local:<default id>` uses the catalog entry first and falls back to that legacy file only when its size equals the catalog size; its hash was verified by the engine installer. No other model falls back and no file is moved or deleted.
+- Errors (`{"detail": code}`): `409 model_not_installed`, `409 model_not_verified` (run Verify in the portal), `422 unknown_model`, `422 route_malformed`, `422 route_capability_mismatch`, `422 route_not_supported` (external routes are not served by this path yet).
+- The LLM gateway restarts `llama-server` with `--alias <id>` when the requested model file differs from the loaded one; a refused request never touches the running server.
+- API: `GET /api/v1/engines/local/{hardware,models,jobs/<id>}`, `POST .../models/<id>/{install,verify}`, `POST .../jobs/<id>/cancel` and `DELETE .../models/<id>` proxy the host-engine local-model routes (signed-in users only; the management token never leaves the API).
+- Deploy: restart the native `asr`, `llm` and `host` engines (`bash scripts/engines/native-engines.sh stop <engine>` then `start <engine>`) and the API container. Do not restart `llm` while a summary is running.
+- Opt-in verification with the real binaries and installed models: `cd backend && SAURI_RUN_NATIVE_TESTS=1 .venv/bin/pytest tests/native/test_local_model_native.py -q` (starts its own `whisper-cli` and `llama-server` on a random port; skips what is not installed).
+
 ## Pending to document
 
 - Extension packaging and updates; portal and backend updates.

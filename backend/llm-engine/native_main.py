@@ -15,13 +15,16 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sauri_engine_common.keep_awake import KeepAwake
+from sauri_engine_common.local_model_use import LocalModelError, LocalSelection, select_local_model
+from sauri_engine_common.route import ROUTE_HEADER
 
 INSTALL_DIR = Path.home() / ".local/share/sauri/native-engines/llm"
 ENGINE_TOKEN_PATH = Path(os.getenv("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config/sauri/engine_token"))
 _bearer_dependency = Depends(HTTPBearer(auto_error=False))
+DEFAULT_ALIAS = "qwen3.5-9b"
 
 
 def require_engine_token(credentials: HTTPAuthorizationCredentials | None = _bearer_dependency) -> None:
@@ -48,6 +51,7 @@ class LlamaServer:
         if not math.isfinite(self.request_seconds) or self.request_seconds <= 0:
             raise ValueError("SUMMARIZATION_TIMEOUT_SECONDS must be finite and positive")
         self.process: asyncio.subprocess.Process | None = None
+        self.loaded_model: Path | None = None  # file the running llama-server was started with
         self.lock = asyncio.Lock()
         self.last_used = time.monotonic()
 
@@ -68,9 +72,16 @@ class LlamaServer:
                 os.killpg(process.pid, signal.SIGKILL)
             await process.wait()
         self.process = None
+        self.loaded_model = None
 
-    async def start(self, client: httpx.AsyncClient) -> None:
-        if self.process is not None and self.process.returncode is None:
+    async def start(self, client: httpx.AsyncClient, selection: LocalSelection | None = None) -> None:
+        """Start llama-server with the chosen model, restarting it when a different one is running.
+
+        No selection means the built-in model and alias, exactly as before the local route existed.
+        """
+        model = self.model if selection is None else selection.path
+        alias = DEFAULT_ALIAS if selection is None else selection.model_id
+        if self.process is not None and self.process.returncode is None and self.loaded_model == model:
             return
         await self.stop()
         port = httpx.URL(self.url).port or 8004
@@ -83,11 +94,12 @@ class LlamaServer:
             except OSError:
                 raise HTTPException(status_code=503, detail="llm_port_busy") from None
         self.process = await asyncio.create_subprocess_exec(
-            str(self.binary), "-m", str(self.model), "-c", "32768", "-ctk", "q8_0", "-ctv", "q8_0",
-            "--host", "127.0.0.1", "--port", str(port), "--parallel", "1", "--alias", "qwen3.5-9b",
+            str(self.binary), "-m", str(model), "-c", "32768", "-ctk", "q8_0", "-ctv", "q8_0",
+            "--host", "127.0.0.1", "--port", str(port), "--parallel", "1", "--alias", alias,
             "--reasoning-budget", "0", "--no-context-shift",
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL, start_new_session=True,
         )
+        self.loaded_model = model
         # No llama.cpp request/prompt diagnostics are allowed into the gateway log.
         async with asyncio.timeout(self.startup_seconds):
             while True:
@@ -103,7 +115,7 @@ class LlamaServer:
                     pass
                 await asyncio.sleep(0.1)
 
-    async def chat(self, body: dict[str, Any]) -> dict[str, Any]:
+    async def chat(self, body: dict[str, Any], selection: LocalSelection | None = None) -> dict[str, Any]:
         if body.get("stream"):
             raise HTTPException(status_code=422, detail="streaming_not_supported")
         # Serializing requests also prevents the idle reaper from stopping active inference.
@@ -112,7 +124,7 @@ class LlamaServer:
                 with KeepAwake():
                     async with httpx.AsyncClient(timeout=self.request_seconds, trust_env=False) as client:
                         async with asyncio.timeout(self.startup_seconds + self.request_seconds):
-                            await self.start(client)
+                            await self.start(client, selection)
                             response = await client.post(f"{self.url}/v1/chat/completions", json={
                                 **body, "stream": False, "reasoning_budget": 0,
                                 "chat_template_kwargs": {"enable_thinking": False},
@@ -170,5 +182,15 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/v1/chat/completions", dependencies=[Depends(require_engine_token)])
-async def chat_completions(body: dict[str, Any]) -> dict[str, Any]:
-    return await server.chat(body)
+async def chat_completions(
+    body: dict[str, Any],
+    route: str | None = Header(default=None, alias=ROUTE_HEADER),
+) -> dict[str, Any]:
+    # Resolved before the lock: a bad or uninstalled model is refused without touching the running server.
+    try:
+        selection = await asyncio.to_thread(
+            select_local_model, route, process="summary", legacy_default=server.model
+        )
+    except LocalModelError as error:
+        raise HTTPException(status_code=error.status, detail=error.code) from None
+    return await server.chat(body, selection)
