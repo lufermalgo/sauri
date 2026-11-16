@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -26,12 +27,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.diarization.assignment import assign_turns
 from app.diarization.carry_over import carry_over_review
-from app.diarization.diarization_engine import DiarizationOptions
+from app.diarization.diarization_engine import DiarizationOptions, DiarizationResult
 from app.diarization.factory import create_diarization_engine
 from app.diarization.labeling import label_speakers
 from app.diarization.repository import DiarizationRepository
 from app.diarization.reprocess_legacy import expired
 from app.diarization.word_attribution import WordTime, attribute_words
+from app.engines.routing import (
+    Provenance,
+    ProviderError,
+    Route,
+    call_with_fallback,
+    resolve_route,
+)
 from app.infra.engine_slot import ENGINE_CALL_TIMEOUT_S, SLOT_WAIT_TIMEOUT_S, EngineSlotTimeout, engine_slot
 from app.infra.models import (
     Diarization,
@@ -263,12 +271,27 @@ async def _process_diarization(
                 return
 
     try:
-        engine = create_diarization_engine()
+        # Per attempt, so a change in Settings applies to the next one without restarting anything. A route
+        # without current consent raises here, before any engine is created or any call is made.
+        async with session_factory() as session:
+            resolved = await resolve_route(session, owner_id, "diarization")
+        engine = (
+            create_diarization_engine() if resolved.route is None
+            else create_diarization_engine(resolved.route)
+        )
+        options = DiarizationOptions(duration_ms=recording.duration_seconds * 1000)
+
+        async def attempt_call(route: Route | None) -> DiarizationResult:
+            # No route means the plain call of every run before engines were selectable.
+            return await engine.diarize(
+                recording.audio_ref, options if route is None else replace(options, route=route)
+            )
+
         async with engine_slot(session_factory.kw["bind"], kind="diarization", timeout_s=SLOT_WAIT_TIMEOUT_S):
             async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
-                result = await engine.diarize(
-                    recording.audio_ref, DiarizationOptions(duration_ms=recording.duration_seconds * 1000)
-                )
+                result, provenance = await call_with_fallback(resolved, attempt_call, _engine_names)
+        provenance = _with_capabilities(provenance, engine.capabilities().is_local)
+        _log_external_diagnostics(result, provenance)
         domain_speakers = label_speakers(result.segments)
         domain_assignments = assign_turns(list(transcript.turns), result.segments, domain_speakers)
         async with session_factory() as session:
@@ -317,8 +340,9 @@ async def _process_diarization(
                 logger.info("Diarization artifact write skipped; reason=fenced")
                 return
             await repo.complete_revision(
-                session, meeting_id, revision, engine.capabilities().provider_name,
-                orm_speakers, orm_assignments, orm_word_assignments,
+                session, meeting_id, revision,
+                "diar-engine-external" if provenance.external else engine.capabilities().provider_name,
+                orm_speakers, orm_assignments, orm_word_assignments, provenance=provenance,
             )
             await _settle_revision(session, meeting_id, operation_id, revision, regenerating)
     except EngineSlotTimeout:
@@ -338,7 +362,10 @@ async def _process_diarization(
                         claim.claim_id = operation_id if operation_id is not None else None
                         claim.claim_kind = "recovery" if operation_id is not None else None
         raise
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, ProviderError):
+            # A closed class code: what failed, never what was said. Retry is explicit, as for any failure.
+            logger.warning("Diarization provider failure for meeting_id=%s class=%s", meeting_id, exc.code)
         async with session_factory() as session, session.begin():
             await repo.fail_revision(session, meeting_id, revision)
             live = (
@@ -361,6 +388,28 @@ async def _process_diarization(
         len(orm_speakers),
         len(orm_assignments),
     )
+
+
+def _engine_names(result: DiarizationResult) -> tuple[str | None, str | None]:
+    """What the engine reported about itself (None for engines that do not say)."""
+    return (result.engine.name, result.engine.model) if result.engine is not None else (None, None)
+
+
+def _with_capabilities(provenance: Provenance, is_local: bool) -> Provenance:
+    """An engine that is not local sent the audio out whatever the route said."""
+    return provenance if is_local else replace(provenance, external=True)
+
+
+def _log_external_diagnostics(result: DiarizationResult, provenance: Provenance) -> None:
+    """Counts only. Provider labels are per audio part, so the merged speaker count can exceed the people."""
+    if not provenance.external:
+        return
+    external = result.diagnostics.get("external")
+    if isinstance(external, dict):
+        logger.info(
+            "External speakers: label_policy=%s speakers=%d per_part=%s",
+            external.get("label_policy"), result.speaker_count, external.get("speaker_count_per_part"),
+        )
 
 
 async def start_worker(

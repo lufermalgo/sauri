@@ -11,9 +11,10 @@ from __future__ import annotations
 import os
 
 from app.diarization.diarization_engine import DiarizationEngine
+from app.engines.routing import ProviderError, Route, is_external
 
 
-def create_diarization_engine() -> DiarizationEngine:
+def create_diarization_engine(route: Route | None = None) -> DiarizationEngine:
     """Creates the DiarizationEngine implementation configured by environment.
 
     Reads the DIARIZATION_PROVIDER environment variable (case-insensitive, stripped):
@@ -22,10 +23,18 @@ def create_diarization_engine() -> DiarizationEngine:
 
     Also reads DIARIZATION_LOCAL_URL for the local provider (required, Req. 2.6).
 
+    ``route`` is the per-attempt route the worker resolved. An external route is accepted only when it
+    carries the consent version it was resolved with; the engine returned is still the gateway client, which
+    sends the route to the host gateway (the gateway holds the key and makes the call). No route, or a local
+    one, is the legacy behavior exactly. The legacy cloud environment value stays rejected.
+
     Raises:
+        ProviderError: ``consent_missing`` for an external route without a consent version.
         ValueError: If DIARIZATION_PROVIDER is not local (Req. 2.5), or if
             DIARIZATION_LOCAL_URL is missing or empty (Req. 2.6).
     """
+    if route is not None and is_external(route) and route.consent_version is None:
+        raise ProviderError("consent_missing")
     raw = os.environ.get("DIARIZATION_PROVIDER", "")
     provider = raw.strip().lower()
 
