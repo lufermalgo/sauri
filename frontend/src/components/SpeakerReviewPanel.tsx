@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { CSSProperties, KeyboardEvent } from "react";
 import { LoaderCircle, Pause, Pencil, Play } from "lucide-react";
 import type { SpeakerDisposition } from "../api";
 import type { ListeningInterval } from "../speaker-review-interval";
@@ -18,12 +18,14 @@ export interface SpeakerRowModel {
   interval: ListeningInterval | null;
 }
 
-interface SpeakerReviewPanelProps {
+export interface SpeakerReviewPanelProps {
   rows: SpeakerRowModel[];
   complete: boolean;
   /** Speakers with a save in flight. */
   busyIds: readonly string[];
   playingId: string | null;
+  /** Speaker talking at the current playback position, highlighted so the video can be matched to a row. */
+  speakingId?: string | null;
   playbackReady: boolean;
   playbackLoading: boolean;
   error: string | null;
@@ -54,9 +56,9 @@ export function avatarText(label: string, generic: boolean): string {
   return label.trim().split(/\s+/).slice(0, 2).map(firstGrapheme).join("");
 }
 
-/** Speaker identification list shown inside the review dialog: one row per speaker. */
+/** Speaker identification list shown in the panel beside the video: one row per speaker. */
 export function SpeakerReviewPanel({
-  rows, complete, busyIds, playingId, playbackReady, playbackLoading, error,
+  rows, complete, busyIds, playingId, speakingId = null, playbackReady, playbackLoading, error,
   onListen, onRename, onAcceptSuggestion, onLeaveUnnamed,
 }: SpeakerReviewPanelProps) {
   const { t } = useT();
@@ -76,13 +78,13 @@ export function SpeakerReviewPanel({
   }
 
   return <div className="meeting-speaker-review">
-    <p role="status" className="meeting-sr-only">{complete ? t("speakerReview:complete") : t("speakerReview:pending")}</p>
+    <p role="status" className={complete ? "meeting-sr-only" : undefined}>{complete ? t("speakerReview:complete") : t("speakerReview:pending")}</p>
     <div role="status" className="meeting-sr-only">
       {announcement && <span key={announcement.id}>{announcement.message}</span>}
     </div>
     {error && <p role="alert" className="meeting-error">{error}</p>}
     {rows.map(row => <SpeakerRow key={row.speakerId} row={row}
-      busy={busyIds.includes(row.speakerId)} playing={playingId === row.speakerId}
+      busy={busyIds.includes(row.speakerId)} playing={playingId === row.speakerId} speaking={speakingId === row.speakerId}
       playbackReady={playbackReady} playbackLoading={playbackLoading}
       onListen={onListen} onRename={onRename} onAcceptSuggestion={onAcceptSuggestion} onAnnounce={announce} />)}
     {pendingGeneric && <div className="meeting-review-footer">
@@ -96,6 +98,7 @@ interface SpeakerRowProps extends Pick<SpeakerReviewPanelProps, "playbackReady" 
   row: SpeakerRowModel;
   busy: boolean;
   playing: boolean;
+  speaking: boolean;
   onAnnounce: (message: string) => void;
 }
 
@@ -104,7 +107,7 @@ function statusText(row: SpeakerRowModel): string {
   return row.disposition === null ? t("speakerReview:suggestedState") : t("speakerReview:namedState");
 }
 
-function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onListen, onRename, onAcceptSuggestion, onAnnounce }: SpeakerRowProps) {
+function SpeakerRow({ row, busy, playing, speaking, playbackReady, playbackLoading, onListen, onRename, onAcceptSuggestion, onAnnounce }: SpeakerRowProps) {
   const { t } = useT();
   const { speakerId, label, interval } = row;
   const [editing, setEditing] = useState(false);
@@ -182,7 +185,7 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
       event.preventDefault();
       void commit("enter");
     } else if (event.key === "Escape") {
-      // Cancels the edit only: the dialog stays open.
+      // Cancels the edit only: the panel stays open.
       event.preventDefault();
       if (!inFlight.current) endEdit(true);
     }
@@ -190,7 +193,9 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
 
   const status = statusText(row);
   const suggested = !row.generic && row.disposition === null;
-  return <article className="meeting-review-item" aria-busy={busy || saving || undefined}>
+  return <article className={`meeting-review-item${speaking ? " meeting-review-item--speaking" : ""}`}
+    style={{ "--meeting-speaker": row.color } as CSSProperties}
+    aria-current={speaking ? "true" : undefined} aria-busy={busy || saving || undefined}>
     <div className="meeting-review-row">
       <span className="meeting-review-play">
         <button type="button" className={`ui-icon-button${playing ? " ui-icon-button--primary" : ""}`}
@@ -210,7 +215,7 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
               onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={() => void commit("blur")} />
             {saving && <span className="meeting-review-spinner"><Icon icon={LoaderCircle} size={16} /></span>}
           </div>
-          : <h4 className="meeting-review-name">{label}</h4>}
+          : <h3 className="meeting-review-name">{label}</h3>}
         {editing && rowError
           ? <p id={errorId} className="meeting-review-field-error">{rowError}</p>
           : <span className={`meeting-review-status${row.generic && row.disposition === null ? " meeting-review-status--pending" : ""}`}>{status}</span>}

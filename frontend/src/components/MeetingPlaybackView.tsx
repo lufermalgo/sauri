@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button, Skeleton, SkeletonLines } from "./ui";
 import "../styles/meeting.css";
 import { SpeakerTimeline, type TimelineTurn } from "./SpeakerTimeline";
@@ -20,7 +20,11 @@ interface MeetingPlaybackViewProps {
   onSeekToReady?: (seekTo: ((timeMs: number, play?: boolean) => void) | undefined) => void;
   onPlayIntervalReady?: (playInterval: ((startMs: number, endMs: number) => Promise<void>) | undefined) => void;
   onPauseReady?: (pause: (() => void) | undefined) => void;
+  /** Panel shown beside the video on wide screens and under the timeline otherwise. It never covers the player. */
+  sidePanel?: ReactNode;
 }
+
+const DEFAULT_VIDEO_RATIO = 16 / 9;
 
 const INITIAL_STATE: PlaybackState = {
   currentTimeMs: 0,
@@ -49,11 +53,14 @@ export function MeetingPlaybackView({
   onSeekToReady,
   onPlayIntervalReady,
   onPauseReady,
+  sidePanel,
 }: MeetingPlaybackViewProps) {
   const { t } = useT();
   const [state, setState] = useState<PlaybackState>(INITIAL_STATE);
   const [mediaReady, setMediaReady] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  // Width over height of the picture, so the player is exactly as wide as the video (no empty side bands).
+  const [videoRatio, setVideoRatio] = useState(DEFAULT_VIDEO_RATIO);
   const [currentManifest, setCurrentManifest] = useState(manifest);
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -186,13 +193,22 @@ export function MeetingPlaybackView({
     void refreshSource();
   }
 
+  function handleVideoMetadata(event: React.SyntheticEvent<HTMLVideoElement>) {
+    const { videoWidth, videoHeight } = event.currentTarget;
+    if (videoWidth > 0 && videoHeight > 0) setVideoRatio(videoWidth / videoHeight);
+  }
+
   const controlsDisabled = loading || !mediaReady || !currentManifest || Boolean(error);
   if (loading && !currentManifest) return <div className="meeting-playback-loading">
     <p role="status">{t("meeting:playbackLoading")}</p>
     <div aria-hidden="true"><Skeleton className="meeting-video-skeleton" radius="md" /><SkeletonLines lines={1} /></div>
+    {sidePanel}
   </div>;
   if (!currentManifest) {
-    return <p role={error ? "alert" : "status"}>{error ? t("meeting:playbackLoadFailed") : t("meeting:playbackUnavailable")}</p>;
+    return <>
+      <p role={error ? "alert" : "status"}>{error ? t("meeting:playbackLoadFailed") : t("meeting:playbackUnavailable")}</p>
+      {sidePanel}
+    </>;
   }
 
   const activeError = error ? t("meeting:playbackLoadFailed") : playbackError;
@@ -200,7 +216,8 @@ export function MeetingPlaybackView({
   const durationMs = state.durationMs;
 
   return (
-    <div className="meeting-player">
+    <div className={`meeting-player${sidePanel && (isMuxed || isSeparateWithVideo) ? " meeting-player--docked" : ""}`}
+      style={{ "--meeting-video-ratio": videoRatio } as CSSProperties}>
       {loading && <p role="status">{t("meeting:playbackMetadataLoading")}</p>}
       {activeError && <p role="alert">{activeError}</p>}
       {!hasPlayableMedia && <p role="status">{t("meeting:playbackUnavailable")}</p>}
@@ -210,6 +227,7 @@ export function MeetingPlaybackView({
           data-testid="playback-media"
           aria-label={t("meeting:recording")}
           playsInline
+          onLoadedMetadata={handleVideoMetadata}
           onError={handleMediaError}
         />
       ) : (
@@ -227,6 +245,7 @@ export function MeetingPlaybackView({
               aria-label={t("meeting:video")}
               muted
               playsInline
+              onLoadedMetadata={handleVideoMetadata}
               onError={handleMediaError}
             />
           )}
@@ -320,6 +339,7 @@ export function MeetingPlaybackView({
       <SpeakerTimeline turns={timelineTurns} durationMs={currentManifest.duration_seconds * 1000}
         currentTimeMs={state.currentTimeMs} keyPointTimes={keyPointTimes} disabled={controlsDisabled}
         onSeek={timeMs => controllerRef.current?.seekTo(timeMs)} />
+      {sidePanel}
     </div>
   );
 }

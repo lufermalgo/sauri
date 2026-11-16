@@ -4,7 +4,7 @@ import { notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
 import { stageLabel, type DetectedStage } from "../processing-estimate";
 import { ArrowLeft, Ellipsis, Pencil, Trash2, UsersRound } from "lucide-react";
-import { Button, ConfirmDialog, Icon, Popover, StatusBadge, Menu, MenuItem, useTooltip } from "./ui";
+import { ConfirmDialog, Icon, StatusBadge, Menu, MenuItem, useTooltip } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
 import { t, useT } from "../i18n";
@@ -33,10 +33,14 @@ const HINT_MS = 5000;
 export interface SpeakerReviewEntry {
   /** Speakers still waiting for a decision; the red dot shows while this is above zero. */
   pendingCount: number;
-  /** Some speakers were left without a name (only meaningful with no pending ones). */
-  hasUnnamed: boolean;
-  onReview: () => void;
+  /** Whether the speakers panel beside the video is open. */
+  open: boolean;
+  /** Opens or closes that panel: the icon is its toggle, with no step in between. */
+  onToggle: () => void;
 }
+
+/** `id` of the speakers panel, the target of the icon's `aria-controls`. */
+export const SPEAKER_DOCK_ID = "meeting-speakers-dock";
 
 /** "Grabada el … · Procesada el …" when the two dates differ by more than a minute; otherwise no tooltip. */
 function datesTooltip(recordedAt: string | null, createdAt: string | null): string | undefined {
@@ -74,6 +78,9 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
   const pencil = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef(false);
   const pencilTip = useTooltip(t("meeting:renameTitle"));
+  const speakersLabel = speakerReview && speakerReview.pendingCount > 0
+    ? t("meeting:speakersButtonPending", { count: speakerReview.pendingCount }) : t("meeting:speakersButton");
+  const speakersTip = useTooltip(speakerReview ? speakersLabel : "");
   // A newer title from outside (renamed in the library list) replaces the one saved here.
   useEffect(() => setRenamedTitle(null), [title]);
   useEffect(() => {
@@ -208,19 +215,14 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
         </div>
       </div>
       <div className="meeting-actions">
-        {speakerReview && <Popover className="meeting-speakers" label={speakerReview.pendingCount > 0
-          ? t("meeting:speakersButtonPending", { count: speakerReview.pendingCount }) : t("meeting:speakersButton")}
-          panelLabel={t("meeting:speakersPanel")} triggerClassName={`ui-icon-button ui-icon-button--ghost${
-            speakerReview.pendingCount > 0 ? " ui-icon-button--alert" : ""}`}
-          trigger={<Icon icon={UsersRound} />}>
-          {close => <>
-            <p className="meeting-speakers-message">{speakerReview.pendingCount > 0
-              ? t("meeting:pendingSpeakers", { count: speakerReview.pendingCount })
-              : speakerReview.hasUnnamed ? t("meeting:speakersSomeUnnamed") : t("meeting:speakersAllNamed")}</p>
-            <Button variant="secondary" size="sm" onClick={() => { close(); speakerReview.onReview(); }}>
-              {speakerReview.pendingCount > 0 ? t("meeting:reviewSpeakers") : t("meeting:editSpeakers")}</Button>
-          </>}
-        </Popover>}
+        {speakerReview && <span className="meeting-speakers">
+          <button type="button" className={`ui-icon-button ui-icon-button--ghost${speakerReview.pendingCount > 0 ? " ui-icon-button--alert" : ""}`}
+            aria-label={speakersLabel} aria-expanded={speakerReview.open} aria-controls={speakerReview.open ? SPEAKER_DOCK_ID : undefined}
+            {...speakersTip.triggerProps} onClick={() => { speakersTip.hide(); speakerReview.onToggle(); }}>
+            <Icon icon={UsersRound} />
+          </button>
+          {speakersTip.tooltip}
+        </span>}
         <MeetingDownloads {...downloads} title={renamedTitle ?? title} />
         <Menu label={t("meeting:moreActions")} tooltip trigger={<Icon icon={Ellipsis} />}
           triggerClassName="ui-icon-button ui-icon-button--quiet">

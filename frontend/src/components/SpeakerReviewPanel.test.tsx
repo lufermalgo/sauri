@@ -54,6 +54,13 @@ describe("avatar text", () => {
 });
 
 describe("SpeakerReviewPanel", () => {
+  it("marks only the speaker talking now as the current row", () => {
+    panel({ speakingId: "c" });
+    expect(article(2)).toHaveAttribute("aria-current", "true");
+    expect(article(2)).toHaveClass("meeting-review-item--speaking");
+    expect(article(0)).not.toHaveAttribute("aria-current");
+  });
+
   it("announces the pending and the complete state", () => {
     panel();
     expect(screen.getByText(t("speakerReview:pending"))).toBeInTheDocument();

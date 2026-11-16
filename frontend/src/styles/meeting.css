@@ -34,9 +34,7 @@
 .meeting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-1); min-width: 0; max-width: 100%; }
 .meeting-heading-row > .meeting-actions { flex: 0 0 auto; }
 .meeting-downloads { min-width: 0; }
-.meeting-speakers .ui-popover-panel { width: 20rem; max-width: calc(100vw - 2 * var(--ds-space-3)); }
-.meeting-speakers-message { margin: 0; color: var(--ds-fg); font-size: var(--ds-text-sm); overflow-wrap: anywhere; }
-.meeting-speakers .ui-button { justify-self: start; }
+.meeting-speakers { position: relative; flex: none; }
 .meeting-details { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--ds-space-3); color: var(--ds-fg-muted); font-size: var(--ds-text-xs); line-height: 1.4; }
 .meeting-header > p { margin: 0; padding: 0 var(--ds-space-3) var(--ds-space-2); font-size: var(--ds-text-sm); }
 
@@ -70,15 +68,15 @@
 @container meeting (max-width: 560px) {
   .meeting-processing .processing-stage { grid-template-columns: minmax(0, 1fr); }
   .meeting-heading-row > .meeting-actions { flex: 1 0 100%; }
-  .meeting-actions :is(.ui-menu-panel, .ui-tooltip, .ui-popover-panel) { left: 0; right: auto; }
+  .meeting-actions :is(.ui-menu-panel, .ui-tooltip) { left: 0; right: auto; }
 }
 @container meeting (min-width: 1100px) {
   .meeting-body { --ds-side-w: 400px; }
 }
 
 /* Player */
-.meeting-player { min-width: 0; }
-.meeting-player video { display: block; width: 100%; max-height: 42vh; border-radius: var(--ds-radius-sm); background: var(--ds-fill-strong); object-fit: contain; }
+.meeting-player { --meeting-video-ratio: 1.7778; --meeting-video-max-h: 42vh; min-width: 0; }
+.meeting-player video { display: block; width: 100%; max-height: var(--meeting-video-max-h); border-radius: var(--ds-radius-sm); background: var(--ds-fill-strong); object-fit: contain; }
 .meeting-player audio { max-width: 100%; }
 .meeting-player-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-1); margin-top: var(--ds-space-2); }
 .meeting-player-controls label { display: flex; align-items: center; min-width: 0; }
@@ -162,23 +160,60 @@
 .meeting-skeleton-turn > .ui-skeleton { flex-shrink: 0; }
 .meeting-skeleton-turn > div { display: grid; gap: var(--ds-space-1); flex: 1; min-width: 0; }
 
-/* Speaker identification rows, shown inside the review dialog. */
+/*
+ * Speakers panel. Never a dialog: it sits in the player card, after the timeline (so it cannot cover the video
+ * or its controls), and the video keeps playing while it is open. With room (below) it moves beside the
+ * video and takes the space the picture does not use; the player is then exactly as wide as the picture.
+ */
+.meeting-dock { min-width: 0; margin-top: var(--ds-space-3); border: 1px solid var(--ds-border); background: var(--ds-surface); }
+.meeting-dock-inner { display: flex; flex-direction: column; max-height: min(45vh, 26rem); min-height: 0; }
+.meeting-dock-header { display: flex; flex: none; align-items: center; justify-content: space-between; gap: var(--ds-space-2); box-sizing: border-box; min-height: 40px; padding: 0 var(--ds-space-1) 0 var(--ds-space-3); border-bottom: 1px solid var(--ds-border); }
+.meeting-dock-title { margin: 0; font-size: var(--ds-text-md); font-weight: var(--ds-weight-semibold); }
+.meeting-dock-close { position: relative; flex: none; }
+.meeting-dock-close .ui-tooltip { right: 0; left: auto; }
+.meeting-dock-body { flex: 1 1 auto; min-height: 0; padding: var(--ds-space-2) var(--ds-space-3) var(--ds-space-3); overflow-y: auto; overscroll-behavior: contain; }
+@media (prefers-reduced-motion: no-preference) {
+  .meeting-dock { animation: meeting-dock-in var(--ds-duration) var(--ds-ease); }
+}
+@keyframes meeting-dock-in { from { opacity: 0; } }
+/* With the panel open under the video, the picture gets less height so both stay in view. */
+.meeting-body--dock .meeting-player { --meeting-video-max-h: 34vh; }
+/* Next to the player the main column scrolls, so the video, the panel and the transcript all stay reachable. */
+@container meeting (min-width: 760px) and (max-width: 1199px) {
+  .meeting-body--dock .meeting-main { overflow-y: auto; overscroll-behavior: contain; }
+  .meeting-body--dock .meeting-transcript { flex: 1 0 18rem; }
+}
+@container meeting (min-width: 1200px) {
+  .meeting-body--dock .meeting-player--docked { --meeting-video-max-h: 42vh; }
+  .meeting-player--docked { display: grid; grid-template-columns: minmax(0, min(calc(var(--meeting-video-max-h) * var(--meeting-video-ratio)), calc(100% - 17rem - var(--ds-space-3)))) minmax(0, 1fr); column-gap: var(--ds-space-3); align-items: start; }
+  .meeting-player--docked > :not(.meeting-dock) { grid-column: 1; }
+  .meeting-player--docked video { aspect-ratio: var(--meeting-video-ratio); }
+  .meeting-player--docked > .meeting-dock { position: relative; grid-column: 2; grid-row: 1 / span 6; align-self: stretch; margin-top: 0; }
+  /* The panel takes the height of the video, controls and timeline; a long list scrolls inside it. */
+  .meeting-player--docked > .meeting-dock > .meeting-dock-inner { position: absolute; inset: 0; max-height: none; }
+}
+
+/* Speaker identification rows, shown in the panel beside the video. */
 .meeting-review-item { padding-block: var(--ds-space-2); border-top: 1px solid var(--ds-border); overflow-wrap: anywhere; }
 .meeting-review-item:first-of-type { padding-top: 0; border-top: 0; }
+/* The speaker talking at the current playback position, so a face on screen can be matched to a row. */
+.meeting-review-item--speaking { background: var(--ds-highlight); box-shadow: inset 3px 0 0 var(--meeting-speaker); }
 .meeting-review-item > p { margin: 0 0 var(--ds-space-2); padding-inline-start: calc(var(--ds-icon-button-sm) + var(--ds-space-2) + 28px + var(--ds-space-2)); font-size: var(--ds-text-xs); color: var(--ds-fg-muted); }
 /* One line per speaker: [play] [avatar] [name + status] [pencil]. */
 .meeting-review-row { display: flex; align-items: center; gap: var(--ds-space-2); min-height: 44px; min-width: 0; }
 .meeting-review-play, .meeting-review-edit-trigger { position: relative; flex: none; }
 .meeting-review-play .ui-tooltip { right: auto; left: 0; }
-/* Names can be long: let tooltips wrap inside the dialog instead of widening its scroll area. */
+/* Names can be long: let tooltips wrap inside the panel instead of widening its scroll area. */
 .meeting-review-play .ui-tooltip, .meeting-review-edit-trigger .ui-tooltip { width: max-content; max-width: min(16rem, 60vw); white-space: normal; }
 .meeting-review-identity { flex: 1; min-width: 0; }
 .meeting-review-name { margin: 0; overflow: hidden; font-size: var(--ds-text-md); font-weight: var(--ds-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
 .meeting-review-status { display: block; font-size: var(--ds-text-xs); color: var(--ds-fg-muted); }
+.meeting-review-edit + .meeting-review-status { margin-top: var(--ds-space-1); }
 .meeting-review-status--pending { color: var(--ds-warning); }
 .meeting-review-edit { position: relative; display: flex; align-items: center; }
 .meeting-review-input { padding-inline-end: calc(var(--ds-space-3) + var(--ds-space-6)); font: inherit; font-size: var(--ds-text-md); font-weight: var(--ds-weight-semibold); }
 .meeting-review-edit .meeting-review-spinner { position: absolute; right: var(--ds-space-3); display: inline-flex; color: var(--ds-fg-muted); }
+.meeting-speaker-review > p[role="status"]:not(.meeting-sr-only) { margin: 0 0 var(--ds-space-2); color: var(--ds-fg-muted); font-size: var(--ds-text-xs); }
 .meeting-review-field-error { margin: var(--ds-space-1) 0 0; font-size: var(--ds-text-xs); color: var(--ds-danger-text); }
 .meeting-review-suggest { padding-inline-start: calc(var(--ds-icon-button-sm) + var(--ds-space-2) + 28px + var(--ds-space-2)); }
 .meeting-review-chip { min-height: var(--ds-control-h-sm); padding: 0 var(--ds-space-3); font: inherit; font-size: var(--ds-text-xs); font-weight: var(--ds-weight-semibold); color: var(--ds-accent-soft-fg); background: var(--ds-accent-soft); border: 0; border-radius: var(--ds-radius-pill); cursor: pointer; }

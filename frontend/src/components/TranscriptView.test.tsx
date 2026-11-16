@@ -17,6 +17,7 @@ import { TranscriptView } from "./TranscriptView";
 import * as api from "../api";
 import { t } from "../i18n";
 import { processingFailureText, remainingText } from "../processing-estimate";
+import { createMemoryStorage } from "../test/storage";
 
 vi.mock("../api", () => ({
   getMeeting: vi.fn(),
@@ -32,6 +33,8 @@ vi.mock("../api", () => ({
 }));
 
 beforeEach(() => {
+  // The speakers panel remembers open or closed in localStorage: every test starts closed.
+  vi.stubGlobal("localStorage", createMemoryStorage());
   vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
   vi.mocked(api.listMeetings).mockResolvedValue([{ id: "r-1", title: "Synthetic meeting", createdAt: "2026-11-14T12:00:00Z" } as Awaited<ReturnType<typeof api.listMeetings>>[number]]);
   vi.mocked(api.getMeetingSummary).mockResolvedValue(null);
@@ -46,6 +49,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -331,13 +335,10 @@ function speakersIcon() {
   return screen.findByRole("button", { name: speakersName });
 }
 
-const reviewLink = { name: new RegExp(`^(${t("meeting:reviewSpeakers")}|${t("meeting:editSpeakers")})$`) };
-
-/** Opens the speaker dialog from the header icon: icon, popover link, modal. */
+/** Opens the speakers panel with one click on the header icon. */
 async function openReview() {
   fireEvent.click(await speakersIcon());
-  fireEvent.click(await screen.findByRole("button", reviewLink));
-  return screen.findByRole("dialog", { name: t("speakerReview:heading") });
+  return screen.findByRole("complementary", { name: t("speakerReview:heading") });
 }
 
 function reviewConflict(): Error {
@@ -580,7 +581,7 @@ describe("TranscriptView — speaker review", () => {
     view.unmount();
     loadTranscript();
     render(<TranscriptView meetingId="r-1" />);
-    await openReview();
+    // The panel was left open, so the new visit shows it again without a click.
     expect(await screen.findByRole("heading", { name: t("transcript:numberedSpeaker", { number: "1" }) })).toBeDefined();
     expect(load).toHaveBeenCalledTimes(2);
   });
@@ -1171,63 +1172,50 @@ describe("TranscriptView — redesigned meeting", () => {
     vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
   });
 
-  it("shows the speakers icon with a pending dot and keeps the panel out of the page until the dialog opens", async () => {
+  it("shows the speakers icon with a pending dot and keeps the panel out of the page until it is opened", async () => {
     const pending = review({ items: [review().items[0]], labelsBySpeakerId: { "speaker-1": "Speaker 1" } });
     vi.mocked(api.getSpeakerReview).mockResolvedValue(pending);
     render(<TranscriptView meetingId="r-1" />);
     const icon = await screen.findByRole("button", { name: t("meeting:speakersButtonPending", { count: 1 }) });
     expect(icon).toHaveClass("ui-icon-button--alert");
-    expect(icon).toHaveAttribute("aria-haspopup", "dialog");
+    expect(icon).not.toHaveAttribute("aria-haspopup");
     expect(icon).toHaveAttribute("aria-expanded", "false");
     expect(icon.closest(".meeting-header")).not.toBeNull();
-    // The wide banner is gone: neither its text nor its link is on the page until the popover opens.
-    expect(screen.queryByText(t("meeting:pendingSpeakers", { count: 1 }))).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", reviewLink)).not.toBeInTheDocument();
     expect(document.querySelector(".meeting-pending-speakers")).toBeNull();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: t("speakerReview:heading") })).not.toBeInTheDocument();
     expect(screen.queryByText(t("speakerReview:pendingState"))).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: t("speakerReview:nameFor", { label: t("transcript:numberedSpeaker", { number: "1" }) }) })).not.toBeInTheDocument();
   });
 
-  it("opens a popover with the pending message and the review link on click, not on hover", async () => {
+  it("opens the speakers panel with a single click as a docked region, not a modal, with no popover in between", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     const icon = await speakersIcon();
     fireEvent.mouseEnter(icon);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: t("speakerReview:heading") })).not.toBeInTheDocument();
     fireEvent.click(icon);
-    const popover = screen.getByRole("dialog", { name: t("meeting:speakersPanel") });
+    const dock = await screen.findByRole("complementary", { name: t("speakerReview:heading") });
     expect(icon).toHaveAttribute("aria-expanded", "true");
-    expect(within(popover).getByText(t("meeting:pendingSpeakers", { count: 2 }))).toBeVisible();
-    expect(within(popover).getByRole("button", { name: t("meeting:reviewSpeakers") })).toHaveFocus();
-  });
-
-  it("opens the speaker modal from the popover link and closes the popover", async () => {
-    vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" />);
-    fireEvent.click(await speakersIcon());
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:reviewSpeakers") }));
-    expect(await screen.findByRole("dialog", { name: t("speakerReview:heading") })).toHaveAttribute("aria-modal", "true");
-    expect(screen.queryByRole("dialog", { name: t("meeting:speakersPanel") })).not.toBeInTheDocument();
-    expect(screen.queryByText(t("meeting:pendingSpeakers", { count: 2 }))).not.toBeInTheDocument();
-  });
-
-  it.each([
-    ["Escape", (icon: HTMLElement) => fireEvent.keyDown(icon.parentElement!.querySelector("[role=dialog] button")!, { key: "Escape" })],
-    ["a click outside", () => fireEvent.mouseDown(document.body)],
-  ])("closes the popover with %s", async (name, close) => {
-    vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" />);
-    const icon = await speakersIcon();
-    fireEvent.click(icon);
-    expect(screen.getByRole("dialog", { name: t("meeting:speakersPanel") })).toBeInTheDocument();
-    close(icon);
+    expect(icon).toHaveAttribute("aria-controls", dock.id);
+    // The explanation is a one-line hint at the top of the panel while speakers are pending.
+    expect(within(dock).getByText(t("speakerReview:pending"))).toBeVisible();
+    expect(within(dock).getByText(t("speakerReview:pending"))).not.toHaveClass("meeting-sr-only");
+    expect(dock).not.toHaveAttribute("aria-modal");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.querySelector(".ui-modal-backdrop")).toBeNull();
+    // It sits in the player card, after the video controls, so it never covers them.
+    const player = document.querySelector(".meeting-player")!;
+    expect(player).toContainElement(dock);
+    expect(player.querySelector(".meeting-player-controls")!.compareDocumentPosition(dock)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // A second click on the icon closes it again.
+    fireEvent.click(icon);
+    expect(screen.queryByRole("complementary", { name: t("speakerReview:heading") })).not.toBeInTheDocument();
     expect(icon).toHaveAttribute("aria-expanded", "false");
-    if (name === "Escape") expect(icon).toHaveFocus();
+    expect(icon).toHaveFocus();
   });
 
-  it("opens the modal from the icon, hides the dot after the last speaker is named and keeps the dialog open", async () => {
+  it("opens the panel from the icon, hides the dot after the last speaker is named and keeps the panel open", async () => {
     const pending = review({ items: [review().items[0]], labelsBySpeakerId: { "speaker-1": "Speaker 1" } });
     vi.mocked(api.getSpeakerReview).mockResolvedValue(pending);
     vi.mocked(api.submitSpeakerDisposition).mockResolvedValue({
@@ -1236,7 +1224,6 @@ describe("TranscriptView — redesigned meeting", () => {
     });
     render(<TranscriptView meetingId="r-1" />);
     const dialog = await openReview();
-    expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(within(dialog).getByText(t("speakerReview:pendingState"))).toBeVisible();
     fireEvent.click(within(dialog).getByRole("button", { name: t("speakerReview:editName", { label: t("transcript:numberedSpeaker", { number: "1" }) }) }));
     const input = within(dialog).getByRole("textbox", { name: t("speakerReview:nameFor", { label: t("transcript:numberedSpeaker", { number: "1" }) }) });
@@ -1244,13 +1231,13 @@ describe("TranscriptView — redesigned meeting", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).toBeInTheDocument());
     expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).not.toHaveClass("ui-icon-button--alert");
-    // The dialog stays until the user closes it.
-    expect(screen.getByRole("dialog", { name: t("speakerReview:heading") })).toBeInTheDocument();
+    // The panel stays until the user closes it.
+    expect(screen.getByRole("complementary", { name: t("speakerReview:heading") })).toBeInTheDocument();
     expect(within(dialog).getByText(t("speakerReview:namedState"))).toBeVisible();
     expect(within(dialog).getByText("L")).toBeVisible();
     expect(within(dialog).getByText(t("speakerReview:complete"))).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: t("speakerReview:close") }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: t("speakerReview:heading") })).not.toBeInTheDocument();
     // The icon stays so the review can be reopened, and it takes the focus back.
     expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).toHaveFocus();
   });
@@ -1258,23 +1245,21 @@ describe("TranscriptView — redesigned meeting", () => {
   it.each([
     ["the close button", () => fireEvent.click(screen.getByRole("button", { name: t("speakerReview:close") }))],
     ["Escape", () => fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })],
-    ["a click on the backdrop", () => {
-      const backdrop = document.querySelector(".ui-modal-backdrop")!;
-      fireEvent.mouseDown(backdrop); fireEvent.click(backdrop);
-    }],
-  ])("closes the dialog with %s and returns focus to the speakers icon", async (_name, close) => {
+  ])("closes the panel with %s and returns focus to the speakers icon", async (_name, close) => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     const opener = await speakersIcon();
     await openReview();
-    expect(screen.getByRole("button", { name: t("speakerReview:close") })).toHaveFocus();
+    // Opened by the user: focus moves into the panel, to its first control.
+    expect(screen.getByRole("button", { name: t("speakerReview:close") })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: t("speakerReview:heading") })).toContainElement(document.activeElement as HTMLElement);
     close();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: t("speakerReview:heading") })).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
     expect(opener).toHaveAccessibleName(t("meeting:speakersButtonPending", { count: 2 }));
   });
 
-  it("stops an excerpt that is playing when the dialog closes", async () => {
+  it("stops an excerpt that is playing when the panel closes", async () => {
     vi.mocked(api.getTranscript).mockResolvedValue({
       ...transcript([]), presentation: "words",
       turns: [
@@ -1306,7 +1291,7 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(pause).toHaveBeenCalledTimes(1);
   });
 
-  it("does not touch playback when the dialog closes and no excerpt is playing", async () => {
+  it("does not touch playback when the panel closes and no excerpt is playing", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     const pause = vi.spyOn(PlaybackController.prototype, "pause").mockImplementation(() => {});
     render(<TranscriptView meetingId="r-1" />);
@@ -1317,7 +1302,7 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(pause).not.toHaveBeenCalled();
   });
 
-  it("keeps the icon without a dot when nobody is pending and says everyone is identified", async () => {
+  it("keeps the icon without a dot when nobody is pending, and the panel has no pending hint", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review({ status: "complete", labelsBySpeakerId: { "speaker-1": "Luc\u00eda", "speaker-2": "Known Speaker" }, items: [
       { ...review().items[0], currentLabel: "Luc\u00eda", disposition: "named" }, { ...review().items[1], disposition: "corrected" },
       { ...review().items[0], speakerId: "speaker-3", currentLabel: "Mario", disposition: "confirmed" },
@@ -1327,24 +1312,10 @@ describe("TranscriptView — redesigned meeting", () => {
     const icon = await screen.findByRole("button", { name: t("meeting:speakersButton") });
     expect(icon).not.toHaveClass("ui-icon-button--alert");
     expect(screen.queryByText(t("speakerReview:namedState"))).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(icon);
-    const popover = screen.getByRole("dialog", { name: t("meeting:speakersPanel") });
-    expect(within(popover).getByText(t("meeting:speakersAllNamed"))).toBeVisible();
-    expect(within(popover).getByRole("button", { name: t("meeting:editSpeakers") })).toBeVisible();
-  });
-
-  it("says some speakers were left unnamed when the review is done with generic labels", async () => {
-    vi.mocked(api.getSpeakerReview).mockResolvedValue(review({ status: "complete",
-      labelsBySpeakerId: { "speaker-1": "Speaker 1" }, items: [
-        { ...review().items[0], currentLabel: "Speaker 1", disposition: "confirmed" },
-        { ...review().items[1], disposition: "named" },
-      ] }));
-    render(<TranscriptView meetingId="r-1" />);
-    const icon = await screen.findByRole("button", { name: t("meeting:speakersButton") });
-    expect(icon).not.toHaveClass("ui-icon-button--alert");
-    fireEvent.click(icon);
-    expect(within(screen.getByRole("dialog", { name: t("meeting:speakersPanel") })).getByText(t("meeting:speakersSomeUnnamed"))).toBeVisible();
+    const dock = await screen.findByRole("complementary", { name: t("speakerReview:heading") });
+    expect(within(dock).getByText(t("speakerReview:complete"))).toHaveClass("meeting-sr-only");
+    expect(within(dock).queryByText(t("speakerReview:pending"))).not.toBeInTheDocument();
   });
 
   it("renders no speakers icon without review data, without speakers or when there was no speech", async () => {
@@ -1445,7 +1416,6 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(main.querySelector(".meeting-transcript > .meeting-transcript-body")).not.toBeNull();
     expect(body.querySelector(".meeting-side-column .meeting-sidebar [role=tablist]")).not.toBeNull();
     expect(document.querySelector(".meeting-notices")).toBeNull();
-    expect(screen.queryByText(t("meeting:pendingSpeakers", { count: 2 }))).not.toBeInTheDocument();
     expect(body.querySelector(".meeting-speaker-review")).toBeNull();
     expect(screen.queryByRole("region", { name: t("speakerReview:heading") })).not.toBeInTheDocument();
   });
@@ -1456,6 +1426,143 @@ describe("TranscriptView — redesigned meeting", () => {
     const follow = await screen.findByRole("checkbox", { name: t("meeting:followPlayback") });
     expect(follow.closest(".meeting-transcript-heading")).not.toBeNull();
     expect(follow.closest(".meeting-transcript-body")).toBeNull();
+  });
+});
+
+describe("TranscriptView — speakers panel beside the video", () => {
+  const storageKey = "sauri_speaker_dock_open";
+  const dockName = { name: t("speakerReview:heading") };
+  const first = t("transcript:numberedSpeaker", { number: "1" });
+
+  beforeEach(() => {
+    vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
+    vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
+  });
+
+  it("starts closed and remembers the choice per browser", async () => {
+    const { unmount } = render(<TranscriptView meetingId="r-1" />);
+    await openReview();
+    expect(localStorage.getItem(storageKey)).toBe("1");
+    unmount();
+    // A new visit opens the panel again, without taking focus from where the user is.
+    render(<TranscriptView meetingId="r-1" />);
+    const dock = await screen.findByRole("complementary", dockName);
+    expect(dock).not.toContainElement(document.activeElement as HTMLElement);
+    fireEvent.click(within(dock).getByRole("button", { name: t("speakerReview:close") }));
+    expect(localStorage.getItem(storageKey)).toBe("0");
+    cleanup();
+    render(<TranscriptView meetingId="r-1" />);
+    await screen.findByRole("region", { name: t("meeting:transcript") });
+    await speakersIcon();
+    expect(screen.queryByRole("complementary", dockName)).not.toBeInTheDocument();
+  });
+
+  it("still opens when the browser refuses to store the choice", async () => {
+    vi.stubGlobal("localStorage", { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } });
+    render(<TranscriptView meetingId="r-1" />);
+    await openReview();
+    expect(screen.getByRole("complementary", dockName)).toBeInTheDocument();
+  });
+
+  it("is a labelled region with no modal behavior: no backdrop, no inert page, no scroll lock", async () => {
+    render(<TranscriptView meetingId="r-1" />);
+    const dock = await openReview();
+    expect(dock.tagName).toBe("ASIDE");
+    expect(dock).not.toHaveAttribute("aria-modal");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(document.querySelector("[inert]")).toBeNull();
+    expect(document.body.style.overflow).not.toBe("hidden");
+    // The video and its controls stay reachable (not hidden from the accessibility tree).
+    expect(screen.getByRole("button", { name: t("meeting:resume") })).toBeVisible();
+    expect(screen.getByTestId("playback-audio")).toBeInTheDocument();
+  });
+
+  it("types a name without touching the video: Space and arrows stay in the field and nothing plays or seeks", async () => {
+    const play = vi.spyOn(PlaybackController.prototype, "resume").mockResolvedValue();
+    const pause = vi.spyOn(PlaybackController.prototype, "pause").mockImplementation(() => {});
+    const seek = vi.spyOn(PlaybackController.prototype, "seekTo").mockImplementation(() => {});
+    render(<TranscriptView meetingId="r-1" />);
+    const dock = await openReview();
+    await screen.findByTestId("playback-audio");
+    play.mockClear(); pause.mockClear(); seek.mockClear();
+    fireEvent.click(within(dock).getByRole("button", { name: t("speakerReview:editName", { label: first }) }));
+    const input = within(dock).getByRole("textbox", { name: t("speakerReview:nameFor", { label: first }) });
+    expect(input).toHaveFocus();
+    for (const key of [" ", "ArrowRight", "ArrowLeft", "k"]) fireEvent.keyDown(input, { key });
+    fireEvent.change(input, { target: { value: "Ana Maria" } });
+    expect(input).toHaveValue("Ana Maria");
+    expect(input).toHaveFocus();
+    expect(play).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
+    expect(seek).not.toHaveBeenCalled();
+    // Escape cancels the edit only; the panel stays open.
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("complementary", dockName)).toBeInTheDocument();
+  });
+
+  it("keeps the same video element while the panel opens and closes", async () => {
+    render(<TranscriptView meetingId="r-1" />);
+    const media = await screen.findByTestId("playback-audio");
+    const player = document.querySelector(".meeting-player")!;
+    await openReview();
+    expect(screen.getByTestId("playback-audio")).toBe(media);
+    expect(document.querySelector(".meeting-player")).toBe(player);
+    fireEvent.click(screen.getByRole("button", { name: t("speakerReview:close") }));
+    expect(screen.getByTestId("playback-audio")).toBe(media);
+  });
+
+  it("stacks under the timeline in the player card by default and docks only with a video picture", async () => {
+    render(<TranscriptView meetingId="r-1" />);
+    const dock = await openReview();
+    const player = document.querySelector(".meeting-player")!;
+    // Audio only: the stacked layout (after the timeline), never the side-by-side grid.
+    expect(player).not.toHaveClass("meeting-player--docked");
+    expect(player.lastElementChild).toBe(dock);
+    expect(document.querySelector(".meeting-body")).toHaveClass("meeting-body--dock");
+    cleanup();
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue({
+      ...playback, video_presence: "muxed",
+      muxed_video_source: { source_id: "m", url: "https://example.test/m.mp4", mime_type: "video/mp4" },
+    });
+    render(<TranscriptView meetingId="r-1" />);
+    await screen.findByTestId("playback-media");
+    expect(document.querySelector(".meeting-player")).toHaveClass("meeting-player--docked");
+    expect(document.querySelector(".meeting-player")!.lastElementChild).toBe(await screen.findByRole("complementary", dockName));
+  });
+
+  it("highlights the speaker talking at the current position", async () => {
+    vi.mocked(api.getTranscript).mockResolvedValue({
+      ...transcript([]), presentation: "words",
+      turns: [
+        { ...turn({ id: "w1", sequence: 1, startMs: 0, endMs: 9000 }), speakerId: "speaker-1", speakerLabel: "Speaker 1", wordCount: 2, hasAmbiguous: false },
+        { ...turn({ id: "w2", sequence: 2, startMs: 9000, endMs: 20000 }), speakerId: "speaker-2", speakerLabel: "Known Speaker", wordCount: 2, hasAmbiguous: false },
+      ],
+    });
+    render(<TranscriptView meetingId="r-1" />);
+    const dock = await openReview();
+    const rows = within(dock).getAllByRole("article");
+    expect(rows.some(row => row.hasAttribute("aria-current"))).toBe(false);
+    const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
+    const at = (seconds: number) => {
+      Object.defineProperty(audio, "currentTime", { value: seconds, configurable: true });
+      fireEvent.timeUpdate(audio);
+    };
+    at(12);
+    expect(rows[1]).toHaveAttribute("aria-current", "true");
+    expect(rows[0]).not.toHaveAttribute("aria-current");
+    at(3);
+    expect(rows[0]).toHaveAttribute("aria-current", "true");
+    expect(rows[1]).not.toHaveAttribute("aria-current");
+  });
+
+  it("does not render the panel when there is no speaker review", async () => {
+    localStorage.setItem(storageKey, "1");
+    vi.mocked(api.getSpeakerReview).mockRejectedValue(new Error("Error 404"));
+    render(<TranscriptView meetingId="r-1" />);
+    await screen.findByRole("region", { name: t("meeting:transcript") });
+    expect(screen.queryByRole("complementary", dockName)).not.toBeInTheDocument();
   });
 });
 
