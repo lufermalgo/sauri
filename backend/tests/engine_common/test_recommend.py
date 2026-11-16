@@ -11,8 +11,10 @@ RANK = {model.id: model.rank for model in CATALOG.models}
 MIN_RAM = {model.id: model.min_ram_gib for model in CATALOG.models}
 
 
-def hardware(memory_gib: float, arch: str = "arm64") -> HardwareProfile:
-    return HardwareProfile(arch=arch, memory_gib=memory_gib, cores=8, metal=arch == "arm64", system="Darwin")
+def hardware(memory_gib: float, arch: str = "arm64", macos_major: int = 26) -> HardwareProfile:
+    return HardwareProfile(
+        arch=arch, memory_gib=memory_gib, cores=8, metal=arch == "arm64", system="Darwin", macos_major=macos_major,
+    )
 
 
 def ids(profile: HardwareProfile) -> dict[str, str | None]:
@@ -22,7 +24,7 @@ def ids(profile: HardwareProfile) -> dict[str, str | None]:
 def test_8_gib_apple_silicon() -> None:
     result = recommend(hardware(8), CATALOG)
     assert ids(hardware(8)) == {
-        "transcription": "whisper-large-v3-turbo-q5_0",
+        "transcription": "parakeet-tdt-0.6b-v3-ultra-coreml",
         "summary": "qwen3.5-4b-q4_k_m",
         "diarization": "senko-coreml",
     }
@@ -31,6 +33,17 @@ def test_8_gib_apple_silicon() -> None:
     assert summary.reason_key == "reduced" and summary.status == "proposal"
     assert summary.reason_params["better_id"] == "qwen3.5-9b-q4_k_m" and summary.reason_params["limited_by"] == "memory"
     assert set(summary.warnings) == {"unmeasured_proposal", "lower_quality_expected", "suggest_external_provider"}
+
+
+def test_an_older_macos_gets_whisper_and_is_not_told_it_is_reduced() -> None:
+    result = recommend(hardware(16, macos_major=13), CATALOG)["transcription"]
+    assert result.model_id == "whisper-large-v3-turbo-q5_0" and result.reason_key == "fits"
+    assert "lower_quality_expected" not in result.warnings
+    assert recommend(hardware(16, macos_major=0), CATALOG)["transcription"].model_id == "whisper-large-v3-turbo-q5_0"
+
+
+def test_the_engine_a_model_needs_is_never_recommended_on_its_own() -> None:
+    assert "fluidaudio-cli" not in {rec.model_id for rec in recommend(hardware(16), CATALOG).values()}
 
 
 def test_16_and_24_gib_apple_silicon() -> None:

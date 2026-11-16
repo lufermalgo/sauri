@@ -4,10 +4,17 @@ import { t } from "./i18n";
 // Honest progress estimate for meeting processing. The backend reports stages, never a percentage,
 // so everything here is an estimate derived from measured speeds and elapsed wall-clock time.
 
+/** Which local engine transcribes: the estimate depends on it by an order of magnitude. */
+export type TranscriptionEngine = "parakeet" | "whisper";
+
 /** Measured on the owner's Mac; tune here when the engines change. */
 export const ESTIMATE_FACTORS = {
-  /** Transcription seconds per second of audio (54 min audio → ~313 s). */
-  transcriptionPerAudioSecond: 0.1,
+  /**
+   * Transcription seconds per second of audio, including download, conversion and the engine's start-up.
+   * Whisper: 60 min → 549 s (9 to 10 min per hour). Parakeet: 60 min → 20 s warm, ~70 s the very first time
+   * the Neural Engine compiles the model, so about 2 min per hour is promised.
+   */
+  transcriptionPerAudioSecond: { whisper: 0.16, parakeet: 0.03 } as const satisfies Record<TranscriptionEngine, number>,
   /** Speaker identification, roughly constant. */
   speakersSeconds: 15,
   /** Summary seconds per second of audio, with a floor (54 min → ~381 s). */
@@ -76,10 +83,12 @@ export function stageLabel(stage: DetectedStage, processState: string | undefine
   }
 }
 
-export function expectedStageSeconds(audioSeconds: number): Record<ActiveStage, number> {
+export function expectedStageSeconds(
+  audioSeconds: number, engine: TranscriptionEngine = "whisper",
+): Record<ActiveStage, number> {
   const audio = Math.max(0, audioSeconds);
   return {
-    transcription: ESTIMATE_FACTORS.transcriptionPerAudioSecond * audio,
+    transcription: ESTIMATE_FACTORS.transcriptionPerAudioSecond[engine] * audio,
     speakers: ESTIMATE_FACTORS.speakersSeconds,
     summary: Math.max(ESTIMATE_FACTORS.summaryMinSeconds, ESTIMATE_FACTORS.summaryPerAudioSecond * audio),
   };
@@ -88,6 +97,8 @@ export function expectedStageSeconds(audioSeconds: number): Record<ActiveStage, 
 export interface EstimateInput {
   stage: ActiveStage;
   audioSeconds: number | null | undefined;
+  /** Engine that transcribes; Whisper (the slower one) when unknown, so the page never promises too much. */
+  engine?: TranscriptionEngine;
   /** Seconds since the upload (meeting createdAt). */
   elapsedSinceUploadSeconds: number;
   /** Seconds since this page saw the stage begin; null when the page opened mid-stage. */
@@ -111,7 +122,7 @@ export interface ProcessingEstimate {
 export function estimateProgress(input: EstimateInput): ProcessingEstimate | null {
   const { stage, audioSeconds } = input;
   if (typeof audioSeconds !== "number" || !Number.isFinite(audioSeconds) || audioSeconds <= 0) return null;
-  const expected = expectedStageSeconds(audioSeconds);
+  const expected = expectedStageSeconds(audioSeconds, input.engine);
   const index = ACTIVE_STAGES.indexOf(stage);
   const total = ACTIVE_STAGES.reduce((sum, key) => sum + expected[key], 0);
   const before = ACTIVE_STAGES.slice(0, index).reduce((sum, key) => sum + expected[key], 0);

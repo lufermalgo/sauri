@@ -157,15 +157,15 @@ describe("ProcessingStatus — stepper", () => {
 describe("ProcessingStatus — estimate", () => {
   it("shows an estimated percentage, elapsed and remaining time that tick every second", () => {
     vi.useFakeTimers({ now: NOW });
-    // 54 min of audio: transcription ~324 s, speakers 15 s, summary ~389 s.
+    // 54 min of audio with Whisper (the engine until the page learns otherwise): transcription ~518 s, speakers 15 s, summary ~389 s.
     render(<ProcessingStatus {...base({ audioSeconds: 54 * 60, createdAt: ago(120) })} />);
     const bar = screen.getByRole("progressbar", { name: t("processing:transcribing") });
-    expect(bar).toHaveAttribute("aria-valuenow", "16");
+    expect(bar).toHaveAttribute("aria-valuenow", "13");
     expect(bar).toHaveAttribute("aria-valuemax", "100");
-    expect(screen.getByText(t("processing:percent", { value: 16 }))).toBeInTheDocument();
+    expect(screen.getByText(t("processing:percent", { value: 13 }))).toBeInTheDocument();
     expect(screen.getByText(t("processing:elapsed", { time: "2:00" }))).toBeInTheDocument();
-    expect(screen.getByText(remainingText(10))).toBeInTheDocument();
-    expect(screen.getByText(explainTranscription(54, 5))).toBeInTheDocument();
+    expect(screen.getByText(remainingText(13))).toBeInTheDocument();
+    expect(screen.getByText(explainTranscription(54, 9))).toBeInTheDocument();
     expect(screen.getByText(t("processing:leaveHint"))).toBeInTheDocument();
 
     act(() => { vi.advanceTimersByTime(5000); });

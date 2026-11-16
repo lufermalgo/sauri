@@ -22,7 +22,7 @@ import {
   verifyLocalModel,
 } from "../../api";
 import { Button, Card, ConfirmDialog, Icon, Menu, MenuItem, ProgressBar, Skeleton, StatusBadge } from "../ui";
-import { availabilityOf, formatBytes, formatMemory, processList } from "./engineLabels";
+import { availabilityOf, formatBytes, formatMemory, processList, resolvedDefault } from "./engineLabels";
 import "../../styles/engines.css";
 import { t, translateIfKnown, useT } from "../../i18n";
 
@@ -95,10 +95,12 @@ function reasonText(recommendation: LocalRecommendation, hardware: LocalHardware
     case "fits":
       return minimum > 0 ? t("engines:local.reasons.fitsMinimum", { memory, minimum }) : t("engines:local.reasons.fits", { memory });
     case "reduced": {
-      const limited = params.limited_by === "metal" ? t("engines:local.limits.metal") : t("engines:local.limits.memory");
+      const limited = params.limited_by === "metal" ? t("engines:local.limits.metal")
+        : params.limited_by === "macos" ? t("engines:local.limits.macos") : t("engines:local.limits.memory");
       return t("engines:local.reasons.reduced", { memory, better: String(params.better_id ?? ""), limit: limited });
     }
     case "no_local_model":
+      if (params.needs === "macos") return t("engines:local.reasons.noModelMacos");
       return params.needs === "metal" ? t("engines:local.reasons.noModelMetal") : t("engines:local.reasons.noModelMemory", { memory, minimum });
     default:
       return t("engines:local.reasons.generic");
@@ -137,9 +139,11 @@ interface LocalModelCardProps {
   pollIntervalMs?: number;
 }
 
-/** The choice key `onUse` hands back: the catalog's default model is `local:default`, any other `local:<id>`. */
-export function choiceKeyOf(model: LocalModel): string {
-  return model.default ? LOCAL_DEFAULT_MODEL : `local:${model.id}`;
+/** The choice key `onUse` hands back: the model `local:default` runs now (the preferred one when it is ready, else
+ * the catalog default) is `local:default`, any other `local:<id>`. */
+export function choiceKeyOf(model: LocalModel, models: readonly LocalModel[] = [model]): string {
+  const resolved = resolvedDefault(models, model.process);
+  return (resolved ? resolved.id === model.id : model.default) ? LOCAL_DEFAULT_MODEL : `local:${model.id}`;
 }
 
 /** "En este equipo" for one process: the computer in plain words and, for each local option, whether it is
@@ -391,7 +395,8 @@ export function LocalModelCard({
             busyModel={busyModel}
             choosing={choosing}
             externalActive={selection.external}
-            onUse={(model) => onUse(choiceKeyOf(model))}
+            savedKey={selection.key}
+            onUse={(model) => onUse(choiceKeyOf(model, load.list.models))}
             onInstall={(model) => start(model, "install")}
             onVerify={(model) => start(model, "verify")}
             onRemove={setPendingRemoval}
@@ -482,6 +487,8 @@ interface ModelListProps {
   busyModel: string | null;
   choosing: boolean;
   externalActive: boolean;
+  /** The saved choice (`local:default` or `local:<id>`): what is active follows it, not the host's guess. */
+  savedKey: string;
   onUse: (model: LocalModel) => void;
   onInstall: (model: LocalModel) => void;
   onVerify: (model: LocalModel) => void;
@@ -510,14 +517,16 @@ function ModelList(props: ModelListProps) {
 
 type RowProps = ModelListProps & { model: LocalModel };
 
-function stateOf(model: LocalModel, running: LocalJob | null, externalActive: boolean): RowState {
+function stateOf(model: LocalModel, running: LocalJob | null, externalActive: boolean, savedKey: string): RowState {
   if (running?.type === "install") return "installing";
   if (running?.type === "verify" || model.verifying === true) return "verifying";
   const availability = availabilityOf(model);
   if (availability === "available") return "available";
   if (availability === "present_unverified") return model.state === "corrupt" ? "corrupt" : "unverified";
-  const active = model.active ?? model.in_use_by.includes(model.process);
-  return active && !externalActive ? "active" : "installed";
+  // A pinned model (`local:<id>`) is the active one; with `local:default` the host says which one it resolves to.
+  const pinned = savedKey.startsWith("local:") && savedKey !== LOCAL_DEFAULT_MODEL;
+  const active = pinned ? savedKey === `local:${model.id}` : (model.active ?? model.in_use_by.includes(model.process));
+  return active && !externalActive && model.needs_ready !== false ? "active" : "installed";
 }
 
 function unverifiedText(model: LocalModel): string {
@@ -533,12 +542,19 @@ function removalBlock(model: LocalModel): string | null {
   return model.in_use_by.length > 0 ? t("engines:local.removeBlocked", { list: processList(model.in_use_by) }) : t("engines:local.removeBlockedGeneric");
 }
 
+/** The plain-language note of a model (key of `engines:local.modelNotes`), by the engine that runs it. */
+function modelNoteKey(model: LocalModel): "parakeet" | "whisper" | null {
+  if (model.engine === "fluidaudio" && model.kind === "model") return "parakeet";
+  if (model.engine === "whisper.cpp" && model.kind === "model" && model.process === "transcription") return "whisper";
+  return null;
+}
+
 function ModelRow(props: RowProps) {
   const { t } = useT();
-  const { process, model, job, cancelling, busyModel, choosing, externalActive, onUse, onInstall, onVerify, onRemove, onCancel } = props;
+  const { process, model, job, cancelling, busyModel, choosing, externalActive, savedKey, onUse, onInstall, onVerify, onRemove, onCancel } = props;
   const jobRunning = job?.state === "running";
   const running = jobRunning && job.model_id === model.id ? job : null;
-  const state = stateOf(model, running, externalActive);
+  const state = stateOf(model, running, externalActive, savedKey);
   const blocked = jobRunning || busyModel !== null;
   const managed = model.kind === "managed_engine" || model.state === "managed" || model.install?.method === "managed_command";
   const name = (model.kind === "managed_engine" && translateIfKnown(`engines:local.managedTitle.${process}`)) || model.id;
@@ -550,6 +566,11 @@ function ModelRow(props: RowProps) {
   const noRoom = model.install?.fits_on_disk === false;
   const removal = removalBlock(model);
   const inUse = model.in_use ?? model.in_use_by.length > 0;
+  const siblings = props.models;
+  const noteKey = modelNoteKey(model);
+  const isFallback = model.default && siblings.some((other) => other.preferred === true);
+  const engineEntry = model.needs ? siblings.find((other) => other.id === model.needs) : undefined;
+  const missingEngine = installed && model.needs_ready === false;
 
   return (
     <li
@@ -566,6 +587,7 @@ function ModelRow(props: RowProps) {
           <StatusBadge tone={STATE_TONE[state]} dot={state === "active"}>{t(`engines:local.states.${state}`)}</StatusBadge>
           {model.location === "legacy" && <StatusBadge tone="neutral">{t("engines:local.manual")}</StatusBadge>}
           {model.recommended && <StatusBadge tone="success">{t("engines:local.recommended")}</StatusBadge>}
+          {isFallback && <StatusBadge tone="neutral">{t("engines:local.fallbackBadge")}</StatusBadge>}
           {model.kind !== "managed_engine" && (
             <StatusBadge tone={model.status === "measured" ? "success" : "progress"}>{t(`engines:local.marks.${model.status}`)}</StatusBadge>
           )}
@@ -574,6 +596,15 @@ function ModelRow(props: RowProps) {
           {managed && installed ? t("engines:local.managedInstalled") : (model.min_ram_gib > 0 ? t("engines:local.descriptionMinRam", { engine: model.engine, minRam: model.min_ram_gib }) : t("engines:local.description", { engine: model.engine }))}
           {installed && model.verified_by && ` ${t(`engines:local.verifiedBy.${model.verified_by}`)}`}
         </p>
+        {noteKey && <p className="settings-help">{t(`engines:local.modelNotes.${noteKey}`)}</p>}
+        {missingEngine && (
+          <p className="settings-help">
+            {t("engines:local.needsEngine", { command: `bash ${engineEntry?.managed_by ?? engineEntry?.install?.managed_by ?? "scripts/engines/install-parakeet-engine.sh"}` })}
+          </p>
+        )}
+        {model.license && model.attribution && (
+          <p className="settings-help">{t("engines:local.license", { license: model.license, attribution: model.attribution })}</p>
+        )}
         {(state === "unverified" || state === "corrupt") && <p className="settings-help">{unverifiedText(model)}</p>}
         {inUse && model.in_use_by.length > 0 && state !== "available" && (
           <p className="settings-help">{t("engines:local.inUse", { list: processList(model.in_use_by) })}</p>
@@ -586,7 +617,7 @@ function ModelRow(props: RowProps) {
 
       {!running && (
         <div className="engines-local-row-actions">
-          {state === "installed" && (
+          {state === "installed" && !missingEngine && (
             <Button variant="secondary" size="sm" aria-label={t("engines:local.useLabel", { name })} disabled={choosing || blocked} onClick={() => onUse(model)}>
               {t("engines:local.use")}
             </Button>

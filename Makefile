@@ -24,13 +24,15 @@ worktree-rm:
 	@test -n "$(BRANCH)" || (echo "Uso: make worktree-rm BRANCH=feature/issue-12-desc" && exit 1)
 	scripts/dev/remove-worktree.sh $(BRANCH)
 
-## Instalar motores nativos en un venv fuera del repositorio (whisper.cpp + Senko/CoreML).
+## Instalar motores nativos en un venv fuera del repositorio (whisper.cpp + Senko/CoreML + Parakeet si hay Swift).
 engines-install:
 	bash scripts/engines/ensure-native-engine-credentials.sh
 	SAURI_ASR_VENV="$(SAURI_NATIVE_VENV)" NATIVE_PYTHON311="$(NATIVE_PYTHON311)" bash scripts/engines/install-asr-engine.sh
 	NATIVE_PYTHON311="$(NATIVE_PYTHON311)" bash scripts/engines/install-diar-engine.sh
 	bash scripts/engines/install-llm-engine.sh
 	bash scripts/engines/install-host-engine.sh
+	@# Parakeet (fast transcription) needs the Swift toolchain; without it (exit 3) Whisper keeps transcribing.
+	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash scripts/engines/install-parakeet-engine.sh || [ $$? -eq 3 ]
 
 ## Iniciar/detener/consultar los servidores nativos; cada uno usa su PID exacto.
 engines-up:

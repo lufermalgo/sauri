@@ -788,15 +788,15 @@ describe("RecordingLibrary processing progress", () => {
 
   it("shows the stage and an estimated percentage for a recording in transcription", async () => {
     const now = Date.now();
-    // 20 min of audio: transcription 120 s, speakers 15 s, summary 144 s; 60 s in → ≈ 22 %.
+    // 20 min of audio with Whisper: transcription 192 s, speakers 15 s, summary 144 s; 60 s in → ≈ 17 %.
     const { view } = await openWith([meeting({
       processState: ProcessState.Transcribing, durationSeconds: 1200,
       createdAt: new Date(now - 60_000).toISOString(),
     })]);
     const progress = view.container.querySelector(".library-item-progress") as HTMLElement;
-    expect(progress.textContent).toBe(t("processing:libraryProgress", { stage: t("processing:steps.transcription"), percent: 22 }));
+    expect(progress.textContent).toBe(t("processing:libraryProgress", { stage: t("processing:steps.transcription"), percent: 17 }));
     const bar = within(progress).getByRole("progressbar", { name: t("processing:libraryProgressLabel") });
-    expect(bar.getAttribute("aria-valuenow")).toBe("22");
+    expect(bar.getAttribute("aria-valuenow")).toBe("17");
   });
 
   it("says it is taking longer instead of a frozen percentage", async () => {

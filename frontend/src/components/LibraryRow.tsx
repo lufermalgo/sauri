@@ -5,6 +5,7 @@ import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { meetingDate, type LibraryDateField } from "../library-query";
 import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
+import { useTranscriptionEngine } from "../useTranscriptionEngine";
 import { Icon, Menu, MenuItem, MenuSeparator, ProgressBar, StatusBadge, useTooltip } from "./ui";
 import { t, useT } from "../i18n";
 import { formatDate } from "../i18n/format";
@@ -76,11 +77,12 @@ export type RowDownloadKind = "transcript" | "summary" | "media";
 /** Compact estimate for rows in transcription; nothing when there is no honest estimate. */
 function RowProgress({ meeting }: { meeting: MeetingListItem }) {
   const { t } = useT();
+  const engine = useTranscriptionEngine();
   if (meeting.processState !== ProcessState.Queued && meeting.processState !== ProcessState.Transcribing) return null;
   const elapsed = secondsSince(meeting.createdAt, Date.now());
   if (elapsed === null) return null;
   const estimate = estimateProgress({
-    stage: "transcription", audioSeconds: meeting.durationSeconds, elapsedSinceUploadSeconds: elapsed,
+    stage: "transcription", audioSeconds: meeting.durationSeconds, engine, elapsedSinceUploadSeconds: elapsed,
   });
   if (!estimate) return null;
   const stage = t("processing:steps.transcription");

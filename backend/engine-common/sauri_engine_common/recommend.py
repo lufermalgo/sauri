@@ -9,7 +9,8 @@ eligible candidate with the highest ``rank`` wins; ``auxiliary`` entries are nev
 =============  ==========================================  =====================================
 process        rule                                        otherwise
 =============  ==========================================  =====================================
-transcription  turbo q5_0 (rank 2) if Metal and RAM >= 8   small q5_1 (rank 1) if RAM >= 4,
+transcription  Parakeet ultra (rank 3) if Metal, macOS 14+ turbo q5_0 (rank 2) if Metal and RAM
+               and RAM >= 8                                >= 8; small q5_1 (rank 1) if RAM >= 4,
                                                            warning ``no_metal_slow`` without Metal
 summary        9B (rank 2) if RAM >= 16;                   no local model below 8 GiB
                4B (rank 1) if RAM >= 8
@@ -18,14 +19,15 @@ diarization    Senko if Metal                              no local model
 
 Examples (Apple silicon, Metal available):
 
-* 8 GiB: transcription -> turbo q5_0 (fits); summary -> 4B (``reduced``; warnings
+* 8 GiB: transcription -> Parakeet ultra (fits); summary -> 4B (``reduced``; warnings
   ``unmeasured_proposal``, ``lower_quality_expected``, ``suggest_external_provider``);
   diarization -> Senko.
-* 16 GiB: transcription -> turbo q5_0; summary -> 9B (fits); diarization -> Senko.
+* 16 GiB: transcription -> Parakeet ultra; summary -> 9B (fits); diarization -> Senko.
 * 24 GiB: same as 16 GiB (the catalog has nothing larger than the 9B).
 
 Without Metal (for example an Intel Mac) transcription falls back to small q5_1 with the warning
-``no_metal_slow`` and diarization has no local model.
+``no_metal_slow`` and diarization has no local model. A ``preferred`` model that the hardware cannot run
+(Parakeet on macOS 13) never makes the answer ``reduced``: it is the faster choice, not the better one.
 
 Every result carries ``reason_key`` plus ``reason_params`` (a copy key and its parameters, never a
 sentence) and ``status``, the catalog mark ``measured`` (the team measured it) or ``proposal``.
@@ -41,6 +43,8 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal, cast
+
+from sauri_engine_common.model_bundle import MAX_BUNDLE_FILES, BundleFile, bundle_digest, bundle_size, safe_relative
 
 Process = Literal["transcription", "summary", "diarization"]
 Kind = Literal["model", "auxiliary", "managed_engine"]
@@ -72,6 +76,7 @@ class HardwareProfile:
     metal: bool
     disk_free_bytes: int = 0
     system: str = ""
+    macos_major: int = 0  # 0 when unknown or not macOS
 
     def has(self, capability: str) -> bool:
         return capability == "metal" and self.metal
@@ -94,6 +99,19 @@ class CatalogModel:
     status: Status
     default: bool
     managed_by: str | None = None
+    # Several files in a directory (``file`` names the directory; ``size`` and ``sha256`` describe the listing).
+    files: tuple[BundleFile, ...] = ()
+    # ``local:default`` resolves to this model when it is installed and healthy; the ``default`` model is the fallback.
+    preferred: bool = False
+    # Id of the managed engine this model cannot run without.
+    needs: str | None = None
+    min_macos: int | None = None
+    license: str | None = None
+    attribution: str | None = None
+
+    @property
+    def bundle(self) -> bool:
+        return bool(self.files)
 
     @property
     def downloadable(self) -> bool:
@@ -134,6 +152,22 @@ def _require(condition: bool, field_name: str) -> None:
         raise CatalogError(f"invalid_catalog_{field_name}")
 
 
+def _parse_bundle(raw: Any) -> tuple[BundleFile, ...]:
+    if raw is None:
+        return ()
+    _require(isinstance(raw, list) and 0 < len(raw) <= MAX_BUNDLE_FILES, "files")
+    files: list[BundleFile] = []
+    for item in raw:
+        _require(isinstance(item, dict), "files")
+        path, size, sha256 = item.get("path"), item.get("size"), item.get("sha256")
+        _require(isinstance(path, str) and safe_relative(path), "files")
+        _require(type(size) is int and size > 0, "files")
+        _require(isinstance(sha256, str) and _SHA256.fullmatch(sha256) is not None, "files")
+        files.append(BundleFile(path, size, sha256))
+    _require(len({f.path for f in files}) == len(files), "files")
+    return tuple(files)
+
+
 def _parse_model(raw: Any) -> CatalogModel:
     _require(isinstance(raw, dict), "entry")
     entry: dict[str, Any] = raw
@@ -155,13 +189,23 @@ def _parse_model(raw: Any) -> CatalogModel:
     _require(entry.get("status") in STATUSES, "status")
     _require(type(entry.get("default")) is bool, "default")
     file, size, sha256, managed_by = entry.get("file"), entry.get("size"), entry.get("sha256"), entry.get("managed_by")
+    bundle = _parse_bundle(entry.get("files"))
     if kind == "managed_engine":
         _require(isinstance(managed_by, str) and managed_by != "", "managed_by")
-        _require(file is None and size is None and sha256 is None, "managed_files")
+        _require(file is None and size is None and sha256 is None and not bundle, "managed_files")
     else:
         _require(isinstance(file, str) and _FILE.fullmatch(file) is not None and ".." not in file, "file")
         _require(type(size) is int and size > 0, "size")
         _require(isinstance(sha256, str) and _SHA256.fullmatch(sha256) is not None, "sha256")
+        if bundle:
+            _require(kind == "model" and size == bundle_size(bundle) and sha256 == bundle_digest(bundle), "bundle")
+    preferred, needs, min_macos = entry.get("preferred", False), entry.get("needs"), entry.get("min_macos")
+    _require(type(preferred) is bool and (not preferred or kind == "model"), "preferred")
+    _require(needs is None or (isinstance(needs, str) and _ID.fullmatch(needs) is not None), "needs")
+    _require(min_macos is None or (type(min_macos) is int and min_macos > 0), "min_macos")
+    licence, attribution = entry.get("license"), entry.get("attribution")
+    _require(licence is None or (isinstance(licence, str) and 0 < len(licence) <= 64), "license")
+    _require(attribution is None or (isinstance(attribution, str) and 0 < len(attribution) <= 1024), "attribution")
     return CatalogModel(
         id=cast(str, model_id),
         process=cast(Process, process),
@@ -178,6 +222,12 @@ def _parse_model(raw: Any) -> CatalogModel:
         status=entry["status"],
         default=entry["default"],
         managed_by=managed_by,
+        files=bundle,
+        preferred=preferred,
+        needs=needs,
+        min_macos=min_macos,
+        license=licence,
+        attribution=attribution,
     )
 
 
@@ -192,6 +242,13 @@ def parse_catalog(raw: Any) -> Catalog:
     for process in PROCESSES:
         defaults = [model for model in models if model.process == process and model.kind == "model" and model.default]
         _require(len(defaults) <= 1, "default")
+        preferred = [model for model in models if model.process == process and model.preferred]
+        _require(len(preferred) <= 1, "preferred")
+    ids = {model.id: model for model in models}
+    for model in models:
+        if model.needs is not None:
+            dependency = ids.get(model.needs)
+            _require(dependency is not None and dependency.kind == "managed_engine", "needs")
     return Catalog(version=CATALOG_VERSION, models=models)
 
 
@@ -207,12 +264,19 @@ def _blocker(model: CatalogModel, hardware: HardwareProfile) -> str | None:
         return "memory"
     if any(not hardware.has(capability) for capability in model.requires):
         return "metal"
+    if model.min_macos is not None and hardware.macos_major < model.min_macos:
+        return "macos"
     return None
 
 
 def _recommend_process(process: Process, hardware: HardwareProfile, models: Iterable[CatalogModel]) -> Recommendation:
+    models = list(models)
+    dependencies = {model.needs for model in models if model.needs}
     candidates = sorted(
-        (model for model in models if model.process == process and model.kind != "auxiliary"),
+        (
+            model for model in models
+            if model.process == process and model.kind != "auxiliary" and model.id not in dependencies
+        ),
         key=lambda model: (-model.rank, model.id),
     )
     params: dict[str, Any] = {"memory_gib": hardware.memory_gib}
@@ -221,7 +285,7 @@ def _recommend_process(process: Process, hardware: HardwareProfile, models: Iter
         if not candidates:
             return Recommendation(process, None, None, "no_local_model", params)
         blockers = {_blocker(model, hardware) for model in candidates}
-        params["needs"] = "metal" if blockers == {"metal"} else "memory"
+        params["needs"] = next(iter(blockers)) if len(blockers) == 1 else "memory"
         params["min_ram_gib"] = min(model.min_ram_gib for model in candidates)
         advice = ("suggest_external_provider",) if process == "summary" else ()
         return Recommendation(process, None, None, "no_local_model", params, advice)
@@ -230,12 +294,14 @@ def _recommend_process(process: Process, hardware: HardwareProfile, models: Iter
     warnings: list[str] = []
     if chosen.status == "proposal":
         warnings.append("unmeasured_proposal")
-    if chosen is candidates[0]:
+    # A preferred model the hardware cannot run is the faster choice, not the better one: it never "reduces" the answer.
+    top = next(model for model in candidates if not (model.preferred and _blocker(model, hardware) is not None))
+    if chosen is top:
         reason = "fits"
     else:
         reason = "reduced"
-        params["better_id"] = candidates[0].id
-        params["limited_by"] = _blocker(candidates[0], hardware)
+        params["better_id"] = top.id
+        params["limited_by"] = _blocker(top, hardware)
         warnings.append("lower_quality_expected")
         if process == "summary":
             warnings.append("suggest_external_provider")

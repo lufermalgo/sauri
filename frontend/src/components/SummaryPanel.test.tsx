@@ -127,9 +127,9 @@ describe("SummaryPanel", () => {
       const bar = screen.getByRole("progressbar", { name: t("processing:summarizing") });
       expect(bar).toHaveAttribute("aria-valuemin", "0");
       expect(bar).toHaveAttribute("aria-valuemax", "100");
-      expect(bar).toHaveAttribute("aria-valuenow", "51");
-      expect(bar).toHaveAttribute("aria-valuetext", t("processing:percent", { value: 51 }));
-      expect(screen.getByText(t("processing:percent", { value: 51 }))).toBeVisible();
+      expect(bar).toHaveAttribute("aria-valuenow", "61");
+      expect(bar).toHaveAttribute("aria-valuetext", t("processing:percent", { value: 61 }));
+      expect(screen.getByText(t("processing:percent", { value: 61 }))).toBeVisible();
       expect(screen.getByText(t("processing:elapsed", { time: "25:00" }))).toBeVisible();
       expect(screen.getByText(remainingText(6))).toBeVisible();
       expect(screen.getByText(explainSummary(6))).toBeVisible();

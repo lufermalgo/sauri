@@ -245,6 +245,8 @@ export interface LocalHardware {
   cores: number;
   /** Metal acceleration: Apple silicon on macOS. */
   metal: boolean;
+  /** Major version of macOS; 0 when unknown. */
+  macos_major?: number;
   disk_free_bytes: number;
 }
 
@@ -301,6 +303,17 @@ export interface LocalModel {
   default: boolean;
   /** Command that installs a managed engine. */
   managed_by: string | null;
+  /** `local:default` means this model when it is installed and its engine is ready; the `default` model is the fallback. */
+  preferred?: boolean;
+  /** Id of the managed engine this model cannot run without (Parakeet needs the FluidAudio CLI). */
+  needs?: string | null;
+  /** False while the engine named in `needs` is not installed. */
+  needs_ready?: boolean;
+  /** Oldest macOS (major version) that can run it. */
+  min_macos?: number | null;
+  /** SPDX id of the license and the attribution text it requires. */
+  license?: string | null;
+  attribution?: string | null;
   recommended: boolean;
   in_use_by: EngineProcess[];
   state: LocalModelState;

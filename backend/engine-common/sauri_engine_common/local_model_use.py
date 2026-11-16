@@ -22,6 +22,13 @@ A gateway calls ``select_local_model`` once per request, before it touches any e
   from the catalog) is refused; without any manifest the size-only fallback above applies. A manifest
   without ``location`` (written before adoption existed) means the models directory.
 
+* A model made of several files (``files`` in the catalog, a CoreML bundle) lives in a directory named
+  after ``file``. Its manifest records the bundle digest and, per file, the size and ``mtime_ns``; the
+  gateway stats every file and accepts the directory only when all of them agree (``model_bundle``).
+* ``select_preferred`` is what ``local:default`` means for a process that has a ``preferred`` model: that
+  model when it is installed (and the managed engine it ``needs`` is ready), otherwise ``None``, and the
+  gateway keeps its built-in default model. An explicit ``local:<id>`` never falls back to another model.
+
 Errors are ``LocalModelError`` with an HTTP status and a stable code, never a path or a value.
 """
 
@@ -30,10 +37,12 @@ from __future__ import annotations
 import json
 import os
 import stat
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from sauri_engine_common.model_bundle import manifest_vouches, snapshot
 from sauri_engine_common.recommend import Catalog, CatalogError, CatalogModel, Process, load_catalog
 from sauri_engine_common.route import LOCAL_KIND, RouteError, decode_route
 
@@ -90,6 +99,7 @@ class LocalSelection:
 
     model_id: str
     path: Path
+    engine: str = ""  # the catalog ``engine`` of the model (``whisper.cpp``, ``fluidaudio``, ``llama.cpp``)
 
 
 def load_runtime_catalog() -> Catalog:
@@ -134,8 +144,20 @@ def manifest_matches(record: dict[str, Any] | None, info: os.stat_result, entry:
     )
 
 
+def _locate_bundle(entry: CatalogModel, models_dir: Path) -> Path:
+    assert entry.file is not None
+    final = models_dir / entry.file
+    found = snapshot(final, entry.files)
+    record = read_manifest(final.with_name(final.name + MANIFEST_SUFFIX))
+    if found is not None and entry.sha256 is not None and manifest_vouches(record, found, entry.sha256):
+        return final
+    raise LocalModelError(409, "model_not_installed" if found is None else "model_not_verified")
+
+
 def _locate(entry: CatalogModel, models_dir: Path, legacy_default: Path | None) -> Path:
     assert entry.file is not None
+    if entry.bundle:
+        return _locate_bundle(entry, models_dir)
     final = models_dir / entry.file
     info = _regular(final)
     record = read_manifest(final.with_name(final.name + MANIFEST_SUFFIX))
@@ -182,4 +204,31 @@ def select_local_model(
     entry = (catalog or load_runtime_catalog()).get(model_id)
     if entry is None or entry.process != process or entry.kind != "model":
         raise LocalModelError(422, "unknown_model")
-    return LocalSelection(entry.id, _locate(entry, models_dir or default_models_dir(), legacy_default))
+    return LocalSelection(entry.id, _locate(entry, models_dir or default_models_dir(), legacy_default), entry.engine)
+
+
+def select_preferred(
+    *,
+    process: Process,
+    ready: Callable[[CatalogModel], bool] = lambda _entry: True,
+    models_dir: Path | None = None,
+    catalog: Catalog | None = None,
+) -> LocalSelection | None:
+    """The ``preferred`` model of ``process`` when it is installed and ``ready(entry)``; else ``None``.
+
+    Never raises for a missing or unverified model: ``local:default`` must keep working with the built-in model.
+    """
+    try:
+        loaded = catalog or load_runtime_catalog()
+    except LocalModelError:
+        return None
+    for entry in loaded.models:
+        if entry.process != process or entry.kind != "model" or not entry.preferred or entry.file is None:
+            continue
+        if not ready(entry):
+            continue
+        try:
+            return LocalSelection(entry.id, _locate(entry, models_dir or default_models_dir(), None), entry.engine)
+        except LocalModelError:
+            continue
+    return None

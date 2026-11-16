@@ -1,4 +1,10 @@
-"""Host-native ASR service using whisper.cpp on Metal."""
+"""Host-native ASR service: Parakeet (Core ML, the default when installed) or whisper.cpp on Metal.
+
+``local:default`` resolves to the catalog's preferred model (Parakeet ultra) when it is installed and its engine is
+healthy, and to the built-in Whisper model otherwise. A Parakeet output that fails the sanity guard, a Parakeet
+failure and any language Parakeet cannot serve are transcribed again by the whisper.cpp path, and the reason is
+recorded as ``engine_fallback_reason`` in the diagnostics. Nothing ever falls back to an external provider.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +26,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import asr_external
+import asr_parakeet
 import boto3
 from asr_assets import vad_cli_path, vad_model_path, verify_assets
 from asr_config import (
@@ -49,7 +56,13 @@ from sauri_engine_common.external.asr_common import AdapterCancelled
 from sauri_engine_common.external.audio_prep import vad_cli_runner
 from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
-from sauri_engine_common.local_model_use import LocalModelError, LocalSelection, select_local_model
+from sauri_engine_common.local_model_use import (
+    LocalModelError,
+    LocalSelection,
+    load_runtime_catalog,
+    select_local_model,
+    select_preferred,
+)
 from sauri_engine_common.process_group import kill_all as kill_helpers
 from sauri_engine_common.process_group import run as run_group
 from sauri_engine_common.route import ROUTE_HEADER, Route, RouteError
@@ -96,6 +109,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     server_budget()
     suppress_nst()
     default_prompt_enabled()
+    asr_parakeet.guard_config()
+    asr_parakeet.default_engine()
     if vad_enabled():
         vad_threshold()
         chunk_ms()
@@ -113,10 +128,39 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                       read_timeout=min(5, server_budget() / 100),
                       retries={"max_attempts": 0}),
     )
-    logger.info("Native ASR initialized (model=%s)", MODEL_ID)
+    logger.info("Native ASR initialized (model=%s, parakeet_ready=%s)", MODEL_ID, _parakeet_default() is not None)
+    threading.Thread(target=_warm_parakeet, name="parakeet-warm", daemon=True).start()
     yield
     kill_helpers()  # no whisper-cli or VAD process may outlive the engine
     s3_client = None
+
+
+def _parakeet_default() -> LocalSelection | None:
+    """The Parakeet model when ``local:default`` would use it now (installed, verified, binary healthy)."""
+    if asr_parakeet.default_engine() != "auto":
+        return None
+    return select_preferred(
+        process="transcription",
+        ready=lambda entry: entry.engine == asr_parakeet.CATALOG_ENGINE and asr_parakeet.engine_ready(),
+    )
+
+
+def _warm_parakeet() -> None:
+    """Compile the Core ML models once in the background so the first recording is not slow; never raises."""
+    try:
+        selection = _parakeet_default()
+        if selection is None:
+            return
+        entry = load_runtime_catalog().get(selection.model_id)
+        if entry is None or entry.sha256 is None or asr_parakeet.is_warm(entry.sha256):
+            return
+        if _job_lock.acquire(blocking=False):  # a recording in progress compiles it anyway
+            try:
+                asr_parakeet.warm(selection.path, entry.sha256)
+            finally:
+                _job_lock.release()
+    except Exception as exc:  # warm-up is an optimization
+        logger.warning("Parakeet warm-up skipped (%s)", type(exc).__name__)
 
 
 app = FastAPI(title="Sauri Native ASR Engine", version="1.0.0", lifespan=lifespan)
@@ -371,9 +415,7 @@ async def transcribe(
     if provider_route is not None:
         return await _transcribe_external(request, http_request, provider_route)
     try:
-        selection = await run_in_threadpool(
-            select_local_model, route, process="transcription", legacy_default=ASR_MODEL_PATH
-        )
+        selection = await run_in_threadpool(_select_engine, route)
     except LocalModelError as error:
         raise HTTPException(status_code=error.status, detail=error.code) from None
     if s3_client is None:
@@ -397,6 +439,16 @@ async def transcribe(
         watcher.cancel()
         await asyncio.gather(watcher, return_exceptions=True)
         cancellation.unbind(token)
+
+
+def _select_engine(header: str | None) -> LocalSelection | None:
+    """The local model for this request; ``None`` means the built-in whisper.cpp model.
+
+    An explicit ``local:<id>`` is honored or refused, never replaced. ``local:default`` (or no route) is Parakeet
+    when it is installed and healthy, else Whisper.
+    """
+    selection = select_local_model(header, process="transcription", legacy_default=ASR_MODEL_PATH)
+    return _parakeet_default() if selection is None else selection
 
 
 def _provider_failure(error: ProviderError) -> JSONResponse:
@@ -513,6 +565,32 @@ def _transcribe_serialized(
         _job_lock.release()
 
 
+def _parakeet_response(
+    wav_path: Path, audio_ms: int, language: str, selection: LocalSelection, deadline: float,
+    stage_ms: dict[str, int],
+) -> TranscribeResponse:
+    """Transcribe with Parakeet or raise ``ParakeetRejected``; the contract-v2 answer carries the engine's own words."""
+    result = asr_parakeet.transcribe(wav_path, audio_ms, language, selection.path, remaining(deadline))
+    return TranscribeResponse(
+        segments=[Segment(text=s.text.strip(), start_ms=s.start_ms, end_ms=s.end_ms) for s in result.segments],
+        words=[Word(**asdict(word)) for segment in result.segments for word in segment.words],
+        language=language,
+        engine=EngineInfo(name=asr_parakeet.ENGINE_NAME, model=selection.model_id, device=asr_parakeet.DEVICE),
+        diagnostics={
+            "audio_ms": audio_ms,
+            "vad": {"enabled": False, "speech_segments": None, "chunks": 1, "speech_ms": None,
+                    "skipped_ms": 0, "vad_ms": 0, "inference_ms": result.cli_ms},
+            "inverted_words": result.words.inverted_words,
+            "default_prompt": False,
+            "parakeet": {
+                "confidence": result.confidence, "rtfx": result.rtfx,
+                "english_stopword_rate": round(result.english_rate, 4),
+            },
+            "stage_ms": {**stage_ms, "inference": result.cli_ms},
+        },
+    )
+
+
 def _transcribe_audio(
     request: TranscribeRequest, deadline: float, selection: LocalSelection | None = None,
 ) -> TranscribeResponse:
@@ -524,10 +602,31 @@ def _transcribe_audio(
             download_ms = round((time.monotonic() - started) * 1000)
             wav_path = Path(temporary) / "audio.wav"
             report = normalize_to_wav(Path(audio_path), wav_path, timeout_s=min(300, remaining(deadline)))
-            model: dict[str, Any] = {} if selection is None else {"model_path": selection.path}
             cancellation.checkpoint()
+            stage_ms = {"download": download_ms, "normalize": round(report.seconds * 1000)}
+            fallback_reason: str | None = None
+            if selection is not None and selection.engine == asr_parakeet.CATALOG_ENGINE:
+                try:
+                    return _parakeet_response(
+                        wav_path, report.audio_ms, request.language, selection, deadline, stage_ms)
+                except asr_parakeet.ParakeetRejected as rejected:
+                    # The same audio goes through the whisper.cpp path with the built-in model; nothing leaves the Mac.
+                    fallback_reason = rejected.reason
+                    logger.warning("Parakeet did not answer; using whisper.cpp (reason=%s)", rejected.reason)
+                    selection = None
+            model: dict[str, Any] = {} if selection is None else {"model_path": selection.path}
             result, language, vad, inference_ms = _transcribe_wav(
                 wav_path, report.audio_ms, request.language, deadline, **model)
+            diagnostics: dict[str, object] = {
+                "audio_ms": report.audio_ms,
+                "vad": vad,
+                "inverted_words": result.inverted_words,
+                # Boolean only, never the prompt text. For `auto` it reflects the detected language.
+                "default_prompt": _initial_prompt(language)[1],
+                "stage_ms": {**stage_ms, "inference": inference_ms},
+            }
+            if fallback_reason is not None:
+                diagnostics["engine_fallback_reason"] = fallback_reason
             return TranscribeResponse(
                 segments=[Segment(text=s.text.strip(), start_ms=s.start_ms, end_ms=s.end_ms) for s in result.segments],
                 words=[Word(**asdict(word)) for segment in result.segments for word in segment.words],
@@ -535,15 +634,7 @@ def _transcribe_audio(
                 engine=EngineInfo(
                     name="whisper.cpp", model=MODEL_ID if selection is None else selection.model_id,
                     device=MODEL_DEVICE),
-                diagnostics={
-                    "audio_ms": report.audio_ms,
-                    "vad": vad,
-                    "inverted_words": result.inverted_words,
-                    # Boolean only, never the prompt text. For `auto` it reflects the detected language.
-                    "default_prompt": _initial_prompt(language)[1],
-                    "stage_ms": {"download": download_ms, "normalize": round(report.seconds * 1000),
-                                 "inference": inference_ms},
-                },
+                diagnostics=diagnostics,
             )
     except cancellation.JobCancelled as exc:
         logger.info("Transcription stopped: the caller left")

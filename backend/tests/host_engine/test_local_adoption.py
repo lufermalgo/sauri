@@ -502,10 +502,14 @@ def test_the_default_managed_environment_follows_the_installer_variable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("SAURI_DIAR_VENV", str(tmp_path / "custom"))
-    assert local_models.default_managed_dirs() == {"senko": tmp_path / "custom"}
+    monkeypatch.setenv("SAURI_PARAKEET_HOME", str(tmp_path / "parakeet"))
+    assert local_models.default_managed_dirs() == {"senko": tmp_path / "custom", "fluidaudio": tmp_path / "parakeet"}
     monkeypatch.delenv("SAURI_DIAR_VENV")
+    monkeypatch.delenv("SAURI_PARAKEET_HOME")
     monkeypatch.setenv("HOME", str(tmp_path))
-    assert local_models.default_managed_dirs()["senko"] == tmp_path / ".local/share/sauri/native-engines/diar-venv"
+    root = tmp_path / ".local/share/sauri/native-engines"
+    assert local_models.default_managed_dirs()["senko"] == root / "diar-venv"
+    assert local_models.default_managed_dirs()["fluidaudio"] == root / "parakeet"
 
 
 # --- backward compatibility ---------------------------------------------------------------------------

@@ -558,6 +558,23 @@ describe("local options of the process", () => {
     expect(within(group).getByRole("option", { name: /whisper-small/ })).not.toHaveTextContent(t("engines:process.activeTag"));
   });
 
+  it("offers Parakeet as the recommended local choice and Whisper as a model that can be pinned, and back", async () => {
+    const parakeet = localModel({
+      id: "parakeet-ultra", process: "transcription", engine: "fluidaudio", state: "installed", availability: "installed",
+      size: 632_000_000, preferred: true, needs: "fluidaudio-cli", needs_ready: true,
+    });
+    await renderReady("transcription", { models: [parakeet, { ...TURBO_ACTIVE, active: false }] });
+    await screen.findByRole("listitem", { name: "parakeet-ultra" });
+    openPicker();
+    const group = within(panel()).getAllByRole("group")[0];
+    const options = within(group).getAllByRole("option");
+    expect(options[0]).toHaveTextContent(t("engines:process.localRecommended"));
+    expect(options[0]).toHaveTextContent("632 MB");
+    // Whisper is no longer the recommended entry: it is listed by its id, so it can be chosen on purpose.
+    expect(within(group).getByRole("option", { name: /whisper-turbo/ })).toBeInTheDocument();
+    expect(within(group).queryByRole("option", { name: /parakeet-ultra/ })).toBeNull();
+  });
+
   it("never renders a key or secret, only what the API returns for display", async () => {
     const leaky = provider("p1", "Work OpenAI", "openai", { key_hint: "1234", ...({ key: "sk-LIVE-SECRET-9999", api_key: "sk-LIVE-SECRET-9999" } as object) });
     await renderReady("transcription", {

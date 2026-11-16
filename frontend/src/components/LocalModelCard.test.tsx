@@ -601,3 +601,53 @@ describe("managed engines", () => {
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 });
+
+describe("Parakeet as the preferred transcription model", () => {
+  const PARAKEET_ID = "parakeet-tdt-0.6b-v3-ultra-coreml";
+  const parakeet = (overrides: Partial<LocalModel> = {}) => model({
+    id: PARAKEET_ID, engine: "fluidaudio", size: 632_314_500, installed_size: 632_314_500, min_ram_gib: 8,
+    preferred: true, needs: "fluidaudio-cli", needs_ready: true, license: "CC-BY-4.0",
+    attribution: "Parakeet-TDT-0.6B-v3 by NVIDIA (CC-BY-4.0)", active: true, in_use: true, in_use_by: ["transcription"],
+    ...overrides,
+  });
+  const whisper = (overrides: Partial<LocalModel> = {}) => model({ ...TURBO, active: false, ...overrides });
+
+  it("marks Parakeet active and Whisper as the fallback that is better with proper names", async () => {
+    await renderCard([parakeet(), whisper()]);
+    const card = row(PARAKEET_ID);
+    expect(within(card).getByText(t("engines:local.states.active"))).toBeInTheDocument();
+    expect(within(card).getByText(t("engines:local.modelNotes.parakeet"))).toBeInTheDocument();
+    expect(within(card).getByText(t("engines:local.license", { license: "CC-BY-4.0", attribution: "Parakeet-TDT-0.6B-v3 by NVIDIA (CC-BY-4.0)" }))).toBeInTheDocument();
+    const fallback = row("whisper-turbo");
+    expect(within(fallback).getByText(t("engines:local.fallbackBadge"))).toBeInTheDocument();
+    expect(within(fallback).queryByText(t("engines:local.states.active"))).toBeNull();
+    expect(within(fallback).getByText(t("engines:local.modelNotes.whisper"))).toBeInTheDocument();
+  });
+
+  it("goes back to the recommended choice from Whisper: Parakeet is local:default, Whisper is pinned by its id", async () => {
+    const onUse = vi.fn();
+    await renderCard([parakeet({ active: false, in_use: false, in_use_by: [] }), whisper({ active: true })], {}, { onUse, selection: { external: false, key: "local:whisper-turbo" } });
+    // Pinned to Whisper: Whisper is the active one and Parakeet is offered.
+    expect(within(row("whisper-turbo")).getByText(t("engines:local.states.active"))).toBeInTheDocument();
+    fireEvent.click(within(row(PARAKEET_ID)).getByRole("button", { name: t("engines:local.useLabel", { name: PARAKEET_ID }) }));
+    expect(onUse).toHaveBeenCalledWith("local:default");
+    cleanup();
+    await renderCard([parakeet(), whisper()], {}, { onUse });
+    fireEvent.click(within(row("whisper-turbo")).getByRole("button", { name: t("engines:local.useLabel", { name: "whisper-turbo" }) }));
+    expect(onUse).toHaveBeenLastCalledWith("local:whisper-turbo");
+  });
+
+  it("does not call Parakeet active, nor offer it, while its engine is missing, and says how to install the engine", async () => {
+    const engine = model({
+      id: "fluidaudio-cli", kind: "managed_engine", engine: "fluidaudio", size: null, installed_size: null, state: "not_installed",
+      availability: "available", location: null, verified_by: undefined, managed_by: "scripts/engines/install-parakeet-engine.sh",
+      install: { method: "managed_command", managed_by: "scripts/engines/install-parakeet-engine.sh", download_bytes: null, disk_required_bytes: null, fits_on_disk: null },
+    });
+    await renderCard([parakeet({ needs_ready: false, active: false }), whisper({ active: true }), engine]);
+    const card = row(PARAKEET_ID);
+    expect(within(card).queryByText(t("engines:local.states.active"))).toBeNull();
+    expect(within(card).queryByRole("button", { name: t("engines:local.useLabel", { name: PARAKEET_ID }) })).toBeNull();
+    expect(within(card).getByText(t("engines:local.needsEngine", { command: "bash scripts/engines/install-parakeet-engine.sh" }))).toBeInTheDocument();
+    expect(within(row("whisper-turbo")).getByText(t("engines:local.states.active"))).toBeInTheDocument();
+  });
+});

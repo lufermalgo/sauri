@@ -178,6 +178,44 @@ registran código de salida y hasta 600 caracteres de las últimas ocho líneas 
 stderr: solo se conservan plantillas técnicas conocidas, sin rutas ni texto de voz;
 el resto aparece como `[stderr redacted]`. No se registra stdout ni el vocabulario.
 
+## Transcripción local con Parakeet (#1180)
+
+Parakeet-TDT-0.6B-v3 «ultra» (Core ML, `fluidaudiocli` de FluidAudio) es el modelo local de transcripción predeterminado cuando está instalado; Whisper turbo queda como respaldo automático y como opción para nombres propios poco comunes. El diseño y la evidencia están en `docs/architecture/overview.md` («Transcripción local: Parakeet y Whisper»).
+
+**Instalación en un Mac nuevo.** `make engines-install` ejecuta `scripts/engines/install-parakeet-engine.sh` al final. Construye `fluidaudiocli` desde el commit fijado de FluidAudio (`engine-hashes.json`, sección `parakeet`; se descarga solo ese commit y SwiftPM no tiene dependencias remotas salvo un binario con suma de comprobación fijada) y registra su procedencia en `~/.local/share/sauri/native-engines/parakeet/provenance.json`. Hace falta Swift 6 (Xcode o las Command Line Tools), Apple Silicon y macOS 14+; si falta algo, el script lo explica en español, sale con código 3 y la transcripción sigue con Whisper. El **modelo** (632 MB, 20 archivos con hash propio) se instala desde el portal (Ajustes → Motores y modelos → «Instalar») o, si ya está en el Mac, se copia con la adopción. `--check` verifica el motor instalado; `--warm` compila el modelo para el Neural Engine una vez (el ASR también lo hace en segundo plano al arrancar si no está caliente).
+
+**Adopción de lo que ya existe en este Mac** (carpeta del benchmark, sin descargar nada, sin tocar la carpeta de origen):
+
+```bash
+bash scripts/engines/install-parakeet-engine.sh --adopt-from ~/sauri-asr-bench
+```
+
+Acepta el binario solo si su SHA-256 es una compilación conocida (`known_binary_sha256`), copia cada archivo del modelo comprobando su hash contra el catálogo (`backend/host-engine/seed_model.py`), escribe el manifiesto y calienta el Neural Engine.
+
+**Desplegar tras fusionar** (sin reuniones en proceso: `make engines-status` y la guarda de despliegue lo comprueban):
+
+1. `bash scripts/engines/install-parakeet-engine.sh --adopt-from ~/sauri-asr-bench` (o instalar el modelo desde el portal y ejecutar el script sin argumentos).
+2. Reiniciar **solo** los motores nativos `host` y `asr`: `bash scripts/engines/native-engines.sh stop host && bash scripts/engines/native-engines.sh start host`, y lo mismo con `asr`. `host` lee el catálogo nuevo (modelos de varios archivos, `preferred`) y `asr` carga el backend. No hace falta tocar `diar` ni `llm`.
+3. Reconstruir y reiniciar `worker` (guarda `engine_fallback_reason` de Parakeet) y `portal` (tarjetas y estimaciones): `make build`. La API no cambia.
+4. Verificar: `GET /api/v1/engines/local/models` muestra `parakeet-tdt-0.6b-v3-ultra-coreml` con `active: true`; el registro `asr.log` dice `parakeet_ready=True`; una reunión corta queda con `engine_name = fluidaudio` en `transcripts`.
+
+**Deshacer.** Sin tocar archivos: en Motores y modelos elegir Whisper en Transcripción, o `SAURI_ASR_DEFAULT_ENGINE=whisper` en el entorno del motor ASR y reiniciarlo (`local:default` vuelve al Whisper integrado; Parakeet sigue disponible si se elige a mano). Quitar Parakeet del todo: desinstalarlo desde el portal y borrar `~/.local/share/sauri/native-engines/parakeet`.
+
+**Variables del motor ASR** (se leen al arrancar el motor):
+
+| Variable | Valor por defecto | Efecto |
+|---|---|---|
+| `SAURI_ASR_DEFAULT_ENGINE` | `auto` | `auto`: `local:default` es Parakeet si está sano; `whisper`: siempre el Whisper integrado. |
+| `SAURI_ASR_PARAKEET_ENGLISH_RATE_MAX` | `0.01` | Fracción máxima de palabras vacías del inglés en un idioma que no sea inglés; por encima se repite con Whisper. |
+| `SAURI_ASR_PARAKEET_REPEAT_MIN_REPEATS` | `6` | Repeticiones seguidas de una frase (1–6 palabras, ≥ 12 palabras en total) que se consideran un bucle. |
+| `SAURI_ASR_PARAKEET_NONMONOTONIC_MAX_RATIO` | `0.005` | Fracción de palabras con tiempos que retroceden que se tolera (se reparan y se cuentan en `inverted_words`). |
+| `SAURI_ASR_PARAKEET_TIMEOUT_S` | automático (90 s + 5 % del audio, máx. 420 s) | Tiempo máximo del CLI antes de pasar a Whisper. |
+| `SAURI_PARAKEET_HOME` | `~/.local/share/sauri/native-engines/parakeet` | Dónde están `bin/fluidaudiocli`, `provenance.json` y `warm.json`. |
+
+**Límites y tiempos.** El límite de 20 min del worker (`ENGINE_CALL_TIMEOUT_S`) no cambia: Parakeet ocupa 20–90 s por hora de audio y el peor caso (Parakeet al límite de su tiempo y luego Whisper una hora, ~270 + 549 s) cabe. El portal estima ~2 min por hora con Parakeet y ~10 con Whisper según el motor activo (`frontend/src/processing-estimate.ts`). Los registros solo llevan códigos y cuentas, nunca el texto ni la salida de error del CLI. Un fallo del CLI deja `engine_fallback_reason` (`parakeet_failed`) y la reunión se transcribe con Whisper.
+
+**Debilidades conocidas.** Escribe peor los nombres propios poco comunes, es más literal (conserva muletillas) y pone menos puntuación en los primeros ~20 min; no tiene bloqueo de idioma (la guardia detecta la deriva al inglés). Idea prevista, sin medir: híbrido (Parakeet y repetir con Whisper solo los tramos de baja confianza).
+
 ## Diarización nativa Senko (U1 #921)
 
 El adaptador conserva puerto 8002, token de motor, capability HMAC por grabación y
@@ -341,7 +379,7 @@ Un reinicio o una caída nunca debe dejar una reunión atascada. Cómo funciona:
 - **Relevo.** Una entrega repetida de la misma generación con arriendo vigente se aplaza 30 s (cola `*.defer`, no cuenta como reintento ni se pierde). Con el arriendo vencido toma el claim con un identificador nuevo: lo que escriba el worker anterior después queda rechazado. Los claims sin vencimiento que dejó la versión anterior cuentan como vencidos 15 min después del último cambio de estado de la reunión (`PROCESSING_LEGACY_GRACE_SECONDS`).
 - **Barredor de huérfanos** (en el worker, cada 60 s). Si una etapa abierta tiene el arriendo vencido hace más de 5 min (o la reunión está en `transcribing` sin claim y no hay nada en la cola `transcribe`), vuelve a publicar su mensaje (uno por pasada, con espera creciente de 2, 4 y 8 min). Tras 3 intentos, o si la etapa lleva abierta más de 24 h, marca la reunión como fallida con `processing_interrupted` (o la revisión de hablantes como fallida); el portal muestra el error con **Reintentar**. Nunca toca una transcripción terminada, hablantes confirmados ni notas.
 - **Apagado ordenado.** Con SIGTERM el worker deja de tomar trabajos, espera hasta `WORKER_SHUTDOWN_GRACE_SECONDS` (540 s) a que termine el actual y, si no termina, lo cancela: libera su claim y devuelve el mensaje a la cola para que otro worker lo retome de inmediato. Compose da `stop_grace_period: 10m` (`SAURI_WORKER_STOP_GRACE`; debe ser mayor que la espera del worker) y `init: true` para que la señal llegue a Python.
-- **Motores nativos.** Si el worker se rinde o se desconecta, el motor ASR deja de transcribir los trozos que faltan: mata el `whisper-cli` en curso (corre en su propio grupo de procesos) y no empieza otro; el de hablantes se detiene en el siguiente punto de control (la llamada a Senko en sí no se puede interrumpir) y una petición que espera turno se retira. Al apagar el motor el ASR mata sus procesos auxiliares, y `make engines-down` termina los que hubieran quedado huérfanos (`whisper-cli`, `ffmpeg`, `llama-server`).
+- **Motores nativos.** Si el worker se rinde o se desconecta, el motor ASR deja de transcribir los trozos que faltan: mata el `whisper-cli` en curso (corre en su propio grupo de procesos) y no empieza otro; el de hablantes se detiene en el siguiente punto de control (la llamada a Senko en sí no se puede interrumpir) y una petición que espera turno se retira. Al apagar el motor el ASR mata sus procesos auxiliares, y `make engines-down` termina los que hubieran quedado huérfanos (`whisper-cli`, `fluidaudiocli`, `ffmpeg`, `llama-server`).
 - **Guarda de despliegue.** `make build`, `make up`, `make down`, `make clean` y `make engines-down` se niegan, con la lista de lo que está en curso, si hay reuniones sin estado terminal, hablantes `pending`/`in_progress`, resúmenes `pending`/`running`, claims con arriendo vivo o mensajes en las colas `transcribe`, `diarize` y `summarize` (incluidas sus colas de espera y los mensajes en manos de un worker). `FORCE=1 make build` lo omite: el trabajo en curso se devuelve a la cola y se retoma después del reinicio, pero esa etapa empieza de nuevo.
 
 **Desplegar sin riesgo:** `make build` sin más; si se niega, espera a que termine lo listado (o usa `FORCE=1` aceptando repetir esa etapa). **Recuperar una reunión ya atascada** (claim sin vencimiento, p. ej. `6c6469e2`): tras desplegar, el barredor la retoma solo en el primer minuto (si pasaron más de 20 min desde su último cambio de estado: 15 de gracia del claim antiguo + 5); si no, 20 min después de ese cambio. Y si el dueño no quiere esperar, `Regenerar` desde el portal funciona en cuanto el arriendo está vencido (el 409 `processing_active` ya no depende de la hora de la última escritura sino del arriendo). Los resúmenes no usan claims: su mensaje sin confirmar vuelve a la cola al caer el worker y `SUMMARY_STALE_AFTER_SECONDS` sigue acotándolos.

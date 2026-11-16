@@ -266,6 +266,7 @@ async def _run_transcription(
                     return await call_with_fallback(resolved, attempt, _engine_names)
 
         result, provenance = await scope.guard(run_engine())
+        provenance = _with_local_fallback(provenance, result)
         if type(result.contract_version) is not int or result.contract_version != 2:
             raise EngineContractError("Unsupported ASR contract_version")
         if result.language == "auto":
@@ -445,6 +446,14 @@ async def _run_transcription(
 def _with_capabilities(provenance: Provenance, capabilities: ASRCapabilities) -> Provenance:
     """An engine that is not local (the legacy cloud provider) sent the audio out whatever the route said."""
     return provenance if capabilities.is_local else replace(provenance, external=True)
+
+
+def _with_local_fallback(provenance: Provenance, result: TranscriptionResult) -> Provenance:
+    """The gateway moved this audio from Parakeet to whisper.cpp: keep its reason (a closed code) as provenance."""
+    reason = result.diagnostics.get("engine_fallback_reason")
+    if provenance.fallback_reason is None and isinstance(reason, str) and 0 < len(reason) <= 64:
+        return replace(provenance, fallback_reason=reason)
+    return provenance
 
 
 def _engine_names(result: TranscriptionResult) -> tuple[str | None, str | None]:

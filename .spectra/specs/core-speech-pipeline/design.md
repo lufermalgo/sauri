@@ -372,3 +372,20 @@ cd backend && uv run --extra dev ruff check . && uv run --extra dev mypy app
 npm run typecheck && npm run test
 SAURI_RUN_NATIVE_TESTS=1 uv run --extra dev pytest tests/native -q   # requiere motores instalados
 ```
+
+
+## Adenda 2026-11-16: Parakeet ultra como ASR local predeterminado (#1180)
+
+**Decisión del dueño.** Parakeet-TDT-0.6B-v3 «ultra» (Core ML, `fluidaudiocli` de FluidAudio, commit `16780f04d2ece24f67d0fc00efccd0296491c1a8`; modelo `FluidInference/parakeet-ultra-coreml` revisión `95eaa59a39d4394f047a4dc5cce480388a60d1b6`) pasa a ser el modelo local de transcripción predeterminado; Whisper large-v3-turbo Q5_0 sigue instalado y es el respaldo automático. Esto sustituye la decisión de «ASR whisper.cpp Turbo Q5_0» tomada con la evaluación de Codex (que descartó un Parakeet anterior por errores de idioma y nombres: era la versión v3 sin «ultra»).
+
+**Evidencia medida (M3 Air, idle, una grabación de 60 min).** Whisper por la ruta de producción (VAD + trozos de ≤ 120 s, beam 5): 549 s. Parakeet ultra: 19,5 s de motor en caliente, ~0,4 GB de memoria; 25 s de petición completa por la pasarela (descarga 0,8 s, conversión 4,8 s, motor 19,6 s); un clip de 2 min tarda ~1 s. La primera ejecución con un modelo nuevo tarda ~70 s (Core ML compila para el Neural Engine; caché en `~/Library/Caches/fluidaudiocli`). Calidad: 98,6 % de acuerdo en la atribución de hablantes con Senko y 89 % de acuerdo de palabras con Whisper; más débil con nombres propios poco comunes, más literal (muletillas) y con menos puntuación en los primeros ~20 min. El v3 sin «ultra» deriva al inglés (10,5 % de las palabras frente a 0,2 % con «ultra»; 34 s de motor). Las cifras de calidad se midieron contra Whisper y contra Senko, no contra una referencia humana completa.
+
+**Alternativas descartadas (medidas en la misma grabación de 60 min).** v3 sin «ultra» (deriva al inglés, 10,5 %); «redux» (130 s y 2 GB de memoria); `parakeet-mlx` (291 s, 28,9 % de las palabras en inglés y solo 4 076 de 7 663 palabras); WhisperKit (532–553 s: no mejora a whisper.cpp ni alcanza la meta de ≤ 2 min por hora); vocabulario CTC / `--custom-vocab` (dispara de más); `--encoder-compute-units gpu|all` (se cuelga al compilar Core ML: nunca se usa); `--language es` (sin efecto: no hay bloqueo de idioma); concurrencia predeterminada de 4 (es la correcta).
+
+**Diseño.** (1) Backend `parakeet` en la pasarela (`asr_parakeet.py`): una ejecución del CLI por grabación completa, en su propio grupo de procesos, sin descargas (`--local-model-dir`, registro inalcanzable, binario y modelo verificados). (2) Guardia de salida y respaldo automático a Whisper local con `engine_fallback_reason` (deriva al inglés, salida vacía, bucles de repetición, tiempos rotos, fallo, tiempo agotado, idioma `auto` o no soportado); umbrales por variables de entorno. (3) Catálogo con modelos de varios archivos, `preferred`, `needs` y licencia; `local:default` = Parakeet si está instalado y sano, si no Whisper. (4) Procedencia: el motor que realmente transcribió y el motivo del respaldo. (5) El portal estima ~2 min por hora con Parakeet y ~10 con Whisper.
+
+**Debilidades conocidas e idea prevista.** Nombres propios poco comunes, muletillas y puntuación inicial. Híbrido planeado y **sin medir**: transcribir con Parakeet y repetir con Whisper solo los tramos de baja confianza (`confidence` por palabra ya viaja como `probability`).
+
+**Licencias.** Modelo CC-BY-4.0 (NVIDIA Parakeet-TDT-0.6B-v3, post-entrenado como parakeet-ultra por Moondream, convertido a Core ML por FluidInference): atribución obligatoria, en `NOTICE`, en la ficha del catálogo y en la tarjeta del modelo. FluidAudio Apache-2.0.
+
+**No verificado.** Calidad con referencia humana completa; el híbrido; Macs con 8 GiB de memoria; macOS anteriores al 27; la primera compilación del Neural Engine tras instalar desde el portal en otro equipo.
