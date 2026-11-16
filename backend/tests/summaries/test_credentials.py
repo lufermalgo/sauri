@@ -53,8 +53,12 @@ async def test_external_request_never_uses_local_token(
         assert request.headers["Authorization"] == f"Bearer {external.read_text()}"
         assert local.read_text() not in str(request.headers)
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({
-            "topic": "Synthetic", "key_points": [{"text": "Point", "sources": [{"passage_id": "P0000"}]}],
-        })}}]})
+    "topic": "Synthetic", "conclusion": "Synthetic conclusion",
+    "key_points": [{
+        "title": "Block", "items": [{"text": "Point", "sub_items": []}],
+        "sources": [{"passage_id": "P0000"}],
+    }],
+})}}]})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
         engine = create_summarization_engine()

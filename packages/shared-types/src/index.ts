@@ -119,7 +119,23 @@ export interface SummaryKeyPoint {
   sources: SummarySource[];
 }
 
-/** Current successful summary artifact, including legacy points without citations. */
+/** One bullet of a thematic block, with optional nested detail. */
+export interface SummaryItem {
+  text: string;
+  subItems: string[];
+}
+
+/** Thematic block of a structured (schema v2) summary. Sources are metadata, never shown as text. */
+export interface SummaryBlock {
+  title: string;
+  items: SummaryItem[];
+  sources: SummarySource[];
+}
+
+/**
+ * Current successful summary artifact. Schema v1 keeps flat points (some legacy ones without
+ * citations); schema v2 carries thematic blocks and a conclusion.
+ */
 export interface MeetingSummary {
   summaryId: string;
   meetingId: string;
@@ -127,7 +143,9 @@ export interface MeetingSummary {
   templateName: string;
   templateVersion: number;
   topic: string;
-  keyPoints: Array<SummaryKeyPoint | string>;
+  schemaVersion?: 1 | 2;
+  keyPoints: Array<SummaryKeyPoint | SummaryBlock | string>;
+  conclusion?: string | null;
   reviewState: "draft";
   generation: number;
   createdAt: string;

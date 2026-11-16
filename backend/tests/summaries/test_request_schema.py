@@ -29,3 +29,26 @@ def test_passage_ids_are_enumerated_in_sources():
     schema = _request_schema(["P0001", "P0002"])
     sources = schema["properties"]["key_points"]["items"]["properties"]["sources"]["items"]
     assert sources["properties"]["passage_id"]["enum"] == ["P0001", "P0002"]
+
+
+def test_schema_describes_v2_blocks_and_server_stamps_the_version():
+    schema = _request_schema(["P0001"])
+    assert list(schema["properties"]) == ["topic", "key_points", "conclusion", "review_state"]
+    assert schema["required"] == ["topic", "key_points", "conclusion", "review_state"]
+    assert schema["properties"]["topic"]["maxLength"] == 1200
+    assert schema["properties"]["conclusion"]["maxLength"] == 1200
+    block = schema["properties"]["key_points"]["items"]
+    assert list(block["properties"]) == ["title", "items", "sources"]
+    assert block["properties"]["title"]["maxLength"] == 160
+    assert block["properties"]["sources"]["minItems"] == 1 and block["properties"]["sources"]["maxItems"] == 4
+    item = block["properties"]["items"]["items"]
+    assert list(item["properties"]) == ["text", "sub_items"]
+    assert item["properties"]["sub_items"]["items"] == {"type": "string", "minLength": 1, "maxLength": 500}
+
+
+def test_system_prompt_describes_structure_and_forbids_time_references():
+    from app.summaries.engine import SYSTEM_PROMPT
+
+    for required in ("topic paragraph", "thematic block", "sub_items", "conclusion paragraph",
+                     "never contain minutes, timestamps", "one to four supplied passage IDs", "Speaker N"):
+        assert required in SYSTEM_PROMPT

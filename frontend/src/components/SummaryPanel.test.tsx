@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SummaryPanel } from "./SummaryPanel";
 import { TranscriptView } from "./TranscriptView";
 import { copy } from "../copy/es";
@@ -367,8 +367,85 @@ describe("SummaryPanel", () => {
   });
 });
 
+const structured = {
+  ...summary, template_version: 2, schema_version: 2,
+  topic: "Synthetic paragraph about the meeting.",
+  key_points: [
+    {
+      title: "Synthetic block one",
+      items: [
+        { text: "Synthetic fact", sub_items: ["Synthetic phase one", "Synthetic phase two"] },
+        { text: "Decision: synthetic decision", sub_items: [] },
+      ],
+      sources: [{ passage_id: "P0001", start_ms: 65432, end_ms: 75000 }],
+    },
+    {
+      title: "Synthetic block two",
+      items: [{ text: "Another fact", sub_items: [] }],
+      sources: [{ passage_id: "P0002", start_ms: 125000, end_ms: 135000 }],
+    },
+  ],
+  conclusion: "Synthetic conclusion paragraph.",
+};
+const structuredPlainText = [
+  `${text.mainTopic}\nSynthetic paragraph about the meeting.`,
+  `${text.detailedKeyPoints}\n1. Synthetic block one\n- Synthetic fact\n  - Synthetic phase one\n  - Synthetic phase two\n- Decision: synthetic decision\n\n2. Synthetic block two\n- Another fact`,
+  `${text.conclusion}\nSynthetic conclusion paragraph.`,
+].join("\n\n");
+
+describe("structured (v2) summary", () => {
+  it("renders the topic paragraph, numbered blocks with nested items and the conclusion", async () => {
+    artifact = structured as unknown as typeof summary;
+    const seek = vi.fn();
+    render(<SummaryPanel meetingId="meeting-1" onSeek={seek} />);
+    expect(await screen.findByRole("heading", { name: text.mainTopic })).toBeVisible();
+    expect(screen.getByRole("heading", { name: text.detailedKeyPoints })).toBeVisible();
+    expect(screen.getByRole("heading", { name: text.conclusion })).toBeVisible();
+    expect(screen.getByText("Synthetic paragraph about the meeting.")).toBeVisible();
+    expect(screen.getByText("Synthetic conclusion paragraph.")).toBeVisible();
+    const blocks = screen.getAllByRole("heading", { level: 4 });
+    expect(blocks.map((block) => block.textContent)).toEqual(["Synthetic block one", "Synthetic block two"]);
+    expect(screen.getByText("Synthetic phase two")).toBeVisible();
+    expect(screen.getByText(/Decision: synthetic decision/)).toBeVisible();
+    fireEvent.click(screen.getByRole("link", { name: text.sourceAt("02:05") }));
+    expect(seek).toHaveBeenLastCalledWith(125000);
+  });
+
+  it("copies and downloads the same structure without minutes or timestamps", async () => {
+    artifact = structured as unknown as typeof summary;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const blobs: Blob[] = [];
+    Object.assign(URL, { createObjectURL: vi.fn((blob: Blob) => { blobs.push(blob); return "blob:synthetic"; }), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: text.copy }));
+    expect(writeText).toHaveBeenCalledWith(structuredPlainText);
+    expect(structuredPlainText).not.toMatch(/\d{1,2}:\d{2}/);
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    const content = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(blobs[0]);
+    });
+    expect(content).toBe(structuredPlainText);
+  });
+
+  it("still renders and exports a stored v1 summary exactly as before", async () => {
+    artifact = summary;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    expect(await screen.findByRole("heading", { name: text.topic })).toBeVisible();
+    expect(screen.getByRole("heading", { name: text.keyPoints })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: text.conclusion })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: text.copy }));
+    expect(writeText).toHaveBeenCalledWith("Synthetic planning\n- First synthetic point\n- Second synthetic point");
+  });
+});
+
 describe("meeting summary tab integration", () => {
-  it("keeps the player mounted, seeks through its controller and polls only while the summary tab is visible", async () => {
+  it("keeps the player mounted, seeks through its controller and keeps polling the pending summary behind the chat tab", async () => {
     artifact = summary;
     latest = { ...pending, status: "running", generation: 2 };
     const summaryFetch = fetchMock.getMockImplementation()!;
@@ -401,17 +478,20 @@ describe("meeting summary tab integration", () => {
     expect(tab).toHaveFocus();
     expect(tab).toHaveAttribute("aria-selected", "true");
     await screen.findByText(text.generating);
-    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("tab", { name: copy.meeting.chatTab }));
+    // The summary panel stays mounted behind the chat tab, so the status (and the header derived
+    // from it) keeps refreshing while the summary is pending or running. The poll timer was
+    // armed with real timers, hence the real wait.
     const count = callsEndingWith("/summary-requests/latest").length;
-    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
-    expect(callsEndingWith("/summary-requests/latest")).toHaveLength(count);
     latest = { ...pending, status: "succeeded" };
+    await waitFor(() => {
+      expect(callsEndingWith("/summary-requests/latest").length).toBeGreaterThan(count);
+    }, { timeout: 8000 });
     await act(async () => { fireEvent.click(tab); });
     expect(screen.getByText(text.draft)).toBeVisible();
     expect(screen.getByTestId("playback-audio")).toBe(audio);
     fireEvent.click(screen.getByRole("link", { name: text.sourceAt("01:05") }));
     expect(audio.currentTime).toBe(65.432);
     view.unmount();
-  });
+  }, 15000);
 });

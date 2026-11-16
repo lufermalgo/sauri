@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -16,7 +15,7 @@ from app.infra.models import Meeting, MeetingSummary, ProcessedSummaryEvent, Sum
 from app.infra.queue import JobQueue
 from app.summaries.engine import ContextExceededError, SummaryProviderError
 from app.summaries.factory import create_summarization_engine
-from app.summaries.passages import SummaryInvalidError
+from app.summaries.passages import SummaryInvalidError, encode_key_points
 from app.summaries.repository import locked_request, transcript_passages
 
 logger = logging.getLogger(__name__)
@@ -128,7 +127,7 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
                     template_version=request.template_version,
                     generation=request.generation,
                     topic=result.topic,
-                    key_points_json=json.dumps([point.model_dump() for point in result.key_points], ensure_ascii=False),
+                    key_points_json=encode_key_points(result),
                     created_at=now,
                     updated_at=now,
                 )

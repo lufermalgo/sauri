@@ -594,14 +594,38 @@ describe("meeting summary API adapters", () => {
     await expect(api.getMeetingSummary("meeting / 1")).resolves.toEqual({
       summaryId: "summary-1", meetingId: "meeting-1", templateId: "template-1",
       templateName: "General", templateVersion: 3, topic: "Synthetic topic",
+      schemaVersion: 1,
       keyPoints: [
         { text: "Synthetic point", sources: [{ passageId: "P0001", startMs: 1234, endMs: 5678 }] },
         "Legacy point",
       ],
+      conclusion: null,
       reviewState: "draft", generation: 2, createdAt: "created", updatedAt: "updated",
     });
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/meetings/meeting%20%2F%201/summary"), {
       method: "GET", headers: { Authorization: "Bearer synthetic-token", "Content-Type": "application/json" },
+    });
+  });
+
+  it("maps structured v2 blocks, nested items and the conclusion", async () => {
+    mockFetch({
+      summary_id: "summary-2", meeting_id: "meeting-1", template_id: "template-1",
+      template_name: "General", template_version: 4, topic: "Synthetic paragraph", schema_version: 2,
+      key_points: [{
+        title: "Synthetic block",
+        items: [{ text: "Synthetic item", sub_items: ["Synthetic detail"] }, { text: "Plain item" }],
+        sources: [{ passage_id: "P0002", start_ms: 10, end_ms: 20 }],
+      }],
+      conclusion: "Synthetic conclusion",
+      review_state: "draft", generation: 1, created_at: "created", updated_at: "updated",
+    });
+    await expect(api.getMeetingSummary("meeting-1")).resolves.toMatchObject({
+      schemaVersion: 2, topic: "Synthetic paragraph", conclusion: "Synthetic conclusion",
+      keyPoints: [{
+        title: "Synthetic block",
+        items: [{ text: "Synthetic item", subItems: ["Synthetic detail"] }, { text: "Plain item", subItems: [] }],
+        sources: [{ passageId: "P0002", startMs: 10, endMs: 20 }],
+      }],
     });
   });
 

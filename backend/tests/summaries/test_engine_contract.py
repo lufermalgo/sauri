@@ -27,8 +27,11 @@ from app.summaries.passages import SummaryInvalidError, Turn, build_passages
                         "message": {
                             "content": json.dumps(
                                 {
-                                    "topic": "synthetic",
-                                    "key_points": [{"text": "unsupported", "sources": [{"passage_id": "invented"}]}],
+                                    "topic": "synthetic", "conclusion": "synthetic",
+                                    "key_points": [{
+                                        "title": "unsupported", "items": [{"text": "x", "sub_items": []}],
+                                        "sources": [{"passage_id": "invented"}],
+                                    }],
                                 }
                             )
                         }

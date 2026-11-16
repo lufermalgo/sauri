@@ -493,7 +493,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       <aside className="meeting-side-column">
       <Card className="meeting-sidebar">
         <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
-          { id: "summary", label: text.summaryTab, panel: meeting && activeTab === "summary"
+          { id: "summary", label: text.summaryTab, panel: meeting
+            // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
             ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
               expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal} /> : null },
           { id: "chat", label: text.chatTab, panel: <ChatTab /> },

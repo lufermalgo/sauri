@@ -52,11 +52,15 @@ async def test_request_uses_long_generation_budget_without_changing_payload(
         schema = payload["response_format"]["json_schema"]["schema"]
         assert "$ref" not in json.dumps(schema)
         key_point = schema["properties"]["key_points"]["items"]["properties"]
-        assert key_point["sources"]["maxItems"] == 2
+        assert key_point["sources"]["maxItems"] == 4
         assert key_point["sources"]["items"]["properties"]["passage_id"]["enum"] == ["P0000"]
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({
-            "topic": "Synthetic", "key_points": [{"text": "Point", "sources": [{"passage_id": "P0000"}]}],
-        })}}]})
+    "topic": "Synthetic", "conclusion": "Synthetic conclusion",
+    "key_points": [{
+        "title": "Block", "items": [{"text": "Point", "sub_items": []}],
+        "sources": [{"passage_id": "P0000"}],
+    }],
+})}}]})
 
     transport = httpx.MockTransport(respond)
     if injected:
@@ -76,7 +80,9 @@ async def test_request_uses_long_generation_budget_without_changing_payload(
             build_passages([Turn(transcript, 0, 1000)]),
             instructions,
         )
-    assert result.topic == "Synthetic" and [p.text for p in result.key_points] == ["Point"]
+    assert result.topic == "Synthetic" and [
+        item.text for block in result.key_points for item in block.items
+    ] == ["Point"] and result.conclusion == "Synthetic conclusion"
 
 
 async def test_total_deadline_cancels_generation_instead_of_waiting_forever() -> None:

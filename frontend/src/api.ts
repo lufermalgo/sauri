@@ -289,10 +289,16 @@ interface MeetingSummaryResponse {
   template_name: string;
   template_version: number;
   topic: string;
+  schema_version?: number;
   key_points: Array<string | {
     text: string;
     sources: Array<{ passage_id: string; start_ms: number; end_ms: number }>;
+  } | {
+    title: string;
+    items: Array<{ text: string; sub_items?: string[] }>;
+    sources: Array<{ passage_id: string; start_ms: number; end_ms: number }>;
   }>;
+  conclusion?: string | null;
   review_state: "draft";
   generation: number;
   created_at: string;
@@ -329,12 +335,22 @@ export async function getMeetingSummary(meetingId: string): Promise<MeetingSumma
     templateName: summary.template_name,
     templateVersion: summary.template_version,
     topic: summary.topic,
-    keyPoints: summary.key_points.map((point) => typeof point === "string" ? point : {
-      text: point.text,
-      sources: point.sources.map((source) => ({
+    schemaVersion: summary.schema_version === 2 ? 2 : 1,
+    keyPoints: summary.key_points.map((point) => {
+      if (typeof point === "string") return point;
+      const sources = point.sources.map((source) => ({
         passageId: source.passage_id, startMs: source.start_ms, endMs: source.end_ms,
-      })),
+      }));
+      if ("title" in point) {
+        return {
+          title: point.title,
+          items: point.items.map((item) => ({ text: item.text, subItems: item.sub_items ?? [] })),
+          sources,
+        };
+      }
+      return { text: point.text, sources };
     }),
+    conclusion: summary.conclusion ?? null,
     reviewState: summary.review_state,
     generation: summary.generation,
     createdAt: summary.created_at,

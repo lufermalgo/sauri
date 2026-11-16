@@ -118,8 +118,11 @@ class Engines:
         async with self.call("summary"):
             return validate_citations(
                 {
-                    "topic": "Synthetic topic",
-                    "key_points": [{"text": "Synthetic point", "sources": [{"passage_id": passages[0].passage_id}]}],
+                    "topic": "Synthetic topic", "conclusion": "Synthetic conclusion",
+                    "key_points": [{
+                        "title": "Synthetic block", "items": [{"text": "Synthetic point", "sub_items": []}],
+                        "sources": [{"passage_id": passages[0].passage_id}],
+                    }],
                 },
                 passages,
             )
