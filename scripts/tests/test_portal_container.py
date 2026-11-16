@@ -4,6 +4,8 @@ Uses a labelled, isolated network, a disposable builder/cache and a synthetic
 HTTP API double. Always removes owned containers, network, images and builder.
 Requires Docker; missing infrastructure fails rather than silently skipping.
 """
+import base64
+import hashlib
 import http.client
 import json
 import os
@@ -44,7 +46,8 @@ class PortalContainerTests(unittest.TestCase):
         # Copy only known source/manifests; seed excluded paths to test the actual
         # Docker context filter without reading any owner's private files.
         required = ['package.json', 'package-lock.json', 'extension/package.json',
-                    'frontend', 'packages/shared-types', '.dockerignore']
+                    'frontend', 'packages/shared-types', '.dockerignore',
+                    'scripts/platform/inline-script-hash.mjs']
         for relative in required:
             source = ROOT / relative
             target = context / relative
@@ -183,10 +186,39 @@ class PortalContainerTests(unittest.TestCase):
         content = b'x' * (2 * 1024 * 1024)
         self.assertEqual(self.request('/api/upload', 'POST', content)[::2], (201, content))
 
+    def test_security_headers_and_csp(self):
+        required = {'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
+                    'Referrer-Policy': 'no-referrer'}
+        for path in ['/', '/index.html', '/assets/missing.js', '/portal-health', '/meetings/synthetic']:
+            _, headers, _ = self.request(path)
+            for name, value in required.items():
+                self.assertEqual(headers.get(name), value, (path, name))
+            self.assertIn('camera=()', headers.get('Permissions-Policy', ''), path)
+            self.assertIn("frame-ancestors 'none'", headers.get('Content-Security-Policy', ''), path)
+            self.assertNotIn('Strict-Transport-Security', headers, path)
+            self.assertEqual(headers.get('Server'), 'nginx', path)
+        csp = self.request('/')[1]['Content-Security-Policy']
+        self.assertIn("default-src 'self'", csp)
+        self.assertNotIn("'unsafe-inline'", csp)
+        self.assertNotIn('*', csp)
+        self.assertIn('http://localhost:9000', csp)  # default object-store origin for signed media
+        # The single inline script (theme bootstrap) is allowed by its exact hash.
+        index = self.request('/')[2].decode()
+        inline = re.findall(r'<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>', index)
+        self.assertEqual(len(inline), 1)
+        digest = base64.b64encode(hashlib.sha256(inline[0].encode()).digest()).decode()
+        self.assertIn(f"'sha256-{digest}'", csp)
+        # HSTS only when the request arrived over HTTPS (proxy header), never over plain HTTP.
+        https = self.request('/', headers={'X-Forwarded-Proto': 'https'})[1]
+        self.assertIn('max-age=', https.get('Strict-Transport-Security', ''))
+        # Proxied API responses keep the API's own headers and are not given the portal CSP.
+        _, api_headers, _ = self.request('/api/status/200')
+        self.assertNotIn('Content-Security-Policy', api_headers)
+
     def test_nginx_and_runtime_context(self):
         docker('exec', self.portal, 'nginx', '-t')
         config = docker('exec', self.portal, 'nginx', '-T').stdout
-        for directive in ['client_max_body_size 0;', 'proxy_request_buffering off;',
+        for directive in ['client_max_body_size 4g;', 'server_tokens off;', 'proxy_request_buffering off;',
                           'proxy_connect_timeout 5s;', 'proxy_read_timeout 3600s;',
                           'proxy_send_timeout 3600s;', 'proxy_http_version 1.1;',
                           'proxy_cache off;', 'autoindex off;']:

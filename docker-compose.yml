@@ -10,6 +10,21 @@ services:
       - "127.0.0.1:${PORTAL_PORT:-5173}:80"
     depends_on:
       - api
+    environment:
+      # Origin the browser loads signed media/thumbnails from; allowed by the portal CSP (img-src, media-src).
+      - SAURI_OBJECT_STORE_ORIGIN=${OBJECT_STORE_PUBLIC_ENDPOINT:-http://localhost:9000}
+    # Hardening: nginx starts as root only to bind port 80 and drop to its worker user, so those
+    # capabilities stay; everything else is dropped. State lives in tmpfs (the config is rendered at start).
+    read_only: true
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "SETGID", "SETUID", "NET_BIND_SERVICE"]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /etc/nginx/conf.d
+      - /var/cache/nginx
+      - /run
+      - /tmp
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/portal-health || exit 1"]
       interval: 10s
@@ -53,7 +68,14 @@ services:
       - ASR_CLOUD_API_KEY=${ASR_CLOUD_API_KEY:-}
       - ASR_CLOUD_ENDPOINT=${ASR_CLOUD_ENDPOINT:-}
       - JWT_SECRET_FILE=/run/secrets/jwt_secret
-      - AUTH_DISABLED=${AUTH_DISABLED:-true}
+      # The legacy bypass also needs APP_ENV=test; it is off here and must stay off in any real deployment.
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
+      - APP_ENV=${APP_ENV:-production}
+      # Browser origins allowed to call the API (explicit list, never "*"); the extension id is the owner's unpacked build.
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      - EXTENSION_ORIGINS=${EXTENSION_ORIGINS-chrome-extension://ilnkkojmkfnbdilogldabpodoobfigce}
+      # /docs, /redoc and /openapi.json exist only when APP_ENV is development/test or this is "true".
+      - ENABLE_API_DOCS=${ENABLE_API_DOCS:-false}
       - RETENTION_DAYS=${RETENTION_DAYS:-90}
       - SAURI_ADMIN_PASSWORD_FILE=/run/secrets/sauri_admin_password
       # Host administration service (secrets, status). Its token is mounted here and never in the worker.
@@ -67,6 +89,17 @@ services:
       - "${HOME}/.config/sauri/object_store_access_key:/run/secrets/object_store_access_key:ro"
       - "${HOME}/.config/sauri/object_store_secret_key:/run/secrets/object_store_secret_key:ro"
       - "${HOME}/.config/sauri/jwt_secret:/run/secrets/jwt_secret:ro"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    # Hardening. Not read_only: uploads are spooled to /tmp on disk and can be several GiB, which a
+    # tmpfs (memory) cannot hold and a new named volume would add state for; the image runs as uid 10001.
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
     networks:
       - sauri-net
 
@@ -120,12 +153,19 @@ services:
       - "${HOME}/.config/sauri/queue_password:/run/secrets/queue_password:ro"
       - "${HOME}/.config/sauri/object_store_access_key:/run/secrets/object_store_access_key:ro"
       - "${HOME}/.config/sauri/object_store_secret_key:/run/secrets/object_store_secret_key:ro"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
     networks:
       - sauri-net
 
   # --- PostgreSQL ---
   postgres:
-    image: postgres:16
+    # postgres:16 pinned by digest (index, resolved 2026-11-16; 16.x, same major as the existing data volume).
+    image: postgres:16@sha256:dd2bf3ce2dc83a81674cf7f217fcfd8a5009a4b325dda5b843bfee82a06cff6f
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -146,7 +186,8 @@ services:
 
   # Repair only the RustFS data volume, using the image's verified runtime UID/GID.
   minio-volume-permissions:
-    image: alpine:3.22
+    # alpine:3.22 pinned by digest (index, resolved 2026-11-16).
+    image: alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
     user: "0:0"
     command: ["sh", "-c", "chown -R 10001:10001 /data"]
     cap_drop: ["ALL"]
@@ -178,7 +219,8 @@ services:
 
   # --- RabbitMQ (broker de cola) ---
   rabbitmq:
-    image: rabbitmq:3-management
+    # rabbitmq:3-management pinned by digest (index, resolved 2026-11-16; the image already in use).
+    image: rabbitmq:3-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69
     # Fixed node name + named volume: users and durable queues survive container recreation.
     hostname: sauri-rabbitmq
     ports:

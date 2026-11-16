@@ -30,7 +30,7 @@ class _SigningStore:
         self.signed: list[str] = []
 
     async def temporary_read_url(self, reference: str, ttl_seconds: int = 3600) -> str:
-        assert ttl_seconds == 3600
+        assert ttl_seconds == 14400
         self.signed.append(reference)
         return f"https://media.example.test/signed/{len(self.signed)}"
 

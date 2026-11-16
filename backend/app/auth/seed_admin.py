@@ -75,6 +75,7 @@ async def ensure_admin(session: AsyncSession, password: str, *, reset_password: 
     admin = (await session.execute(select(User).where(User.email == ADMIN_EMAIL))).scalar_one()
     if reset_password:
         admin.password_hash = hash_password(password)
+        admin.token_version += 1  # A reset signs the account out everywhere.
         await session.flush()
         return admin, "password reset"
     return admin, "unchanged"

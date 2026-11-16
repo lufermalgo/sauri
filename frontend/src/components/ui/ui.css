@@ -415,6 +415,11 @@ textarea.ui-input {
   box-shadow: var(--ds-shadow-md);
 }
 
+.ui-menu-panel--up {
+  top: auto;
+  bottom: calc(100% + var(--ds-space-1));
+}
+
 .ui-menu-item {
   display: flex;
   align-items: center;
@@ -656,6 +661,25 @@ textarea.ui-input {
   font-weight: var(--ds-weight-medium);
   white-space: nowrap;
   pointer-events: none;
+}
+
+.ui-tooltip[hidden] {
+  display: none;
+}
+
+/* Longer text (a summary): wraps, at most six lines, wider than the label tooltips. */
+.ui-tooltip--wrap {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 2 * var(--ds-space-3)));
+  overflow: hidden;
+  font-weight: var(--ds-weight-regular);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 /*

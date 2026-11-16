@@ -77,7 +77,8 @@ describe("LibraryWorkspace on a wide screen", () => {
     mockViewport(true);
     render(<LibraryWorkspace meetingId="b" />);
     const list = await screen.findByRole("region", { name: copy.library.title });
-    const rows = await within(list).findAllByRole("button", { name: /Weekly sync|Client interview/ });
+    const rows = (await within(list).findAllByRole("button", { name: /Weekly sync|Client interview/ }))
+      .filter((row) => row.classList.contains("library-item"));
     const selected = rows.filter((row) => row.getAttribute("aria-current") === "true");
     expect(selected).toHaveLength(1);
     expect(selected[0]).toHaveTextContent("Client interview");
@@ -90,7 +91,9 @@ describe("LibraryWorkspace on a wide screen", () => {
     mockViewport(true);
     render(<LibraryWorkspace />);
     const list = await screen.findByRole("region", { name: copy.library.title });
-    fireEvent.click(await within(list).findByRole("button", { name: /Weekly sync/ }));
+    const row = (await within(list).findAllByRole("button", { name: /Weekly sync/ }))
+      .find((button) => button.classList.contains("library-item"));
+    fireEvent.click(row as HTMLElement);
     expect(window.location.pathname).toBe("/meetings/a");
   });
 

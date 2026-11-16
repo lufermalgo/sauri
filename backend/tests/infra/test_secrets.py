@@ -78,3 +78,73 @@ def test_object_store_credentials_required(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(SecretUnavailableError):
         secrets.object_store_credentials()
+
+
+def test_database_url_has_no_builtin_default(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(SecretUnavailableError, match="DATABASE_URL"):
+        get_database_url()
+
+
+def test_database_url_without_password_is_rejected_outside_test_mode(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://sauri@postgres:5432/sauri")
+    monkeypatch.delenv("DATABASE_PASSWORD_FILE", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    with pytest.raises(SecretUnavailableError, match="DATABASE_PASSWORD_FILE"):
+        get_database_url()
+    monkeypatch.setenv("APP_ENV", "test")
+    assert get_database_url() == "postgresql+asyncpg://sauri@postgres:5432/sauri"
+
+
+def test_database_url_keeps_sqlite_and_explicit_passwords(monkeypatch):
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    assert get_database_url() == "sqlite+aiosqlite:///:memory:"
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://sauri:explicit@postgres:5432/sauri")
+    assert get_database_url().endswith("sauri:explicit@postgres:5432/sauri")
+
+
+def test_queue_url_has_no_builtin_default_and_needs_a_password(tmp_path, monkeypatch):
+    from app.infra import queue
+
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("QUEUE_BROKER_URL", raising=False)
+    monkeypatch.delenv("QUEUE_BROKER_PASSWORD_FILE", raising=False)
+    with pytest.raises(SecretUnavailableError, match="QUEUE_BROKER_URL"):
+        queue.create_job_queue()
+    monkeypatch.setenv("QUEUE_BROKER_URL", "amqp://sauri@rabbitmq:5672/")
+    with pytest.raises(SecretUnavailableError, match="QUEUE_BROKER_PASSWORD_FILE"):
+        queue.create_job_queue()
+    password_file = tmp_path / "queue_password"
+    password_file.write_text("queue-secret\n", encoding="utf-8")
+    monkeypatch.setenv("QUEUE_BROKER_PASSWORD_FILE", str(password_file))
+    assert queue.create_job_queue() is not None
+
+
+def test_secret_source_reports_kind_without_reading_the_value(tmp_path, monkeypatch):
+    secret_file = tmp_path / "secret"
+    secret_file.write_text("super-private\n", encoding="utf-8")
+    monkeypatch.setenv("SAMPLE_FILE", str(secret_file))
+    assert secrets.secret_source("SAMPLE_FILE", "SAMPLE") == "file"
+    monkeypatch.setenv("SAMPLE_FILE", str(tmp_path / "absent"))
+    assert secrets.secret_source("SAMPLE_FILE", "SAMPLE") == "missing"
+    monkeypatch.delenv("SAMPLE_FILE")
+    monkeypatch.setenv("SAMPLE", "super-private")
+    assert secrets.secret_source("SAMPLE_FILE", "SAMPLE") == "env"
+    monkeypatch.delenv("SAMPLE")
+    assert secrets.secret_source("SAMPLE_FILE", "SAMPLE") == "missing"
+
+
+def test_startup_log_names_sources_and_never_values(tmp_path, monkeypatch, caplog):
+    import logging
+
+    secret_file = tmp_path / "database_password"
+    secret_file.write_text("super-private\n", encoding="utf-8")
+    monkeypatch.setenv("DATABASE_PASSWORD_FILE", str(secret_file))
+    monkeypatch.setenv("JWT_SECRET", "super-private-jwt")
+    monkeypatch.delenv("JWT_SECRET_FILE", raising=False)
+    with caplog.at_level(logging.INFO, logger="test.startup"):
+        secrets.log_secret_sources(logging.getLogger("test.startup"))
+    assert "database_password=file" in caplog.text
+    assert "jwt_secret=env" in caplog.text
+    assert "super-private" not in caplog.text

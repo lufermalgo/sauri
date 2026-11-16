@@ -25,3 +25,9 @@ def test_upload_title_is_bounded_to_meeting_title_limit() -> None:
 
 def test_upload_title_uses_safe_fallback_for_filename_without_basename() -> None:
     assert resolve_upload_title(None, r"C:\\private\\") == "Untitled recording"
+
+
+def test_upload_title_drops_control_characters_and_path_components() -> None:
+    assert resolve_upload_title(None, "../../etc/pa\x00ss\r\nwd.webm") == "passwd.webm"
+    assert resolve_upload_title(None, "\x00\x1b[31m\n") == "[31m"
+    assert resolve_upload_title(None, "\x00\n\t") == "Untitled recording"

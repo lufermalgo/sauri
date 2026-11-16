@@ -206,7 +206,7 @@ async def test_ingestion_rejects_a_meeting_owned_by_another_user_without_persist
         )
 
     assert error.value.status_code == 404
-    assert error.value.detail == "Meeting not found"
+    assert error.value.detail == "not_found"
     assert foreign_meeting.process_state == "recording"
     assert (await db_session.execute(select(SessionRecording))).scalars().all() == []
     assert (await db_session.execute(select(RecordingMediaSource))).scalars().all() == []
@@ -269,7 +269,7 @@ async def test_idempotency_key_owned_by_another_user_is_not_disclosed(
         )
 
     assert error.value.status_code == 404
-    assert error.value.detail == "Recording not found"
+    assert error.value.detail == "not_found"
     assert recording_id not in str(error.value.detail)
     assert "private/" not in str(error.value.detail)
     persisted = (await db_session.execute(select(SessionRecording))).scalars().all()
@@ -306,7 +306,7 @@ async def test_same_owner_cannot_reuse_idempotency_key_for_another_meeting(
         )
 
     assert error.value.status_code == 409
-    assert error.value.detail == "Idempotency key conflict"
+    assert error.value.detail == "conflict"
     assert original.id not in str(error.value.detail)
     assert "private/" not in str(error.value.detail)
     assert len((await db_session.execute(select(SessionRecording))).scalars().all()) == 1

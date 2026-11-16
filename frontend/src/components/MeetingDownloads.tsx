@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { PlaybackManifest } from "../api";
 import { meeting as text } from "../copy/meeting";
-import { titleToFilename } from "../download-filename";
 import { transcriptToText, type ExportTurn } from "../transcript-export";
+import { saveTextFile, transcriptFilename } from "../transcript-download";
 import { Download } from "lucide-react";
 import { Icon, Menu, MenuItem } from "./ui";
 import "../styles/meeting.css";
@@ -25,15 +25,7 @@ export function MeetingDownloads({ meetingId, title, manifest, turns }: MeetingD
   function downloadTranscript() {
     setError(false);
     try {
-      const url = URL.createObjectURL(new Blob([transcriptToText(turns)], { type: "text/plain;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = titleToFilename(title, "txt") ?? text.transcriptFilename(meetingId);
-      document.body.append(link);
-      link.click();
-      link.remove();
-      // Give the browser time to start reading the download before releasing it.
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      saveTextFile(transcriptFilename(meetingId, title), transcriptToText(turns));
     } catch {
       setError(true);
     }

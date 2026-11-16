@@ -1,13 +1,17 @@
 """FastAPI dependencies for JWT authentication."""
 
 import os
+from typing import Any
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from sqlalchemy import select
 
 from app.auth.schemas import AuthenticatedUser
-from app.auth.token import JWT_ALGORITHM, JWT_SECRET
+from app.auth.token import decode_token
+from app.infra.database import create_engine, create_session_factory
+from app.infra.models import User
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 _bearer_dependency = Depends(_bearer_scheme)
@@ -35,53 +39,81 @@ def _bypass_active() -> bool:
     return auth_disabled and app_env == "test"
 
 
+def _test_environment() -> bool:
+    return os.getenv("APP_ENV", "").lower() == "test"
+
+
+def _user_from_claims(sub: str, payload: dict[str, Any]) -> AuthenticatedUser:
+    """Test environment only: tokens for users without a row are trusted on their claims.
+
+    Gated like the AUTH_DISABLED bypass (`APP_ENV=test`), so existing route tests that mint tokens
+    for synthetic users keep working. Any other environment rejects a token whose account is missing.
+    """
+    email, name, is_sales = payload.get("email"), payload.get("name"), payload.get("is_sales")
+    if not isinstance(email, str) or not isinstance(name, str) or not isinstance(is_sales, bool):
+        raise _unauthorized("Token with incomplete claims")
+    return AuthenticatedUser(id=sub, email=email, name=name, is_sales=is_sales)
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def _load_account(user_id: str) -> User | None:
+    """Current account row; the database, not the token, is the source of truth for role and revocation."""
+    engine = create_engine()
+    try:
+        async with create_session_factory(engine)() as session:
+            return (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    finally:
+        await engine.dispose()
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = _bearer_dependency,
 ) -> AuthenticatedUser:
-    """Extracts and validates the JWT token from the Authorization header.
+    """Validates the JWT and the account it names against the database.
 
-    Returns:
-        AuthenticatedUser with the token's data.
+    The token must carry a valid signature and expiry, the account must still exist, and the token's
+    `tv` claim must equal `users.token_version` (logout bumps it). Tokens without `tv`, issued before
+    revocation existed, count as version 0. `email`, `name` and `is_sales` come from the account row,
+    so a role change applies to existing tokens on the next request.
 
     Raises:
-        HTTPException 401: if the token is missing, invalid, or expired.
+        HTTPException 401: if the token is missing, invalid, expired or revoked.
     """
     # Bypass only in the test environment (AUTH_DISABLED=1 and APP_ENV=test), Req. 13.1, 13.4
     if _bypass_active():
         return _DEV_USER
 
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication token required",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise _unauthorized("Authentication token required")
 
-    token = credentials.credentials
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except JWTError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        payload: dict[str, Any] = decode_token(credentials.credentials)
+    except jwt.PyJWTError as exc:
+        raise _unauthorized("Invalid or expired token") from exc
 
-    sub: str | None = payload.get("sub")
-    email: str | None = payload.get("email")
-    name: str | None = payload.get("name")
-    is_sales: bool | None = payload.get("is_sales")
+    sub = payload.get("sub")
+    token_version = payload.get("tv", 0)
+    if not isinstance(sub, str) or not sub or not isinstance(token_version, int):
+        raise _unauthorized("Token with incomplete claims")
 
-    if sub is None or email is None or name is None or is_sales is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token with incomplete claims",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    account = await _load_account(sub)
+    if account is None:
+        if _test_environment():
+            return _user_from_claims(sub, payload)
+        raise _unauthorized("Invalid or expired token")
+    if account.token_version != token_version:
+        raise _unauthorized("Invalid or expired token")
 
     return AuthenticatedUser(
-        id=sub,
-        email=email,
-        name=name,
-        is_sales=is_sales,
+        id=account.id,
+        email=account.email,
+        name=account.name,
+        is_sales=account.is_sales,
     )

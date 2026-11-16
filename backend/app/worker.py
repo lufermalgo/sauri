@@ -16,6 +16,7 @@ from app.diarization.worker import start_worker as start_diarization_worker
 from app.infra.database import create_engine, create_session_factory
 from app.infra.object_store import create_object_store
 from app.infra.queue import create_job_queue
+from app.infra.secrets import log_secret_sources
 from app.regeneration.sweeper import run_stale_operation_sweeper
 from app.retention.worker import start_retention_worker
 from app.summaries.sweeper import run_stale_request_sweeper
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 async def main() -> None:
     """Starts the queue, subscribes workers, and waits until shutdown."""
     logger.info("Starting sauri worker...")
+    log_secret_sources(logger)
 
     # Infrastructure
     engine = create_engine()

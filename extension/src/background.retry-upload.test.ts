@@ -17,8 +17,9 @@ async function setup() {
     get(name: string) { return this.fields.get(name); }
   });
   let listener!: Listener;
-  const upload = vi.fn(async () => new Response(JSON.stringify({ recording_id: "retried-recording", state: "queued" }), { status: 200 }));
-  vi.stubGlobal("fetch", upload);
+  const upload = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ recording_id: "retried-recording", state: "queued" }), { status: 200 }));
+  // Only ingestion uploads count; the later processing-status reads are answered with a failure.
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => String(url).endsWith("/ingestion/upload") ? upload(url, init) : Promise.resolve(new Response("", { status: 503 })));
   vi.stubGlobal("chrome", {
     runtime: {
       onMessage: { addListener: (handler: Listener) => { listener = handler; } },
@@ -30,8 +31,7 @@ async function setup() {
     alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
     tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 80 })) },
     storage: {
-      session: { get: vi.fn(async () => ({ sauriState: { status: "idle", paused: false } })) },
-      sync: { get: vi.fn(async () => ({})) },
+      session: { get: vi.fn(async () => ({ sauriState: { status: "idle", paused: false }, sauriSessionToken: "synthetic-token" })) },
     },
   });
   const db = await import("./recording-db");

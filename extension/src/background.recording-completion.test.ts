@@ -34,10 +34,9 @@ async function harness(sessionId: string, tabId: number, legacy = false) {
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
       session: {
-        get: vi.fn(async () => ({ sauriState: structuredClone(state) })),
+        get: vi.fn(async () => ({ sauriState: structuredClone(state), sauriSessionToken: "synthetic-token" })),
         set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = structuredClone(value.sauriState); }),
       },
-      sync: { get: vi.fn(async () => ({})) },
     },
     tabs: {
       onRemoved: { addListener: (fn: typeof onRemoved) => { onRemoved = fn; } },

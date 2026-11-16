@@ -13,6 +13,7 @@ import {
   InvalidSessionError,
   DEFAULT_BACKEND_URL,
 } from "../core/api/client";
+import { isSignInRequired, onSessionChanged, readSessionToken } from "../core/session-token";
 import { portalDestination } from "./portal";
 import { panelCopy as copy } from "./copy";
 import { RecordingSettingsView } from "./components/RecordingSettingsView";
@@ -81,12 +82,15 @@ export function SidePanelApp() {
   const recordingElapsedRef = useRef(0);
 
   const loadSession = useCallback(async () => {
-    const result = await chrome.storage.sync.get("authToken");
-    setSessionActive(Boolean(result.authToken));
+    const active = Boolean(await readSessionToken());
+    // Queued uploads that found no valid token reuse the session-expired prompt.
+    if (!active && await isSignInRequired()) setSessionExpired(true);
+    setSessionActive(active);
   }, []);
 
   useEffect(() => {
     void loadSession();
+    return onSessionChanged(() => { void loadSession(); });
   }, [loadSession]);
 
 
@@ -378,6 +382,8 @@ export function SidePanelApp() {
       await loginApi(email, password, DEFAULT_BACKEND_URL);
       setSessionExpired(false);
       setSessionActive(true);
+      // Uploads queued while signed out resume now instead of waiting for the next alarm.
+      void Promise.resolve(chrome.runtime.sendMessage({ type: "session-restored" })).catch(() => undefined);
     },
     []
   );

@@ -22,7 +22,7 @@ PARENT = "023_summary_request_timestamps"
 
 def test_revision_is_the_single_head_after_summary_timestamps() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == [REVISION]
+    assert script.get_heads() == ["025_auth_hardening"]  # The auth revision follows.
     assert script.get_revision(REVISION).down_revision == PARENT
     assert len(REVISION) <= 32  # alembic_version.version_num is VARCHAR(32) unless widened
 
@@ -49,7 +49,7 @@ async def test_upgrade_creates_the_audit_table_and_downgrade_removes_only_it(mon
             "INSERT INTO meetings (id, origin, process_state, created_by, created_at) "
             "VALUES ('m', 'manual', 'completed', 'u', now())")
 
-        await asyncio.to_thread(command.upgrade, config, "head")
+        await asyncio.to_thread(command.upgrade, config, REVISION)
         assert await connection.fetchval("SELECT version_num FROM alembic_version") == REVISION
         insert = (
             "INSERT INTO regeneration_operations (id, meeting_id, stage, status, requested_by, requested_at) "
@@ -70,7 +70,7 @@ async def test_upgrade_creates_the_audit_table_and_downgrade_removes_only_it(mon
         assert await connection.fetchval("SELECT to_regclass('regeneration_operations')") is None
         assert await connection.fetchval("SELECT count(*) FROM meetings") == 1  # nothing else was touched
 
-        await asyncio.to_thread(command.upgrade, config, "head")
+        await asyncio.to_thread(command.upgrade, config, REVISION)
         assert await connection.fetchval("SELECT count(*) FROM regeneration_operations") == 0
     finally:
         if connection is not None:

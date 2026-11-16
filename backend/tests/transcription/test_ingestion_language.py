@@ -12,6 +12,7 @@ import pytest
 from fastapi import UploadFile
 
 from app.ingestion import router
+from tests.media_samples import WEBM
 
 
 def _payload(**overrides: object) -> dict[str, Any]:
@@ -64,7 +65,7 @@ async def test_ingestion_forwards_optional_language(
     engine = Mock()
     engine.dispose = AsyncMock()
     store = Mock()
-    store.save = AsyncMock(return_value="synthetic/audio-object")
+    store.save_stream = AsyncMock(return_value="synthetic/audio-object")
     queue = Mock()
     queue.connect = AsyncMock()
     queue.publish = AsyncMock()
@@ -86,7 +87,7 @@ async def test_ingestion_forwards_optional_language(
     monkeypatch.setattr(router, "create_processing_generation", AsyncMock(return_value=1))
 
     result = await router.upload_recording(
-        audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic audio")),
+        audio=UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"synthetic audio")),
         video=None,
         data=json.dumps(_payload(meeting_id=meeting_id, video_presence="absent", language=language)),
         user=AuthenticatedUser(

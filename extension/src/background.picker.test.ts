@@ -68,7 +68,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     get(key: string) { return this.values.get(key); }
   });
   const original = { status: recording ? "recording" : "pending", meetingTitle: "Prior title", meetingUrl: "https://meet.google.com/previous", captureMode };
-  const stored: Record<string, any> = { sauriState: original };
+  const stored: Record<string, any> = { sauriState: original, sauriSessionToken: "synthetic-token" };
   const video = new Track("video");
   const audio = new Track("audio");
   const stream = new Stream([audio, video]);
@@ -103,8 +103,9 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     if (message.type === "get-capture-status" && liveOffscreen) return { active: true };
     return dispatch(listeners[toOffscreen ? 0 : 1], message);
   });
-  const upload = vi.fn(async () => new Response(JSON.stringify({ recording_id: "server-picker", state: "queued" }), { status: 200 }));
-  vi.stubGlobal("fetch", upload);
+  const upload = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ recording_id: "server-picker", state: "queued" }), { status: 200 }));
+  // Only ingestion uploads count; the later processing-status reads are answered with a failure.
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => String(url).endsWith("/ingestion/upload") ? upload(url, init) : Promise.resolve(new Response("", { status: 503 })));
   vi.stubGlobal("chrome", {
     runtime: {
       ContextType: { OFFSCREEN_DOCUMENT: "OFFSCREEN_DOCUMENT" },
@@ -128,7 +129,6 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
         set: vi.fn(async (values: object) => { Object.assign(stored, values); }),
         remove: vi.fn(async (key: string) => { delete stored[key]; }),
       },
-      sync: { get: vi.fn(async () => ({})) },
     },
     tabs: {
       query: vi.fn(async (query: { active?: boolean }) => query.active ? [{ id: 7, url, title }] : []),

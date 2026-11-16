@@ -2,17 +2,26 @@
 
 from typing import cast
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import SummaryTemplate, TemplateCategory, User
 
 
-async def list_templates(session: AsyncSession, owner_id: str) -> list[SummaryTemplate]:
+async def list_templates(
+    session: AsyncSession, owner_id: str, limit: int, offset: int = 0,
+) -> list[SummaryTemplate]:
     rows = await session.scalars(
-        select(SummaryTemplate).where(SummaryTemplate.owner_user_id == owner_id).order_by(SummaryTemplate.created_at)
+        select(SummaryTemplate).where(SummaryTemplate.owner_user_id == owner_id)
+        .order_by(SummaryTemplate.created_at, SummaryTemplate.id).limit(limit).offset(offset)
     )
     return list(rows.all())
+
+
+async def count_templates(session: AsyncSession, owner_id: str) -> int:
+    return int(await session.scalar(
+        select(func.count()).select_from(SummaryTemplate).where(SummaryTemplate.owner_user_id == owner_id)
+    ) or 0)
 
 
 async def get_template(session: AsyncSession, owner_id: str, template_id: str) -> SummaryTemplate | None:
@@ -21,11 +30,20 @@ async def get_template(session: AsyncSession, owner_id: str, template_id: str) -
     ))
 
 
-async def list_categories(session: AsyncSession, owner_id: str) -> list[TemplateCategory]:
+async def list_categories(
+    session: AsyncSession, owner_id: str, limit: int, offset: int = 0,
+) -> list[TemplateCategory]:
     rows = await session.scalars(
-        select(TemplateCategory).where(TemplateCategory.owner_user_id == owner_id).order_by(TemplateCategory.created_at)
+        select(TemplateCategory).where(TemplateCategory.owner_user_id == owner_id)
+        .order_by(TemplateCategory.created_at, TemplateCategory.id).limit(limit).offset(offset)
     )
     return list(rows.all())
+
+
+async def count_categories(session: AsyncSession, owner_id: str) -> int:
+    return int(await session.scalar(
+        select(func.count()).select_from(TemplateCategory).where(TemplateCategory.owner_user_id == owner_id)
+    ) or 0)
 
 
 async def get_category(session: AsyncSession, owner_id: str, category_id: str) -> TemplateCategory | None:

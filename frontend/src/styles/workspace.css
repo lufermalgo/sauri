@@ -10,6 +10,34 @@
   min-height: 0;
 }
 
+/*
+ * The list pane's slot. Hidden from the side panel it collapses to nothing (the detail takes the full
+ * width) while staying mounted: the list inside keeps its own width, so it is clipped, not reflowed.
+ */
+.workspace-list {
+  display: flex;
+  flex: 0 0 var(--ds-list-w);
+  width: var(--ds-list-w);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: flex-basis var(--ds-duration) var(--ds-ease), width var(--ds-duration) var(--ds-ease),
+    opacity var(--ds-duration) var(--ds-ease), visibility 0s linear 0s;
+}
+
+.workspace[data-layout="single"] .workspace-list {
+  flex: 1;
+  width: auto;
+}
+
+.workspace-list[data-hidden] {
+  flex-basis: 0;
+  width: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition-delay: 0s, 0s, 0s, var(--ds-duration);
+}
+
 .workspace-detail {
   display: flex;
   flex: 1 1 0;

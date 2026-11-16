@@ -9,6 +9,7 @@ import {
   markProcessing,
   markDone,
   markFailed,
+  releaseProcessing,
   resetFailedJobsForSession,
   type UploadJob,
 } from "./upload-queue";
@@ -20,6 +21,14 @@ import { canCaptureCurrentTab, isMeetUrl } from "./core/capture";
 import { ensureOverlay } from "./overlay-injection";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
 import { parseDurationSeconds } from "./core/recording-duration";
+import {
+  SessionRequiredError,
+  clearSessionToken,
+  purgeLegacyToken,
+  readSessionToken,
+  restrictSessionStorageToTrustedContexts,
+  setSignInRequired,
+} from "./core/session-token";
 
 export {};
 
@@ -141,24 +150,21 @@ async function uploadRecording(job: UploadJob): Promise<void> {
     formData.append("audio", blob, "recording.webm");
     formData.append("data", JSON.stringify(ingestionData));
 
-    // Retrieve auth token from chrome.storage.sync (set by login flow)
-    const headers: Record<string, string> = {};
-    try {
-      const stored = await chrome.storage.sync.get("authToken");
-      if (stored.authToken) {
-        headers["Authorization"] = `Bearer ${stored.authToken}`;
-      } else {
-        console.warn("[sauri] No authToken in storage — uploading without auth (dev mode)");
-      }
-    } catch (e) {
-      console.warn("[sauri] Could not read authToken from storage:", e);
-    }
+    // The token comes from chrome.storage.session (set by the sign-in flow). Without it the
+    // job is released back to the queue and the panel asks the user to sign in again.
+    const token = await readSessionToken();
+    if (!token) throw new SessionRequiredError();
 
     const response = await fetch(`${BACKEND_URL}/api/v1/ingestion/upload`, {
       method: "POST",
-      headers,
+      headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
+
+    if (response.status === 401) {
+      await clearSessionToken();
+      throw new SessionRequiredError();
+    }
 
     if (response.ok) {
       const result = await response.json();
@@ -197,6 +203,11 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 // --- Initialization ---
+
+// Hardening runs on every service worker start: the legacy synced token is deleted (never
+// copied) and session storage stays out of reach of content scripts.
+void restrictSessionStorageToTrustedContexts();
+void purgeLegacyToken();
 
 chrome.runtime.onInstalled.addListener(async () => {
   // Updates must not detach a still-live legacy offscreen capture.
@@ -276,7 +287,7 @@ chrome.runtime.onMessage.addListener(
   ) => {
     // Media-owner messages cannot come from a page. Overlay controls are
     // separately bound to the exact recording session and originating Meet tab.
-    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload"].includes(message.type)) {
+    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload", "session-restored"].includes(message.type)) {
       sendResponse({ ok: false, error: "Message requires an extension capture context" });
       return false;
     }
@@ -335,6 +346,14 @@ chrome.runtime.onMessage.addListener(
           }
         })();
         return true;
+
+      case "session-restored":
+        // The panel just signed in: resume the uploads that were waiting for a token.
+        void processUploadQueue().catch(() => {
+          console.warn("[sauri] Upload processing unavailable; pending jobs remain queued");
+        });
+        sendResponse({ ok: true });
+        break;
 
       case "recording-stopped":
         handleRecordingStopped(message.size!, message.mimeType!, message.sessionId, message.durationSeconds);
@@ -796,6 +815,14 @@ async function processUploadQueue(): Promise<void> {
     return;
   }
 
+  // No token (browser restarted, session expired): the job stays pending and uncounted, and
+  // the panel asks the user to sign in. Signing in resumes the queue.
+  if (!await readSessionToken()) {
+    await setSignInRequired();
+    console.warn("[sauri] Upload waiting for the user to sign in");
+    return;
+  }
+
   console.log(`[sauri] Processing upload job: ${job.id} (session: ${job.sessionId}, attempt: ${job.retryCount + 1})`);
 
   if (!await markProcessing(job.id)) return; // Concurrent completion/alarm already owns this attempt.
@@ -805,6 +832,12 @@ async function processUploadQueue(): Promise<void> {
     await uploadRecording(job);
     await markDone(job.id);
   } catch (error) {
+    if (error instanceof SessionRequiredError) {
+      await releaseProcessing(job.id);
+      await setSignInRequired();
+      console.warn("[sauri] Upload waiting for the user to sign in");
+      return;
+    }
     const errorMsg = error instanceof Error ? error.message : "Upload outcome unavailable";
     const latest = await getUploadJob(job.idempotencyKey);
     if (latest?.status !== "done") {
@@ -832,13 +865,13 @@ async function processUploadQueue(): Promise<void> {
 // Only authenticated reads of the persisted meeting can establish processing success.
 async function reconcileProcessing(record: RecordingCompletion): Promise<void> {
   if (!record.recordingId) return;
-  const stored = await chrome.storage.sync.get("authToken");
-  if (typeof stored.authToken !== "string" || !stored.authToken) {
+  const token = await readSessionToken();
+  if (!token) {
     await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing_status_unavailable");
     return;
   }
   const base = `${BACKEND_URL}/api/v1/meetings/${encodeURIComponent(record.meetingId)}`;
-  const headers = { Authorization: `Bearer ${stored.authToken}` };
+  const headers = { Authorization: `Bearer ${token}` };
   async function read(path: string): Promise<unknown> {
     const response = await fetch(`${base}${path}`, { headers });
     if (!response.ok) throw new Error(`Protected recording asset unavailable (${response.status})`);
