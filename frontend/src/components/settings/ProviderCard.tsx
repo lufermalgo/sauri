@@ -40,6 +40,13 @@ function keyLine(provider: EngineProvider, info: EngineKindInfo | undefined): st
   return info?.key_required === false && isLocalApp(provider.kind) ? text.keyNotNeeded : text.keyNone;
 }
 
+/** What the provider can do for Sauri: read from the models it listed, or, when its type serves nothing yet, said so. */
+function servesLine(info: EngineKindInfo | undefined, catalog: CatalogEntry | undefined): string | null {
+  if (info && info.capabilities.length === 0) return text.servesNone;
+  if (catalog?.status !== "ready") return null;
+  return catalog.serves.length > 0 ? text.serves(processList(catalog.serves)) : text.servesNone;
+}
+
 function modelsLine(provider: EngineProvider, catalog: CatalogEntry | undefined): string {
   if (!catalog) return text.modelsNotAsked;
   if (catalog.status === "loading") return text.modelsLoading;
@@ -66,6 +73,7 @@ export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit,
   const info = kinds.find((candidate) => candidate.kind === provider.kind);
   const kindLabel = copy.engines.kinds[provider.kind].label;
   const dimmed = provider.status === "disabled";
+  const serves = servesLine(info, catalog);
 
   return (
     <Card className="engines-card" dimmed={dimmed} aria-labelledby={titleId}>
@@ -91,6 +99,7 @@ export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit,
           <dd>{modelsLine(provider, catalog)}</dd>
         </div>
       </dl>
+      {serves && <p className="engines-card-usage">{serves}</p>}
       <p className="engines-card-usage">{provider.used_by.length > 0 ? text.usedBy(processList(provider.used_by)) : text.unused}</p>
       <div className="engines-card-actions">
         <span className="engines-card-switch">

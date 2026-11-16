@@ -74,7 +74,7 @@ function fakeBackend(setup: Setup = {}) {
   const calls: Call[] = [];
   const failing = new Set<string>();
   const catalogs: Record<string, unknown> = {
-    p1: { models: [{ id: "gpt-a", label: null }, { id: "gpt-b", label: null }], starter: "gpt-a", from_cache: true, fetched_at: null, manual_entry: false, error_class: null },
+    p1: { models: [{ id: "gpt-a", label: null, serves: ["summary"] }, { id: "gpt-b", label: null, serves: ["summary"] }], starter: "gpt-a", from_cache: true, fetched_at: null, manual_entry: false, error_class: null, serves: ["summary"] },
   };
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -524,6 +524,16 @@ describe("local options of the process", () => {
     fireEvent.click(await screen.findByRole("option", { name: /gpt-a/ }));
     expect(await screen.findByRole("dialog", { name: "Notice title" })).toBeInTheDocument();
     expect(writes()).toHaveLength(0);
+  });
+
+  it("says why a working provider is not offered for a process its type does not serve", async () => {
+    await renderReady("transcription", { providers: [provider("p3", "Claude", "anthropic")] });
+    expect(screen.getByText(text.notServedBy("Claude", copy.engines.processes.transcription, copy.engines.processes.summary))).toBeInTheDocument();
+    expect(screen.getByText(text.noProviders)).toBeInTheDocument();
+    cleanup();
+    // A provider that does serve the process needs no such note.
+    await renderReady("summary", { providers: [provider("p3", "Claude", "anthropic")] });
+    expect(screen.queryByText(/no sirve para/)).toBeNull();
   });
 
   it("points to the provider setup when no provider can serve the process", async () => {

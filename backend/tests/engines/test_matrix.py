@@ -61,10 +61,17 @@ def test_documented_expectations_of_the_design_table() -> None:
     assert not matrix.is_offered("assemblyai", "summary")
     assert not matrix.is_offered("deepgram", "summary")
     # Not verified against official documentation: not offered until checked.
-    assert not matrix.is_offered("gemini", "summary")
     assert not matrix.is_offered("chatgpt_plan", "summary")
     assert not matrix.is_offered("ollama", "summary")
     assert not matrix.is_offered("assemblyai", "diarization")
+
+
+def test_gemini_serves_summary_only() -> None:
+    # Checked with a real key on 2026-11-16 (OpenAI-compatible route); audio would need generateContent.
+    assert matrix.is_offered("gemini", "summary")
+    assert not matrix.is_offered("gemini", "transcription")
+    assert not matrix.is_offered("gemini", "diarization")
+    assert matrix.ApiCapabilityMatrix().supports("gemini", "summary", "openai-chat")
 
 
 def test_gateway_contract_requires_the_matching_transport() -> None:

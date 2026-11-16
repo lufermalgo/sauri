@@ -1,7 +1,7 @@
 """``openai-chat`` adapter: ``POST {base_url}/chat/completions`` in streaming mode, aggregated on demand.
 
-Covers OpenAI, OpenRouter, Groq, Ollama, LM Studio and other OpenAI-compatible servers. Gemini's
-OpenAI-compatible path is NOT claimed: it stays ``verified_on = None`` until it is tried with a real key (U10).
+Covers OpenAI, OpenRouter, Groq, Ollama, LM Studio, Gemini (its OpenAI-compatible route, checked with a real
+key on 2026-11-16, see ``capability_matrix.py``) and other OpenAI-compatible servers.
 Provider kind and base URL come from the route; the key goes only in ``Authorization: Bearer``.
 """
 
