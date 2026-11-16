@@ -107,6 +107,9 @@ async def test_api_refuses_to_start_without_a_valid_secret(production_env: pytes
 async def test_real_application_lifespan_includes_the_secret_check(production_env: pytest.MonkeyPatch) -> None:
     from app.main import app
 
+    # The application lifespan runs first and now requires explicit service URLs (no built-in defaults).
+    production_env.setenv("DATABASE_URL", "postgresql+asyncpg://sauri:unused@127.0.0.1:1/sauri")
+    production_env.setenv("QUEUE_BROKER_URL", "amqp://sauri:unused@127.0.0.1:1/")
     with pytest.raises(JwtConfigurationError):
         async with app.router.lifespan_context(app):
             pass

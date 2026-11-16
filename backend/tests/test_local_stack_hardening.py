@@ -44,3 +44,46 @@ def test_services_read_credentials_from_mounted_files() -> None:
     assert "RUSTFS_SECRET_KEY_FILE=/run/secrets/object_store_secret_key" in services["minio"]["environment"]
     assert services["rabbitmq"]["hostname"] == "sauri-rabbitmq"
     assert "rabbitmq-data:/var/lib/rabbitmq" in services["rabbitmq"]["volumes"]
+
+
+BACKEND_DOCKERFILE = Path(__file__).resolve().parents[1] / "Dockerfile"
+DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
+
+
+def test_auth_bypass_is_off_by_default_and_app_env_is_production() -> None:
+    env = "\n".join(_compose()["services"]["api"]["environment"])
+    assert "AUTH_DISABLED=${AUTH_DISABLED:-false}" in env
+    assert "APP_ENV=${APP_ENV:-production}" in env
+    assert "ENABLE_API_DOCS=${ENABLE_API_DOCS:-false}" in env
+
+
+def test_cors_origins_are_configured_without_wildcard() -> None:
+    env = "\n".join(_compose()["services"]["api"]["environment"])
+    assert "CORS_ALLOWED_ORIGINS=" in env and "EXTENSION_ORIGINS=" in env
+    assert "*" not in env.split("CORS_ALLOWED_ORIGINS=")[1].splitlines()[0]
+
+
+def test_every_third_party_image_is_pinned_by_digest() -> None:
+    for name, service in _compose()["services"].items():
+        if "image" in service:
+            assert DIGEST.search(service["image"]), f"{name} image is not pinned by digest: {service['image']}"
+
+
+def test_application_containers_drop_privileges() -> None:
+    services = _compose()["services"]
+    for name in ("api", "worker", "portal"):
+        assert services[name]["cap_drop"] == ["ALL"], name
+        assert "no-new-privileges:true" in services[name]["security_opt"], name
+    assert services["worker"]["read_only"] is True
+    assert services["portal"]["read_only"] is True
+    assert "healthcheck" in services["api"]
+
+
+def test_backend_image_is_pinned_locked_and_non_root() -> None:
+    text = BACKEND_DOCKERFILE.read_text(encoding="utf-8")
+    assert re.search(r"^ARG PYTHON_IMAGE=python:3\.11-slim@sha256:[0-9a-f]{64}$", text, re.MULTILINE)
+    assert "uv sync --frozen --no-dev" in text
+    assert "pip install" not in text
+    users = re.findall(r"^USER (.+)$", text, re.MULTILINE)
+    assert users and users[-1] == "sauri"
+    assert "--uid 10001" in text

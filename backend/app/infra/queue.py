@@ -50,11 +50,14 @@ class JobQueue(ABC):
 def create_job_queue() -> JobQueue:
     """Factory that creates the configured JobQueue implementation.
 
-    Reads QUEUE_BROKER_URL from the environment to determine the broker URL.
+    Reads QUEUE_BROKER_URL from the environment; there is no built-in default credential.
     """
     from app.infra.queue_rabbitmq import RabbitMQJobQueue
-    from app.infra.secrets import read_secret, with_password
+    from app.infra.secrets import SecretUnavailableError, read_secret, require_url_password, with_password
 
-    broker_url = os.environ.get("QUEUE_BROKER_URL", "amqp://guest:guest@localhost:5672/")
+    broker_url = os.environ.get("QUEUE_BROKER_URL")
+    if not broker_url:
+        raise SecretUnavailableError("Set QUEUE_BROKER_URL (the password goes in QUEUE_BROKER_PASSWORD_FILE)")
     broker_url = with_password(broker_url, read_secret("QUEUE_BROKER_PASSWORD_FILE"))
+    require_url_password(broker_url, "QUEUE_BROKER_PASSWORD_FILE", "QUEUE_BROKER_URL")
     return RabbitMQJobQueue(broker_url=broker_url)

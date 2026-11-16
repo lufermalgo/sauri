@@ -19,13 +19,14 @@ class Base(DeclarativeBase):
 
 def get_database_url() -> str:
     """Get the database URL; the password may come from the file named by DATABASE_PASSWORD_FILE."""
-    from app.infra.secrets import read_secret, with_password
+    from app.infra.secrets import SecretUnavailableError, read_secret, require_url_password, with_password
 
-    url = os.environ.get(
-        "DATABASE_URL",
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/sauri",
-    )
-    return with_password(url, read_secret("DATABASE_PASSWORD_FILE"))
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise SecretUnavailableError("Set DATABASE_URL (the password goes in DATABASE_PASSWORD_FILE)")
+    url = with_password(url, read_secret("DATABASE_PASSWORD_FILE"))
+    require_url_password(url, "DATABASE_PASSWORD_FILE", "DATABASE_URL")
+    return url
 
 
 def create_engine(database_url: str | None = None) -> AsyncEngine:
