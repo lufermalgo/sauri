@@ -89,6 +89,14 @@ describe("speaker state indicator", () => {
     expect(article(1).querySelector(".meeting-review-status")).toBeNull();
   });
 
+  it("places the badge right after the name on the same line", () => {
+    panel();
+    const heading = within(article(0)).getByRole("heading", { name: G1 });
+    const badge = within(article(0)).getByText(t("speakerReview:pendingState"));
+    expect(heading.parentElement).toHaveClass("meeting-review-line");
+    expect(heading.nextElementSibling).toBe(badge);
+  });
+
   it("keeps the assigned state for screen readers only", () => {
     panel();
     expect(within(article(1)).getByText(t("speakerReview:namedState"))).toHaveClass("meeting-sr-only");

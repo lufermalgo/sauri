@@ -194,7 +194,7 @@
 /*
  * Speaker identification rows, shown in the panel beside the video. Each row is a three-column grid
  * [ avatar | name | actions ] so avatars, names and buttons line up from row to row. Assigned rows show only
- * the name; a speaker that still needs a name carries a small state badge under it.
+ * the name; a speaker that still needs a name carries a small state badge right after it.
  */
 .meeting-review-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; column-gap: var(--ds-space-2); padding: var(--ds-space-1) var(--ds-space-3); border-top: 1px solid var(--ds-fill-strong); overflow-wrap: anywhere; box-shadow: inset 3px 0 0 transparent; transition: background-color var(--ds-duration) var(--ds-ease); }
 @media (hover: hover) {
@@ -209,7 +209,15 @@
 /* "Name - Organization": the organization is secondary and is the first part to be cut by the ellipsis. */
 .meeting-review-org { font-weight: var(--ds-weight-regular); color: var(--ds-fg-muted); }
 .meeting-review-identity .ui-tooltip { right: auto; left: 0; width: max-content; max-width: min(18rem, 70vw); white-space: normal; }
-.meeting-review-status { margin-top: 2px; }
+/* Name and pending badge share one line: the name gives way first (ellipsis), the badge never shrinks. When the column is too narrow for both, the badge drops under the name. */
+.meeting-review-identity { container-type: inline-size; }
+.meeting-review-line { display: flex; align-items: center; gap: var(--ds-space-2); min-width: 0; }
+.meeting-review-line > .meeting-review-name { flex: 0 1 auto; min-width: 4rem; }
+.meeting-review-status { flex: none; }
+@container (max-width: 13.5rem) {
+  .meeting-review-line { flex-wrap: wrap; row-gap: 2px; }
+  .meeting-review-line > .meeting-review-name { flex-basis: 100%; }
+}
 .meeting-review-actions { display: flex; align-items: center; gap: 2px; }
 .meeting-review-play, .meeting-review-edit-trigger { position: relative; flex: none; }
 .meeting-review-play .ui-tooltip, .meeting-review-edit-trigger .ui-tooltip { right: 0; left: auto; width: max-content; max-width: min(16rem, 60vw); white-space: normal; }
