@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   getDiarization,
   getMeeting,
+  regenerateTranscription,
   listMeetings,
   getPlaybackManifest,
   getSpeakerReview,
@@ -104,6 +105,8 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   }, [meetingId, authorizedMeetingId]);
 
   const [statusError, setStatusError] = useState(false);
+  // Bumped when the owner retries an interrupted meeting: polling stopped at "failed" and starts over.
+  const [pollRound, setPollRound] = useState(0);
   const [diarizationError, setDiarizationError] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const turnRefs = useRef(new Map<string, HTMLLIElement>());
@@ -290,7 +293,13 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       clearTimeout(speakerWaitTimer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [meetingId]);
+  }, [meetingId, pollRound]);
+
+  async function retryTranscription(): Promise<void> {
+    await regenerateTranscription(meetingId);
+    setMeeting(null);
+    setPollRound((round) => round + 1);
+  }
 
   /** Queues one disposition save. Resolves to null on success or to the message to show when it failed. */
   function recordDisposition(speakerId: string, disposition: SpeakerDisposition, label?: string): Promise<string | null> {
@@ -518,7 +527,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
               diarizationNotFound={diarizationNotFound} error={statusError}
               hasDiarization={diarization !== null} summary={summaryForStage}
               audioSeconds={playbackManifest?.duration_seconds ?? metadata.durationSeconds}
-              createdAt={metadata.createdAt} />
+              createdAt={metadata.createdAt} onRetry={retryTranscription} />
           </div>}
         {diarizationError && <p role="alert">{t("processing:diarizationFailed")}</p>}
         {error && <p role="alert" className="meeting-error">{error}</p>}

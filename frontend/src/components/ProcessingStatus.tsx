@@ -1,11 +1,12 @@
+import { useState } from "react";
 import type { MeetingState } from "../api";
 import {
-  ACTIVE_STAGES, NO_SPEECH_CAUSE, detectProcessingStage, processingFailureText, stageLabel, type ActiveStage, type DetectedStage,
+  ACTIVE_STAGES, INTERRUPTED_CAUSE, NO_SPEECH_CAUSE, detectProcessingStage, processingFailureText, stageLabel, type ActiveStage, type DetectedStage,
   type SummarySignal,
 } from "../processing-estimate";
 import { useStageStart } from "../useStageStart";
 import { StageProgress } from "./StageProgress";
-import { ProgressBar } from "./ui";
+import { Button, ProgressBar } from "./ui";
 import "../styles/processing.css";
 import { useT } from "../i18n";
 
@@ -20,6 +21,33 @@ interface ProcessingStatusProps {
   audioSeconds?: number | null;
   /** Upload time (meeting createdAt). */
   createdAt?: string | null;
+  /** Runs the transcription again; offered only when a restart interrupted the processing. */
+  onRetry?: () => Promise<void>;
+}
+
+function InterruptedRetry({ cause, onRetry }: { cause: string; onRetry: () => Promise<void> }) {
+  const { t } = useT();
+  const [retrying, setRetrying] = useState(false);
+  const [failed, setFailed] = useState(false);
+  async function retry() {
+    setRetrying(true);
+    setFailed(false);
+    try {
+      await onRetry();
+    } catch {
+      setFailed(true);
+      setRetrying(false);
+    }
+  }
+  return (
+    <div className="processing-current">
+      <p role="status">{t("processing:failed")}: {processingFailureText(cause)}</p>
+      <Button variant="primary" size="sm" onClick={() => void retry()} disabled={retrying}>
+        {retrying ? t("processing:retrying") : t("processing:retry")}
+      </Button>
+      {failed && <p role="alert">{t("processing:retryFailed")}</p>}
+    </div>
+  );
 }
 
 const STEP_KEYS = ["upload", ...ACTIVE_STAGES] as const;
@@ -64,7 +92,7 @@ function Stepper({ stage }: { stage: ActiveStage | "done" }) {
 
 export function ProcessingStatus({
   meeting, hasTranscript, diarizationNotFound, error, hasDiarization = false, summary = "none",
-  audioSeconds = null, createdAt = null,
+  audioSeconds = null, createdAt = null, onRetry,
 }: ProcessingStatusProps) {
   const { t } = useT();
   const detected: DetectedStage | null = meeting ? detectProcessingStage({
@@ -79,6 +107,9 @@ export function ProcessingStatus({
       <p className="processing-headline">{t("processing:noSpeechTitle")}</p>
       <p className="processing-explain">{t("processing:noSpeechBody")}</p>
     </div>
+  );
+  if (detected === "failed" && onRetry && meeting.failureCause === INTERRUPTED_CAUSE) return (
+    <InterruptedRetry cause={meeting.failureCause} onRetry={onRetry} />
   );
   if (detected === "failed") return (
     <p role="status">{t("processing:failed")}: {processingFailureText(meeting.failureCause)}</p>

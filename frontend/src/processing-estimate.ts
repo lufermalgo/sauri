@@ -192,7 +192,11 @@ const PROCESSING_FAILURE_KEYS = {
   engine_failed: "engine_failed",
   engine_contract_mismatch: "engine_contract_mismatch",
   invalid_response: "invalid_response",
+  processing_interrupted: "processing_interrupted",
 } as const;
+
+/** The cause set when a restart or crash stopped the processing and it could not resume by itself. */
+export const INTERRUPTED_CAUSE = "processing_interrupted";
 
 /** The translated sentence for a processing failure code; an unknown or missing code gets the generic one. */
 export function processingFailureText(cause?: string | null): string {

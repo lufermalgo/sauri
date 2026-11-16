@@ -701,6 +701,23 @@ describe("meeting summary API adapters", () => {
   );
 });
 
+describe("regenerateTranscription", () => {
+  it("asks for the transcription stage only, with an idempotency key", async () => {
+    const fetchMock = mockFetch({ operation_id: "op-1" }, 202);
+    await expect(api.regenerateTranscription("meeting / 1")).resolves.toBeUndefined();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/meeting%20%2F%201/regenerate");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(JSON.stringify({ stage: "transcription" }));
+    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBeTruthy();
+  });
+
+  it("rejects a refused request without exposing the server detail", async () => {
+    mockFetch({ detail: "private diagnostic" }, 409);
+    await expect(api.regenerateTranscription("meeting-1")).rejects.toThrow("Error 409");
+  });
+});
+
 describe("attributed transcript and meeting state adapters", () => {
   it("maps word turns without reusing segment attribution or dropping ambiguous and unassigned text", async () => {
     mockFetch({

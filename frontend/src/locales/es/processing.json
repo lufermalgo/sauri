@@ -60,6 +60,10 @@
     "engine_failed": "El motor no pudo procesar la grabación.",
     "engine_contract_mismatch": "El motor de transcripción devolvió un formato incompatible.",
     "invalid_response": "El motor de transcripción devolvió una respuesta inválida.",
-    "unknown": "El procesamiento falló sin una causa reconocida."
-  }
+    "unknown": "El procesamiento falló sin una causa reconocida.",
+    "processing_interrupted": "El procesamiento se interrumpió antes de terminar."
+  },
+  "retry": "Reintentar",
+  "retrying": "Reintentando…",
+  "retryFailed": "No se pudo reintentar. Inténtalo de nuevo en un momento."
 }

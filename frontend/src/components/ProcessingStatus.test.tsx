@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { ProcessingStatus } from "./ProcessingStatus";
 import { t } from "../i18n";
@@ -71,6 +71,38 @@ describe("ProcessingStatus — real states", () => {
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     },
   );
+
+  describe("a restart interrupted the processing", () => {
+    const interrupted = { meetingId: "m-1", processState: "failed", failureCause: "processing_interrupted" };
+
+    it("explains it and offers to try again", async () => {
+      const onRetry = vi.fn().mockResolvedValue(undefined);
+      render(<ProcessingStatus {...base({ meeting: interrupted, onRetry })} />);
+      expect(screen.getByRole("status")).toHaveTextContent(processingFailureText("processing_interrupted"));
+      expect(processingFailureText("processing_interrupted")).not.toBe(processingFailureText("unknown"));
+      fireEvent.click(screen.getByRole("button", { name: t("processing:retry") }));
+      await waitFor(() => expect(onRetry).toHaveBeenCalledTimes(1));
+      expect(screen.getByRole("button")).toBeDisabled();
+    });
+
+    it("lets the owner try again when the request is refused", async () => {
+      const onRetry = vi.fn().mockRejectedValue(new Error("Error 503"));
+      render(<ProcessingStatus {...base({ meeting: interrupted, onRetry })} />);
+      fireEvent.click(screen.getByRole("button", { name: t("processing:retry") }));
+      expect(await screen.findByRole("alert")).toHaveTextContent(t("processing:retryFailed"));
+      expect(screen.getByRole("button", { name: t("processing:retry") })).toBeEnabled();
+    });
+
+    it("offers nothing when no retry is available, and no other failure gets a button", () => {
+      render(<ProcessingStatus {...base({ meeting: interrupted })} />);
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+      cleanup();
+      render(<ProcessingStatus {...base({
+        meeting: { meetingId: "m-1", processState: "failed", failureCause: "engine_failed" }, onRetry: vi.fn(),
+      })} />);
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    });
+  });
 
   it("explains a recording without detected speech instead of a generic failure, with no retry", () => {
     render(<ProcessingStatus {...base({
