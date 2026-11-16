@@ -87,7 +87,7 @@ export function TranscriptPanel({
                     height: "32px",
                     borderRadius: "50%",
                     backgroundColor: color,
-                    color: COLOR_TOKENS.text,
+                    color: COLOR_TOKENS.onSpeaker,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",

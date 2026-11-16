@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import { permissionCopy as copy } from "./copy";
 import { Icon } from "../core/design/Icon";
 import { PanelHeader } from "../panel/components/PanelHeader";
-import "../core/design/tokens.css";
+import "../core/design/base.css";
 import "../panel/panel.css";
 import "./options.css";
 

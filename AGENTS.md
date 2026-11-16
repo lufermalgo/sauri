@@ -54,7 +54,7 @@ Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con 
 - Documentos de producto → `docs/product/` (línea base y descubrimiento).
 - Arquitectura → `docs/architecture/`.
 - Operación y despliegue → `docs/operations/`.
-- Referencias de diseño → `docs/design/`.
+- Sistema de diseño (tokens, paleta clara/oscura, accesibilidad) → `DESIGN.md` en la raíz. Referencias de diseño → `docs/design/`.
 - Informes antiguos → `docs/history/`.
 - Specs → `.spectra/specs/` (índice y estado en `.spectra/README.md`).
 - Scripts → `scripts/` (dev, engines, platform, tests).

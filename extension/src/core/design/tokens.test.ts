@@ -1,101 +1,113 @@
-/**
- * Example-based test: focus ring contrast (RED)
- * Validates: Requirement 12.4
- *
- * Verifies that the focus tokens exported by tokens.ts meet a WCAG contrast
- * ratio >= 3:1 and that AVATAR_PALETTE is a non-empty array.
- *
- * This test MUST FAIL (RED) because tokens.ts doesn't exist yet.
- */
+import { describe, expect, it } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
+import {
+  BACKGROUND_GROUPS,
+  compositeOverWhite,
+  contrastRatio,
+  parseColorTokens,
+  parseContrastTable,
+  parsePaletteTable,
+} from "./contract";
 
-import { describe, it, expect } from "vitest";
-import { FOCUS_RING_COLOR, SURFACE_COLOR, AVATAR_PALETTE } from "./tokens";
+const tokensCss = readFileSync(join(__dirname, "tokens.css"), "utf8");
+const designMd = readFileSync(join(__dirname, "../../../../DESIGN.md"), "utf8");
+const tokens = parseColorTokens(tokensCss);
+const palette = parsePaletteTable(designMd);
+const contrastRows = parseContrastTable(designMd);
 
-// ---------------------------------------------------------------------------
-// Helper: WCAG 2.x relative luminance calculation
-// https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
-// ---------------------------------------------------------------------------
-
-/**
- * Converts an sRGB color channel (0-255) to its linear component.
- */
-function linearChannel(c8bit: number): number {
-  const c = c8bit / 255;
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-}
-
-/**
- * Parses a hexadecimal color (#RRGGBB or #RGB) and returns [r, g, b] in 0-255.
- * Throws if the format isn't recognized.
- */
-function parseHex(hex: string): [number, number, number] {
-  const h = hex.replace("#", "");
-  if (h.length === 3) {
-    return [
-      parseInt(h[0] + h[0], 16),
-      parseInt(h[1] + h[1], 16),
-      parseInt(h[2] + h[2], 16),
-    ];
-  }
-  if (h.length === 6) {
-    return [
-      parseInt(h.slice(0, 2), 16),
-      parseInt(h.slice(2, 4), 16),
-      parseInt(h.slice(4, 6), 16),
-    ];
-  }
-  throw new Error(`Unrecognized hexadecimal color: "${hex}"`);
-}
-
-/**
- * Calculates the WCAG relative luminance of a hexadecimal color.
- */
-function relativeLuminance(hex: string): number {
-  const [r, g, b] = parseHex(hex);
-  return (
-    0.2126 * linearChannel(r) +
-    0.7152 * linearChannel(g) +
-    0.0722 * linearChannel(b)
+// Source files the design contract governs: no literal colors or web fonts outside tokens.css.
+const srcRoot = join(__dirname, "../..");
+function walk(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
   );
 }
+const governed = walk(srcRoot)
+  .map((path) => relative(srcRoot, path))
+  .filter((path) => /\.(css|ts|tsx)$/.test(path))
+  .filter((path) => !/\.test\.tsx?$/.test(path) && !/^core\/design\/(tokens\.css|contract\.ts)$/.test(path) && !path.startsWith("e2e/"))
+  .map((path) => [path, readFileSync(join(srcRoot, path), "utf8")] as const);
 
-/**
- * Calculates the WCAG contrast ratio between two hexadecimal colors.
- * Always returns a value >= 1.
- */
-function contrastRatio(hex1: string, hex2: string): number {
-  const l1 = relativeLuminance(hex1);
-  const l2 = relativeLuminance(hex2);
-  const lighter = Math.max(l1, l2);
-  const darker = Math.min(l1, l2);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe("Design_System – focus tokens (Req. 12.4)", () => {
-  it("FOCUS_RING_COLOR is defined and is a valid hexadecimal color", () => {
-    expect(FOCUS_RING_COLOR).toBeDefined();
-    expect(typeof FOCUS_RING_COLOR).toBe("string");
-    // Must be parseable as hex; parseHex throws if it isn't
-    expect(() => parseHex(FOCUS_RING_COLOR)).not.toThrow();
+describe("DESIGN.md palette table", () => {
+  it("lists exactly the color tokens declared in tokens.css", () => {
+    expect(Object.keys(palette).sort()).toEqual(Object.keys(tokens).sort());
   });
 
-  it("SURFACE_COLOR is defined and is a valid hexadecimal color", () => {
-    expect(SURFACE_COLOR).toBeDefined();
-    expect(typeof SURFACE_COLOR).toBe("string");
-    expect(() => parseHex(SURFACE_COLOR)).not.toThrow();
+  it.each(Object.keys(palette))("%s matches tokens.css in light and dark", (name) => {
+    expect(tokens[name]).toEqual(palette[name]);
+  });
+});
+
+describe("DESIGN.md contrast table", () => {
+  it("covers the declared pairs", () => {
+    expect(contrastRows.length).toBeGreaterThan(30);
   });
 
-  it("the contrast between FOCUS_RING_COLOR and SURFACE_COLOR is >= 3:1 (Req. 12.4)", () => {
-    const ratio = contrastRatio(FOCUS_RING_COLOR, SURFACE_COLOR);
-    expect(ratio).toBeGreaterThanOrEqual(3.0);
+  it.each(contrastRows.map((row) => [`${row.text} / ${row.background}`, row] as const))("%s", (_label, row) => {
+    const backgrounds = BACKGROUND_GROUPS[row.background] ?? [row.background];
+    const measure = (mode: "light" | "dark") =>
+      Math.min(...backgrounds.map((bg) => contrastRatio(tokens[row.text][mode], tokens[bg][mode])));
+    const light = measure("light");
+    const dark = measure("dark");
+    expect(Number(light.toFixed(2))).toBe(row.light);
+    expect(Number(dark.toFixed(2))).toBe(row.dark);
+    if (row.note.startsWith("exc")) {
+      // Documented exception (DESIGN.md 3.3): must stay within 0.1 of the minimum and be dark-safe.
+      expect(light).toBeGreaterThanOrEqual(row.min - 0.1);
+      expect(dark).toBeGreaterThanOrEqual(row.min);
+    } else {
+      expect(light).toBeGreaterThanOrEqual(row.min);
+      expect(dark).toBeGreaterThanOrEqual(row.min);
+    }
   });
 
-  it("AVATAR_PALETTE is a non-empty array", () => {
-    expect(Array.isArray(AVATAR_PALETTE)).toBe(true);
-    expect(AVATAR_PALETTE.length).toBeGreaterThan(0);
+  it("keeps on-scrim readable over the strong scrim on a pure white page", () => {
+    for (const mode of ["light", "dark"] as const) {
+      const over = compositeOverWhite(tokens["scrim-strong"][mode]);
+      expect(contrastRatio(tokens["on-scrim"][mode], over)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
+describe("token scales", () => {
+  const scale = (prefix: string) =>
+    [...tokensCss.matchAll(new RegExp(`--ds-${prefix}-(\\w+):\\s*(\\d+)px`, "g"))].map((m) => Number(m[2]));
+
+  it("uses the 4/8/12/16/24/32 spacing scale", () => {
+    expect(scale("space")).toEqual([4, 8, 12, 16, 24, 32]);
+  });
+
+  it("fixes the touch target, focus ring and icon scale", () => {
+    expect(tokensCss).toMatch(/--ds-target:\s*44px/);
+    expect(tokensCss).toMatch(/--ds-focus-width:\s*2px/);
+    expect(tokensCss).toMatch(/--ds-focus-offset:\s*2px/);
+    expect(scale("icon")).toEqual([12, 14, 16, 18]);
+  });
+
+  it("supports the system theme and an explicit data-theme override", () => {
+    expect(tokensCss).toMatch(/color-scheme:\s*light dark/);
+    expect(tokensCss).toMatch(/:root\[data-theme="light"\]\s*{\s*color-scheme:\s*light/);
+    expect(tokensCss).toMatch(/:root\[data-theme="dark"\]\s*{\s*color-scheme:\s*dark/);
+  });
+
+  it("uses the system font stacks", () => {
+    expect(tokensCss).toMatch(/--ds-font-sans:\s*system-ui/);
+    expect(tokensCss).toMatch(/--ds-font-mono:\s*ui-monospace/);
+  });
+});
+
+describe("components use tokens only", () => {
+  it("has files to check", () => {
+    expect(governed.length).toBeGreaterThan(10);
+  });
+
+  it.each(governed)("%s has no literal colors or web fonts", (path, source) => {
+    // chrome.action.setBadgeBackgroundColor has no CSS access: it takes the light `recording` value.
+    const checked = path === "background.ts" ? source.replace(tokens.recording.light, "") : source;
+    expect(checked).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(checked).not.toMatch(/\b(?:rgba?|hsla?)\(/);
+    expect(checked).not.toMatch(/Literata|Nunito|JetBrains|@fontsource/);
+    expect(checked).not.toMatch(/(?:linear|radial|conic)-gradient|backdrop-filter/);
   });
 });

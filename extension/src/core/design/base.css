@@ -1,0 +1,20 @@
+/* Entry point for the extension pages (side panel, options, detail): tokens plus base styles. */
+@import "./tokens.css";
+
+body {
+  margin: 0;
+  background: var(--ds-bg);
+  color: var(--ds-fg);
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-text-md);
+  line-height: var(--ds-leading);
+}
+
+:focus-visible {
+  outline: var(--ds-focus-width) solid var(--ds-focus);
+  outline-offset: var(--ds-focus-offset);
+}
+
+time, .ds-numeric {
+  font-variant-numeric: tabular-nums;
+}
