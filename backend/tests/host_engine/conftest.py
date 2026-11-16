@@ -23,6 +23,7 @@ def load_host_module(token_file: Path, secrets_dir: Path) -> ModuleType:
     spec.loader.exec_module(module)
     from sauri_engine_common.secrets import FileSecretStore
 
+    module.ADOPT_ON_START = False  # tests never adopt (or hash) files outside their own temp directories
     module.MANAGEMENT_TOKEN_PATH = token_file
     module._store = FileSecretStore(secrets_dir)
     return module
@@ -36,3 +37,12 @@ def host(tmp_path: Path) -> Iterator[ModuleType]:
     module = load_host_module(token_file, tmp_path / "secrets")
     module.secrets_dir = tmp_path / "secrets"
     yield module
+
+
+@pytest.fixture(autouse=True)
+def _no_real_model_locations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point every location the host service could read at an empty temp directory, never at the owner's files."""
+    monkeypatch.setenv("SAURI_MODELS_DIR", str(tmp_path / "env-models"))
+    monkeypatch.setenv("SAURI_LLM_MODEL_FILE", str(tmp_path / "env-legacy" / "llm.gguf"))
+    monkeypatch.setenv("ASR_MODEL_PATH", str(tmp_path / "env-legacy" / "asr.bin"))
+    monkeypatch.setenv("SAURI_DIAR_VENV", str(tmp_path / "env-diar-venv"))

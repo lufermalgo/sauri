@@ -83,6 +83,7 @@ async def http(engines_db: Any) -> Any:
 ROUTES = [
     ("GET", "/hardware", "/v1/hardware"),
     ("GET", "/models", "/v1/local/models"),
+    ("POST", "/adopt", "/v1/local/adopt"),
     ("POST", "/models/whisper-small-q5_1/install", "/v1/local/models/whisper-small-q5_1/install"),
     ("POST", "/models/qwen3.5-4b-q4_k_m/verify", "/v1/local/models/qwen3.5-4b-q4_k_m/verify"),
     ("DELETE", "/models/qwen3.5-4b-q4_k_m", "/v1/local/models/qwen3.5-4b-q4_k_m"),
@@ -137,6 +138,34 @@ async def test_ids_outside_the_catalog_and_job_alphabets_never_reach_the_host(
     response = await http.request(method, LOCAL + path, headers=auth_headers())
     assert response.status_code in (404, 422)
     assert recorder.calls == []
+
+
+async def test_the_listing_relays_the_adoption_fields_untouched(http: AsyncClient, recorder: Recorder) -> None:
+    body = {
+        "catalog_version": 1, "active_job": None, "recommendations": {},
+        "active": {"transcription": "whisper-large-v3-turbo-q5_0", "summary": None},
+        "adoption": {"job_id": JOB, "outcomes": {"qwen3.5-9b-q4_k_m": "adopted"}},
+        "models": [{
+            "id": "qwen3.5-9b-q4_k_m", "state": "installed", "availability": "installed", "active": True,
+            "in_use": True, "location": "legacy", "reason": None, "verifying": False, "verified_by": "hash",
+            "install": None,
+        }],
+    }  # fmt: skip
+    recorder.answer = (200, body)
+    response = await http.get(f"{LOCAL}/models", headers=auth_headers())
+    assert response.status_code == 200 and response.json() == body
+    assert recorder.calls == [("GET", "/v1/local/models", "", f"Bearer {MANAGEMENT_TOKEN}")]
+
+
+async def test_adoption_through_the_proxy_reaches_the_real_host_and_never_forwards_the_request(
+    http: AsyncClient, recorder: Recorder
+) -> None:
+    recorder.answer = (409, {"error": {"code": "job_active", "job_id": JOB}})
+    response = await http.post(
+        f"{LOCAL}/adopt?models_dir=/etc", headers=auth_headers(), json={"path": "/Users/private"}
+    )
+    assert (response.status_code, response.json()) == (409, {"detail": "job_active", "job_id": JOB})
+    assert recorder.calls == [("POST", "/v1/local/adopt", "", f"Bearer {MANAGEMENT_TOKEN}")]
 
 
 async def test_other_host_routes_are_not_exposed(http: AsyncClient, recorder: Recorder) -> None:

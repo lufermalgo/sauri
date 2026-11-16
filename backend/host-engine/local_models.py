@@ -12,6 +12,16 @@ Every route is mounted by ``native_main`` behind the management token. Security 
   the catalog value. A failed, cancelled or tampered download leaves no ``.part`` behind.
 * One job (install or verify) is active at a time; a second request gets 409.
 
+Adoption (``adopt``): a Mac whose models were installed by hand (the file is already in the models
+directory or, for a process default, at its legacy location) is recognized as if it had been installed
+from here. Each present catalog file is size-checked and hashed once, in a worker thread and under an
+``adopt`` job that reports progress; only when the SHA-256 equals the catalog value is the usual manifest
+written (``location`` says ``legacy`` when the file stays where it is). Nothing is moved, copied, renamed,
+deleted or downloaded. A file that differs from the catalog is never claimed: it is recorded as
+``present_unverified`` (with the reason) so the next run does not hash it again until it changes.
+A managed engine (Senko) has no file: it is "installed" when its virtual environment holds the package
+(presence only, never hashed; ``scripts/engines/install-diar-engine.sh --check`` does the hash check).
+
 "In use" check (``in_use_processes``): the process settings layer records the chosen local model of
 each process in ``<models>/selection.json`` (``{"transcription": "<id>", "summary": "<id>"}``). A
 process without an entry runs its catalog default, because the gateways fall back to it; auxiliary
@@ -30,7 +40,7 @@ import re
 import stat
 import uuid
 from collections import OrderedDict
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,7 +51,15 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from hardware import detect_hardware, disk_free_bytes
-from sauri_engine_common.local_model_use import MANIFEST_SUFFIX, default_models_dir
+from sauri_engine_common.local_model_use import (
+    LOCATION_LEGACY,
+    LOCATION_MODELS_DIR,
+    MANIFEST_SUFFIX,
+    default_models_dir,
+    legacy_path_for,
+    manifest_location,
+    read_manifest,
+)
 from sauri_engine_common.recommend import (
     Catalog,
     CatalogError,
@@ -60,6 +78,10 @@ MAX_ATTEMPTS: Final = 4
 RETRY_DELAY_S: Final = 1.0
 MAX_FINISHED_JOBS: Final = 20
 SELECTION_FILE: Final = "selection.json"
+LOCATION_MANAGED: Final = "managed"
+ADOPT_JOB_MODEL: Final = "-"
+# Reasons recorded for a present file that differs from the catalog (never a path or a value).
+UNVERIFIED_REASONS: Final = frozenset({"size_mismatch", "hash_mismatch"})
 JOB_ID_PATTERN: Final = re.compile(r"[0-9a-f]{32}")
 _TOKEN_PATTERN: Final = re.compile(r"[A-Za-z0-9_-]{8,256}")
 _CONTENT_RANGE: Final = re.compile(r"bytes (\d+)-(\d+)/(\d+)")
@@ -119,16 +141,19 @@ class JobError(Exception):
 class Job:
     id: str
     model_id: str
-    type: str  # "install" | "verify"
+    type: str  # "install" | "verify" | "adopt"
     bytes_total: int
     state: str = "running"  # running | done | failed | cancelled
     bytes_done: int = 0
     error: str | None = None
     result: str | None = None
+    # Adoption only: model ids still waiting to be checked, and the outcome of each one checked so far.
+    pending: set[str] = field(default_factory=set, repr=False)
+    outcomes: dict[str, str] = field(default_factory=dict, repr=False)
     task: asyncio.Task[None] | None = field(default=None, repr=False)
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        view: dict[str, Any] = {
             "id": self.id,
             "model_id": self.model_id,
             "type": self.type,
@@ -138,6 +163,18 @@ class Job:
             "error": self.error,
             "result": self.result,
         }
+        if self.type == "adopt":
+            view["outcomes"] = dict(self.outcomes)
+        return view
+
+
+@dataclass(frozen=True)
+class _Found:
+    """A catalog file present on disk: where it is, which location and its ``lstat``."""
+
+    path: Path
+    location: str
+    info: os.stat_result
 
 
 class _Sink:
@@ -164,6 +201,12 @@ def _unlink(path: Path) -> None:
     path.unlink(missing_ok=True)
 
 
+def default_managed_dirs() -> dict[str, Path]:
+    """Virtual environment of each managed engine, keyed by catalog ``engine``."""
+    root = Path.home() / ".local" / "share" / "sauri" / "native-engines"
+    return {"senko": Path(os.getenv("SAURI_DIAR_VENV", root / "diar-venv"))}
+
+
 def _regular(path: Path) -> os.stat_result | None:
     """``lstat`` of a regular file (never a symlink), or None."""
     try:
@@ -180,8 +223,13 @@ class LocalModelService:
         catalog: Catalog | None = None,
         policy: DownloadPolicy | None = None,
         token_path: Path | None = None,
+        legacy_locator: Callable[[CatalogModel], Path | None] | None = None,
+        managed_dirs: dict[str, Path] | None = None,
     ) -> None:
         self.models_dir = models_dir or default_models_dir()
+        self._legacy_locator = legacy_locator or legacy_path_for
+        self.managed_dirs = default_managed_dirs() if managed_dirs is None else managed_dirs
+        self._last_adoption: dict[str, Any] | None = None
         self._catalog = catalog
         self.policy = policy or DownloadPolicy()
         self.token_path = token_path or default_token_path()
@@ -226,19 +274,52 @@ class LocalModelService:
             return None
         return data if isinstance(data, dict) else None
 
-    def _state(self, model: CatalogModel) -> dict[str, Any]:
-        """Cheap state from stat and manifest only; the hash is recomputed by ``verify``."""
-        if not model.downloadable:
-            return {"state": "managed", "installed_size": None, "installed_at": None}
-        final, _part, manifest_path = self._paths(model)
-        if self._active and self._active.type == "install" and self._active.model_id == model.id:
-            return {"state": "installing", "installed_size": None, "installed_at": None}
+    def _legacy_path(self, model: CatalogModel) -> Path | None:
+        return self._legacy_locator(model)
+
+    def _locate_file(self, model: CatalogModel) -> _Found | None:
+        """The catalog file where it is: the models directory first, then the legacy location."""
+        final = self._paths(model)[0]
         info = _regular(final)
-        if info is None:
-            return {"state": "not_installed", "installed_size": None, "installed_at": None}
-        record = self._read_manifest(manifest_path)
-        state = "unverified"
-        installed_at = None
+        if info is not None:
+            return _Found(final, LOCATION_MODELS_DIR, info)
+        legacy = self._legacy_path(model)
+        legacy_info = _regular(legacy) if legacy is not None else None
+        if legacy is not None and legacy_info is not None:
+            return _Found(legacy, LOCATION_LEGACY, legacy_info)
+        return None
+
+    def managed_detected(self, model: CatalogModel) -> bool:
+        """A managed engine is installed when its virtual environment holds an interpreter and the package.
+
+        Presence only: nothing is hashed or imported (the installer's ``--check`` does the integrity check).
+        """
+        venv = self.managed_dirs.get(model.engine)
+        if venv is None or not (venv / "bin" / "python").is_file():
+            return False
+        return any(venv.glob(f"lib/python*/site-packages/{model.engine}*"))
+
+    def _state(self, model: CatalogModel) -> dict[str, Any]:
+        """Cheap state from stat and manifest only; the hash is recomputed by ``verify`` and ``adopt``.
+
+        ``state`` keeps its original vocabulary. ``reason`` is set when a present file was already judged
+        different from the catalog (``adopt``); ``location`` says where the file is.
+        """
+        if not model.downloadable:
+            location = LOCATION_MANAGED if self.managed_detected(model) else None
+            return {"state": "managed", "installed_size": None, "installed_at": None, "location": location,
+                    "reason": None}  # fmt: skip
+        absent = {"installed_size": None, "installed_at": None, "location": None, "reason": None}
+        if self._active and self._active.type == "install" and self._active.model_id == model.id:
+            return {"state": "installing", **absent}
+        found = self._locate_file(model)
+        if found is None:
+            return {"state": "not_installed", **absent}
+        record = read_manifest(self._paths(model)[2])
+        if record is not None and manifest_location(record) != found.location:
+            record = None  # written for another location: says nothing about this file
+        info = found.info
+        state, reason, installed_at = "unverified", None, None
         if record is not None:
             installed_at = record.get("installed_at")
             same_file = (
@@ -250,27 +331,46 @@ class LocalModelService:
                 state = "corrupt"
             elif same_file and record.get("status") == "installed":
                 state = "installed"
-        return {"state": state, "installed_size": info.st_size, "installed_at": installed_at}
+            elif self._judged_different(record, info):
+                reason = record.get("reason")
+        return {
+            "state": state,
+            "installed_size": info.st_size,
+            "installed_at": installed_at,
+            "location": found.location,
+            "reason": reason,
+        }
+
+    @staticmethod
+    def _judged_different(record: dict[str, Any], info: os.stat_result) -> bool:
+        """The manifest says this very file (same size and ``mtime_ns``) was judged different from the catalog."""
+        return (
+            record.get("status") == "present_unverified"
+            and record.get("reason") in UNVERIFIED_REASONS
+            and record.get("size") == info.st_size
+            and record.get("mtime_ns") == info.st_mtime_ns
+        )
+
+    def _read_selection(self) -> dict[str, Any]:
+        try:
+            raw = (self.models_dir / SELECTION_FILE).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return {}
+        except (OSError, UnicodeError):
+            raise LocalModelError(503, "selection_unreadable") from None
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            raise LocalModelError(503, "selection_unreadable") from None
+        if not isinstance(parsed, dict):
+            raise LocalModelError(503, "selection_unreadable")
+        return parsed
 
     def in_use_processes(self, model: CatalogModel) -> list[str]:
         """Processes that currently run ``model``; see the module docstring for the marker contract."""
         if model.kind == "auxiliary":
             return [model.process]
-        try:
-            raw = (self.models_dir / SELECTION_FILE).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            selection: dict[str, Any] = {}
-        except (OSError, UnicodeError):
-            raise LocalModelError(503, "selection_unreadable") from None
-        else:
-            try:
-                parsed = json.loads(raw)
-            except ValueError:
-                raise LocalModelError(503, "selection_unreadable") from None
-            if not isinstance(parsed, dict):
-                raise LocalModelError(503, "selection_unreadable")
-            selection = parsed
-        chosen = selection.get(model.process)
+        chosen = self._read_selection().get(model.process)
         if chosen is None:
             return [model.process] if model.default else []
         return [model.process] if chosen == model.id else []
@@ -291,11 +391,60 @@ class LocalModelService:
             "disk_free_bytes": profile.disk_free_bytes,
         }
 
+    @staticmethod
+    def _availability(state: dict[str, Any]) -> str:
+        """``installed`` (verified, or a managed engine that is present), ``present_unverified`` or ``available``."""
+        if state["state"] == "managed":
+            return "installed" if state["location"] else "available"
+        if state["state"] == "installed":
+            return "installed"
+        if state["state"] in ("unverified", "corrupt"):
+            return "present_unverified"
+        return "available"
+
+    def _active_models(self, availability: dict[str, str]) -> dict[str, str | None]:
+        """The model serving each process: the chosen one, else the catalog default, only when installed.
+
+        Mirrors the gateways: no choice means ``local:default`` (the catalog default); a choice means
+        ``local:<id>``, which fails unless that model is installed, so no other model is shown as active.
+        An unreadable marker is treated as no choice, as ``local:default`` never reads it.
+        """
+        try:
+            selection = self._read_selection()
+        except LocalModelError:
+            selection = {}
+        active: dict[str, str | None] = {}
+        for process in dict.fromkeys(model.process for model in self.catalog.models):
+            candidates = [m for m in self.catalog.models if m.process == process and m.kind != "auxiliary"]
+            chosen = selection.get(process)
+            picked = next((m for m in candidates if m.default), None) if chosen is None else next(
+                (m for m in candidates if m.id == chosen), None
+            )
+            active[process] = picked.id if picked is not None and availability[picked.id] == "installed" else None
+        return active
+
+    def _install_hint(self, model: CatalogModel, free_bytes: int) -> dict[str, Any]:
+        """What installing a model still needs: a download with its disk headroom, or the managed command."""
+        if not model.downloadable:
+            return {"method": "managed_command", "managed_by": model.managed_by, "download_bytes": None,
+                    "disk_required_bytes": None, "fits_on_disk": None}  # fmt: skip
+        assert model.size is not None
+        required = -(-model.size * DISK_HEADROOM_PERCENT // 100)
+        return {"method": "download", "managed_by": None, "download_bytes": model.size,
+                "disk_required_bytes": required, "fits_on_disk": free_bytes >= required}  # fmt: skip
+
     def list_models(self) -> dict[str, Any]:
-        recommendations = recommend(self.hardware(), self.catalog)
+        profile = self.hardware()
+        recommendations = recommend(profile, self.catalog)
         recommended = {rec.model_id for rec in recommendations.values() if rec.model_id}
+        states = {model.id: self._state(model) for model in self.catalog.models}
+        availability = {model_id: self._availability(state) for model_id, state in states.items()}
+        active = self._active_models(availability)
+        verifying = self._active.pending if self._active is not None and self._active.type == "adopt" else set()
         models = []
         for model in self.catalog.models:
+            in_use_by = self._safe_in_use(model)
+            state = states[model.id]
             view = {
                 "id": model.id,
                 "process": model.process,
@@ -308,8 +457,16 @@ class LocalModelService:
                 "default": model.default,
                 "managed_by": model.managed_by,
                 "recommended": model.id in recommended,
-                "in_use_by": self._safe_in_use(model),
-                **self._state(model),
+                "in_use_by": in_use_by,
+                **state,
+                "availability": availability[model.id],
+                "active": active.get(model.process) == model.id,
+                "in_use": bool(in_use_by),
+                "verifying": model.id in verifying,
+                "verified_by": "presence" if not model.downloadable else "hash",
+                "install": None
+                if availability[model.id] == "installed"
+                else self._install_hint(model, profile.disk_free_bytes),
             }
             models.append(view)
         return {
@@ -317,6 +474,8 @@ class LocalModelService:
             "models": models,
             "recommendations": {process: rec.as_dict() for process, rec in recommendations.items()},
             "active_job": self._active.id if self._active else None,
+            "active": active,
+            "adoption": self._last_adoption,
         }
 
     def _safe_in_use(self, model: CatalogModel) -> list[str]:
@@ -352,7 +511,8 @@ class LocalModelService:
         model = self._downloadable(model_id)
         assert model.size is not None
         self._require_idle()
-        if self._state(model)["state"] in ("installed", "unverified"):
+        current = self._state(model)
+        if current["state"] == "installed" or (current["state"] == "unverified" and current["reason"] is None):
             raise LocalModelError(409, "already_installed")
         final, part, _manifest = self._paths(model)
         try:
@@ -372,11 +532,10 @@ class LocalModelService:
         model = self._downloadable(model_id)
         assert model.size is not None
         self._require_idle()
-        final, _part, _manifest = self._paths(model)
-        info = _regular(final)
-        if info is None:
+        found = self._locate_file(model)
+        if found is None:
             raise LocalModelError(404, "not_installed")
-        job = Job(id=uuid.uuid4().hex, model_id=model.id, type="verify", bytes_total=info.st_size)
+        job = Job(id=uuid.uuid4().hex, model_id=model.id, type="verify", bytes_total=found.info.st_size)
         return self._start(job, self._run(job, self._verify(job, model), None))
 
     async def cancel(self, job_id: str) -> Job:
@@ -397,8 +556,12 @@ class LocalModelService:
         if self._active is not None and self._active.model_id == model.id:
             raise LocalModelError(409, "job_active", job_id=self._active.id)
         final, part, manifest = self._paths(model)
-        if _regular(final) is None:
+        found = self._locate_file(model)
+        if found is None:
             raise LocalModelError(404, "not_installed")
+        if found.location == LOCATION_LEGACY:
+            # The file is not ours to delete: it was installed by hand outside the models directory.
+            raise LocalModelError(409, "legacy_location")
         processes = self.in_use_processes(model)
         if processes:
             raise LocalModelError(409, "model_in_use", processes=processes)
@@ -481,7 +644,7 @@ class LocalModelService:
         if not hmac.compare_digest(sink.sha.hexdigest(), model.sha256):
             raise JobError("hash_mismatch")
         os.replace(part, final)
-        self._write_manifest(model, final, manifest, "installed")
+        self._write_manifest(model, final.stat(), manifest, "installed")
         job.result = "installed"
 
     async def _fetch(
@@ -538,19 +701,29 @@ class LocalModelService:
 
     async def _verify(self, job: Job, model: CatalogModel) -> None:
         assert model.sha256 is not None
-        final, _part, manifest = self._paths(model)
+        manifest = self._paths(model)[2]
+        found = self._locate_file(model)
+        if found is None:
+            raise JobError("not_installed")
         sha = hashlib.sha256()
-        await self._hash_into(final, sha, job)
-        info = _regular(final)
+        await self._hash_into(found.path, sha, job)
+        info = _regular(found.path)
         if info is None:
             raise JobError("not_installed")
         matches = hmac.compare_digest(sha.hexdigest(), model.sha256) and info.st_size == model.size
-        self._write_manifest(model, final, manifest, "installed" if matches else "corrupt")
+        self._write_manifest(model, info, manifest, "installed" if matches else "corrupt", found.location)
         job.result = "verified" if matches else "corrupt"
 
-    def _write_manifest(self, model: CatalogModel, final: Path, manifest: Path, status: str) -> None:
-        info = final.stat()
-        record = {
+    def _write_manifest(
+        self,
+        model: CatalogModel,
+        info: os.stat_result,
+        manifest: Path,
+        status: str,
+        location: str = LOCATION_MODELS_DIR,
+        reason: str | None = None,
+    ) -> None:
+        record: dict[str, Any] = {
             "id": model.id,
             "file": model.file,
             "revision": model.revision,
@@ -559,10 +732,97 @@ class LocalModelService:
             "mtime_ns": info.st_mtime_ns,
             "installed_at": _now(),
             "status": status,
+            "location": location,
         }
+        if reason is not None:
+            record["reason"] = reason
+        manifest.parent.mkdir(parents=True, exist_ok=True)
         temporary = manifest.with_name(manifest.name + ".tmp")
         temporary.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
         os.replace(temporary, manifest)
+
+    # --- adoption ---------------------------------------------------------------------------------
+
+    def adopt(self) -> Job:
+        """Recognize catalog files that are already on disk; see the module docstring.
+
+        Idempotent: a run already in progress is returned as is, and a model already verified (or already
+        judged different at its current size and ``mtime_ns``) is not hashed again.
+        """
+        if self._active is not None and self._active.type == "adopt":
+            return self._active
+        self._require_idle()
+        candidates = self._adoption_candidates()
+        job = Job(
+            id=uuid.uuid4().hex,
+            model_id=ADOPT_JOB_MODEL,
+            type="adopt",
+            bytes_total=sum(found.info.st_size for model, found in candidates if found.info.st_size == model.size),
+            pending={model.id for model, _found in candidates},
+        )
+        logger.info("local_model_adoption_started candidates=%d", len(candidates))
+        return self._start(job, self._run(job, self._adopt(job, candidates), None))
+
+    def _adoption_candidates(self) -> list[tuple[CatalogModel, _Found]]:
+        candidates = []
+        for model in self.catalog.models:
+            if not model.downloadable:
+                continue
+            found = self._locate_file(model)
+            if found is None or self._state(model)["state"] == "installed":
+                continue
+            record = read_manifest(self._paths(model)[2])
+            same_place = record is not None and manifest_location(record) == found.location
+            if record is not None and same_place and self._already_judged(record, found):
+                continue
+            candidates.append((model, found))
+        return candidates
+
+    def _already_judged(self, record: dict[str, Any], found: _Found) -> bool:
+        """This very file (same size and ``mtime_ns``) was already hashed and found different."""
+        same = record.get("size") == found.info.st_size and record.get("mtime_ns") == found.info.st_mtime_ns
+        return same and (record.get("status") == "corrupt" or self._judged_different(record, found.info))
+
+    async def _adopt(self, job: Job, candidates: list[tuple[CatalogModel, _Found]]) -> None:
+        try:
+            for model, found in candidates:
+                job.model_id = model.id
+                job.outcomes[model.id] = await self._adopt_one(job, model, found)
+                job.pending.discard(model.id)
+        finally:
+            job.model_id, job.pending = ADOPT_JOB_MODEL, set()
+            self._last_adoption = {"job_id": job.id, "outcomes": dict(job.outcomes)}
+        adopted = sum(1 for outcome in job.outcomes.values() if outcome == "adopted")
+        job.result = "adopted" if adopted else "nothing_adopted"
+        logger.info("local_model_adoption_finished outcomes=%s", sorted(job.outcomes.values()))
+
+    async def _adopt_one(self, job: Job, model: CatalogModel, found: _Found) -> str:
+        """Outcome of one file: ``adopted``, ``present_unverified``, ``changed``, ``unreadable``, ``write_failed``."""
+        assert model.size is not None and model.sha256 is not None
+        before = found.info
+        if before.st_size != model.size:
+            return self._record_judgement(model, found, "present_unverified", "size_mismatch")
+        sha = hashlib.sha256()
+        try:
+            await self._hash_into(found.path, sha, job)
+        except OSError as exc:
+            logger.warning("local_model_adoption_error type=%s", type(exc).__name__)
+            return "unreadable"
+        after = _regular(found.path)
+        if after is None or (after.st_size, after.st_mtime_ns) != (before.st_size, before.st_mtime_ns):
+            return "changed"  # modified while it was being read: judge nothing, try again next run
+        if hmac.compare_digest(sha.hexdigest(), model.sha256):
+            return self._record_judgement(model, found, "installed", None)
+        return self._record_judgement(model, found, "present_unverified", "hash_mismatch")
+
+    def _record_judgement(self, model: CatalogModel, found: _Found, status: str, reason: str | None) -> str:
+        """Write the manifest for a judged file (never the file itself) and name the outcome."""
+        try:
+            self._write_manifest(model, found.info, self._paths(model)[2], status, found.location, reason)
+        except OSError as exc:
+            logger.warning("local_model_adoption_error type=%s", type(exc).__name__)
+            return "write_failed"
+        return "adopted" if status == "installed" else "present_unverified"
 
 
 # --- routes -----------------------------------------------------------------------------------------
@@ -592,6 +852,15 @@ async def hardware_route() -> dict[str, Any]:
 async def list_models_route() -> dict[str, Any] | Response:
     try:
         return await asyncio.to_thread(get_service().list_models)
+    except LocalModelError as exc:
+        return exc.response()
+
+
+@router.post("/local/adopt", status_code=202, response_model=None)
+async def adopt_route(request: Request) -> dict[str, Any] | Response:
+    try:
+        _no_query(request)
+        return get_service().adopt().as_dict()
     except LocalModelError as exc:
         return exc.response()
 
@@ -637,3 +906,11 @@ async def cancel_route(job_id: str) -> dict[str, Any] | Response:
         return (await get_service().cancel(job_id)).as_dict()
     except LocalModelError as exc:
         return exc.response()
+
+
+async def adopt_on_startup() -> None:
+    """Recognize models installed by hand when the host engine starts; a failure never stops the service."""
+    try:
+        get_service().adopt()
+    except LocalModelError as exc:
+        logger.warning("local_model_adoption_skipped code=%s", exc.code)

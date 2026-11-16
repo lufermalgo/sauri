@@ -6,7 +6,10 @@ forwarded, so a caller cannot steer the call elsewhere (no SSRF) and cannot reac
 routes of the host. The management token stays inside ``host_client`` and no key or secret travels
 through here: these routes carry model ids and download progress only.
 
-Installs and verifications run as host jobs. The host answers ``202`` at once and the portal polls
+``POST /adopt`` asks the host to recognize models that are already on this Mac (installed by hand); it takes
+no body and nothing from the request reaches the host. It returns a job like the other long operations.
+
+Installs, verifications and adoptions run as host jobs. The host answers ``202`` at once and the portal polls
 ``GET /jobs/{id}``: each poll is a short, independent call with its own timeout, so no connection is held
 open and a slow download cannot tie up the API.
 
@@ -94,6 +97,11 @@ async def get_hardware(user: AuthorizedUser, host: Host) -> Response:
 @router.get("/models")
 async def list_local_models(user: AuthorizedUser, host: Host) -> Response:
     return await _forward(host, "GET", "/v1/local/models")
+
+
+@router.post("/adopt", status_code=status.HTTP_202_ACCEPTED)
+async def adopt_models(user: AuthorizedUser, host: Host) -> Response:
+    return await _forward(host, "POST", "/v1/local/adopt")
 
 
 @router.post("/models/{model_id}/install", status_code=status.HTTP_202_ACCEPTED)

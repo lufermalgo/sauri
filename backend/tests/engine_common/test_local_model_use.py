@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 import pytest
-from sauri_engine_common.local_model_use import LocalModelError, LocalSelection, select_local_model
+from sauri_engine_common.local_model_use import (
+    LocalModelError,
+    LocalSelection,
+    legacy_path_for,
+    select_local_model,
+)
 from sauri_engine_common.recommend import Catalog, Process, parse_catalog
 
-from tests.local_models_support import BIG, SMALL, catalog_entry, install_model, route_header
+from tests.local_models_support import BIG, SMALL, adopt_legacy, catalog_entry, install_model, route_header
 
 DEFAULT = catalog_entry("llm-big", "summary", "big.gguf", BIG, default=True, rank=2)
 SMALLER = catalog_entry("llm-small", "summary", "small.gguf", SMALL)
@@ -138,3 +144,73 @@ def test_transcription_gateway_resolves_its_own_models(tmp_path: Path) -> None:
     assert refused(route_header("local:llm-big", process="transcription"), tmp_path, process="transcription").code == (
         "unknown_model"
     )
+
+
+# --- adopted files (models installed by hand, recognized by host-engine) ---------------------------
+
+
+def test_an_adopted_legacy_file_resolves_through_its_manifest_and_stays_in_place(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy" / "old-name.gguf"
+    legacy.parent.mkdir()
+    legacy.write_bytes(BIG)
+    models = tmp_path / "models"
+    adopt_legacy(models, DEFAULT, legacy)
+    chosen = select(route_header("local:llm-big"), models, legacy_default=legacy)
+    assert chosen is not None and chosen.path == legacy
+    assert [path.name for path in models.iterdir()] == ["big.gguf.manifest.json"]  # nothing was copied or moved
+
+
+def test_an_adopted_legacy_file_replaced_afterwards_is_refused(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy.gguf"
+    legacy.write_bytes(BIG)
+    models = tmp_path / "models"
+    adopt_legacy(models, DEFAULT, legacy)
+    info = legacy.stat()
+    os.utime(legacy, ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000))
+    error = refused(route_header("local:llm-big"), models, legacy_default=legacy)
+    assert (error.status, error.code) == (409, "model_not_verified")
+
+
+@pytest.mark.parametrize("status", ["present_unverified", "corrupt"])
+def test_a_legacy_file_judged_different_from_the_catalog_is_not_served(tmp_path: Path, status: str) -> None:
+    legacy = tmp_path / "legacy.gguf"
+    legacy.write_bytes(BIG)
+    models = tmp_path / "models"
+    adopt_legacy(models, DEFAULT, legacy, status=status)
+    assert refused(route_header("local:llm-big"), models, legacy_default=legacy).code == "model_not_verified"
+
+
+def test_a_legacy_manifest_does_not_vouch_for_a_file_in_the_models_directory(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy.gguf"
+    legacy.write_bytes(BIG)
+    models = tmp_path / "models"
+    adopt_legacy(models, DEFAULT, legacy)
+    (models / "big.gguf").write_bytes(BIG)  # a different file, same size, never verified
+    error = refused(route_header("local:llm-big"), models)
+    assert error.code == "model_not_verified"
+    manifest_only = tmp_path / "other"
+    adopt_legacy(manifest_only, DEFAULT, legacy)
+    assert refused(route_header("local:llm-big"), manifest_only).code == "model_not_installed"
+
+
+def test_a_manifest_written_before_adoption_existed_still_means_the_models_directory(tmp_path: Path) -> None:
+    final = install_model(tmp_path, SMALLER, SMALL)
+    manifest = final.with_name(final.name + ".manifest.json")
+    record = json.loads(manifest.read_text())
+    assert "location" not in record
+    chosen = select(route_header("local:llm-small"), tmp_path)
+    assert chosen is not None and chosen.path == final
+
+
+def test_legacy_paths_follow_the_gateways_built_in_locations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("SAURI_LLM_MODEL_FILE", raising=False)
+    monkeypatch.delenv("ASR_MODEL_PATH", raising=False)
+    parsed = {model.id: model for model in CATALOG.models}
+    assert legacy_path_for(parsed["llm-big"]) == tmp_path / ".local/share/sauri/native-engines/llm/models/big.gguf"
+    assert legacy_path_for(parsed["llm-small"]) is None  # only a process default can live there
+    assert legacy_path_for(parsed["asr-one"]) is None and legacy_path_for(parsed["asr-vad"]) is None
+    monkeypatch.setenv("SAURI_LLM_MODEL_FILE", str(tmp_path / "x.gguf"))
+    monkeypatch.setenv("ASR_MODEL_PATH", str(tmp_path / "x.bin"))
+    assert legacy_path_for(parsed["llm-big"]) == tmp_path / "x.gguf"
+    assert legacy_path_for(parsed["asr-one"]) == tmp_path / "x.bin"
