@@ -21,10 +21,18 @@ export const library = {
   search: {
     regionLabel: "Buscar en la biblioteca",
     text: "Buscar por título",
+    closeSearch: "Cerrar búsqueda",
+    dates: "Fechas",
+    datesActive: (from: string | null, to: string | null) => {
+      if (from && to) return `Fechas: ${from} – ${to}`;
+      return from ? `Fechas: desde ${from}` : `Fechas: hasta ${to}`;
+    },
     from: "Desde",
     to: "Hasta",
     sort: "Ordenar",
+    sortCurrent: (choice: string) => `Ordenar: ${choice}`,
     clear: "Limpiar",
+    clearFilters: "Limpiar filtros",
     sortNewest: "Más recientes",
     sortOldest: "Más antiguas",
     sortTitle: "Título",

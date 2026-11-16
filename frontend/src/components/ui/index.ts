@@ -10,6 +10,7 @@ export { Dialog, type DialogProps } from "./Dialog";
 export { ProgressBar, type ProgressBarProps } from "./ProgressBar";
 export { Skeleton, SkeletonLines, type SkeletonProps, type SkeletonLinesProps } from "./Skeleton";
 export { Menu, MenuItem, type MenuProps, type MenuItemProps } from "./Menu";
+export { Popover, type PopoverProps } from "./Popover";
 export { Avatar, type AvatarProps } from "./Avatar";
 export { TimeChip, type TimeChipProps } from "./TimeChip";
 export { Icon, type IconProps } from "./Icon";

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { Avatar, Button, Card, ConfirmDialog, Dialog, Menu, MenuItem, ProgressBar, Skeleton, SkeletonLines, StatusBadge, Tabs,
+import { Avatar, Button, Card, ConfirmDialog, Dialog, Menu, MenuItem, Popover, ProgressBar, Skeleton, SkeletonLines, StatusBadge, Tabs,
   TextField, TimeChip } from "./index";
 
 afterEach(() => {
@@ -427,5 +427,81 @@ describe("Dialog", () => {
     expect(target).toHaveFocus();
     unmount();
     target.remove();
+  });
+});
+
+describe("Menu radio items", () => {
+  it("exposes menuitemradio with aria-checked and keeps arrow navigation", () => {
+    render(<Menu label="Sort">
+      <MenuItem checked onSelect={() => undefined}>Newest</MenuItem>
+      <MenuItem checked={false} onSelect={() => undefined}>Oldest</MenuItem>
+    </Menu>);
+    fireEvent.click(screen.getByRole("button", { name: "Sort" }));
+    const radios = screen.getAllByRole("menuitemradio");
+    expect(radios.map(radio => radio.getAttribute("aria-checked"))).toEqual(["true", "false"]);
+    expect(radios[0]).toHaveFocus();
+    fireEvent.keyDown(radios[0], { key: "ArrowDown" });
+    expect(radios[1]).toHaveFocus();
+  });
+});
+
+describe("Popover", () => {
+  function setup() {
+    render(<div>
+      <button>Outside</button>
+      <Popover label="Dates: none" panelLabel="Dates" trigger={<span>icon</span>}>
+        {close => <>
+          <input aria-label="Since" />
+          <button onClick={close}>Done</button>
+        </>}
+      </Popover>
+    </div>);
+    return screen.getByRole("button", { name: "Dates: none" });
+  }
+
+  it("is a non-modal dialog opened by the trigger, with focus moved to its first control", () => {
+    const trigger = setup();
+    expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Dates" });
+    expect(dialog).not.toHaveAttribute("aria-modal");
+    expect(trigger).toHaveAttribute("aria-controls", dialog.id);
+    expect(screen.getByLabelText("Since")).toHaveFocus();
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("opens with ArrowDown, closes with Escape and returns focus to the trigger", () => {
+    const trigger = setup();
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByLabelText("Since"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes on a click outside and when focus moves outside, and `close` returns focus", () => {
+    const trigger = setup();
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    fireEvent.blur(screen.getByLabelText("Since"), { relatedTarget: screen.getByRole("button", { name: "Outside" }) });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("describes the trigger with a tooltip that repeats its name", () => {
+    const trigger = setup();
+    const tooltip = document.getElementById(trigger.getAttribute("aria-describedby")!);
+    expect(tooltip).toHaveAttribute("role", "tooltip");
+    expect(tooltip).toHaveTextContent("Dates: none");
   });
 });
