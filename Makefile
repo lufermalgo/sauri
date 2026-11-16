@@ -38,6 +38,7 @@ engines-up:
 	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash scripts/engines/native-engines.sh start all
 
 engines-down:
+	bash scripts/platform/deploy-guard.sh "stop the native engines"
 	SAURI_ASR_ENGINE_PYTHON="$(SAURI_NATIVE_VENV)/bin/python" bash scripts/engines/native-engines.sh stop all
 
 engines-status:
@@ -48,8 +49,10 @@ engines-status:
 check-english:
 	python3 scripts/dev/check_english_only.py $$(git ls-files 'backend/**' 'extension/src/**' 'frontend/src/**' 'packages/shared-types/**')
 
-## Levantar API, worker, PostgreSQL, MinIO y RabbitMQ; motores locales corren fuera de Compose
+## Levantar API, worker, PostgreSQL, MinIO y RabbitMQ; motores locales corren fuera de Compose.
+## Este y los demás objetivos que reinician servicios se niegan si hay reuniones procesándose: FORCE=1 lo omite.
 up:
+	bash scripts/platform/deploy-guard.sh "recreate the API and worker"
 	scripts/platform/compose-bringup.sh
 
 ## Llave privada de la cola: se genera una vez en ~/.config/sauri y nunca se imprime ni se versiona.
@@ -58,6 +61,7 @@ WITH_QUEUE_KEY = QUEUE_MESSAGE_SIGNING_KEY="$$(cat $(HOME)/.config/sauri/queue_s
 
 ## Levantar con rebuild de imágenes
 build:
+	bash scripts/platform/deploy-guard.sh "rebuild and recreate the API and worker"
 	bash scripts/engines/ensure-native-engine-credentials.sh
 	$(WITH_QUEUE_KEY) docker compose build
 	scripts/platform/compose-bringup.sh
@@ -68,10 +72,12 @@ logs:
 
 ## Detener todos los servicios
 down:
+	bash scripts/platform/deploy-guard.sh "stop all services"
 	$(WITH_QUEUE_KEY) docker compose down
 
 ## Detener y eliminar volúmenes (datos locales)
 clean:
+	bash scripts/platform/deploy-guard.sh "stop all services and delete local data"
 	$(WITH_QUEUE_KEY) docker compose down -v
 
 ## Ejecutar migraciones de base de datos

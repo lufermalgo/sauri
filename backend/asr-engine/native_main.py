@@ -42,6 +42,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
+from sauri_engine_common import cancellation
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
 from sauri_engine_common.credentials import object_store_credentials
 from sauri_engine_common.external.asr_common import AdapterCancelled
@@ -49,6 +50,8 @@ from sauri_engine_common.external.audio_prep import vad_cli_runner
 from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
 from sauri_engine_common.local_model_use import LocalModelError, LocalSelection, select_local_model
+from sauri_engine_common.process_group import kill_all as kill_helpers
+from sauri_engine_common.process_group import run as run_group
 from sauri_engine_common.route import ROUTE_HEADER, Route, RouteError
 from sauri_engine_common.secrets import SecretStore
 from whisper_words import NoSpeechError, NoWordTimestampsError, WordsResult, words_from_ggml_json
@@ -112,6 +115,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     )
     logger.info("Native ASR initialized (model=%s)", MODEL_ID)
     yield
+    kill_helpers()  # no whisper-cli or VAD process may outlive the engine
     s3_client = None
 
 
@@ -270,7 +274,7 @@ def _run_whisper(
         command.extend(["--prompt", prompt, "--carry-initial-prompt"])
     command.extend(["-ojf", "-of", str(output)])
     try:
-        subprocess.run(command, check=True, capture_output=True, timeout=timeout_s)
+        run_group(command, check=True, capture_output=True, timeout=timeout_s)
     except subprocess.CalledProcessError as exc:
         logger.error("whisper-cli failed (exit_code=%s); stderr_tail=%s", exc.returncode, diagnostic_tail(exc.stderr))
         raise
@@ -302,9 +306,10 @@ def _transcribe_wav(
             "enabled": False, "speech_segments": None, "chunks": 1, "speech_ms": None,
             "skipped_ms": 0, "vad_ms": 0, "inference_ms": inference_ms,
         }, inference_ms
+    cancellation.checkpoint()
     started = time.monotonic()
     try:
-        process = subprocess.run(
+        process = run_group(
             [str(vad_cli_path()), "-f", str(wav_path), "-vm", str(vad_model_path()), "-vt", str(vad_threshold())],
             check=True, capture_output=True, text=True, timeout=remaining(deadline),
         )
@@ -322,6 +327,7 @@ def _transcribe_wav(
     detected: str | None = None
     inference_seconds = 0.0
     for interval in chunks:
+        cancellation.checkpoint()  # the worker left: do not start the remaining chunks
         with tempfile.TemporaryDirectory(prefix="chunk-", dir=wav_path.parent) as temporary:
             chunk_path = Path(temporary) / "audio.wav"
             cut_wav(wav_path, chunk_path, interval, deadline)
@@ -374,12 +380,23 @@ async def transcribe(
         raise HTTPException(status_code=503, detail="Engine not initialized")
     budget = server_budget()
     deadline = time.monotonic() + budget
+    # The thread stops at its next checkpoint once the worker disconnects or this request ends.
+    left = threading.Event()
+    token = cancellation.bind(left)
+    watcher = asyncio.create_task(cancellation.cancel_on_disconnect(http_request.is_disconnected, left))
     try:
         return await asyncio.wait_for(
             run_in_threadpool(_transcribe_serialized, request, deadline, selection), timeout=budget
         )
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="engine_failed") from exc
+    except cancellation.JobCancelled as exc:  # left while waiting for the job slot
+        raise HTTPException(status_code=499, detail="client_closed") from exc
+    finally:
+        left.set()
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+        cancellation.unbind(token)
 
 
 def _provider_failure(error: ProviderError) -> JSONResponse:
@@ -487,7 +504,7 @@ async def _run_external(
 def _transcribe_serialized(
     request: TranscribeRequest, deadline: float, selection: LocalSelection | None = None,
 ) -> TranscribeResponse:
-    if not _job_lock.acquire(timeout=remaining(deadline)):
+    if not cancellation.acquire(_job_lock, remaining(deadline)):
         raise TimeoutError("engine_failed")
     try:
         remaining(deadline)
@@ -508,6 +525,7 @@ def _transcribe_audio(
             wav_path = Path(temporary) / "audio.wav"
             report = normalize_to_wav(Path(audio_path), wav_path, timeout_s=min(300, remaining(deadline)))
             model: dict[str, Any] = {} if selection is None else {"model_path": selection.path}
+            cancellation.checkpoint()
             result, language, vad, inference_ms = _transcribe_wav(
                 wav_path, report.audio_ms, request.language, deadline, **model)
             return TranscribeResponse(
@@ -527,6 +545,9 @@ def _transcribe_audio(
                                  "inference": inference_ms},
                 },
             )
+    except cancellation.JobCancelled as exc:
+        logger.info("Transcription stopped: the caller left")
+        raise HTTPException(status_code=499, detail="client_closed") from exc
     except NormalizeError as exc:
         raise HTTPException(status_code=422, detail="normalize_failed") from exc
     except NoSpeechError as exc:

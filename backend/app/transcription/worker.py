@@ -34,8 +34,9 @@ from app.engines.routing import (
     call_with_fallback,
     resolve_route,
 )
+from app.infra.claim_lease import ClaimLost, LeaseScope
 from app.infra.engine_slot import ENGINE_CALL_TIMEOUT_S, SLOT_WAIT_TIMEOUT_S, EngineSlotTimeout, engine_slot
-from app.infra.models import Meeting, MeetingProcessingClaim, SessionRecording, SpeechTurn, Transcript, TranscriptWord
+from app.infra.models import Meeting, SessionRecording, SpeechTurn, Transcript, TranscriptWord
 from app.infra.processing_claims import (
     advance_processing_generation,
     claim_worker_generation,
@@ -74,15 +75,27 @@ def _is_no_speech_response(exc: httpx.HTTPError) -> bool:
 
 async def _publish_diarization(
     message: dict[str, Any], session_factory: async_sessionmaker[AsyncSession], queue: JobQueue,
+    holder: str | None = None,
 ) -> bool:
-    """Hand a committed transcript to diarization once; False when the fence says it already moved on."""
+    """Hand a committed transcript to diarization once; False when the fence says it already moved on.
+
+    A delivery that does not hold the claim (the redelivery of a job whose worker died after
+    committing the transcript) takes it first, once the previous lease has lapsed.
+    """
     meeting_id = message["meeting_id"]
     async with session_factory() as session, session.begin():
         if not await verify_worker_binding(
             session, meeting_id=meeting_id, owner_id=message["owner_id"], recording_id=message["recording_id"],
-        ) or not await verify_worker_generation(
+        ):
+            return False
+        if holder is None:
+            holder = await claim_worker_generation(
+                session, meeting_id=meeting_id, generation=message.get("generation"), job_id=message.get("job_id"),
+                kind="transcription", operation_id=message.get("operation_id"),
+            )
+        if holder is None or not await verify_worker_generation(
             session, meeting_id=meeting_id, generation=message.get("generation"), job_id=message.get("job_id"),
-            kind="transcription", operation_id=message.get("operation_id"),
+            kind="transcription", operation_id=message.get("operation_id"), holder=holder,
         ):
             return False
         job = {key: message[key] for key in ("meeting_id", "owner_id", "recording_id")}
@@ -104,6 +117,20 @@ async def _process_transcription(
     message: dict[str, Any],
     session_factory: async_sessionmaker[AsyncSession],
     queue: JobQueue | None = None,
+) -> None:
+    """Process one delivery with its claim kept alive; an interrupted one gives the claim back."""
+    async with LeaseScope(session_factory) as scope:
+        try:
+            await _run_transcription(message, session_factory, queue, scope)
+        except ClaimLost:
+            logger.warning("Transcription abandoned: its processing claim was lost to another worker")
+
+
+async def _run_transcription(
+    message: dict[str, Any],
+    session_factory: async_sessionmaker[AsyncSession],
+    queue: JobQueue | None,
+    scope: LeaseScope,
 ) -> None:
     """Processes a message from the transcription queue.
 
@@ -179,12 +206,15 @@ async def _process_transcription(
         return
 
     async with session_factory() as session, session.begin():
-        if not await claim_worker_generation(
+        holder = await claim_worker_generation(
             session, meeting_id=meeting_id, generation=generation, job_id=job_id,
             kind="transcription", operation_id=operation_id,
-        ):
-            logger.info("Transcription delivery acknowledged without claim; reason=fenced")
-            return
+        )
+    if holder is None:
+        logger.info("Transcription delivery acknowledged without claim; reason=fenced")
+        return
+    scope.arm(meeting_id=meeting_id, generation=generation, holder=holder, kind="transcription",
+              operation_id=operation_id)
 
     async with session_factory() as session, session.begin():
         meeting = await session.get(Meeting, meeting_id)
@@ -192,7 +222,7 @@ async def _process_transcription(
             session, meeting_id=meeting_id, owner_id=owner_id, recording_id=recording_id,
         ) or not await verify_worker_generation(
             session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-            kind="transcription", operation_id=operation_id,
+            kind="transcription", operation_id=operation_id, holder=holder,
         ):
             return
         if regenerating:
@@ -230,9 +260,12 @@ async def _process_transcription(
                 recording_audio_ref, options if route is None else replace(options, route=route)
             )
 
-        async with engine_slot(session_factory.kw["bind"], kind="transcription", timeout_s=SLOT_WAIT_TIMEOUT_S):
-            async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
-                result, provenance = await call_with_fallback(resolved, attempt, _engine_names)
+        async def run_engine() -> tuple[TranscriptionResult, Provenance]:
+            async with engine_slot(session_factory.kw["bind"], kind="transcription", timeout_s=SLOT_WAIT_TIMEOUT_S):
+                async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
+                    return await call_with_fallback(resolved, attempt, _engine_names)
+
+        result, provenance = await scope.guard(run_engine())
         if type(result.contract_version) is not int or result.contract_version != 2:
             raise EngineContractError("Unsupported ASR contract_version")
         if result.language == "auto":
@@ -242,15 +275,7 @@ async def _process_transcription(
                 raise EngineContractError("Missing detected language")
             result.language = options.preferred_language
     except EngineSlotTimeout:
-        async with session_factory() as session, session.begin():
-            if await verify_worker_generation(
-                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-                kind="transcription", operation_id=operation_id,
-            ):
-                claim = await session.get(MeetingProcessingClaim, meeting_id)
-                if claim is not None:
-                    claim.claim_id = operation_id if operation_id is not None else None
-                    claim.claim_kind = "recovery" if operation_id is not None else None
+        # Not an engine failure: the scope gives the claim back and the queue offers the job again.
         raise
     except (httpx.HTTPError, ValueError, TimeoutError, ProviderError) as exc:
         if isinstance(exc, ProviderError):
@@ -273,7 +298,7 @@ async def _process_transcription(
                 )
                 and await verify_worker_generation(
                     session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-                    kind="transcription", operation_id=operation_id,
+                    kind="transcription", operation_id=operation_id, holder=holder,
                 )
             ):
                 live = (
@@ -323,7 +348,7 @@ async def _process_transcription(
             )
             or not await verify_worker_generation(
                 session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-                kind="transcription", operation_id=operation_id,
+                kind="transcription", operation_id=operation_id, holder=holder,
             )
         ):
             logger.info("Transcription artifact write skipped; reason=fenced")
@@ -407,7 +432,7 @@ async def _process_transcription(
                 )
 
     if queue is not None and transcript_created:
-        await _publish_diarization(message, session_factory, queue)
+        await _publish_diarization(message, session_factory, queue, holder)
     if follow_up is not None and queue is not None:
         # The cascade continues with speakers, one turn at a time through the engine slot.
         try:
@@ -505,13 +530,12 @@ async def start_worker(
                 "meeting_id": meeting_id, "generation": message.get("generation"),
                 "job_id": message.get("job_id"), "operation_id": message.get("operation_id"),
             }
-            if not await claim_worker_generation(session, kind="transcription", **binding) and not (
-                await verify_worker_generation(session, kind="transcription", **binding)
-            ):
-                return
             meeting = await session.get(Meeting, meeting_id)
-            if meeting is not None and meeting.process_state == "transcribing":
-                await record_transition(session, meeting, "engine_failed", failure_cause="processing_retries_exhausted")
+            if meeting is None or meeting.process_state != "transcribing":
+                return  # already settled: a repeated terminal delivery must not wait on the first one's claim
+            if await claim_worker_generation(session, kind="transcription", **binding) is None:
+                return
+            await record_transition(session, meeting, "engine_failed", failure_cause="processing_retries_exhausted")
 
     await queue.subscribe("transcribe", handler)
     await queue.subscribe("transcribe.failed", terminal)

@@ -90,7 +90,7 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(monke
         assert Path(command[4]).exists()
         assert kwargs["capture_output"] and kwargs["check"]
         Path(command[-1] + ".json").write_text(json.dumps(document()))
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
         response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav", "language": "auto"},
                                      headers=configured)
@@ -448,7 +448,7 @@ async def test_language_hint_is_validated_before_cli(monkeypatch, configured, la
     def run(command, **kwargs):
         assert command[command.index("-l") + 1] == expected
         Path(command[-1] + ".json").write_text(json.dumps(document()))
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
         response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav", "language": language},
                                      headers=configured)
@@ -554,7 +554,7 @@ async def test_normalization_and_inference_share_remaining_budget(monkeypatch, c
         assert 0 < kwargs["timeout"] < 3570
         Path(command[-1] + ".json").write_text(json.dumps(document()))
     monkeypatch.setattr(native, "normalize_to_wav", normalize)
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
         response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav"}, headers=configured)
     assert response.status_code == 200 and len(seen) == 1
@@ -652,7 +652,7 @@ def test_run_whisper_reads_default_or_override_vocabulary(monkeypatch, tmp_path,
         assert "-ojf" in command and "-fa" in command
         assert kwargs == {"check": True, "capture_output": True, "timeout": 12}
         output.with_suffix(".json").write_text(json.dumps({"transcription": []}))
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     assert native._run_whisper(tmp_path / "audio.wav", output, "es", 12) == {"transcription": []}
 
 
@@ -674,7 +674,7 @@ def test_default_prompt_without_terms_for_spanish(monkeypatch, tmp_path, content
         assert command.count("--carry-initial-prompt") == 1
         assert command.index("--carry-initial-prompt") == command.index("--prompt") + 2
         output.with_suffix(".json").write_text(json.dumps({"transcription": []}))
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     native._run_whisper(tmp_path / "audio.wav", output, language, 12)
 
 
@@ -690,7 +690,7 @@ def test_no_prompt_flags_for_other_languages_or_when_disabled(monkeypatch, tmp_p
     def run(command, **kwargs):
         assert "--prompt" not in command and "--carry-initial-prompt" not in command
         output.with_suffix(".json").write_text(json.dumps({"transcription": []}))
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     native._run_whisper(tmp_path / "audio.wav", output, language, 12)
 
 

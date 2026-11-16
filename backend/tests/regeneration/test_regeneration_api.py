@@ -482,3 +482,53 @@ async def test_older_speaker_revision_stays_readable(api: Api) -> None:
     assert older["revision_id"] == 1 and older["status"] == "complete"
     assert older["labels_by_speaker_id"] == {"speaker-1": "Ana"}
     assert (await api.client.get(f"{path}?revision_id=9", headers=api.headers())).status_code == 404
+
+
+# --- Liveness comes from the claim lease, not from how recently a row changed (#1166) -------------------
+
+
+async def hold_claim(api: Api, kind: str, expires: datetime | None) -> None:
+    async with api.factory() as session, session.begin():
+        claim = await session.get(MeetingProcessingClaim, api.meeting)
+        if claim is None:
+            claim = MeetingProcessingClaim(meeting_id=api.meeting, generation=2)
+            session.add(claim)
+        claim.claim_id, claim.claim_kind, claim.claim_expires_at = str(uuid4()), kind, expires
+
+
+async def test_speakers_whose_worker_lease_lapsed_do_not_block_regeneration(api: Api) -> None:
+    """The 2026-11-16 incident: updated 2 minutes ago, but the worker that held the claim is gone."""
+    await add_diarization(api, 1, "in_progress", updated=datetime.now(UTC) - timedelta(minutes=2))
+    await hold_claim(api, "diarization", datetime.now(UTC) - timedelta(seconds=1))
+
+    accepted = await api.regenerate({"stage": "speakers"})
+
+    assert accepted.status_code == 202, accepted.text
+
+
+async def test_a_claim_left_without_expiry_by_an_older_worker_does_not_block_either(api: Api) -> None:
+    await add_diarization(api, 1, "in_progress", updated=datetime.now(UTC) - timedelta(minutes=2))
+    await hold_claim(api, "diarization", None)  # no state history at all: lapsed at once
+
+    assert (await api.regenerate({"stage": "speakers"})).status_code == 202
+
+
+async def test_speakers_under_a_live_lease_block_even_when_the_row_looks_old(api: Api) -> None:
+    await add_diarization(api, 1, "in_progress", updated=datetime.now(UTC) - timedelta(hours=3))
+    await hold_claim(api, "diarization", datetime.now(UTC) + timedelta(minutes=2))
+
+    blocked = await api.regenerate({"stage": "speakers"})
+
+    assert blocked.status_code == 409 and blocked.json()["detail"]["active_stage"] == "speakers"
+
+
+async def test_a_transcription_whose_worker_lease_lapsed_does_not_block_regeneration(api: Api) -> None:
+    async with api.factory() as session, session.begin():
+        meeting = await session.get(Meeting, api.meeting)
+        assert meeting is not None
+        meeting.process_state = "transcribing"
+        session.add(StateHistory(id=str(uuid4()), meeting_id=api.meeting, state="transcribing",
+                                 occurred_at=datetime.now(UTC) - timedelta(minutes=3)))
+    await hold_claim(api, "transcription", datetime.now(UTC) - timedelta(seconds=1))
+
+    assert (await api.regenerate({"stage": "transcription"})).status_code == 202

@@ -45,7 +45,7 @@ def installed(monkeypatch, tmp_path):
     monkeypatch.setattr(native.boto3, "client", lambda *args, **kwargs: calls.append(True) or object())
     def unexpected(*args, **kwargs):
         pytest.fail("Startup verification must never execute inference")
-    monkeypatch.setattr(native.subprocess, "run", unexpected)
+    monkeypatch.setattr(native, "run_group", unexpected)
     return {"model": vad_model, "binary": vad_cli, "provenance": provenance, "calls": calls,
             "record": record, "hashes": hashes}
 

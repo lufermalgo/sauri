@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import subprocess
+import threading
 import time
 import wave
 from contextlib import nullcontext
@@ -14,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from sauri_engine_common import cancellation
 from test_native_contract import native
 
 vad = importlib.import_module("asr_vad")
@@ -28,7 +30,7 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(tmp_path / "absent"))
     def unexpected(*args, **kwargs):
         pytest.fail("Real subprocesses are forbidden in VAD tests")
-    monkeypatch.setattr(native.subprocess, "run", unexpected)
+    monkeypatch.setattr(native, "run_group", unexpected)
 
 
 def write_wav(path, frames=160000, data=None):
@@ -66,7 +68,7 @@ def simulate(monkeypatch, documents, stdout=None, fail_at=None, tick=None):
             assert audio.getnframes() == 1600 * 16
         Path(command[-1] + ".json").write_text(json.dumps(documents[index]))
         return SimpleNamespace(returncode=0)
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     return commands
 
 
@@ -269,7 +271,7 @@ def test_suppress_nst_is_explicit_and_off_by_default(monkeypatch, tmp_path, sett
     def run(command, **kwargs):
         assert ("-sns" in command) is flag
         Path(command[-1] + ".json").write_text(json.dumps(document()))
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     native._run_whisper(tmp_path / "audio.wav", tmp_path / "out", "es", 10)
 
 
@@ -341,7 +343,7 @@ def test_vad_response_preserves_full_duration_and_never_returns_partial_results(
         def fail(command, **kwargs):
             assert "-vm" in command
             raise subprocess.CalledProcessError(3, command, stderr="private output /Users/private/audio.wav")
-        monkeypatch.setattr(native.subprocess, "run", fail)
+        monkeypatch.setattr(native, "run_group", fail)
     request = native.TranscribeRequest(audio_ref="synthetic.wav")
     if failure:
         with pytest.raises(native.HTTPException) as exc:
@@ -388,7 +390,7 @@ def test_single_pass_uses_the_default_prompt_when_vad_is_off(monkeypatch, tmp_pa
     def run(command, **kwargs):
         commands.append(command)
         Path(command[-1] + ".json").write_text(json.dumps(document()))
-    monkeypatch.setattr(native.subprocess, "run", run)
+    monkeypatch.setattr(native, "run_group", run)
     native._transcribe_wav(source, 10000, "es", time.monotonic() + 30)
     assert len(commands) == 1
     cmd = commands[0]
@@ -405,3 +407,42 @@ def test_disabled_default_prompt_is_not_passed_to_any_chunk(monkeypatch, tmp_pat
     native._transcribe_wav(source, 10000, "es", time.monotonic() + 30)
     for cmd, _ in commands:
         assert "--prompt" not in cmd and "--carry-initial-prompt" not in cmd
+
+
+def test_a_caller_that_left_stops_the_remaining_chunks(monkeypatch, tmp_path):
+    """#1166: the worker gave up, so whisper must not go on through the rest of the recording."""
+    source = tmp_path / "audio.wav"
+    write_wav(source)
+    left = threading.Event()
+    calls = []
+
+    def tick():
+        calls.append(1)
+        if len(calls) == 2:  # the first chunk is being transcribed when the worker disconnects
+            left.set()
+
+    commands = simulate(monkeypatch, [document(), document(" beta")], tick=tick)
+    token = cancellation.bind(left)
+    try:
+        with pytest.raises(cancellation.JobCancelled):
+            native._transcribe_wav(source, 10000, "es", time.monotonic() + 30)
+    finally:
+        cancellation.unbind(token)
+    assert sum("-vm" not in command for command, _ in commands) == 1  # one whisper run, not two
+    assert list(tmp_path.iterdir()) == [source]
+
+
+def test_a_request_waiting_for_the_job_slot_gives_up_when_the_caller_leaves(monkeypatch):
+    left = threading.Event()
+    token = cancellation.bind(left)
+    request = SimpleNamespace(audio_ref="synthetic")
+    assert native._job_lock.acquire(timeout=1)  # another job holds the slot
+    try:
+        threading.Timer(0.2, left.set).start()
+        started = time.monotonic()
+        with pytest.raises(cancellation.JobCancelled):
+            native._transcribe_serialized(request, time.monotonic() + 30)
+        assert time.monotonic() - started < 3
+    finally:
+        native._job_lock.release()
+        cancellation.unbind(token)

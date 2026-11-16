@@ -404,6 +404,19 @@ export async function getMeetingSummary(meetingId: string): Promise<MeetingSumma
   };
 }
 
+/** Explicitly runs the transcription of a meeting again (a failed one included). Throws on any non-2xx answer. */
+export async function regenerateTranscription(meetingId: string): Promise<void> {
+  const response = await fetch(
+    `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/regenerate`,
+    {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Idempotency-Key": newIdempotencyKey() },
+      body: JSON.stringify({ stage: "transcription" }),
+    },
+  );
+  rejectUnlessOk(response);
+}
+
 export async function getLatestSummaryRequest(meetingId: string): Promise<SummaryRequestStatus | null> {
   const response = await fetch(
     `${BASE_URL}/api/v1/meetings/${encodeURIComponent(meetingId)}/summary-requests/latest`,

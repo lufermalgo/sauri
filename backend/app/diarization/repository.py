@@ -116,6 +116,23 @@ class DiarizationRepository:
         )
         return result.scalar_one_or_none() is not None
 
+    async def reopen_orphaned_revision(
+        self, session: AsyncSession, meeting_id: str, processing_revision: int,
+    ) -> bool:
+        """Make an attempt left in progress pending again.
+
+        Only a caller that holds the meeting's processing claim may use it: nobody else can be
+        working on the attempt, so one still in progress belongs to a worker that died.
+        """
+        result = await session.execute(
+            update(Diarization).where(
+                Diarization.meeting_id == meeting_id,
+                Diarization.processing_revision == processing_revision,
+                Diarization.diarization_state == "in_progress",
+            ).values(diarization_state="pending", updated_at=datetime.now(UTC)).returning(Diarization.id)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def fail_revision(
         self, session: AsyncSession, meeting_id: str, processing_revision: int,
     ) -> bool:

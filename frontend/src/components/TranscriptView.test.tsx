@@ -30,6 +30,7 @@ vi.mock("../api", () => ({
   getSpeakerReview: vi.fn(),
   submitSpeakerDisposition: vi.fn(),
   newIdempotencyKey: vi.fn(),
+  regenerateTranscription: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -788,6 +789,25 @@ describe("TranscriptView — processing polling", () => {
     expect(api.getMeeting).toHaveBeenCalledTimes(1);
     fireEvent(document, new Event("visibilitychange"));
     expect(api.getMeeting).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the owner retry an interrupted meeting and follows the new run", async () => {
+    vi.mocked(api.getMeeting).mockResolvedValueOnce({
+      meetingId: "r-1", processState: "failed", failureCause: "processing_interrupted",
+    });
+    vi.mocked(api.regenerateTranscription).mockResolvedValue(undefined);
+    await open();
+    expect(screen.getByText(new RegExp(processingFailureText("processing_interrupted")))).toBeVisible();
+    await advance(20000);
+    expect(api.getMeeting).toHaveBeenCalledTimes(1); // polling had stopped at the failure
+
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: t("processing:retry") })); });
+    await advance(100);
+
+    expect(api.regenerateTranscription).toHaveBeenCalledWith("r-1");
+    expect(vi.mocked(api.getMeeting).mock.calls.length).toBeGreaterThan(1);
+    expect(screen.queryByRole("button", { name: t("processing:retry") })).not.toBeInTheDocument();
   });
 
   it("explains a recording without speech, offers no retry and shows no transcript placeholder", async () => {

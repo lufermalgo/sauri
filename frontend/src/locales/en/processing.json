@@ -60,6 +60,10 @@
     "engine_failed": "The engine couldn't process the recording.",
     "engine_contract_mismatch": "The transcription engine returned an incompatible format.",
     "invalid_response": "The transcription engine returned an invalid response.",
-    "unknown": "Processing failed for an unknown reason."
-  }
+    "unknown": "Processing failed for an unknown reason.",
+    "processing_interrupted": "Processing was interrupted before it finished."
+  },
+  "retry": "Try again",
+  "retrying": "Trying again…",
+  "retryFailed": "Couldn't try again. Please try once more in a moment."
 }

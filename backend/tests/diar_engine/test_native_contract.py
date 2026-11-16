@@ -521,6 +521,13 @@ async def test_startup_uses_exact_coreml_options(monkeypatch: pytest.MonkeyPatch
     assert native.diarization_pipeline is None
 
 
+class _Connected:
+    """An HTTP request whose client stays connected."""
+
+    async def is_disconnected(self) -> bool:
+        return False
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["download", "normalize", "inference"])
 async def test_failures_remove_all_temporaries(
@@ -551,7 +558,7 @@ async def test_failures_remove_all_temporaries(
     with pytest.raises(HTTPException) as error:
         await native.diarize(
             native.DiarizeRequest(audio_ref=audio_ref),
-            None,  # no HTTP request object: the local path never reads it
+            _Connected(),
             recording_capability=capability(audio_ref, secret, int(time.time()) + 60),
             route=None,
         )

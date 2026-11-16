@@ -109,6 +109,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     command: ["python", "-m", "app.worker"]
+    # On SIGTERM the worker stops taking jobs, lets the running one finish for up to
+    # WORKER_SHUTDOWN_GRACE_SECONDS and otherwise gives its claim back (docs/operations/local-deployment.md).
+    # The Docker grace period must stay above that. `init` forwards the signal and reaps ffmpeg children.
+    init: true
+    stop_signal: SIGTERM
+    stop_grace_period: ${SAURI_WORKER_STOP_GRACE:-600s}
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,6 +148,9 @@ services:
       - SUMMARIZE_MAX_RETRIES=${SUMMARIZE_MAX_RETRIES:-1}
       - SUMMARIZE_RETRY_DELAY_SECONDS=${SUMMARIZE_RETRY_DELAY_SECONDS:-30}
       - SUMMARY_STALE_AFTER_SECONDS=${SUMMARY_STALE_AFTER_SECONDS:-4500}
+      - WORKER_SHUTDOWN_GRACE_SECONDS=${WORKER_SHUTDOWN_GRACE_SECONDS:-540}
+      - PROCESSING_LEASE_SECONDS=${PROCESSING_LEASE_SECONDS:-150}
+      - PROCESSING_HEARTBEAT_SECONDS=${PROCESSING_HEARTBEAT_SECONDS:-30}
       - SAURI_ENGINE_TOKEN_FILE=/run/secrets/sauri_engine_token
       - SAURI_RECORDING_CAPABILITY_KEY_FILE=/run/secrets/recording_capability_key
       - MINIO_AUDIO_PREFIX=recordings/

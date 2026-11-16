@@ -602,7 +602,7 @@ async def test_publication_failure_rolls_back_generation_and_redelivery_recovers
     async with pg_factory() as session:
         claim = await session.get(MeetingProcessingClaim, message["meeting_id"])
         assert claim is not None and claim.generation == message["generation"]
-        assert claim.claim_id == message["job_id"]
+        assert claim.claim_id is None  # the interrupted delivery gave its claim back for the redelivery
         assert await session.scalar(select(func.count()).select_from(Transcript)) == 1
     queue.publish.side_effect = None
     await _process_transcription(message, pg_factory, queue)
