@@ -11,6 +11,12 @@ describe("PanelHeader", () => {
     fireEvent.click(screen.getByRole("button", { name: copy.settings }));
     expect(onOpenSettings).toHaveBeenCalledOnce();
   });
+  it("keeps the icon-only settings button named and its icon decorative", () => {
+    render(<PanelHeader onOpenSettings={() => {}} />);
+    const button = screen.getByRole("button", { name: copy.settings });
+    expect(button.textContent).toBe("");
+    expect(button.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+  });
   it.each([false, true])("shows the projected recording badge, paused=%s", paused => {
     render(<PanelHeader captureState="recording" paused={paused} />);
     expect(screen.getByText(paused ? copy.paused : copy.recording)).toBeInTheDocument();

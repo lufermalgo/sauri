@@ -81,6 +81,30 @@ describe('Meet isolated recording UI', () => {
     expect(root().querySelector('option')!.textContent).toBe('Test input');
   });
 
+  it('draws Lucide icons in the bar while icon-only buttons keep their accessible names', () => {
+    syncRecordingUI(state);
+    const names: Record<string, string> = { handle: copy.drag, cancel: copy.cancelRecording, pause: copy.pause, save: copy.stop };
+    for (const [name, label] of Object.entries(names)) {
+      const button = root().querySelector<HTMLButtonElement>(`.${name}`)!;
+      expect(button.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+      expect(button).toHaveAccessibleName(label);
+      expect(button.textContent).toBe('');
+    }
+    const pauseIcon = root().querySelector('.pause svg')!.innerHTML;
+    syncRecordingUI({ ...state, paused: true, elapsedMs: 5000 });
+    expect(root().querySelectorAll('.pause svg')).toHaveLength(1);
+    expect(root().querySelector('.pause svg')!.innerHTML).not.toBe(pauseIcon);
+    expect(root().querySelector('.pause')).toHaveAccessibleName(copy.resume);
+    expect(root().querySelectorAll('.mic svg')).toHaveLength(2);
+  });
+
+  it('draws an icon in the notice close button', () => {
+    showNotice();
+    const close = document.getElementById('sauri-consent-banner-host')!.shadowRoot!.querySelector('button')!;
+    expect(close.querySelector('svg')).not.toBeNull();
+    expect(close).toHaveAccessibleName(copy.close);
+  });
+
   it('requires explicit confirmation before discarding and keeps recording on dismissal', async () => {
     syncRecordingUI(state);
     root().querySelector<HTMLButtonElement>('.cancel')!.click();

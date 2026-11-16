@@ -1,3 +1,7 @@
+import { FailureCause } from "@sauri/shared-types";
+import { meeting as meetingText } from "./copy/meeting";
+import { processing as processingText } from "./copy/processing";
+
 // Honest progress estimate for meeting processing. The backend reports stages, never a percentage,
 // so everything here is an estimate derived from measured speeds and elapsed wall-clock time.
 
@@ -14,6 +18,9 @@ export const ESTIMATE_FACTORS = {
 
 /** The estimate never claims more than this until the work really finishes. */
 export const PROGRESS_CAP = 0.95;
+
+/** Failure cause for a recording without detected speech: an expected outcome, shown as its own message. */
+export const NO_SPEECH_CAUSE = FailureCause.NoSpeechDetected;
 
 export type ActiveStage = "transcription" | "speakers" | "summary";
 export const ACTIVE_STAGES: readonly ActiveStage[] = ["transcription", "speakers", "summary"];
@@ -51,6 +58,22 @@ export function detectProcessingStage(signals: StageSignals): DetectedStage {
       if (hasDiarization && (summary === "waiting" || summary === "expected")) return "summary";
       return "done";
     default: return "unknown";
+  }
+}
+
+/**
+ * Plain-language label of a detected stage. The meeting header and the stepper both read it, so
+ * the header never says the meeting is ready while a stage is still running.
+ */
+export function stageLabel(stage: DetectedStage, processState: string | undefined): string {
+  switch (stage) {
+    case "transcription": return processState === "queued" ? processingText.queued : processingText.transcribing;
+    case "speakers": return processingText.identifying;
+    case "summary": return processingText.summarizing;
+    case "done": return meetingText.ready;
+    case "failed": return processingText.failed;
+    case "live": return processState === "joining" ? processingText.joining : processingText.recording;
+    case "unknown": return processingText.unknown;
   }
 }
 

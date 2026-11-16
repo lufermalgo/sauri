@@ -71,6 +71,18 @@ describe("ProcessingStatus — real states", () => {
     },
   );
 
+  it("explains a recording without detected speech instead of a generic failure, with no retry", () => {
+    render(<ProcessingStatus {...base({
+      meeting: { meetingId: "m-1", processState: "failed", failureCause: "no_speech_detected" }, hasTranscript: false,
+    })} />);
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(copy.processing.noSpeechTitle);
+    expect(status).toHaveTextContent(copy.processing.noSpeechBody);
+    expect(status).not.toHaveTextContent(copy.processing.failureCause("engine_failed"));
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
   it("does not turn a state load failure into a processing state", () => {
     render(<ProcessingStatus {...base({ meeting: null, error: true })} />);
     expect(screen.getByRole("alert")).toHaveTextContent(copy.processing.loadFailed);
@@ -148,6 +160,22 @@ describe("ProcessingStatus — estimate", () => {
     view.rerender(<ProcessingStatus {...props} hasTranscript />);
     expect(currentStep()).toBe(copy.processing.steps.speakers);
     expect(document.querySelector(".processing-remaining")).not.toHaveTextContent(copy.processing.overtime);
+    act(() => { vi.advanceTimersByTime(20_000); });
+    expect(document.querySelector(".processing-remaining")).toHaveTextContent(copy.processing.overtime);
+  });
+
+  it("does not claim a slow stage when the page opens right after speakers started", () => {
+    vi.useFakeTimers({ now: NOW });
+    // 94 minutes of audio uploaded 14 minutes ago: transcription took most of that time, not speakers.
+    const props = base({
+      meeting: { meetingId: "m-1", processState: "completed" },
+      audioSeconds: 94 * 60, createdAt: ago(850), hasTranscript: true, diarizationNotFound: true,
+    });
+    render(<ProcessingStatus {...props} />);
+    expect(currentStep()).toBe(copy.processing.steps.speakers);
+    expect(screen.queryByText(copy.processing.overtime)).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.processing.explain.overtime)).not.toBeInTheDocument();
+    // Only time this page watched the running stage can make it overtime.
     act(() => { vi.advanceTimersByTime(20_000); });
     expect(document.querySelector(".processing-remaining")).toHaveTextContent(copy.processing.overtime);
   });

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { permissionCopy as copy } from "./copy";
+import { Icon } from "../core/design/Icon";
 import { PanelHeader } from "../panel/components/PanelHeader";
 import "../core/design/base.css";
 import "../panel/panel.css";
@@ -80,7 +82,7 @@ export function OptionsApp() {
       <section className="permission-card panel-stack panel-card">
         <span className={`panel-badge panel-badge-${state === "granted" ? "success" : state === "denied" ? "error" : "progress"}`}>{state === "granted" ? copy.granted : state === "denied" ? copy.denied : copy.waiting}</span>
         {state === "waiting" && <><h2>{copy.waitingHeading}</h2><p>{copy.waitingHelp}</p><p role="status">{copy.waitingStatus}</p></>}
-        {state === "granted" && <><span className="permission-check" aria-hidden="true">✓</span><h2>{copy.grantedHeading}</h2><p>{device ? `${copy.devicePrefix}${device}${copy.deviceSuffix}` : copy.grantedHelp}</p><p role="status">{copy.closingPrefix} <b className="permission-time">{remaining}</b> {copy.closingSuffix}</p><button onClick={() => { void close(); }}>{copy.close}</button></>}
+        {state === "granted" && <><span className="permission-check" aria-hidden="true"><Icon icon={Check} size={28} strokeWidth={2.25} /></span><h2>{copy.grantedHeading}</h2><p>{device ? `${copy.devicePrefix}${device}${copy.deviceSuffix}` : copy.grantedHelp}</p><p role="status">{copy.closingPrefix} <b className="permission-time">{remaining}</b> {copy.closingSuffix}</p><button onClick={() => { void close(); }}>{copy.close}</button></>}
         {state === "denied" && <><h2>{copy.deniedHeading}</h2><ol>{copy.steps.map(step => <li key={step}>{step}</li>)}</ol><p>{copy.settingsPrefix} <code>chrome://settings/content/microphone</code> {copy.settingsSuffix}</p><button className="panel-primary" onClick={() => { void checkPermission(); }}>{copy.retry}</button></>}
         {error && <p role="alert">{error}</p>}
       </section>

@@ -7,8 +7,8 @@ import { meeting as text } from "../copy/meeting";
 
 afterEach(cleanup);
 const turns: TimelineTurn[] = [
-  { id: "a", startMs: 10000, endMs: 30000, speakerId: "s1", speakerLabel: "Synthetic One", color: "var(--speaker-1)" },
-  { id: "b", startMs: 30000, endMs: 90000, speakerId: "s2", speakerLabel: "Synthetic Two", color: "var(--speaker-2)" },
+  { id: "a", startMs: 10000, endMs: 30000, speakerId: "s1", speakerLabel: "Synthetic One", color: "var(--ds-speaker-1)" },
+  { id: "b", startMs: 30000, endMs: 90000, speakerId: "s2", speakerLabel: "Synthetic Two", color: "var(--ds-speaker-2)" },
 ];
 function setup(overrides: Partial<Parameters<typeof SpeakerTimeline>[0]> = {}) {
   const onSeek = vi.fn();
@@ -21,8 +21,8 @@ describe("SpeakerTimeline", () => {
   it("positions proportional segments, retaining silence and the actual speaker colors", () => {
     setup();
     const segments = screen.getAllByTestId("timeline-segment");
-    expect(segments[0]).toHaveStyle({ left: "10%", width: "20%", background: "var(--speaker-1)" });
-    expect(segments[1]).toHaveStyle({ left: "30%", width: "60%", background: "var(--speaker-2)" });
+    expect(segments[0]).toHaveStyle({ left: "10%", width: "20%", background: "var(--ds-speaker-1)" });
+    expect(segments[1]).toHaveStyle({ left: "30%", width: "60%", background: "var(--ds-speaker-2)" });
     expect(screen.getByText("Synthetic One")).toBeVisible();
     expect(screen.getByText("Synthetic Two")).toBeVisible();
     expect(screen.getByText(text.keyPoints)).toBeVisible();

@@ -22,6 +22,8 @@ export enum FailureCause {
   CouldNotJoin = "could_not_join",
   MeetingCancelled = "meeting_cancelled",
   EngineFailure = "engine_failure",
+  /** The engine found no speech in the recording; a terminal, expected outcome. */
+  NoSpeechDetected = "no_speech_detected",
 }
 
 /** Origin of the Meeting record. */

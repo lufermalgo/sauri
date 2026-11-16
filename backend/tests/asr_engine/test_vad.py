@@ -212,8 +212,12 @@ def test_failing_chunk_discards_job_and_cleans_chunk_files(monkeypatch, tmp_path
     assert list(tmp_path.iterdir()) == [source]
 
 
-@pytest.mark.parametrize("empty_vad", [False, True])
-def test_no_voice_or_no_decoded_words_uses_existing_controlled_error(monkeypatch, tmp_path, empty_vad):
+@pytest.mark.parametrize(("empty_vad", "detail", "status"), [
+    (False, "no_word_timestamps", 500), (True, "no_speech", 422),
+])
+def test_no_voice_is_a_distinct_client_result_and_no_decoded_words_keeps_the_controlled_error(
+    monkeypatch, tmp_path, caplog, empty_vad, detail, status,
+):
     source = tmp_path / "source.wav"
     source.write_bytes(b"synthetic source")
     monkeypatch.setattr(native, "_download_audio", lambda *args: str(source))
@@ -225,11 +229,14 @@ def test_no_voice_or_no_decoded_words_uses_existing_controlled_error(monkeypatch
     monkeypatch.setattr(native, "normalize_to_wav", normalize)
     commands = simulate(monkeypatch, [{"transcription": []}, {"transcription": []}],
                         stdout="Detected 0 speech segments:" if empty_vad else None)
-    with pytest.raises(native.HTTPException) as exc:
+    with caplog.at_level("INFO", logger=native.logger.name), pytest.raises(native.HTTPException) as exc:
         native._transcribe_audio(native.TranscribeRequest(audio_ref="synthetic.wav"), time.monotonic() + 30)
-    assert exc.value.status_code == 500 and exc.value.detail == "no_word_timestamps"
+    assert exc.value.status_code == status and exc.value.detail == detail
     assert len(commands) == (1 if empty_vad else 3)
     assert not list(tmp_path.iterdir())
+    no_speech_lines = [record for record in caplog.records if "no speech" in record.getMessage()]
+    assert len(no_speech_lines) == (1 if empty_vad else 0)
+    assert str(tmp_path) not in caplog.text and "synthetic" not in caplog.text
 
 
 def test_shared_deadline_and_sum_of_inference_times(monkeypatch, tmp_path):

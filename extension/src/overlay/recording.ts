@@ -1,5 +1,7 @@
+import { ChevronDown, GripVertical, Mic, Pause, Play, Square, X } from 'lucide';
 import { copy } from './copy';
 import tokens from '../core/design/tokens.css?raw';
+import { icon, iconHtml } from './icons';
 
 export interface RecordingUI {
   sessionId: string;
@@ -17,7 +19,8 @@ const styles = `
   :host { all: initial; color-scheme: light dark; font: var(--ds-text-base)/var(--ds-leading) var(--ds-font-sans); color: var(--ds-fg); }
   * { box-sizing: border-box; }
   button, select { font: inherit; cursor: pointer; min-height: var(--ds-target); border-radius: var(--ds-radius-md); padding: var(--ds-space-2) var(--ds-space-3); }
-  button { border: 0; }
+  button { border: 0; display: inline-flex; align-items: center; justify-content: center; min-width: var(--ds-target); }
+  svg { display: block; flex: 0 0 auto; }
   button:focus-visible, select:focus-visible { outline: var(--ds-focus-width) solid var(--ds-focus); outline-offset: var(--ds-focus-offset); }
   [hidden] { display: none !important; }
   .dot { display: inline-block; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; background: var(--ds-recording); animation: pulse 1.4s infinite; }
@@ -38,7 +41,11 @@ const styles = `
   .bar.paused .dot { animation: none; background: var(--ds-fg-subtle); }
   .time { font: var(--ds-text-base) var(--ds-font-mono); font-variant-numeric: tabular-nums; padding: 0 var(--ds-space-2); }
   .handle { touch-action: none; cursor: grab; }
-  .bar select { max-width: 150px; border: 1px solid var(--ds-border-strong); background: var(--ds-surface); }
+  .bar select { max-width: 190px; border: 1px solid var(--ds-border-strong); background: var(--ds-surface); appearance: none; padding: var(--ds-space-2) 30px var(--ds-space-2) 36px; }
+  .mic { position: relative; display: inline-flex; align-items: center; }
+  .mic svg { position: absolute; pointer-events: none; }
+  .mic .lead { left: var(--ds-space-3); }
+  .mic .chevron { right: 10px; }
   .bar option { color: var(--ds-fg); background: var(--ds-surface-raised); }
   .confirmation { position: fixed; left: 24px; bottom: 100px; width: min(340px, calc(100vw - 32px)); padding: var(--ds-space-4); border-radius: var(--ds-radius-lg); border: 1px solid var(--ds-border-strong); background: var(--ds-surface-raised); color: var(--ds-fg); box-shadow: var(--ds-shadow-md); }
   .confirmation p { color: var(--ds-fg-muted); font-size: var(--ds-text-md); }
@@ -68,7 +75,7 @@ export function showNotice(): boolean {
   const notice = document.createElement('div');
   notice.className = 'notice';
   notice.setAttribute('role', 'status');
-  notice.innerHTML = `<span class="dot" aria-hidden="true"></span><span><b>${copy.notice}</b> ${copy.noticeHint}</span><button aria-label="${copy.close}">✕</button>`;
+  notice.innerHTML = `<span class="dot" aria-hidden="true"></span><span><b>${copy.notice}</b> ${copy.noticeHint}</span><button aria-label="${copy.close}">${iconHtml(X, 16)}</button>`;
   notice.querySelector('button')!.onclick = () => shadow.host.remove();
   shadow.append(notice);
   return true;
@@ -181,7 +188,7 @@ export function syncRecordingUI(state: RecordingUI): void {
     bar.className = 'bar';
     bar.setAttribute('role', 'toolbar');
     bar.setAttribute('aria-label', copy.controls);
-    bar.innerHTML = `<button class="handle" aria-label="${copy.drag}">⠿</button><span class="dot" aria-hidden="true"></span><span class="time" role="timer"></span><span class="status"></span><button class="cancel" aria-label="${copy.cancelRecording}">✕</button><button class="pause"></button><button class="save" aria-label="${copy.stop}" title="${copy.stop}">■</button><select aria-label="${copy.microphone}" title="${copy.microphoneHint}"></select><span class="error" role="alert"></span>`;
+    bar.innerHTML = `<button class="handle" aria-label="${copy.drag}">${iconHtml(GripVertical)}</button><span class="dot" aria-hidden="true"></span><span class="time" role="timer"></span><span class="status"></span><button class="cancel" aria-label="${copy.cancelRecording}">${iconHtml(X)}</button><button class="pause"></button><button class="save" aria-label="${copy.stop}" title="${copy.stop}">${iconHtml(Square, 16)}</button><span class="mic">${iconHtml(Mic, 16, 'lead')}<select aria-label="${copy.microphone}" title="${copy.microphoneHint}"></select>${iconHtml(ChevronDown, 14, 'chevron')}</span><span class="error" role="alert"></span>`;
     shadow.append(bar);
     const root = shadow;
     const command = async (type: string) => {
@@ -232,7 +239,7 @@ export function syncRecordingUI(state: RecordingUI): void {
   root.querySelector('.bar')!.classList.toggle('paused', state.paused);
   root.querySelector('.status')!.textContent = state.paused ? copy.paused : '';
   const pause = root.querySelector<HTMLButtonElement>('.pause')!;
-  pause.textContent = state.paused ? '▶' : 'Ⅱ';
+  pause.replaceChildren(icon(state.paused ? Play : Pause));
   pause.setAttribute('aria-label', state.paused ? copy.resume : copy.pause);
   pause.title = state.paused ? copy.resume : copy.pause;
   // Only the active device is shown. Device changes apply to the next session.

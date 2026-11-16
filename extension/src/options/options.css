@@ -6,6 +6,6 @@
 .permission-card ol { margin: 0; padding-left: var(--ds-space-6); color: var(--ds-fg-muted); }
 .permission-card li + li { margin-top: var(--ds-space-2); }
 .permission-card code { font: var(--ds-text-sm) var(--ds-font-mono); overflow-wrap: anywhere; }
-.permission-check { width: 56px; height: 56px; border-radius: var(--ds-radius-pill); display: grid; place-items: center; background: var(--ds-accent-soft); color: var(--ds-accent-soft-fg); font-size: var(--ds-text-3xl); }
+.permission-check { width: 56px; height: 56px; border-radius: var(--ds-radius-pill); display: grid; place-items: center; background: var(--ds-accent-soft); color: var(--ds-accent-soft-fg); }
 .permission-time { font-family: var(--ds-font-mono); }
 .permission-page [role="alert"] { color: var(--ds-danger-soft-fg); }

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { MeetingState } from "../api";
 import { copy } from "../copy/es";
 import {
-  ACTIVE_STAGES, detectProcessingStage, estimateProgress, expectedStageSeconds, formatElapsed,
-  roundMinutes, secondsSince, type ActiveStage, type DetectedStage, type SummarySignal,
+  ACTIVE_STAGES, NO_SPEECH_CAUSE, detectProcessingStage, estimateProgress, expectedStageSeconds, formatElapsed,
+  roundMinutes, secondsSince, stageLabel, type ActiveStage, type DetectedStage, type SummarySignal,
 } from "../processing-estimate";
 import { ProgressBar } from "./ui";
 import "../styles/processing.css";
@@ -88,12 +88,6 @@ function Stepper({ stage }: { stage: ActiveStage | "done" }) {
   );
 }
 
-function headlineFor(stage: ActiveStage, processState: string): string {
-  const text = copy.processing;
-  if (stage === "transcription") return processState === "queued" ? text.queued : text.transcribing;
-  return stage === "speakers" ? text.identifying : text.summarizing;
-}
-
 export function ProcessingStatus({
   meeting, hasTranscript, diarizationNotFound, error, hasDiarization = false, summary = "none",
   audioSeconds = null, createdAt = null,
@@ -115,6 +109,12 @@ export function ProcessingStatus({
 
   if (error) return <p role="alert">{text.loadFailed}</p>;
   if (!meeting || detected === null) return <p role="status">{text.loading}</p>;
+  if (detected === "failed" && meeting.failureCause === NO_SPEECH_CAUSE) return (
+    <div role="status" className="processing-current">
+      <p className="processing-headline">{text.noSpeechTitle}</p>
+      <p className="processing-explain">{text.noSpeechBody}</p>
+    </div>
+  );
   if (detected === "failed") return (
     <p role="status">{text.failed}: {text.failureCause(meeting.failureCause)}</p>
   );
@@ -137,11 +137,14 @@ export function ProcessingStatus({
   );
 
   const stage = detected;
-  const headline = headlineFor(stage, meeting.processState);
+  const headline = stageLabel(stage, meeting.processState);
   const sinceUpload = (at: number) => secondsSince(createdAt, at) ?? (at - mountedAt) / 1000;
+  // A page opened mid-stage cannot know when speakers or the summary began: the time since the upload
+  // also holds a transcription of any length, so only the time this page has watched counts as overtime.
+  const stageStart = track.since ?? (stage === "transcription" ? null : mountedAt);
   const estimateAt = (at: number) => estimateProgress({
     stage, audioSeconds, elapsedSinceUploadSeconds: sinceUpload(at),
-    stageElapsedSeconds: track.since === null ? null : Math.max(0, (at - track.since) / 1000),
+    stageElapsedSeconds: stageStart === null ? null : Math.max(0, (at - stageStart) / 1000),
   });
   const estimate = estimateAt(now);
   const audioMinutes = typeof audioSeconds === "number" && audioSeconds > 0 ? roundMinutes(audioSeconds) : null;

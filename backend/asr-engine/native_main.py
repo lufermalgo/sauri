@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field, field_validator
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
 from sauri_engine_common.credentials import object_store_credentials
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
-from whisper_words import NoWordTimestampsError, WordsResult, words_from_ggml_json
+from whisper_words import NoSpeechError, NoWordTimestampsError, WordsResult, words_from_ggml_json
 
 logger = logging.getLogger("asr-engine-native")
 logging.basicConfig(level=logging.INFO)
@@ -285,7 +285,8 @@ def _transcribe_wav(
     intervals = parse_vad(process.stdout, audio_ms)
     chunks = group_chunks(intervals, audio_ms, chunk_ms())
     if not chunks:
-        raise NoWordTimestampsError("no_word_timestamps")
+        logger.info("VAD found no speech (audio_ms=%d, vad_ms=%d)", audio_ms, vad_ms)
+        raise NoSpeechError("no_speech")
     results = []
     detected: str | None = None
     inference_seconds = 0.0
@@ -369,6 +370,8 @@ def _transcribe_audio(request: TranscribeRequest, deadline: float) -> Transcribe
             )
     except NormalizeError as exc:
         raise HTTPException(status_code=422, detail="normalize_failed") from exc
+    except NoSpeechError as exc:
+        raise HTTPException(status_code=422, detail="no_speech") from exc
     except NoWordTimestampsError as exc:
         raise HTTPException(status_code=500, detail="no_word_timestamps") from exc
     except KeepAwakeError as exc:

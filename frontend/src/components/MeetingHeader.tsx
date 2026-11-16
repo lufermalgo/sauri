@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { deleteMeeting, renameMeeting } from "../api";
-import { processing } from "../copy/processing";
 import { meeting as text } from "../copy/meeting";
 import { navigate } from "../router";
+import { stageLabel, type DetectedStage } from "../processing-estimate";
 import { Button, ConfirmDialog, StatusBadge, TextField, Menu, MenuItem } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
@@ -11,17 +11,13 @@ interface MeetingHeaderProps extends MeetingDownloadsProps {
   title: string | null;
   createdAt: string | null;
   onBack: () => void;
-  completed?: boolean;
+  /** Stage derived once by the page, the same one the processing stepper shows. */
+  stage?: DetectedStage;
   processState?: string;
   speakerCount?: number;
 }
 
-export function MeetingHeader({ title, createdAt, onBack, completed = false, processState, speakerCount, ...downloads }: MeetingHeaderProps) {
-  const state = completed ? "completed" : processState;
-  const statusLabels: Record<string, string> = {
-    queued: processing.queued, joining: processing.joining, recording: processing.recording,
-    transcribing: processing.transcribing, completed: text.ready, failed: processing.failed,
-  };
+export function MeetingHeader({ title, createdAt, onBack, stage, processState, speakerCount, ...downloads }: MeetingHeaderProps) {
   const duration = downloads.manifest?.duration_seconds;
   const totalSeconds = duration === undefined ? null : Math.max(0, Math.floor(duration));
   const durationLabel = totalSeconds === null ? null : totalSeconds >= 3600
@@ -89,8 +85,8 @@ export function MeetingHeader({ title, createdAt, onBack, completed = false, pro
           </div>
         </form> : <h1>{currentTitle}</h1>}
         <div className="meeting-details">
-        {state && <StatusBadge tone={state === "completed" ? "success" : state === "failed" ? "error" : "progress"}>
-          {statusLabels[state] ?? processing.unknown}
+        {stage && <StatusBadge tone={stage === "done" ? "success" : stage === "failed" ? "error" : "progress"}>
+          {stageLabel(stage, processState)}
         </StatusBadge>}
         {createdAt && <time className="meeting-date" dateTime={createdAt}>
           {new Date(createdAt).toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" })}

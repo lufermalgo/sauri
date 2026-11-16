@@ -27,7 +27,6 @@ Herramienta de trabajo, no página de marketing. Jerarquía por superficie, tama
 | Semántico | `--ds-fg`, `--ds-accent`, `--ds-danger-text` | Contrato estable: nombra la función, no el color |
 | Escala | `--ds-space-3`, `--ds-radius-md`, `--ds-text-sm` | Valores compartidos de espaciado, geometría y tipografía |
 | Layout | `--ds-layout-max`, `--ds-target` | Medidas estructurales |
-| Alias heredados | `--color-primary`, `--space-2` | Sin valor propio; solo para ramas abiertas. Se eliminan al integrarlas |
 
 - **Un solo punto de entrada por aplicación:** `frontend/src/design/tokens.css` (importado desde `frontend/src/index.css`) y `extension/src/core/design/tokens.css` (importado desde `base.css`). El bloque de color es idéntico en ambos; las pruebas lo comparan con la tabla 3.1, de modo que no pueden divergir. Los dos archivos se mantienen por separado porque el portal y la extensión se compilan por separado.
 - **Regla:** los componentes consumen `var(--ds-…)`. Prohibidos hexadecimales, `rgb()`/`hsl()` y nombres de fuentes en componentes. Excepción documentada: el color de la insignia del icono de la extensión (`chrome.action.setBadgeBackgroundColor`, API sin CSS) usa el valor claro de `recording`.
@@ -229,7 +228,7 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 
 ## 8. Iconos
 
-- Familia **Lucide**, lineal, heredan `currentColor`. No se cambia la librería ni el trazo por defecto (2) sin necesidad documentada. Este PR no cambia el uso de iconos en componentes.
+- Familia **Lucide**, lineal, heredan `currentColor`. Los componentes React usan `core/design/Icon.tsx` y el overlay `overlay/icons.ts`; ambos toman tamaño (18) y trazo (1.75) de `core/design/iconDefaults.ts`, un único punto de cambio. No se cambia la librería ni el trazo sin necesidad documentada.
 - Escala: `icon-xs` 12, `icon-sm` 14, `icon-md` 16, `icon-lg` 18. Botón de icono: 44×44 con icono 16–18.
 - Decorativo: `aria-hidden="true"`; acción solo con icono: nombre accesible (`aria-label`).
 - El color de un icono lo da el texto que lo rodea (`fg-muted`, `accent-text`, `danger-text`).

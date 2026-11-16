@@ -21,7 +21,7 @@ import { ChatTab } from "./ChatTab";
 import { Avatar, Button, Card, Tabs, TextField, Skeleton, SkeletonLines } from "./ui";
 import { meeting as text } from "../copy/meeting";
 import "../styles/meeting.css";
-import { detectProcessingStage, type SummarySignal } from "../processing-estimate";
+import { NO_SPEECH_CAUSE, detectProcessingStage, type SummarySignal } from "../processing-estimate";
 import { copy } from "../copy/es";
 
 interface TranscriptViewProps {
@@ -36,7 +36,7 @@ function formatTimestamp(ms: number): string {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
-const UNRESOLVED_SPEAKER_COLOR = "var(--speaker-unresolved)";
+const UNRESOLVED_SPEAKER_COLOR = "var(--ds-speaker-unresolved)";
 // Wall-clock speaker wait limit, including hidden time; repeated polls do not reset it.
 const SPEAKER_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 // After speakers finish, the backend requests the summary on its own; wait this long to see that request.
@@ -51,7 +51,7 @@ function isReviewFailure(err: unknown, reason: "conflict" | "not_found"): boolea
 function speakerColor(diarization: MeetingDiarization | null, speakerId: string | undefined): string {
   const sequence = diarization?.speakers.find((speaker) => speaker.id === speakerId)?.sequence;
   if (sequence === undefined) return UNRESOLVED_SPEAKER_COLOR;
-  return `var(--speaker-${(Math.max(1, sequence) - 1) % 6 + 1})`;
+  return `var(--ds-speaker-${(Math.max(1, sequence) - 1) % 6 + 1})`;
 }
 
 function displaySpeakerLabel(label: string, speakerId: string | undefined, review: SpeakerReview | null): string {
@@ -402,7 +402,8 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
 
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
-  const completed = meeting?.processState === "completed" && !statusError;
+  // Nothing will ever be transcribed: the status card explains it, so no transcript placeholder.
+  const noSpeech = meeting?.processState === "failed" && meeting.failureCause === NO_SPEECH_CAUSE && !statusError;
 
   const pendingCount = review?.items.filter(item => item.disposition === null).length ?? 0;
   const selectedId = selectedSpeakerId ?? review?.items[0]?.speakerId;
@@ -452,7 +453,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   return (
     <section className="meeting-view">
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
-        onBack={onBack} completed={completed} processState={statusError ? undefined : meeting?.processState}
+        onBack={onBack} stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
         speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} />
       {pendingCount > 0 && <div className="meeting-pending-speakers">
         <span role="status">{text.pendingSpeakers(pendingCount)}</span>
@@ -587,7 +588,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         <label className="meeting-follow"><input type="checkbox" checked={followPlayback}
           onChange={event => setFollowPlayback(event.target.checked)} />{text.followPlayback}</label>
       </div>
-      {!data && !error && <>
+      {!data && !error && !noSpeech && <>
         <p role="status">{copy.processing.transcriptPending}</p>
         <p>{text.transcriptPlaceholder}</p>
         <span role="status" className="meeting-sr-only">{text.loading}</span>

@@ -5,6 +5,8 @@ Subscribes to the "transcribe" topic of the JobQueue. For each message:
 2. Invokes transcribe with the message language or configured default.
 3. If there are segments -> persists Transcript + SpeechTurn -> transitions to "completed".
 4. If there are no segments -> transitions to "failed" with cause "engine_failure".
+5. If the engine reports no detected speech -> "failed" with cause "no_speech_detected"
+   (no retry offered, no diarization, no summary).
 
 Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7
 """
@@ -37,6 +39,19 @@ from app.transcription.factory import create_asr_engine
 from app.transcription.repository import TranscriptRepository
 
 logger = logging.getLogger(__name__)
+
+NO_SPEECH_CAUSE = "no_speech_detected"
+
+
+def _is_no_speech_response(exc: httpx.HTTPError) -> bool:
+    """True when the engine reported that the recording holds no detectable speech."""
+    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 422:
+        return False
+    try:
+        body = exc.response.json()
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("detail") == "no_speech"
 
 
 async def _publish_diarization(
@@ -198,7 +213,7 @@ async def _process_transcription(
         elif isinstance(exc, TimeoutError):
             cause = "engine_timeout"
         elif isinstance(exc, httpx.HTTPError):
-            cause = "engine_failed"
+            cause = NO_SPEECH_CAUSE if _is_no_speech_response(exc) else "engine_failed"
         else:
             cause = "invalid_response"
         elapsed_seconds = time.monotonic() - started_at
@@ -217,6 +232,13 @@ async def _process_transcription(
                 if meeting.process_state == "recording":
                     await record_transition(session, meeting, "recording_uploaded")
                 await record_transition(session, meeting, "engine_failed", failure_cause=cause)
+        if cause == NO_SPEECH_CAUSE:
+            # An expected outcome: retrying the same audio cannot produce text.
+            logger.info(
+                "No speech detected for meeting_id=%s; cause=%s; elapsed_seconds=%.2f",
+                meeting_id, cause, elapsed_seconds,
+            )
+            return
         logger.error(
             "Transcription failed for meeting_id=%s; cause=%s; "
             "elapsed_seconds=%.2f; manual retry available",
