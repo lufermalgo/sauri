@@ -57,12 +57,12 @@ afterEach(() => {
 });
 
 describe("SummaryPanel", () => {
-  it("renders the draft, topic, points and timed source links that seek to exact milliseconds", async () => {
+  it("renders the topic, points and timed source links that seek to exact milliseconds", async () => {
     artifact = summary;
     latest = { ...pending, status: "succeeded" };
     const seek = vi.fn();
     render(<SummaryPanel meetingId="meeting-1" onSeek={seek} />);
-    expect(await screen.findByText(t("summary:draft"))).toBeVisible();
+    expect(await screen.findByText(summary.topic)).toBeVisible();
     expect(screen.getByText(summary.topic)).toBeVisible();
     for (const point of summary.key_points) expect(screen.getByText(point.text)).toBeVisible();
     fireEvent.click(screen.getByRole("link", { name: t("summary:sourceAt", { time: "01:05" }) }));
@@ -92,10 +92,11 @@ describe("SummaryPanel", () => {
     },
   );
 
-  it("keeps the draft badge but offers no copy or download button in the panel", async () => {
+  it("shows no draft badge and offers no copy or download button in the panel", async () => {
     artifact = summary;
     render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
-    expect(await screen.findByText(t("summary:draft"))).toBeVisible();
+    expect(await screen.findByText(summary.topic)).toBeVisible();
+    expect(screen.queryByText(/borrador|draft/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Copiar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Descargar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Acciones del resumen" })).not.toBeInTheDocument();
@@ -152,7 +153,7 @@ describe("SummaryPanel", () => {
     artifact = summary;
     latest = null;
     const view = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
-    expect(await screen.findByText(t("summary:draft"))).toBeVisible();
+    expect(await screen.findByText(summary.topic)).toBeVisible();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.queryByText(t("processing:leaveHint"))).not.toBeInTheDocument();
     view.unmount();
@@ -174,7 +175,7 @@ describe("SummaryPanel", () => {
     artifact = summary;
     latest = { ...pending, status: "succeeded" };
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(screen.getByText(t("summary:draft"))).toBeVisible();
+    expect(screen.getByText(summary.topic)).toBeVisible();
     expect(view.container.querySelector(".ui-skeleton")).toBeNull();
     expect(screen.queryByText(t("summary:generating"))).not.toBeInTheDocument();
   });
@@ -215,7 +216,7 @@ describe("SummaryPanel", () => {
     artifact = summary;
     latest = { ...pending, status: "succeeded" };
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(screen.getByText(t("summary:draft"))).toBeVisible();
+    expect(screen.getByText(summary.topic)).toBeVisible();
     await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
     expect(callsEndingWith("/summary-requests/latest")).toHaveLength(count + 2);
   });
@@ -318,7 +319,7 @@ describe("SummaryPanel", () => {
     expect(screen.queryByText(summary.topic)).not.toBeInTheDocument();
     artifact = { ...summary, generation: 2 };
     fireEvent.click(screen.getByRole("button", { name: t("summary:retry") }));
-    expect(await screen.findByText(t("summary:draft"))).toBeVisible();
+    expect(await screen.findByText(summary.topic)).toBeVisible();
     expect(callsEndingWith("/summary-requests")).toHaveLength(0);
   });
 
@@ -455,7 +456,7 @@ describe("meeting summary tab integration", () => {
       expect(callsEndingWith("/summary-requests/latest").length).toBeGreaterThan(count);
     }, { timeout: 8000 });
     await act(async () => { fireEvent.click(tab); });
-    expect(screen.getByText(t("summary:draft"))).toBeVisible();
+    expect(screen.getByText(summary.topic)).toBeVisible();
     expect(screen.getByTestId("playback-audio")).toBe(audio);
     fireEvent.click(screen.getByRole("link", { name: t("summary:sourceAt", { time: "01:05" }) }));
     expect(audio.currentTime).toBe(65.432);
