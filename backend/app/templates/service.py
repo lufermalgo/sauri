@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from fastapi import HTTPException
+from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.copy.templates_es import (
@@ -12,6 +12,7 @@ from app.copy.templates_es import (
     DEFAULT_PROVENANCE,
     DEFAULT_PROVENANCE_V2,
 )
+from app.infra.http_errors import INVALID_REQUEST, NOT_FOUND, api_error
 from app.infra.models import SummaryTemplate, TemplateCategory
 from app.templates import repository
 from app.templates.schemas import CategoryCreate, CategoryOut, TemplateCreate, TemplateOut, TemplateUpdate
@@ -58,13 +59,13 @@ def category_out(row: TemplateCategory) -> CategoryOut:
 async def validate_category(session: AsyncSession, owner_id: str, category_id: str | None) -> None:
     if category_id is not None and await repository.get_category(session, owner_id, category_id) is None:
         # Identical response for missing and foreign category; no existence leak.
-        raise HTTPException(status_code=422, detail="Invalid category_id")
+        raise api_error(422, INVALID_REQUEST)
 
 
 async def set_default_template(session: AsyncSession, owner_id: str, template_id: str) -> None:
     if await repository.get_template(session, owner_id, template_id) is None:
         # The same response for foreign and missing IDs avoids disclosing ownership.
-        raise HTTPException(status_code=422, detail="Invalid template_id")
+        raise api_error(422, INVALID_REQUEST)
     await repository.set_default_id(session, owner_id, template_id)
 
 
@@ -86,10 +87,10 @@ async def update_template(
 ) -> SummaryTemplate:
     row = await repository.get_template(session, owner_id, template_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
     supplied = data.model_fields_set
     if ("name" in supplied and data.name is None) or ("instructions" in supplied and data.instructions is None):
-        raise HTTPException(status_code=422, detail="name and instructions cannot be null")
+        raise api_error(422, INVALID_REQUEST)
     if "category_id" in supplied:
         await validate_category(session, owner_id, data.category_id)
         row.category_id = data.category_id

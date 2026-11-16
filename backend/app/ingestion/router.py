@@ -15,25 +15,38 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from pydantic import ValidationError
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
+from app.infra.http_errors import (
+    INVALID_REQUEST,
+    NOT_FOUND,
+    PAYLOAD_TOO_LARGE,
+    api_error,
+)
 from app.infra.models import Meeting
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.processing_claims import create_processing_generation
 from app.infra.queue import JobQueue, create_job_queue
 from app.ingestion.schemas import IngestionData
 from app.ingestion.service import preflight_ingestion, process_ingestion, resolve_upload_title
+from app.ingestion.upload_limits import (
+    CappedUploadRoute,
+    MediaContainer,
+    max_upload_bytes,
+    size_of,
+    sniff_container,
+)
 from app.meetings.service import record_transition
 from app.retention.cleanup import (
     drain_pending_object_deletions,
     persist_pending_object_deletions,
 )
 
-router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"])
+router = APIRouter(prefix="/api/v1/ingestion", tags=["ingestion"], route_class=CappedUploadRoute)
 logger = logging.getLogger(__name__)
 
 _AUDIO_FILE = File(...)
@@ -57,6 +70,13 @@ def _get_object_store() -> ObjectStore:
 def _get_queue() -> JobQueue:
     """Creates the job queue instance (simplified DI, final wiring in task 17.1)."""
     return create_job_queue()
+
+
+def _verify_upload(upload: UploadFile) -> MediaContainer:
+    """Reject an oversized or non-media part before anything is stored (413 / 415)."""
+    if size_of(upload.file) > max_upload_bytes():
+        raise api_error(413, PAYLOAD_TOO_LARGE)
+    return sniff_container(upload.file)
 
 
 @router.post("/upload", status_code=status.HTTP_200_OK)
@@ -83,11 +103,8 @@ async def upload_recording(
         data_dict = json.loads(data)
         ingestion_data = IngestionData(**data_dict)
         ingestion_data.title = resolve_upload_title(ingestion_data.title, audio.filename)
-    except (json.JSONDecodeError, ValidationError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid ingestion data: {exc}",
-        ) from exc
+    except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+        raise api_error(422, INVALID_REQUEST) from exc
 
     # b. Authentication already validated by the dependency
     has_separate_video = video is not None
@@ -95,10 +112,11 @@ async def upload_recording(
         (ingestion_data.video_presence == "separate") != has_separate_video
         or ingestion_data.video_presence in {"muxed", "absent"} and has_separate_video
     ):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Video upload does not match the declared video_presence",
-        )
+        raise api_error(422, INVALID_REQUEST)
+
+    # Verify the media itself before any database or object-store work.
+    audio_container = _verify_upload(audio)
+    video_container = _verify_upload(video) if video is not None else None
 
     # Check ownership and exact retries before writing any media object.
     preflight_engine = create_engine()
@@ -123,10 +141,7 @@ async def upload_recording(
                 )
                 meeting = await session.get(Meeting, ingestion_data.meeting_id)
                 if meeting is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Meeting not found",
-                    )
+                    raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
                 prior_state = meeting.process_state
     finally:
         await preflight_engine.dispose()
@@ -149,23 +164,21 @@ async def upload_recording(
     video_ref: str | None = None
     try:
         # c. Store audio in the ObjectStore
-        audio_content = await audio.read()
         audio_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/audio"
-        audio_ref = await object_store.save(
+        audio_ref = await object_store.save_stream(
             audio_key,
-            audio_content,
-            audio.content_type or "audio/webm",
+            audio.file,
+            audio_container.stored_content_type(audio.content_type, video=False),
         )
         staged_refs.append(audio_ref)
 
         # d. Store video (optional)
-        if video is not None:
-            video_content = await video.read()
+        if video is not None and video_container is not None:
             video_key = f"recordings/{ingestion_data.meeting_id}/{uuid.uuid4()}/video"
-            video_ref = await object_store.save(
+            video_ref = await object_store.save_stream(
                 video_key,
-                video_content,
-                video.content_type or "video/webm",
+                video.file,
+                video_container.stored_content_type(video.content_type, video=True),
             )
             staged_refs.append(video_ref)
     except Exception:
@@ -209,10 +222,7 @@ async def upload_recording(
                 # f. Transition Meeting to "transcribing"
                 meeting = await session.get(Meeting, ingestion_data.meeting_id)
                 if meeting is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail=f"Meeting not found: {ingestion_data.meeting_id}",
-                    )
+                    raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
 
                 transition_result = await record_transition(
                     session=session,
@@ -226,10 +236,7 @@ async def upload_recording(
             else:
                 meeting = await session.get(Meeting, ingestion_data.meeting_id)
                 if meeting is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_404_NOT_FOUND,
-                        detail="Meeting not found",
-                    )
+                    raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
                 prior_state = meeting.process_state
     except Exception:
         try:

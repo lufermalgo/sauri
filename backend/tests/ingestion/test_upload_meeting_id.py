@@ -16,12 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.auth.schemas import AuthenticatedUser
 from app.infra.models import Meeting
 from app.ingestion import router as ingestion_router
+from tests.media_samples import WEBM
 
 _FILE_NAME = "Quarterly sales review.webm"
 
 
 class _SyntheticObjectStore:
-    async def save(self, key: str, _content: bytes, _content_type: str) -> str:
+    async def save_stream(self, key: str, _content: object, _content_type: str) -> str:
         return f"synthetic/{key}"
 
     async def delete(self, _reference: str) -> None:
@@ -54,7 +55,7 @@ def patched_infrastructure(
 
 async def _upload(meeting_id: str, idempotency_key: str) -> dict[str, Any]:
     return await ingestion_router.upload_recording(
-        audio=UploadFile(filename=_FILE_NAME, file=BytesIO(b"synthetic-audio")),
+        audio=UploadFile(filename=_FILE_NAME, file=BytesIO(WEBM + b"synthetic-audio")),
         video=None,
         data=json.dumps(
             {

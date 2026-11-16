@@ -125,7 +125,7 @@ async def test_status_route_restricts_an_existing_meeting_to_its_owner(
     stranger = await api_client.get(path, headers=_status_headers("status-stranger"))
     missing = await api_client.get(f"/api/v1/meetings/{uuid.uuid4()}", headers=_status_headers("status-stranger"))
     assert stranger.status_code == missing.status_code == 404
-    assert stranger.json() == missing.json() == {"detail": "Meeting not found"}
+    assert stranger.json() == missing.json() == {"detail": "not_found"}
     assert all(
         secret not in stranger.text
         for secret in (meeting.id, recording_id, state, "process_state", "recording_id")
