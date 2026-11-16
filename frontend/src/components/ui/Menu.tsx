@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
+import { useTooltip } from "./Tooltip";
 
 type MenuContextValue = { close: () => void };
 const MenuContext = createContext<MenuContextValue | null>(null);
@@ -12,11 +13,14 @@ export type MenuProps = {
   trigger?: ReactNode;
   triggerClassName?: string;
   className?: string;
+  /** Shows `label` as a tooltip on the trigger (hover and keyboard focus). */
+  tooltip?: boolean;
   children: ReactNode;
 };
 
-export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, triggerClassName, className, children }: MenuProps) {
+export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, triggerClassName, className, tooltip, children }: MenuProps) {
   const [open, setOpen] = useState(false);
+  const tip = useTooltip(tooltip ? label : undefined);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -93,7 +97,9 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, tr
       <button ref={triggerRef} type="button"
         className={trigger ? triggerClassName : `ui-menu-trigger ui-menu-trigger--${triggerLabel ? triggerVariant : "icon"}`} aria-label={label}
         aria-haspopup="menu" aria-expanded={open} aria-controls={open ? panelId : undefined}
-        onClick={() => (open ? close(false) : openMenu("first"))} onKeyDown={onTriggerKeyDown}>
+        {...tip.triggerProps}
+        onClick={() => { tip.hide(); if (open) close(false); else openMenu("first"); }}
+        onKeyDown={event => { tip.triggerProps.onKeyDown?.(event); onTriggerKeyDown(event); }}>
         {trigger ? trigger : triggerLabel ? (
           <>
             <span>{triggerLabel}</span>
@@ -110,6 +116,7 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, tr
           </svg>
         )}
       </button>
+      {tip.tooltip}
       {open && (
         <MenuContext.Provider value={{ close: () => close(true) }}>
           <div ref={panelRef} id={panelId} role="menu" aria-label={label} className="ui-menu-panel"

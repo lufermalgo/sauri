@@ -17,6 +17,14 @@ const turns = [{ timestampMs: 65000, speakerLabel: "Synthetic speaker", text: "S
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("MeetingDownloads", () => {
+  it("is an icon-only button named and described by the download label", () => {
+    render(<MeetingDownloads meetingId="m1" manifest={manifest} turns={turns} />);
+    const trigger = screen.getByRole("button", { name: text.download });
+    expect(trigger).toHaveTextContent("");
+    expect(trigger.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(trigger).toHaveAccessibleDescription(text.download);
+  });
+
   it("disables both downloads without a manifest or turns", () => {
     render(<MeetingDownloads meetingId="m1" manifest={null} turns={[]} />);
     fireEvent.click(screen.getByRole("button", { name: text.download }));

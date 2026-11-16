@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MeetingHeader } from "./MeetingHeader";
+import { TOOLTIP_DELAY_MS } from "./ui";
 import { deleteMeeting, renameMeeting } from "../api";
 import { navigate } from "../router";
 import { meeting as text } from "../copy/meeting";
@@ -29,8 +30,13 @@ function openDelete() {
   fireEvent.click(screen.getByRole("menuitem", { name: text.deleteRecording }));
 }
 
+function startRename() {
+  fireEvent.click(screen.getByRole("button", { name: text.moreActions }));
+  fireEvent.click(screen.getByRole("menuitem", { name: text.rename }));
+}
+
 function edit(value: string) {
-  fireEvent.click(screen.getByRole("button", { name: text.rename }));
+  startRename();
   fireEvent.change(screen.getByRole("textbox", { name: text.titleLabel }), { target: { value } });
 }
 
@@ -134,18 +140,83 @@ describe("MeetingHeader", () => {
 });
 
 
-it("orders download, rename and more actions, keeping deletion inside the menu", () => {
+it("shows two icon-only actions with names, keeping rename and deletion inside the more menu", () => {
   open();
   const actions = document.querySelector(".meeting-heading-row > .meeting-actions")!;
   const buttons = within(actions as HTMLElement).getAllByRole("button");
-  expect(buttons).toHaveLength(3);
+  expect(buttons).toHaveLength(2);
   expect(buttons[0]).toHaveAccessibleName(text.download);
-  expect(buttons[0]).toHaveClass("ui-menu-trigger--primary");
-  expect(buttons[1]).toHaveAccessibleName(text.rename);
-  expect(buttons[2]).toHaveAccessibleName(text.moreActions);
+  expect(buttons[0]).toHaveClass("ui-icon-button--primary");
+  expect(buttons[1]).toHaveAccessibleName(text.moreActions);
+  for (const button of buttons) {
+    expect(button).toHaveTextContent("");
+    expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  }
+  expect(screen.queryByRole("button", { name: text.rename })).not.toBeInTheDocument();
   expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
-  fireEvent.click(buttons[2]);
-  expect(screen.getByRole("menuitem", { name: text.deleteRecording })).toHaveClass("ui-menu-item--danger");
+  fireEvent.click(buttons[1]);
+  const items = screen.getAllByRole("menuitem");
+  expect(items.map(item => item.textContent)).toEqual([text.rename, text.deleteRecording]);
+  expect(items[1]).toHaveClass("ui-menu-item--danger");
+});
+
+it("opens the more menu with the keyboard, focuses Rename, closes with Escape and returns focus", () => {
+  open();
+  const trigger = screen.getByRole("button", { name: text.moreActions });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  expect(screen.getByRole("menuitem", { name: text.rename })).toHaveFocus();
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "ArrowDown" });
+  expect(screen.getByRole("menuitem", { name: text.deleteRecording })).toHaveFocus();
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});
+
+it("focuses the title field after choosing Rename and offers no second Rename while editing", () => {
+  open(); startRename();
+  expect(screen.getByRole("textbox", { name: text.titleLabel })).toHaveFocus();
+  expect(screen.getByRole("textbox", { name: text.titleLabel })).toHaveValue("Synthetic meeting");
+  fireEvent.click(screen.getByRole("button", { name: text.moreActions }));
+  expect(screen.queryByRole("menuitem", { name: text.rename })).not.toBeInTheDocument();
+  expect(screen.getByRole("menuitem", { name: text.deleteRecording })).toHaveAttribute("aria-disabled", "true");
+});
+
+describe("header tooltips", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it.each([text.download, text.moreActions])("describes the %s button with a delayed tooltip on hover and focus", name => {
+    open();
+    const button = screen.getByRole("button", { name });
+    const tooltip = document.getElementById(button.getAttribute("aria-describedby")!)!;
+    expect(tooltip).toHaveAttribute("role", "tooltip");
+    expect(tooltip).toHaveTextContent(name);
+    expect(button).toHaveAccessibleDescription(name);
+    expect(tooltip).not.toBeVisible();
+    fireEvent.mouseEnter(button);
+    act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS - 1); });
+    expect(tooltip).not.toBeVisible();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(tooltip).toBeVisible();
+    fireEvent.mouseLeave(button);
+    expect(tooltip).not.toBeVisible();
+    act(() => button.focus());
+    act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
+    expect(tooltip).toBeVisible();
+    fireEvent.keyDown(button, { key: "Escape" });
+    expect(tooltip).not.toBeVisible();
+  });
+
+  it("hides the tooltip when the menu opens", () => {
+    open();
+    const button = screen.getByRole("button", { name: text.moreActions });
+    fireEvent.mouseEnter(button);
+    act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
+    fireEvent.click(button);
+    expect(document.getElementById(button.getAttribute("aria-describedby")!)).not.toBeVisible();
+    expect(screen.getByRole("menu")).toBeVisible();
+  });
 });
 
 it.each([[65, "01:05"], [3605, "1:00:05"], [0, "00:00"]])("formats real duration %s and speaker count", (duration, label) => {
