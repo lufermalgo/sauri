@@ -68,6 +68,41 @@ describe("MeetingDownloads", () => {
     await waitFor(() => expect(revoke).toHaveBeenCalledWith("blob:synthetic"));
   });
 
+  async function transcriptDownloadName(title: string | null | undefined) {
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:synthetic", revokeObjectURL: revoke });
+    let clicked: HTMLAnchorElement | undefined;
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicked = this; });
+    const view = render(<MeetingDownloads meetingId="m1" title={title} manifest={manifest} turns={turns} />);
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    fireEvent.click(screen.getByRole("menuitem", { name: text.downloadTranscript }));
+    await waitFor(() => expect(revoke).toHaveBeenCalled());
+    return { name: clicked?.getAttribute("download"), view };
+  }
+
+  it("names the transcript after the meeting title", async () => {
+    expect((await transcriptDownloadName("Caf\u00e9 planning a\u00f1o")).name).toBe("Caf\u00e9 planning a\u00f1o.txt");
+  });
+
+  it("drops the media extension of an uploaded recording title", async () => {
+    expect((await transcriptDownloadName("recording.webm")).name).toBe("recording.txt");
+  });
+
+  it("uses the renamed title for the next download", async () => {
+    const { name, view } = await transcriptDownloadName("Old title");
+    expect(name).toBe("Old title.txt");
+    let clicked: HTMLAnchorElement | undefined;
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicked = this; });
+    view.rerender(<MeetingDownloads meetingId="m1" title="Renamed title" manifest={manifest} turns={turns} />);
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    fireEvent.click(screen.getByRole("menuitem", { name: text.downloadTranscript }));
+    expect(clicked).toHaveAttribute("download", "Renamed title.txt");
+  });
+
+  it.each([null, undefined, "", "  ", "???"])("falls back to the id-based name for the title %j", async title => {
+    expect((await transcriptDownloadName(title)).name).toBe(text.transcriptFilename("m1"));
+  });
+
   it("reports an export failure without disabling retry", () => {
     vi.stubGlobal("URL", { createObjectURL: () => { throw new Error("Synthetic failure"); } });
     render(<MeetingDownloads meetingId="m1" manifest={manifest} turns={turns} />);

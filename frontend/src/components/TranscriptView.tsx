@@ -36,7 +36,7 @@ function formatTimestamp(ms: number): string {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
-const UNRESOLVED_SPEAKER_COLOR = "var(--speaker-unresolved)";
+const UNRESOLVED_SPEAKER_COLOR = "var(--ds-speaker-unresolved)";
 // Wall-clock speaker wait limit, including hidden time; repeated polls do not reset it.
 const SPEAKER_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 // After speakers finish, the backend requests the summary on its own; wait this long to see that request.
@@ -51,7 +51,7 @@ function isReviewFailure(err: unknown, reason: "conflict" | "not_found"): boolea
 function speakerColor(diarization: MeetingDiarization | null, speakerId: string | undefined): string {
   const sequence = diarization?.speakers.find((speaker) => speaker.id === speakerId)?.sequence;
   if (sequence === undefined) return UNRESOLVED_SPEAKER_COLOR;
-  return `var(--speaker-${(Math.max(1, sequence) - 1) % 6 + 1})`;
+  return `var(--ds-speaker-${(Math.max(1, sequence) - 1) % 6 + 1})`;
 }
 
 function displaySpeakerLabel(label: string, speakerId: string | undefined, review: SpeakerReview | null): string {

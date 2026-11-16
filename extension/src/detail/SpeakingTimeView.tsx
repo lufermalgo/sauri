@@ -54,7 +54,7 @@ export function SpeakingTimeView({ state, entries, onRetry }: SpeakingTimeViewPr
                   height: "28px",
                   borderRadius: "50%",
                   backgroundColor: avatarColor(entry.speaker.sequence),
-                  color: COLOR_TOKENS.text,
+                  color: COLOR_TOKENS.onSpeaker,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",

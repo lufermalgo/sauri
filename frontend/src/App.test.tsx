@@ -120,8 +120,9 @@ describe("global authentication gate", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
 
     render(<App />);
-    fireEvent.click(screen.getByRole("link", { name: copy.shell.upload }));
-    expect(screen.getByRole("link", { name: copy.shell.upload }).getAttribute("aria-current")).toBe("page");
+    fireEvent.click(screen.getAllByRole("button", { name: copy.shell.upload })[0]);
+    await waitFor(() => expect(window.location.pathname).toBe("/upload"));
+    expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBeNull();
 
     window.history.back();
     await waitFor(() => expect(window.location.pathname).toBe("/"));

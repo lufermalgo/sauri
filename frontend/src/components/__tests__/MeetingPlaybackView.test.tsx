@@ -398,7 +398,7 @@ it("keeps exactly the existing controls together in one compact toolbar", () => 
 
 it("seeks timeline markers through the original playback controller and tracks its clock", async () => {
   render(<MeetingPlaybackView manifest={manifest()} passages={passages} loading={false} error={null}
-    timelineTurns={[{ id: "t1", startMs: 0, endMs: 15000, speakerId: "s1", speakerLabel: "Synthetic speaker", color: "var(--speaker-1)" }]}
+    timelineTurns={[{ id: "t1", startMs: 0, endMs: 15000, speakerId: "s1", speakerLabel: "Synthetic speaker", color: "var(--ds-speaker-1)" }]}
     keyPointTimes={[5000, 10000]} />);
   const audio = mediaElement();
   Object.defineProperty(audio, "duration", { configurable: true, value: 30 });

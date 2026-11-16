@@ -102,6 +102,7 @@ async def test_transcribe_preserves_response_contract_and_cleans_temp_file(monke
                               "probability": 0.9, "timing_repaired": True}]
     assert data["engine"] == {"name": "whisper.cpp", "model": native.MODEL_ID, "device": "metal"}
     assert data["diagnostics"]["inverted_words"] == 1
+    assert data["diagnostics"]["default_prompt"] is False
     assert set(data["diagnostics"]["stage_ms"]) == {"download", "normalize", "inference"}
     assert set(tmp_path.iterdir()) == before
 
@@ -473,6 +474,14 @@ async def test_startup_rejects_invalid_default_language(monkeypatch, language):
 
 
 @pytest.mark.asyncio
+async def test_startup_rejects_invalid_default_prompt_switch(monkeypatch):
+    monkeypatch.setenv("SAURI_ASR_DEFAULT_PROMPT", "maybe")
+    with pytest.raises(ValueError, match="SAURI_ASR_DEFAULT_PROMPT"):
+        async with native.lifespan(native.app):
+            pytest.fail("Invalid configuration must not start")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("tamper", [None, "model", "binary", "missing_provenance", "provenance"])
 async def test_startup_verifies_assets_once(monkeypatch, tmp_path, tamper):
     from asr_assets import binary_record, load_manifest, provenance_path
@@ -647,18 +656,54 @@ def test_run_whisper_reads_default_or_override_vocabulary(monkeypatch, tmp_path,
     assert native._run_whisper(tmp_path / "audio.wav", output, "es", 12) == {"transcription": []}
 
 
+DEFAULT_PROMPT = "Buenos d\u00edas. Empecemos."
+
+
 @pytest.mark.parametrize("content", [None, "", " \n"])
-def test_no_prompt_flags_without_terms(monkeypatch, tmp_path, content):
+@pytest.mark.parametrize("language", ["es", "es-ES"])
+def test_default_prompt_without_terms_for_spanish(monkeypatch, tmp_path, content, language):
     path = tmp_path / "vocabulary.txt"
     monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(path))
+    monkeypatch.delenv("SAURI_ASR_DEFAULT_PROMPT", raising=False)
     if content is not None:
         path.write_text(content)
+    output = tmp_path / "output"
+    def run(command, **kwargs):
+        assert native.DEFAULT_PROMPT == DEFAULT_PROMPT
+        assert command[command.index("--prompt") + 1] == DEFAULT_PROMPT
+        assert command.count("--carry-initial-prompt") == 1
+        assert command.index("--carry-initial-prompt") == command.index("--prompt") + 2
+        output.with_suffix(".json").write_text(json.dumps({"transcription": []}))
+    monkeypatch.setattr(native.subprocess, "run", run)
+    native._run_whisper(tmp_path / "audio.wav", output, language, 12)
+
+
+@pytest.mark.parametrize(("language", "setting"), [
+    ("auto", None), ("en", None), ("fr", None), ("es", "off"),
+])
+def test_no_prompt_flags_for_other_languages_or_when_disabled(monkeypatch, tmp_path, language, setting):
+    monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(tmp_path / "absent"))
+    monkeypatch.delenv("SAURI_ASR_DEFAULT_PROMPT", raising=False)
+    if setting:
+        monkeypatch.setenv("SAURI_ASR_DEFAULT_PROMPT", setting)
     output = tmp_path / "output"
     def run(command, **kwargs):
         assert "--prompt" not in command and "--carry-initial-prompt" not in command
         output.with_suffix(".json").write_text(json.dumps({"transcription": []}))
     monkeypatch.setattr(native.subprocess, "run", run)
-    native._run_whisper(tmp_path / "audio.wav", output, "es", 12)
+    native._run_whisper(tmp_path / "audio.wav", output, language, 12)
+
+
+@pytest.mark.parametrize("setting", [None, "off"])
+def test_vocabulary_prompt_wins_over_default_and_switch(monkeypatch, tmp_path, setting):
+    path = tmp_path / "vocabulary.txt"
+    path.write_text("Zorvex\n")
+    monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(path))
+    monkeypatch.delenv("SAURI_ASR_DEFAULT_PROMPT", raising=False)
+    if setting:
+        monkeypatch.setenv("SAURI_ASR_DEFAULT_PROMPT", setting)
+    assert native._initial_prompt("es") == (native.vocabulary_prompt(path), False)
+    assert native._initial_prompt("en") == (native.vocabulary_prompt(path), False)
 
 
 def test_diagnostic_tail_is_bounded_and_private():

@@ -380,7 +380,7 @@ export function MeetingPlaybackView({
                 >
                   <span
                     data-testid="transcript-speaker-label"
-                    className="meeting-speaker" style={{ color: passage.speakerColor ?? "var(--speaker-unresolved)" }}
+                    className="meeting-speaker" style={{ color: passage.speakerColor ?? "var(--ds-speaker-unresolved)" }}
                   >
                     {passage.speakerLabel ?? text.unknownSpeaker}
                   </span>

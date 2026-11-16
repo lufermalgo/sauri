@@ -22,7 +22,8 @@ config = importlib.import_module("asr_config")
 
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch, tmp_path):
-    for name in ("SAURI_ASR_VAD", "SAURI_ASR_VAD_THRESHOLD", "SAURI_ASR_CHUNK_SECONDS", "SAURI_ASR_SUPPRESS_NST"):
+    for name in ("SAURI_ASR_VAD", "SAURI_ASR_VAD_THRESHOLD", "SAURI_ASR_CHUNK_SECONDS", "SAURI_ASR_SUPPRESS_NST",
+                 "SAURI_ASR_DEFAULT_PROMPT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(tmp_path / "absent"))
     def unexpected(*args, **kwargs):
@@ -280,6 +281,7 @@ def test_suppress_nst_is_explicit_and_off_by_default(monkeypatch, tmp_path, sett
     ("SAURI_ASR_CHUNK_SECONDS", "inf", config.chunk_ms),
     ("SAURI_ASR_CHUNK_SECONDS", "1e308", config.chunk_ms),
     ("SAURI_ASR_SUPPRESS_NST", "maybe", config.suppress_nst),
+    ("SAURI_ASR_DEFAULT_PROMPT", "maybe", config.default_prompt_enabled),
 ])
 def test_invalid_configuration_fails_closed(monkeypatch, variable, value, function):
     monkeypatch.setenv(variable, value)
@@ -292,6 +294,12 @@ def test_configuration_defaults():
     assert config.vad_threshold() == 0.5
     assert config.chunk_ms() == 120000
     assert config.suppress_nst() is False
+    assert config.default_prompt_enabled() is True
+
+
+def test_default_prompt_switch_accepts_off(monkeypatch):
+    monkeypatch.setenv("SAURI_ASR_DEFAULT_PROMPT", "off")
+    assert config.default_prompt_enabled() is False
 
 
 @pytest.mark.parametrize("threshold", ["0", "1"])
@@ -348,3 +356,52 @@ def test_vad_response_preserves_full_duration_and_never_returns_partial_results(
         assert len(response.words) == len(response.segments) == 2
         assert response.words[1].start_ms == 7800
     assert list(tmp_path.iterdir()) == []
+
+
+def test_each_vad_chunk_receives_the_default_prompt_without_vocabulary(monkeypatch, tmp_path):
+    source = tmp_path / "audio.wav"
+    write_wav(source)
+    commands = simulate(monkeypatch, [document(), document()])
+    native._transcribe_wav(source, 10000, "es", time.monotonic() + 30)
+    asr = [cmd for cmd, _ in commands if "-vm" not in cmd]
+    assert len(asr) == 2
+    for cmd in asr:
+        assert cmd[cmd.index("--prompt") + 1] == "Buenos d\u00edas. Empecemos."
+        assert "--carry-initial-prompt" in cmd
+
+
+def test_auto_language_chunks_use_default_prompt_only_once_spanish_is_detected(monkeypatch, tmp_path):
+    source = tmp_path / "audio.wav"
+    write_wav(source)
+    commands = simulate(monkeypatch, [document(language="es"), document(language="es")])
+    native._transcribe_wav(source, 10000, "auto", time.monotonic() + 30)
+    asr = [cmd for cmd, _ in commands if "-vm" not in cmd]
+    assert "--prompt" not in asr[0]
+    assert asr[1][asr[1].index("--prompt") + 1] == "Buenos d\u00edas. Empecemos."
+
+
+def test_single_pass_uses_the_default_prompt_when_vad_is_off(monkeypatch, tmp_path):
+    source = tmp_path / "audio.wav"
+    write_wav(source)
+    monkeypatch.setenv("SAURI_ASR_VAD", "off")
+    commands = []
+    def run(command, **kwargs):
+        commands.append(command)
+        Path(command[-1] + ".json").write_text(json.dumps(document()))
+    monkeypatch.setattr(native.subprocess, "run", run)
+    native._transcribe_wav(source, 10000, "es", time.monotonic() + 30)
+    assert len(commands) == 1
+    cmd = commands[0]
+    assert "-vm" not in cmd
+    assert cmd[cmd.index("--prompt") + 1] == "Buenos d\u00edas. Empecemos."
+    assert "--carry-initial-prompt" in cmd
+
+
+def test_disabled_default_prompt_is_not_passed_to_any_chunk(monkeypatch, tmp_path):
+    source = tmp_path / "audio.wav"
+    write_wav(source)
+    monkeypatch.setenv("SAURI_ASR_DEFAULT_PROMPT", "off")
+    commands = simulate(monkeypatch, [document(), document()])
+    native._transcribe_wav(source, 10000, "es", time.monotonic() + 30)
+    for cmd, _ in commands:
+        assert "--prompt" not in cmd and "--carry-initial-prompt" not in cmd

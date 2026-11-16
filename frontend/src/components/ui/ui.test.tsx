@@ -301,12 +301,12 @@ describe("Menu text trigger and disabled items", () => {
 
 describe("Avatar", () => {
   it("shows initials, is aria-hidden and sets the color variable", () => {
-    const { container } = render(<Avatar initials="LF" color="var(--speaker-2)" size="sm" />);
+    const { container } = render(<Avatar initials="LF" color="var(--ds-speaker-2)" size="sm" />);
     const node = container.firstElementChild as HTMLElement;
     expect(node).toHaveTextContent("LF");
     expect(node).toHaveAttribute("aria-hidden", "true");
     expect(node).toHaveClass("ui-avatar--sm");
-    expect(node.style.getPropertyValue("--avatar-color")).toBe("var(--speaker-2)");
+    expect(node.style.getPropertyValue("--avatar-color")).toBe("var(--ds-speaker-2)");
   });
 });
 

@@ -1,94 +1,27 @@
-@import "@fontsource/literata/600.css";
-@import "@fontsource/nunito-sans/400.css";
-@import "@fontsource/nunito-sans/600.css";
-@import "@fontsource/nunito-sans/700.css";
-@import "@fontsource/jetbrains-mono/400.css";
-
-:root {
-  --color-primary: #4a7c59;
-  --color-on-primary: #ffffff;
-  --color-primary-container: #78a886;
-  --color-primary-fixed: #c8e8d0;
-  --color-secondary: #6b6358;
-  --color-secondary-container: #f0e8db;
-  --color-tertiary: #705c30;
-  --color-tertiary-container: #f4e7c7;
-  --color-surface: #faf6f0;
-  --color-surface-lowest: #ffffff;
-  --color-surface-low: #f5f1ea;
-  --color-surface-container: #f0ece4;
-  --color-surface-high: #eae6de;
-  --color-on-surface: #2e3230;
-  --color-on-surface-variant: #4a4e4a;
-  --color-outline: #74796e;
-  --color-outline-variant: #c4c8bc;
-  --color-error: #b83230;
-  --color-error-container: #fce8e6;
-  --color-on-error-container: #690005;
-  --color-highlight: #f4e7c7;
-  --speaker-1: #4a7c59;
-  --speaker-2: #9a5b2e;
-  --speaker-3: #3f6a8a;
-  --speaker-4: #7a4f7f;
-  --speaker-5: #8a6d1f;
-  --speaker-6: #2f7a74;
-  --speaker-unresolved: #74796e;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
-  --radius-full: 9999px;
-  --shadow-card: 0 4px 20px rgba(46, 50, 48, 0.06);
-  --shadow-soft: 0 8px 28px rgba(46, 50, 48, 0.1);
-  --font-heading: "Literata", Georgia, serif;
-  --font-body: "Nunito Sans", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --transition-fast: 150ms;
-}
+@import "./design/tokens.css";
 
 body {
-  background: var(--color-surface);
-  color: var(--color-on-surface);
-  font-family: var(--font-body);
-  line-height: 1.6;
+  background: var(--ds-bg);
+  color: var(--ds-fg);
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-text-base);
+  line-height: var(--ds-leading);
   margin: 0;
-  isolation: isolate;
 }
 
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  background:
-    radial-gradient(ellipse at 10% 15%, color-mix(in srgb, var(--color-primary-fixed) 35%, transparent), transparent 55%),
-    radial-gradient(ellipse at 90% 45%, color-mix(in srgb, var(--color-tertiary-container) 40%, transparent), transparent 55%),
-    radial-gradient(ellipse at 40% 95%, color-mix(in srgb, var(--color-secondary-container) 50%, transparent), transparent 60%);
-}
-
-h1, h2, h3 {
-  font-family: var(--font-heading);
-  font-weight: 600;
+h1, h2, h3, h4 {
+  font-weight: var(--ds-weight-semibold);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  outline: var(--ds-focus-width) solid var(--ds-focus);
+  outline-offset: var(--ds-focus-offset);
 }
 
 button, input, select {
   font: inherit;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --transition-fast: 0ms;
-  }
+time, .ds-numeric {
+  font-variant-numeric: tabular-nums;
 }

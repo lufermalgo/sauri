@@ -25,7 +25,7 @@ import type {
 } from "../core/types";
 import type { TranscriptSearchResult } from "../core/search";
 import { COLOR_TOKENS, SPACING_TOKENS, TYPOGRAPHY_TOKENS } from "../core/design/tokens";
-import "../core/design/tokens.css";
+import "../core/design/base.css";
 
 const INITIAL_REQUEST = { phase: "initial", data: null, previous: null } as const;
 // Stable empty references: avoids `?? []` creating a new array on every

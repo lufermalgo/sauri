@@ -37,6 +37,8 @@ export function TranscriptSearch({ interventions, onResult }: TranscriptSearchPr
           padding: SPACING_TOKENS.space2,
           borderRadius: RADIUS_TOKENS.radiusSm,
           border: `1px solid ${COLOR_TOKENS.textMuted}`,
+          background: COLOR_TOKENS.surface,
+          color: COLOR_TOKENS.text,
         }}
       />
       {noMatches && (

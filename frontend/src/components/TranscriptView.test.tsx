@@ -982,7 +982,7 @@ describe("TranscriptView — visual QA refinements", () => {
     expect(row).toHaveAttribute("aria-current", "true");
     expect(action).toHaveAttribute("aria-current", "true");
     expect(row).toHaveClass("meeting-turn--active");
-    expect(row.style.getPropertyValue("--meeting-speaker")).toBe("var(--speaker-unresolved)");
+    expect(row.style.getPropertyValue("--meeting-speaker")).toBe("var(--ds-speaker-unresolved)");
   });
 
   it("keeps untimed turns readable but not playable", async () => {
@@ -1014,7 +1014,7 @@ describe("TranscriptView — visual QA refinements", () => {
     labels.forEach(label => expect(label).toHaveTextContent(copy.transcript.numberedSpeaker("4")));
     expect(data.turns[0].speakerLabel).toBe("Speaker 4");
     const row = within(screen.getByRole("region", { name: copy.meeting.transcript })).getByRole("listitem");
-    expect(row.style.getPropertyValue("--meeting-speaker")).toBe("var(--speaker-4)");
+    expect(row.style.getPropertyValue("--meeting-speaker")).toBe("var(--ds-speaker-4)");
   });
 
   it.each(["named", "corrected"] as const)("preserves an explicitly %s user name even if it matches a default label", async disposition => {
