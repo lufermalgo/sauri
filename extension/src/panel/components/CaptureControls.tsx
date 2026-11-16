@@ -1,4 +1,6 @@
 import React from "react";
+import { AppWindow, AudioLines, Check, Monitor, Pause, Play, Square } from "lucide-react";
+import { Icon } from "../../core/design/Icon";
 import { formatTimestamp } from "../../core/time";
 import type { CaptureState } from "../../core/types";
 import { panelCopy as copy } from "../copy";
@@ -44,13 +46,13 @@ export function CaptureControls({ captureState, microphones, selectedMicrophone,
       </div>
     </div>
     <div className="panel-row panel-actions">
-      <button disabled={commandPending || captureState === "stopping"} onClick={onPause}>{paused ? copy.resume : copy.pause}</button>
-      <button className="panel-primary" disabled={commandPending || captureState === "stopping"} onClick={onToggleCapture}>{captureState === "stopping" ? copy.stopping : copy.stop}</button>
+      <button className="panel-with-icon" disabled={commandPending || captureState === "stopping"} onClick={onPause}><Icon icon={paused ? Play : Pause} />{paused ? copy.resume : copy.pause}</button>
+      <button className="panel-primary panel-with-icon" disabled={commandPending || captureState === "stopping"} onClick={onToggleCapture}><Icon icon={Square} size={16} />{captureState === "stopping" ? copy.stopping : copy.stop}</button>
     </div>
     <ul className="panel-sources" aria-label={copy.recordingSources}>
-      <li>{copy.tabAudio}</li>
-      {recordedVideo && <li>{copy.tabVideo}</li>}
-      {recordedMicrophone && <li>{recordedMicrophone}</li>}
+      <li><Icon icon={Check} size={14} strokeWidth={2.5} className="panel-check" />{copy.tabAudio}</li>
+      {recordedVideo && <li><Icon icon={Check} size={14} strokeWidth={2.5} className="panel-check" />{copy.tabVideo}</li>}
+      {recordedMicrophone && <li><Icon icon={Check} size={14} strokeWidth={2.5} className="panel-check" />{recordedMicrophone}</li>}
     </ul>
     <p>{copy.recordingHelp}</p>
     {startError && <p role="alert">{startError}</p>}
@@ -61,7 +63,7 @@ export function CaptureControls({ captureState, microphones, selectedMicrophone,
     <div><h1>{copy.heading}</h1><p>{copy.introduction}</p></div>
     <section className="panel-card panel-stack" aria-label={copy.capture}>
       <div className="panel-segmented" role="radiogroup" aria-label={copy.captureMode}>
-        {(["screen_audio", "audio_only"] as const).map(mode => <button key={mode} role="radio" aria-checked={captureMode === mode} disabled={selecting} onClick={() => onChangeMode?.(mode)}>{mode === "screen_audio" ? copy.screenAudio : copy.audioOnly}</button>)}
+        {(["screen_audio", "audio_only"] as const).map(mode => <button key={mode} role="radio" aria-checked={captureMode === mode} disabled={selecting} onClick={() => onChangeMode?.(mode)}><Icon icon={mode === "screen_audio" ? Monitor : AudioLines} size={16} />{mode === "screen_audio" ? copy.screenAudio : copy.audioOnly}</button>)}
       </div>
       <div className="panel-row">
         <button className="panel-switch" role="switch" aria-checked={microphoneEnabled} aria-label={copy.microphone} disabled={selecting} onClick={onToggleMicrophone}><span /></button>
@@ -79,9 +81,9 @@ export function CaptureControls({ captureState, microphones, selectedMicrophone,
       {microphoneError && <p role="alert">{microphoneError}</p>}
     </section>
     <div className="panel-stack panel-start">
-      <button className="panel-primary panel-record-button" disabled={selecting} onClick={onToggleCapture}><span aria-hidden="true">●</span> {copy.record}</button>
+      <button className="panel-primary panel-record-button panel-with-icon" disabled={selecting} onClick={onToggleCapture}><span className="panel-dot" aria-hidden="true" />{copy.record}</button>
       <p className="panel-small panel-center">{copy.pickerHelp}</p>
-      <button disabled={!currentTabAvailable || selecting} onClick={onCaptureCurrentTab}>{copy.recordTab}</button>
+      <button className="panel-with-icon" disabled={!currentTabAvailable || selecting} onClick={onCaptureCurrentTab}><Icon icon={AppWindow} size={16} />{copy.recordTab}</button>
     </div>
     {startError && <p role="alert">{startError}</p>}
   </section>;

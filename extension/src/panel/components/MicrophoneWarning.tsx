@@ -1,4 +1,6 @@
 import React, { useEffect, useRef } from "react";
+import { MicOff } from "lucide-react";
+import { Icon } from "../../core/design/Icon";
 import { panelCopy as copy } from "../copy";
 
 export function MicrophoneWarning({ skip, onSkip, onContinue, onDismiss, pending, error }: {
@@ -17,7 +19,7 @@ export function MicrophoneWarning({ skip, onSkip, onContinue, onDismiss, pending
   }, []);
   return <dialog className="panel-mic-dialog" ref={ref} aria-labelledby="mic-off-heading" aria-describedby="mic-off-description" onCancel={event => { if (pending) event.preventDefault(); else onDismiss(); }}>
     <div className="panel-stack">
-      <span className="panel-warning-icon" aria-hidden="true">⚠</span>
+      <span className="panel-warning-icon" aria-hidden="true"><Icon icon={MicOff} size={24} /></span>
       <h2 id="mic-off-heading">{copy.micOffHeading}</h2>
       <p id="mic-off-description">{copy.micOffDescription}</p>
       <button disabled={pending} className="panel-primary" onClick={() => onContinue(true)}>{copy.enableMic}</button>
