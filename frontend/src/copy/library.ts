@@ -1,6 +1,7 @@
 export const library = {
   title: "Grabaciones",
   selectHint: "Elige una grabación para ver su transcripción y su resumen.",
+  chooseRecording: "Elige una grabación",
   upload: "Subir grabación",
   loading: "Cargando grabaciones…",
   empty: "Todavía no hay grabaciones.",
@@ -27,6 +28,13 @@ export const library = {
     downloadTranscript: "Descargar transcripción",
     downloadUnavailable: "Disponible cuando la transcripción esté lista.",
     downloadFailed: "No se pudo descargar la transcripción. Vuelve a intentarlo.",
+    downloadSummary: "Descargar resumen",
+    downloadSummaryUnavailable: "Aún no hay resumen",
+    downloadSummaryFailed: "No se pudo descargar el resumen. Vuelve a intentarlo.",
+    downloadVideo: "Descargar video",
+    downloadAudio: "Descargar audio",
+    downloadMediaUnavailable: "Disponible cuando la grabación esté lista.",
+    downloadMediaFailed: "No se pudo descargar el archivo. Vuelve a intentarlo.",
     delete: "Eliminar",
     deleteTitle: "¿Eliminar esta grabación?",
     deleteBody: "Se quitarán de Sauri la grabación, su transcripción y su resumen. Esta acción no se puede deshacer.",
@@ -40,6 +48,7 @@ export const library = {
     selectAll: "Seleccionar todas",
     clear: "Cancelar",
     downloadAll: "Descargar transcripciones",
+    downloadSummaries: "Descargar resúmenes",
     deleteAll: "Eliminar",
   },
   bulk: {
@@ -49,9 +58,12 @@ export const library = {
     downloadConfirmTitle: (count: number) => `¿Descargar ${count} transcripciones?`,
     downloadConfirmBody: "Se guardará un archivo de texto por grabación. Tu navegador puede pedirte permiso para descargar varios archivos a la vez.",
     downloadConfirm: "Descargar",
+    downloadSummariesConfirmTitle: (count: number) => `¿Descargar ${count} resúmenes?`,
+    downloadSummariesConfirmBody: "Se guardará un archivo de texto por grabación. Tu navegador puede pedirte permiso para descargar varios archivos a la vez.",
     cancel: "Cancelar",
     runningDeleteTitle: "Eliminando grabaciones",
     runningDownloadTitle: "Descargando transcripciones",
+    runningDownloadSummariesTitle: "Descargando resúmenes",
     doneDeleteTitle: "Eliminación terminada",
     doneDownloadTitle: "Descarga terminada",
     deleting: (current: number, total: number) => `Eliminando ${current} de ${total}…`,
@@ -69,12 +81,20 @@ export const library = {
       if (failed === 0) return done === 1 ? "Se descargó 1 transcripción." : `Se descargaron ${done} transcripciones.`;
       return `Se descargaron ${done}; ${failed === 1 ? "1 no se pudo descargar" : `${failed} no se pudieron descargar`}.`;
     },
+    downloadedSummaries: (done: number, failed: number) => {
+      if (failed === 0) return done === 1 ? "Se descargó 1 resumen." : `Se descargaron ${done} resúmenes.`;
+      return `Se descargaron ${done}; ${failed === 1 ? "1 no se pudo descargar" : `${failed} no se pudieron descargar`}.`;
+    },
+    skippedNoSummary: (count: number) => (count === 1
+      ? "1 se omitió porque aún no tiene resumen."
+      : `${count} se omitieron porque aún no tienen resumen.`),
     skippedNotReady: (count: number) => (count === 1
       ? "1 se omitió porque su transcripción aún no está lista."
       : `${count} se omitieron porque su transcripción aún no está lista.`),
     notProcessed: (count: number) => (count === 1 ? "1 quedó sin procesar." : `${count} quedaron sin procesar.`),
     failedKept: "Las que fallaron siguen seleccionadas.",
     noneReady: "Ninguna de las grabaciones seleccionadas tiene la transcripción lista.",
+    noneWithSummary: "Ninguna de las grabaciones seleccionadas tiene resumen todavía.",
   },
   search: {
     regionLabel: "Buscar en la biblioteca",

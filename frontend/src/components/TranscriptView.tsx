@@ -34,6 +34,8 @@ interface TranscriptViewProps {
   meetingId: string;
   /** Shown as a back button in the header when the list is not beside this view (narrow screens). */
   onBack?: () => void;
+  /** Reports whether the server knows this recording: "found" once it answers, "missing" on a 404. */
+  onResolved?: (outcome: "found" | "missing") => void;
 }
 
 function formatTimestamp(ms: number): string {
@@ -58,7 +60,9 @@ export function TranscriptView(props: TranscriptViewProps) {
   return <MeetingTranscriptView key={props.meetingId} {...props} />;
 }
 
-function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
+function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptViewProps) {
+  const onResolvedRef = useRef(onResolved);
+  onResolvedRef.current = onResolved;
   const [meeting, setMeeting] = useState<MeetingState | null>(null);
   const [metadata, setMetadata] = useState<{ title: string | null; createdAt: string | null; durationSeconds: number | null }>(
     { title: null, createdAt: null, durationSeconds: null });
@@ -106,8 +110,10 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [playingSpeakerId, setPlayingSpeakerId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("summary");
   const [keyPointTimes, setKeyPointTimes] = useState<number[]>([]);
-  // Key-point markers come from the summary the side panel already loaded.
+  // The summary the side panel already loaded feeds the key-point markers and the header's download.
+  const [hasSummary, setHasSummary] = useState(false);
   const handleSummaryChange = useCallback((summary: MeetingSummary | null) => {
+    setHasSummary(summary !== null);
     const times: number[] = [];
     for (const point of summary?.keyPoints ?? []) {
       if (typeof point !== "string" && point.sources.length > 0) times.push(point.sources[0].startMs);
@@ -222,11 +228,13 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         const [transcript] = await Promise.allSettled([getTranscript(meetingId)]);
         if (cancelled || terminal) return;
         if (state.status === "fulfilled") {
+          onResolvedRef.current?.("found");
           setMeeting(state.value);
           setStatusError(false);
           terminal = state.value.processState === "failed" ||
             (state.value.processState === "completed" && speakers.status === "fulfilled");
         } else {
+          if (state.reason instanceof Error && state.reason.message === "Error 404") onResolvedRef.current?.("missing");
           setStatusError(true);
         }
         if (transcript.status === "fulfilled") {
@@ -497,7 +505,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     <section className="meeting-view" tabIndex={-1}>
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
         stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
-        speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns}
+        speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} hasSummary={hasSummary}
         speakerReview={speakerReview} onBack={onBack} />
       {hasNotices && <div className="meeting-notices">
         {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
@@ -604,7 +612,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
           { id: "summary", label: text.summaryTab, panel: meeting
             // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
-            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
+            ? <SummaryPanel meetingId={meetingId} title={metadata.title} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
               expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal}
               progress={{ audioSeconds: playbackManifest?.duration_seconds ?? metadata.durationSeconds,
                 createdAt: metadata.createdAt, stageStartedAt: stage === "summary" ? stageStartedAt : null }} /> : null },
