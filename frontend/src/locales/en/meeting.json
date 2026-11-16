@@ -75,5 +75,6 @@
   "volume": "Volume",
   "mute": "Mute",
   "unmute": "Unmute",
-  "quality": "Video quality"
+  "quality": "Video quality",
+  "datesTooltip": "Recorded {{recorded}} · Processed {{processed}}"
 }

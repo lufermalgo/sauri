@@ -3,6 +3,7 @@ import type { CSSProperties, KeyboardEvent, MouseEvent } from "react";
 import { AudioLines, Ellipsis, FileText, Pencil, ScrollText, Trash2, Video } from "lucide-react";
 import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
+import { meetingDate, type LibraryDateField } from "../library-query";
 import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
 import { Icon, Menu, MenuItem, MenuSeparator, ProgressBar, StatusBadge, useTooltip } from "./ui";
 import { t, useT } from "../i18n";
@@ -41,9 +42,9 @@ const ROW_EDGES: Record<BadgeTone, string> = {
 const THUMBNAIL_ICON_SIZE = 16;
 const MAX_TITLE_LENGTH = 512;
 
-function formatCreatedAt(createdAt: string | null): string {
-  if (!createdAt) return t("library:noDate");
-  const date = new Date(createdAt);
+function formatListDate(isoDate: string | null): string {
+  if (!isoDate) return t("library:noDate");
+  const date = new Date(isoDate);
   return Number.isNaN(date.getTime()) ? t("library:noDate") : formatDate(date, { dateStyle: "medium", timeStyle: "short" });
 }
 
@@ -169,6 +170,8 @@ function RowRename({ meeting, onSubmit, onCancel }: {
 
 export interface LibraryRowProps {
   meeting: MeetingListItem;
+  /** Which date the meta line shows: when it was recorded (default) or when Sauri processed it. */
+  dateField?: LibraryDateField;
   /** The recording open in the detail pane. */
   open: boolean;
   /** Part of the bulk selection. */
@@ -192,7 +195,7 @@ export interface LibraryRowProps {
 
 /** One recording: title line, meta line and status chip; selection checkbox and actions menu beside it. */
 export function LibraryRow({
-  meeting, open, checked, tabbable, renaming, error, notice, onOpen, onToggleChecked, onFocusRow,
+  meeting, dateField = "recorded", open, checked, tabbable, renaming, error, notice, onOpen, onToggleChecked, onFocusRow,
   onStartRename, onRename, onCancelRename, onDownload, onDelete,
 }: LibraryRowProps) {
   const { t } = useT();
@@ -269,7 +272,7 @@ export function LibraryRow({
                 <StatusBadge tone={tone}>{t(STATE_LABEL_KEYS[meeting.processState])}</StatusBadge>
               </span>
               <span className="library-item-meta">
-                <span>{formatCreatedAt(meeting.createdAt)}</span>
+                <span>{formatListDate(meetingDate(meeting, dateField))}</span>
                 {duration !== null && <span className="library-item-duration">{formatDuration(duration)}</span>}
                 {speakers !== null && <span>{t("library:speakers", { count: speakers })}</span>}
               </span>

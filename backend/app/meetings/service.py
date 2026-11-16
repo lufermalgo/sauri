@@ -219,6 +219,8 @@ async def register_meeting(
         failure_cause=None,
         created_by=created_by,
         created_at=now,
+        recorded_at=now,
+        recorded_at_source="received",
     )
     session.add(meeting)
     # Flush the Meeting first: StateHistory's FK requires the parent row
@@ -238,6 +240,15 @@ async def register_meeting(
     await session.flush()
 
     return meeting
+
+
+def recorded_at_fields(meeting: Meeting) -> dict[str, Any]:
+    """When the recording was made and where that came from; rows older than the column fall back to receipt."""
+    moment = meeting.recorded_at or meeting.created_at
+    return {
+        "recorded_at": moment.isoformat() if moment else None,
+        "recorded_at_source": meeting.recorded_at_source or "received",
+    }
 
 
 async def get_meeting(
@@ -264,6 +275,7 @@ async def get_meeting(
         "meeting_id": meeting.id,
         "title": meeting.title,
         "process_state": meeting.process_state,
+        **recorded_at_fields(meeting),
     }
 
     if meeting.process_state == "failed":

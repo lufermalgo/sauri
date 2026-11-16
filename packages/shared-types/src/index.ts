@@ -42,6 +42,9 @@ export enum CaptureOrigin {
 
 // --- Interfaces ---
 
+/** Where a recording date came from: the capture start, the file's own metadata, the browser's file date, or receipt. */
+export type RecordedAtSource = "capture" | "file_metadata" | "file_modified" | "received";
+
 /** Raw meeting-list record returned by GET /api/v1/meetings. */
 export interface MeetingListApiResponse {
   meeting_id: string;
@@ -49,7 +52,11 @@ export interface MeetingListApiResponse {
   origin: MeetingOrigin;
   process_state: ProcessState;
   failure_cause: FailureCause | null;
+  /** When Sauri received the recording (the "processed" date). */
   created_at: string | null;
+  /** When the recording was made; absent from backends older than the field. */
+  recorded_at?: string | null;
+  recorded_at_source?: RecordedAtSource | null;
   title: string;
   duration_seconds?: number | null;
   speaker_count?: number | null;
@@ -69,7 +76,11 @@ export interface MeetingListItem {
   origin: MeetingOrigin;
   processState: ProcessState;
   failureCause: FailureCause | null;
+  /** When Sauri received the recording (the "processed" date). */
   createdAt: string | null;
+  /** When the recording was made; absent in records built before the field existed (use `createdAt`). */
+  recordedAt?: string | null;
+  recordedAtSource?: RecordedAtSource | null;
   title: string;
   durationSeconds: number | null;
   speakerCount: number | null;

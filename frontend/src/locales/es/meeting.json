@@ -75,5 +75,6 @@
   "volume": "Volumen",
   "mute": "Silenciar",
   "unmute": "Activar sonido",
-  "quality": "Calidad de video"
+  "quality": "Calidad de video",
+  "datesTooltip": "Grabada el {{recorded}} · Procesada el {{processed}}"
 }

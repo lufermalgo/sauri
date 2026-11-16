@@ -74,7 +74,11 @@ async def test_get_meeting_authorizes_owner_and_preserves_response(api_client: A
     meeting_id = await _create_meeting(api_db_url)
     response = await api_client.get(f"{BASE_PATH}/{meeting_id}", headers=_headers(OWNER_ID))
     assert response.status_code == 200
-    assert response.json() == {"meeting_id": meeting_id, "title": "Private synthetic title", "process_state": "queued"}
+    body = response.json()
+    # Rows older than the recording-date column report the receipt date as their recording date.
+    assert body.pop("recorded_at")
+    assert body.pop("recorded_at_source") == "received"
+    assert body == {"meeting_id": meeting_id, "title": "Private synthetic title", "process_state": "queued"}
     assert not await _audit_rows(api_db_url, OWNER_ID)
 
 

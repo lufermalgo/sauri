@@ -1,7 +1,28 @@
 import type { MeetingListItem } from "@sauri/shared-types";
 import { compareText } from "./i18n/format";
 
-export type LibrarySort = "newest" | "oldest" | "title";
+/** How the library is ordered: by when the recording was made, by when Sauri processed it, or by title. */
+export type LibrarySort = "recordedNewest" | "recordedOldest" | "processedNewest" | "processedOldest" | "title";
+
+/** Which date the list shows, groups by and filters on. */
+export type LibraryDateField = "recorded" | "processed";
+
+export const DEFAULT_LIBRARY_SORT: LibrarySort = "recordedNewest";
+
+/** The date a sort is about; a title sort keeps the recording date for the cards, groups and calendar. */
+export function sortDateField(sort: LibrarySort): LibraryDateField {
+  return sort === "processedNewest" || sort === "processedOldest" ? "processed" : "recorded";
+}
+
+/** Newest-first date sorts are the ones shown under "Today / This week / Earlier" headings. */
+export function isGroupedSort(sort: LibrarySort): boolean {
+  return sort === "recordedNewest" || sort === "processedNewest";
+}
+
+/** The ISO date of a recording for the chosen field; the recording date falls back to the processed one. */
+export function meetingDate(item: MeetingListItem, field: LibraryDateField): string | null {
+  return field === "processed" ? item.createdAt : item.recordedAt ?? item.createdAt;
+}
 
 export interface LibraryQuery {
   text: string;
@@ -28,15 +49,18 @@ function localDate(createdAt: string | null): string | null {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function createdTime(item: MeetingListItem): number | null {
-  if (!item.createdAt) return null;
-  const time = new Date(item.createdAt).getTime();
+function dateTime(item: MeetingListItem, field: LibraryDateField): number | null {
+  const iso = meetingDate(item, field);
+  if (!iso) return null;
+  const time = new Date(iso).getTime();
   return Number.isNaN(time) ? null : time;
 }
 
-function compareByDate(left: MeetingListItem, right: MeetingListItem, direction: 1 | -1): number {
-  const a = createdTime(left);
-  const b = createdTime(right);
+function compareByDate(
+  left: MeetingListItem, right: MeetingListItem, field: LibraryDateField, direction: 1 | -1,
+): number {
+  const a = dateTime(left, field);
+  const b = dateTime(right, field);
   if (a === null && b === null) return 0;
   if (a === null) return 1; // items without a date always go last
   if (b === null) return -1;
@@ -49,10 +73,11 @@ export function applyLibraryQuery(
   query: LibraryQuery,
 ): MeetingListItem[] {
   const needle = fold(query.text.trim());
+  const field = sortDateField(query.sort);
   const filtered = items.filter((item) => {
     if (needle && !fold(item.title).includes(needle)) return false;
     if (query.from || query.to) {
-      const date = localDate(item.createdAt);
+      const date = localDate(meetingDate(item, field));
       if (date === null) return false;
       if (query.from && date < query.from) return false;
       if (query.to && date > query.to) return false;
@@ -62,12 +87,14 @@ export function applyLibraryQuery(
 
   // Array.prototype.sort is stable, so ties keep the input order.
   switch (query.sort) {
-    case "oldest":
-      return filtered.sort((a, b) => compareByDate(a, b, 1));
+    case "recordedOldest":
+    case "processedOldest":
+      return filtered.sort((a, b) => compareByDate(a, b, field, 1));
     case "title":
       return filtered.sort((a, b) => compareText(a.title, b.title));
-    case "newest":
+    case "recordedNewest":
+    case "processedNewest":
     default:
-      return filtered.sort((a, b) => compareByDate(a, b, -1));
+      return filtered.sort((a, b) => compareByDate(a, b, field, -1));
   }
 }

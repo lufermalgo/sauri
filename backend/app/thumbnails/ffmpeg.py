@@ -12,7 +12,10 @@ import logging
 import math
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+
+from app.meetings.recorded_at import parse_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,35 @@ class MediaProbe:
 
     duration_seconds: float | None
     has_video: bool
+    creation_time: datetime | None = None
+
+
+# Container tags that say when a file was made, best first. Apple's keeps the real local offset;
+# `creation_time` is the generic one (mp4, mov, mkv, webm); `DATE` is Matroska's, often a date only.
+CREATION_TAGS = ("com.apple.quicktime.creationdate", "creation_time", "date")
+
+
+def _quicktime_offset_fixed(text: str) -> str:
+    """Apple writes the offset as +0100; fromisoformat reads +01:00 on every supported Python."""
+    if len(text) > 5 and text[-5] in "+-" and text[-4:].isdigit():
+        return f"{text[:-2]}:{text[-2:]}"
+    return text
+
+
+def read_creation_time(document: dict[str, Any]) -> datetime | None:
+    """When the container says the media was created, or None. Only these tags are ever read."""
+    tags = (document.get("format") or {}).get("tags")
+    if not isinstance(tags, dict):
+        return None
+    lowered = {str(key).lower(): value for key, value in tags.items() if isinstance(value, str)}
+    for name in CREATION_TAGS:
+        raw = lowered.get(name)
+        if raw is None:
+            continue
+        parsed = parse_timestamp(_quicktime_offset_fixed(raw.strip()))
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def select_frame_time(duration_seconds: float | None) -> float | None:
@@ -104,13 +136,15 @@ def parse_probe(output: bytes) -> MediaProbe:
         for stream in document.get("streams") or []
         if isinstance(stream, dict)
     )
-    return MediaProbe(duration_seconds=duration, has_video=has_video)
+    return MediaProbe(duration_seconds=duration, has_video=has_video, creation_time=read_creation_time(document))
 
 
 def probe_command(source_url: str) -> list[str]:
     return [
         FFPROBE, "-v", "error", *_SAFE_INPUT_OPTIONS, "-print_format", "json",
-        "-show_entries", "format=duration:stream=codec_type:stream_disposition=attached_pic",
+        "-show_entries",
+        "format=duration:format_tags=" + ",".join(CREATION_TAGS)
+        + ":stream=codec_type:stream_disposition=attached_pic",
         source_url,
     ]
 

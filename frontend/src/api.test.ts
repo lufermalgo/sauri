@@ -538,6 +538,8 @@ describe("meeting list API adapter", () => {
       process_state: "completed",
       failure_cause: null,
       created_at: "2026-10-28T17:45:00Z",
+      recorded_at: "2026-06-02T09:30:00Z",
+      recorded_at_source: "file_metadata",
       title: "Synthetic processed meeting",
       duration_seconds: 1860,
       speaker_count: 3,
@@ -553,6 +555,8 @@ describe("meeting list API adapter", () => {
       processState: "completed",
       failureCause: null,
       createdAt: "2026-10-28T17:45:00Z",
+      recordedAt: "2026-06-02T09:30:00Z",
+      recordedAtSource: "file_metadata",
       title: "Synthetic processed meeting",
       durationSeconds: 1860,
       speakerCount: 3,
@@ -560,6 +564,16 @@ describe("meeting list API adapter", () => {
       thumbnailUrl: "https://storage.invalid/thumbnail.jpg?sig=x",
       mediaKind: "video",
     }]);
+  });
+
+  it("uses the processed date as the recording date when the backend does not send one", async () => {
+    mockFetch([{
+      meeting_id: "m-1", meet_link: null, origin: "manual", process_state: "queued",
+      failure_cause: null, created_at: "2026-10-28T17:45:00Z", title: "Older backend",
+    }]);
+    const [item] = await api.listMeetings();
+    expect(item.recordedAt).toBe("2026-10-28T17:45:00Z");
+    expect(item.recordedAtSource).toBeNull();
   });
 
   it("maps absent or null summary fields to null", async () => {

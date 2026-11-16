@@ -114,8 +114,10 @@
     "sortCurrent": "Sort: {{choice}}",
     "clear": "Clear",
     "clearFilters": "Clear filters",
-    "sortNewest": "Newest",
-    "sortOldest": "Oldest",
+    "sortRecordedNewest": "Recorded date: newest first",
+    "sortRecordedOldest": "Recorded date: oldest first",
+    "sortProcessedNewest": "Processed date: newest first",
+    "sortProcessedOldest": "Processed date: oldest first",
     "sortTitle": "Title"
   },
   "states": {

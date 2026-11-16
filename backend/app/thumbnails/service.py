@@ -12,13 +12,15 @@ import logging
 import os
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.models import SessionRecording
+from app.infra.models import Meeting, SessionRecording
 from app.infra.object_store import ObjectStore
+from app.meetings.recorded_at import SOURCE_FILE_METADATA, is_stronger_source, plausible_recorded_at
 from app.meetings.service import load_playback_source_inventory
 from app.thumbnails.ffmpeg import MediaToolError, extract_best_frame, probe_media
 
@@ -44,6 +46,18 @@ class _Job:
     source_ref: str | None
     offset_seconds: float
     fixed_state: ThumbnailState | None
+    # Media object to probe for the creation tag when the thumbnail itself needs no probe (audio only).
+    creation_ref: str | None = None
+    # The meeting may still learn its recording date from the container; see `note_creation_time`.
+    wants_creation_time: bool = False
+
+
+async def _wants_creation_time(session: AsyncSession, recording: SessionRecording) -> bool:
+    """Only web uploads: the extension knows its own capture start, which is better than any tag."""
+    if recording.capture_origin != "web_upload":
+        return False
+    meeting = await session.get(Meeting, recording.meeting_id)
+    return meeting is not None and is_stronger_source(SOURCE_FILE_METADATA, meeting.recorded_at_source)
 
 
 async def _load_job(session: AsyncSession, recording_id: str) -> _Job | None:
@@ -51,8 +65,13 @@ async def _load_job(session: AsyncSession, recording_id: str) -> _Job | None:
     if recording is None:
         return None
 
+    wants = await _wants_creation_time(session, recording)
+
     def job(
-        source_ref: str | None = None, offset_seconds: float = 0.0, fixed_state: ThumbnailState | None = None
+        source_ref: str | None = None,
+        offset_seconds: float = 0.0,
+        fixed_state: ThumbnailState | None = None,
+        creation_ref: str | None = None,
     ) -> _Job:
         return _Job(
             meeting_id=recording.meeting_id,
@@ -61,10 +80,16 @@ async def _load_job(session: AsyncSession, recording_id: str) -> _Job | None:
             source_ref=source_ref,
             offset_seconds=offset_seconds,
             fixed_state=fixed_state,
+            creation_ref=creation_ref,
+            wants_creation_time=wants,
         )
 
     if recording.video_presence == "absent":
-        return job(fixed_state="audio_only")
+        if not wants:
+            return job(fixed_state="audio_only")
+        audio_only = await load_playback_source_inventory(session, recording.id)
+        audio_ref = audio_only.audio_source.object_ref if audio_only and audio_only.audio_source else None
+        return job(fixed_state="audio_only", creation_ref=audio_ref)
 
     inventory = await load_playback_source_inventory(session, recording.id)
     if inventory is None:
@@ -102,6 +127,22 @@ async def _record_result(
         await object_store.delete(key)
 
 
+async def note_creation_time(
+    session_factory: async_sessionmaker[AsyncSession], meeting_id: str, creation_time: datetime | None
+) -> bool:
+    """Keep the container's creation date as the meeting's recording date when it is a better source."""
+    moment = plausible_recorded_at(creation_time)
+    if moment is None:
+        return False
+    async with session_factory() as session, session.begin():
+        meeting = await session.get(Meeting, meeting_id)
+        if meeting is None or not is_stronger_source(SOURCE_FILE_METADATA, meeting.recorded_at_source):
+            return False
+        meeting.recorded_at = moment
+        meeting.recorded_at_source = SOURCE_FILE_METADATA
+        return True
+
+
 async def generate_thumbnail(
     session_factory: async_sessionmaker[AsyncSession],
     object_store: ObjectStore,
@@ -120,6 +161,13 @@ async def generate_thumbnail(
     state: ThumbnailState
     if job.source_ref is None:
         state = job.fixed_state or "unavailable"
+        if job.creation_ref is not None:
+            # Audio only has no frame to cut, but its header can still carry the creation date.
+            url = await object_store.temporary_read_url(job.creation_ref, ttl_seconds=SOURCE_URL_TTL_SECONDS)
+            try:
+                await note_creation_time(session_factory, job.meeting_id, (await probe_media(url)).creation_time)
+            except MediaToolError as exc:
+                logger.info("No creation date for recording_id=%s: %s", recording_id, exc)
         await _record_result(session_factory, object_store, job, state, None)
         return state
 
@@ -127,6 +175,8 @@ async def generate_thumbnail(
     jpeg: bytes | None = None
     try:
         probe = await probe_media(source_url)
+        if job.wants_creation_time:
+            await note_creation_time(session_factory, job.meeting_id, probe.creation_time)
         if not probe.has_video:
             state = "audio_only"
         else:

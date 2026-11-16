@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { uploadWithProgress } from "../api";
+import { fileModifiedIso, uploadWithProgress } from "../api";
 import type { RecordingUploadData, UploadProgress } from "../api";
 import { durationText, fileSizeText, transferredText } from "../upload-format";
 import { Button, Card, ProgressBar } from "./ui";
@@ -176,6 +176,7 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
                 capture_origin: "web_upload",
                 video_presence: media.videoWidth > 0 ? "muxed" : "absent",
                 title: recording.file.name,
+                recorded_at: fileModifiedIso(recording.file),
               } });
               setError(null);
             }}

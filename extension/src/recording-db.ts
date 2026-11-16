@@ -28,6 +28,8 @@ export interface RecordingCompletion {
   /** Set when the user dismisses a terminal outcome; absent on records saved earlier. */
   acknowledgedAt?: number;
   updatedAt: number;
+  /** When capture actually began (after any countdown), epoch ms; sent as the recording date. Absent on records saved earlier. */
+  startedAt?: number;
 }
 
 /** Resolve only after commit, never after an individual successful write. */

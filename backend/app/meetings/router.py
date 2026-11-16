@@ -57,6 +57,7 @@ from app.meetings.schemas import MeetingCreate, ResourceId, RevisionId
 from app.meetings.service import (
     delete_meeting,
     get_meeting,
+    recorded_at_fields,
     register_meeting,
     rename_meeting,
     request_join,
@@ -261,6 +262,25 @@ async def _owner_meeting_count(session: AsyncSession, owner_id: str, offset: int
     )
 
 
+ListSort = Literal["recorded_desc", "recorded_asc", "processed_desc", "processed_asc"]
+
+
+def _list_order(sort: ListSort) -> tuple[Any, ...]:
+    """Row order of the list; the id breaks ties so pages never repeat or skip a row.
+
+    `recorded` is when the recording was made (rows older than the column use the receipt date);
+    `processed` is when Sauri received it. Title order is left to the client, which knows the language.
+    """
+    column = (
+        func.coalesce(Meeting.recorded_at, Meeting.created_at)
+        if sort.startswith("recorded")
+        else Meeting.created_at
+    )
+    if sort.endswith("_asc"):
+        return (column.asc(), Meeting.id.asc())
+    return (column.desc(), Meeting.id.desc())
+
+
 @router.get("/")
 async def list_meetings(
     request: Request,
@@ -268,8 +288,12 @@ async def list_meetings(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
     offset: Annotated[int, Query(ge=0, le=MAX_LIST_OFFSET)] = 0,
+    sort: Annotated[ListSort, Query()] = "recorded_desc",
 ) -> list[dict[str, Any]]:
-    """Lists the authenticated user's meetings, newest first.
+    """Lists the authenticated user's meetings, most recently recorded first by default.
+
+    ``sort`` picks the date and direction: ``recorded_desc`` (default), ``recorded_asc``,
+    ``processed_desc`` or ``processed_asc``.
 
     The body stays a bare list. ``X-Total-Count`` carries the owner's total and a
     ``Link: <...>; rel="next"`` header is present while more rows remain.
@@ -284,7 +308,7 @@ async def list_meetings(
             stmt = (
                 select(Meeting, func.count().over())
                 .where(Meeting.created_by == user.id)
-                .order_by(Meeting.created_at.desc(), Meeting.id.desc())
+                .order_by(*_list_order(sort))
                 .limit(limit)
                 .offset(offset)
             )
@@ -303,6 +327,7 @@ async def list_meetings(
                     "failure_cause": m.failure_cause if m.process_state == "failed" else None,
                     "created_at": m.created_at.isoformat() if m.created_at else None,
                     "title": m.title,
+                    **recorded_at_fields(m),
                     **extras.get(m.id, _EMPTY_LIST_FIELDS),
                 }
                 for m in meetings

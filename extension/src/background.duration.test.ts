@@ -46,15 +46,16 @@ function profile() {
   }
 
   const sentDurations = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/ingestion/upload")).map(([, init]) => JSON.parse(((init.body as unknown as { get(n: string): string }).get("data"))).duration_seconds);
+  const sentPayloads = () => fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/ingestion/upload")).map(([, init]) => JSON.parse(((init.body as unknown as { get(n: string): string }).get("data"))));
   return {
-    boot, fetchMock, sentDurations,
+    boot, fetchMock, sentDurations, sentPayloads,
     message: (message: Message) => new Promise(resolve => listener(message, {}, resolve)),
     startup: () => startup(),
   };
 }
 
-async function seedCapture(db: typeof import("./recording-db"), sessionId: string) {
-  await db.createCompletion({ sessionId, meetingId: `meeting-${sessionId}`, provider: "meet", capturedTabId: 7, status: "finalizing", updatedAt: 1 });
+async function seedCapture(db: typeof import("./recording-db"), sessionId: string, startedAt?: number) {
+  await db.createCompletion({ sessionId, meetingId: `meeting-${sessionId}`, provider: "meet", capturedTabId: 7, status: "finalizing", updatedAt: 1, startedAt });
   await db.storeChunk(sessionId, new NativeBlob(["media"]) as Blob);
 }
 
@@ -123,5 +124,23 @@ describe("recorded duration in the upload payload", () => {
     p.startup();
     await vi.waitFor(async () => expect(await queue.getUploadJob("legacy")).toMatchObject({ status: "done" }));
     expect(p.sentDurations()).toEqual([0]);
+  });
+
+  it("sends the moment capture began as the recording date", async () => {
+    const p = profile();
+    const { db, queue } = await p.boot();
+    await seedCapture(db, "s5", Date.UTC(2026, 10, 3, 15, 30, 0));
+    await p.message({ type: "recording-stopped", sessionId: "s5", size: 5, mimeType: "video/webm", durationSeconds: 20 });
+    await vi.waitFor(async () => expect(await queue.getUploadJob("s5")).toMatchObject({ status: "done" }));
+    expect(p.sentPayloads().map(payload => payload.recorded_at)).toEqual(["2026-11-03T15:30:00.000Z"]);
+  });
+
+  it("leaves the recording date out when the capture record has no start", async () => {
+    const p = profile();
+    const { db, queue } = await p.boot();
+    await seedCapture(db, "s6");
+    await p.message({ type: "recording-stopped", sessionId: "s6", size: 5, mimeType: "video/webm", durationSeconds: 20 });
+    await vi.waitFor(async () => expect(await queue.getUploadJob("s6")).toMatchObject({ status: "done" }));
+    expect(p.sentPayloads()[0]).not.toHaveProperty("recorded_at");
   });
 });
