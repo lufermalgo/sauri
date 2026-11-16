@@ -31,6 +31,7 @@ interface SauriBackgroundState {
   captureMode?: "screen_audio" | "audio_only";
   micDeviceId?: string | null;
   videoPresence?: "muxed" | "absent";
+  overlayAvailable?: boolean;
 }
 
 function mapCaptureState(status: SauriBackgroundState["status"]): CaptureState {
@@ -405,6 +406,7 @@ export function SidePanelApp() {
           onCancel={() => { void sendControl("cancel-capture"); }}
           paused={backgroundState.paused}
           tabTitle={backgroundState.meetingTitle}
+          overlayUnavailable={backgroundState.overlayAvailable === false}
           recordedVideo={backgroundState.videoPresence === "muxed"}
           recordedMicrophone={backgroundState.micDeviceId ? microphones.find(mic => mic.deviceId === backgroundState.micDeviceId)?.label ?? copy.microphone : undefined}
           commandPending={commandPending}

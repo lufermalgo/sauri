@@ -24,7 +24,15 @@ export function newNoteButtonEnabled(state: CaptureState): boolean {
   return state === "idle";
 }
 
-/** Restrict the shortcut to ordinary web tabs, never browser/extension pages. */
+export function isMeetUrl(url?: string): boolean {
+  return !!url?.startsWith("https://meet.google.com/");
+}
+
+/**
+ * Technical limit only: ordinary http(s) tabs that Chrome lets an extension capture
+ * and script. Browser pages, extension pages, local files and the Web Store are out.
+ * No site (Meet or otherwise) is preferred or excluded here.
+ */
 export function canCaptureCurrentTab(url?: string): boolean {
   if (!url) return false;
   try {

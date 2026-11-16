@@ -66,7 +66,10 @@ function createHost(id: string): ShadowRoot {
   return shadow;
 }
 
-export function showNotice(): boolean {
+/** "meeting" keeps the Google Meet wording; "tab" is neutral for any other page. */
+export type OverlayVariant = 'meeting' | 'tab';
+
+export function showNotice(variant: OverlayVariant = 'meeting'): boolean {
   const existing = document.getElementById('sauri-consent-banner-host');
   if (existing?.shadowRoot) return false;
   // A previous extension version may have left a closed shadow root behind.
@@ -75,7 +78,8 @@ export function showNotice(): boolean {
   const notice = document.createElement('div');
   notice.className = 'notice';
   notice.setAttribute('role', 'status');
-  notice.innerHTML = `<span class="dot" aria-hidden="true"></span><span><b>${copy.notice}</b> ${copy.noticeHint}</span><button aria-label="${copy.close}">${iconHtml(X, 16)}</button>`;
+  const [title, hint] = variant === 'tab' ? [copy.tabNotice, copy.tabNoticeHint] : [copy.notice, copy.noticeHint];
+  notice.innerHTML = `<span class="dot" aria-hidden="true"></span><span><b>${title}</b> ${hint}</span><button aria-label="${copy.close}">${iconHtml(X, 16)}</button>`;
   notice.querySelector('button')!.onclick = () => shadow.host.remove();
   shadow.append(notice);
   return true;
@@ -84,7 +88,7 @@ export function showNotice(): boolean {
 let countdownCancel: (() => void) | undefined;
 export function cancelCountdown(): void { countdownCancel?.(); }
 
-export function showCountdown(seconds: number, requestId: string): Promise<{ ok: boolean }> {
+export function showCountdown(seconds: number, requestId: string, variant: OverlayVariant = 'meeting'): Promise<{ ok: boolean }> {
   cancelCountdown();
   const shadow = createHost('sauri-countdown-host');
   const dialog = document.createElement('div');
@@ -92,7 +96,7 @@ export function showCountdown(seconds: number, requestId: string): Promise<{ ok:
   dialog.setAttribute('role', 'dialog');
   dialog.setAttribute('aria-modal', 'true');
   dialog.setAttribute('aria-label', copy.countdown);
-  dialog.innerHTML = `<h2>${copy.countdown}</h2><strong aria-live="polite"></strong><span>${copy.countdownHint}</span><button>${copy.cancel}</button>`;
+  dialog.innerHTML = `<h2>${copy.countdown}</h2><strong aria-live="polite"></strong><span>${variant === 'tab' ? copy.tabCountdownHint : copy.countdownHint}</span><button>${copy.cancel}</button>`;
   shadow.append(dialog);
   const previousFocus = document.activeElement as HTMLElement | null;
   return new Promise(resolve => {

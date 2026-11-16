@@ -22,6 +22,7 @@ export interface CaptureControlsProps {
   onCancel?: () => void;
   paused?: boolean;
   tabTitle?: string;
+  overlayUnavailable?: boolean;
   recordedMicrophone?: string;
   recordedVideo?: boolean;
   commandPending?: boolean;
@@ -34,7 +35,7 @@ export interface CaptureControlsProps {
 export function CaptureControls({ captureState, microphones, selectedMicrophone, onSelectMicrophone,
   microphoneEnabled = true, onToggleMicrophone, captureMode = "screen_audio", onChangeMode,
   onToggleCapture, onCaptureCurrentTab, currentTabAvailable, onPause, onCancel,
-  paused, tabTitle, recordedMicrophone, recordedVideo, commandPending, elapsedTimeMs, startError, selecting, microphoneError,
+  paused, tabTitle, overlayUnavailable, recordedMicrophone, recordedVideo, commandPending, elapsedTimeMs, startError, selecting, microphoneError,
 }: CaptureControlsProps) {
   if (captureState === "recording" || captureState === "stopping") return <section className="panel-stack panel-recording">
     <div className="panel-card panel-clock" aria-label={copy.timer}>
@@ -54,6 +55,7 @@ export function CaptureControls({ captureState, microphones, selectedMicrophone,
       {recordedVideo && <li><Icon icon={Check} size={14} strokeWidth={2.5} className="panel-check" />{copy.tabVideo}</li>}
       {recordedMicrophone && <li><Icon icon={Check} size={14} strokeWidth={2.5} className="panel-check" />{recordedMicrophone}</li>}
     </ul>
+    {overlayUnavailable && <p role="note">{copy.noOverlay}</p>}
     <p>{copy.recordingHelp}</p>
     {startError && <p role="alert">{startError}</p>}
     <button className="panel-danger-link" disabled={commandPending || captureState === "stopping"} onClick={onCancel}>{copy.discard}</button>

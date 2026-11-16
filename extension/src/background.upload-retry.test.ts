@@ -69,7 +69,7 @@ async function runUpload(fetchImplementation: typeof fetch) {
       session: { get: vi.fn(async () => ({ sauriState: { status: "idle" } })), set: vi.fn(async () => undefined) },
       sync: { get: vi.fn(async () => ({})) },
     },
-    tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 614 })), sendMessage: vi.fn(async () => undefined) },
+    tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 614 })), sendMessage: vi.fn(async () => undefined) },
   });
 
   await import("./background");

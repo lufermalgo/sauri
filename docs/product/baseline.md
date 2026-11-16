@@ -24,7 +24,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 
 ## 3. Experience principles
 
-- **On-demand capture:** capture starts only when the user initiates it from the extension and selects the Google Meet tab.
+- **On-demand capture:** capture starts only when the user initiates it from the extension and selects the browser tab to record: a Google Meet meeting, another meeting held in a browser tab, or any other tab content (owner clarification, 2026-11-16).
 - **Configurable capture presence:** the extension preferences include whether the floating recording indicator is shown. Hiding it is intentional; the user does not need in-recording controls in that mode and can end capture by stopping Chrome tab sharing.
 - **Honest attribution:** show a known speaker's name when recognized; use `Speaker N` when the voice is unknown or attribution is uncertain. Do not imply an uncertain match is confirmed.
 - **Human correction matters:** incomplete speaker review remains pending and is requested again when the user returns. A user's speaker-name/identity associations are that user's own preferences/data; corrections may inform later recognition for that same user, not other users. Do not infer cross-user sharing of labels, names, or voice data.
@@ -36,7 +36,7 @@ The user needs to be able to record a meeting on demand, trust that the resultin
 ### A. Configure and capture a meeting
 
 1. The user opens the Chrome extension and chooses to record a session.
-2. A Chrome tab-selection flow lets the user select the Google Meet tab. The exact selector composition and options are for design; the reference image does not authorize whole-window or full-screen capture.
+2. A Chrome tab-selection flow lets the user select the browser tab to record (Google Meet or any other tab). The exact selector composition and options are for design; the reference image does not authorize whole-window or full-screen capture.
 3. A countdown runs for the duration set in extension preferences, then recording begins. The user expects both audio and video to be captured; this is a product expectation, not a claim that the current implementation guarantees it.
 4. The user may choose whether the floating recording indicator is visible. When visible, the expected indicator includes a timer and the previously described recording controls (cancel, pause/resume, stop, microphone selection, movable placement, and access to notes). When hidden, no in-recording controls are required; the user ends capture by stopping sharing of the captured Chrome tab. How notes are reached from the floating control when the indicator is hidden remains a design question.
 5. Cancel ends capture without another action. Pause temporarily stops capture and allows resuming. Stop ends the recording; the expected next result is storage in Sauri and transcription. Exact interactions where the indicator is hidden must follow the confirmed tab-sharing behavior, not assume an additional hidden control.
@@ -101,7 +101,7 @@ Login presentation may be styled for the portal, but this is a visual treatment 
 ### Confirmed product constraints
 
 - Sauri is an internal Summan platform, initially for the functional user, with future multi-user scale under consideration.
-- A recording can be added either by on-demand capture from the extension, whose current described journey selects a Google Meet browser tab, or by the distinct manual file-upload journey in §4.D. Manual upload does not start or imply extension capture.
+- A recording can be added either by on-demand capture from the extension, whose described journey selects a browser tab (Google Meet or any other), or by the distinct manual file-upload journey in §4.D. Manual upload does not start or imply extension capture.
 - The portal's login presentation may receive visual styling only; it must use existing authentication behavior and does not decide or change access policy or permissions.
 - Meeting recordings and derived material are sensitive. A manual upload does not itself define new consent, retention, deletion, or access rules. Do not expose secrets or transcript content through copied diagnostics; other diagnostic fields are not yet defined.
 - The user expects usable audio and video, transcription, and speaker attribution. Expectations do not represent technical verification or a guaranteed outcome.

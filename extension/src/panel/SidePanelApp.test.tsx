@@ -244,6 +244,8 @@ describe("current-tab shortcut and microphone permission", () => {
 // Real IndexedDB records; only browser APIs/network are synthetic. No worker
 // is imported, and no successful queue result or UI component is mocked.
 describe("T1.9: durable same-recording completion feedback", () => {
+  // Recovered records older than seven days count as acknowledged, so use current times.
+  const BASE = Date.now();
   let projection: { status: "idle"; sessionId?: string };
   let listeners: Array<(changes: Record<string, chrome.storage.StorageChange>, area: string) => void>;
 
@@ -251,7 +253,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
     return {
       sessionId: "session-618-current", meetingId: "meeting-618-current",
       recordingId: "recording-618-current", capturedTabId: 618, provider: "meet",
-      status, updatedAt: 100, ...overrides,
+      status, updatedAt: BASE + 100, ...overrides,
     };
   }
 
@@ -268,7 +270,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
     const regions = [...screen.queryAllByRole("status"), ...screen.queryAllByRole("alert")];
     expect(regions).toHaveLength(1);
     expect(within(regions[0]).getByText(expected)).toBeInTheDocument();
-    expect(regions[0]).toHaveTextContent(sessionId);
+    expect(regions[0].closest("[data-session-id]")).toHaveAttribute("data-session-id", sessionId);
     return regions[0];
   }
 
@@ -376,7 +378,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
     await act(async () => {
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(COMPLETION_STORE, "readwrite");
-        tx.objectStore(COMPLETION_STORE).put(record("upload_failed", { updatedAt: 400 }));
+        tx.objectStore(COMPLETION_STORE).put(record("upload_failed", { updatedAt: BASE + 400 }));
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = () => { db.close(); reject(tx.error); };
       });
@@ -389,7 +391,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
     await createCompletion(record("processing_succeeded"));
     await createCompletion(record("upload_failed", {
       sessionId: "session-618-next", meetingId: "meeting-618-next", recordingId: "recording-618-next",
-      capturedTabId: 619, updatedAt: 200,
+      capturedTabId: 619, updatedAt: BASE + 200,
     }));
     await mount();
     // Switch the public panel's selected recording exactly as storage does.
@@ -403,7 +405,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
     expect(screen.queryByText(/review ready/i)).not.toBeInTheDocument();
     await waitFor(() => {
       const region = outcome(new RegExp(copy.uploadFailed), "session-618-next");
-      expect(region).not.toHaveTextContent("session-618-current");
+      expect(region.closest("[data-session-id]")).not.toHaveAttribute("data-session-id", "session-618-current");
       expect(region).not.toHaveTextContent(new RegExp(`${copy.reviewReady}|${copy.reviewOpened}`));
     });
   });
@@ -413,14 +415,15 @@ describe("T1.9: durable same-recording completion feedback", () => {
       await createCompletion(record(status));
       await createCompletion(record("review_opened", {
         sessionId: "session-618-foreign", meetingId: "meeting-618-foreign", recordingId: "recording-618-foreign",
-        capturedTabId: 620, updatedAt: 300,
+        capturedTabId: 620, updatedAt: BASE + 300,
       }));
       await mount();
       // Require real feedback first so a blank panel cannot pass a negative test.
       const regions = [...screen.queryAllByRole("status"), ...screen.queryAllByRole("alert")];
       expect(regions).toHaveLength(1);
-      expect(regions[0]).toHaveTextContent("session-618-current");
-      expect(regions[0]).not.toHaveTextContent(/review.*ready|review.*opened|session-618-foreign/i);
+      expect(regions[0].closest("[data-session-id]")).toHaveAttribute("data-session-id", "session-618-current");
+      expect(regions[0]).not.toHaveTextContent(/review.*ready|review.*opened/i);
+      expect(regions[0].closest("[data-session-id]")).not.toHaveAttribute("data-session-id", "session-618-foreign");
     },
   );
 });

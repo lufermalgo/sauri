@@ -26,3 +26,10 @@ export function resolveProcessingStatus(
         !!source && typeof source === "object" && typeof source.url === "string" && !!source.url)));
   return transcriptReady && videoReady ? "processing_succeeded" : "processing_assets_unavailable";
 }
+
+/** The backend exposes the cause only for failed meetings; anything else is ignored. */
+export function readFailureCause(meeting: unknown): string | undefined {
+  if (!meeting || typeof meeting !== "object") return undefined;
+  const cause = (meeting as Record<string, unknown>).failure_cause;
+  return typeof cause === "string" && cause.trim() ? cause.trim() : undefined;
+}

@@ -150,7 +150,7 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
       },
       sidePanel: { setPanelBehavior: vi.fn(async () => undefined) },
       storage: { session: { get: vi.fn(async () => ({})) }, sync: { get: vi.fn(async () => ({})) } },
-      tabs: { onRemoved: { addListener: vi.fn() } },
+      tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() } },
     });
     await import("./background");
     expect(startup).toBeTypeOf("function");

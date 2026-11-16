@@ -8,7 +8,7 @@ Early development. The speech core (fast local transcription, speaker attributio
 
 ## Architecture
 
-- **Chrome extension** (Manifest V3): captures tab audio and video and uploads the recording.
+- **Chrome extension** (Manifest V3): captures the audio and video of any browser tab (Google Meet, other web meetings, or any other content) and uploads the recording.
 - **Web portal** (React, served by Nginx): upload, browse, play back and review recordings.
 - **API and workers** (FastAPI, Python): authentication, recording lifecycle and the processing pipeline.
 - **Docker services**: PostgreSQL, RabbitMQ and S3-compatible object storage.

@@ -34,7 +34,7 @@ function profile() {
       action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
       sidePanel: { setPanelBehavior: vi.fn(async () => undefined) },
       alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
-      tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 80 })), sendMessage: vi.fn() },
+      tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 80 })), sendMessage: vi.fn() },
       storage: {
         session: { get: vi.fn(async () => ({ sauriState: { status: "idle", paused: false } })), set: vi.fn(async () => undefined) },
         sync: { get: vi.fn(async () => ({})) },

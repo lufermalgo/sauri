@@ -51,7 +51,7 @@ async function worker(record: RecordingCompletion, crashAfterCreate = false, alr
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: { session: { get: vi.fn(async () => ({ sauriState: { status: "idle" } })), set: vi.fn(async () => undefined) },
       sync: { get: vi.fn(async () => ({})) } },
-    tabs: { onRemoved: { addListener: vi.fn() }, query, create, sendMessage: vi.fn(async () => undefined) },
+    tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query, create, sendMessage: vi.fn(async () => undefined) },
   });
   let acceptedAmbiguousClaim = false;
   async function drain() {

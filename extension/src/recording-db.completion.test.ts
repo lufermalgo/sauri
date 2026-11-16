@@ -1,6 +1,6 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { openDB, DB_NAME, createCompletion, getCompletion, claimCompletion, getCapturingCompletion, settleCapture, getPendingFinalizations, claimReviewLaunch, claimReviewCreate, markReviewOpened, getProcessingCompletions, setProcessingStatus, getPendingReviewLaunches } from "./recording-db";
+import { openDB, DB_NAME, createCompletion, getCompletion, claimCompletion, getCapturingCompletion, settleCapture, getPendingFinalizations, claimReviewLaunch, claimReviewCreate, markReviewOpened, getProcessingCompletions, setProcessingStatus, getPendingReviewLaunches, acknowledgeCompletion } from "./recording-db";
 import * as fc from "fast-check";
 
 beforeEach(() => { vi.stubGlobal("indexedDB", new IDBFactory()); });
@@ -121,4 +121,26 @@ it("closes its connection on versionchange so a later upgrade is not blocked", a
   });
   expect(() => db.transaction("chunks")).toThrow();
   upgraded.close();
+});
+
+it("stores the failure cause with a failed processing status and acknowledges without reordering", async () => {
+  const record = { sessionId: "failed", meetingId: "meeting", recordingId: "recording", provider: "meet" as const,
+    capturedTabId: 42, status: "upload_succeeded" as const, updatedAt: 1 };
+  await createCompletion(record);
+  await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing_failed", "no_speech_detected");
+  const failed = await getCompletion(record.sessionId);
+  expect(failed).toMatchObject({ status: "processing_failed", failureCause: "no_speech_detected" });
+  await acknowledgeCompletion(record.sessionId);
+  const acknowledged = await getCompletion(record.sessionId);
+  expect(acknowledged?.acknowledgedAt).toBeTypeOf("number");
+  expect(acknowledged?.updatedAt).toBe(failed?.updatedAt);
+  await acknowledgeCompletion("missing-session");
+});
+
+it("omits the failure cause for any other processing status", async () => {
+  const record = { sessionId: "ok", meetingId: "meeting", recordingId: "recording", provider: "meet" as const,
+    capturedTabId: 42, status: "upload_succeeded" as const, updatedAt: 1 };
+  await createCompletion(record);
+  await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing", "no_speech_detected");
+  expect((await getCompletion(record.sessionId))?.failureCause).toBeUndefined();
 });

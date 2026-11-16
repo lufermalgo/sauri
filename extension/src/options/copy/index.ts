@@ -1,6 +1,6 @@
 export const permissionCopy = {
   heading: "Autoriza el micrófono",
-  introduction: "Chrome pide permiso una sola vez. Así tu voz queda en la grabación junto con el audio de la reunión. Esta pestaña se abre sola cuando falta el permiso.",
+  introduction: "Chrome pide permiso una sola vez. Así tu voz queda en la grabación junto con el audio de la pestaña. Esta pestaña se abre sola cuando falta el permiso.",
   waiting: "1 · Esperando",
   waitingHeading: "Pulsa «Permitir» en el aviso de Chrome",
   waitingHelp: "El aviso aparece arriba a la izquierda, junto a la barra de direcciones. Elige el micrófono real de tu equipo, no uno «virtual».",

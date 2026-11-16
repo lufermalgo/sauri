@@ -21,10 +21,10 @@ describe("durable capture error feedback", () => {
     const panel = render(<RecordingCompletionStatus sessionId="capture-a" />);
     expect(await screen.findByRole("alert")).toHaveTextContent(copy.captureError);
     expect(screen.getByRole("alert")).toHaveTextContent(copy.captureErrorHelp);
-    expect(screen.getByRole("alert")).toHaveTextContent("capture-a");
+    expect(screen.getByRole("alert").closest("[data-session-id]")).toHaveAttribute("data-session-id", "capture-a");
     panel.unmount();
     render(<RecordingCompletionStatus sessionId="capture-a" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("capture-a");
+    expect((await screen.findByRole("alert")).closest("[data-session-id]")).toHaveAttribute("data-session-id", "capture-a");
   });
 
   it("does not show a previous recording's error for another session", async () => {
@@ -44,7 +44,7 @@ describe("durable capture error feedback", () => {
     render(<RecordingCompletionStatus sessionId="live" />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await act(async () => { await settleCapture("live", true); });
-    expect(await screen.findByRole("alert", {}, { timeout: 2500 })).toHaveTextContent("live");
+    expect((await screen.findByRole("alert", {}, { timeout: 2500 })).closest("[data-session-id]")).toHaveAttribute("data-session-id", "live");
   });
 
   it("reports unavailable persistence rather than a successful save", async () => {
