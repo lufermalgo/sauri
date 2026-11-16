@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Final
 
+import chatgpt_auth
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -232,4 +233,6 @@ async def engines_status() -> dict[str, Any]:
     return {"engines": list(engines), "secret_store": store.name}
 
 
-app.include_router(build_router(get_store, require_management_token))
+get_chatgpt_login = chatgpt_auth.login_getter(get_store)
+app.include_router(chatgpt_auth.build_router(get_chatgpt_login, require_management_token))
+app.include_router(build_router(get_store, require_management_token, get_chatgpt=get_chatgpt_login))

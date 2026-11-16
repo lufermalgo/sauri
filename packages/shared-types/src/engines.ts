@@ -111,6 +111,30 @@ export interface EngineProbeResult {
   json_schema_ok: boolean | null;
 }
 
+/** Why the last ChatGPT sign-in did not end connected. */
+export type EngineAccountError = "code_expired" | "access_denied" | "login_failed" | "session_expired";
+
+/** The code to type at the verification address while a sign-in is in progress. */
+export interface EngineAccountPending {
+  user_code: string;
+  verification_url: string;
+  expires_at: string;
+  interval_s: number;
+  slow_down: boolean;
+}
+
+/** The ChatGPT account behind a provider of kind `chatgpt_plan`. Never carries a token. */
+export interface EngineAccount {
+  state: "disconnected" | "pending" | "connected";
+  /** The account's email, or its id when the sign-in names no email. */
+  account: string | null;
+  plan: string | null;
+  pending: EngineAccountPending | null;
+  error: EngineAccountError | null;
+  /** Processes sent back to the local engine by disconnecting. */
+  reverted_processes: EngineProcess[];
+}
+
 export interface EngineModel {
   id: string;
   label: string | null;
@@ -170,15 +194,17 @@ export interface EnginePrivacyNotice {
 export interface EngineCapability {
   capability: EngineProcess;
   transport: string;
-  /** ISO date of the documentation check; pairs without one are not listed. */
-  verified_on: string;
+  /** ISO date of the check; null when the owner chose to offer the pair before it was verified live. */
+  verified_on: string | null;
 }
 
 export interface EngineKindInfo {
   kind: EngineProviderKind;
   default_base_url: string | null;
   key_required: boolean;
-  /** False while the kind cannot be linked yet (the ChatGPT plan waits for a legal check). */
+  /** "account": no key; the person signs in with their account from the card (the ChatGPT plan). */
+  auth: "key" | "account";
+  /** False while the kind cannot be linked. */
   linkable: boolean;
   /** Processes the kind can serve and that are verified; may be empty for a linkable kind. */
   capabilities: EngineCapability[];

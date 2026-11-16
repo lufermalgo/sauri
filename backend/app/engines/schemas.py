@@ -218,13 +218,16 @@ class NoticeOut(BaseModel):
 class CapabilityOut(BaseModel):
     capability: ProcessName
     transport: str
-    verified_on: str
+    # ISO date of the check; None = offered by the owner's decision but not verified live yet.
+    verified_on: str | None
 
 
 class KindOut(BaseModel):
     kind: ProviderKind
     default_base_url: str | None
     key_required: bool
+    # "account": no key, the user signs in with their account from the card (ChatGPT plan).
+    auth: Literal["key", "account"] = "key"
     linkable: bool
     capabilities: list[CapabilityOut]
 
@@ -232,6 +235,32 @@ class KindOut(BaseModel):
 class CapabilitiesOut(BaseModel):
     notice_versions: dict[ProcessName, int]
     kinds: list[KindOut]
+
+
+AccountState = Literal["disconnected", "pending", "connected"]
+# Why the last sign-in did not end connected (the portal words each one).
+ACCOUNT_ERRORS = frozenset({"code_expired", "access_denied", "login_failed", "session_expired"})
+
+
+class AccountPendingOut(BaseModel):
+    """A sign-in in progress: the code to type at the address."""
+
+    user_code: str = Field(min_length=1, max_length=32)
+    verification_url: str = Field(max_length=200)
+    expires_at: datetime
+    interval_s: int = Field(ge=1, le=60)
+    slow_down: bool
+
+
+class AccountOut(BaseModel):
+    """The ChatGPT-plan account of a provider: never carries a token."""
+
+    state: AccountState
+    account: str | None = Field(default=None, max_length=254)
+    plan: str | None = Field(default=None, max_length=32)
+    pending: AccountPendingOut | None = None
+    error: str | None = None
+    reverted_processes: list[ProcessName] = []
 
 
 class EngineStateOut(BaseModel):

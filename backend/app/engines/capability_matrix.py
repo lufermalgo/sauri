@@ -32,8 +32,10 @@ PROVIDER_KINDS: Final[tuple[str, ...]] = (
     "deepgram",
     "groq",
 )
-# Kinds that cannot be linked yet: the ChatGPT-plan sign-in waits for the owner's legal check (U9).
-BLOCKED_KINDS: Final[frozenset[str]] = frozenset({"chatgpt_plan"})
+# Kinds that cannot be linked (none today; the ChatGPT plan was one until the owner decided on 2026-11-16).
+BLOCKED_KINDS: Final[frozenset[str]] = frozenset()
+# Kinds that sign in with the user's account on the host instead of a key: no key is stored or asked for.
+ACCOUNT_KINDS: Final[frozenset[str]] = frozenset({"chatgpt_plan"})
 # Kinds that run on the user's own machine; they may use http on loopback and may work without a key.
 LOCAL_APP_KINDS: Final[frozenset[str]] = frozenset({"ollama", "lmstudio"})
 # The key is optional for these (a local or self-hosted server may not need one).
@@ -49,7 +51,7 @@ DEFAULT_BASE_URLS: Final[dict[str, str | None]] = {
     "ollama": "http://127.0.0.1:11434/v1",
     "lmstudio": "http://127.0.0.1:1234/v1",
     "openai_compatible": None,
-    "chatgpt_plan": None,
+    "chatgpt_plan": "https://chatgpt.com/backend-api/codex",
     "assemblyai": "https://api.assemblyai.com",
     "deepgram": "https://api.deepgram.com",
     "groq": "https://api.groq.com/openai/v1",
@@ -59,12 +61,14 @@ DEFAULT_BASE_URLS: Final[dict[str, str | None]] = {
 @dataclass(frozen=True)
 class Support:
     transport: Transport
-    verified_on: str | None  # ISO date of the documentation check, or None = NO VERIFICADO
+    verified_on: str | None  # ISO date of the documentation or real-key check, or None = NO VERIFICADO
     notes: str  # English evidence note: the source and what is still unchecked
+    # ISO date the owner decided to offer the pair although it is not verified (``verified_on`` stays None).
+    accepted_on: str | None = None
 
     @property
     def offered(self) -> bool:
-        return self.verified_on is not None
+        return self.verified_on is not None or self.accepted_on is not None
 
 
 _DOCS_CHECK = "2026-11-16"
@@ -117,7 +121,11 @@ _GEMINI = Support(
 _CODEX = Support(
     "chatgpt-responses",
     None,
-    "NO VERIFICADO: json_schema on the ChatGPT-plan route and the legal scope wait for U9.",
+    "NO VERIFICADO en vivo. Offered by the owner's decision of 2026-11-16, who accepts that this is not a "
+    "documented access path and may break: device-code sign-in with the user's ChatGPT account and the "
+    "Responses API at chatgpt.com/backend-api/codex, the way APX does it. Unchecked until the live acceptance: "
+    "text.format json_schema, the originator header value and the user agent.",
+    accepted_on="2026-11-16",
 )
 _GROQ_ASR = Support(
     "openai-audio",
@@ -173,6 +181,11 @@ MATRIX: Final[dict[str, dict[str, Support]]] = {
 def get_support(kind: str, capability: str) -> Support | None:
     """The matrix entry for the pair, or None when the pair is not supported at all."""
     return MATRIX.get(kind, {}).get(capability)
+
+
+def key_needed(kind: str) -> bool:
+    """True when the user must store a key for the kind (local servers and account sign-in need none)."""
+    return kind not in KEY_OPTIONAL_KINDS and kind not in ACCOUNT_KINDS
 
 
 def is_offered(kind: str, capability: str) -> bool:

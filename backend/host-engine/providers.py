@@ -24,6 +24,9 @@ from typing import Any, Final, cast
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sauri_engine_common.chatgpt_login import ALLOWED_HOSTS, ChatGptLogin
+from sauri_engine_common.external import chat_responses
+from sauri_engine_common.external.allowlist_http import AllowlistedHttp
 from sauri_engine_common.external.errors import ProviderError, classify
 from sauri_engine_common.external.safe_http import (
     CONNECT_TIMEOUT_S,
@@ -342,6 +345,7 @@ class ProviderService:
         self,
         *,
         http: SafeHttp | None = None,
+        chatgpt_http: SafeHttp | None = None,
         clock: Callable[[], float] = time.monotonic,
         local_apps: tuple[tuple[str, str, int], ...] = LOCAL_APPS,
         probe_timeout_s: float = PROBE_TIMEOUT_S,
@@ -350,6 +354,7 @@ class ProviderService:
         connect_timeout_s: float = CONNECT_TIMEOUT_S,
     ) -> None:
         self._http = http or SafeHttp()
+        self._chatgpt_http = chatgpt_http or AllowlistedHttp(ALLOWED_HOSTS)
         self._clock = clock
         self._local_apps = local_apps
         self._probe_timeout_s = probe_timeout_s
@@ -387,9 +392,17 @@ class ProviderService:
         _raise_for_status(result, key)
         return result
 
-    async def _list_models(self, body: _Target, key: str | None, timeout_s: float) -> list[ModelInfo]:
+    async def _list_models(
+        self, body: _Target, key: str | None, timeout_s: float, login: ChatGptLogin | None = None
+    ) -> list[ModelInfo]:
         if body.transport == "chatgpt-responses":
-            raise ProviderError("provider_unsupported")
+            if login is None:
+                raise ProviderError("provider_unsupported")
+            # Account sign-in, no key: the login owns the tokens and the call goes only to the allowed hosts.
+            plan = await chat_responses.list_models(
+                login, self._chatgpt_http, base_url=body.base_url, timeout_s=timeout_s
+            )
+            return [ModelInfo(model.id, model.name) for model in plan]
         _kind, url = _check_url(body)
         result = await self._call(
             "GET", url, key, body.transport, None, allow_local=body.allow_local, timeout_s=timeout_s
@@ -398,14 +411,16 @@ class ProviderService:
             return []  # the model is fixed by the provider; the call only proves the key works
         return parse_models(result.body)
 
-    async def probe(self, store: SecretStore, body: ProbeBody) -> dict[str, Any]:
+    async def probe(
+        self, store: SecretStore, body: ProbeBody, login: ChatGptLogin | None = None
+    ) -> dict[str, Any]:
         started = time.monotonic()
         result: dict[str, Any] = {"ok": False, "json_schema_ok": None}
         key: str | None = None
         try:
             record = await self._record(store, body)
             key = record.key if record is not None else None
-            models = await self._list_models(body, key, self._probe_timeout_s)
+            models = await self._list_models(body, key, self._probe_timeout_s, login)
         except ProviderError as exc:
             result.update(_failure(exc))
             result["latency_ms"] = round((time.monotonic() - started) * 1000)
@@ -438,23 +453,32 @@ class ProviderService:
             return {"json_schema_ok": True, "schema_model": model}
         return {"json_schema_ok": False, "schema_cause": "output_not_schema", "schema_model": model}
 
-    async def models(self, store: SecretStore, body: ModelsBody) -> dict[str, Any]:
+    async def models(
+        self, store: SecretStore, body: ModelsBody, login: ChatGptLogin | None = None
+    ) -> dict[str, Any]:
         cache_key = (body.kind, body.transport, body.base_url.rstrip("/"), body.secret_ref)
         entry = self._cache.get(cache_key)
         fresh = entry is not None and self._clock() - entry.stored_at < CACHE_TTL_S
         # A model app on this computer answers at once or not at all: it is asked every time.
-        cached = fresh and not body.refresh and body.kind not in LOCAL_APP_KINDS
+        # The plan's list depends on the signed-in account, so it is asked every time too.
+        uncached = body.kind in LOCAL_APP_KINDS or body.transport == "chatgpt-responses"
+        cached = fresh and not body.refresh and not uncached
         if not cached or entry is None:
             record = await self._record(store, body)
-            listed = await self._list_models(body, record.key if record else None, self._models_timeout_s)
+            listed = await self._list_models(
+                body, record.key if record else None, self._models_timeout_s, login
+            )
             entry = _CacheEntry(listed, self._clock(), datetime.now(UTC).isoformat(timespec="seconds"))
-            if body.kind not in LOCAL_APP_KINDS:
+            if not uncached:
                 self._remember(cache_key, entry)
         shown = filter_models(entry.models, body.capability)
         return {
             "models": [_public_model(model) for model in shown],
             "serves": served_processes(entry.models),
-            "starter": starter_model([model.id for model in shown]),
+            # The plan lists its own models in priority order: its first one is the everyday choice.
+            "starter": shown[0].id if shown and body.transport == "chatgpt-responses" else starter_model(
+                [model.id for model in shown]
+            ),
             "fetched_at": entry.fetched_at,
             "cached": cached,
         }
@@ -520,6 +544,7 @@ def build_router(
     get_store: Callable[[], Awaitable[SecretStore]],
     require_token: Callable[..., None],
     service: ProviderService | None = None,
+    get_chatgpt: Callable[[], Awaitable[ChatGptLogin]] | None = None,
 ) -> APIRouter:
     """Routes of this module; ``native_main`` passes its own store getter and management-token check."""
     svc = service or ProviderService()
@@ -528,13 +553,15 @@ def build_router(
     @router.post("/v1/providers/probe")
     async def probe(request: Request) -> dict[str, Any]:
         body = cast(ProbeBody, await _read_body(request, ProbeBody))
-        return await svc.probe(await get_store(), body)
+        return await svc.probe(await get_store(), body, await get_chatgpt() if get_chatgpt else None)
 
     @router.post("/v1/providers/models", response_model=None)
     async def models(request: Request) -> dict[str, Any] | JSONResponse:
         body = cast(ModelsBody, await _read_body(request, ModelsBody))
         try:
-            return await svc.models(await get_store(), body)
+            return await svc.models(
+                await get_store(), body, await get_chatgpt() if get_chatgpt else None
+            )
         except ProviderError as exc:
             logger.info("models ok=false class=%s cause=%s", exc.code, exc.reason)
             error = {"code": exc.code, "retryable": exc.retryable, "cause": exc.reason}

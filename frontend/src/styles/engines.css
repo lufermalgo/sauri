@@ -1006,3 +1006,25 @@
   border-radius: var(--ds-radius-xs);
   overflow-wrap: anywhere;
 }
+
+/* ChatGPT plan sign-in: the code to type and the button that opens the verification page */
+.engines-account {
+  align-items: flex-start;
+}
+
+.engines-account-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  text-decoration: none;
+  width: fit-content;
+}
+
+.engines-account-code {
+  margin: 0;
+  font-family: var(--ds-font-mono, ui-monospace, monospace);
+  font-size: var(--ds-text-xl, 1.5rem);
+  letter-spacing: 0.18em;
+  font-weight: 600;
+  user-select: all;
+}

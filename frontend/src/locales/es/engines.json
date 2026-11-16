@@ -38,8 +38,8 @@
       "description": "Tu propio servidor o uno de terceros con el mismo formato."
     },
     "chatgpt_plan": {
-      "label": "Plan de ChatGPT",
-      "description": "Todavía no disponible."
+      "label": "ChatGPT (plan)",
+      "description": "Usa tu plan de ChatGPT, sin clave de API."
     },
     "assemblyai": {
       "label": "AssemblyAI",
@@ -96,7 +96,14 @@
     "provider_key_missing": "Ese proveedor no tiene clave guardada. Agrégala en Motores y modelos.",
     "unsupported_provider": "Ese proveedor no puede servir este proceso.",
     "invalid_model": "El nombre del modelo no es válido.",
-    "host_unavailable": "El servicio de este equipo que guarda las claves y consulta a los proveedores no responde."
+    "host_unavailable": "El servicio de este equipo que guarda las claves y consulta a los proveedores no responde.",
+    "provider_account_missing": "ChatGPT no está conectado. Conéctalo en Motores y modelos.",
+    "base_url_fixed": "La dirección de este proveedor es fija.",
+    "provider_has_no_key": "Este proveedor no usa clave: se conecta con tu cuenta.",
+    "provider_has_no_account": "Este proveedor no se conecta con una cuenta.",
+    "provider_rate_limited": "OpenAI pidió esperar un momento. Inténtalo en un minuto.",
+    "provider_unavailable": "No pudimos contactar a OpenAI. Inténtalo de nuevo.",
+    "secret_unavailable": "No pudimos usar el llavero de este equipo."
   },
   "genericError": "No pudimos completar la acción. Inténtalo de nuevo.",
   "card": {
@@ -451,5 +458,51 @@
     "hardware_other": "{{chip}}, {{memory}} de memoria, {{count}} núcleos y {{free}} libres en disco.",
     "description": "Motor {{engine}}.",
     "descriptionMinRam": "Motor {{engine}}. Pide al menos {{minRam}} GB de memoria."
+  },
+  "account": {
+    "row": "Cuenta",
+    "connectedAs": "Conectado como {{who}}",
+    "notConnected": "Sin conectar",
+    "checking": "Revisando…",
+    "unconfigured": "Inicia sesión con tu cuenta de ChatGPT. No hace falta clave.",
+    "unofficial": "OpenAI no documenta esta vía de forma oficial y podría dejar de funcionar.",
+    "connect": "Conectar con ChatGPT",
+    "connectLabel": "Conectar «{{name}}» con ChatGPT",
+    "disconnect": "Desconectar",
+    "disconnectLabel": "Desconectar «{{name}}»",
+    "errors": {
+      "code_expired": "El código venció antes de que lo escribieras.",
+      "access_denied": "Se canceló desde ChatGPT.",
+      "login_failed": "No pudimos completar la conexión.",
+      "session_expired": "La sesión con ChatGPT venció. Conecta de nuevo."
+    },
+    "dialog": {
+      "title": "Conectar con ChatGPT",
+      "close": "Cerrar",
+      "starting": "Pidiendo el código…",
+      "openPage": "Abrir la página de ChatGPT",
+      "stepOpen": "1. Abre la página de ChatGPT e inicia sesión con tu cuenta.",
+      "stepCode": "2. Escribe este código allí:",
+      "expires": "El código vence a las {{time}}.",
+      "waiting": "Esperando que lo confirmes en ChatGPT…",
+      "slowDown": "OpenAI pidió ir más despacio; seguimos esperando.",
+      "connected": "Conectado como {{who}}.",
+      "startFailed": "No pudimos pedir el código.",
+      "retry": "Pedir otro código",
+      "cancel": "Cancelar",
+      "done": "Listo"
+    },
+    "disconnectDialog": {
+      "title": "Desconectar ChatGPT",
+      "body": "Sauri olvidará la sesión de «{{name}}» en este equipo. Podrás conectarla de nuevo cuando quieras.",
+      "reverts": "Estos procesos volverán a usar el motor local: {{list}}.",
+      "confirm": "Desconectar",
+      "cancel": "Cancelar"
+    },
+    "disconnected": "Desconectamos «{{name}}».",
+    "disconnectedReverted": "Desconectamos «{{name}}». Volvieron al motor local: {{list}}.",
+    "disconnectFailed": "No pudimos desconectar. No se cambió nada.",
+    "createFailed": "No pudimos preparar el proveedor.",
+    "notNeeded": "No hace falta clave: se conecta con tu cuenta."
   }
 }

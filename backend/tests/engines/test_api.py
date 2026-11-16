@@ -74,6 +74,10 @@ async def test_every_route_requires_authentication(api: AsyncClient) -> None:
         ("DELETE", "/providers/x"),
         ("PUT", "/providers/x/key"),
         ("DELETE", "/providers/x/key"),
+        ("GET", "/providers/x/account"),
+        ("POST", "/providers/x/account/start"),
+        ("POST", "/providers/x/account/poll"),
+        ("DELETE", "/providers/x/account"),
         ("POST", "/providers/x/test"),
         ("GET", "/providers/x/models?capability=summary"),
         ("GET", "/processes"),
@@ -93,11 +97,16 @@ async def test_capabilities_lists_only_offered_pairs(api: AsyncClient) -> None:
     assert [entry["capability"] for entry in kinds["anthropic"]["capabilities"]] == ["summary"]
     assert [entry["capability"] for entry in kinds["gemini"]["capabilities"]] == ["summary"]
     assert kinds["gemini"]["linkable"] is True
-    assert kinds["chatgpt_plan"]["linkable"] is False
+    assert kinds["chatgpt_plan"]["linkable"] is True and kinds["chatgpt_plan"]["auth"] == "account"
+    assert kinds["chatgpt_plan"]["key_required"] is False and kinds["openai"]["auth"] == "key"
+    assert [entry["capability"] for entry in kinds["chatgpt_plan"]["capabilities"]] == ["summary"]
+    # Offered by the owner's decision, not verified live: the date is empty, never invented.
+    assert kinds["chatgpt_plan"]["capabilities"][0]["verified_on"] is None
     assert kinds["ollama"]["key_required"] is False and kinds["openai"]["key_required"] is True
     for entry in kinds.values():
         for capability in entry["capabilities"]:
-            assert capability["verified_on"] and capability["capability"] != "chat"
+            assert capability["capability"] != "chat"
+            assert capability["verified_on"] or entry["kind"] == "chatgpt_plan"
 
 
 # --- Providers --------------------------------------------------------------------------------------
@@ -118,7 +127,8 @@ async def test_create_list_get_and_defaults(api: AsyncClient) -> None:
 async def test_creation_validates_kind_label_and_url(api: AsyncClient) -> None:
     headers = auth_headers()
     post = lambda body: api.post(f"{BASE}/providers", json=body, headers=headers)  # noqa: E731
-    assert (await post({"kind": "chatgpt_plan", "label": "x"})).json() == {"detail": "provider_kind_unavailable"}
+    other = {"kind": "chatgpt_plan", "label": "x", "base_url": "https://api.example.com/v1"}
+    assert (await post(other)).json() == {"detail": "base_url_fixed"}
     assert (await post({"kind": "openai_compatible", "label": "x"})).json() == {"detail": "base_url_required"}
     assert (await post({"kind": "nothing", "label": "x"})).status_code == 422
     assert (await post({"kind": "openai", "label": ""})).status_code == 422
@@ -840,3 +850,153 @@ async def test_the_management_token_never_reaches_a_response(api: AsyncClient, f
     fake_host.down = True
     texts.append((await api.get(f"{BASE}/status", headers=auth_headers())).text)
     assert all(MANAGEMENT_TOKEN not in text_ for text_ in texts)
+
+
+# --- ChatGPT plan: account sign-in, no key ---------------------------------------------------------
+
+CODE_LOGIN = {
+    "state": "pending",
+    "account": None,
+    "plan": None,
+    "error": None,
+    "pending": {
+        "user_code": "ABCD-1234",
+        "verification_url": "https://auth.openai.com/codex/device",
+        "expires_at": 1_800_000_900.0,
+        "interval_s": 5,
+        "slow_down": False,
+    },
+}
+CONNECTED = {"state": "connected", "account": "owner@example.com", "plan": "plus", "pending": None, "error": None}
+
+
+async def _plan(api: AsyncClient, user: str = OWNER) -> dict[str, Any]:
+    return await _create(api, "chatgpt_plan", label="ChatGPT (plan)", user=user)
+
+
+async def test_a_plan_provider_needs_no_key_and_has_a_fixed_address(api: AsyncClient) -> None:
+    plan = await _plan(api)
+    assert plan["base_url"] == "https://chatgpt.com/backend-api/codex"
+    assert (plan["status"], plan["key_set"]) == ("active", False)
+    headers = auth_headers()
+    key = await api.put(f"{BASE}/providers/{plan['id']}/key", json={"key": "sk-whatever-123456"}, headers=headers)
+    assert (key.status_code, key.json()) == (422, {"detail": "provider_has_no_key"})
+    moved = await api.patch(
+        f"{BASE}/providers/{plan['id']}", json={"base_url": "https://api.example.com/v1"}, headers=headers
+    )
+    assert (moved.status_code, moved.json()) == (422, {"detail": "base_url_fixed"})
+
+
+async def test_the_sign_in_runs_through_the_api_and_never_shows_a_token(api: AsyncClient, fake_host: FakeHost) -> None:
+    plan = await _plan(api)
+    headers, path = auth_headers(), f"{BASE}/providers/{plan['id']}/account"
+    assert (await api.get(path, headers=headers)).json()["state"] == "disconnected"
+    fake_host.account = CODE_LOGIN
+    started = await api.post(f"{path}/start", headers=headers)
+    assert started.status_code == 200 and started.headers["cache-control"] == "no-store"
+    pending = started.json()["pending"]
+    assert (pending["user_code"], pending["verification_url"]) == ("ABCD-1234", "https://auth.openai.com/codex/device")
+    assert pending["expires_at"].startswith("2027-01-15") and pending["interval_s"] == 5
+    fake_host.account = CONNECTED
+    done = (await api.post(f"{path}/poll", headers=headers)).json()
+    assert done == {
+        "state": "connected", "account": "owner@example.com", "plan": "plus", "pending": None, "error": None,
+        "reverted_processes": [],
+    }  # fmt: skip
+    assert [(m, p) for m, p, _ in fake_host.calls if "oauth" in p] == [
+        ("GET", "/v1/oauth/chatgpt/status"),
+        ("POST", "/v1/oauth/chatgpt/start"),
+        ("POST", "/v1/oauth/chatgpt/poll"),
+    ]
+
+
+async def test_only_what_the_contract_names_comes_back_from_the_host(api: AsyncClient, fake_host: FakeHost) -> None:
+    plan = await _plan(api)
+    fake_host.account = {
+        **CODE_LOGIN,
+        "access_token": "token-leak",
+        "pending": {
+            **CODE_LOGIN["pending"],
+            "verification_url": "https://evil.example.com/x",
+            "device_auth_id": "leak",
+        },
+    }
+    response = await api.get(f"{BASE}/providers/{plan['id']}/account", headers=auth_headers())
+    assert response.json()["state"] == "disconnected" and response.json()["pending"] is None  # not an OpenAI address
+    fake_host.account = {**CONNECTED, "access_token": "token-leak", "refresh_token": "leak"}
+    assert "leak" not in (await api.get(f"{BASE}/providers/{plan['id']}/account", headers=auth_headers())).text
+
+
+async def test_account_routes_refuse_other_kinds_and_other_owners(api: AsyncClient) -> None:
+    openai = await _create(api, "openai")
+    plan = await _plan(api)
+    refused = await api.get(f"{BASE}/providers/{openai['id']}/account", headers=auth_headers())
+    assert (refused.status_code, refused.json()) == (422, {"detail": "provider_has_no_account"})
+    stolen = await api.post(f"{BASE}/providers/{plan['id']}/account/start", headers=auth_headers(OTHER))
+    assert (stolen.status_code, stolen.json()) == (404, {"detail": "not_found"})
+
+
+async def test_a_rate_limited_start_is_a_429(api: AsyncClient, fake_host: FakeHost) -> None:
+    plan = await _plan(api)
+    fake_host.account_refusal = (429, "provider_rate_limited")
+    response = await api.post(f"{BASE}/providers/{plan['id']}/account/start", headers=auth_headers())
+    assert (response.status_code, response.json()) == (429, {"detail": "provider_rate_limited"})
+
+
+async def test_a_plan_can_only_be_chosen_while_connected_and_asks_for_the_notice(
+    api: AsyncClient, fake_host: FakeHost
+) -> None:
+    plan = await _plan(api)
+    refused = await _accepted(api, "summary", plan, "gpt-5")
+    assert (refused.status_code, refused.json()) == (422, {"detail": "provider_account_missing"})
+    fake_host.account = CONNECTED
+    no_notice = await _choose(api, "summary", plan["id"], "gpt-5")
+    assert (no_notice.status_code, no_notice.json()) == (422, {"detail": "notice_required"})
+    chosen = await _accepted(api, "summary", plan, "gpt-5")
+    assert chosen.status_code == 200 and chosen.json()["provider_kind"] == "chatgpt_plan"
+    for capability in ("transcription", "diarization"):
+        other = await _accepted(api, capability, plan, "gpt-5")
+        assert (other.status_code, other.json()) == (422, {"detail": "unsupported_provider"})
+
+
+async def test_the_notice_names_the_plan_and_the_unofficial_path(api: AsyncClient) -> None:
+    plan = await _plan(api)
+    notice = (
+        await api.get(f"{BASE}/processes/summary/notice?provider_id={plan['id']}", headers=auth_headers())
+    ).json()
+    text = " ".join(notice["paragraphs"])
+    assert notice["provider_name"] == "ChatGPT (plan)" and "https://chatgpt.com" in notice["address"]
+    assert "tu plan de ChatGPT" in text and "no documenta" in text
+
+
+async def test_disconnecting_forgets_the_account_and_sends_the_process_back_to_local(
+    api: AsyncClient, fake_host: FakeHost
+) -> None:
+    plan = await _plan(api)
+    fake_host.account = CONNECTED
+    assert (await _accepted(api, "summary", plan, "gpt-5")).status_code == 200
+    done = await api.delete(f"{BASE}/providers/{plan['id']}/account", headers=auth_headers())
+    assert done.status_code == 200 and done.json()["state"] == "disconnected"
+    assert done.json()["reverted_processes"] == ["summary"]
+    assert fake_host.account == {"state": "disconnected"}
+    processes = (await api.get(f"{BASE}/processes", headers=auth_headers())).json()
+    process = next(p for p in processes if p["capability"] == "summary")
+    assert process["provider_id"] is None and process["model"] == "local:default"
+
+
+async def test_plan_models_are_listed_with_what_they_serve(api: AsyncClient, fake_host: FakeHost) -> None:
+    plan = await _plan(api)
+    fake_host.models_answer = {
+        "models": [{"id": "gpt-5", "name": "GPT-5", "serves": ["summary"]}],
+        "serves": ["summary"],
+        "starter": "gpt-5",
+        "cached": False,
+        "fetched_at": "2026-11-16T10:00:00+00:00",
+    }
+    body = (
+        await api.get(f"{BASE}/providers/{plan['id']}/models?capability=summary", headers=auth_headers())
+    ).json()
+    assert (body["serves"], body["starter"]) == (["summary"], "gpt-5")
+    assert body["models"] == [{"id": "gpt-5", "label": "GPT-5", "serves": ["summary"]}]
+    payload = next(p for m, path, p in fake_host.calls if path == "/v1/providers/models")
+    assert payload["transport"] == "chatgpt-responses" and "secret_ref" not in payload

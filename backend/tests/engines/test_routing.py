@@ -101,6 +101,29 @@ async def test_the_route_carries_references_never_keys_and_a_bounded_attempt(eng
     assert route.timeouts.total_s == EXTERNAL_TOTAL_S
 
 
+async def test_the_chatgpt_plan_route_has_no_key_reference_and_falls_back_to_local_on_a_rate_limit(
+    engines_db: Factory,
+) -> None:
+    provider = await add_provider(
+        engines_db, kind="chatgpt_plan", base_url="https://chatgpt.com/backend-api/codex", secret_ref=None
+    )
+    await choose(engines_db, provider, "gpt-5", capability="summary")
+    await consent(engines_db, provider, capability="summary")
+    resolved = await resolve(engines_db, capability="summary")
+    route = resolved.route
+    assert route is not None and resolved.local_fallback
+    assert (route.kind, route.transport, route.model) == ("chatgpt_plan", "chatgpt-responses", "gpt-5")
+    assert route.secret_ref is None and route.base_url == "https://chatgpt.com/backend-api/codex"
+    calls = Calls({"external": failing("provider_rate_limited"), "local": lambda: ("llama.cpp", "qwen")})
+    value, provenance = await call_with_fallback(resolved, calls, identify)
+    assert provenance == Provenance("llama.cpp", "qwen", False, "provider_rate_limited") and value[0] == "llama.cpp"
+    # Not offered for the audio processes.
+    await choose(engines_db, provider, "gpt-5", capability="transcription")
+    with pytest.raises(ProviderError) as refused:
+        await resolve(engines_db, capability="transcription")
+    assert refused.value.code == "provider_unsupported"
+
+
 async def test_disabled_provider_and_unsupported_pair(engines_db: Factory) -> None:
     disabled = await add_provider(engines_db, enabled=False)
     await choose(engines_db, disabled)

@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import type { EngineKindInfo, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
+import type { EngineAccount, EngineKindInfo, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
 import { Button, Card, Icon, StatusBadge, useTooltip } from "../ui";
 import { isLocalApp, processList } from "./engineLabels";
 import { ProviderLogo } from "./ProviderLogo";
@@ -33,6 +33,16 @@ function IconAction({ icon, label, onClick, disabled }: { icon: LucideIcon; labe
   );
 }
 
+/** What the card knows of the ChatGPT account behind an account provider (asked once when the screen opens). */
+export type AccountView = { status: "loading" } | { status: "ready"; account: EngineAccount } | { status: "failed" };
+
+function accountLine(view: AccountView | undefined): string {
+  if (!view || view.status === "loading") return t("engines:account.checking");
+  if (view.status === "failed") return t("engines:account.notConnected");
+  if (view.account.state === "connected") return t("engines:account.connectedAs", { who: view.account.account ?? "ChatGPT" });
+  return view.account.error === "session_expired" ? t("engines:account.errors.session_expired") : t("engines:account.notConnected");
+}
+
 function keyLine(provider: EngineProvider, info: EngineKindInfo | undefined): string {
   if (provider.key_set) return provider.key_hint ? t("engines:card.keyShown", { hint: provider.key_hint }) : t("engines:card.keySaved");
   return info?.key_required === false && isLocalApp(provider.kind) ? t("engines:card.keyNotNeeded") : t("engines:card.keyNone");
@@ -41,6 +51,10 @@ function keyLine(provider: EngineProvider, info: EngineKindInfo | undefined): st
 /** What the provider can do for Sauri: read from the models it listed, or, when its type serves nothing yet, said so. */
 function servesLine(info: EngineKindInfo | undefined, catalog: CatalogEntry | undefined): string | null {
   if (info && info.capabilities.length === 0) return t("engines:card.servesNone");
+  // An account provider lists models only while signed in; the offered pairs still say what it is for.
+  if (info?.auth === "account" && catalog?.status !== "ready") {
+    return t("engines:card.serves", { list: processList(info.capabilities.map((entry) => entry.capability)) });
+  }
   if (catalog?.status !== "ready") return null;
   return catalog.serves.length > 0 ? t("engines:card.serves", { list: processList(catalog.serves) }) : t("engines:card.servesNone");
 }
@@ -58,14 +72,20 @@ interface ProviderCardProps {
   /** What the provider answered when asked for its models, if it was asked. */
   catalog: CatalogEntry | undefined;
   busy: boolean;
+  /** The ChatGPT account state, for providers that sign in with an account instead of a key. */
+  account?: AccountView;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
 }
 
 /** A provider the person linked: logo and name, state in words, address, key hint and model count,
  * the processes using it, and an on/off switch with edit and delete. Off providers are dimmed. */
-export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit, onDelete }: ProviderCardProps) {
+export function ProviderCard({
+  provider, kinds, catalog, busy, account, onToggle, onEdit, onDelete, onConnect, onDisconnect,
+}: ProviderCardProps) {
   const { t } = useT();
   const titleId = `engines-card-${provider.id}`;
   const switchLabelId = `${titleId}-switch`;
@@ -73,6 +93,8 @@ export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit,
   const kindLabel = t(`engines:kinds.${provider.kind}.label`);
   const dimmed = provider.status === "disabled";
   const serves = servesLine(info, catalog);
+  const byAccount = info?.auth === "account";
+  const connected = account?.status === "ready" && account.account.state === "connected";
 
   return (
     <Card className="engines-card" dimmed={dimmed} aria-labelledby={titleId}>
@@ -90,8 +112,10 @@ export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit,
           <dd className="engines-kv-mono" title={provider.base_url ?? undefined}>{provider.base_url ?? t("engines:card.noAddress")}</dd>
         </div>
         <div>
-          <dt>{t("engines:card.key")}</dt>
-          <dd className={provider.key_set ? "engines-kv-mono" : undefined}>{keyLine(provider, info)}</dd>
+          <dt>{byAccount ? t("engines:account.row") : t("engines:card.key")}</dt>
+          <dd className={provider.key_set && !byAccount ? "engines-kv-mono" : undefined}>
+            {byAccount ? accountLine(account) : keyLine(provider, info)}
+          </dd>
         </div>
         <div>
           <dt>{t("engines:card.models")}</dt>
@@ -100,7 +124,23 @@ export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit,
       </dl>
       {serves && <p className="engines-card-usage">{serves}</p>}
       <p className="engines-card-usage">{provider.used_by.length > 0 ? t("engines:card.usedBy", { list: processList(provider.used_by) }) : t("engines:card.unused")}</p>
+      {byAccount && <p className="engines-card-usage">{t("engines:account.unofficial")}</p>}
       <div className="engines-card-actions">
+        {byAccount && (
+          <Button
+            variant={connected ? "ghost" : "secondary"}
+            size="sm"
+            disabled={busy || !account || account.status === "loading"}
+            aria-label={
+              connected
+                ? t("engines:account.disconnectLabel", { name: provider.label })
+                : t("engines:account.connectLabel", { name: provider.label })
+            }
+            onClick={connected ? onDisconnect : onConnect}
+          >
+            {connected ? t("engines:account.disconnect") : t("engines:account.connect")}
+          </Button>
+        )}
         <span className="engines-card-switch">
           <button
             type="button"
@@ -127,17 +167,20 @@ export function ProviderCard({ provider, kinds, catalog, busy, onToggle, onEdit,
 interface UnconfiguredCardProps {
   info: EngineKindInfo;
   onConfigure: () => void;
+  disabled?: boolean;
 }
 
-function unconfiguredHelp(kind: EngineProviderKind): string {
+function unconfiguredHelp(kind: EngineProviderKind, byAccount: boolean): string {
+  if (byAccount) return `${t("engines:account.unconfigured")} ${t("engines:account.unofficial")}`;
   if (isLocalApp(kind)) return t("engines:card.unconfiguredLocal");
   return kind === "openai_compatible" ? t("engines:card.unconfiguredCompatible") : t("engines:card.unconfiguredKey");
 }
 
 /** A kind Sauri can link that the person has not set up: dashed and dimmed, with one way forward and
  * no delete, because there is nothing to delete yet. */
-export function UnconfiguredCard({ info, onConfigure }: UnconfiguredCardProps) {
+export function UnconfiguredCard({ info, onConfigure, disabled }: UnconfiguredCardProps) {
   const { t } = useT();
+  const byAccount = info.auth === "account";
   const titleId = `engines-kind-${info.kind}`;
   const label = t(`engines:kinds.${info.kind}.label`);
   return (
@@ -149,10 +192,16 @@ export function UnconfiguredCard({ info, onConfigure }: UnconfiguredCardProps) {
         </div>
         <StatusBadge tone="neutral">{t("engines:statuses.unconfigured")}</StatusBadge>
       </div>
-      <p className="engines-card-help">{unconfiguredHelp(info.kind)}</p>
+      <p className="engines-card-help">{unconfiguredHelp(info.kind, byAccount)}</p>
       <div className="engines-card-actions">
-        <Button variant="secondary" size="sm" aria-label={t("engines:card.configureLabel", { name: label })} onClick={onConfigure}>
-          {t("engines:card.configure")}
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-label={byAccount ? t("engines:account.connectLabel", { name: label }) : t("engines:card.configureLabel", { name: label })}
+          disabled={disabled}
+          onClick={onConfigure}
+        >
+          {byAccount ? t("engines:account.connect") : t("engines:card.configure")}
         </Button>
       </div>
     </Card>

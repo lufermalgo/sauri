@@ -23,7 +23,10 @@ from typing import Any
 import httpx
 import pytest
 import uvicorn
-from sauri_engine_common.external.errors import ERROR_CODES
+from sauri_engine_common import offered_providers
+from sauri_engine_common.chatgpt_login import ChatGptCredentials
+from sauri_engine_common.external.errors import ERROR_CODES, ProviderError
+from sauri_engine_common.external.safe_http import SafeHttp
 from sauri_engine_common.route import Route, RouteTimeouts, encode_route
 from sauri_engine_common.secrets import FileSecretStore, SecretRecord
 
@@ -33,6 +36,7 @@ from tests.llm_engine.external_support import (
     FakeProvider,
     Handler,
     anthropic_events,
+    data,
     failing,
     hang_after_first_event,
     hang_before_any_byte,
@@ -453,3 +457,109 @@ async def test_a_client_that_stays_gets_its_answer_while_the_watcher_runs(
         )
     assert response.status_code == 200
     assert fake.open_streams == 0
+
+
+# --- ChatGPT plan (account sign-in, no key) --------------------------------------------------------------------
+
+
+class _LoopbackHttp(SafeHttp):
+    """The gateway's allow-listed client is replaced by one that may reach the loopback fake."""
+
+    async def request(self, method: str, url: str, **kwargs: Any) -> Any:
+        return await super().request(method, url, **{**kwargs, "allow_local": True})
+
+    def open_stream(self, method: str, url: str, **kwargs: Any) -> Any:
+        return super().open_stream(method, url, **{**kwargs, "allow_local": True})
+
+
+class _Login:
+    def __init__(self) -> None:
+        self.state = "ok"
+
+    async def credentials(self) -> ChatGptCredentials:
+        if self.state == "signed_out":
+            raise ProviderError("provider_auth", reason="login_required")
+        return ChatGptCredentials("access-synthetic", "acct-test-0001")
+
+    async def renew(self) -> ChatGptCredentials:
+        return await self.credentials()
+
+
+@pytest.fixture
+def chatgpt_gateway(gateway: Gateway, monkeypatch: pytest.MonkeyPatch) -> tuple[Gateway, _Login]:
+    login = _Login()
+
+    async def get_login() -> _Login:
+        return login
+
+    monkeypatch.setattr(gateway.module, "chatgpt_http", _LoopbackHttp())
+    monkeypatch.setattr(gateway.module, "_chatgpt", get_login)
+    # The pair is offered by the registry step; here the gateway's own routing is what is under test.
+    monkeypatch.setitem(offered_providers.OFFERED, "chatgpt_plan", {"summary": "chatgpt-responses"})
+    return gateway, login
+
+
+def _chatgpt_route(gateway: Gateway, fake: FakeProvider, **extra: Any) -> str:
+    return gateway.route(
+        fake, kind="chatgpt_plan", transport="chatgpt-responses", suffix="/backend-api/codex", secret_ref=None, **extra
+    )
+
+
+def _responses_events(text: str) -> list[str]:
+    return [
+        data({"type": "response.created", "response": {"id": "resp_1", "model": "gpt-real"}}),
+        data({"type": "response.output_text.delta", "delta": text}),
+        data({"type": "response.completed", "response": {"status": "completed", "usage": {"input_tokens": 5}}}),
+    ]
+
+
+async def test_chatgpt_route_uses_the_account_and_never_reads_a_key(
+    chatgpt_gateway: tuple[Gateway, _Login], serve: Serve
+) -> None:
+    gateway, _login = chatgpt_gateway
+    fake = await serve(replying(_responses_events('{"title": "Weekly sync"}')))
+    response = await gateway.chat(_chatgpt_route(gateway, fake))
+    assert response.status_code == 200, response.text
+    assert json.loads(response.json()["choices"][0]["message"]["content"]) == {"title": "Weekly sync"}
+    sent = fake.seen[0]
+    assert sent.path == "/backend-api/codex/responses" and sent.headers["chatgpt-account-id"] == "acct-test-0001"
+    assert "access-synthetic" not in response.text and gateway.reads == []
+    assert gateway.module.server.process is None
+
+
+async def test_chatgpt_route_without_consent_is_refused_before_any_connection(
+    chatgpt_gateway: tuple[Gateway, _Login], serve: Serve
+) -> None:
+    gateway, _login = chatgpt_gateway
+    fake = await serve(replying(_responses_events("{}")))
+    response = await gateway.chat(_chatgpt_route(gateway, fake, consent=None))
+    assert_error(response, 403, "consent_missing", retryable=False)
+    assert fake.seen == []
+
+
+async def test_chatgpt_route_with_a_signed_out_account_is_an_auth_error_the_worker_can_fall_back_from(
+    chatgpt_gateway: tuple[Gateway, _Login], serve: Serve
+) -> None:
+    gateway, login = chatgpt_gateway
+    login.state = "signed_out"
+    fake = await serve(replying(_responses_events("{}")))
+    response = await gateway.chat(_chatgpt_route(gateway, fake))
+    assert_error(response, 502, "provider_auth", retryable=False)
+    assert fake.seen == []
+
+
+async def test_chatgpt_route_maps_a_rate_limit_to_429_with_retry_after(
+    chatgpt_gateway: tuple[Gateway, _Login], serve: Serve
+) -> None:
+    gateway, _login = chatgpt_gateway
+    fake = await serve(failing(429, {"error": {"type": "rate_limit_exceeded"}}, {"Retry-After": "30"}))
+    response = await gateway.chat(_chatgpt_route(gateway, fake))
+    assert_error(response, 429, "provider_rate_limited", retryable=True, retry_after=30)
+
+
+async def test_the_gateway_client_for_the_plan_only_reaches_its_two_hosts(gateway: Gateway) -> None:
+    with pytest.raises(ProviderError) as caught:
+        await gateway.module.chatgpt_http.request(
+            "GET", "https://evil.example.com/", headers={}, allow_local=False, total_timeout_s=2
+        )
+    assert caught.value.reason == "host_not_allowed"

@@ -16,6 +16,7 @@ OFFERED: Final[dict[str, dict[str, Transport]]] = {
     "openai": {"summary": "openai-chat"},
     "anthropic": {"summary": "anthropic-messages"},
     "gemini": {"summary": "openai-chat"},
+    "chatgpt_plan": {"summary": "chatgpt-responses"},
     "openrouter": {"summary": "openai-chat"},
     "lmstudio": {"summary": "openai-chat"},
     "openai_compatible": {"summary": "openai-chat"},

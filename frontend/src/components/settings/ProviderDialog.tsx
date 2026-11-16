@@ -59,7 +59,8 @@ interface ProviderDialogProps {
 export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged, onClose }: ProviderDialogProps) {
   const { t } = useT();
   const ids = useId();
-  const linkable = kinds.filter((info) => info.linkable);
+  // An account kind is linked from its own card («Conectar con ChatGPT»), not from the key-and-address form.
+  const linkable = kinds.filter((info) => info.linkable && info.auth !== "account");
   const [current, setCurrent] = useState<EngineProvider | null>(provider);
   const [kind, setKind] = useState<EngineProviderKind>(provider?.kind ?? initialKind ?? linkable[0]?.kind ?? "openai");
   const info = kinds.find((candidate) => candidate.kind === kind);
@@ -76,6 +77,7 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
 
   const keyRequired = info?.key_required ?? true;
   const localApp = isLocalApp(kind);
+  const byAccount = info?.auth === "account";
   const servedBy = info?.capabilities.map((entry) => entry.capability) ?? [];
 
   /** What is wrong with each field right now; empty fields are reported once the person has left them. */
@@ -149,7 +151,9 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
       return;
     }
 
-    if (!saved.key_set && keyRequired) {
+    if (byAccount) {
+      setOutcome({ tone: "info", text: t("engines:account.notNeeded") });
+    } else if (!saved.key_set && keyRequired) {
       setOutcome({ tone: "info", text: t("engines:dialog.savedNoKey") });
     } else {
       try {
@@ -241,6 +245,7 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
           />
           <span id={`${ids}-name-help`} className="settings-help">{t("engines:dialog.nameHelp")}</span>
         </div>
+        {!byAccount && (
         <div className="engines-field">
           <TextField
             label={t("engines:dialog.baseUrl")}
@@ -257,8 +262,9 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
           />
           <span id={`${ids}-url-help`} className="settings-help">{urlHelp}</span>
         </div>
+        )}
 
-        {!localApp && (
+        {!localApp && !byAccount && (
           <div className="engines-field">
             <TextField
               label={t("engines:dialog.key")}

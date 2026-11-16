@@ -12,6 +12,7 @@ from app.engines import service
 from app.engines.capability_matrix import ProcessName
 from app.engines.host_client import HostClient, get_host_client
 from app.engines.schemas import (
+    AccountOut,
     CapabilitiesOut,
     KeyIn,
     KeyOut,
@@ -100,6 +101,38 @@ async def delete_key(
     return await service.delete_key(session, host, user.id, provider_id)
 
 
+@router.get("/providers/{provider_id}/account")
+async def get_account(
+    provider_id: ResourceId, session: Session, user: AuthorizedUser, host: Host, response: Response
+) -> AccountOut:
+    response.headers["Cache-Control"] = "no-store"
+    return await service.account_status(session, host, user.id, provider_id)
+
+
+@router.post("/providers/{provider_id}/account/start")
+async def start_account(
+    provider_id: ResourceId, session: Session, user: AuthorizedUser, host: Host, response: Response
+) -> AccountOut:
+    response.headers["Cache-Control"] = "no-store"
+    return await service.account_start(session, host, user.id, provider_id)
+
+
+@router.post("/providers/{provider_id}/account/poll")
+async def poll_account(
+    provider_id: ResourceId, session: Session, user: AuthorizedUser, host: Host, response: Response
+) -> AccountOut:
+    response.headers["Cache-Control"] = "no-store"
+    return await service.account_poll(session, host, user.id, provider_id)
+
+
+@router.delete("/providers/{provider_id}/account")
+async def delete_account(
+    provider_id: ResourceId, session: Session, user: AuthorizedUser, host: Host, response: Response
+) -> AccountOut:
+    response.headers["Cache-Control"] = "no-store"
+    return await service.account_disconnect(session, host, user.id, provider_id)
+
+
 @router.post("/providers/{provider_id}/test")
 async def test_provider(
     provider_id: ResourceId, session: Session, user: AuthorizedUser, host: Host, data: ProbeIn | None = None
@@ -133,8 +166,10 @@ async def get_notice(
 
 
 @router.put("/processes/{capability}")
-async def put_process(capability: ProcessName, data: ProcessIn, session: Session, user: AuthorizedUser) -> ProcessOut:
-    return await service.put_process(session, user.id, capability, data)
+async def put_process(
+    capability: ProcessName, data: ProcessIn, session: Session, user: AuthorizedUser, host: Host
+) -> ProcessOut:
+    return await service.put_process(session, user.id, capability, data, host)
 
 
 @router.get("/status")

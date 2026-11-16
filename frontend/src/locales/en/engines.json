@@ -16,7 +16,7 @@
     "ollama": { "label": "Ollama", "description": "Program that runs models on this computer." },
     "lmstudio": { "label": "LM Studio", "description": "Program that runs models on this computer." },
     "openai_compatible": { "label": "OpenAI-compatible server", "description": "Your own server, or a third party's, with the same format." },
-    "chatgpt_plan": { "label": "ChatGPT plan", "description": "Not available yet." },
+    "chatgpt_plan": { "label": "ChatGPT (plan)", "description": "Uses your ChatGPT plan, with no API key." },
     "assemblyai": { "label": "AssemblyAI", "description": "Cloud service with your API key." },
     "deepgram": { "label": "Deepgram", "description": "Cloud service with your API key." },
     "groq": { "label": "Groq", "description": "Cloud service with your API key." }
@@ -63,9 +63,62 @@
     "provider_key_missing": "That provider has no saved key. Add it in Engines and models.",
     "unsupported_provider": "That provider can't serve this process.",
     "invalid_model": "The model name isn't valid.",
-    "host_unavailable": "The service on this computer that stores keys and queries providers isn't responding."
+    "host_unavailable": "The service on this computer that stores keys and queries providers isn't responding.",
+    "provider_account_missing": "ChatGPT is not connected. Connect it in Engines and models.",
+    "base_url_fixed": "This provider's address is fixed.",
+    "provider_has_no_key": "This provider uses no key: it connects with your account.",
+    "provider_has_no_account": "This provider does not connect with an account.",
+    "provider_rate_limited": "OpenAI asked to wait a moment. Try again in a minute.",
+    "provider_unavailable": "We could not reach OpenAI. Try again.",
+    "secret_unavailable": "We could not use this computer's keychain."
   },
   "genericError": "We couldn't complete the action. Try again.",
+  "account": {
+    "row": "Account",
+    "connectedAs": "Connected as {{who}}",
+    "notConnected": "Not connected",
+    "checking": "Checking…",
+    "unconfigured": "Sign in with your ChatGPT account. No key is needed.",
+    "unofficial": "OpenAI does not document this route officially and it could stop working.",
+    "connect": "Connect with ChatGPT",
+    "connectLabel": "Connect “{{name}}” with ChatGPT",
+    "disconnect": "Disconnect",
+    "disconnectLabel": "Disconnect “{{name}}”",
+    "errors": {
+      "code_expired": "The code expired before you typed it.",
+      "access_denied": "It was cancelled from ChatGPT.",
+      "login_failed": "We could not complete the connection.",
+      "session_expired": "The ChatGPT session expired. Connect again."
+    },
+    "dialog": {
+      "title": "Connect with ChatGPT",
+      "close": "Close",
+      "starting": "Asking for the code…",
+      "openPage": "Open the ChatGPT page",
+      "stepOpen": "1. Open the ChatGPT page and sign in with your account.",
+      "stepCode": "2. Type this code there:",
+      "expires": "The code expires at {{time}}.",
+      "waiting": "Waiting for you to confirm in ChatGPT…",
+      "slowDown": "OpenAI asked to go slower; we keep waiting.",
+      "connected": "Connected as {{who}}.",
+      "startFailed": "We could not ask for the code.",
+      "retry": "Ask for another code",
+      "cancel": "Cancel",
+      "done": "Done"
+    },
+    "disconnectDialog": {
+      "title": "Disconnect ChatGPT",
+      "body": "Sauri will forget the “{{name}}” session on this computer. You can connect it again whenever you like.",
+      "reverts": "These processes will go back to the local engine: {{list}}.",
+      "confirm": "Disconnect",
+      "cancel": "Cancel"
+    },
+    "disconnected": "We disconnected “{{name}}”.",
+    "disconnectedReverted": "We disconnected “{{name}}”. Back on the local engine: {{list}}.",
+    "disconnectFailed": "We could not disconnect. Nothing was changed.",
+    "createFailed": "We could not set up the provider.",
+    "notNeeded": "No key needed: it connects with your account."
+  },
   "card": {
     "usedBy": "Used in: {{list}}",
     "unused": "No processes assigned",

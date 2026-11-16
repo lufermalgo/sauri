@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EngineKindInfo, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
 import {
+  createEngineProvider,
   deleteEngineProvider,
+  disconnectEngineAccount,
+  getEngineAccount,
   getEngineCapabilities,
   listEngineProviders,
   updateEngineProvider,
 } from "../../api";
 import { Button, ConfirmDialog, Skeleton } from "../ui";
 import { processList } from "./engineLabels";
+import { AccountDialog } from "./AccountDialog";
 import { ModelsCatalog } from "./ModelsCatalog";
 import { ProviderDialog, describeEngineError } from "./ProviderDialog";
 import { AddProviderCard, ProviderCard, UnconfiguredCard } from "./ProviderCard";
+import type { AccountView } from "./ProviderCard";
 import { useModelCatalogs } from "./useModelCatalogs";
 import "../../styles/engines.css";
 import { useT } from "../../i18n";
@@ -37,6 +42,9 @@ export function EnginesSettings() {
   const [turningOff, setTurningOff] = useState<EngineProvider | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
+  const [accounts, setAccounts] = useState<Record<string, AccountView>>({});
+  const [signingIn, setSigningIn] = useState<EngineProvider | null>(null);
+  const [disconnecting, setDisconnecting] = useState<EngineProvider | null>(null);
   const grid = useRef<HTMLUListElement>(null);
 
   const fetchAll = useCallback(() => {
@@ -54,6 +62,26 @@ export function EnginesSettings() {
   useEffect(() => fetchAll(), [fetchAll]);
 
   const ready = load.status === "ready";
+
+  /** Asks the API who is signed in for a provider that uses an account (never a token, only the label). */
+  const loadAccount = useCallback((providerId: string) => {
+    setAccounts((previous) => ({ ...previous, [providerId]: { status: "loading" } }));
+    getEngineAccount(providerId).then(
+      (account) => setAccounts((previous) => ({ ...previous, [providerId]: { status: "ready", account } })),
+      () => setAccounts((previous) => ({ ...previous, [providerId]: { status: "failed" } })),
+    );
+  }, []);
+
+  const accountIds = ready
+    ? load.providers
+        .filter((provider) => load.kinds.find((info) => info.kind === provider.kind)?.auth === "account")
+        .map((provider) => provider.id)
+        .join("|")
+    : "";
+  useEffect(() => {
+    accountIds.split("|").filter(Boolean).forEach(loadAccount);
+  }, [accountIds, loadAccount]);
+
   const catalogs = useModelCatalogs(ready ? load.providers : [], ready ? load.kinds : [], ready);
 
   /** Replaces a provider with the version the API returned, or appends a new one. */
@@ -123,6 +151,56 @@ export function EnginesSettings() {
     }
   }
 
+  /** The card of an account kind creates its provider (fixed name and address) and opens the sign-in. */
+  async function connectNew(info: EngineKindInfo) {
+    setPending(info.kind);
+    setNotice(null);
+    try {
+      const created = await createEngineProvider({
+        kind: info.kind,
+        label: t(`engines:kinds.${info.kind}.label`),
+        base_url: info.default_base_url ?? undefined,
+        enabled: true,
+      });
+      providerChanged(created);
+      setSigningIn(created);
+    } catch (error) {
+      setNotice({ kind: "error", text: `${t("engines:account.createFailed")} ${describeEngineError(error)}` });
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function confirmDisconnect(provider: EngineProvider) {
+    setDisconnecting(null);
+    setPending(provider.id);
+    setNotice(null);
+    try {
+      const done = await disconnectEngineAccount(provider.id);
+      const { reverted_processes: reverted } = done;
+      setAccounts((previous) => ({ ...previous, [provider.id]: { status: "ready", account: done } }));
+      setLoad((previous) =>
+        previous.status === "ready"
+          ? {
+              ...previous,
+              providers: previous.providers.map((item) =>
+                item.id === provider.id ? { ...item, used_by: item.used_by.filter((name) => !reverted.includes(name)) } : item,
+              ),
+            }
+          : previous);
+      setNotice({
+        kind: "success",
+        text: reverted.length > 0
+          ? t("engines:account.disconnectedReverted", { name: provider.label, list: processList(reverted) })
+          : t("engines:account.disconnected", { name: provider.label }),
+      });
+    } catch (error) {
+      setNotice({ kind: "error", text: `${t("engines:account.disconnectFailed")} ${describeEngineError(error)}` });
+    } finally {
+      setPending(null);
+    }
+  }
+
   const providers = ready ? [...load.providers].sort((a, b) => STATE_ORDER[a.status] - STATE_ORDER[b.status]) : [];
   const notSetUp = ready
     ? load.kinds.filter((info) => info.linkable && !load.providers.some((provider) => provider.kind === info.kind))
@@ -167,15 +245,22 @@ export function EnginesSettings() {
                   kinds={load.kinds}
                   catalog={catalogs.entries[provider.id]}
                   busy={pending === provider.id}
+                  account={accounts[provider.id]}
                   onToggle={(enabled) => toggle(provider, enabled)}
                   onEdit={() => setDialog({ provider })}
                   onDelete={() => setDeleting(provider)}
+                  onConnect={() => setSigningIn(provider)}
+                  onDisconnect={() => setDisconnecting(provider)}
                 />
               </li>
             ))}
             {notSetUp.map((info) => (
               <li key={info.kind} className="engines-grid-item">
-                <UnconfiguredCard info={info} onConfigure={() => setDialog({ provider: null, kind: info.kind })} />
+                <UnconfiguredCard
+                  info={info}
+                  disabled={pending === info.kind}
+                  onConfigure={() => (info.auth === "account" ? void connectNew(info) : setDialog({ provider: null, kind: info.kind }))}
+                />
               </li>
             ))}
             <li className="engines-grid-item">
@@ -202,6 +287,30 @@ export function EnginesSettings() {
           linked={load.providers}
           onChanged={providerChanged}
           onClose={() => setDialog(null)}
+        />
+      )}
+      {signingIn && (
+        <AccountDialog
+          provider={signingIn}
+          onConnected={() => loadAccount(signingIn.id)}
+          onClose={() => setSigningIn(null)}
+        />
+      )}
+      {disconnecting && (
+        <ConfirmDialog
+          title={t("engines:account.disconnectDialog.title")}
+          body={
+            <>
+              <p>{t("engines:account.disconnectDialog.body", { name: disconnecting.label })}</p>
+              {disconnecting.used_by.length > 0 && (
+                <p>{t("engines:account.disconnectDialog.reverts", { list: processList(disconnecting.used_by) })}</p>
+              )}
+            </>
+          }
+          confirmLabel={t("engines:account.disconnectDialog.confirm")}
+          cancelLabel={t("engines:account.disconnectDialog.cancel")}
+          onConfirm={() => void confirmDisconnect(disconnecting)}
+          onCancel={() => setDisconnecting(null)}
         />
       )}
       {turningOff && (
