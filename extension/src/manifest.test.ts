@@ -27,3 +27,23 @@ describe("manifest.json — migration to chrome.sidePanel (Req. 1.2)", () => {
     expect(manifest.options_page.length).toBeGreaterThan(0);
   });
 });
+
+describe("manifest.json — recording any browser tab with least privilege", () => {
+  it("describes a generic tab recorder, not a Meet-only tool", () => {
+    expect(manifest.description).toMatch(/cualquier pesta/);
+    expect(manifest.description).not.toMatch(/meet/i);
+    expect(manifest.action.default_title).not.toMatch(/meet/i);
+  });
+
+  it("adds no host permission: only Meet (static script) and the local backend", () => {
+    expect(manifest.host_permissions).toEqual(["https://meet.google.com/*", "http://localhost:8000/*"]);
+    expect(manifest.optional_host_permissions).toBeUndefined();
+    expect(manifest.permissions).not.toContain("<all_urls>");
+  });
+
+  it("keeps the static content script on Meet only and injects other tabs on demand", () => {
+    expect(manifest.content_scripts).toEqual([{ matches: ["https://meet.google.com/*"], js: ["src/content.ts"] }]);
+    // On-demand injection into the recorded tab relies on these two, granted by the user's gesture.
+    expect(manifest.permissions).toEqual(expect.arrayContaining(["scripting", "activeTab", "tabs"]));
+  });
+});

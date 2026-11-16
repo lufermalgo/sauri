@@ -2,9 +2,12 @@
 export const copy = {
   notice: 'Esta reunión se está grabando con Sauri.', // spanish-sample-data
   noticeHint: 'Si no quieres aparecer, avisa al anfitrión.', // spanish-sample-data
+  tabNotice: 'Esta pestaña se está grabando con Sauri.', // spanish-sample-data
+  tabNoticeHint: 'Si grabas a otras personas, avísales.', // spanish-sample-data
   close: 'Cerrar aviso',
   countdown: 'La grabación empezará en', // spanish-sample-data
   countdownHint: 'Todos ven el aviso de que se está grabando.', // spanish-sample-data
+  tabCountdownHint: 'Se grabará el contenido de esta pestaña.', // spanish-sample-data
   cancel: 'Cancelar',
   cancelRecording: 'Cancelar grabación', // spanish-sample-data
   confirm: '¿Cancelar la grabación?', // spanish-sample-data

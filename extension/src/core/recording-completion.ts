@@ -1,8 +1,11 @@
 /** Pure, provider-neutral decision; persistence must claim the result atomically. */
 export type CompletionTrigger = "stop" | "captured-tab-close" | "meeting-ended";
 
+/** Where a capture came from: a Google Meet tab, a Teams tab, or any other web tab. */
+export type CaptureProvider = "meet" | "teams" | "tab";
+
 export interface CaptureHandle {
-  provider: "meet" | "teams";
+  provider: CaptureProvider;
   capturedTabId: number;
   sessionId: string;
 }
@@ -16,7 +19,7 @@ export function matchesCaptureHandle(saved: CaptureHandle, projected: CaptureHan
 
 export interface CompletionClaim {
   sessionId: string;
-  provider: "meet" | "teams";
+  provider: CaptureProvider;
   completionClaimed: boolean;
 }
 

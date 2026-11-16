@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
-import { applyCaptureEvent, newNoteButtonEnabled, videoPresenceFromStream } from "./capture";
+import { applyCaptureEvent, canCaptureCurrentTab, isMeetUrl, newNoteButtonEnabled, videoPresenceFromStream } from "./capture";
 import type { CaptureState, CaptureEvent } from "./types";
 
 const STATES: CaptureState[] = ["idle", "recording", "stopping"];
@@ -81,5 +81,35 @@ describe("newNoteButtonEnabled", () => {
       }),
       { numRuns: 100 }
     );
+  });
+});
+
+describe("canCaptureCurrentTab", () => {
+  it.each([
+    "https://meet.google.com/abc-defg-hij",
+    "https://example.com/watch?v=1",
+    "https://zoom.us/wc/join/123",
+    "https://teams.microsoft.com/v2/",
+    "http://localhost:3000/lecture",
+    "https://chrome.google.com/other",
+  ])("accepts the ordinary web tab %s whatever the site", url => {
+    expect(canCaptureCurrentTab(url)).toBe(true);
+  });
+
+  it.each([
+    undefined, "", "not a url", "chrome://extensions", "chrome-extension://abc/page.html", "about:blank",
+    "file:///Users/me/talk.html", "data:text/html,hi", "view-source:https://example.com", "blob:https://example.com/1",
+    "https://chromewebstore.google.com/detail/x", "https://chrome.google.com/webstore/detail/x",
+  ])("rejects the technically uncapturable %s", url => {
+    expect(canCaptureCurrentTab(url)).toBe(false);
+  });
+});
+
+describe("isMeetUrl", () => {
+  it("recognizes Google Meet tabs only", () => {
+    expect(isMeetUrl("https://meet.google.com/abc-defg-hij")).toBe(true);
+    for (const url of [undefined, "", "http://meet.google.com/x", "https://meet.google.com.evil.example/", "https://example.com/meet.google.com/"]) {
+      expect(isMeetUrl(url)).toBe(false);
+    }
   });
 });

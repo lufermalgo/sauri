@@ -93,6 +93,7 @@ async function setup() {
     },
     tabs: {
       onRemoved: { addListener: (listener: RemovedListener) => { onRemoved = listener; } },
+      onUpdated: { addListener: vi.fn() },
       query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined),
     },
   });

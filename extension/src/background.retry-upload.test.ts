@@ -28,7 +28,7 @@ async function setup() {
     action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined) },
     alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
-    tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 80 })) },
+    tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 80 })) },
     storage: {
       session: { get: vi.fn(async () => ({ sauriState: { status: "idle", paused: false } })) },
       sync: { get: vi.fn(async () => ({})) },

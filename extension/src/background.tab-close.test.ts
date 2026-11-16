@@ -46,6 +46,7 @@ async function loadBackgroundWithHandles(handles: Handle[], projected?: Handle, 
     },
     tabs: {
       onRemoved: { addListener: (listener: TabRemovedListener) => { tabRemovedListener = listener; } },
+      onUpdated: { addListener: vi.fn() },
       query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined),
     },
   });

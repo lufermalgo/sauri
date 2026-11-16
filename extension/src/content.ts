@@ -1,46 +1,11 @@
 // Content script injected into https://meet.google.com/*
 // Detects the active meeting via ARIA attributes (es/en), notifies the background service worker.
-// Shows a recording consent banner in Shadow DOM (Recording_Notice).
+// Hosts the recording overlay (consent notice, countdown, floating controls) in Shadow DOM.
+// Any other recorded tab receives the same overlay through overlay/entry.ts instead.
 
-import { cancelCountdown, hideRecordingUI, showCountdown, showNotice, syncRecordingUI, type RecordingUI } from "./overlay/recording";
+import { installOverlayMessaging } from "./overlay/messaging";
 
-function showConsentBanner(): void {
-  if (showNotice()) {
-    void chrome.runtime.sendMessage({ type: "notification-emitted", emittedAt: new Date().toISOString() });
-  }
-}
-
-chrome.runtime.onMessage.addListener(
-  (message: { type: string; seconds?: number; requestId?: string; state?: RecordingUI }, _sender, sendResponse) => {
-    if (message.type === "show-consent-banner") {
-      showConsentBanner();
-      sendResponse({ ok: true });
-    } else if (message.type === "hide-consent-banner") {
-      hideRecordingUI();
-      sendResponse({ ok: true });
-    } else if (message.type === "show-countdown" && message.seconds && message.requestId) {
-      void (async () => { sendResponse(await showCountdown(message.seconds!, message.requestId!)); })();
-      return true;
-    } else if (message.type === "cancel-countdown") {
-      cancelCountdown();
-      sendResponse({ ok: true });
-    } else if (message.type === "recording-ui" && message.state) {
-      syncRecordingUI(message.state);
-      sendResponse({ ok: true });
-    } else if (message.type === "get-current-title") {
-      sendResponse({ title: extractMeetingTitle() });
-    }
-    return false;
-  }
-);
-
-// A reloaded Meet tab can restore controls without reading extension session storage.
-void (async () => {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "get-recording-ui" });
-    if (response?.state) { showConsentBanner(); syncRecordingUI(response.state); }
-  } catch { /* An older extension worker may not support UI recovery yet. */ }
-})();
+installOverlayMessaging({ currentTitle: () => extractMeetingTitle() });
 
 // --- ARIA-based detection signals (English / Spanish variants) ---
 

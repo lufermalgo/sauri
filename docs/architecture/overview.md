@@ -123,8 +123,16 @@ archivo, WebM, IndexedDB y subida. La identidad durable se crea después de obte
 los medios válidos. `audio_only` excluye video del archivo, pero conserva su pista
 fuente para detectar `ended`, usando el cierre durable de `captured-tab-close`.
 Cerrar la pestaña de origen también finaliza; en el selector puede ser distinta de
-la elegida. Solo Meet recibe consulta de título y banner. Otros orígenes conservan
-`provider: "meet"` por falta de proveedor genérico, sin título/enlace de Meet.
+la elegida. Cualquier pestaña web se puede grabar. Meet usa su script de contenido
+estático (título, banner, cuenta regresiva y barra, además de `meet_link`); las demás
+pestañas reciben el mismo overlay por inyección bajo demanda (`overlay/entry`) en la
+pestaña activa al iniciar, con `activeTab` (sin permisos de host nuevos), y usan el
+título de la pestaña, `provider: "tab"` y `meet_link` nulo. Si Chrome no permite
+inyectar (páginas internas, tienda, visor PDF, `file://`, concesión vencida), la
+grabación sigue y los controles quedan solo en el panel («sin barra en esta
+pestaña»). Con el selector, el overlay aparece solo en la pestaña que estaba activa
+al iniciar, aunque se elija otra. Se reinyecta al terminar una carga completa de la
+pestaña grabada (`tabs.onUpdated`); la instalación es idempotente por página.
 
 Con micrófono configurado, el panel consulta su permiso antes de cualquiera de los
 modos. Si no está concedido, o el offscreen recibe `NotAllowedError` del micrófono,
@@ -137,10 +145,10 @@ local sin silencio/eco y recorrido real; los mocks no sustituyen aceptación.
 
 ### Lista de prueba manual para el dueño
 
-1. Construir y recargar la extensión; abrir Meet en una pestaña nueva e invocar
+1. Construir y recargar la extensión; abrir una pestaña nueva (Meet u otra) e invocar
    el panel desde el icono de la extensión, con sesión iniciada en Sauri.
 2. Con micrófono sin permiso, probar cada botón: debe abrir opciones sin grabar.
-   Autorizar con «Enable microphone», volver a Meet y pulsar Record otra vez.
+   Autorizar con «Enable microphone», volver a esa pestaña y pulsar Record otra vez.
 3. Probar «Record»: ver el estado de selección sin contador; elegir una pestaña
    (también distinta del origen) con audio activado y hablar por el micrófono.
 4. Verificar audio local una sola vez; usar «Dejar de compartir». El portal debe
@@ -151,5 +159,5 @@ local sin silencio/eco y recorrido real; los mocks no sustituyen aceptación.
    micrófono en el archivo; cerrar esa pestaña y comprobar subida/apertura del portal.
    Repetir deteniendo la captura y con `audio_only` en ambos modos.
 7. Comprobar atajo deshabilitado en `chrome://settings`, y ambos modos desde una web
-   no-Meet sin banner. Reabrir el panel durante una captura: no debe iniciar otra ni
+   no-Meet: con banner, cuenta regresiva y barra si Chrome permite inyectar, o solo panel si no. Reabrir el panel durante una captura: no debe iniciar otra ni
    destruir la actual. Reinvocar el icono si se cambia de pestaña para usar el atajo.

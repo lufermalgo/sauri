@@ -2,7 +2,7 @@
 // Used by both offscreen.ts (write chunks) and background.ts (read/assemble/clear).
 // This module has NO side effects — all operations are explicit function calls.
 
-import { applyCompletionEvent, type CompletionTrigger } from "./core/recording-completion";
+import { applyCompletionEvent, type CaptureProvider, type CompletionTrigger } from "./core/recording-completion";
 
 export const DB_NAME = "sauri-recordings";
 export const DB_VERSION = 2;
@@ -11,7 +11,7 @@ export const STORE_NAME = "chunks";
 
 export interface RecordingCompletion {
   sessionId: string;
-  provider: "meet" | "teams";
+  provider: CaptureProvider;
   meetingId: string;
   recordingId?: string;
   capturedTabId: number;
@@ -23,6 +23,10 @@ export interface RecordingCompletion {
   reviewTabId?: number;
   /** Once Chrome creation is attempted, a missing tab cannot prove creation failed. */
   reviewCreateAttempted?: boolean;
+  /** Backend failure cause (e.g. "no_speech_detected"); only set with processing_failed. */
+  failureCause?: string;
+  /** Set when the user dismisses a terminal outcome; absent on records saved earlier. */
+  acknowledgedAt?: number;
   updatedAt: number;
 }
 
@@ -142,6 +146,7 @@ export async function getProcessingCompletions(): Promise<RecordingCompletion[]>
 export async function setProcessingStatus(
   sessionId: string, meetingId: string, recordingId: string,
   status: "processing" | "processing_assets_unavailable" | "processing_status_unavailable" | "processing_failed" | "processing_succeeded",
+  failureCause?: string,
 ): Promise<void> {
   return completionTransaction("readwrite", (store, result, fail) => {
     const request = store.get(sessionId);
@@ -154,8 +159,23 @@ export async function setProcessingStatus(
       }
       // A stale concurrent status read must not demote an already verified result.
       if (record.status !== "processing_succeeded" || status === "processing_succeeded") {
-        store.put({ ...record, status, updatedAt: Date.now() });
+        store.put({
+          ...record, status, updatedAt: Date.now(),
+          ...(status === "processing_failed" && failureCause ? { failureCause } : {}),
+        });
       }
+      result(undefined);
+    };
+  });
+}
+
+/** Persist that the user dismissed this outcome; ordering (updatedAt) is untouched. */
+export async function acknowledgeCompletion(sessionId: string): Promise<void> {
+  return completionTransaction("readwrite", (store, result) => {
+    const request = store.get(sessionId);
+    request.onsuccess = () => {
+      const record = request.result as RecordingCompletion | undefined;
+      if (record && record.acknowledgedAt === undefined) store.put({ ...record, acknowledgedAt: Date.now() });
       result(undefined);
     };
   });

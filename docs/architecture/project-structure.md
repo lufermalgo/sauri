@@ -141,6 +141,8 @@ extension/
 └── src/
     ├── background.ts          # service worker (+ exploration tests)
     ├── content.ts             # Meet content script (+ exploration/preservation tests)
+    ├── overlay/               # recording overlay: messaging (shared), entry (injected into other tabs)
+    ├── overlay-injection.ts   # on-demand injection into the recorded tab (activeTab)
     ├── offscreen.ts offscreen.html        # offscreen capture document
     ├── recording-db.ts        # IndexedDB recording persistence
     ├── upload-queue.ts        # retryable upload queue (+ property and preservation tests)

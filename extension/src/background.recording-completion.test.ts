@@ -41,6 +41,7 @@ async function harness(sessionId: string, tabId: number, legacy = false) {
     },
     tabs: {
       onRemoved: { addListener: (fn: typeof onRemoved) => { onRemoved = fn; } },
+      onUpdated: { addListener: vi.fn() },
       query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined),
     },
   });

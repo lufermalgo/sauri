@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import * as fc from "fast-check";
-import { resolveProcessingStatus } from "./processing-status";
+import { readFailureCause, resolveProcessingStatus } from "./processing-status";
 import type { RecordingCompletion } from "../recording-db";
 
 const record: RecordingCompletion = {
@@ -34,4 +34,11 @@ it("rejects absent, unknown, empty and mismatched video while accepting a usable
   })).toBe("processing_succeeded");
   expect(resolveProcessingStatus(record, meeting, { ...transcript, meeting_id: "other" }, playback))
     .toBe("processing_assets_unavailable");
+});
+
+it("reads the failure cause only from a non-empty string field", () => {
+  expect(readFailureCause({ failure_cause: " no_speech_detected " })).toBe("no_speech_detected");
+  for (const value of [{}, null, undefined, "x", { failure_cause: null }, { failure_cause: "" }, { failure_cause: 3 }]) {
+    expect(readFailureCause(value)).toBeUndefined();
+  }
 });

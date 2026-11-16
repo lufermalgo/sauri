@@ -260,17 +260,21 @@ describe("Preservation: Genuine State Transitions Still Work", () => {
           }),
           (_input) => {
             const contentSource = readSource("content.ts");
+            // The listener now lives in the overlay module shared with injected tabs;
+            // the Meet script must install it, and it must stay detection-independent.
+            const messagingSource = readSource("overlay/messaging.ts");
+            expect(contentSource).toContain("installOverlayMessaging(");
 
             // Verify: There is an onMessage listener that handles "show-consent-banner"
             const onMessagePattern =
               /chrome\.runtime\.onMessage\.addListener/;
-            expect(contentSource).toMatch(onMessagePattern);
+            expect(messagingSource).toMatch(onMessagePattern);
 
             // Verify: The listener checks for "show-consent-banner" message type
-            expect(contentSource).toContain('"show-consent-banner"');
+            expect(messagingSource).toContain('"show-consent-banner"');
 
             // Verify: showConsentBanner function exists
-            const showConsentBannerDef = contentSource.match(
+            const showConsentBannerDef = messagingSource.match(
               /function showConsentBanner\(\)/
             );
             expect(showConsentBannerDef).not.toBeNull();

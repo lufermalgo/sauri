@@ -13,14 +13,23 @@ import {
   type UploadJob,
 } from "./upload-queue";
 import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture, bindRecordingId, setUploadOutcome, setProcessingStatus, getProcessingCompletions, claimReviewLaunch, claimReviewCreate, markReviewOpened, getPendingReviewLaunches, type RecordingCompletion } from "./recording-db";
-import { resolveProcessingStatus } from "./core/processing-status";
+import { readFailureCause, resolveProcessingStatus } from "./core/processing-status";
 import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from "./core/recording-completion";
 
-import { canCaptureCurrentTab } from "./core/capture";
+import { canCaptureCurrentTab, isMeetUrl } from "./core/capture";
+import { ensureOverlay } from "./overlay-injection";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
 import { parseDurationSeconds } from "./core/recording-duration";
 
 export {};
+
+// Maximum title length sent for a recording named after its tab.
+const MAX_TAB_TITLE_LENGTH = 200;
+
+function tabTitleOf(title?: string): string | undefined {
+  const trimmed = title?.trim().slice(0, MAX_TAB_TITLE_LENGTH).trim();
+  return trimmed || undefined;
+}
 
 // --- State interface ---
 
@@ -33,7 +42,9 @@ type CaptureMode = "screen_audio" | "audio_only";
 
 interface SauriState {
   status: "idle" | "pending" | "recording";
+  // Page URL of a Meet tab only ("" for any other tab); sent as `meet_link`.
   meetingUrl?: string;
+  // Meet title, or the tab title for any other recorded tab.
   meetingTitle?: string;
   sessionId?: string;
   resolution?: Resolution;
@@ -49,6 +60,8 @@ interface SauriState {
   segmentStartedAt?: number;
   showControlBar?: boolean;
   micLabel?: string;
+  // False when the recorded tab cannot host the overlay; controls live in the panel only.
+  overlayAvailable?: boolean;
 }
 
 const DEFAULT_STATE: SauriState = { status: "idle", paused: false };
@@ -211,6 +224,23 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   }
 });
 
+// A full page load in the recorded tab drops the overlay: bring it back. The script
+// restores the notice and controls itself by asking for the recording state.
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== "complete") return;
+  try {
+    const state = await getState();
+    if (state.status !== "recording" || state.tabId !== tabId) return;
+    const available = await ensureOverlay(tabId, tab.url);
+    const latest = await getState();
+    if (latest.sessionId === state.sessionId && latest.overlayAvailable !== available) {
+      await setState({ ...latest, overlayAvailable: available });
+    }
+  } catch (error) {
+    console.warn("[sauri] Could not restore the overlay after navigation:", error);
+  }
+});
+
 // On service worker startup, ensure state is loaded from session storage
 // (chrome.storage.session persists across SW restarts within the browser session)
 (async () => {
@@ -278,7 +308,7 @@ chrome.runtime.onMessage.addListener(
       case "get-recording-ui":
         void (async () => {
           const state = await getState();
-          sendResponse({ state: state.status === "recording" && state.tabId === _sender.tab?.id && isMeetUrl(state.meetingUrl) ? recordingUI(state) : undefined });
+          sendResponse({ state: state.status === "recording" && state.tabId === _sender.tab?.id ? recordingUI(state) : undefined });
         })();
         return true;
 
@@ -374,10 +404,6 @@ interface CaptureRequest {
   cancelled?: boolean;
 }
 
-function isMeetUrl(url?: string): boolean {
-  return !!url?.startsWith("https://meet.google.com/");
-}
-
 async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; reason?: "cancelled" }> {
   try {
     const stored = await chrome.storage.session.get("sauriCaptureRequest");
@@ -387,14 +413,17 @@ async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; re
     if (request.cancelled) return { ok: false, reason: "cancelled" };
     // Acquire the selected stream first, but persist no media or completion until
     // the countdown finishes. Current-tab stream IDs must be consumed promptly.
-    if (isMeetUrl(state.meetingUrl) && request.countdownSeconds > 0) {
+    // A tab that cannot host the overlay records without a countdown instead of failing.
+    if (state.overlayAvailable !== false && request.countdownSeconds > 0) {
       await chrome.storage.session.set({ sauriCountdown: { requestId: state.sessionId, tabId: state.tabId } });
       try {
         const countdown = await chrome.tabs.sendMessage(state.tabId, { type: "show-countdown", seconds: request.countdownSeconds, requestId: state.sessionId });
         const stored = (await chrome.storage.session.get("sauriCountdown")).sauriCountdown;
         if (!countdown?.ok || stored?.cancelled) return { ok: false, reason: "cancelled" };
       } catch {
-        return { ok: false, reason: "cancelled" };
+        // Meet always hosts the overlay, so a failure there still cancels. Elsewhere the
+        // injected script may be gone (page closed or navigated): record without it.
+        if (isMeetUrl(state.meetingUrl)) return { ok: false, reason: "cancelled" };
       } finally {
         await chrome.storage.session.remove("sauriCountdown");
       }
@@ -402,7 +431,7 @@ async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; re
     const latest = (await chrome.storage.session.get("sauriCaptureRequest")).sauriCaptureRequest as CaptureRequest | undefined;
     if (!latest || latest.cancelled) return { ok: false, reason: "cancelled" };
     await createCompletion({
-      sessionId: state.sessionId, meetingId, provider: "meet",
+      sessionId: state.sessionId, meetingId, provider: state.provider ?? "meet",
       capturedTabId: state.tabId, status: "capturing", updatedAt: Date.now(),
     });
     await setState(state);
@@ -429,6 +458,9 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
           const permission = await chrome.runtime.sendMessage({ type: "check-microphone-permission" });
           if (!permission?.ok) return { ok: false, reason: "microphone-permission" };
         }
+        // The overlay must exist before the picker or the countdown. Only the tab that is
+        // active now can host it: with the picker, another tab may end up being recorded.
+        const overlayAvailable = await ensureOverlay(tab.id, tab.url);
         let streamId: string | undefined;
         if (source === "current-tab") {
           if (!canCaptureCurrentTab(tab.url)) return { ok: false, reason: "current-tab-unavailable" };
@@ -447,7 +479,7 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
         const captureMode = currentState.captureMode ?? "screen_audio";
         const res = resolution ?? { width: 1280, height: 720 };
         const isMeet = isMeetUrl(tab.url);
-        let meetingTitle = isMeet ? currentState.meetingTitle : undefined;
+        let meetingTitle = isMeet ? currentState.meetingTitle : tabTitleOf(tab.title);
         if (isMeet) {
           try {
             const response = await chrome.tabs.sendMessage(tab.id, { type: "get-current-title" });
@@ -462,10 +494,10 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
           meetingId: crypto.randomUUID(),
           countdownSeconds: settings.countdownSeconds,
           state: {
-            status: "recording", sessionId, provider: "meet", resolution: res, pickerSource: source,
+            status: "recording", sessionId, provider: isMeet ? "meet" : "tab", resolution: res, pickerSource: source,
             captureMode, micDeviceId, tabId: tab.id, meetingTitle,
             paused: false, elapsedMs: 0, showControlBar: settings.showControlBar,
-            meetingUrl: isMeet ? tab.url : "",
+            meetingUrl: isMeet ? tab.url : "", overlayAvailable,
           },
         };
         await chrome.storage.session.set({ sauriCaptureRequest: request });
@@ -486,7 +518,7 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
           await setState({ ...recording, segmentStartedAt: result.segmentStartedAt ?? Date.now(), micLabel: result.micLabel });
           await syncRecordingUI(await getState());
         }
-        if (isMeet) {
+        if (overlayAvailable) {
           try { await chrome.tabs.sendMessage(tab.id, { type: "show-consent-banner" }); }
           catch (error) { console.warn("[sauri] Could not show consent banner:", error); }
         }
@@ -532,7 +564,7 @@ function recordingUI(state: SauriState) {
 }
 
 async function syncRecordingUI(state: SauriState): Promise<void> {
-  if (state.tabId === undefined || !isMeetUrl(state.meetingUrl)) return;
+  if (state.tabId === undefined || state.overlayAvailable === false) return;
   try { await chrome.tabs.sendMessage(state.tabId, { type: "recording-ui", state: recordingUI(state) }); }
   catch (error) { console.warn("[sauri] Could not update recording controls:", error); }
 }
@@ -554,7 +586,7 @@ async function handleCaptureControl(type: string, sessionId?: string, senderTabI
   }
   if (state.status !== "recording" || !state.sessionId) return false;
   if (sessionId !== undefined && sessionId !== state.sessionId) return false;
-  if (senderTabId !== undefined && (senderTabId !== state.tabId || sessionId !== state.sessionId || !isMeetUrl(state.meetingUrl))) return false;
+  if (senderTabId !== undefined && (senderTabId !== state.tabId || sessionId !== state.sessionId)) return false;
   if (type === "stop-capture") return handleStopCapture();
   const command = type === "cancel-capture" ? "cancel-recording" : type === "pause-capture" ? "pause-recording" : "resume-recording";
   const response = await chrome.runtime.sendMessage({ type: command, sessionId: state.sessionId });
@@ -562,7 +594,7 @@ async function handleCaptureControl(type: string, sessionId?: string, senderTabI
   const latest = await getState();
   if (latest.sessionId !== state.sessionId) return true;
   if (type === "cancel-capture") {
-    await hideConsentBanner(latest.tabId, latest.meetingUrl);
+    await hideConsentBanner(latest.tabId, latest.overlayAvailable);
     await setState(DEFAULT_STATE);
     await chrome.action.setBadgeText({ text: "" });
   } else {
@@ -653,7 +685,7 @@ async function handleRecordingStopped(
 
   if (ownsProjection) {
     chrome.action.setBadgeText({ text: "" });
-    await hideConsentBanner(currentState.tabId, currentState.meetingUrl);
+    await hideConsentBanner(currentState.tabId, currentState.overlayAvailable);
   }
 
   // Enqueue upload job — the queue handles retries with the same idempotencyKey
@@ -700,14 +732,14 @@ async function handleRecordingError(sessionId?: string): Promise<void> {
   chrome.action.setBadgeText({ text: "" });
 
   const currentState = await getState();
-  await hideConsentBanner(currentState.tabId, currentState.meetingUrl);
+  await hideConsentBanner(currentState.tabId, currentState.overlayAvailable);
 
   await setState(DEFAULT_STATE);
   console.log("[sauri] Recording error, state reset to idle");
 }
 
-async function hideConsentBanner(tabId?: number, meetingUrl?: string): Promise<void> {
-  if (!tabId || (meetingUrl !== undefined && !isMeetUrl(meetingUrl))) return;
+async function hideConsentBanner(tabId?: number, overlayAvailable?: boolean): Promise<void> {
+  if (!tabId || overlayAvailable === false) return;
   try {
     await chrome.tabs.sendMessage(tabId, { type: "hide-consent-banner" });
   } catch (error) {
@@ -822,7 +854,8 @@ async function reconcileProcessing(record: RecordingCompletion): Promise<void> {
       const playback = await read("/playback");
       status = resolveProcessingStatus(record, meeting, transcript, playback);
     }
-    await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, status ?? "processing_status_unavailable");
+    await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, status ?? "processing_status_unavailable",
+      status === "processing_failed" ? readFailureCause(meeting) : undefined);
     if (status === "processing_succeeded") await reconcileReviewLaunches();
   } catch (error) {
     await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId,

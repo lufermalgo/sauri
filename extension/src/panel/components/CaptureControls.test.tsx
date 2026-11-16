@@ -46,4 +46,11 @@ describe("CaptureControls", () => {
     expect(screen.getByRole("button", { name: copy.recordTab })).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent(copy.startError);
   });
+  it("tells the user the tab has no on-page controls only when it cannot host them", () => {
+    const { rerender } = render(<CaptureControls {...defaults} captureState="recording" />);
+    expect(screen.queryByText(copy.noOverlay)).not.toBeInTheDocument();
+    rerender(<CaptureControls {...defaults} captureState="recording" overlayUnavailable />);
+    expect(screen.getByText(copy.noOverlay)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: copy.stop })).toBeEnabled();
+  });
 });

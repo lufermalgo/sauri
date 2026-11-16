@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "sauri",
   "version": "0.2.0",
-  "description": "Asistente de captura y transcripción de reuniones de Google Meet",
+  "description": "Graba el audio y el video de cualquier pestaña del navegador y Sauri lo transcribe y lo resume.",
   "permissions": [
     "tabCapture",
     "offscreen",
@@ -33,7 +33,7 @@
   },
   "options_page": "src/options/index.html",
   "action": {
-    "default_title": "sauri — Abrir panel"
+    "default_title": "Sauri — Abrir panel"
   },
   "web_accessible_resources": [
     {

@@ -54,7 +54,8 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
       video_sources: [],
     }));
     return new Response(JSON.stringify({ meeting_id: scenario.sameMeeting ? meetingId : otherMeetingId,
-      recording_id: recordingId, process_state: scenario.state }));
+      recording_id: recordingId, process_state: scenario.state,
+      ...(scenario.state === "failed" ? { failure_cause: "no_speech_detected" } : {}) }));
   }));
 
   let listener: Listener | undefined;
@@ -74,7 +75,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
       session: { get: vi.fn(async () => ({ sauriState: state })), set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = value.sauriState; }) },
       sync: { get: vi.fn(async () => ({ authToken: "synthetic-token" })) },
     },
-    tabs: { onRemoved: { addListener: vi.fn() }, query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined), create: createTab },
+    tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined), create: createTab },
   });
   await import("./background");
   await new Promise<void>((resolve) => listener!({ type: "stop-capture" }, {}, () => resolve()));
@@ -205,3 +206,8 @@ it("marks success only after checking completed status, transcript and playable 
   }
   expect(violations, `Checked 100 cases; counterexample: ${counterexample}`).toBe(0);
 }, 60000);
+
+it("stores the backend failure cause when the confirmed meeting failed", async () => {
+  const { completion } = await runScenario({ ...ready, state: "failed" }, "failed-cause");
+  expect(completion).toMatchObject({ status: "processing_failed", failureCause: "no_speech_detected" });
+});

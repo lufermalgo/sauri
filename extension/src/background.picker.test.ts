@@ -56,7 +56,7 @@ async function completions() {
   });
 }
 
-async function setup({ url = "https://meet.google.com/test-picker", existing = false, recording = false, liveOffscreen = false, captureMode = "screen_audio", countdownSeconds = 0, showControlBar = true, realUI = false } = {}) {
+async function setup({ url = "https://meet.google.com/test-picker", existing = false, recording = false, liveOffscreen = false, captureMode = "screen_audio", countdownSeconds = 0, showControlBar = true, realUI = false, title = "Example page", injectable = true } = {}) {
   vi.resetModules();
   Recorder.last = undefined as unknown as Recorder;
   vi.stubGlobal("indexedDB", new IDBFactory());
@@ -90,6 +90,8 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
   vi.stubGlobal("AudioContext", AudioContextMock);
   const listeners: Listener[] = [];
   let removed!: (tabId: number) => Promise<void>;
+  let updated!: (tabId: number, change: { status?: string }, tab: { url?: string }) => Promise<void>;
+  const executeScript = vi.fn(async (_injection: unknown) => { if (!injectable) throw new Error("Cannot access contents of the page"); return []; });
   function dispatch(listener: Listener, message: Message, sender = {}) {
     return new Promise<any>(resolve => {
       const pending = listener(message, sender, resolve);
@@ -129,7 +131,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
       sync: { get: vi.fn(async () => ({})) },
     },
     tabs: {
-      query: vi.fn(async (query: { active?: boolean }) => query.active ? [{ id: 7, url }] : []),
+      query: vi.fn(async (query: { active?: boolean }) => query.active ? [{ id: 7, url, title }] : []),
       sendMessage: vi.fn(async (_tabId: number, message: Message): Promise<any> => {
         if (realUI && message.type === "show-countdown") return showCountdown(message.seconds as number, message.requestId as string);
         if (realUI && message.type === "cancel-countdown") { cancelCountdown(); return { ok: true }; }
@@ -139,7 +141,9 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
       }),
       create: vi.fn(async () => ({ id: 80 })),
       onRemoved: { addListener: (listener: typeof removed) => { removed = listener; } },
+      onUpdated: { addListener: (listener: typeof updated) => { updated = listener; } },
     },
+    scripting: { executeScript },
     action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
@@ -154,6 +158,8 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     start: (source: "picker" | "current-tab" = "picker", micDeviceId?: string) => dispatch(listeners[1], { type: "start-capture", source, micDeviceId }),
     stop: () => dispatch(listeners[1], { type: "stop-capture" }),
     close: (id = 7) => removed(id),
+    executeScript,
+    navigate: (url: string, tabId = 7) => updated(tabId, { status: "complete" }, { url }),
     message: (message: Message, sender: chrome.runtime.MessageSender) => dispatch(listeners[1], message, sender),
   };
 }
@@ -247,17 +253,126 @@ describe("#994: native picker to durable upload", () => {
     expect(h.upload).toHaveBeenCalledOnce();
   });
 
-  it("captures from a non-Meet origin without title/banner messages or a stale Meet URL", async () => {
-    const h = await setup({ url: "https://example.com" });
-    const result = await h.start();
-    expect(result).toMatchObject({ ok: true });
-    expect(h.stored.sauriState).toMatchObject({ provider: "meet", tabId: 7, meetingUrl: "" });
-    expect(h.stored.sauriState.meetingTitle).toBeUndefined();
-    expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
-    h.video.dispatchEvent(new Event("ended"));
-    await vi.waitFor(() => expect(h.upload).toHaveBeenCalledOnce());
-    await vi.waitFor(() => expect(h.stored.sauriState.status).toBe("idle"));
-    expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+  describe("any browser tab, not only Google Meet", () => {
+    const uploaded = async (h: Awaited<ReturnType<typeof setup>>) => {
+      h.video.dispatchEvent(new Event("ended"));
+      await vi.waitFor(() => expect(h.upload).toHaveBeenCalledOnce());
+      const [, init] = (h.upload.mock.calls as unknown as [string, RequestInit][])[0];
+      return JSON.parse((init.body as FormData).get("data") as string);
+    };
+
+    it("injects the overlay before recording and records a regular tab as a tab capture", async () => {
+      const h = await setup({ url: "https://example.com/talk", title: "  Conference talk  " });
+      const result = await h.start();
+      expect(result).toMatchObject({ ok: true });
+      expect(h.executeScript).toHaveBeenCalledOnce();
+      expect(h.executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: [expect.stringContaining("entry")] });
+      expect(h.executeScript.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
+      expect(h.stored.sauriState).toMatchObject({ provider: "tab", tabId: 7, meetingUrl: "", meetingTitle: "Conference talk", overlayAvailable: true });
+      expect(await getCompletion(result.sessionId)).toMatchObject({ capturedTabId: 7, provider: "tab", status: "capturing" });
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, { type: "show-consent-banner" });
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalledWith(7, { type: "get-current-title" });
+    });
+
+    it("names the upload after the tab (trimmed, capped) and sends no meet_link", async () => {
+      const h = await setup({ url: "https://example.com/talk", title: ` ${"x".repeat(300)} ` });
+      await h.start();
+      const payload = await uploaded(h);
+      expect(payload.title).toBe("x".repeat(200));
+      expect(payload.meet_link).toBeNull();
+    });
+
+    it("sends a null title when the tab has none", async () => {
+      const h = await setup({ url: "https://example.com/talk", title: "   " });
+      await h.start();
+      expect((await uploaded(h)).title).toBeNull();
+    });
+
+    it("keeps the Meet title and link for a Meet tab without injecting anything", async () => {
+      const h = await setup({ url: "https://meet.google.com/abc-defg-hij" });
+      await h.start();
+      expect(h.executeScript).not.toHaveBeenCalled();
+      expect(h.stored.sauriState).toMatchObject({ provider: "meet", meetingTitle: "Fresh Meet title", overlayAvailable: true });
+      const payload = await uploaded(h);
+      expect(payload).toMatchObject({ title: "Fresh Meet title", meet_link: "https://meet.google.com/abc-defg-hij" });
+    });
+
+    it("shows the countdown on a regular tab and records only after it ends", async () => {
+      const h = await setup({ url: "https://example.com/talk", countdownSeconds: 3, realUI: true });
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      const pending = h.start();
+      await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
+      expect(await completions()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(3200);
+      expect(await pending).toMatchObject({ ok: true });
+      expect(document.getElementById("sauri-countdown-host")).toBeNull();
+    });
+
+    it.each([
+      ["a browser page", "chrome://extensions", true],
+      ["the Chrome Web Store", "https://chromewebstore.google.com/detail/x", true],
+      ["a page that refuses injection", "https://example.com/doc.pdf", false],
+    ])("records %s through the panel alone, with no overlay, banner or countdown", async (_name, url, injectable) => {
+      const h = await setup({ url, injectable, countdownSeconds: 3 });
+      const result = await h.start();
+      expect(result).toMatchObject({ ok: true });
+      if (injectable) expect(h.executeScript).not.toHaveBeenCalled();
+      else expect(h.executeScript).toHaveBeenCalledOnce();
+      expect(h.stored.sauriState).toMatchObject({ status: "recording", tabId: 7, overlayAvailable: false });
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+      await uploaded(h);
+      await vi.waitFor(() => expect(h.stored.sauriState.status).toBe("idle"));
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it("keeps recording without a countdown when the injected script stops answering", async () => {
+      const h = await setup({ url: "https://example.com/talk", countdownSeconds: 3 });
+      vi.mocked(chrome.tabs.sendMessage).mockRejectedValueOnce(new Error("Receiving end does not exist"));
+      expect(await h.start()).toMatchObject({ ok: true });
+    });
+
+    it("injects again after a full page load in the recorded tab and records the new availability", async () => {
+      const h = await setup({ url: "https://example.com/a", injectable: false });
+      await h.start();
+      expect(h.stored.sauriState.overlayAvailable).toBe(false);
+      h.executeScript.mockResolvedValue([]);
+      await h.navigate("https://example.com/b");
+      expect(h.executeScript).toHaveBeenCalledTimes(2);
+      expect(h.stored.sauriState.overlayAvailable).toBe(true);
+      h.executeScript.mockRejectedValue(new Error("Cannot access contents of the page"));
+      await h.navigate("https://example.com/c");
+      expect(h.stored.sauriState.overlayAvailable).toBe(false);
+    });
+
+    it("does not inject for other tabs, unfinished loads or when nothing is recording", async () => {
+      const h = await setup({ url: "https://example.com/a" });
+      await h.navigate("https://example.com/idle");
+      expect(h.executeScript).not.toHaveBeenCalled();
+      await h.start();
+      expect(h.executeScript).toHaveBeenCalledOnce();
+      await h.navigate("https://example.com/other", 99);
+      expect(h.executeScript).toHaveBeenCalledOnce();
+    });
+
+    it("lets the injected script recover the controls of its own recorded tab only", async () => {
+      const h = await setup({ url: "https://example.com/a" });
+      await h.start();
+      const own = await h.message({ type: "get-recording-ui" }, { tab: { id: 7 } } as chrome.runtime.MessageSender);
+      expect(own.state).toMatchObject({ showControlBar: true });
+      const other = await h.message({ type: "get-recording-ui" }, { tab: { id: 8 } } as chrome.runtime.MessageSender);
+      expect(other.state).toBeUndefined();
+    });
+
+    it("accepts overlay stop commands from the recorded regular tab", async () => {
+      const h = await setup({ url: "https://example.com/a" });
+      const { sessionId } = await h.start();
+      const rejected = await h.message({ type: "stop-capture", sessionId }, { tab: { id: 8 } } as chrome.runtime.MessageSender);
+      expect(rejected).toEqual({ ok: false });
+      expect(Recorder.last.stop).not.toHaveBeenCalled();
+      const accepted = await h.message({ type: "stop-capture", sessionId }, { tab: { id: 7 } } as chrome.runtime.MessageSender);
+      expect(accepted).toEqual({ ok: true });
+      expect(Recorder.last.stop).toHaveBeenCalledOnce();
+    });
   });
 
   it("audio_only still opens the picker and records only audio", async () => {
