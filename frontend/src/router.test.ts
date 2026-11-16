@@ -9,9 +9,12 @@ afterEach(() => {
 });
 
 describe("parseRoute", () => {
-  it("resolves the four routes", () => {
+  it("resolves every route", () => {
     expect(parseRoute("/", "")).toEqual({ name: "library" });
     expect(parseRoute("/upload", "")).toEqual({ name: "upload" });
+    expect(parseRoute("/settings", "")).toEqual({ name: "settings" });
+    expect(parseRoute("/settings/", "")).toEqual({ name: "settings" });
+    expect(parseRoute("/settings/extra", "")).toEqual({ name: "notFound" });
     expect(parseRoute("/meetings/m1", "")).toEqual({ name: "meeting", meetingId: "m1" });
     expect(parseRoute("/anything-else", "")).toEqual({ name: "notFound" });
   });
@@ -38,6 +41,7 @@ describe("routePath", () => {
   const routes: Route[] = [
     { name: "library" },
     { name: "upload" },
+    { name: "settings" },
     { name: "meeting", meetingId: "m1" },
     { name: "notFound" },
   ];

@@ -320,3 +320,19 @@ describe("TimeChip", () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 });
+
+describe("Menu custom trigger", () => {
+  it("renders the given content inside a button that keeps the menu semantics and the label", () => {
+    render(<Menu label="Account" trigger={<span>Ana</span>} triggerClassName="custom-trigger" className="custom-root">
+      <MenuItem onSelect={() => undefined}>Sign out</MenuItem>
+    </Menu>);
+    const trigger = screen.getByRole("button", { name: "Account" });
+    expect(trigger).toHaveClass("custom-trigger");
+    expect(trigger).not.toHaveClass("ui-menu-trigger");
+    expect(trigger).toHaveTextContent("Ana");
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger.parentElement).toHaveClass("ui-menu", "custom-root");
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menuitem", { name: "Sign out" })).toHaveFocus();
+  });
+});
