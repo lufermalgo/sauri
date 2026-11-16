@@ -202,6 +202,26 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
               onClick={() => { pencilTip.hide(); startEditing(); }}><Icon icon={Pencil} size={16} /></button>
             {pencilTip.tooltip}
           </span>
+          <span className="meeting-actions-divider" aria-hidden="true" />
+          <div className="meeting-actions">
+            {speakerReview && <span className="meeting-speakers">
+              <button type="button" className={`ui-icon-button ui-icon-button--ghost${speakerReview.pendingCount > 0 ? " ui-icon-button--alert" : ""}`}
+                aria-label={speakersLabel} aria-expanded={speakerReview.open} aria-controls={speakerReview.open ? SPEAKER_DOCK_ID : undefined}
+                {...speakersTip.triggerProps} onClick={() => { speakersTip.hide(); speakerReview.onToggle(); }}>
+                <Icon icon={UsersRound} />
+              </button>
+              {speakersTip.tooltip}
+            </span>}
+            <MeetingDownloads {...downloads} title={renamedTitle ?? title} />
+            <span className="meeting-delete">
+              <button type="button" className="ui-icon-button ui-icon-button--ghost ui-icon-button--danger"
+                aria-label={t("meeting:deleteRecording")} disabled={busy || editing} {...deleteTip.triggerProps}
+                onClick={() => { deleteTip.hide(); setConfirming(true); setError(null); }}>
+                <Icon icon={Trash2} />
+              </button>
+              {deleteTip.tooltip}
+            </span>
+          </div>
         </div>
         <div className="meeting-details">
         {stage && <StatusBadge tone={stage === "done" ? "success" : stage === "failed" ? "error" : "progress"}>
@@ -214,25 +234,6 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
         {durationLabel !== null && <span className="meeting-duration">{durationLabel}</span>}
         {speakerCount !== undefined && <span>{t("meeting:speakerCount", { count: speakerCount })}</span>}
         </div>
-      </div>
-      <div className="meeting-actions">
-        {speakerReview && <span className="meeting-speakers">
-          <button type="button" className={`ui-icon-button ui-icon-button--ghost${speakerReview.pendingCount > 0 ? " ui-icon-button--alert" : ""}`}
-            aria-label={speakersLabel} aria-expanded={speakerReview.open} aria-controls={speakerReview.open ? SPEAKER_DOCK_ID : undefined}
-            {...speakersTip.triggerProps} onClick={() => { speakersTip.hide(); speakerReview.onToggle(); }}>
-            <Icon icon={UsersRound} />
-          </button>
-          {speakersTip.tooltip}
-        </span>}
-        <MeetingDownloads {...downloads} title={renamedTitle ?? title} />
-        <span className="meeting-delete">
-          <button type="button" className="ui-icon-button ui-icon-button--ghost ui-icon-button--danger"
-            aria-label={t("meeting:deleteRecording")} disabled={busy || editing} {...deleteTip.triggerProps}
-            onClick={() => { deleteTip.hide(); setConfirming(true); setError(null); }}>
-            <Icon icon={Trash2} />
-          </button>
-          {deleteTip.tooltip}
-        </span>
       </div>
     </div>
     <p role="status" className="meeting-sr-only">{notice}</p>
