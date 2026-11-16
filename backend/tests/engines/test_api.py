@@ -91,7 +91,7 @@ async def test_capabilities_lists_only_offered_pairs(api: AsyncClient) -> None:
     kinds = {entry["kind"]: entry for entry in body["kinds"]}
     assert [entry["capability"] for entry in kinds["deepgram"]["capabilities"]] == ["transcription", "diarization"]
     assert [entry["capability"] for entry in kinds["anthropic"]["capabilities"]] == ["summary"]
-    assert kinds["gemini"]["capabilities"] == []  # linkable, but no verified pair yet
+    assert [entry["capability"] for entry in kinds["gemini"]["capabilities"]] == ["summary"]
     assert kinds["gemini"]["linkable"] is True
     assert kinds["chatgpt_plan"]["linkable"] is False
     assert kinds["ollama"]["key_required"] is False and kinds["openai"]["key_required"] is True
@@ -482,7 +482,8 @@ async def test_unsupported_unverified_and_reserved_pairs_are_422(api: AsyncClien
         ("transcription", anthropic),
         ("diarization", anthropic),
         ("summary", deepgram),
-        ("summary", gemini),  # linkable but not verified: not offered
+        ("transcription", gemini),  # Gemini serves summary only
+        ("diarization", gemini),
         ("summary", ollama),  # not verified against its docs
     ):
         response = await _choose(api, capability, provider["id"], "m", notice_version=1)
@@ -722,7 +723,14 @@ async def test_connection_test_classifies_failures_and_drops_unknown_values(
 async def test_models_are_filtered_through_the_host_and_shaped_here(api: AsyncClient, fake_host: FakeHost) -> None:
     provider = await _with_key(api, "anthropic")
     fake_host.models_answer = {
-        "models": [{"id": "a", "name": "Model A"}, {"id": ""}, {"nope": 1}, "plain-id", {"id": "x" * 300}],
+        "models": [
+            {"id": "a", "name": "Model A", "serves": ["summary", "transcription", "nonsense"]},
+            {"id": ""},
+            {"nope": 1},
+            "plain-id",
+            {"id": "x" * 300},
+        ],
+        "serves": ["transcription", "summary"],
         "starter": "a",
         "cached": True,
         "fetched_at": "2026-11-16T10:00:00+00:00",
@@ -732,12 +740,17 @@ async def test_models_are_filtered_through_the_host_and_shaped_here(api: AsyncCl
         f"{BASE}/providers/{provider['id']}/models?capability=summary&refresh=true", headers=auth_headers()
     )
     assert response.json() == {
-        "models": [{"id": "a", "label": "Model A"}, {"id": "plain-id", "label": None}],
+        # Anthropic is offered for summary only: whatever else the list could do is not claimed.
+        "models": [
+            {"id": "a", "label": "Model A", "serves": ["summary"]},
+            {"id": "plain-id", "label": None, "serves": []},
+        ],
         "starter": "a",
         "from_cache": True,
         "fetched_at": "2026-11-16T10:00:00+00:00",
         "manual_entry": False,
         "error_class": None,
+        "serves": ["summary"],
     }
     body = [call for call in fake_host.calls if call[1] == "/v1/providers/models"][-1][2]
     assert body["refresh"] is True and body["capability"] == "summary" and "key" not in body
@@ -751,7 +764,7 @@ async def test_models_are_filtered_through_the_host_and_shaped_here(api: AsyncCl
     empty = (
         await api.get(f"{BASE}/providers/{provider['id']}/models?capability=summary", headers=auth_headers())
     ).json()
-    assert empty["manual_entry"] is True
+    assert (empty["manual_entry"], empty["serves"]) == (True, [])
     fake_host.models_status = 502
     fake_host.models_answer = {"error": {"code": "provider_unavailable", "retryable": True, "cause": "connect"}}
     failed = (
@@ -768,6 +781,29 @@ async def test_models_are_filtered_through_the_host_and_shaped_here(api: AsyncCl
         await api.get(f"{BASE}/providers/{provider['id']}/models?capability=transcription", headers=auth_headers())
     ).status_code == 422
     assert (await api.get(f"{BASE}/providers/{provider['id']}/models", headers=auth_headers())).status_code == 422
+
+
+async def test_gemini_lists_serve_summary_only_and_fixed_model_providers_follow_the_matrix(
+    api: AsyncClient, fake_host: FakeHost
+) -> None:
+    gemini = await _with_key(api, "gemini")
+    fake_host.models_answer = {
+        "models": [{"id": "gemini-3.1-flash-lite", "name": "x", "serves": ["summary"]}],
+        "serves": ["summary"],
+    }
+    listed = (
+        await api.get(f"{BASE}/providers/{gemini['id']}/models?capability=summary", headers=auth_headers())
+    ).json()
+    assert listed["serves"] == ["summary"] and listed["models"][0]["serves"] == ["summary"]
+    assert (
+        await api.get(f"{BASE}/providers/{gemini['id']}/models?capability=transcription", headers=auth_headers())
+    ).status_code == 422  # Gemini has no transcription pair at all
+    deepgram = await _with_key(api, "deepgram")
+    fake_host.models_answer = {"models": []}  # one fixed model per process: nothing to list
+    fixed = (
+        await api.get(f"{BASE}/providers/{deepgram['id']}/models?capability=transcription", headers=auth_headers())
+    ).json()
+    assert fixed["serves"] == ["transcription", "diarization"]
 
 
 async def test_local_servers_are_marked_for_the_host_as_local_apps(api: AsyncClient, fake_host: FakeHost) -> None:

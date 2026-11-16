@@ -114,6 +114,8 @@ export interface EngineProbeResult {
 export interface EngineModel {
   id: string;
   label: string | null;
+  /** The processes this model can serve and Sauri offers for its provider's type. */
+  serves: EngineProcess[];
 }
 
 export interface EngineModelList {
@@ -125,6 +127,8 @@ export interface EngineModelList {
   /** True when the list is empty or failed: let the user type the model name. */
   manual_entry: boolean;
   error_class: EngineErrorClass | null;
+  /** The processes the provider can serve, from the models it lists, within the pairs Sauri offers. */
+  serves: EngineProcess[];
 }
 
 /** Body of `PUT /processes/{capability}`. `provider_id: null` selects a local model (`local:<id>`). */

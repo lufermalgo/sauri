@@ -157,6 +157,8 @@ class ProbeOut(BaseModel):
 class ModelOut(BaseModel):
     id: str = Field(min_length=1, max_length=MAX_MODEL_CHARS)
     label: str | None = Field(default=None, max_length=MAX_MODEL_CHARS)
+    # The processes this model can serve and Sauri offers for this provider kind (matrix pairs only).
+    serves: list[ProcessName] = Field(default_factory=list)
 
 
 class ModelsOut(BaseModel):
@@ -168,6 +170,9 @@ class ModelsOut(BaseModel):
     # True when the list is missing or failed, so the portal lets the user type the model name.
     manual_entry: bool
     error_class: str | None = None
+    # The processes this provider can serve, from the models it lists, within the pairs Sauri offers for its
+    # kind. Empty when the list is missing or failed (`manual_entry`).
+    serves: list[ProcessName] = Field(default_factory=list)
 
 
 class ProcessIn(BaseModel):

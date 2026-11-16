@@ -432,6 +432,23 @@ async def test_provider(
     )
 
 
+# Providers with one fixed model per process: they list nothing, so the matrix alone says what they serve.
+_FIXED_MODEL_TRANSPORTS: Final = frozenset({"assemblyai", "deepgram"})
+
+
+def _offered_processes(kind: str, declared: object) -> list[ProcessName]:
+    """What a model (or the whole list) serves, kept to the pairs Sauri offers for this kind."""
+    names = set(declared) if isinstance(declared, list) else set()
+    return [name for name in matrix.VISIBLE_CAPABILITIES if name in names and matrix.is_offered(kind, name)]
+
+
+def _provider_serves(kind: str, raw: dict[str, Any], models: list[ModelOut]) -> list[ProcessName]:
+    offered = [name for name in matrix.VISIBLE_CAPABILITIES if matrix.is_offered(kind, name)]
+    if offered and all(matrix.probe_transport(kind, name) in _FIXED_MODEL_TRANSPORTS for name in offered):
+        return offered
+    return _offered_processes(kind, raw.get("serves")) if models else []
+
+
 async def list_models(
     session: AsyncSession,
     host: HostClient,
@@ -464,7 +481,13 @@ async def list_models(
         entry_id = item.get("id") if isinstance(item, dict) else item
         label = item.get("name") if isinstance(item, dict) else None
         if isinstance(entry_id, str) and 0 < len(entry_id) <= 200:
-            models.append(ModelOut(id=entry_id, label=label if isinstance(label, str) and len(label) <= 200 else None))
+            models.append(
+                ModelOut(
+                    id=entry_id,
+                    label=label if isinstance(label, str) and len(label) <= 200 else None,
+                    serves=_offered_processes(row.kind, item.get("serves") if isinstance(item, dict) else None),
+                )
+            )
     fetched_at = raw.get("fetched_at")
     starter = raw.get("starter")
     return ModelsOut(
@@ -474,6 +497,7 @@ async def list_models(
         fetched_at=fetched_at if isinstance(fetched_at, str) and len(fetched_at) <= 64 else None,
         manual_entry=not models,
         error_class=None,
+        serves=_provider_serves(row.kind, raw, models),
     )
 
 

@@ -32,7 +32,9 @@ from providers import (
     classify_address,
     filter_models,
     parse_ip_literal,
+    parse_models,
     parse_target,
+    served_processes,
     starter_model,
 )
 from providers import ModelInfo as Model
@@ -788,6 +790,58 @@ def test_filter_keeps_chat_models_only_for_chat_processes() -> None:
     models = [Model(i, i) for i in ("gpt-4o", "bge-m3:latest", "playai-tts", "distil-whisper-large-v3-en")]
     assert [m.id for m in filter_models(models, "summary")] == ["gpt-4o"]
     assert [m.id for m in filter_models(models, "diarization")] == ["distil-whisper-large-v3-en"]
+
+
+GEMINI_IDS = (
+    "gemini-3.1-flash-lite", "gemini-flash-latest", "gemma-4-31b-it", "nano-banana-pro-preview",
+    "gemini-3.8-live", "gemini-3.1-flash-live-preview", "gemini-robotics-er-2-preview",
+    "gemini-2.5-computer-use-preview-10-2025", "deep-research-pro-preview-12-2025", "antigravity-preview-latest",
+)  # fmt: skip
+
+
+def test_gemini_lists_keep_chat_models_and_drop_live_image_and_agent_ones() -> None:
+    models = [Model(i, i) for i in GEMINI_IDS]
+    assert [m.id for m in filter_models(models, "summary")] == [
+        "gemini-3.1-flash-lite", "gemini-flash-latest", "gemma-4-31b-it",
+    ]  # fmt: skip
+    assert filter_models(models, "transcription") == []
+    assert served_processes(models) == ["summary"]
+
+
+def test_each_model_says_which_processes_it_serves() -> None:
+    models = [Model("gpt-4o", "gpt-4o"), Model("whisper-1", "whisper-1"), Model("bge-m3", "bge-m3")]
+    assert [m.serves for m in models] == [("summary",), ("transcription", "diarization"), ()]
+    assert served_processes(models) == ["transcription", "diarization", "summary"]
+    assert served_processes([]) == []
+
+
+def test_declared_generation_methods_decide_when_the_provider_lists_them() -> None:
+    body = json.dumps({"data": [
+        {"id": "models/gemini-3.1-flash-lite", "supportedGenerationMethods": ["generateContent", "countTokens"]},
+        {"id": "models/gemini-live-x", "supportedGenerationMethods": ["bidiGenerateContent"]},
+        {"id": "models/text-thing", "supportedGenerationMethods": ["embedContent"]},
+        {"id": "models/plain"},
+    ]}).encode()  # fmt: skip
+    models = parse_models(body)
+    assert [(m.id, m.serves) for m in models] == [
+        ("gemini-3.1-flash-lite", ("summary",)), ("gemini-live-x", ()), ("text-thing", ()), ("plain", ("summary",)),
+    ]  # fmt: skip
+
+
+def test_models_answer_carries_per_model_and_overall_processes(client: TestClient, fake: FakeProvider) -> None:
+    fake.routes["GET /v1/models"] = MIXED
+    answer = list_models(client, fake).json()
+    assert answer["serves"] == ["transcription", "diarization", "summary"]
+    assert {m["id"]: m["serves"] for m in answer["models"]}["gpt-4o"] == ["summary"]
+
+
+def test_provider_errors_wrapped_in_a_list_still_give_their_code() -> None:
+    from providers import _error_hint
+
+    body = b'[{"error": {"code": 400, "message": "Please pass a valid API key", "status": "INVALID_ARGUMENT"}}]'
+    assert _error_hint(body, None) == "invalid_argument"
+    assert _error_hint(b"[]", None) is None
+    assert _error_hint(b'["x"]', None) is None
 
 
 # --- local discovery ----------------------------------------------------------------------------------------

@@ -6,7 +6,7 @@ Spec: `.spectra/specs/local-platform-deployment/`; issue padre #818; U1 #827/PR 
 
 - Docker: portal construido (Nginx), API, worker, PostgreSQL, RustFS/S3 y RabbitMQ.
 - Chrome: extensión MV3; no vive en Docker.
-- Mac: motores HTTP nativos whisper.cpp/Metal (ASR v2, U2 #922) y Senko/CoreML (contrato de diarización v2, U1 #921). No son servicios Compose. Una URL o `/health` no demuestra inferencia ni GPU.
+- Mac: cuatro procesos HTTP nativos, todos en `127.0.0.1` y fuera de Compose: ASR whisper.cpp/Metal (:8001, contrato v2, U2 #922), diarización Senko/CoreML (:8002, contrato v2, U1 #921), pasarela de resumen `llm-engine` (:8003, con `llama-server` interno en :8004, #924) y administración `host-engine` (:8005, `model-engines`). Se instalan con `make engines-install` y se controlan con `make engines-up|down|status`. Una URL o `/health` no demuestra inferencia ni GPU.
 - PostgreSQL guarda datos/propiedad; S3 guarda audio/video; RabbitMQ transporta trabajos, no es el archivo de las grabaciones.
 
 El portal se sirve en `http://127.0.0.1:5173` por defecto (`PORTAL_PORT`). `/api/` pasa a la API sin reemplazar su autenticación. Los medios se leen directamente con enlaces S3 temporales firmados, usando `OBJECT_STORE_PUBLIC_ENDPOINT` accesible desde el navegador; nunca se reescribe una URL después de firmarla. El almacenamiento conserva nombres históricos MinIO aunque su imagen sea RustFS; esto no migra datos anteriores (#543).
@@ -46,7 +46,7 @@ Los contenedores reciben esos archivos de solo lectura en `/run/secrets/<mismo n
 
 Los motores nativos ASR y diarización leen las llaves del almacén desde `~/.config/sauri/object_store_access_key` y `object_store_secret_key`; se pueden cambiar con `SAURI_OBJECT_STORE_ACCESS_KEY_FILE` y `SAURI_OBJECT_STORE_SECRET_KEY_FILE`.
 
-**Servicio `host-engine` (administración de claves).** `make engines-install` crea su entorno propio (`~/.local/share/sauri/native-engines/host-venv`, solo FastAPI, uvicorn y httpx; `bash scripts/engines/install-host-engine.sh --check` verifica sin cambiar nada) y `make engines-up|down|status` lo incluyen como `host` (puerto 8005, registro en `~/.local/state/sauri/native-engines/host.log`, sin registro de accesos). Requiere `management_token`: ejecutar `bash scripts/engines/ensure-native-engine-credentials.sh` (o `make up`/`make build`) **antes** de recrear `api`, porque `docker-compose.yml` monta ese archivo y Docker crearía una carpeta si no existiera. Variables: `SAURI_HOST_ENGINE_PYTHON` (intérprete), `SAURI_MANAGEMENT_TOKEN_FILE` (ruta del token) y `SAURI_SECRET_STORE=keychain|file` (fuerza el almacén; por defecto elige el llavero si responde). El comportamiento del llavero con procesos lanzados con `nohup` está sin verificar hasta ejecutar `SAURI_RUN_NATIVE_TESTS=1 uv run --extra dev pytest tests/native/test_keychain_native.py -q` en el Mac (usa un servicio de prueba `sauri-test-<uuid>` que elimina al terminar y no toca el servicio `sauri`). La unidad U1 de `model-engines` (#1074) no despliega nada ni conecta la API; eso llega con U2.
+**Servicio `host-engine` (administración de claves).** `make engines-install` crea su entorno propio (`~/.local/share/sauri/native-engines/host-venv`, solo FastAPI, uvicorn y httpx; `bash scripts/engines/install-host-engine.sh --check` verifica sin cambiar nada) y `make engines-up|down|status` lo incluyen como `host` (puerto 8005, registro en `~/.local/state/sauri/native-engines/host.log`, sin registro de accesos). Requiere `management_token`: ejecutar `bash scripts/engines/ensure-native-engine-credentials.sh` (o `make up`/`make build`) **antes** de recrear `api`, porque `docker-compose.yml` monta ese archivo y Docker crearía una carpeta si no existiera. Variables: `SAURI_HOST_ENGINE_PYTHON` (intérprete), `SAURI_MANAGEMENT_TOKEN_FILE` (ruta del token) y `SAURI_SECRET_STORE=keychain|file` (fuerza el almacén; por defecto elige el llavero si responde). El comportamiento del llavero con procesos lanzados con `nohup` está sin verificar hasta ejecutar `SAURI_RUN_NATIVE_TESTS=1 uv run --extra dev pytest tests/native/test_keychain_native.py -q` en el Mac (usa un servicio de prueba `sauri-test-<uuid>` que elimina al terminar y no toca el servicio `sauri`). La API lo usa mediante `HOST_ENGINE_URL` (por defecto `http://host.docker.internal:8005`) y el token montado en `api`; si el servicio no está arriba, las pantallas de claves, proveedores y modelos locales fallan, pero el procesamiento local de reuniones no depende de él.
 
 **Migración de instalaciones existentes.** En el siguiente arranque, sin pérdida de datos, `compose-bringup.sh` fija la contraseña del rol de base de datos desde el archivo (`ALTER ROLE` dentro del contenedor, sin imprimir nada), asegura el usuario `sauri` de RabbitMQ con la contraseña del archivo y elimina `guest`. RabbitMQ ahora tiene el volumen con nombre `rabbitmq-data` y un hostname fijo, de modo que usuarios y colas durables sobreviven a la recreación del contenedor. RustFS arranca con las nuevas llaves raíz sobre el mismo volumen de datos. Tras la primera actualización hay que reiniciar los motores nativos para que lean las llaves del almacén: `make engines-down && make engines-up`.
 
@@ -116,8 +116,7 @@ esperado, no una falla del motor); si hay voz pero Whisper no devuelve palabras,
 
 Calibrar fuera del sandbox: `SAURI_ASR_VAD_THRESHOLD=0.5` (entre 0 y 1, inclusive),
 `SAURI_ASR_CHUNK_SECONDS=120` y `SAURI_ASR_SUPPRESS_NST=off` (`on` activa `-sns`).
-La eliminación de palabras inventadas, la puntuación, precisión del vocabulario y
-rendimiento quedan **NO VERIFICADOS con audio real** en esta entrega.
+La eliminación de palabras inventadas y la precisión del vocabulario siguen **NO VERIFICADAS con audio real**. El rendimiento se midió en dos grabaciones reales (15 y 16-11-2026; cifras y límites en `.spectra/specs/core-speech-pipeline/acceptance-run.md`). La puntuación en la reunión de 94 min mostró un defecto en el primer tramo (#1010, abierto).
 
 El [modelo oficial Silero v6.2.0](https://huggingface.co/ggml-org/whisper-vad/blob/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin)
 coincide con el archivo de pruebas medido: 885098 bytes, SHA-256
@@ -171,7 +170,7 @@ tiempo de palabra invertidas, desplazamiento mediano del inicio de palabra ≈ 0
 velocidad dentro del ruido. Descartados: `Hola, ¿cómo están? Muy bien, gracias.` (omitió
 unas 50 de 148 palabras en una ventana), `Hola, buenos días. Vamos a empezar la reunión:
 ¿cómo están todos?` (2 de 24 aún sin puntuación) y `Hola.` (demasiado débil). La
-repetición sobre el archivo completo de 94 min queda **NO VERIFICADA** en esta entrega.
+repetición sobre una grabación completa de 94 min (16-11-2026, VAD activo) tuvo puntuación normal salvo los primeros ~1:36, que salieron sin puntuación ni mayúsculas (#1010, abierto, causa sin determinar).
 
 Ante `engine_failed`, revisar `~/.local/state/sauri/native-engines/asr.log`
 (o `asr.log` bajo `SAURI_NATIVE_ENGINE_STATE_DIR`). Los fallos de `whisper-cli` y del VAD
@@ -229,6 +228,22 @@ credenciales son sintéticos. Usa exclusivamente el venv del instalador, configu
 `SAURI_DIAR_ENGINE_PYTHON`; si no está aprovisionado, la prueba se omite con un motivo
 explícito. No instala dependencias ni inyecta paquetes de otro venv. Comprueba contrato v2,
 duración y eliminación de temporales propios. No demuestra calidad vocal, cantidad correcta de hablantes ni el recorrido de U8.
+
+## Resumen local: `llm-engine` y `llama-server` (#924)
+
+La pasarela `backend/llm-engine/native_main.py` escucha en :8003 (`POST /v1/chat/completions`, con el `engine_token`) y arranca `llama-server` en :8004 solo cuando llega una petición; lo detiene tras 120 s de inactividad y lo protege de la suspensión con `caffeinate`. Atiende una petición a la vez. El worker apunta a `SUMMARIZATION_BASE_URL` (por defecto `http://host.docker.internal:8003/v1`).
+
+- `bash scripts/engines/install-llm-engine.sh` (parte de `make engines-install`; `--check` no descarga ni compila) compila `llama-server` estático con Metal en el commit fijado de llama.cpp y descarga Qwen3.5-9B Q4_K_M verificando el SHA-256 de `scripts/engines/engine-hashes.json`. Destino: `~/.local/share/sauri/native-engines/llm/` (`SAURI_LLM_INSTALL_DIR`): `bin/llama-server`, `models/`, entorno virtual propio y `provenance.json`.
+- Variables de la pasarela: `SAURI_LLAMA_SERVER` y `SAURI_LLM_MODEL_FILE` (rutas alternativas), `SUMMARIZATION_TIMEOUT_SECONDS` (ver «Fiabilidad de los resúmenes»). El razonamiento interno del modelo va desactivado (`--reasoning-budget 0`).
+- Registro: `~/.local/state/sauri/native-engines/llm.log`.
+
+## Enrutamiento por proceso, claves y modelos locales (`model-engines`)
+
+- **Elección:** desde el portal («Motores y modelos» y los selectores por proceso) el dueño enlaza proveedores y elige, por proceso, motor y modelo; sin elección guardada se usa el motor local de siempre. La elección vive en PostgreSQL y se lee en cada intento, así que aplica al siguiente trabajo sin reiniciar nada.
+- **Datos que salen del Mac:** solo con una elección externa y el consentimiento del aviso de privacidad vigente para ese proceso y proveedor. Las claves quedan en el llavero de macOS (o `~/.config/sauri/secrets/`), nunca en Docker ni en el worker; la pasarela las lee en cada llamada.
+- **Respaldo local:** si el proveedor falla de forma transitoria y el respaldo está activo, el trabajo se repite una vez con el motor local; si la causa es de configuración (clave rechazada, falta de consentimiento) no se cambia de motor. La procedencia (`engine_name`, `engine_model`, `engine_external`, `engine_fallback_reason`) queda en las filas de transcripción, diarización y resumen; todavía no se muestra en la reunión.
+- **Modelos locales:** `host-engine` instala desde `huggingface.co` solo archivos del catálogo `scripts/engines/model-catalog.json` (repositorio, revisión y SHA-256 fijos) en `~/.local/share/sauri/models/` (`SAURI_MODELS_DIR`), con progreso y cancelación; reconoce («adopta») los modelos instalados a mano sin moverlos y no deja quitar el que está en uso. Tras cambiar el código de `host-engine`, de una pasarela o de un motor hace falta reiniciar ese proceso (`make engines-down && make engines-up`); ni los instaladores ni `--check` reinician procesos personales.
+- **Límite de la evidencia:** las pruebas automáticas usan servidores simulados en `127.0.0.1`; no se ha hecho el recorrido con proveedores reales ni con claves del dueño (unidad U10 de `model-engines`).
 
 ## Procedimiento QA sin datos personales
 

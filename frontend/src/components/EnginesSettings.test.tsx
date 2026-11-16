@@ -141,12 +141,13 @@ function fakeBackend(initial: EngineProvider[]) {
 let backend: ReturnType<typeof fakeBackend>;
 
 const GOOD_CATALOG: EngineModelList = {
-  models: [{ id: "gpt-a", label: null }, { id: "gpt-b", label: "GPT B" }],
+  models: [{ id: "gpt-a", label: null, serves: ["summary"] }, { id: "gpt-b", label: "GPT B", serves: ["summary"] }],
   starter: "gpt-a",
   from_cache: false,
   fetched_at: new Date().toISOString(),
   manual_entry: false,
   error_class: null,
+  serves: ["summary"],
 };
 
 async function renderReady(initial: EngineProvider[], prepare?: (fake: ReturnType<typeof fakeBackend>) => void) {
@@ -190,6 +191,23 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe("what a provider serves", () => {
+  it("says it plainly on the card: from the listed models, or that its type serves nothing yet", async () => {
+    await renderReady(
+      [
+        provider({ id: "p1", label: "Work OpenAI" }),
+        provider({ id: "p2", label: "Soon", kind: "chatgpt_plan", key_set: false, key_hint: null }),
+      ],
+      (fake) => {
+        fake.catalogs.p1 = { ...GOOD_CATALOG, serves: ["transcription", "summary"] };
+      },
+    );
+    const work = within(card("Work OpenAI"));
+    expect(await work.findByText(text.card.serves(`${text.processes.transcription}, ${text.processes.summary}`))).toBeInTheDocument();
+    expect(within(card("Soon")).getByText(text.card.servesNone)).toBeInTheDocument();
+  });
 });
 
 describe("preloaded provider cards", () => {
@@ -243,6 +261,8 @@ describe("preloaded provider cards", () => {
     expect(work.getByText("https://api.openai.example/v1")).toBeInTheDocument();
     expect(work.getByText(text.card.keyShown("1234"))).toBeInTheDocument();
     expect(await work.findByText(text.card.modelsCount(2))).toBeInTheDocument();
+    // What the provider can do for Sauri comes from the models it listed.
+    expect(work.getByText(text.card.serves(text.processes.summary))).toBeInTheDocument();
 
     expect(within(card("No key yet")).getByText(text.statuses.no_key)).toBeInTheDocument();
     // Key and models are both "—": no key saved, and nothing was asked.
@@ -381,7 +401,7 @@ describe("models catalog", () => {
       [provider({ id: "p1", label: "Work OpenAI" }), provider({ id: "p2", label: "Claude", kind: "anthropic" })],
       (fake) => {
         fake.catalogs.p1 = GOOD_CATALOG;
-        fake.catalogs.p2 = { ...GOOD_CATALOG, models: [{ id: "claude-x", label: null }], starter: null };
+        fake.catalogs.p2 = { ...GOOD_CATALOG, models: [{ id: "claude-x", label: null, serves: ["summary"] }], starter: null };
       },
     );
     await waitFor(() => expect(screen.getAllByText(text.catalog.available)).toHaveLength(2));

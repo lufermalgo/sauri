@@ -66,7 +66,8 @@ REQUEST_CAUSES: Final = frozenset(
 # Ids that name non-chat models (speech, embeddings, images...), plus common embedding and rerank families.
 NOT_CHAT: Final = re.compile(
     r"(embed|tts|audio|speech|transcri|whisper|image|imagen|veo|dall-e|moderation|aqa|realtime|rerank|bge|minilm"
-    r"|nomic|mxbai|sora|lyria|(?:^|[^a-z0-9])(?:gte|e5)(?:$|[^a-z0-9]))",
+    r"|nomic|mxbai|sora|lyria|banana|robotics|computer-use|deep-research|antigravity"
+    r"|(?:^|[^a-z0-9])(?:gte|e5|live)(?:$|[^a-z0-9]))",
     re.IGNORECASE,
 )
 _AUDIO_IN: Final = re.compile(r"(whisper|transcri|scribe|stt|speech-to-text|asr)", re.IGNORECASE)
@@ -81,10 +82,26 @@ _ODD: Final = re.compile(
 _DATED: Final = re.compile(r"\d{4}-?\d{2}-?\d{2}")
 
 
+# The Sauri processes a model can serve. Offered pairs are the API matrix' business; this only reads the
+# model: its own declared methods when the provider lists them (Gemini ``supportedGenerationMethods``),
+# else its id.
+PROCESSES: Final[tuple[Capability, ...]] = ("transcription", "diarization", "summary")
+CHAT_METHODS: Final = frozenset({"generateContent", "streamGenerateContent"})
+
+
 @dataclass(frozen=True)
 class ModelInfo:
     id: str
     name: str
+    methods: tuple[str, ...] = ()
+
+    @property
+    def serves(self) -> tuple[Capability, ...]:
+        if NOT_CHAT.search(self.id) is None and (not self.methods or CHAT_METHODS.intersection(self.methods)):
+            return ("summary",)
+        if _AUDIO_IN.search(self.id) and not _AUDIO_OUT.search(self.id):
+            return ("transcription", "diarization")
+        return ()
 
 
 def _version(model_id: str) -> list[int]:
@@ -110,9 +127,13 @@ def starter_model(ids: list[str]) -> str | None:
 
 def filter_models(models: list[ModelInfo], capability: Capability) -> list[ModelInfo]:
     """Keep what the process can use: chat models for summary/chat, speech-to-text models for audio."""
-    if capability in ("summary", "chat"):
-        return [model for model in models if not NOT_CHAT.search(model.id)]
-    return [model for model in models if _AUDIO_IN.search(model.id) and not _AUDIO_OUT.search(model.id)]
+    wanted = "summary" if capability == "chat" else capability
+    return [model for model in models if wanted in model.serves]
+
+
+def served_processes(models: list[ModelInfo]) -> list[Capability]:
+    """The processes at least one of the listed models can serve, in the portal's order."""
+    return [process for process in PROCESSES if any(process in model.serves for model in models)]
 
 
 def parse_models(body: bytes) -> list[ModelInfo]:
@@ -132,14 +153,16 @@ def parse_models(body: bytes) -> list[ModelInfo]:
             continue
         label = entry.get("display_name")
         name = label if isinstance(label, str) and label and len(label) <= 128 else model_id
-        models.setdefault(model_id, ModelInfo(model_id, name))
+        declared = entry.get("supportedGenerationMethods")
+        methods = tuple(m for m in declared if isinstance(m, str))[:32] if isinstance(declared, list) else ()
+        models.setdefault(model_id, ModelInfo(model_id, name, methods))
         if len(models) >= MAX_MODELS:
             break
     return list(models.values())
 
 
-def _public_model(model: ModelInfo) -> dict[str, str]:
-    return {"id": model.id, "name": model.name}
+def _public_model(model: ModelInfo) -> dict[str, Any]:
+    return {"id": model.id, "name": model.name, "serves": list(model.serves)}
 
 
 # --- requests -----------------------------------------------------------------------------------------
@@ -222,6 +245,8 @@ def _error_hint(body: bytes, key: str | None) -> str | None:
         data = json.loads(body)
     except ValueError:
         return None
+    if isinstance(data, list) and data:
+        data = data[0]  # Google's OpenAI-compatible route wraps its error in a one-item list
     error = data.get("error") if isinstance(data, dict) else None
     candidates: list[Any] = []
     if isinstance(error, dict):
@@ -449,6 +474,7 @@ class ProviderService:
         shown = filter_models(entry.models, body.capability)
         return {
             "models": [_public_model(model) for model in shown],
+            "serves": served_processes(entry.models),
             # The plan lists its own models in priority order: its first one is the everyday choice.
             "starter": shown[0].id if shown and body.transport == "chatgpt-responses" else starter_model(
                 [model.id for model in shown]

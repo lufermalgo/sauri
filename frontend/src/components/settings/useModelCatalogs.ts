@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EngineErrorClass, EngineKindInfo, EngineModel, EngineModelList, EngineProvider } from "@sauri/shared-types";
+import type { EngineErrorClass, EngineKindInfo, EngineModel, EngineModelList, EngineProcess, EngineProvider } from "@sauri/shared-types";
 import { listEngineModels } from "../../api";
 
 /** What one provider answered when asked for its models, across every process it can serve. */
 export type CatalogEntry =
   | { status: "loading" }
-  | { status: "ready"; models: EngineModel[]; fetchedAt: string | null }
+  | { status: "ready"; models: EngineModel[]; fetchedAt: string | null; serves: EngineProcess[] }
   | { status: "failed"; cause: EngineErrorClass };
 
 /** Providers whose lists are requested: switched on, with their key where one is needed, and able to
@@ -17,6 +17,8 @@ export function catalogProviders(providers: EngineProvider[], kinds: EngineKindI
   );
 }
 
+const PROCESS_ORDER: EngineProcess[] = ["transcription", "diarization", "summary"];
+
 function merge(lists: PromiseSettledResult<EngineModelList>[]): CatalogEntry {
   const answered = lists.flatMap((result) => (result.status === "fulfilled" && !result.value.error_class ? [result.value] : []));
   if (answered.length === 0) {
@@ -26,7 +28,8 @@ function merge(lists: PromiseSettledResult<EngineModelList>[]): CatalogEntry {
   const seen = new Map<string, EngineModel>();
   for (const list of answered) for (const model of list.models) if (!seen.has(model.id)) seen.set(model.id, model);
   const dates = answered.flatMap((list) => (list.fetched_at ? [list.fetched_at] : [])).sort();
-  return { status: "ready", models: Array.from(seen.values()), fetchedAt: dates[dates.length - 1] ?? null };
+  const serves = PROCESS_ORDER.filter((process) => answered.some((list) => list.serves.includes(process)));
+  return { status: "ready", models: Array.from(seen.values()), fetchedAt: dates[dates.length - 1] ?? null, serves };
 }
 
 /** Model lists of the given providers, asked once each (the API keeps them a day) and again on `refreshAll`. */

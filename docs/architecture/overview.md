@@ -1,6 +1,6 @@
 # Arquitectura de Sauri
 
-Estado: dirección confirmada por Fer el 12-11-2026 (conversación del 12-11-2026, 19:10–19:25 UTC). Inventario contrastado con `origin/main` `c19b4ae`. Este documento distingue configuración, implementación y validación; no declara aceptación de producto ni reemplaza las specs.
+Estado: dirección confirmada por Fer el 12-11-2026 (conversación del 12-11-2026, 19:10–19:25 UTC). Inventario contrastado con `origin/main` `98591fb` (16-11-2026). Este documento distingue configuración, implementación y validación; no declara aceptación de producto ni reemplaza las specs.
 
 ## Decisiones y límites
 
@@ -21,10 +21,10 @@ Estado: dirección confirmada por Fer el 12-11-2026 (conversación del 12-11-202
 | Datos | PostgreSQL 16 | Docker `postgres`, volumen `pgdata` | Reuniones, estados, transcripciones, hablantes y propiedad |
 | Archivos | RustFS compatible con S3 | Docker `minio`, volumen `minio-data` | Audio/video y enlaces firmados para acceso temporal |
 | Cola | RabbitMQ 3 | Docker `rabbitmq` | Trabajos asíncronos firmados |
-| Transcripción | MLX Whisper `large-v3-turbo` (se reemplaza por whisper.cpp `large-v3-turbo` Q5_0 en la unidad U2 de `core-speech-pipeline`) | Host Mac, puerto 8001 | `POST /transcribe`; `backend/asr-engine/native_main.py` |
-| Diarización | Senko (CoreML), contrato v2 | Host Mac, puerto 8002 | `POST /diarize`; `backend/diar-engine/native_main.py` |
-| Resumen | `llm-engine` + `llama-server` (llama.cpp) con Qwen3.5-9B, o un proveedor compatible con OpenAI configurado explícitamente | Host Mac, puerto 8003 (llama-server interno en 8004) | `POST /v1/chat/completions`; `backend/llm-engine/native_main.py` |
-| Administración del anfitrión (`host-engine`) | Python, FastAPI | Host Mac, puerto 8005 (solo `127.0.0.1`) | Guarda las claves de proveedores externos en el llavero de macOS (archivo 0600 en `~/.config/sauri/secrets/` como alternativa) y reporta el estado de los motores: `PUT`/`DELETE /v1/secrets/{ref}`, `GET /v1/engines/status`, `GET /health`. Autentica cada llamada con `management_token`; ninguna ruta devuelve una clave; `backend/host-engine/native_main.py`. Spec `model-engines`, unidad U1 (#1074): código listo para revisión, sin desplegar ni conectado aún a la API (U2) |
+| Transcripción | whisper.cpp (`whisper-cli`, Metal) con `large-v3-turbo` cuantizado Q5_0, contrato v2 (palabras con tiempos) y detección de voz Silero activa por omisión | Host Mac, puerto 8001 | `POST /transcribe`; `backend/asr-engine/native_main.py`. Reemplazó a MLX Whisper (unidad U2 de `core-speech-pipeline`, #922) |
+| Diarización | Senko (CoreML, commit fijado), contrato v2: segmentos crudos, `speaker_count`, `engine` y `diagnostics` | Host Mac, puerto 8002 | `POST /diarize`; `backend/diar-engine/native_main.py`. Reemplazó a pyannote en el camino nativo (unidad U1, #921) |
+| Resumen | Pasarela `llm-engine` (:8003) que arranca `llama-server` (llama.cpp compilado en el commit fijado, :8004, solo interno) con Qwen3.5-9B Q4_K_M bajo demanda y lo detiene tras 120 s de inactividad; o un proveedor externo elegido explícitamente (ver «Enrutamiento por proceso») | Host Mac, puerto 8003 (llama-server interno en 8004) | `POST /v1/chat/completions`; `backend/llm-engine/native_main.py` |
+| Administración del anfitrión (`host-engine`) | Python, FastAPI | Host Mac, puerto 8005 (solo `127.0.0.1`) | Guarda las claves de proveedores externos en el llavero de macOS (archivo 0600 en `~/.config/sauri/secrets/` como alternativa), prueba proveedores y lista sus modelos (`POST /v1/providers/probe`, `POST /v1/providers/models`, `GET /v1/discover/local`), y administra los modelos locales: hardware, catálogo con SHA-256, adopción de los ya instalados a mano, instalación, verificación y borrado (`/v1/hardware`, `/v1/local/...`). Además `PUT`/`DELETE /v1/secrets/{ref}`, `GET /v1/engines/status` y `GET /health`. Autentica cada llamada con `management_token`; ninguna ruta devuelve una clave. `backend/host-engine/native_main.py`; spec `model-engines`. La API lo llama con `HOST_ENGINE_URL` (`backend/app/engines/host_client.py`) |
 
 ## Entorno local con Docker Desktop
 
@@ -38,7 +38,7 @@ En el Mac, los servicios de Sauri corren en **Docker Desktop** como el proyecto 
 | `postgres` (PostgreSQL 16) | `127.0.0.1:5432` | volumen `sauri_pgdata` |
 | `minio` (RustFS, compatible S3; conserva el nombre MinIO) | `127.0.0.1:9000` (API) y `127.0.0.1:9001` (consola) | volumen `sauri_minio-data` |
 | `rabbitmq` (RabbitMQ 3 con consola de administración) | `127.0.0.1:5672` y `127.0.0.1:15672` | volumen `sauri_rabbitmq-data` |
-| Motores nativos (fuera de Docker) | `127.0.0.1` `8001` ASR, `8002` diarización, `8003` resumen, `8005` administración (`host-engine`) | modelos en `~/.local/share/sauri/`, credenciales en `~/.config/sauri/` |
+| Motores nativos (fuera de Docker) | `127.0.0.1` `8001` ASR, `8002` diarización, `8003` pasarela de resumen (con `llama-server` interno en `8004`), `8005` administración (`host-engine`) | modelos en `~/.local/share/sauri/`, credenciales en `~/.config/sauri/` |
 
 Comandos: `make up` (levanta el proyecto `sauri`), `make logs`, `make down`; `make engines-install`, `make engines-up`, `make engines-status`, `make engines-down` para los motores nativos. Instalación paso a paso en `docs/operations/installation-notes.md`.
 
@@ -61,13 +61,54 @@ graph LR
   W --> T[ASR nativo :8001]
   W --> H[Senko nativo :8002]
   W --> L[llm-engine nativo :8003]
-  A -.->|management_token; llamada de la API pendiente (U2)| HE[host-engine nativo :8005]
+  L --> LS[llama-server :8004]
+  A -->|management_token| HE[host-engine nativo :8005]
   HE --> K[(Llavero de macOS o archivo 0600)]
 ```
 
 La configuración de API/worker apunta a `host.docker.internal:8001`, `:8002` y `:8003`. Los motores implementan HTTP y controles de credenciales/capacidad por grabación. Su arranque, accesibilidad desde Docker y uso efectivo de GPU deben comprobarse juntos; tener una URL o un modelo configurado no demuestra inferencia. Credenciales fuera del repositorio en `~/.config/sauri`, montadas de solo lectura al worker; modelos compartidos en caché, nunca copiados al repositorio.
 
-**Claves de proveedores y regla «el worker no recibe claves».** Las claves de proveedores externos viven solo en el host (llavero o archivo 0600) y las administra `host-engine` (:8005). El token de administración (`management_token`) es una credencial distinta del `engine_token`: se monta de solo lectura **únicamente** en el contenedor `api` (`/run/secrets/management_token`, variable `MANAGEMENT_TOKEN_FILE`; junto con `HOST_ENGINE_URL=http://host.docker.internal:8005`) y nunca en `worker`, ni lo leen las pasarelas de datos. El `engine_token` del worker no autoriza ninguna ruta de `host-engine`. La API aún no usa este servicio (unidad U2 de `model-engines`).
+**Claves de proveedores y regla «el worker no recibe claves».** Las claves de proveedores externos viven solo en el host (llavero o archivo 0600) y las administra `host-engine` (:8005). El token de administración (`management_token`) es una credencial distinta del `engine_token`: se monta de solo lectura **únicamente** en el contenedor `api` (`/run/secrets/management_token`, variable `MANAGEMENT_TOKEN_FILE`; junto con `HOST_ENGINE_URL=http://host.docker.internal:8005`) y nunca en `worker`, ni lo leen las pasarelas de datos. El `engine_token` del worker no autoriza ninguna ruta de `host-engine`. La API llama a este servicio para guardar claves, probar proveedores y gestionar modelos locales (unidades U1, U2 y U6 de `model-engines`).
+
+## Core de voz: motores nativos, contrato v2 y slot
+
+Fuente: spec `.spectra/specs/core-speech-pipeline/`; mediciones en `.spectra/specs/core-speech-pipeline/acceptance-run.md`. Este apartado describe la implementación en `main`; no declara aceptación de producto.
+
+- **Motores (HTTP nativos, solo `127.0.0.1`):** ASR whisper.cpp `large-v3-turbo` Q5_0 en :8001 (`whisper-cli`, un subproceso por trozo de voz; modelo `ggml-large-v3-turbo-q5_0.bin` fijado por revisión y SHA-256 en `scripts/engines/engine-hashes.json`); diarización Senko en :8002; pasarela de resumen en :8003 con `llama-server` en :8004 (Qwen3.5-9B Q4_K_M, también fijado por hash). Los instala `make engines-install` y se controlan con `make engines-up|down|status` (`scripts/engines/native-engines.sh start|stop|status {asr|diar|llm|host|all}`). Cada motor tiene su entorno virtual propio y normaliza el audio con `sauri_engine_common` (`ffmpeg`, mono 16 kHz); durante cada petición lo protege de la suspensión con `caffeinate -i`.
+- **Contrato v2:** el ASR devuelve segmentos, **palabras con inicio, fin y probabilidad** (los tiempos invertidos se reparan con una regla determinista y se marcan), el idioma usado, `engine` y `diagnostics`; la diarización devuelve segmentos crudos de Senko (no la salida suavizada), `speaker_count`, `engine` y `diagnostics`. Ambos exigen `contract_version: 2`; una respuesta anterior se rechaza en el cliente. El idioma sale de configuración, no está fijado.
+- **Persistencia:** las palabras viven en `transcript_words` y la atribución por palabra en `word_speaker_assignments` (estados `assigned`, `ambiguous`, `unassigned`); `speech_turns` conserva el segmento original del ASR y los turnos visibles se construyen al leer, agrupando palabras por hablante.
+- **Slot de motor pesado:** los workers de transcripción, diarización y resumen toman un `pg_advisory_lock` de sesión antes de llamar a un motor (`backend/app/infra/engine_slot.py`; espera máxima de 120 s para obtenerlo), de modo que nunca corren dos cargas pesadas a la vez. Transcripción y diarización van en serie.
+- **Resumen:** se solicita solo al terminar la diarización, usa el cliente de chat compatible con OpenAI contra :8003 y queda como borrador con citas validadas por código; no entra en `Tiempo_Hasta_Transcripcion`.
+
+## Enrutamiento por proceso, respaldo local y procedencia (`model-engines`)
+
+Fuente: spec `.spectra/specs/model-engines/`. Sin configuración guardada, cada proceso usa su motor local y nada sale del Mac.
+
+- **Configuración:** por propietario, en PostgreSQL: `engine_providers` (proveedores enlazados, sin claves), `engine_process_settings` (proveedor, modelo y `local_fallback`, activado por defecto, por proceso: transcripción, hablantes, resumen) y `engine_privacy_consents` (consentimiento por proceso y proveedor, con la versión del aviso). API en `/api/v1/engines` (proveedores, claves, prueba, modelos, procesos, aviso, estado) y `/api/v1/engines/local` (hardware, modelos locales, adopción, instalación, verificación, trabajos).
+- **Dónde se decide:** en cada intento, el worker resuelve la ruta del propietario desde PostgreSQL (`backend/app/engines/routing.py`), exige consentimiento vigente para esa combinación proceso/proveedor y la envía a la pasarela en la cabecera `X-Sauri-Route`. El worker nunca lee una clave: la pasarela la lee del almacén del anfitrión (llavero de macOS o archivo 0600) en el momento de la llamada, la valida contra el origen para el que se guardó y habla con el proveedor. `backend/app/engines/capability_matrix.py` es la fuente de verdad de qué proveedor sirve a qué proceso; al 16-11-2026 se ofrecen resumen con OpenAI, Anthropic, Gemini, OpenRouter, LM Studio y servidores compatibles, transcripción con AssemblyAI, Deepgram y Groq, y hablantes con Deepgram. OpenAI no se ofrece para transcripción ni hablantes. El inicio de sesión con el plan de ChatGPT sigue bloqueado.
+- **Respaldo local:** solo ante un fallo transitorio del proveedor y con el respaldo activado, el worker hace una segunda llamada al motor local; los fallos que exigen una acción del usuario (clave rechazada, consentimiento ausente, petición inválida, salida inválida) nunca cambian de motor y no hay cadena entre proveedores externos.
+- **Procedencia:** transcripción, diarización y resumen guardan `engine_name`, `engine_model`, `engine_external` y `engine_fallback_reason`. Está registrado en la base; **exponerlo en la API de reuniones y mostrarlo en el portal (tarea U8.3 de `model-engines`) sigue pendiente**. Las reuniones procesadas antes de esa columna no la tienen.
+- **Modelos locales:** el catálogo (`scripts/engines/model-catalog.json`) fija repositorio, revisión, tamaño y SHA-256 de cada archivo. `host-engine` instala solo desde `huggingface.co` con ese hash, reconoce los modelos ya instalados a mano (adopción sin mover ni descargar nada) y bloquea quitar el modelo en uso. Los modelos viven en `~/.local/share/sauri/models/` (variable `SAURI_MODELS_DIR`; los instalados a mano antes se reconocen en su ubicación original) y las pasarelas usan el modelo elegido en cada proceso.
+- **Alcance de la evidencia:** los adaptadores de proveedores externos se verificaron contra servidores simulados en `127.0.0.1` y la documentación de cada proveedor; el recorrido real con claves y material del dueño (unidad U10) no se ha hecho.
+
+## Alternativas descartadas y evidencia
+
+Fuentes: `.spectra/specs/core-speech-pipeline/design.md` y `model-engines/design.md`; las cifras de Codex son de su evaluación en el Mac del dueño (M3, 24 GiB) fuera de Sauri, con informes privados fuera del repositorio. WER y DER no se midieron (no hay referencia humana).
+
+| Decisión | Descartado | Evidencia |
+|---|---|---|
+| Motores nativos, no en Docker | Motores en contenedores; app nativa Swift | Docker en macOS corre una VM Linux sin CoreML ni Metal |
+| ASR whisper.cpp Turbo Q5_0 por subproceso | MLX Whisper; `whisper-server`; binding Python; Parakeet; Whisper CoreML | MLX 9,0 s frente a 6,0 s en el mismo fragmento y más memoria; cargar el modelo cuesta 168 ms, un servidor residente (~1,5 GiB) no ahorra nada; Parakeet 3 veces más rápido pero con errores de nombres y de idioma y sin referencia humana; Whisper CoreML resultó más lento que la variante Metal elegida (67,8 s en clips de 9 min) |
+| Diarización Senko, salida cruda | FluidAudio; pyannote 3.1 y community-1; salida suavizada de Senko | 98 min: Senko 11,1 s de inferencia frente a 49,6 s de FluidAudio (que además exige compilar Swift); pyannote 8–15 min por reunión; la salida suavizada descarta turnos de 0,78 s o menos, justo el hablante breve |
+| Atribución por palabra con función pura | Punto medio de la palabra; alineación forzada con wav2vec2; modificar `assign_turns` | Cambiaría resultados y partiría palabras largas; añade minutos y un modelo por idioma; los más de 400 casos de equivalencia de #907 protegen el comportamiento por segmento |
+| Ejecución en serie con `pg_advisory_lock` | Paralelizar ASR y diarización; arrendamiento con fencing; `flock` en el anfitrión | La diarización dura unos 30 s de unos 6 min: menos de 10 % de ganancia; los workers corren en Docker y no comparten sistema de archivos con el anfitrión |
+| Resumen: Qwen3.5-9B Q4_K_M con llama.cpp fijado | Qwen3-4B; Qwen2.5-14B; resumen extractivo; `llama-server` residente; solo Ollama | Qwen3-4B inventó que no había metas; Qwen2.5-14B abortó por presión de memoria; el extractivo (12–16 s) omitió el bloque final; un `llama-server` residente ocupa unos 5,5 GiB permanentes; el `llama-completion` de Homebrew aborta por incompatibilidad con GGML |
+| Claves en el llavero del anfitrión | Archivos `*_FILE` montados en Docker; PostgreSQL cifrado; biblioteca `keyring`; variables de entorno | Exponen la clave a Docker o a `ps`/`docker inspect`, o piden permiso por cada intérprete |
+| Ruta decidida en el worker y ejecutada en la pasarela | Que la pasarela lea su propia copia de la configuración; que las pasarelas lean PostgreSQL; que el worker llame al proveedor | La pasarela no conoce al propietario ni el consentimiento; el worker llamando directo dejaría las claves en Docker |
+| `host-engine` aparte (:8005) con su propio token | Ruta de administración en la pasarela LLM; que el portal hable con el anfitrión | La pasarela comparte el token del worker y mezcla datos con administración; el portal obligaría a validar sesiones en el anfitrión y abrir CORS |
+| Revisión de hablantes sobre la grabación original | Un WAV por hablante (`speaker_excerpt_service`) | Crea audio derivado y contradice la decisión del dueño del 13-11; la revisión de hablantes reproduce la grabación original |
+
+Medido en la corrida real del 15 y 16-11 (detalle y límites en `acceptance-run.md`): 0,25 % y 0,29 % de palabras sin asignar frente a la meta de 3 %; `Tiempo_Hasta_Transcripcion` de 6,3 min para 55 min de audio y 14,2 min para 94 min, frente a la meta de 7 min para 60 min, que **no queda demostrada**; memoria y presión del host, no registradas.
 
 ## Validación de entrada, límites y errores de la API (#1070)
 
@@ -116,6 +157,8 @@ La configuración de API/worker apunta a `host.docker.internal:8001`, `:8002` y 
 | Finalización, carga y apertura de revisión | `.spectra/specs/chrome-recording-completion/{requirements,design,tasks}.md` | Tres documentos presentes; PR #703 MERGED (head `191c8aa`, verificado durante U4). No inferir de ese merge captura real, recorrido integrado ni aceptación; revisar cada issue antes de abrir trabajo |
 | Reproducción | `.spectra/specs/meeting-review-playback/` | Diseño, tareas y registro de aceptación separados; API `/api/v1/meetings/{meeting_id}/playback` implementada, falta comprobar recorrido integrado |
 | Biblioteca y metadatos | `.spectra/specs/recording-library-metadata/` | Main contiene requirements/config; discrepancias documentales ya registradas en #701, #715, #716. Reusar esos issues, no duplicarlos |
+| Core de voz (transcripción, hablantes, resumen, portal, revisión de hablantes) | `.spectra/specs/core-speech-pipeline/{requirements,design,tasks}.md` y `acceptance-run.md` | Unidades U1–U7 y U9 integradas en `main`; corrida real medida (U8.1), con la meta de tiempo no demostrada y la apertura por el dueño sin registrar; aceptación de producto del dueño pendiente |
+| Motores y modelos (proveedores externos, claves, modelos locales) | `.spectra/specs/model-engines/{requirements,design,tasks}.md` | Integradas U1–U8 salvo la procedencia visible en la reunión (U8.3); U9 (plan de ChatGPT) bloqueada por verificación legal; U10 (recorrido real con proveedores) pendiente |
 | Fallos de carga existentes | #606 y pruebas `extension/src/background.upload-retry.test.ts`, `upload-queue.*test.ts` | Inspeccionar correcciones existentes antes de iniciar otra; una prueba con dobles no acredita carga real |
 
 La spec de finalización exige abrir revisión **después de procesamiento exitoso y activos protegidos disponibles**. El avance inicial de guardar/reproducir no autoriza suprimir esa condición ni anunciar transcripción terminada. Primero validar almacenamiento y reproducción como capacidades reales; conservar el comportamiento aprobado de apertura automática hasta que una enmienda funcional sea aprobada.
