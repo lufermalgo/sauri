@@ -259,6 +259,28 @@ export async function markFailed(jobId: string, error: string): Promise<void> {
   });
 }
 
+/** Restarts only this session's exhausted jobs after an explicit manual retry. */
+export async function resetFailedJobsForSession(sessionId: string): Promise<number> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const request = tx.objectStore(STORE_NAME).index("status").openCursor(IDBKeyRange.only("failed"));
+    let resetCount = 0;
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const job = cursor.value as UploadJob;
+      if (job.sessionId === sessionId) {
+        cursor.update({ ...job, status: "pending", retryCount: 0 });
+        resetCount++;
+      }
+      cursor.continue();
+    };
+    tx.oncomplete = () => { db.close(); resolve(resetCount); };
+    tx.onabort = tx.onerror = () => { db.close(); reject(tx.error ?? new Error("Manual upload retry failed")); };
+  });
+}
+
 /**
  * Returns jobs that can still be retried: status='pending' or
  * status='processing' (stale — might have been interrupted).

@@ -9,6 +9,7 @@ import {
   markProcessing,
   markDone,
   markFailed,
+  resetFailedJobsForSession,
   type UploadJob,
 } from "./upload-queue";
 import { assembleBlob, clearSession, createCompletion, getCapturingCompletion, claimCompletion, getCompletion, getPendingFinalizations, settleCapture, bindRecordingId, setUploadOutcome, setProcessingStatus, getProcessingCompletions, claimReviewLaunch, claimReviewCreate, markReviewOpened, getPendingReviewLaunches, type RecordingCompletion } from "./recording-db";
@@ -42,15 +43,21 @@ interface SauriState {
   tabId?: number;
   provider?: CaptureHandle["provider"];
   pickerSource?: CaptureSource;
+  paused: boolean;
+  elapsedMs?: number;
+  segmentStartedAt?: number;
+  showControlBar?: boolean;
+  micLabel?: string;
 }
 
-const DEFAULT_STATE: SauriState = { status: "idle" };
+const DEFAULT_STATE: SauriState = { status: "idle", paused: false };
 
 // --- State helpers ---
 
 async function getState(): Promise<SauriState> {
   const result = await chrome.storage.session.get("sauriState");
-  return (result.sauriState as SauriState) ?? DEFAULT_STATE;
+  const state = (result.sauriState as SauriState) ?? DEFAULT_STATE;
+  return { ...state, paused: state.paused ?? false };
 }
 
 async function setState(state: SauriState): Promise<void> {
@@ -234,9 +241,9 @@ chrome.runtime.onMessage.addListener(
     _sender,
     sendResponse
   ) => {
-    // Page scripts can report discovery, not act as a media owner or a
-    // capture control. A different provider tab must not mutate the capture.
-    if (_sender.tab && ["start-capture", "capture-ready", "stop-capture", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode"].includes(message.type)) {
+    // Media-owner messages cannot come from a page. Overlay controls are
+    // separately bound to the exact recording session and originating Meet tab.
+    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload"].includes(message.type)) {
       sendResponse({ ok: false, error: "Message requires an extension capture context" });
       return false;
     }
@@ -265,10 +272,34 @@ chrome.runtime.onMessage.addListener(
         void (async () => { sendResponse(await handleCaptureReady(message.sessionId)); })();
         return true;
 
+      case "get-recording-ui":
+        void (async () => {
+          const state = await getState();
+          sendResponse({ state: state.status === "recording" && state.tabId === _sender.tab?.id && isMeetUrl(state.meetingUrl) ? recordingUI(state) : undefined });
+        })();
+        return true;
+
+      case "pause-capture":
+      case "resume-capture":
+      case "cancel-capture":
       case "stop-capture":
         void (async () => {
-          const stopped = await handleStopCapture();
-          sendResponse({ ok: stopped });
+          try {
+            sendResponse({ ok: await handleCaptureControl(message.type, message.sessionId, _sender.tab?.id) });
+          } catch (error) {
+            console.warn("[sauri] Capture control unavailable:", error);
+            sendResponse({ ok: false });
+          }
+        })();
+        return true;
+
+      case "retry-upload":
+        void (async () => {
+          try {
+            sendResponse(await handleRetryUpload(message.sessionId));
+          } catch {
+            sendResponse({ ok: false, reason: "retry-unavailable" });
+          }
         })();
         return true;
 
@@ -311,9 +342,10 @@ async function handleMeetDetected(
   meetingTitle?: string,
   url?: string
 ): Promise<void> {
-  if ((await getState()).status === "recording") return;
+  if ((await getState()).status === "recording" || (await chrome.storage.session.get("sauriCountdown")).sauriCountdown) return;
   const newState: SauriState = {
     status: "pending",
+    paused: false,
     meetingUrl: url,
     meetingTitle: meetingTitle ?? "Google Meet",
   };
@@ -335,18 +367,37 @@ async function handleMeetEnded(): Promise<void> {
 interface CaptureRequest {
   state: SauriState & { sessionId: string; tabId: number };
   meetingId: string;
+  countdownSeconds: number;
+  cancelled?: boolean;
 }
 
 function isMeetUrl(url?: string): boolean {
   return !!url?.startsWith("https://meet.google.com/");
 }
 
-async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean }> {
+async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; reason?: "cancelled" }> {
   try {
     const stored = await chrome.storage.session.get("sauriCaptureRequest");
     const request = stored.sauriCaptureRequest as CaptureRequest | undefined;
     if (!request || request.state.sessionId !== sessionId) return { ok: false };
     const { state, meetingId } = request;
+    if (request.cancelled) return { ok: false, reason: "cancelled" };
+    // Acquire the selected stream first, but persist no media or completion until
+    // the countdown finishes. Current-tab stream IDs must be consumed promptly.
+    if (isMeetUrl(state.meetingUrl) && request.countdownSeconds > 0) {
+      await chrome.storage.session.set({ sauriCountdown: { requestId: state.sessionId, tabId: state.tabId } });
+      try {
+        const countdown = await chrome.tabs.sendMessage(state.tabId, { type: "show-countdown", seconds: request.countdownSeconds, requestId: state.sessionId });
+        const stored = (await chrome.storage.session.get("sauriCountdown")).sauriCountdown;
+        if (!countdown?.ok || stored?.cancelled) return { ok: false, reason: "cancelled" };
+      } catch {
+        return { ok: false, reason: "cancelled" };
+      } finally {
+        await chrome.storage.session.remove("sauriCountdown");
+      }
+    }
+    const latest = (await chrome.storage.session.get("sauriCaptureRequest")).sauriCaptureRequest as CaptureRequest | undefined;
+    if (!latest || latest.cancelled) return { ok: false, reason: "cancelled" };
     await createCompletion({
       sessionId: state.sessionId, meetingId, provider: "meet",
       capturedTabId: state.tabId, status: "capturing", updatedAt: Date.now(),
@@ -369,6 +420,12 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id === undefined) return { ok: false, reason: "failed" };
         if (source !== "picker" && source !== "current-tab") return { ok: false, reason: "failed" };
+        const settings = await readRecordingSettings();
+        if (!await ensureOffscreenDocument()) return { ok: false, reason: "busy" };
+        if (micDeviceId) {
+          const permission = await chrome.runtime.sendMessage({ type: "check-microphone-permission" });
+          if (!permission?.ok) return { ok: false, reason: "microphone-permission" };
+        }
         let streamId: string | undefined;
         if (source === "current-tab") {
           if (!canCaptureCurrentTab(tab.url)) return { ok: false, reason: "current-tab-unavailable" };
@@ -383,7 +440,6 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
             return { ok: false, reason: "current-tab-unavailable" };
           }
         }
-        if (!await ensureOffscreenDocument()) return { ok: false, reason: "busy" };
         const currentState = await getState();
         const captureMode = currentState.captureMode ?? "screen_audio";
         const res = resolution ?? { width: 1280, height: 720 };
@@ -401,16 +457,18 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
         startingSessionId = sessionId;
         const request: CaptureRequest = {
           meetingId: crypto.randomUUID(),
+          countdownSeconds: settings.countdownSeconds,
           state: {
             status: "recording", sessionId, provider: "meet", resolution: res, pickerSource: source,
             captureMode, micDeviceId, tabId: tab.id, meetingTitle,
+            paused: false, elapsedMs: 0, showControlBar: settings.showControlBar,
             meetingUrl: isMeet ? tab.url : "",
           },
         };
         await chrome.storage.session.set({ sauriCaptureRequest: request });
         // The offscreen binds this request only after the picker returns valid
         // media. No durable session or recording projection exists on cancel.
-        const result: CaptureStartResult = await chrome.runtime.sendMessage({
+        const result: CaptureStartResult & { segmentStartedAt?: number; micLabel?: string } = await chrome.runtime.sendMessage({
           type: "start-recording", sessionId, source, ...(streamId ? { streamId } : {}), resolution: res, captureMode,
           micDeviceId: micDeviceId ?? null,
         });
@@ -420,6 +478,11 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
         }
         const activeCapture = await getCompletion(sessionId);
         if (activeCapture?.status !== "capturing" || activeCapture.captureError) return result;
+        const recording = await getState();
+        if (recording.sessionId === sessionId) {
+          await setState({ ...recording, segmentStartedAt: result.segmentStartedAt ?? Date.now(), micLabel: result.micLabel });
+          await syncRecordingUI(await getState());
+        }
         if (isMeet) {
           try { await chrome.tabs.sendMessage(tab.id, { type: "show-consent-banner" }); }
           catch (error) { console.warn("[sauri] Could not show consent banner:", error); }
@@ -427,7 +490,7 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
         // Sharing may have ended while the banner message was in flight.
         if ((await getCompletion(sessionId))?.status === "capturing") {
           chrome.action.setBadgeText({ text: "REC" });
-          chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+          chrome.action.setBadgeBackgroundColor({ color: "#b83230" });
         }
         return result;
       } catch (error) {
@@ -447,6 +510,63 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
     console.error("[sauri] Capture request unavailable:", error);
     return { ok: false, reason: "failed" };
   }
+}
+
+async function readRecordingSettings(): Promise<{ countdownSeconds: number; showControlBar: boolean }> {
+  const { recordingSettings } = await chrome.storage.local.get("recordingSettings");
+  return {
+    countdownSeconds: [0, 3, 5, 10].includes(recordingSettings?.countdownSeconds) ? recordingSettings.countdownSeconds : 3,
+    showControlBar: typeof recordingSettings?.showControlBar === "boolean" ? recordingSettings.showControlBar : true,
+  };
+}
+
+function recordingUI(state: SauriState) {
+  return {
+    sessionId: state.sessionId, paused: state.paused ?? false,
+    elapsedMs: state.elapsedMs ?? 0, segmentStartedAt: state.segmentStartedAt,
+    showControlBar: state.showControlBar ?? true, micLabel: state.micLabel, micActive: !!state.micDeviceId,
+  };
+}
+
+async function syncRecordingUI(state: SauriState): Promise<void> {
+  if (state.tabId === undefined || !isMeetUrl(state.meetingUrl)) return;
+  try { await chrome.tabs.sendMessage(state.tabId, { type: "recording-ui", state: recordingUI(state) }); }
+  catch (error) { console.warn("[sauri] Could not update recording controls:", error); }
+}
+
+async function handleCaptureControl(type: string, sessionId?: string, senderTabId?: number): Promise<boolean> {
+  const state = await getState();
+  if (type === "cancel-capture" && state.status !== "recording") {
+    const { sauriCaptureRequest, sauriCountdown } = await chrome.storage.session.get(["sauriCaptureRequest", "sauriCountdown"]);
+    const request = sauriCaptureRequest as CaptureRequest | undefined;
+    if (!request || (sessionId !== undefined && sessionId !== request.state.sessionId)) return false;
+    if (senderTabId !== undefined && (senderTabId !== request.state.tabId || sessionId !== request.state.sessionId)) return false;
+    await chrome.storage.session.set({ sauriCaptureRequest: { ...request, cancelled: true } });
+    if (sauriCountdown?.requestId === request.state.sessionId) {
+      await chrome.storage.session.set({ sauriCountdown: { ...sauriCountdown, cancelled: true } });
+      try { await chrome.tabs.sendMessage(sauriCountdown.tabId, { type: "cancel-countdown" }); }
+      catch { /* Closing the tab also closes its pending countdown response. */ }
+    }
+    return true;
+  }
+  if (state.status !== "recording" || !state.sessionId) return false;
+  if (sessionId !== undefined && sessionId !== state.sessionId) return false;
+  if (senderTabId !== undefined && (senderTabId !== state.tabId || sessionId !== state.sessionId || !isMeetUrl(state.meetingUrl))) return false;
+  if (type === "stop-capture") return handleStopCapture();
+  const command = type === "cancel-capture" ? "cancel-recording" : type === "pause-capture" ? "pause-recording" : "resume-recording";
+  const response = await chrome.runtime.sendMessage({ type: command, sessionId: state.sessionId });
+  if (!response?.ok) return false;
+  const latest = await getState();
+  if (latest.sessionId !== state.sessionId) return true;
+  if (type === "cancel-capture") {
+    await hideConsentBanner(latest.tabId, latest.meetingUrl);
+    await setState(DEFAULT_STATE);
+    await chrome.action.setBadgeText({ text: "" });
+  } else {
+    await setState({ ...latest, paused: response.paused, elapsedMs: response.elapsedMs, segmentStartedAt: response.segmentStartedAt });
+    await syncRecordingUI(await getState());
+  }
+  return true;
 }
 
 async function completeRecording(sessionId: string, trigger: CompletionTrigger): Promise<void> {
@@ -616,6 +736,16 @@ async function handleSetCaptureMode(captureMode?: CaptureMode): Promise<void> {
 // --- Upload queue processing ---
 
 const UPLOAD_ALARM_NAME = "sauri-upload-check";
+
+async function handleRetryUpload(sessionId?: string) {
+  if (typeof sessionId !== "string" || !sessionId.trim() || !await resetFailedJobsForSession(sessionId)) {
+    return { ok: false, reason: "nothing-to-retry" };
+  }
+  void processUploadQueue().catch(() => {
+    console.warn("[sauri] Manual upload processing unavailable; pending jobs remain queued");
+  });
+  return { ok: true };
+}
 
 /**
  * Processes the next pending job in the upload queue.
