@@ -93,7 +93,6 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const turnRefs = useRef(new Map<string, HTMLLIElement>());
   const [followPlayback, setFollowPlayback] = useState(true);
-  const [selectedSpeakerId, setSelectedSpeakerId] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [playingSpeakerId, setPlayingSpeakerId] = useState<string | null>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
@@ -137,11 +136,14 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
   const [error, setError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [names, setNames] = useState<Record<string, string>>({});
-  const [submittingSpeakerId, setSubmittingSpeakerId] = useState<string | null>(null);
+  const [submittingSpeakerIds, setSubmittingSpeakerIds] = useState<string[]>([]);
   const playbackRef = useRef<HTMLDivElement>(null);
   // Idempotency key of the last unsettled action per speaker, reused when that same action is retried.
   const pendingActions = useRef(new Map<string, { signature: string; key: string }>());
+  // Latest review snapshot and the chain of saves: auto-saved edits run one after another so each
+  // response (a full snapshot) includes the previous ones and no stale snapshot overwrites a newer one.
+  const reviewRef = useRef<SpeakerReview | null>(null);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     let cancelled = false;
@@ -273,15 +275,22 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
     };
   }, [meetingId]);
 
-  async function recordDisposition(
+  /** Queues one disposition save. Resolves to null on success or to the message to show when it failed. */
+  function recordDisposition(speakerId: string, disposition: SpeakerDisposition, label?: string): Promise<string | null> {
+    const run = saveQueue.current.then(() => applyDisposition(speakerId, disposition, label));
+    saveQueue.current = run;
+    return run;
+  }
+
+  async function applyDisposition(
     speakerId: string,
     disposition: SpeakerDisposition,
     label?: string
-  ) {
-    if (!review) return;
-    const item = review.items.find((candidate) => candidate.speakerId === speakerId);
-    if (!item) return;
-    const signature = JSON.stringify([review.revisionId, disposition, label ?? null, item.expectedVersion]);
+  ): Promise<string | null> {
+    const current = reviewRef.current;
+    const item = current?.items.find((candidate) => candidate.speakerId === speakerId);
+    if (!current || !item) return copy.speakerReview.notFound;
+    const signature = JSON.stringify([current.revisionId, disposition, label ?? null, item.expectedVersion]);
     const previous = pendingActions.current.get(speakerId);
     const action = previous?.signature === signature ? previous : { signature, key: newIdempotencyKey() };
     pendingActions.current.set(speakerId, action);
@@ -292,24 +301,48 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
       ...(label === undefined ? {} : { label }),
     };
 
-    setSubmittingSpeakerId(speakerId);
+    setSubmittingSpeakerIds((ids) => [...ids, speakerId]);
     setReviewError(null);
     try {
       const updatedReview = await submitSpeakerDisposition(
         meetingId,
-        review.revisionId,
+        current.revisionId,
         speakerId,
         request
       );
       pendingActions.current.delete(speakerId);
+      reviewRef.current = updatedReview;
       setReview(updatedReview);
+      return null;
     } catch (err) {
       // A conflict or a missing meeting will not succeed on retry; anything else keeps the key.
       if (isReviewFailure(err, "conflict") || isReviewFailure(err, "not_found")) pendingActions.current.delete(speakerId);
-      setReviewError(isReviewFailure(err, "conflict") ? copy.speakerReview.conflict
-        : isReviewFailure(err, "not_found") ? copy.speakerReview.notFound : copy.speakerReview.saveFailed);
+      return isReviewFailure(err, "conflict") ? copy.speakerReview.conflict
+        : isReviewFailure(err, "not_found") ? copy.speakerReview.notFound : copy.speakerReview.saveFailed;
     } finally {
-      setSubmittingSpeakerId(null);
+      setSubmittingSpeakerIds((ids) => ids.filter((id) => id !== speakerId));
+    }
+  }
+
+  /** Saves a typed name: "named" for a speaker that only had the generic label, "corrected" for a real name. */
+  async function renameSpeaker(speakerId: string, name: string): Promise<string | null> {
+    const generic = speakerRows.find((row) => row.speakerId === speakerId)?.generic ?? true;
+    return recordDisposition(speakerId, generic ? "named" : "corrected", name);
+  }
+
+  async function acceptSuggestion(speakerId: string) {
+    const message = await recordDisposition(speakerId, "confirmed");
+    if (message) setReviewError(message);
+  }
+
+  /** Marks every pending speaker that still has the generic label as reviewed, keeping that label. */
+  async function leaveUnnamed() {
+    for (const row of speakerRows.filter((candidate) => candidate.generic && candidate.disposition === null)) {
+      const message = await recordDisposition(row.speakerId, "confirmed");
+      if (message) {
+        setReviewError(message);
+        return;
+      }
     }
   }
 
@@ -412,16 +445,18 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
   // Nothing will ever be transcribed: the status card explains it, so no transcript placeholder.
   const noSpeech = meeting?.processState === "failed" && meeting.failureCause === NO_SPEECH_CAUSE && !statusError;
 
+  reviewRef.current = review;
   const speakerRows: SpeakerRowModel[] = review?.items.map(item => {
-    const label = displaySpeakerLabel(review.labelsBySpeakerId[item.speakerId]?.trim() || item.currentLabel ||
-      copy.transcript.legacyUnknownSpeaker, item.speakerId, review);
+    const raw = review.labelsBySpeakerId[item.speakerId]?.trim() || item.currentLabel;
+    const label = displaySpeakerLabel(raw || copy.transcript.legacyUnknownSpeaker, item.speakerId, review);
+    // Generic until a person typed a name: the numbered "Speaker N" label (or none) is not a name.
+    const generic = !raw || (/^Speaker \d+$/.test(raw) && item.disposition !== "named" && item.disposition !== "corrected");
     return {
-      speakerId: item.speakerId, label, initials: speakerInitials(label), color: speakerColor(diarization, item.speakerId),
+      speakerId: item.speakerId, label, generic, color: speakerColor(diarization, item.speakerId),
       disposition: item.disposition, interval: selectListeningInterval(intervalTurns, item.speakerId),
     };
   }) ?? [];
   const pendingCount = review?.items.filter(item => item.disposition === null).length ?? 0;
-  const selectedId = selectedSpeakerId ?? review?.items[0]?.speakerId;
   const stageSignals = meeting ? {
     processState: meeting.processState, hasTranscript: Boolean(data), diarizationNotFound,
     hasDiarization: diarization !== null,
@@ -591,13 +626,12 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
       </div>
       {reviewOpen && review && <Dialog title={copy.speakerReview.heading} closeLabel={copy.speakerReview.close}
         onClose={closeReview} returnFocus={() => bannerRef.current?.querySelector("button") ?? viewRef.current}>
-        <SpeakerReviewPanel rows={speakerRows} complete={review.status === "complete"} selectedId={selectedId}
-          names={names} busyId={submittingSpeakerId} playingId={playingSpeakerId}
+        <SpeakerReviewPanel rows={speakerRows} complete={review.status === "complete"}
+          busyIds={submittingSpeakerIds} playingId={playingSpeakerId}
           playbackReady={Boolean(playbackManifest) && !playbackLoading && !playbackError}
           playbackLoading={playbackLoading} error={reviewError}
-          onSelect={setSelectedSpeakerId} onNameChange={(speakerId, name) => setNames(current => ({ ...current, [speakerId]: name }))}
           onListen={row => { if (row.interval) void listenToSpeaker(row.speakerId, row.interval.startMs, row.interval.endMs); }}
-          onSubmit={(speakerId, disposition, label) => void recordDisposition(speakerId, disposition, label)} />
+          onRename={renameSpeaker} onAcceptSuggestion={id => void acceptSuggestion(id)} onLeaveUnnamed={leaveUnnamed} />
       </Dialog>}
     </section>
   );

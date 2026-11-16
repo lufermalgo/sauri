@@ -94,27 +94,37 @@
 .meeting-follow { display: inline-flex; align-items: center; gap: var(--ds-space-2); color: var(--ds-fg-muted); font-size: var(--ds-text-md); }
 .meeting-follow input { width: 18px; height: 18px; accent-color: var(--ds-accent); }
 /* Speaker identification rows, shown inside the review dialog. */
-.meeting-review-item { padding-block: var(--ds-space-4); border-top: 1px solid var(--ds-border); overflow-wrap: anywhere; }
+.meeting-review-item { padding-block: var(--ds-space-2); border-top: 1px solid var(--ds-border); overflow-wrap: anywhere; }
 .meeting-review-item:first-of-type { padding-top: 0; border-top: 0; }
-.meeting-review-item:last-of-type { padding-bottom: 0; }
-.meeting-review-item h4 { margin: 0; font-size: var(--ds-text-base); }
-.meeting-review-item > p { margin: var(--ds-space-2) 0 0; font-size: var(--ds-text-sm); color: var(--ds-fg-muted); }
+.meeting-review-item > p { margin: 0 0 var(--ds-space-2); padding-inline-start: calc(var(--ds-target) + var(--ds-space-3)); font-size: var(--ds-text-sm); color: var(--ds-fg-muted); }
+/* One line per speaker: [play] [avatar] [name + status] [pencil]. */
 .meeting-review-row { display: flex; align-items: center; gap: var(--ds-space-3); min-width: 0; }
+.meeting-review-play, .meeting-review-edit-trigger { position: relative; flex: none; }
+.meeting-review-play .ui-tooltip { right: auto; left: 0; }
+/* Names can be long: let tooltips wrap inside the dialog instead of widening its scroll area. */
+.meeting-review-play .ui-tooltip, .meeting-review-edit-trigger .ui-tooltip { width: max-content; max-width: min(16rem, 60vw); white-space: normal; }
 .meeting-review-identity { flex: 1; min-width: 0; }
-.meeting-speaker-select { display: inline-flex; align-items: center; min-height: var(--ds-target); max-width: 100%; padding: 0; text-align: left; font: inherit; font-weight: var(--ds-weight-semibold); border: 0; background: transparent; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
-.meeting-review-listen { position: relative; flex: none; }
-.meeting-review-editor { display: grid; gap: var(--ds-space-3); margin-top: var(--ds-space-3); padding: var(--ds-space-3); background: var(--ds-fill); border-radius: var(--ds-radius-md); }
-.meeting-review-name { display: flex; flex-wrap: wrap; align-items: end; gap: var(--ds-space-2); }
-.meeting-review-name .ui-text-field { flex: 1 1 10rem; min-width: 0; }
-.meeting-review-decision { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); }
-@media (max-width: 480px) {
-  .meeting-review-row { flex-wrap: wrap; }
-  .meeting-review-listen { margin-left: calc(36px + var(--ds-space-3)); }
+.meeting-review-name { margin: 0; overflow: hidden; font-size: var(--ds-text-base); font-weight: var(--ds-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
+.meeting-review-status { display: block; font-size: var(--ds-text-sm); color: var(--ds-fg-muted); }
+.meeting-review-status--pending { color: var(--ds-warning); }
+.meeting-review-edit { position: relative; display: flex; align-items: center; }
+.meeting-review-input { padding-inline-end: calc(var(--ds-space-3) + var(--ds-space-6)); font: inherit; font-size: var(--ds-text-base); font-weight: var(--ds-weight-semibold); }
+.meeting-review-edit .meeting-review-spinner { position: absolute; right: var(--ds-space-3); display: inline-flex; color: var(--ds-fg-muted); }
+.meeting-review-field-error { margin: var(--ds-space-1) 0 0; font-size: var(--ds-text-sm); color: var(--ds-danger-text); }
+.meeting-review-suggest { padding-inline-start: calc(var(--ds-target) + var(--ds-space-3)); }
+.meeting-review-chip { min-height: var(--ds-target); padding: 0 var(--ds-space-3); font: inherit; font-size: var(--ds-text-sm); font-weight: var(--ds-weight-semibold); color: var(--ds-accent-soft-fg); background: var(--ds-accent-soft); border: 0; border-radius: var(--ds-radius-pill); cursor: pointer; }
+.meeting-review-chip:disabled, .meeting-review-leave:disabled { opacity: 0.5; cursor: default; }
+.meeting-review-footer { margin-top: var(--ds-space-2); padding-top: var(--ds-space-2); border-top: 1px solid var(--ds-border); }
+.meeting-review-leave { min-height: var(--ds-target); padding: 0 var(--ds-space-1); font: inherit; font-size: var(--ds-text-md); color: var(--ds-accent-text); background: transparent; border: 0; text-decoration: underline; cursor: pointer; }
+.meeting-review-leave:hover:not(:disabled) { color: var(--ds-accent-hover); }
+@media (prefers-reduced-motion: no-preference) {
+  .meeting-review-spinner svg { animation: meeting-review-spin 1s linear infinite; }
 }
-.meeting-speaker-select:hover { text-decoration: underline; }
-.meeting-review-pending, .meeting-review-confirmed { display: block; font-size: var(--ds-text-sm); }
-.meeting-review-pending { color: var(--ds-warning); }
-.meeting-review-confirmed { color: var(--ds-accent-text); }
+@keyframes meeting-review-spin { to { transform: rotate(360deg); } }
+@media (max-width: 480px) {
+  .meeting-review-row { gap: var(--ds-space-2); }
+  .meeting-review-item > p, .meeting-review-suggest { padding-inline-start: calc(var(--ds-target) + var(--ds-space-2)); }
+}
 .meeting-timeline { min-width: 0; margin-top: var(--ds-space-3); }
 .meeting-timeline-track { position: relative; padding-top: var(--ds-space-4); }
 .meeting-timeline-slider { position: relative; height: 28px; cursor: pointer; }

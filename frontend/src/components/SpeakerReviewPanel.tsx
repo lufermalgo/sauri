@@ -1,13 +1,17 @@
-import { Pause, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
+import { LoaderCircle, Pause, Pencil, Play } from "lucide-react";
 import type { SpeakerDisposition } from "../api";
 import { copy } from "../copy/es";
 import type { ListeningInterval } from "../speaker-review-interval";
-import { Avatar, Button, Icon, TextField, useTooltip } from "./ui";
+import { Avatar, Icon, useTooltip } from "./ui";
 
 export interface SpeakerRowModel {
   speakerId: string;
+  /** Name shown for the speaker: the generic numbered label (for example "Speaker 1" in Spanish copy) or the assigned name. */
   label: string;
-  initials: string;
+  /** True while the speaker still carries the generic numbered label (no real name yet). */
+  generic: boolean;
   color: string;
   disposition: SpeakerDisposition | null;
   interval: ListeningInterval | null;
@@ -16,88 +20,214 @@ export interface SpeakerRowModel {
 interface SpeakerReviewPanelProps {
   rows: SpeakerRowModel[];
   complete: boolean;
-  selectedId: string | undefined;
-  names: Record<string, string>;
-  busyId: string | null;
+  /** Speakers with a save in flight. */
+  busyIds: readonly string[];
   playingId: string | null;
   playbackReady: boolean;
   playbackLoading: boolean;
   error: string | null;
-  onSelect: (speakerId: string) => void;
-  onNameChange: (speakerId: string, name: string) => void;
   onListen: (row: SpeakerRowModel) => void;
-  onSubmit: (speakerId: string, disposition: SpeakerDisposition, label?: string) => void;
+  /** Saves a name. Resolves to null on success or to the message to show when the save failed. */
+  onRename: (speakerId: string, name: string) => Promise<string | null>;
+  /** Keeps the machine-suggested name as final. */
+  onAcceptSuggestion: (speakerId: string) => void;
+  /** Marks every pending speaker that still has the generic label as reviewed without a name. */
+  onLeaveUnnamed: () => Promise<void>;
 }
 
 const text = copy.speakerReview;
 
+const segmenter = typeof Intl !== "undefined" && "Segmenter" in Intl
+  ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+
+/** First user-perceived character of a name, uppercased (accents and emoji stay whole). */
+export function firstGrapheme(name: string): string {
+  const trimmed = name.trim();
+  const first = segmenter ? segmenter.segment(trimmed)[Symbol.iterator]().next().value?.segment : Array.from(trimmed)[0];
+  return (first ?? "").toLocaleUpperCase("es");
+}
+
+/** Avatar text: initial plus number (such as "H1") for a generic numbered label, the first letter of the name otherwise. */
+export function avatarText(label: string, generic: boolean): string {
+  if (!generic) return firstGrapheme(label);
+  const numbered = /^(\S+)\s+(\d+)$/.exec(label.trim());
+  if (numbered) return firstGrapheme(numbered[1]) + numbered[2];
+  return label.trim().split(/\s+/).slice(0, 2).map(firstGrapheme).join("");
+}
+
 /** Speaker identification list shown inside the review dialog: one row per speaker. */
 export function SpeakerReviewPanel({
-  rows, complete, selectedId, names, busyId, playingId, playbackReady, playbackLoading, error,
-  onSelect, onNameChange, onListen, onSubmit,
+  rows, complete, busyIds, playingId, playbackReady, playbackLoading, error,
+  onListen, onRename, onAcceptSuggestion, onLeaveUnnamed,
 }: SpeakerReviewPanelProps) {
+  const [announcement, setAnnouncement] = useState<{ id: number; message: string } | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const announce = (message: string) => setAnnouncement(current => ({ id: (current?.id ?? 0) + 1, message }));
+  const pendingGeneric = rows.some(row => row.generic && row.disposition === null);
+
+  async function leaveUnnamed() {
+    setLeaving(true);
+    try {
+      await onLeaveUnnamed();
+      announce(text.leftUnnamed);
+    } finally {
+      setLeaving(false);
+    }
+  }
+
   return <div className="meeting-speaker-review">
     <p role="status" className="meeting-sr-only">{complete ? text.complete : text.pending}</p>
+    <div role="status" className="meeting-sr-only">
+      {announcement && <span key={announcement.id}>{announcement.message}</span>}
+    </div>
     {error && <p role="alert" className="meeting-error">{error}</p>}
-    {rows.map(row => <SpeakerRow key={row.speakerId} row={row} selected={selectedId === row.speakerId}
-      name={names[row.speakerId] ?? ""} busy={busyId === row.speakerId} playing={playingId === row.speakerId}
+    {rows.map(row => <SpeakerRow key={row.speakerId} row={row}
+      busy={busyIds.includes(row.speakerId)} playing={playingId === row.speakerId}
       playbackReady={playbackReady} playbackLoading={playbackLoading}
-      onSelect={onSelect} onNameChange={onNameChange} onListen={onListen} onSubmit={onSubmit} />)}
+      onListen={onListen} onRename={onRename} onAcceptSuggestion={onAcceptSuggestion} onAnnounce={announce} />)}
+    {pendingGeneric && <div className="meeting-review-footer">
+      <button type="button" className="meeting-review-leave" disabled={leaving || busyIds.length > 0}
+        aria-busy={leaving || undefined} onClick={() => void leaveUnnamed()}>{text.leaveUnnamed}</button>
+    </div>}
   </div>;
 }
 
-interface SpeakerRowProps extends Pick<SpeakerReviewPanelProps, "playbackReady" | "playbackLoading" | "onSelect" | "onNameChange" | "onListen" | "onSubmit"> {
+interface SpeakerRowProps extends Pick<SpeakerReviewPanelProps, "playbackReady" | "playbackLoading" | "onListen" | "onRename" | "onAcceptSuggestion"> {
   row: SpeakerRowModel;
-  selected: boolean;
-  name: string;
   busy: boolean;
   playing: boolean;
+  onAnnounce: (message: string) => void;
 }
 
-function SpeakerRow({ row, selected, name, busy, playing, playbackReady, playbackLoading, onSelect, onNameChange, onListen, onSubmit }: SpeakerRowProps) {
+function statusText(row: SpeakerRowModel): string {
+  if (row.generic) return row.disposition === null ? text.pendingState : text.unnamedState;
+  return row.disposition === null ? text.suggestedState : text.namedState;
+}
+
+function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onListen, onRename, onAcceptSuggestion, onAnnounce }: SpeakerRowProps) {
   const { speakerId, label, interval } = row;
-  const trimmed = name.trim();
-  const listenName = playing ? text.stopFor(label) : text.listenTo(label);
-  const tip = useTooltip(listenName);
-  return <article className="meeting-review-item" aria-busy={busy || undefined}>
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [rowError, setRowError] = useState<string | null>(null);
+  const pencilRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Guards: a save in flight, and an edit that already ended (its unmount-time blur must not save again).
+  const inFlight = useRef(false);
+  const ended = useRef(false);
+  const refocusPencil = useRef(false);
+  const errorId = `speaker-name-error-${speakerId}`;
+
+  const playName = text.listenTo(label);
+  const playTip = useTooltip(playing ? text.stopFor(label) : playName);
+  const editName = text.editName(label);
+  const editTip = useTooltip(editName);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    } else if (refocusPencil.current) {
+      refocusPencil.current = false;
+      pencilRef.current?.focus();
+    }
+  }, [editing]);
+
+  function startEdit() {
+    editTip.hide();
+    ended.current = false;
+    setDraft(label);
+    setRowError(null);
+    setEditing(true);
+  }
+
+  function endEdit(returnFocus: boolean) {
+    ended.current = true;
+    refocusPencil.current = returnFocus;
+    setRowError(null);
+    setEditing(false);
+  }
+
+  async function commit(via: "enter" | "blur") {
+    if (ended.current || inFlight.current) return;
+    const name = draft.trim();
+    if (!name) {
+      // An empty name cannot be saved (the backend requires one and cannot revert to the generic label).
+      if (via === "enter") {
+        setRowError(text.nameRequired);
+        onAnnounce(text.nameRequired);
+      } else endEdit(false);
+      return;
+    }
+    if (name === label) { endEdit(via === "enter"); return; }
+    inFlight.current = true;
+    setSaving(true);
+    setRowError(null);
+    const message = await onRename(speakerId, name);
+    inFlight.current = false;
+    setSaving(false);
+    if (message) {
+      setRowError(message);
+      onAnnounce(message);
+      return;
+    }
+    onAnnounce(text.saved(name));
+    endEdit(via === "enter");
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void commit("enter");
+    } else if (event.key === "Escape") {
+      // Cancels the edit only: the dialog stays open.
+      event.preventDefault();
+      if (!inFlight.current) endEdit(true);
+    }
+  }
+
+  const status = statusText(row);
+  const suggested = !row.generic && row.disposition === null;
+  return <article className="meeting-review-item" aria-busy={busy || saving || undefined}>
     <div className="meeting-review-row">
-      <Avatar initials={row.initials} color={row.color} size="md" />
-      <div className="meeting-review-identity">
-        <h4><button type="button" className="meeting-speaker-select"
-          aria-label={text.selectSpeaker(label)} aria-expanded={selected}
-          aria-controls={`speaker-editor-${speakerId}`}
-          onClick={() => onSelect(speakerId)}>{label}</button></h4>
-        <span className={row.disposition === null ? "meeting-review-pending" : "meeting-review-confirmed"}>
-          {row.disposition === null ? text.pendingState : text.confirmedState}
-        </span>
-      </div>
-      <span className="meeting-review-listen">
-        <Button variant="secondary" aria-label={listenName} {...tip.triggerProps}
-          onClick={() => { tip.hide(); onListen(row); }}
-          disabled={!interval || !playbackReady}>
+      <span className="meeting-review-play">
+        <button type="button" className={`ui-icon-button${playing ? " ui-icon-button--primary" : ""}`}
+          aria-label={playName} aria-pressed={playing} {...playTip.triggerProps}
+          onClick={() => { playTip.hide(); onListen(row); }} disabled={!interval || !playbackReady}>
           <Icon icon={playing ? Pause : Play} size={16} />
-          {playing ? text.stop : text.listen}
-        </Button>
-        {tip.tooltip}
+        </button>
+        {playTip.tooltip}
       </span>
+      <Avatar initials={avatarText(label, row.generic)} color={row.color} size="md" />
+      <div className="meeting-review-identity">
+        {editing
+          ? <div className="meeting-review-edit">
+            <input ref={inputRef} className="ui-input meeting-review-input" type="text" value={draft}
+              maxLength={64} aria-label={text.nameFor(label)} readOnly={saving} aria-busy={saving || undefined}
+              aria-invalid={rowError ? true : undefined} aria-describedby={rowError ? errorId : undefined}
+              onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={() => void commit("blur")} />
+            {saving && <span className="meeting-review-spinner"><Icon icon={LoaderCircle} size={16} /></span>}
+          </div>
+          : <h4 className="meeting-review-name">{label}</h4>}
+        {editing && rowError
+          ? <p id={errorId} className="meeting-review-field-error">{rowError}</p>
+          : <span className={`meeting-review-status${row.generic && row.disposition === null ? " meeting-review-status--pending" : ""}`}>{status}</span>}
+      </div>
+      {!editing && <span className="meeting-review-edit-trigger">
+        <button ref={pencilRef} type="button" className="ui-icon-button ui-icon-button--ghost"
+          aria-label={editName} {...editTip.triggerProps} onClick={startEdit} disabled={busy}>
+          <Icon icon={Pencil} size={16} />
+        </button>
+        {editTip.tooltip}
+      </span>}
     </div>
+    {suggested && !editing && <div className="meeting-review-suggest">
+      <button type="button" className="meeting-review-chip" disabled={busy}
+        onClick={() => onAcceptSuggestion(speakerId)}>{text.acceptSuggestion(label)}</button>
+    </div>}
     {!interval && <p>{text.noInterval}</p>}
     {interval?.short && <p>{text.shortInterval}</p>}
     {interval && !playbackReady && !playbackLoading && <p>{text.playbackUnavailable}</p>}
-    {selected && <div className="meeting-review-editor" id={`speaker-editor-${speakerId}`}>
-      <div className="meeting-review-name">
-        <TextField label={text.nameFor(label)} id={`speaker-name-${speakerId}`} type="text" value={name}
-          onChange={event => onNameChange(speakerId, event.target.value)} disabled={busy} />
-        <Button variant="primary" aria-label={text.saveNameFor(label)} disabled={busy || !trimmed}
-          onClick={() => onSubmit(speakerId, "named", trimmed)}>{text.saveName}</Button>
-      </div>
-      <div className="meeting-review-decision">
-        <Button variant="secondary" aria-label={text.confirmFor(label)} disabled={busy}
-          onClick={() => onSubmit(speakerId, "confirmed")}>{text.confirm}</Button>
-        <Button variant="secondary" aria-label={text.correctFor(label)} disabled={busy || !trimmed}
-          onClick={() => onSubmit(speakerId, "corrected", trimmed)}>{text.correct}</Button>
-        {busy && <span role="status">{text.saving}</span>}
-      </div>
-    </div>}
   </article>;
 }
