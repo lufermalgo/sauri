@@ -1,5 +1,5 @@
 {
-  "title": "Bienvenido a Sauri",
+  "titleLead": "Te damos la bienvenida a",
   "subtitle": "Inicia sesión para revisar tus reuniones",
   "emailLabel": "Correo electrónico",
   "passwordLabel": "Contraseña",
@@ -8,5 +8,13 @@
   "submit": "Iniciar sesión",
   "submitting": "Iniciando sesión…",
   "error": "No se pudo iniciar sesión. Revisa tus datos e inténtalo de nuevo.",
-  "providersSeparator": "o"
+  "providersSeparator": "o",
+  "continueWithGoogle": "Continuar con Google",
+  "forgotPassword": "¿Olvidaste tu contraseña?",
+  "newToSauri": "¿Nuevo en Sauri?",
+  "joinFree": "Únete gratis",
+  "legalTerms": "Términos del servicio",
+  "legalPrivacy": "Política de privacidad",
+  "legalDataNotice": "Aviso de recopilación de datos",
+  "soon": "Próximamente"
 }

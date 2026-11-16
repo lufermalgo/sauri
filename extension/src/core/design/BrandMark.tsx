@@ -11,11 +11,11 @@ export interface BrandMarkProps {
 /** Largest size (px) that uses the small variant (wider gap, bigger diamond), see brand/README.md. Same drawing as frontend/src/components/ui/BrandMark.tsx. */
 export const SMALL_VARIANT_MAX = 32;
 
-const DARK_HALF = "#4a7c59";
-const LIGHT_HALF = "#78a886";
+export const DARK_HALF = "#4a7c59";
+export const LIGHT_HALF = "#78a886";
 
 // Geometry copied from brand/sauri-isotype.svg (master) and brand/sauri-isotype-small.svg (small).
-const VARIANTS = {
+export const BRAND_SHAPES = {
   master: {
     rect: { x: 0, y: 0, width: 100, height: 100, rx: 30 },
     dark: "-10,-10 108.3,-10 54.4,43.9 50,39.5 39.5,50 43.9,54.4 -10,108.3",
@@ -31,7 +31,7 @@ const VARIANTS = {
 /** Sauri isotype drawn inline: two green halves split by a diagonal gap, with a diamond in the center. */
 export function BrandMark({ size = 24, title, className }: BrandMarkProps) {
   const clipId = `brand-mark-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const shape = VARIANTS[size <= SMALL_VARIANT_MAX ? "small" : "master"];
+  const shape = BRAND_SHAPES[size <= SMALL_VARIANT_MAX ? "small" : "master"];
   const a11y = title ? { role: "img", "aria-label": title } : { "aria-hidden": true as const };
   return (
     <svg className={className} width={size} height={size} viewBox="0 0 100 100" focusable="false" {...a11y}>

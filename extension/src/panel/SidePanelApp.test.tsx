@@ -169,7 +169,7 @@ describe("SidePanelApp", () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     mockChrome(true);
     render(<SidePanelApp />);
-    await waitFor(() => expect(screen.getByText(copy.panelTitle)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("img", { name: copy.brandName })).toBeInTheDocument());
     expect(screen.getByText(copy.recordings)).toBeInTheDocument();
     expect(screen.getByText(copy.screenAudio)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: copy.newRecording })).toBeInTheDocument();
@@ -435,7 +435,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
 
   async function mount() {
     const view = render(<SidePanelApp />);
-    await screen.findByText(copy.panelTitle);
+    await screen.findByRole("img", { name: copy.brandName });
     // Drain the initial asynchronous auth/storage/list reads before assertions.
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     return view;

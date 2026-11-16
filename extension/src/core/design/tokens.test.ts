@@ -24,7 +24,7 @@ function walk(dir: string): string[] {
   );
 }
 // The isotype keeps its two fixed brand greens in every theme (brand/README.md); they are not theme tokens.
-const BRAND_ASSET_FILES = ["core/design/BrandMark.tsx"];
+const BRAND_ASSET_FILES = ["core/design/BrandMark.tsx", "core/design/BrandLogo.tsx"];
 const governed = walk(srcRoot)
   .map((path) => relative(srcRoot, path))
   .filter((path) => /\.(css|ts|tsx)$/.test(path))

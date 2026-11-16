@@ -16,7 +16,7 @@ import {
   useSecondaryPane,
   type SecondaryPaneControl,
 } from "./useSecondaryPane";
-import { BrandMark, Icon, useTooltip } from "./ui";
+import { BrandMark, BrandWordmark, Icon, useTooltip } from "./ui";
 import "../styles/shell.css";
 import { useT } from "../i18n";
 
@@ -35,6 +35,8 @@ function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
 }
 
 const BRAND_MARK_SIZE = 24;
+/** The word's height when it sits next to the isotype, in the proportion of the horizontal logo (60.16 of 100). */
+const BRAND_WORDMARK_HEIGHT = Math.round(BRAND_MARK_SIZE * 0.6016 * 10) / 10;
 
 export function PortalShell({ route, user = null, onLogout, children }: PortalShellProps) {
   const { t } = useT();
@@ -130,7 +132,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
           </button>
           <span className="shell-brand">
             <BrandMark className="shell-brand-mark" size={BRAND_MARK_SIZE} />
-            <span className="shell-brand-name">{t("shell:brand")}</span>
+            <BrandWordmark className="shell-brand-name" height={BRAND_WORDMARK_HEIGHT} title={t("shell:brand")} />
           </span>
         </header>
       )}
@@ -145,7 +147,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
         <div className="shell-sidebar-head">
           <a className="shell-brand" href={routePath(LIBRARY_ROUTE)} aria-label={t("shell:brand")} onClick={(event) => go(event, LIBRARY_ROUTE)}>
             <BrandMark className="shell-brand-mark" size={BRAND_MARK_SIZE} />
-            <span className="shell-brand-name shell-collapsible">{t("shell:brand")}</span>
+            <BrandWordmark className="shell-brand-name shell-collapsible" height={BRAND_WORDMARK_HEIGHT} />
           </a>
           {drawer ? (
             <button

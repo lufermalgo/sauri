@@ -47,7 +47,7 @@ describe("LanguageSelect", () => {
 describe("login screen", () => {
   it("offers the language choice before signing in and retranslates the form", async () => {
     render(<LoginScreen onLogin={() => undefined} />);
-    expect(screen.getByRole("heading", { name: "Bienvenido a Sauri" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Te damos la bienvenida a Sauri" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: LANGUAGE_NAMES.en }));
     expect(await screen.findByRole("heading", { name: "Welcome to Sauri" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();

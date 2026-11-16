@@ -66,7 +66,8 @@
 .shell-brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--ds-space-2);
+  /* Space between isotype and word as in the horizontal logo (22 of 100 of the isotype's size). */
+  gap: calc(var(--shell-brand-mark-size, 24px) * 0.22);
   min-width: 0;
   color: var(--ds-accent-text);
   text-decoration: none;
@@ -80,10 +81,7 @@
 }
 
 .shell-brand-name {
-  font-family: var(--ds-font-sans);
-  font-weight: var(--ds-weight-semibold);
-  font-size: var(--ds-text-lg);
-  color: var(--ds-fg);
+  flex: 0 0 auto;
 }
 
 .shell-icon-button,

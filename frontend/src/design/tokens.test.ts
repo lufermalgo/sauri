@@ -25,7 +25,8 @@ function walk(dir: string): string[] {
   );
 }
 // The isotype keeps its two fixed brand greens in every theme (brand/README.md); they are not theme tokens.
-const BRAND_ASSET_FILES = ["components/ui/BrandMark.tsx"];
+// Same for the logo word and the Google "G", whose official colors are fixed by their owners.
+const BRAND_ASSET_FILES = ["components/ui/BrandMark.tsx", "components/ui/BrandLogo.tsx", "assets/providers/GoogleGlyph.tsx"];
 const governed = walk(srcRoot)
   .map((path) => relative(srcRoot, path))
   .filter((path) => /\.(css|ts|tsx)$/.test(path))

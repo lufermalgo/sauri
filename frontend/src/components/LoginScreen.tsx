@@ -2,20 +2,21 @@ import { useState, type FormEvent } from "react";
 import { CircleAlert, Eye, EyeOff } from "lucide-react";
 import { login as loginRequest } from "../api";
 import { LanguageSelect } from "./LanguageSelect";
-import { LoginBrand } from "./LoginBrand";
-import { ENABLED_LOGIN_PROVIDERS, LoginProviders, type LoginProvider } from "./LoginProviders";
-import { Button, Card, Icon, TextField } from "./ui";
+import { LoginProviders, useLoginProviders, type LoginProvider } from "./LoginProviders";
+import { SoonLink } from "./LoginSoon";
+import { BrandLogo, Button, Card, Icon, TextField } from "./ui";
 import "../styles/login.css";
 import { useT } from "../i18n";
 
 interface LoginScreenProps {
   onLogin: () => void;
-  /** External sign-in options shown under the form; none today (see LoginProviders). */
+  /** External sign-in options under the form; defaults to the ones in LoginProviders (Google, not active yet). */
   providers?: readonly LoginProvider[];
 }
 
-export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: LoginScreenProps) {
+export function LoginScreen({ onLogin, providers }: LoginScreenProps) {
   const { t } = useT();
+  const defaultProviders = useLoginProviders();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -45,8 +46,11 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
   return (
     <div className="login-page">
       <Card className="login-card" aria-labelledby="login-heading">
-        <LoginBrand />
-        <h1 id="login-heading" className="login-title">{t("login:title")}</h1>
+        {/* The logo is the product name: the heading reads "Welcome to Sauri" for assistive technology. */}
+        <h1 id="login-heading" className="login-title">
+          <span className="login-title-lead">{t("login:titleLead")}</span>{" "}
+          <BrandLogo className="login-title-logo" title={t("shell:brand")} />
+        </h1>
         <p className="login-subtitle">{t("login:subtitle")}</p>
         <form className="login-form" onSubmit={handleSubmit} aria-busy={pending}>
           <TextField
@@ -80,6 +84,7 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
               </button>
             }
           />
+          <p className="login-forgot"><SoonLink>{t("login:forgotPassword")}</SoonLink></p>
           {error && (
             <p className="login-error" role="alert">
               <Icon icon={CircleAlert} size={16} />
@@ -90,7 +95,17 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
             {pending ? t("login:submitting") : t("login:submit")}
           </Button>
         </form>
-        <LoginProviders providers={providers} disabled={pending} />
+        <LoginProviders providers={providers ?? defaultProviders} disabled={pending} />
+        <p className="login-join">
+          {t("login:newToSauri")} <SoonLink>{t("login:joinFree")}</SoonLink>
+        </p>
+        <p className="login-legal">
+          <SoonLink>{t("login:legalTerms")}</SoonLink>
+          <span aria-hidden="true"> · </span>
+          <SoonLink>{t("login:legalPrivacy")}</SoonLink>
+          <span aria-hidden="true"> · </span>
+          <SoonLink>{t("login:legalDataNotice")}</SoonLink>
+        </p>
         <div className="login-language"><LanguageSelect /></div>
       </Card>
     </div>
