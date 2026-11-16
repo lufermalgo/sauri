@@ -116,9 +116,9 @@ describe("MeetingHeader", () => {
 
   it.each(["", "  ", "x".repeat(513)])("rejects invalid titles (%s)", value => {
     open(); edit(value);
-    expect(screen.getByRole("button", { name: t("meeting:save") })).toBeDisabled();
     fireEvent.submit(screen.getByRole("textbox").closest("form")!);
     expect(renameMeeting).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("accepts exactly 512 characters", () => {
@@ -178,6 +178,149 @@ describe("MeetingHeader", () => {
   });
 });
 
+describe("pencil next to the title", () => {
+  const pencil = () => screen.getByRole("button", { name: t("meeting:renameTitle") });
+  const field = () => screen.getByRole("textbox", { name: t("meeting:titleLabel") });
+  const type = (value: string) => fireEvent.change(field(), { target: { value } });
+
+  it("sits right after the title with an accessible name and a decorative icon", () => {
+    open();
+    const row = screen.getByRole("heading", { level: 1 }).parentElement!;
+    expect(row).toContainElement(pencil());
+    expect(pencil()).toHaveClass("ui-icon-button", "ui-icon-button--ghost");
+    expect(pencil().querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(pencil()).toHaveAccessibleDescription(t("meeting:renameTitle"));
+  });
+
+  it("turns the title into a focused, selected field filled with the current title", () => {
+    open();
+    fireEvent.click(pencil());
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(field()).toHaveFocus();
+    expect(field()).toHaveValue("Synthetic meeting");
+    expect(field()).toHaveAttribute("maxlength", "512");
+    expect((field() as HTMLInputElement).selectionStart).toBe(0);
+    expect((field() as HTMLInputElement).selectionEnd).toBe("Synthetic meeting".length);
+  });
+
+  it("saves with Enter, updates the header at once, tells the library and returns focus to the pencil", async () => {
+    vi.mocked(renameMeeting).mockResolvedValue({ meetingId: "m1", title: "New name" });
+    const changed = vi.fn();
+    window.addEventListener("sauri:library-changed", changed);
+    open();
+    fireEvent.click(pencil());
+    type("  New name ");
+    fireEvent.submit(field().closest("form")!);
+    expect(await screen.findByRole("heading", { level: 1, name: "New name" })).toBeVisible();
+    expect(renameMeeting).toHaveBeenCalledWith("m1", "New name");
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(t("meeting:renamed"))).toHaveAttribute("role", "status");
+    await waitFor(() => expect(pencil()).toHaveFocus());
+    window.removeEventListener("sauri:library-changed", changed);
+  });
+
+  it("shows a pending state while saving and blocks a second request", async () => {
+    let finish!: (value: { meetingId: string; title: string }) => void;
+    vi.mocked(renameMeeting).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    open();
+    fireEvent.click(pencil());
+    type("Slow name");
+    fireEvent.submit(field().closest("form")!);
+    fireEvent.submit(field().closest("form")!);
+    expect(await screen.findByText(t("meeting:saving"))).toBeInTheDocument();
+    expect(field()).toBeDisabled();
+    expect(renameMeeting).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ meetingId: "m1", title: "Slow name" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Slow name" })).toBeVisible();
+  });
+
+  it("cancels with Escape without calling the API", async () => {
+    open();
+    fireEvent.click(pencil());
+    type("Discarded");
+    fireEvent.keyDown(field(), { key: "Escape" });
+    expect(renameMeeting).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
+    await waitFor(() => expect(pencil()).toHaveFocus());
+  });
+
+  it("closes on blur when nothing changed and keeps a changed draft open", () => {
+    open();
+    fireEvent.click(pencil());
+    fireEvent.blur(field());
+    expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
+    fireEvent.click(pencil());
+    type("Half typed");
+    fireEvent.blur(field());
+    expect(field()).toHaveValue("Half typed");
+    expect(renameMeeting).not.toHaveBeenCalled();
+  });
+
+  it("does not close when focus moves to Save or Cancel", () => {
+    open();
+    fireEvent.click(pencil());
+    fireEvent.blur(field(), { relatedTarget: screen.getByRole("button", { name: t("meeting:save") }) });
+    expect(field()).toBeInTheDocument();
+  });
+
+  it("closes without a request when the title is unchanged", () => {
+    open();
+    fireEvent.click(pencil());
+    fireEvent.submit(field().closest("form")!);
+    expect(renameMeeting).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
+  });
+
+  it("explains a blank title and keeps the field open", () => {
+    open();
+    fireEvent.click(pencil());
+    type("   ");
+    expect(screen.getByRole("alert")).toHaveTextContent(t("meeting:titleRequired"));
+    expect(field()).toHaveAttribute("aria-invalid", "true");
+    fireEvent.submit(field().closest("form")!);
+    expect(renameMeeting).not.toHaveBeenCalled();
+    expect(field()).toBeInTheDocument();
+  });
+
+  it("flags a blank title on Enter even when the field was never edited (untitled recording)", () => {
+    open(null);
+    fireEvent.click(pencil());
+    expect(field()).toHaveValue("");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.submit(field().closest("form")!);
+    expect(screen.getByRole("alert")).toHaveTextContent(t("meeting:titleRequired"));
+  });
+
+  it("keeps the typed title and announces the failure, then saves on retry", async () => {
+    vi.mocked(renameMeeting).mockRejectedValueOnce(new Error("Error 503"))
+      .mockResolvedValueOnce({ meetingId: "m1", title: "Second try" });
+    open();
+    fireEvent.click(pencil());
+    type("Second try");
+    fireEvent.submit(field().closest("form")!);
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("meeting:renameFailed"));
+    expect(field()).toHaveValue("Second try");
+    fireEvent.submit(field().closest("form")!);
+    expect(await screen.findByRole("heading", { level: 1, name: "Second try" })).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("is a focusable native button, so Enter and Space activate it", () => {
+    open();
+    pencil().focus();
+    expect(pencil()).toHaveFocus();
+    expect(pencil().tagName).toBe("BUTTON");
+    expect(pencil()).toHaveAttribute("type", "button");
+    expect(pencil()).not.toHaveAttribute("tabindex", "-1");
+  });
+
+  it("opens from the more menu with the same editor", () => {
+    open(); startRename();
+    expect(field()).toHaveFocus();
+    expect(field()).toHaveValue("Synthetic meeting");
+  });
+});
+
 it("shows two icon-only actions with names, keeping rename and deletion inside the more menu", () => {
   open();
   const actions = document.querySelector(".meeting-heading-row > .meeting-actions")!;
@@ -190,7 +333,6 @@ it("shows two icon-only actions with names, keeping rename and deletion inside t
     expect(button).toHaveTextContent("");
     expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
   }
-  expect(screen.queryByRole("button", { name: t("meeting:rename") })).not.toBeInTheDocument();
   expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
   fireEvent.click(buttons[1]);
   const items = screen.getAllByRole("menuitem");
@@ -318,7 +460,7 @@ describe("MeetingHeader speakers entry", () => {
     expect(icon).toHaveAttribute("aria-expanded", "false");
     expect(icon.textContent).toBe("");
     const order = screen.getAllByRole("button").map(button => button.getAttribute("aria-label"));
-    expect(order).toEqual([t("meeting:speakersButtonPending", { count: 3 }), t("meeting:download"), t("meeting:moreActions")]);
+    expect(order).toEqual([t("meeting:renameTitle"), t("meeting:speakersButtonPending", { count: 3 }), t("meeting:download"), t("meeting:moreActions")]);
   });
 
   it("shows the message and the link in a popover; the link closes it and calls onReview", () => {
