@@ -1,21 +1,43 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { LibraryWorkspace } from "./components/LibraryWorkspace";
 import { LoginScreen } from "./components/LoginScreen";
 import { UploadView } from "./components/UploadView";
 import { PortalShell } from "./components/PortalShell";
 import { SettingsView } from "./components/SettingsView";
 import { copy } from "./copy/es";
-import { navigate, routePath, useRoute } from "./router";
+import { navigate, routePath, useRoute, type Route } from "./router";
+import { readLastMeetingId } from "./last-meeting";
 import { readSessionUser } from "./session-user";
 import "./styles/shell.css";
 
 export function App() {
   // The route lives in the URL, so a protected deep link survives sign-in:
   // the login screen is rendered in place and the same route shows afterwards.
-  const route = useRoute();
+  const urlRoute = useRoute();
   const [authenticated, setAuthenticated] = useState(
     () => Boolean(localStorage.getItem("sauri_token"))
   );
+
+  // The portal starts on the recording the user last explored. This applies once per start (and after an
+  // explicit sign-out), only when it begins at `/`: later visits to `/` are the user's own choice, and
+  // direct links are never redirected. The first paint already shows the recording, with no flash of the
+  // library, and the URL is replaced (not pushed) so Back does not return to `/` and loop.
+  const startRestorePending = useRef(true);
+  const restoreId = authenticated && startRestorePending.current && urlRoute.name === "library" ? readLastMeetingId() : null;
+  const route: Route = restoreId ? { name: "meeting", meetingId: restoreId } : urlRoute;
+  const [restoredId, setRestoredId] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    if (!authenticated) return;
+    startRestorePending.current = false;
+    if (restoreId) {
+      setRestoredId(restoreId);
+      navigate({ name: "meeting", meetingId: restoreId }, { replace: true });
+    }
+  }, [authenticated, restoreId]);
+  // A reopened recording is only "restored" until the user moves elsewhere.
+  useEffect(() => {
+    if (restoredId !== null && !(route.name === "meeting" && route.meetingId === restoredId)) setRestoredId(null);
+  }, [route, restoredId]);
 
   const user = useMemo(() => (authenticated ? readSessionUser() : null), [authenticated]);
 
@@ -30,6 +52,7 @@ export function App() {
 
   function handleLogout() {
     localStorage.removeItem("sauri_token");
+    startRestorePending.current = true;
     setAuthenticated(false);
     navigate({ name: "library" });
   }
@@ -45,7 +68,10 @@ export function App() {
   return (
     <PortalShell route={route} user={user} onLogout={handleLogout}>
       {(route.name === "library" || route.name === "meeting") && (
-        <LibraryWorkspace meetingId={route.name === "meeting" ? route.meetingId : undefined} />
+        <LibraryWorkspace
+          meetingId={route.name === "meeting" ? route.meetingId : undefined}
+          restored={route.name === "meeting" && route.meetingId === restoredId}
+        />
       )}
 
       {route.name === "upload" && (

@@ -3,6 +3,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { Library, PanelLeft } from "lucide-react";
 import { navigate, routePath, type Route } from "../router";
 import type { SessionUser } from "../session-user";
+import { readLastMeetingId } from "../last-meeting";
 import { copy } from "../copy/es";
 import { ProfileCard } from "./ProfileCard";
 import { useSidebar } from "./useSidebar";
@@ -58,13 +59,13 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
   const wasOpen = useRef(false);
   const drawer = mode === "drawer";
   // A sidebar item whose section has a secondary pane shows or hides it, but only while that pane
-  // exists beside the content: the library list with a recording open on a wide screen, the settings
+  // exists beside the content: the library list on the library routes of a wide screen, the settings
   // categories on any screen wide enough for two panes. Everywhere else the item is a plain link.
   const wide = useMediaQuery(WORKSPACE_WIDE_QUERY);
   const library = useSecondaryPane(LIBRARY_PANE_STORAGE_KEY);
   const settings = useSecondaryPane(SETTINGS_PANE_STORAGE_KEY);
   const libraryPane: SecondaryPaneControl | null =
-    route.name === "meeting" && wide ? { id: LIBRARY_PANE_ID, hidden: library.hidden, toggle: library.toggle } : null;
+    (route.name === "library" || route.name === "meeting") && wide ? { id: LIBRARY_PANE_ID, hidden: library.hidden, toggle: library.toggle } : null;
   const settingsPane: SecondaryPaneControl | null =
     route.name === "settings" && !drawer ? { id: SETTINGS_PANE_ID, hidden: settings.hidden, toggle: settings.toggle } : null;
   // A plain link says its name (the rail already pops its label out beside the icon).
@@ -120,6 +121,10 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
   }
 
   const libraryActive = route.name === LIBRARY_ROUTE.name;
+  const onLibraryRoute = route.name === "library" || route.name === "meeting";
+  // From another section the item returns to the recording the user was exploring, if there is one.
+  const lastMeetingId = onLibraryRoute ? null : readLastMeetingId();
+  const libraryTarget: Route = lastMeetingId ? { name: "meeting", meetingId: lastMeetingId } : LIBRARY_ROUTE;
 
   return (
     <div className="shell-root" data-mode={mode}>
@@ -188,6 +193,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
                 type="button"
                 className="shell-link shell-link--pane"
                 aria-label={copy.shell.library}
+                aria-current={onLibraryRoute ? "page" : undefined}
                 aria-expanded={!libraryPane.hidden}
                 aria-controls={libraryPane.id}
                 {...libraryTip.triggerProps}
@@ -202,10 +208,10 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
             <span className="shell-link-wrap">
               <a
                 className="shell-link"
-                href={routePath(LIBRARY_ROUTE)}
+                href={routePath(libraryTarget)}
                 aria-current={libraryActive ? "page" : undefined}
                 {...libraryTip.triggerProps}
-                onClick={(event) => { libraryTip.hide(); go(event, LIBRARY_ROUTE); }}
+                onClick={(event) => { libraryTip.hide(); go(event, libraryTarget); }}
               >
                 <Icon icon={Library} />
                 <span className="shell-collapsible">{copy.shell.library}</span>

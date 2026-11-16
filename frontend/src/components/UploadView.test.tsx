@@ -146,7 +146,7 @@ describe("UploadView", () => {
   });
 
   it("opens the uploaded meeting from the list through App's existing view switch", async () => {
-    vi.stubGlobal("localStorage", { getItem: () => "synthetic-token" });
+    vi.stubGlobal("localStorage", { getItem: (key: string) => (key === "sauri_token" ? "synthetic-token" : null) });
     const upload = vi.mocked(api.uploadWithProgress);
     upload.mockResolvedValue({ meeting_id: "server-meeting-id", recording_id: "recording-not-meeting", state: "transcribing" });
     render(<App />);

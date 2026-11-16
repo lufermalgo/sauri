@@ -7,6 +7,7 @@ import { copy } from "../copy/es";
 import { applyLibraryQuery, type LibraryQuery } from "../library-query";
 import { LIBRARY_CHANGED_EVENT, notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
+import { forgetLastMeeting } from "../last-meeting";
 import { downloadMeetingTranscript } from "../transcript-download";
 import { Button, ConfirmDialog, Skeleton } from "./ui";
 import { LibraryBulkBar } from "./LibraryBulkBar";
@@ -105,6 +106,8 @@ interface RecordingLibraryProps {
   onSelectMeeting: (meeting: MeetingListItem) => void;
   /** The recording open in the detail pane, marked in the list. */
   selectedId?: string;
+  /** Called with the ids of the recordings each time the full list loads (not on quiet refreshes). */
+  onListLoaded?: (ids: string[]) => void;
 }
 
 /** More transcripts than this are downloaded only after the user confirms: browsers may block bursts. */
@@ -113,7 +116,9 @@ const DOWNLOAD_CONFIRM_ABOVE = 5;
 type BulkConfirm = { kind: BulkKind; ids: string[]; skipped: number };
 
 /** The list pane: header strip, icon toolbar and compact rows (DESIGN.md 6, master-detail). */
-export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId }: RecordingLibraryProps) {
+export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onListLoaded }: RecordingLibraryProps) {
+  const onListLoadedRef = useRef(onListLoaded);
+  onListLoadedRef.current = onListLoaded;
   const [meetings, setMeetings] = useState<MeetingListItem[]>([]);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -138,7 +143,9 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId }: Re
     listMeetings()
       .then((data) => {
         // The API can return a null title for recordings that never had one.
-        if (!cancelled) setMeetings(data.map((item) => ({ ...item, title: item.title ?? "" })));
+        if (cancelled) return;
+        setMeetings(data.map((item) => ({ ...item, title: item.title ?? "" })));
+        onListLoadedRef.current?.(data.map((item) => item.id));
       })
       .catch(() => {
         if (!cancelled) setFailed(true);
@@ -195,6 +202,7 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId }: Re
   /** Deletes on the server, then takes the recording out of the list, the selection and, if open, the detail. */
   const removeMeeting = useCallback(async (id: string, focusNext?: string) => {
     await deleteMeeting(id);
+    forgetLastMeeting(id);
     if (focusNext !== undefined) focusAfterRemoval.current = focusNext;
     setMeetings((current) => current.filter((meeting) => meeting.id !== id));
     selection.remove([id]);
