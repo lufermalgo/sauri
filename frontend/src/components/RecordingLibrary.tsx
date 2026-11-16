@@ -9,7 +9,7 @@ import {
 import { LIBRARY_CHANGED_EVENT, notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
 import { forgetLastMeeting } from "../last-meeting";
-import { downloadMeetingMedia, mediaProgressText } from "../media-download";
+import { downloadMeetingMedia } from "../media-download";
 import { downloadMeetingSummary } from "../summary-download";
 import { downloadMeetingTranscript } from "../transcript-download";
 import { Button, ConfirmDialog, Skeleton } from "./ui";
@@ -130,7 +130,6 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
   const [query, setQuery] = useState<LibraryQuery>(EMPTY_QUERY);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
-  const [rowNotices, setRowNotices] = useState<Record<string, string>>({});
   const [pendingDelete, setPendingDelete] = useState<MeetingListItem | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState<BulkConfirm | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -259,24 +258,15 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     notifyLibraryChanged();
   };
 
-  const setRowNotice = (id: string, message: string | null) => setRowNotices((current) => {
-    const { [id]: _removed, ...rest } = current;
-    return message === null ? rest : { ...rest, [id]: message };
-  });
-
-  // Recordings whose video is being saved: a second click must not open a second file picker.
+  // Recordings whose download link is being requested: a second click must not start a second download.
   const mediaDownloads = useRef(new Set<string>());
 
   const downloadMedia = async (meeting: MeetingListItem) => {
     if (mediaDownloads.current.has(meeting.id)) return;
     mediaDownloads.current.add(meeting.id);
-    setRowNotice(meeting.id, mediaProgressText(null));
     try {
-      const outcome = await downloadMeetingMedia(meeting.id, meeting.title,
-        (percent) => setRowNotice(meeting.id, mediaProgressText(percent)));
-      setRowNotice(meeting.id, outcome === "opened" ? t("meeting:mediaOpened") : null);
+      await downloadMeetingMedia(meeting.id);
     } catch {
-      setRowNotice(meeting.id, null);
       setRowError(meeting.id, t("library:row.downloadMediaFailed"));
     } finally {
       mediaDownloads.current.delete(meeting.id);
@@ -285,7 +275,6 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
 
   const downloadRow = async (meeting: MeetingListItem, kind: RowDownloadKind) => {
     setRowError(meeting.id, null);
-    setRowNotice(meeting.id, null);
     if (kind === "media") { await downloadMedia(meeting); return; }
     try {
       if (kind === "summary") await downloadMeetingSummary(meeting.id, meeting.title);
@@ -411,7 +400,7 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     const renderRow = (meeting: MeetingListItem) => (
       <LibraryRow key={meeting.id} meeting={meeting} dateField={dateField} open={meeting.id === selectedId}
         checked={selection.selected.has(meeting.id)} tabbable={meeting.id === tabbableId}
-        renaming={meeting.id === renamingId} error={rowErrors[meeting.id] ?? null} notice={rowNotices[meeting.id] ?? null}
+        renaming={meeting.id === renamingId} error={rowErrors[meeting.id] ?? null}
         onOpen={openRow} onToggleChecked={toggleChecked} onFocusRow={setActiveId}
         onStartRename={(id) => { setRowError(id, null); setRenamingId(id); }}
         onRename={renameRow} onCancelRename={() => setRenamingId(null)}

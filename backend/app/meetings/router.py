@@ -53,6 +53,7 @@ from app.infra.models import (
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.meetings import service as meeting_service
+from app.meetings.download_filename import media_filename
 from app.meetings.schemas import MeetingCreate, ResourceId, RevisionId
 from app.meetings.service import (
     delete_meeting,
@@ -62,7 +63,11 @@ from app.meetings.service import (
     rename_meeting,
     request_join,
 )
-from app.meetings.signed_urls import playback_url_ttl_seconds, signed_url_ttl_seconds
+from app.meetings.signed_urls import (
+    download_url_ttl_seconds,
+    playback_url_ttl_seconds,
+    signed_url_ttl_seconds,
+)
 from app.meetings.speaker_review_service import SpeakerReviewService
 from app.regeneration import service as regeneration_service
 
@@ -587,6 +592,52 @@ async def get_playback_manifest(
                 "muxed_video_source": muxed_video_source,
                 "video_sources": video_sources,
             }
+    finally:
+        await engine.dispose()
+
+
+@router.get("/{meeting_id}/media-download")
+async def get_media_download_link(
+    meeting_id: ResourceId,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+) -> dict[str, Any]:
+    """Return a short-lived link that makes the browser save the recording's video (or audio)."""
+    engine = create_engine()
+    session_factory = create_session_factory(engine)
+    try:
+        async with session_factory() as session:
+            meeting = await _get_authorized_meeting(
+                session,
+                meeting_id,
+                user,
+                f"GET /api/v1/meetings/{meeting_id}/media-download",
+            )
+            recording = await session.scalar(
+                select(SessionRecording).where(SessionRecording.meeting_id == meeting_id)
+            )
+            if recording is None:
+                raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
+            inventory = await meeting_service.load_playback_source_inventory(
+                session, recording.id
+            )
+            if inventory is None or inventory.audio_source is None:
+                raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
+
+            # Same choice the player makes: the muxed file, else the first aligned video, else audio.
+            source = inventory.audio_source
+            if inventory.video_presence == "separate":
+                aligned = [i for i in inventory.video_sources if i.video_offset_ms is not None]
+                if not aligned:
+                    raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
+                source = aligned[0]
+            filename = media_filename(
+                meeting.title, meeting_id, source.mime_type, source.object_ref
+            )
+            ttl_seconds = download_url_ttl_seconds()
+            url = await _get_object_store().temporary_download_url(
+                source.object_ref, filename, ttl_seconds=ttl_seconds
+            )
+            return {"url": url, "filename": filename, "expires_in_seconds": ttl_seconds}
     finally:
         await engine.dispose()
 
