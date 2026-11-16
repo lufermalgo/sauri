@@ -246,7 +246,24 @@ describe("settings categories pane toggle in the side panel", () => {
 });
 
 describe("items without a secondary pane", () => {
-  it("keeps Biblioteca a plain link on the library route, named by a tooltip that only says its name", () => {
+  it("makes Biblioteca the list pane's toggle on the library route too, with its state in the tooltip", () => {
+    localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
+    renderShell({ name: "library" });
+    const button = screen.getByRole("button", { name: copy.shell.library });
+    expect(button).toHaveAttribute("aria-current", "page");
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveAttribute("aria-controls", "library-pane");
+    expect(screen.queryByRole("link", { name: copy.shell.library })).toBeNull();
+    expect(tipOf(button)).toHaveTextContent(copy.shell.libraryPane.show);
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(tipOf(button)).toHaveTextContent(copy.shell.libraryPane.hide);
+    expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("0");
+  });
+
+  it("keeps Biblioteca a plain link below 1100px, named by a tooltip that only says its name", () => {
+    stubViewport(900);
+    localStorage.setItem("sauri_sidebar_collapsed", "0"); // below 1320px the sidebar starts as a rail
     localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
     renderShell({ name: "library" });
     const link = screen.getByRole("link", { name: copy.shell.library });

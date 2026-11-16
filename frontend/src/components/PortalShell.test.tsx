@@ -70,7 +70,7 @@ afterEach(() => {
 
 describe("PortalShell navigation and profile", () => {
   it("renders the library link, the profile card and no top bar or upload link", () => {
-    renderShell();
+    renderShell({ route: { name: "upload" } });
     expect(screen.getByRole("navigation", { name: copy.shell.navLabel })).toBeTruthy();
     expect(screen.getByRole("link", { name: copy.shell.library })).toHaveProperty("pathname", "/");
     expect(screen.queryByRole("link", { name: copy.shell.upload })).toBeNull();
@@ -133,7 +133,8 @@ describe("PortalShell navigation and profile", () => {
 
   it("marks the library as the current page only on the library route", () => {
     const { unmount } = renderShell();
-    expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBe("page");
+    // On the library route (wide) the item is the list pane's toggle and stays the current item.
+    expect(screen.getByRole("button", { name: copy.shell.library }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBeNull();
     unmount();
     renderShell({ route: { name: "settings" } });
@@ -181,7 +182,7 @@ describe("PortalShell collapse", () => {
     expect(root().dataset.mode).toBe("rail");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     // Labels stay in the document (visually hidden in the rail) so every control keeps its name.
-    expect(screen.getByRole("link", { name: copy.shell.library })).toBeTruthy();
+    expect(screen.getByRole("button", { name: copy.shell.library })).toBeTruthy();
     expect(screen.getByRole("link", { name: copy.shell.profile.settings })).toBeTruthy();
     fireEvent.click(toggle);
     expect(root().dataset.mode).toBe("full");
