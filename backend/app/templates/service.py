@@ -6,11 +6,32 @@ from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.copy.templates_es import DEFAULT_PROVENANCE
+from app.copy.templates_es import (
+    DEFAULT_INSTRUCTIONS_V2,
+    DEFAULT_NAME,
+    DEFAULT_PROVENANCE,
+    DEFAULT_PROVENANCE_V2,
+)
 from app.infra.models import SummaryTemplate, TemplateCategory
 from app.templates import repository
 from app.templates.schemas import CategoryCreate, CategoryOut, TemplateCreate, TemplateOut, TemplateUpdate
 from app.templates.seed import seed_id
+
+
+def _provenance(row: SummaryTemplate) -> str | None:
+    """Owner-proposal note, shown only while the seeded starter is unchanged."""
+    if row.id != seed_id(row.owner_user_id, "template"):
+        return None
+    if row.version == 1 and row.updated_at == row.created_at and row.instructions != DEFAULT_INSTRUCTIONS_V2:
+        return DEFAULT_PROVENANCE
+    # Version 2 text also reaches owners through migration 020, which bumps version and updated_at,
+    # so unedited means: same text, name and category as the seed.
+    if (
+        row.instructions == DEFAULT_INSTRUCTIONS_V2 and row.name == DEFAULT_NAME
+        and row.category_id == seed_id(row.owner_user_id, "category")
+    ):
+        return DEFAULT_PROVENANCE_V2
+    return None
 
 
 def template_out(row: SummaryTemplate, default_id: str | None) -> TemplateOut:
@@ -18,12 +39,7 @@ def template_out(row: SummaryTemplate, default_id: str | None) -> TemplateOut:
         id=row.id, name=row.name, instructions=row.instructions,
         owner_user_id=row.owner_user_id, category_id=row.category_id,
         version=row.version, is_default=row.id == default_id,
-        provenance=(
-            DEFAULT_PROVENANCE
-            if row.id == seed_id(row.owner_user_id, "template") and row.version == 1
-            and row.updated_at == row.created_at
-            else None
-        ),
+        provenance=_provenance(row),
         created_at=row.created_at.isoformat(), updated_at=row.updated_at.isoformat(),
     )
 

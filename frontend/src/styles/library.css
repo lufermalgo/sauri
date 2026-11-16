@@ -176,6 +176,10 @@
 }
 
 .library-item-topic {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; /* The topic is a whole paragraph in structured summaries. */
   color: var(--color-on-surface-variant);
   font-size: 0.9375rem;
 }

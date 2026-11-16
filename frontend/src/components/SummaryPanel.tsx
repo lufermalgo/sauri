@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { MeetingSummary, SummaryRequestStatus } from "@sauri/shared-types";
+import type { MeetingSummary, SummaryBlock, SummaryKeyPoint, SummaryRequestStatus, SummarySource } from "@sauri/shared-types";
 import type { SummarySignal } from "../processing-estimate";
 import { getLatestSummaryRequest, getMeetingSummary, requestMeetingSummary } from "../api";
 import { copy } from "../copy/es";
@@ -58,11 +58,84 @@ function timestamp(ms: number): string {
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 }
 
-// The exact plain text that "Copy" puts on the clipboard and "Download" saves.
+function isBlock(point: SummaryKeyPoint | SummaryBlock | string): point is SummaryBlock {
+  return typeof point !== "string" && "title" in point;
+}
+
+// The exact plain text that "Copy" puts on the clipboard and "Download" saves. It never carries
+// minutes or timestamps: sources are only offered as links in the panel.
 function summaryPlainText(summary: MeetingSummary): string {
-  return [summary.topic, ...summary.keyPoints.map((point) =>
-    `- ${typeof point === "string" ? point : point.text}`,
-  )].join("\n");
+  const text = copy.summary;
+  if (summary.schemaVersion !== 2) {
+    return [summary.topic, ...summary.keyPoints.map((point) =>
+      `- ${typeof point === "string" ? point : isBlock(point) ? point.title : point.text}`,
+    )].join("\n");
+  }
+  const blocks = summary.keyPoints.filter(isBlock).map((block, index) => [
+    `${index + 1}. ${block.title}`,
+    ...block.items.flatMap((item) => [`- ${item.text}`, ...item.subItems.map((sub) => `  - ${sub}`)]),
+  ].join("\n"));
+  return [
+    `${text.mainTopic}\n${summary.topic}`,
+    `${text.detailedKeyPoints}\n${blocks.join("\n\n")}`,
+    ...(summary.conclusion ? [`${text.conclusion}\n${summary.conclusion}`] : []),
+  ].join("\n\n");
+}
+
+function SourceChips({ sources, onSeek }: { sources: SummarySource[]; onSeek: (startMs: number) => void }) {
+  const text = copy.summary;
+  if (sources.length === 0) return null;
+  return (
+    <ul aria-label={text.sources} className="summary-sources">
+      {sources.map((source) => (
+        <li key={source.passageId}>
+          <a
+            href="#meeting-playback"
+            className="summary-source"
+            aria-label={text.sourceAt(timestamp(source.startMs))}
+            onClick={(event) => { event.preventDefault(); onSeek(source.startMs); }}
+          >{timestamp(source.startMs)}</a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function StructuredSummary({ summary, onSeek }: { summary: MeetingSummary; onSeek: (startMs: number) => void }) {
+  const text = copy.summary;
+  return (
+    <>
+      <h3 className="summary-label">{text.mainTopic}</h3>
+      <p className="summary-paragraph">{summary.topic}</p>
+      <h3 className="summary-label">{text.detailedKeyPoints}</h3>
+      <ol className="summary-blocks">
+        {summary.keyPoints.filter(isBlock).map((block, index) => (
+          <li key={index} className="summary-block">
+            <h4 className="summary-block-title">{block.title}</h4>
+            <ul className="summary-items">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex}>
+                  {item.text}
+                  {item.subItems.length > 0 && (
+                    <ul className="summary-subitems">
+                      {item.subItems.map((sub, subIndex) => <li key={subIndex}>{sub}</li>)}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <SourceChips sources={block.sources} onSeek={onSeek} />
+          </li>
+        ))}
+      </ol>
+      {summary.conclusion && (
+        <>
+          <h3 className="summary-label">{text.conclusion}</h3>
+          <p className="summary-paragraph">{summary.conclusion}</p>
+        </>
+      )}
+    </>
+  );
 }
 
 // A meeting change also cancels pending requests and clears clipboard feedback.
@@ -233,30 +306,21 @@ function MeetingSummaryPanel({
             </div>
           </div>
           {copyFeedback && <p role="status" className="summary-feedback">{copyFeedback}</p>}
-          <h3 className="summary-label">{text.topic}</h3>
-          <p className="summary-topic">{summary.topic}</p>
-          <h3 className="summary-label">{text.keyPoints}</h3>
-          <ul className="summary-points">
-            {summary.keyPoints.map((point, index) => (
-              <li key={index} className="summary-point">
-                <p>{typeof point === "string" ? point : point.text}</p>
-                {typeof point !== "string" && point.sources.length > 0 && (
-                  <ul aria-label={text.sources} className="summary-sources">
-                    {point.sources.map((source) => (
-                      <li key={source.passageId}>
-                        <a
-                          href="#meeting-playback"
-                          className="summary-source"
-                          aria-label={text.sourceAt(timestamp(source.startMs))}
-                          onClick={(event) => { event.preventDefault(); onSeek(source.startMs); }}
-                        >{timestamp(source.startMs)}</a>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
+          {summary.schemaVersion === 2 ? <StructuredSummary summary={summary} onSeek={onSeek} /> : (
+            <>
+              <h3 className="summary-label">{text.topic}</h3>
+              <p className="summary-topic">{summary.topic}</p>
+              <h3 className="summary-label">{text.keyPoints}</h3>
+              <ul className="summary-points">
+                {summary.keyPoints.map((point, index) => (
+                  <li key={index} className="summary-point">
+                    <p>{typeof point === "string" ? point : isBlock(point) ? point.title : point.text}</p>
+                    {typeof point !== "string" && <SourceChips sources={point.sources} onSeek={onSeek} />}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </>
       ) : transcriptReady ? (
         <div className="summary-empty">

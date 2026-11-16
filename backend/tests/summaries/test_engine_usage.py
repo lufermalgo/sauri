@@ -15,7 +15,11 @@ from app.summaries.passages import Turn, build_passages
 SECRET = "PRIVATE-CONTENT-SENTINEL"
 LOGGER = "app.summaries.engine"
 PASSAGES = build_passages([Turn(SECRET, 0, 1000)])
-CONTENT = {"topic": "ok", "key_points": [{"text": "point", "sources": [{"passage_id": "P0000"}]}]}
+CONTENT = {
+    "topic": "ok", "conclusion": "done",
+    "key_points": [{"title": "block", "items": [{"text": "point", "sub_items": []}],
+                    "sources": [{"passage_id": "P0000"}]}],
+}
 
 
 def events(caplog: pytest.LogCaptureFixture) -> list[dict[str, object]]:

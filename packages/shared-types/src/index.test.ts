@@ -14,7 +14,14 @@ type Assert<T extends true> = T;
 type SummaryContract = Assert<Equal<MeetingSummary, {
   summaryId: string; meetingId: string; templateId: string; templateName: string;
   templateVersion: number; topic: string;
-  keyPoints: Array<string | { text: string; sources: Array<{ passageId: string; startMs: number; endMs: number }> }>;
+  schemaVersion?: 1 | 2;
+  keyPoints: Array<string
+    | { text: string; sources: Array<{ passageId: string; startMs: number; endMs: number }> }
+    | {
+      title: string; items: Array<{ text: string; subItems: string[] }>;
+      sources: Array<{ passageId: string; startMs: number; endMs: number }>;
+    }>;
+  conclusion?: string | null;
   reviewState: "draft"; generation: number;
   createdAt: string; updatedAt: string;
 }>>;

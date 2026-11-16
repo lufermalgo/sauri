@@ -6,11 +6,13 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.copy.templates_es import DEFAULT_CATEGORY, DEFAULT_INSTRUCTIONS, DEFAULT_NAME
+from app.copy.templates_es import DEFAULT_CATEGORY, DEFAULT_INSTRUCTIONS_V2, DEFAULT_NAME
 from app.infra.models import SummaryTemplate, TemplateCategory, User
 
 
 def seed_id(owner_id: str, kind: str) -> str:
+    # The identity stays version-independent: migration 020 upgrades unedited v1 templates in
+    # place, so migrated owners and new owners share one seeded id scheme.
     return str(uuid5(NAMESPACE_URL, f"sauri:summary-default:2026-11-14:{kind}:{owner_id}"))
 
 
@@ -30,7 +32,7 @@ async def ensure_default(session: AsyncSession, owner_id: str) -> str | None:
     if await session.get(SummaryTemplate, template_id) is None:
         session.add(SummaryTemplate(
             id=template_id, owner_user_id=owner_id, category_id=category_id,
-            name=DEFAULT_NAME, instructions=DEFAULT_INSTRUCTIONS, version=1, created_at=now, updated_at=now,
+            name=DEFAULT_NAME, instructions=DEFAULT_INSTRUCTIONS_V2, version=1, created_at=now, updated_at=now,
         ))
         await session.flush()
     user.default_summary_template_id = template_id

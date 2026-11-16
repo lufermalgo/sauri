@@ -16,7 +16,6 @@ import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -40,6 +39,7 @@ from app.infra.models import (
 )
 from app.infra.queue_rabbitmq import RabbitMQJobQueue
 from app.main import app
+from app.summaries.passages import CanonicalSummary
 
 
 def _id() -> str:
@@ -547,9 +547,15 @@ async def test_request_to_persisted_content_uses_frozen_lineage(
     calls: list[tuple[str, str]] = []
 
     class Engine:
-        async def generate(self, text: str, instructions: str) -> SimpleNamespace:
+        async def generate(self, text: str, instructions: str) -> CanonicalSummary:
             calls.append((text, instructions))
-            return SimpleNamespace(topic="Identifiable topic", key_points=["Identifiable point"])
+            return CanonicalSummary.model_validate({
+                "topic": "Identifiable topic", "conclusion": "Identifiable conclusion",
+                "key_points": [{
+                    "title": "Identifiable block", "items": [{"text": "Identifiable point"}],
+                    "sources": [{"passage_id": "P0000", "start_ms": 0, "end_ms": 1000}],
+                }],
+            })
 
     class Queue:
         def __init__(self) -> None:
@@ -565,5 +571,9 @@ async def test_request_to_persisted_content_uses_frozen_lineage(
     assert calls == [("Synthetic transcript.", "Keep these exact words")]
     async with factory() as session:
         row = (await session.scalars(select(MeetingSummary).where(MeetingSummary.event_id == event_id))).one()
-        assert (row.topic, json.loads(row.key_points_json)) == ("Identifiable topic", ["Identifiable point"])
+        stored = json.loads(row.key_points_json)
+        assert (row.topic, stored["schema_version"], stored["conclusion"]) == (
+            "Identifiable topic", 2, "Identifiable conclusion",
+        )
+        assert stored["key_points"][0]["items"] == [{"text": "Identifiable point", "sub_items": []}]
         assert (row.template_id, row.template_version, row.generation) == (template_id, 1, 1)

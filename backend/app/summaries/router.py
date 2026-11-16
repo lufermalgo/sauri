@@ -1,6 +1,5 @@
 """Authenticated owner-scoped summary artifacts and request status API."""
 
-import json
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -11,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.authorization import require_sales
 from app.auth.schemas import AuthenticatedUser
 from app.summaries import repository, service
-from app.summaries.passages import KeyPoint
+from app.summaries.passages import KeyPoint, KeyPointBlock, decode_key_points
 from app.templates.router import get_session
 
 router = APIRouter(prefix="/api/v1/meetings/{meeting_id}", tags=["summaries"])
@@ -37,7 +36,9 @@ class SummaryResponse(BaseModel):
     template_name: str
     template_version: int
     topic: str
-    key_points: list[KeyPoint | str]  # Legacy artifacts remain readable, without invented citations.
+    schema_version: int = 1
+    key_points: list[KeyPointBlock | KeyPoint | str]  # Legacy artifacts remain readable, without invented citations.
+    conclusion: str | None = None
     review_state: Literal["draft"] = "draft"
     generation: int
     created_at: datetime
@@ -50,6 +51,7 @@ async def current_summary(meeting_id: str, session: Session, user: AuthorizedUse
     if result is None:
         raise HTTPException(status_code=404, detail="Summary not available")
     summary, template_name = result
+    content = decode_key_points(summary.key_points_json)
     return SummaryResponse(
         summary_id=summary.id,
         meeting_id=summary.meeting_id,
@@ -57,7 +59,9 @@ async def current_summary(meeting_id: str, session: Session, user: AuthorizedUse
         template_name=template_name,
         template_version=summary.template_version,
         topic=summary.topic,
-        key_points=json.loads(summary.key_points_json),
+        schema_version=content.schema_version,
+        key_points=content.key_points,
+        conclusion=content.conclusion,
         generation=summary.generation,
         created_at=summary.created_at,
         updated_at=summary.updated_at,

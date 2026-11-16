@@ -87,9 +87,12 @@ class Case:
         return validate_citations(
             {
                 "topic": "Synthetic topic",
-                "key_points": [
-                    {"text": "Synthetic key point", "sources": [{"passage_id": "P0000"}]},
-                ],
+                "key_points": [{
+                    "title": "Synthetic block",
+                    "items": [{"text": "Synthetic key point", "sub_items": ["Synthetic detail"]}],
+                    "sources": [{"passage_id": "P0000"}],
+                }],
+                "conclusion": "Synthetic conclusion",
             },
             passages,
         )
@@ -243,12 +246,17 @@ async def test_snapshot_survives_template_edit_and_default_change(case: Case, mo
     assert (rows[0].template_id, rows[0].template_version, rows[0].generation) == (case.message["template_id"], 1, 1)
     assert (rows[0].topic, json.loads(rows[0].key_points_json)) == (
         "Synthetic topic",
-        [
-            {
-                "text": "Synthetic key point",
-                "sources": [{"passage_id": "P0000", "start_ms": 0, "end_ms": 1000}],
-            }
-        ],
+        {
+            "schema_version": 2,
+            "key_points": [
+                {
+                    "title": "Synthetic block",
+                    "items": [{"text": "Synthetic key point", "sub_items": ["Synthetic detail"]}],
+                    "sources": [{"passage_id": "P0000", "start_ms": 0, "end_ms": 1000}],
+                }
+            ],
+            "conclusion": "Synthetic conclusion",
+        },
     )
     async with case.factory() as session:
         meeting = await session.get(Meeting, case.message["meeting_id"])
@@ -409,8 +417,12 @@ async def test_openai_adapter_sends_only_frozen_inputs_and_parses_canonical_cont
                         "message": {
                             "content": json.dumps(
                                 {
-                                    "topic": "Synthetic topic",
-                                    "key_points": [{"text": "Synthetic point", "sources": [{"passage_id": "P0000"}]}],
+                                    "topic": "Synthetic topic", "conclusion": "Synthetic conclusion",
+                                    "key_points": [{
+                                        "title": "Synthetic block",
+                                        "items": [{"text": "Synthetic point", "sub_items": []}],
+                                        "sources": [{"passage_id": "P0000"}],
+                                    }],
                                 }
                             )
                         }
@@ -424,7 +436,9 @@ async def test_openai_adapter_sends_only_frozen_inputs_and_parses_canonical_cont
         result = await engine.generate(
             build_passages([Turn("Synthetic transcript.", 0, 1000)]), "  Opaque instruction\n"
         )
-    assert (result.topic, [p.text for p in result.key_points]) == ("Synthetic topic", ["Synthetic point"])
+    assert (result.topic, [i.text for p in result.key_points for i in p.items], result.conclusion) == (
+        "Synthetic topic", ["Synthetic point"], "Synthetic conclusion",
+    )
     assert len(requests) == 1 and requests[0]["model"] == "local-model"
     assert requests[0]["stream"] is False
     payload = json.dumps(requests[0])

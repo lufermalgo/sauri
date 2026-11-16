@@ -474,7 +474,7 @@ async def test_status_routes_enforce_meeting_association_sales_and_owner(summary
 
 
 async def test_no_personal_default_seeds_editable_starter_and_accepts(summary_api: ApiFixture) -> None:
-    from app.copy.templates_es import DEFAULT_INSTRUCTIONS, DEFAULT_NAME, DEFAULT_PROVENANCE
+    from app.copy.templates_es import DEFAULT_INSTRUCTIONS_V2, DEFAULT_NAME, DEFAULT_PROVENANCE_V2
     from app.templates.seed import seed_id
 
     client, factory, owner, other, meeting, _, _ = summary_api
@@ -489,11 +489,11 @@ async def test_no_personal_default_seeds_editable_starter_and_accepts(summary_ap
     async with factory() as session:
         request = await session.get(SummaryRequestOutbox, response.json()["event_id"])
         assert request is not None and request.template_id == template_id
-        assert request.instructions_snapshot == DEFAULT_INSTRUCTIONS
+        assert request.instructions_snapshot == DEFAULT_INSTRUCTIONS_V2
     template = await client.get(f"/api/v1/templates/{template_id}", headers=_headers(owner))
     assert template.status_code == 200
     assert template.json()["name"] == DEFAULT_NAME and template.json()["is_default"]
-    assert template.json()["provenance"] == DEFAULT_PROVENANCE
+    assert template.json()["provenance"] == DEFAULT_PROVENANCE_V2
     assert (await client.get(f"/api/v1/templates/{template_id}", headers=_headers(other))).status_code == 404
     updated = await client.patch(f"/api/v1/templates/{template_id}", json={"instructions": "Edited synthetic"},
                                  headers=_headers(owner))
@@ -518,6 +518,29 @@ async def test_grounded_summary_is_exposed_as_draft(summary_api: ApiFixture) -> 
     assert response.status_code == 200
     assert response.json()["key_points"] == points
     assert response.json()["review_state"] == "draft"
+    assert response.json()["schema_version"] == 1 and response.json()["conclusion"] is None
+
+
+async def test_v2_summary_is_exposed_with_blocks_and_conclusion(summary_api: ApiFixture) -> None:
+    from app.summaries.passages import CanonicalSummary, encode_key_points
+
+    client, factory, owner, _, meeting, _, _ = summary_api
+    events = await _persist_successes(summary_api)
+    canonical = CanonicalSummary.model_validate({
+        "topic": "Synthetic topic paragraph", "conclusion": "Synthetic conclusion paragraph",
+        "key_points": [{
+            "title": "Synthetic block",
+            "items": [{"text": "Synthetic item", "sub_items": ["Synthetic sub-item"]}],
+            "sources": [{"passage_id": "P0000", "start_ms": 0, "end_ms": 1000}],
+        }],
+    })
+    async with factory() as session, session.begin():
+        summary = await session.scalar(select(MeetingSummary).where(MeetingSummary.event_id == events[1]["event_id"]))
+        assert summary is not None
+        summary.key_points_json = encode_key_points(canonical)
+    body = (await client.get(f"/api/v1/meetings/{meeting}/summary", headers=_headers(owner))).json()
+    assert body["schema_version"] == 2 and body["conclusion"] == "Synthetic conclusion paragraph"
+    assert body["key_points"] == [block.model_dump() for block in canonical.key_points]
 
 
 @pytest.mark.parametrize("edit", [{"name": "Edited title"}, {"instructions": "Edited instructions"},
@@ -525,7 +548,7 @@ async def test_grounded_summary_is_exposed_as_draft(summary_api: ApiFixture) -> 
 async def test_editing_starter_removes_owner_proposal_provenance(
     summary_api: ApiFixture, edit: dict[str, str | None]
 ) -> None:
-    from app.copy.templates_es import DEFAULT_PROVENANCE
+    from app.copy.templates_es import DEFAULT_PROVENANCE_V2
     from app.templates.seed import ensure_default
 
     client, factory, owner, _, _, _, _ = summary_api
@@ -535,7 +558,7 @@ async def test_editing_starter_removes_owner_proposal_provenance(
         user.default_summary_template_id = None
         template_id = await ensure_default(session, owner)
     path = f"/api/v1/templates/{template_id}"
-    assert (await client.get(path, headers=_headers(owner))).json()["provenance"] == DEFAULT_PROVENANCE
+    assert (await client.get(path, headers=_headers(owner))).json()["provenance"] == DEFAULT_PROVENANCE_V2
     edited = await client.patch(path, json=edit, headers=_headers(owner))
     assert edited.status_code == 200
     assert edited.json()["provenance"] is None

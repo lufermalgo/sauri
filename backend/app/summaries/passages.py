@@ -1,10 +1,11 @@
 """Lossless, timed transcript windows and citation validation."""
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 
 @dataclass(frozen=True)
@@ -39,16 +40,71 @@ class PassageRef(BaseModel):
 
 
 class KeyPoint(BaseModel):
+    """Stored shape of schema v1 (flat point). Only read, never written."""
+
     model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1)
     sources: list[PassageRef] = Field(min_length=1, max_length=2)
 
 
-class CanonicalSummary(BaseModel):
+class SummaryItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    topic: str = Field(min_length=1, max_length=450)
-    key_points: list[KeyPoint] = Field(min_length=1, max_length=12)
+    text: str = Field(min_length=1, max_length=800)
+    sub_items: list[Annotated[str, StringConstraints(min_length=1, max_length=500)]] = Field(
+        default_factory=list, max_length=8,
+    )
+
+
+class KeyPointBlock(BaseModel):
+    """One thematic block of the schema v2 summary."""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=160)
+    items: list[SummaryItem] = Field(min_length=1, max_length=12)
+    sources: list[PassageRef] = Field(min_length=1, max_length=4)
+
+
+class CanonicalSummary(BaseModel):
+    """Schema v2: topic paragraph, thematic blocks and a closing conclusion."""
+
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal[2] = 2
+    topic: str = Field(min_length=1, max_length=1200)
+    key_points: list[KeyPointBlock] = Field(min_length=1, max_length=12)
+    conclusion: str = Field(min_length=1, max_length=1200)
     review_state: Literal["draft"] = "draft"
+
+
+@dataclass(frozen=True)
+class StoredSummaryContent:
+    """Key points and conclusion read back from the stored JSON, whatever the schema version."""
+
+    schema_version: int
+    key_points: list[Any]
+    conclusion: str | None
+
+
+def encode_key_points(summary: CanonicalSummary) -> str:
+    """The `key_points_json` payload: a v2 object. Schema v1 stored a bare list instead."""
+    return json.dumps(
+        {
+            "schema_version": summary.schema_version,
+            "key_points": [block.model_dump() for block in summary.key_points],
+            "conclusion": summary.conclusion,
+        },
+        ensure_ascii=False,
+    )
+
+
+def decode_key_points(payload: str) -> StoredSummaryContent:
+    """Tolerant reader: a bare list is schema v1, an object with `schema_version` 2 is v2."""
+    data = json.loads(payload)
+    if isinstance(data, list):
+        return StoredSummaryContent(1, data, None)
+    if isinstance(data, dict) and data.get("schema_version") == 2 and isinstance(data.get("key_points"), list):
+        conclusion = data.get("conclusion")
+        return StoredSummaryContent(2, data["key_points"], conclusion if isinstance(conclusion, str) else None)
+    raise ValueError("Unrecognized stored summary shape")
 
 
 class SummaryInvalidError(ValueError):
@@ -93,7 +149,7 @@ def validate_citations(
                     ))
                     seen.add(passage.passage_id)
             if sources:
-                points.append({**point, "sources": sources[:2]})
+                points.append({**point, "sources": sources[:4]})
         return CanonicalSummary.model_validate({**data, "key_points": points[:12]})
     except (ValidationError, KeyError, TypeError, AttributeError):
         raise SummaryInvalidError("summary_invalid") from None
