@@ -19,23 +19,6 @@
   gap: var(--ds-space-3);
 }
 
-.summary-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ds-space-2);
-}
-
-.summary-actions .ui-button {
-  min-height: var(--ds-control-h-sm);
-  padding: 0 var(--ds-space-3);
-  font-size: var(--ds-text-sm);
-}
-
-.summary-feedback {
-  color: var(--ds-fg-muted);
-  font-size: var(--ds-text-xs);
-}
-
 .summary-label {
   margin: var(--ds-space-1) 0 calc(-1 * var(--ds-space-1));
   font-family: var(--ds-font-sans);
@@ -106,7 +89,6 @@
 }
 
 .summary-source:focus-visible,
-.summary-actions .ui-button:focus-visible,
 .summary-notice .ui-button:focus-visible,
 .summary-empty .ui-button:focus-visible {
   outline: 2px solid var(--ds-accent);

@@ -91,58 +91,13 @@ describe("SummaryPanel", () => {
     },
   );
 
-  it("copies only topic and point text as plain text", async () => {
+  it("keeps the draft badge but offers no copy or download button in the panel", async () => {
     artifact = summary;
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
     render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: text.copy }));
-    expect(writeText).toHaveBeenCalledWith("Synthetic planning\n- First synthetic point\n- Second synthetic point");
-    expect(await screen.findByText(text.copied)).toBeVisible();
-  });
-
-  it("downloads exactly the copied plain text as <title> - resumen.txt and revokes the object URL", async () => {
-    artifact = summary;
-    const expected = "Synthetic planning\n- First synthetic point\n- Second synthetic point";
-    const blobs: Blob[] = [];
-    const createObjectURL = vi.fn((blob: Blob) => { blobs.push(blob); return "blob:synthetic"; });
-    const revokeObjectURL = vi.fn();
-    Object.assign(URL, { createObjectURL, revokeObjectURL });
-    const downloads: string[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
-      downloads.push(`${this.download}|${this.href}`);
-    });
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
-    render(<SummaryPanel meetingId="meeting-1" title="Weekly sync" onSeek={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: text.download }));
-    expect(downloads).toEqual(["Weekly sync - resumen.txt|blob:synthetic"]);
-    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith("blob:synthetic"));
-    expect(document.querySelector("a[download]")).toBeNull();
-    expect(blobs).toHaveLength(1);
-    expect(blobs[0].type).toContain("text/plain");
-    const content = await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.readAsText(blobs[0]);
-    });
-    expect(content).toBe(expected);
-    fireEvent.click(screen.getByRole("button", { name: text.copy }));
-    await screen.findByText(text.copied);
-    expect(writeText).toHaveBeenCalledWith(content);
-  });
-
-  it.each([null, undefined, "???"])("falls back to resumen-<id>.txt when the title %j leaves no usable name", async (title) => {
-    artifact = summary;
-    Object.assign(URL, { createObjectURL: vi.fn(() => "blob:synthetic"), revokeObjectURL: vi.fn() });
-    const names: string[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
-      names.push(this.download);
-    });
-    render(<SummaryPanel meetingId="meeting-1" title={title} onSeek={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: text.download }));
-    expect(names).toEqual([copy.meeting.summaryFilename("meeting-1")]);
-    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalled());
+    expect(await screen.findByText(text.draft)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Copiar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Descargar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Acciones del resumen" })).not.toBeInTheDocument();
   });
 
   it("shows the generating skeleton card with an accessible status while the summary is pending", async () => {
@@ -243,30 +198,6 @@ describe("SummaryPanel", () => {
     render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} transcriptReady={false} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(text.failureCause("llm_unavailable"));
     expect(screen.queryByRole("button", { name: text.retry })).not.toBeInTheDocument();
-  });
-
-  it("offers no download button without a summary", async () => {
-    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
-    await screen.findByRole("button", { name: text.generate });
-    expect(screen.queryByRole("button", { name: text.download })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: text.copy })).not.toBeInTheDocument();
-  });
-
-  it("handles unavailable clipboard without claiming a successful copy", async () => {
-    artifact = summary;
-    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: text.copy }));
-    expect(await screen.findByText(text.copyFailed)).toBeVisible();
-    expect(screen.queryByText(text.copied)).not.toBeInTheDocument();
-  });
-
-  it("handles denied clipboard permissions without losing the draft", async () => {
-    artifact = summary;
-    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockRejectedValue(new Error("Permission denied")) } });
-    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: text.copy }));
-    expect(await screen.findByText(text.copyFailed)).toBeVisible();
-    expect(screen.getByText(summary.topic)).toBeVisible();
   });
 
   it("polls every five seconds through running to ready, then stops", async () => {
@@ -450,11 +381,7 @@ const structured = {
   ],
   conclusion: "Synthetic conclusion paragraph.",
 };
-const structuredPlainText = [
-  `${text.mainTopic}\nSynthetic paragraph about the meeting.`,
-  `${text.detailedKeyPoints}\n1. Synthetic block one\n- Synthetic fact\n  - Synthetic phase one\n  - Synthetic phase two\n- Decision: synthetic decision\n\n2. Synthetic block two\n- Another fact`,
-  `${text.conclusion}\nSynthetic conclusion paragraph.`,
-].join("\n\n");
+
 
 describe("structured (v2) summary", () => {
   it("renders the topic paragraph, numbered blocks with nested items and the conclusion", async () => {
@@ -474,42 +401,12 @@ describe("structured (v2) summary", () => {
     expect(seek).toHaveBeenLastCalledWith(125000);
   });
 
-  it("copies and downloads the same structure without minutes or timestamps", async () => {
-    artifact = structured as unknown as typeof summary;
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
-    const blobs: Blob[] = [];
-    const revokeObjectURL = vi.fn();
-    Object.assign(URL, { createObjectURL: vi.fn((blob: Blob) => { blobs.push(blob); return "blob:synthetic"; }), revokeObjectURL });
-    const names: string[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
-      names.push(this.download);
-    });
-    render(<SummaryPanel meetingId="meeting-1" title="Weekly sync" onSeek={vi.fn()} />);
-    fireEvent.click(await screen.findByRole("button", { name: text.copy }));
-    expect(writeText).toHaveBeenCalledWith(structuredPlainText);
-    expect(structuredPlainText).not.toMatch(/\d{1,2}:\d{2}/);
-    fireEvent.click(screen.getByRole("button", { name: text.download }));
-    const content = await new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.readAsText(blobs[0]);
-    });
-    expect(content).toBe(structuredPlainText);
-    expect(names).toEqual(["Weekly sync - resumen.txt"]);
-    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalled());
-  });
-
-  it("still renders and exports a stored v1 summary exactly as before", async () => {
+  it("still renders a stored v1 summary exactly as before", async () => {
     artifact = summary;
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    vi.stubGlobal("navigator", { clipboard: { writeText } });
     render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
     expect(await screen.findByRole("heading", { name: text.topic })).toBeVisible();
     expect(screen.getByRole("heading", { name: text.keyPoints })).toBeVisible();
     expect(screen.queryByRole("heading", { name: text.conclusion })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: text.copy }));
-    expect(writeText).toHaveBeenCalledWith("Synthetic planning\n- First synthetic point\n- Second synthetic point");
   });
 });
 
@@ -566,7 +463,6 @@ describe("meeting summary tab integration", () => {
 });
 
 describe("meeting header summary download", () => {
-  // The panel has its own "Descargar" button: the header's trigger is found inside the header.
   const headerOf = (title: HTMLElement) => title.closest("header") as HTMLElement;
 
   function routeMeetingRequests() {
@@ -605,10 +501,7 @@ describe("meeting header summary download", () => {
     await waitFor(() => expect(item).not.toHaveAttribute("aria-disabled"));
     fireEvent.click(item);
     await waitFor(() => expect(names).toEqual(["Synthetic meeting - resumen.txt"]));
-    // The panel's own button saves the same file.
-    fireEvent.click(within(screen.getByRole("group", { name: text.actions })).getByRole("button", { name: text.download }));
-    expect(names).toEqual(["Synthetic meeting - resumen.txt", "Synthetic meeting - resumen.txt"]);
-    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1));
   });
 
   it("keeps it disabled, with the hint, while there is no summary", async () => {
