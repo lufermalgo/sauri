@@ -36,7 +36,7 @@ _CONTEXT_PHRASES: Final = (
     "exceeds the available context",
     "context window",
 )
-_QUOTA_HINTS: Final = ("insufficient_quota", "billing", "credit_balance", "quota_exceeded")
+_QUOTA_HINTS: Final = ("insufficient_quota", "billing", "credit_balance", "quota_exceeded", "usage_limit")
 _STREAM_ERROR_STATUS: Final = {
     "overloaded_error": 529,
     "api_error": 500,

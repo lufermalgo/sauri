@@ -37,7 +37,7 @@ _CONTEXT_MARKERS: Final = (
     "exceeds the available context",
     "maximum context length",
 )
-_QUOTA_MARKERS: Final = ("insufficient_quota", "billing", "credit_balance", "quota_exceeded")
+_QUOTA_MARKERS: Final = ("insufficient_quota", "billing", "credit_balance", "quota_exceeded", "usage_limit")
 
 
 class ProviderError(Exception):

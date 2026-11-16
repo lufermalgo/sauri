@@ -20,7 +20,9 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sauri_engine_common.external import chat_anthropic, chat_openai
+from sauri_engine_common.chatgpt_login import ALLOWED_HOSTS, ChatGptLogin
+from sauri_engine_common.external import chat_anthropic, chat_openai, chat_responses
+from sauri_engine_common.external.allowlist_http import AllowlistedHttp
 from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.external.safe_http import SafeHttp
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
@@ -235,15 +237,31 @@ def _external_route(header: str | None) -> Route | None:
     return None if route is None or route.kind == LOCAL_KIND else route
 
 
-async def _read_secret(ref: str) -> SecretRecord:
+async def _store() -> SecretStore:
     global _secret_store
+    # Both the store probe and the Keychain read run ``/usr/bin/security``: keep them off the event loop.
+    if _secret_store is None:
+        _secret_store = await asyncio.to_thread(default_secret_store)
+    return _secret_store
+
+
+async def _read_secret(ref: str) -> SecretRecord:
     try:
-        # Both the store probe and the Keychain read run ``/usr/bin/security``: keep them off the event loop.
-        if _secret_store is None:
-            _secret_store = await asyncio.to_thread(default_secret_store)
-        return await asyncio.to_thread(_secret_store.get, ref)
+        return await asyncio.to_thread((await _store()).get, ref)
     except SecretError:
         raise ProviderError("secret_unavailable") from None
+
+
+# The account sign-in of the ChatGPT plan: tokens come from the secret store at call time, never from the route.
+chatgpt_http = AllowlistedHttp(ALLOWED_HOSTS)
+_chatgpt_login: ChatGptLogin | None = None
+
+
+async def _chatgpt() -> ChatGptLogin:
+    global _chatgpt_login
+    if _chatgpt_login is None:
+        _chatgpt_login = ChatGptLogin(await _store(), chatgpt_http)
+    return _chatgpt_login
 
 
 async def _external_secret(route: Route) -> SecretRecord | None:
@@ -285,7 +303,7 @@ async def _external_chat(request: Request, body: dict[str, Any], route: Route) -
         raise ProviderError("provider_bad_request", reason="streaming_not_supported")
     secret = await _external_secret(route)
     adapter = {"openai-chat": chat_openai, "anthropic-messages": chat_anthropic}.get(route.transport or "")
-    if adapter is None:  # unreachable while the matrix and this table agree; fail closed
+    if adapter is None and route.transport != "chatgpt-responses":  # unreachable while the matrix agrees; fail closed
         raise ProviderError("provider_unsupported", reason="no_adapter")
     # The route's budget never outlives this gateway's own request budget (the worker waits that long).
     timeouts = dataclasses.replace(route.timeouts, total_s=min(route.timeouts.total_s, server.request_seconds))
@@ -294,10 +312,16 @@ async def _external_chat(request: Request, body: dict[str, Any], route: Route) -
         with suppress(KeepAwakeError):
             stack.enter_context(KeepAwake())
         # Citations and the original schema are checked by the worker, which owns the passages (U3.3).
-        result = await _run_until_disconnect(request, adapter.complete(
-            body, route=route, secret=secret, http=external_http,
-            allow_local=route.kind in LOCAL_SERVER_KINDS, timeouts=timeouts,
-        ))
+        if adapter is None:
+            call = chat_responses.complete(
+                body, route=route, login=await _chatgpt(), http=chatgpt_http, timeouts=timeouts
+            )
+        else:
+            call = adapter.complete(
+                body, route=route, secret=secret, http=external_http,
+                allow_local=route.kind in LOCAL_SERVER_KINDS, timeouts=timeouts,
+            )
+        result = await _run_until_disconnect(request, call)
     if result is None:
         return Response(status_code=499)  # nobody is listening any more
     return JSONResponse(result)
