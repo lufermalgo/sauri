@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
 
@@ -27,6 +29,26 @@ PROVENANCE_TABLES = ("transcripts", "diarizations", "meeting_summaries")
 # The only columns that mention keys: a reference and a display hint, never a value.
 KEY_RELATED = {"secret_ref", "key_hint", "key_set_at"}
 FORBIDDEN_WORDS = ("password", "token", "audio", "content", "text", "transcript_body", "secret_value", "api_key")
+
+
+@pytest.fixture(autouse=True)
+def keep_logging_state() -> Iterator[None]:
+    """alembic's env.py reconfigures logging and disables every existing logger; undo it for later tests."""
+    root = logging.getLogger()
+    root_state = (root.level, list(root.handlers))
+    loggers = {
+        name: (logger.disabled, logger.level, logger.propagate, list(logger.handlers))
+        for name, logger in logging.Logger.manager.loggerDict.items()
+        if isinstance(logger, logging.Logger)
+    }
+    yield
+    root.setLevel(root_state[0])
+    root.handlers[:] = root_state[1]
+    for name, (disabled, level, propagate, handlers) in loggers.items():
+        logger = logging.getLogger(name)
+        logger.disabled, logger.propagate = disabled, propagate
+        logger.setLevel(level)
+        logger.handlers[:] = handlers
 
 
 def test_revision_is_the_single_head_after_auth_hardening() -> None:
