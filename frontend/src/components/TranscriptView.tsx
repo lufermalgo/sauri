@@ -398,7 +398,8 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
 
   const presentationTurns = useMemo(
     () => (data ? presentTranscriptTurns(data, diarization, review) : []),
-    [data, diarization, review],
+    // `t` changes with the language, so the speaker labels follow it.
+    [data, diarization, review, t],
   );
 
   const playbackIntervals = useMemo(() => createPlaybackIntervals(data?.turns ?? [], presentationTurns),
@@ -429,7 +430,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
         color: presentation?.color ?? UNRESOLVED_SPEAKER_COLOR,
       };
     });
-  }, [intervalTurns, presentationTurns]);
+  }, [intervalTurns, presentationTurns, t]);
 
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 

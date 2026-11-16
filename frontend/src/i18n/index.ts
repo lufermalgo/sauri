@@ -5,12 +5,34 @@ import { DEFAULT_LANGUAGE, detectInitialLanguage, storeLanguage, type Language }
 
 export * from "./languages";
 
+type Tree = { [key: string]: string | Tree };
+
+/**
+ * Spanish also has a "many" plural category (round millions: "1 millón de …"), which i18next looks up
+ * as `key_many`. The files only carry `_one` and `_other`, so a missing `_many` reuses `_other`
+ * instead of showing the raw key.
+ */
+export function withManyForms(tree: Tree, language: string): Tree {
+  const hasMany = new Intl.PluralRules(language).resolvedOptions().pluralCategories.includes("many");
+  const out: Tree = {};
+  for (const [key, value] of Object.entries(tree)) {
+    out[key] = typeof value === "string" ? value : withManyForms(value, language);
+    if (hasMany && typeof value === "string" && key.endsWith("_other")) {
+      const many = key.replace(/_other$/, "_many");
+      if (!(many in tree)) out[many] = value;
+    }
+  }
+  return out;
+}
+
+const spanish = Object.fromEntries(Object.entries(es).map(([namespace, tree]) => [namespace, withManyForms(tree, "es")]));
+
 /**
  * Spanish is bundled (default and fallback) and registered synchronously on import, so tests and
  * early code can call `t` right away. Other languages load on demand (`loadLanguage`).
  */
 void i18n.use(initReactI18next).init({
-  resources: { es },
+  resources: { es: spanish },
   lng: DEFAULT_LANGUAGE,
   fallbackLng: DEFAULT_LANGUAGE,
   supportedLngs: ["es", "en"],
@@ -52,7 +74,7 @@ export async function loadLanguage(language: Language): Promise<void> {
   if (loaded.has(language)) return;
   const { en } = await import("../locales/en");
   for (const [namespace, resources] of Object.entries(en)) {
-    i18n.addResourceBundle("en", namespace, resources, true, true);
+    i18n.addResourceBundle("en", namespace, withManyForms(resources, "en"), true, true);
   }
   loaded.add(language);
 }

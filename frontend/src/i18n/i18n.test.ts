@@ -107,6 +107,11 @@ describe("plural forms", () => {
     expect(t("library:speakers", { count })).toBe(expected);
   });
 
+  it("uses the other form for round millions, where Spanish has a third plural category", () => {
+    expect(new Intl.PluralRules("es").select(1_000_000)).toBe("many");
+    expect(t("library:speakers", { count: 1_000_000 })).toBe("1000000 hablantes");
+  });
+
   it("builds composed bulk messages in both languages", async () => {
     expect(t("library:bulk.deleted", { count: 1 })).toBe("Se eliminó 1 grabación.");
     expect(t("library:bulk.deleted", { count: 3 })).toBe("Se eliminaron 3 grabaciones.");

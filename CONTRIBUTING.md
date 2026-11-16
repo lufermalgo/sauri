@@ -32,6 +32,6 @@ cd backend && uv run --extra dev mypy .
 
 ## Conventions
 
-- Identifiers, comments and commit messages are in English. User-facing UI copy (Spanish) lives only in `frontend/src/copy/`. `make check-english` enforces this.
+- Identifiers, comments and commit messages are in English. User-facing UI copy (Spanish source and English) lives only in `frontend/src/locales/`; `npm run i18n:check` keeps both languages in step. `make check-english` enforces this.
 - Keep changes small, tested and consistent with the surrounding code. No dead code.
 - Secrets go in environment variables or files outside the repository, never in commits or logs.
