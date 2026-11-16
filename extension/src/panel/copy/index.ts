@@ -1,5 +1,5 @@
 export const panelCopy = {
-  panelTitle: "Grabaciones REC",
+  panelTitle: "Grabar reunión",
   settings: "Ajustes de grabación",
   back: "Volver",
   countdown: "Cuenta regresiva",

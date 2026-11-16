@@ -6,7 +6,8 @@ import { panelCopy as copy } from "../copy";
 describe("PanelHeader", () => {
   it("shows the panel title and no brand name or settings button", () => {
     render(<PanelHeader />);
-    expect(screen.getByText(copy.panelTitle)).toBeInTheDocument();
+    expect(screen.getByText("Grabar reunión")).toBeInTheDocument(); // spanish-sample-data
+    expect(copy.panelTitle).toBe("Grabar reunión"); // spanish-sample-data
     expect(screen.queryByText("Sauri")).not.toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });

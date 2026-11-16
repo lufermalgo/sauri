@@ -44,7 +44,7 @@ def create_app() -> FastAPI:
     """Build the application; CORS, docs exposure and error handling come from the environment."""
     docs_url, redoc_url, openapi_url = docs_paths()
     application = FastAPI(
-        title="sauri",
+        title="Sauri",
         description="Summan's internal commercial-meeting intelligence platform",
         version="0.1.0",
         lifespan=lifespan,

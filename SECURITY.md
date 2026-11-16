@@ -1,4 +1,4 @@
-# Security Notes — sauri
+# Security Notes — Sauri
 
 ## TLS in Transit
 
