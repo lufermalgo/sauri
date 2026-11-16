@@ -6,6 +6,7 @@ import {
 import { ProgressBar } from "./ui";
 import "../styles/processing.css";
 import { useT } from "../i18n";
+import { useTranscriptionEngine } from "../useTranscriptionEngine";
 
 interface StageProgressProps {
   stage: ActiveStage;
@@ -57,6 +58,7 @@ export function StageProgress({
 }: StageProgressProps) {
   const { t } = useT();
   const now = useNow();
+  const engine = useTranscriptionEngine();
   const [mountedAt] = useState(() => Date.now());
 
   const sinceUpload = (at: number) => secondsSince(createdAt, at) ?? (at - mountedAt) / 1000;
@@ -64,12 +66,12 @@ export function StageProgress({
   // also holds a transcription of any length, so only the time this page has watched counts as overtime.
   const stageStart = stageStartedAt ?? (stage === "transcription" ? null : mountedAt);
   const estimateAt = (at: number) => estimateProgress({
-    stage, audioSeconds, elapsedSinceUploadSeconds: sinceUpload(at),
+    stage, audioSeconds, engine, elapsedSinceUploadSeconds: sinceUpload(at),
     stageElapsedSeconds: stageStart === null ? null : Math.max(0, (at - stageStart) / 1000),
   });
   const estimate = estimateAt(now);
   const audioMinutes = typeof audioSeconds === "number" && audioSeconds > 0 ? roundMinutes(audioSeconds) : null;
-  const stageMinutes = audioMinutes === null ? null : roundMinutes(expectedStageSeconds(audioSeconds as number)[stage]);
+  const stageMinutes = audioMinutes === null ? null : roundMinutes(expectedStageSeconds(audioSeconds as number, engine)[stage]);
   const explanation = estimate?.overtime ? t("processing:explain.overtime")
     : queued ? t("processing:explain.queued")
       : stage === "transcription" ? explainTranscription(audioMinutes, stageMinutes)

@@ -42,3 +42,17 @@ export function availabilityOf(model: LocalModel): LocalModelAvailability {
   if (model.state === "unverified" || model.state === "corrupt") return "present_unverified";
   return "available";
 }
+
+/** A model that can run now: its files are verified and the engine it needs (if any) is installed. */
+export function isReady(model: LocalModel): boolean {
+  return model.kind === "model" && availabilityOf(model) === "installed" && model.needs_ready !== false;
+}
+
+/**
+ * The model `local:default` runs for a process: the preferred one (Parakeet) when it is ready, otherwise the
+ * catalog default (Whisper). Undefined when neither is installed.
+ */
+export function resolvedDefault(models: readonly LocalModel[], process: EngineProcess): LocalModel | undefined {
+  const own = models.filter((model) => model.process === process && model.kind === "model");
+  return own.find((model) => model.preferred === true && isReady(model)) ?? own.find((model) => model.default && isReady(model));
+}

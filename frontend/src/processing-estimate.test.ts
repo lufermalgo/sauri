@@ -9,9 +9,19 @@ const AUDIO_54_MIN = 54 * 60;
 
 describe("expectedStageSeconds", () => {
   it("uses the measured speeds", () => {
-    expect(expectedStageSeconds(AUDIO_54_MIN)).toEqual({ transcription: 324, speakers: 15, summary: 388.8 });
+    expect(expectedStageSeconds(AUDIO_54_MIN)).toEqual({ transcription: 518.4, speakers: 15, summary: 388.8 });
     // Short recordings keep the one-minute summary floor.
     expect(expectedStageSeconds(120).summary).toBe(60);
+  });
+
+  it("is an order of magnitude faster for Parakeet than for Whisper, per hour of audio", () => {
+    const hour = 3600;
+    expect(expectedStageSeconds(hour, "whisper").transcription / 60).toBeGreaterThanOrEqual(9);
+    expect(expectedStageSeconds(hour, "whisper").transcription / 60).toBeLessThanOrEqual(10);
+    expect(expectedStageSeconds(hour, "parakeet").transcription / 60).toBeGreaterThanOrEqual(1);
+    expect(expectedStageSeconds(hour, "parakeet").transcription / 60).toBeLessThanOrEqual(2);
+    // Only transcription depends on the engine.
+    expect(expectedStageSeconds(AUDIO_54_MIN, "parakeet").summary).toBe(expectedStageSeconds(AUDIO_54_MIN).summary);
   });
 });
 
@@ -23,18 +33,27 @@ describe("estimateProgress", () => {
   });
 
   it("estimates transcription from the time since upload", () => {
-    const estimate = estimateProgress({ stage: "transcription", audioSeconds: AUDIO_54_MIN, elapsedSinceUploadSeconds: 162 })!;
-    // Total 727.8 s; half of transcription done.
-    expect(estimate.percent).toBe(22);
+    const estimate = estimateProgress({ stage: "transcription", audioSeconds: AUDIO_54_MIN, elapsedSinceUploadSeconds: 259.2 })!;
+    // Total 922.2 s; half of transcription done.
+    expect(estimate.percent).toBe(28);
     expect(estimate.overtime).toBe(false);
-    expect(estimate.remainingSeconds).toBeCloseTo(162 + 15 + 388.8);
+    expect(estimate.remainingSeconds).toBeCloseTo(259.2 + 15 + 388.8);
+  });
+
+  it("follows the engine: the same time since upload is much further along with Parakeet", () => {
+    const input = { stage: "transcription" as const, audioSeconds: AUDIO_54_MIN, elapsedSinceUploadSeconds: 60 };
+    const parakeet = estimateProgress({ ...input, engine: "parakeet" })!;
+    const whisper = estimateProgress({ ...input, engine: "whisper" })!;
+    expect(parakeet.stageExpectedSeconds).toBeCloseTo(97.2);
+    expect(parakeet.percent).toBeGreaterThan(whisper.percent);
+    expect(estimateProgress({ ...input, engine: "parakeet", elapsedSinceUploadSeconds: 120 })!.overtime).toBe(true);
   });
 
   it("starts speakers after the nominal transcription time and summary after both", () => {
     const speakers = estimateProgress({ stage: "speakers", audioSeconds: AUDIO_54_MIN, elapsedSinceUploadSeconds: 0 })!;
-    expect(speakers.fraction).toBeCloseTo(324 / 727.8);
+    expect(speakers.fraction).toBeCloseTo(518.4 / 922.2);
     const summary = estimateProgress({ stage: "summary", audioSeconds: AUDIO_54_MIN, elapsedSinceUploadSeconds: 0 })!;
-    expect(summary.fraction).toBeCloseTo(339 / 727.8);
+    expect(summary.fraction).toBeCloseTo(533.4 / 922.2);
     expect(summary.remainingSeconds).toBeCloseTo(388.8);
   });
 
@@ -57,12 +76,12 @@ describe("estimateProgress", () => {
 
   it("reports overtime instead of a remaining time when a stage outlasts its estimate", () => {
     const estimate = estimateProgress({
-      stage: "transcription", audioSeconds: 21 * 60, elapsedSinceUploadSeconds: 200,
+      stage: "transcription", audioSeconds: 21 * 60, elapsedSinceUploadSeconds: 210,
     })!;
     expect(estimate.overtime).toBe(true);
     expect(estimate.remainingSeconds).toBeNull();
     // The bar rests at the end of the current stage, not at the cap.
-    expect(estimate.fraction).toBeCloseTo(126 / (126 + 15 + 151.2));
+    expect(estimate.fraction).toBeCloseTo(201.6 / (201.6 + 15 + 151.2));
   });
 
   it("handles a late open gracefully: overtime, capped, never negative", () => {

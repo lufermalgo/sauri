@@ -323,6 +323,7 @@
     "reasons": {
       "reduced": "Un modelo mejor ({{better}}) no es posible porque {{limit}}. Con {{memory}} de memoria este es el más capaz que cabe.",
       "noModelMemory": "Tu equipo tiene {{memory}} de memoria y el modelo local más pequeño pide al menos {{minimum}} GB.",
+      "noModelMacos": "Este proceso solo tiene modelo local para versiones de macOS más recientes que la de tu equipo.",
       "noModelMetal": "Este proceso solo tiene modelo local para equipos con aceleración Metal, y tu equipo no la tiene.",
       "generic": "Elegimos el modelo según la memoria y la aceleración de tu equipo.",
       "fits": "Tu equipo tiene {{memory}} de memoria: este modelo cabe sin problema.",
@@ -330,7 +331,8 @@
     },
     "limits": {
       "memory": "tu equipo tiene menos memoria de la que pide",
-      "metal": "tu equipo no tiene aceleración Metal"
+      "metal": "tu equipo no tiene aceleración Metal",
+      "macos": "tu versión de macOS es anterior a la que pide"
     },
     "warnings": {
       "unmeasured_proposal": "Es una propuesta sin medir con reuniones reales.",
@@ -352,8 +354,16 @@
     "manual": "Instalado a mano",
     "manualNote": "Instalado a mano; Sauri no lo borra.",
     "managedTitle": {
-      "diarization": "Motor de hablantes de Sauri"
+      "diarization": "Motor de hablantes de Sauri",
+      "transcription": "Motor de Parakeet (FluidAudio)"
     },
+    "fallbackBadge": "Respaldo · Mayor precisión en nombres propios",
+    "modelNotes": {
+      "parakeet": "Mucho más rápido: una hora de reunión se transcribe en 1 o 2 minutos. La transcripción es más literal (conserva muletillas) y puede escribir mal nombres propios poco comunes; para esos casos conviene Whisper. Si algo sale raro, Sauri repite la transcripción con Whisper por su cuenta.",
+      "whisper": "Más lento (una hora de reunión tarda unos 9 o 10 minutos) pero más preciso con nombres propios poco comunes. Es el respaldo automático de Parakeet."
+    },
+    "needsEngine": "Los archivos están instalados, pero falta el motor que los ejecuta. Para instalarlo, ejecuta en una terminal: {{command}}. Mientras tanto Sauri transcribe con Whisper.",
+    "license": "Licencia {{license}}. {{attribution}}",
     "verifiedBy": {
       "hash": "Archivo comprobado contra el catálogo.",
       "presence": "Detectado en este equipo."

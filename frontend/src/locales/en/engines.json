@@ -332,6 +332,7 @@
     },
     "noRecommendation": "There's no recommended local model for this process.",
     "reasons": {
+      "noModelMacos": "This process only has a local model for newer versions of macOS than the one on your computer.",
       "noModelMetal": "This process only has a local model for computers with Metal acceleration, and yours doesn't have it.",
       "generic": "We chose the model based on your computer's memory and acceleration.",
       "reduced": "A better model ({{better}}) isn't possible because {{limit}}. With {{memory}} of memory, this is the most capable one that fits.",
@@ -341,7 +342,8 @@
     },
     "limits": {
       "memory": "your computer has less memory than it needs",
-      "metal": "your computer doesn't have Metal acceleration"
+      "metal": "your computer doesn't have Metal acceleration",
+      "macos": "your version of macOS is older than it requires"
     },
     "warnings": {
       "unmeasured_proposal": "It's a proposal not yet measured with real meetings.",
@@ -362,7 +364,14 @@
     },
     "manual": "Installed manually",
     "manualNote": "Installed manually; Sauri doesn't delete it.",
-    "managedTitle": { "diarization": "Sauri speaker engine" },
+    "managedTitle": { "diarization": "Sauri speaker engine", "transcription": "Parakeet engine (FluidAudio)" },
+    "fallbackBadge": "Fallback · More accurate on proper names",
+    "modelNotes": {
+      "parakeet": "Much faster: an hour of meeting is transcribed in 1 or 2 minutes. The transcript is more literal (keeps filler words) and may misspell uncommon proper names; Whisper is the better choice for those. If anything looks off, Sauri transcribes the recording again with Whisper on its own.",
+      "whisper": "Slower (an hour of meeting takes about 9 or 10 minutes) but more accurate on uncommon proper names. It is Parakeet's automatic fallback."
+    },
+    "needsEngine": "The files are installed, but the engine that runs them is missing. To install it, run in a terminal: {{command}}. Meanwhile Sauri transcribes with Whisper.",
+    "license": "License {{license}}. {{attribution}}",
     "verifiedBy": {
       "hash": "File checked against the catalog.",
       "presence": "Detected on this computer."

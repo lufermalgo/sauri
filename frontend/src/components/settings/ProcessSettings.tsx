@@ -21,7 +21,7 @@ import {
 } from "../../api";
 import { navigate } from "../../router";
 import { Button, Card, Icon, Skeleton, StatusBadge } from "../ui";
-import { availabilityOf, formatBytes, processList } from "./engineLabels";
+import { availabilityOf, resolvedDefault, formatBytes, processList } from "./engineLabels";
 import { LocalModelCard } from "./LocalModelCard";
 import { ModelPicker } from "./ModelPicker";
 import type { ModelPickerHandle, PickerGroup, PickerOption } from "./ModelPicker";
@@ -158,11 +158,11 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
           : t("engines:process.notServedAtAll", { provider: provider.label }),
       };
     });
+  // `local:default` is the preferred model when it is ready (Parakeet), else the catalog default (Whisper); every
+  // other installed model is listed by its id so the person can pin it and come back to the recommended one.
+  const defaultModel = resolvedDefault(localModels, process);
   const installed = localModels.filter(
-    (model) => model.process === process && model.kind === "model" && !model.default && availabilityOf(model) === "installed",
-  );
-  const defaultModel = localModels.find(
-    (model) => model.process === process && model.kind === "model" && model.default && availabilityOf(model) === "installed",
+    (model) => model.process === process && model.kind === "model" && model.id !== defaultModel?.id && availabilityOf(model) === "installed",
   );
 
   function applyState(next: EngineProcessState) {
@@ -301,7 +301,6 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
       label: t("engines:process.localRecommended"),
       detail: defaultModel?.size ? formatBytes(defaultModel.size) : undefined,
       inUse: !savedExternal && saved.model === LOCAL_DEFAULT_MODEL,
-      tag: defaultModel?.active && saved.model !== LOCAL_DEFAULT_MODEL ? t("engines:process.activeTag") : undefined,
     },
     ...installed.map((model) => {
       const key = `${LOCAL_PREFIX}${model.id}`;
