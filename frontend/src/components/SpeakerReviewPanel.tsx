@@ -78,7 +78,7 @@ export function SpeakerReviewPanel({
   }
 
   return <div className="meeting-speaker-review">
-    <p role="status" className="meeting-sr-only">{complete ? t("speakerReview:complete") : t("speakerReview:pending")}</p>
+    <p role="status" className={complete ? "meeting-sr-only" : undefined}>{complete ? t("speakerReview:complete") : t("speakerReview:pending")}</p>
     <div role="status" className="meeting-sr-only">
       {announcement && <span key={announcement.id}>{announcement.message}</span>}
     </div>

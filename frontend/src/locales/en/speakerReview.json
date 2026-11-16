@@ -4,7 +4,7 @@
   "namedState": "Name assigned",
   "unnamedState": "Unnamed",
   "suggestedState": "Suggested name",
-  "pending": "Review pending: listen to each speaker and type their name.",
+  "pending": "Listen to each speaker and type their name so the summary and transcript say who spoke.",
   "complete": "Review complete.",
   "disposition": {
     "confirmed": "Confirmed",

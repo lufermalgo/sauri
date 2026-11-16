@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MeetingHeader } from "./MeetingHeader";
+import { MeetingHeader, SPEAKER_DOCK_ID } from "./MeetingHeader";
 import { TOOLTIP_DELAY_MS } from "./ui";
 import { deleteMeeting, renameMeeting } from "../api";
 import { navigate } from "../router";
@@ -476,7 +476,7 @@ it("shows no status badge while the stage is unknown to the page", () => {
 });
 
 describe("MeetingHeader speakers entry", () => {
-  function withSpeakers(speakerReview?: { pendingCount: number; hasUnnamed: boolean; onReview: () => void }) {
+  function withSpeakers(speakerReview?: { pendingCount: number; open: boolean; onToggle: () => void }) {
     return render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1"
       manifest={null} turns={[]} speakerReview={speakerReview} />);
   }
@@ -487,34 +487,34 @@ describe("MeetingHeader speakers entry", () => {
   });
 
   it("puts the icon right before the download button and names the pending count; the dot is decorative", () => {
-    withSpeakers({ pendingCount: 3, hasUnnamed: false, onReview: vi.fn() });
+    withSpeakers({ pendingCount: 3, open: false, onToggle: vi.fn() });
     const icon = screen.getByRole("button", { name: t("meeting:speakersButtonPending", { count: 3 }) });
     expect(icon).toHaveAccessibleName(t("meeting:speakersButtonPending", { count: 3 }));
     expect(icon).toHaveClass("ui-icon-button", "ui-icon-button--ghost", "ui-icon-button--alert");
-    expect(icon).toHaveAttribute("aria-haspopup", "dialog");
+    expect(icon).not.toHaveAttribute("aria-haspopup");
     expect(icon).toHaveAttribute("aria-expanded", "false");
     expect(icon.textContent).toBe("");
     const order = screen.getAllByRole("button").map(button => button.getAttribute("aria-label"));
     expect(order).toEqual([t("meeting:renameTitle"), t("meeting:speakersButtonPending", { count: 3 }), t("meeting:download"), t("meeting:moreActions")]);
   });
 
-  it("shows the message and the link in a popover; the link closes it and calls onReview", () => {
-    const onReview = vi.fn();
-    withSpeakers({ pendingCount: 1, hasUnnamed: false, onReview });
+  it("toggles the panel with a single click and no popover in between", () => {
+    const onToggle = vi.fn();
+    withSpeakers({ pendingCount: 1, open: false, onToggle });
     fireEvent.click(screen.getByRole("button", { name: t("meeting:speakersButtonPending", { count: 1 }) }));
-    const popover = screen.getByRole("dialog", { name: t("meeting:speakersPanel") });
-    expect(popover).toHaveTextContent(t("meeting:pendingSpeakers", { count: 1 }));
-    fireEvent.click(within(popover).getByRole("button", { name: t("meeting:reviewSpeakers") }));
-    expect(onReview).toHaveBeenCalledTimes(1);
+    expect(onToggle).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("has no dot and offers editing when nothing is pending", () => {
-    withSpeakers({ pendingCount: 0, hasUnnamed: true, onReview: vi.fn() });
-    const icon = screen.getByRole("button", { name: t("meeting:speakersButton") });
-    expect(icon).not.toHaveClass("ui-icon-button--alert");
-    fireEvent.click(icon);
-    expect(screen.getByText(t("meeting:speakersSomeUnnamed"))).toBeVisible();
-    expect(screen.getByRole("button", { name: t("meeting:editSpeakers") })).toBeVisible();
+  it("reports the open panel through aria-expanded and aria-controls", () => {
+    withSpeakers({ pendingCount: 1, open: true, onToggle: vi.fn() });
+    const icon = screen.getByRole("button", { name: t("meeting:speakersButtonPending", { count: 1 }) });
+    expect(icon).toHaveAttribute("aria-expanded", "true");
+    expect(icon).toHaveAttribute("aria-controls", SPEAKER_DOCK_ID);
+  });
+
+  it("has no dot when nothing is pending", () => {
+    withSpeakers({ pendingCount: 0, open: false, onToggle: vi.fn() });
+    expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).not.toHaveClass("ui-icon-button--alert");
   });
 });

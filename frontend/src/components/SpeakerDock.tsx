@@ -3,14 +3,11 @@ import type { KeyboardEvent } from "react";
 import { X } from "lucide-react";
 import { Icon, useTooltip } from "./ui";
 import { SpeakerReviewPanel, type SpeakerReviewPanelProps } from "./SpeakerReviewPanel";
+import { SPEAKER_DOCK_ID } from "./MeetingHeader";
 import { useT } from "../i18n";
 
 const TABBABLE = 'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
-/** Moves focus to the first control of a mounted dock (the entry point uses it when the panel is already open). */
-export function focusSpeakerDock(dock: HTMLElement | null) {
-  dock?.querySelector<HTMLElement>(TABBABLE)?.focus();
-}
 
 interface SpeakerDockProps extends SpeakerReviewPanelProps {
   onClose: () => void;
@@ -29,7 +26,7 @@ export function SpeakerDock({ onClose, focusOnMount, ...panel }: SpeakerDockProp
   const closeTip = useTooltip(t("speakerReview:close"));
 
   useEffect(() => {
-    if (focusOnMount) focusSpeakerDock(dockRef.current);
+    if (focusOnMount) dockRef.current?.querySelector<HTMLElement>(TABBABLE)?.focus();
     // Only the first render decides: a later prop change must not pull focus back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -42,7 +39,7 @@ export function SpeakerDock({ onClose, focusOnMount, ...panel }: SpeakerDockProp
     }
   }
 
-  return <aside ref={dockRef} className="meeting-dock" aria-labelledby={headingId} onKeyDown={onKeyDown}>
+  return <aside ref={dockRef} id={SPEAKER_DOCK_ID} className="meeting-dock" aria-labelledby={headingId} onKeyDown={onKeyDown}>
     <div className="meeting-dock-inner">
       <div className="meeting-dock-header">
         <h2 id={headingId} className="meeting-dock-title">{t("speakerReview:heading")}</h2>

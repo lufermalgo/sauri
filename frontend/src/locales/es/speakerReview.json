@@ -4,7 +4,7 @@
   "namedState": "Nombre asignado",
   "unnamedState": "Sin nombre",
   "suggestedState": "Nombre sugerido",
-  "pending": "Revisión pendiente: escucha a cada hablante y escribe su nombre.",
+  "pending": "Escucha a cada hablante y escribe su nombre para que el resumen y la transcripción digan quién habló.",
   "complete": "Revisión completa.",
   "disposition": {
     "confirmed": "Confirmado",

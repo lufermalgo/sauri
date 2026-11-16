@@ -25,7 +25,7 @@ import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import { ChatTab } from "./ChatTab";
 import { Avatar, Tabs, Skeleton, SkeletonLines } from "./ui";
 import type { SpeakerRowModel } from "./SpeakerReviewPanel";
-import { SpeakerDock, focusSpeakerDock } from "./SpeakerDock";
+import { SpeakerDock } from "./SpeakerDock";
 import { useSpeakerDock } from "./useSpeakerDock";
 import "../styles/meeting.css";
 import { NO_SPEECH_CAUSE, detectProcessingStage, type SummarySignal } from "../processing-estimate";
@@ -395,9 +395,9 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
     }
   }
 
-  function openReview() {
+  function toggleReview() {
     if (reviewOpen) {
-      focusSpeakerDock(viewRef.current?.querySelector<HTMLElement>(".meeting-dock") ?? null);
+      closeReview();
       return;
     }
     dockFocusOnMount.current = true;
@@ -513,12 +513,9 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
     </div>
   </section>;
 
-  const speakerReview = review && review.items.length > 0 && !noSpeech ? {
-    pendingCount,
-    hasUnnamed: speakerRows.some(row => row.generic),
-    onReview: openReview,
-  } : undefined;
-  const dockOpen = reviewOpen && speakerReview !== undefined;
+  const hasSpeakers = review !== null && review.items.length > 0 && !noSpeech;
+  const dockOpen = hasSpeakers && reviewOpen;
+  const speakerReview = hasSpeakers ? { pendingCount, open: dockOpen, onToggle: toggleReview } : undefined;
   const speakingId = presentationTurns.find(turn => turn.id === activeTurnId)?.speakerId ?? null;
   const hasNotices = metadataError || speakerWaitExpired || showProcessing ||
     diarizationError || Boolean(error);

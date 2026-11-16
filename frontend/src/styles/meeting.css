@@ -34,9 +34,7 @@
 .meeting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-1); min-width: 0; max-width: 100%; }
 .meeting-heading-row > .meeting-actions { flex: 0 0 auto; }
 .meeting-downloads { min-width: 0; }
-.meeting-speakers .ui-popover-panel { width: 20rem; max-width: calc(100vw - 2 * var(--ds-space-3)); }
-.meeting-speakers-message { margin: 0; color: var(--ds-fg); font-size: var(--ds-text-sm); overflow-wrap: anywhere; }
-.meeting-speakers .ui-button { justify-self: start; }
+.meeting-speakers { position: relative; flex: none; }
 .meeting-details { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--ds-space-3); color: var(--ds-fg-muted); font-size: var(--ds-text-xs); line-height: 1.4; }
 .meeting-header > p { margin: 0; padding: 0 var(--ds-space-3) var(--ds-space-2); font-size: var(--ds-text-sm); }
 
@@ -70,7 +68,7 @@
 @container meeting (max-width: 560px) {
   .meeting-processing .processing-stage { grid-template-columns: minmax(0, 1fr); }
   .meeting-heading-row > .meeting-actions { flex: 1 0 100%; }
-  .meeting-actions :is(.ui-menu-panel, .ui-tooltip, .ui-popover-panel) { left: 0; right: auto; }
+  .meeting-actions :is(.ui-menu-panel, .ui-tooltip) { left: 0; right: auto; }
 }
 @container meeting (min-width: 1100px) {
   .meeting-body { --ds-side-w: 400px; }
@@ -215,6 +213,7 @@
 .meeting-review-edit { position: relative; display: flex; align-items: center; }
 .meeting-review-input { padding-inline-end: calc(var(--ds-space-3) + var(--ds-space-6)); font: inherit; font-size: var(--ds-text-md); font-weight: var(--ds-weight-semibold); }
 .meeting-review-edit .meeting-review-spinner { position: absolute; right: var(--ds-space-3); display: inline-flex; color: var(--ds-fg-muted); }
+.meeting-speaker-review > p[role="status"]:not(.meeting-sr-only) { margin: 0 0 var(--ds-space-2); color: var(--ds-fg-muted); font-size: var(--ds-text-xs); }
 .meeting-review-field-error { margin: var(--ds-space-1) 0 0; font-size: var(--ds-text-xs); color: var(--ds-danger-text); }
 .meeting-review-suggest { padding-inline-start: calc(var(--ds-icon-button-sm) + var(--ds-space-2) + 28px + var(--ds-space-2)); }
 .meeting-review-chip { min-height: var(--ds-control-h-sm); padding: 0 var(--ds-space-3); font: inherit; font-size: var(--ds-text-xs); font-weight: var(--ds-weight-semibold); color: var(--ds-accent-soft-fg); background: var(--ds-accent-soft); border: 0; border-radius: var(--ds-radius-pill); cursor: pointer; }
