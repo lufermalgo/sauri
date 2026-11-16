@@ -15,6 +15,7 @@ from sauri_engine_common.route import Capability, Transport
 OFFERED: Final[dict[str, dict[str, Transport]]] = {
     "openai": {"summary": "openai-chat"},
     "anthropic": {"summary": "anthropic-messages"},
+    "gemini": {"summary": "openai-chat"},
     "openrouter": {"summary": "openai-chat"},
     "lmstudio": {"summary": "openai-chat"},
     "openai_compatible": {"summary": "openai-chat"},

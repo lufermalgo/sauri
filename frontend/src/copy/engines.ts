@@ -83,6 +83,8 @@ export const engines = {
   card: {
     usedBy: (list: string) => `Usado en: ${list}`,
     unused: "Sin procesos asignados",
+    serves: (list: string) => `Sirve para: ${list}`,
+    servesNone: "Todavía no sirve para ningún proceso de Sauri.",
     address: "Dirección",
     key: "Clave",
     models: "Modelos",
@@ -228,6 +230,9 @@ export const engines = {
     backToLocal: "Volver al local",
     noMatches: "Ningún motor ni modelo coincide con tu búsqueda.",
     noProviders: "Todavía no tienes un proveedor activo con clave que pueda servir este proceso.",
+    notServedBy: (provider: string, process: string, only: string) =>
+      `«${provider}» no sirve para ${process}: solo sirve para ${only}.`,
+    notServedAtAll: (provider: string) => `«${provider}» todavía no sirve para ningún proceso de Sauri.`,
     modelsLoading: "Pidiendo la lista de modelos al proveedor…",
     modelsRefresh: "Volver a pedir",
     modelsRefreshLabel: (provider: string) => `Volver a pedir los modelos de «${provider}»`,

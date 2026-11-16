@@ -106,8 +106,13 @@ _COMPATIBLE_CHAT = Support(
 )
 _GEMINI = Support(
     "openai-chat",
-    None,
-    "NO VERIFICADO: OpenAI-compatible route versus native call is decided in U3.1 with a real key.",
+    _DOCS_CHECK,
+    "Real-key check 2026-11-16 on the OpenAI-compatible route (base .../v1beta/openai): GET /models answers "
+    "200 with 40 ids; POST /chat/completions with response_format json_schema strict is honored on "
+    "gemini-3.1-flash-lite, gemini-3.5-flash-lite and gemini-flash-lite-latest. Gemini 2.5 ids answered 404 "
+    "for that key, the larger flash ids exceeded the 10 s probe budget and some answered 429/503. Streaming "
+    "with stream_options.include_usage is not checked yet. Transcription and diarization are not offered: "
+    "audio goes through generateContent (not an adapter Sauri has) and returns no word times or speakers.",
 )
 _CODEX = Support(
     "chatgpt-responses",

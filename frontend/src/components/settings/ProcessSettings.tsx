@@ -22,7 +22,7 @@ import {
 import { copy } from "../../copy/es";
 import { navigate } from "../../router";
 import { Button, Card, Icon, Skeleton, StatusBadge } from "../ui";
-import { availabilityOf, formatBytes } from "./engineLabels";
+import { availabilityOf, formatBytes, processList } from "./engineLabels";
 import { LocalModelCard } from "./LocalModelCard";
 import { ModelPicker } from "./ModelPicker";
 import type { ModelPickerHandle, PickerGroup, PickerOption } from "./ModelPicker";
@@ -147,6 +147,18 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
   const eligible = load.providers.filter(
     (provider) => provider.enabled && provider.status === "active" && servesProcess(load.kinds, provider.kind, process),
   );
+  // Linked and working, but the type does not serve this process: say why instead of leaving it out silently.
+  const notServed = load.providers
+    .filter((provider) => provider.enabled && provider.status === "active" && !servesProcess(load.kinds, provider.kind, process))
+    .map((provider) => {
+      const serves = load.kinds.find((info) => info.kind === provider.kind)?.capabilities.map((entry) => entry.capability) ?? [];
+      return {
+        id: provider.id,
+        note: serves.length > 0
+          ? text.notServedBy(provider.label, copy.engines.processes[process], processList(serves))
+          : text.notServedAtAll(provider.label),
+      };
+    });
   const installed = localModels.filter(
     (model) => model.process === process && model.kind === "model" && !model.default && availabilityOf(model) === "installed",
   );
@@ -377,6 +389,9 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
         <span id={pickerHelpId} className="settings-help">{text.engineHelp}</span>
 
         {eligible.length === 0 && <p className="settings-help">{text.noProviders}</p>}
+        {notServed.map((entry) => (
+          <p key={entry.id} className="settings-help">{entry.note}</p>
+        ))}
 
         {savedExternal && (
           <>
