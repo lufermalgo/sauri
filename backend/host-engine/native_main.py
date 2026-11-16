@@ -19,6 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from local_models import router as local_models_router
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sauri_engine_common.route import RouteError, origin_of
 from sauri_engine_common.secrets import (
@@ -121,6 +122,7 @@ class HardenedMiddleware:
 
 app = FastAPI(title="Sauri Host Engine", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(HardenedMiddleware)
+app.include_router(local_models_router, dependencies=[Depends(require_management_token)])
 
 
 @app.exception_handler(StarletteHTTPException)
