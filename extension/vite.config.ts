@@ -19,6 +19,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
+    // The overlay imports tokens.css as text (`?raw`); vitest empties CSS files unless included.
+    css: { include: [/core\/design\/tokens\.css/] },
     // tests/e2e/** are Playwright specs (run via `npm run test:e2e`), not Vitest.
     exclude: ["node_modules/**", "tests/e2e/**"],
   },

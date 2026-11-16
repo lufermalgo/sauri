@@ -1,4 +1,5 @@
 import { copy } from './copy';
+import tokens from '../core/design/tokens.css?raw';
 
 export interface RecordingUI {
   sessionId: string;
@@ -10,43 +11,46 @@ export interface RecordingUI {
   micActive?: boolean;
 }
 
+// The same token file as the extension pages, resolved inside the shadow root through `:host`.
 const styles = `
-  :host { all: initial; font: 15px 'Nunito Sans', system-ui, sans-serif; color: #2e3230; }
+  ${tokens}
+  :host { all: initial; color-scheme: light dark; font: var(--ds-text-base)/var(--ds-leading) var(--ds-font-sans); color: var(--ds-fg); }
   * { box-sizing: border-box; }
-  button, select { font: inherit; cursor: pointer; min-height: 44px; border-radius: 12px; padding: 8px 12px; }
+  button, select { font: inherit; cursor: pointer; min-height: var(--ds-target); border-radius: var(--ds-radius-md); padding: var(--ds-space-2) var(--ds-space-3); }
   button { border: 0; }
-  button:focus-visible, select:focus-visible { outline: 3px solid #78a886; outline-offset: 3px; }
+  button:focus-visible, select:focus-visible { outline: var(--ds-focus-width) solid var(--ds-focus); outline-offset: var(--ds-focus-offset); }
   [hidden] { display: none !important; }
-  .dot { display: inline-block; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; background: #b83230; animation: pulse 1.4s infinite; }
+  .dot { display: inline-block; flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%; background: var(--ds-recording); animation: pulse 1.4s infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
   @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
-  .notice { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); width: min(532px, calc(100vw - 24px)); display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 14px; background: #faf6f0; box-shadow: 0 8px 28px #0005; }
-  .notice button { background: transparent; color: #4a4e4a; }
-  .shade { position: fixed; inset: 0; background: #202421b8; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 16px; }
-  .shade strong { font: 600 clamp(100px, 25vw, 200px)/1 'Literata', Georgia, serif; }
-  .shade h2 { font-size: 20px; font-weight: 600; margin: 0; }
-  .shade button { margin-top: 14px; background: transparent; border: 1px solid #fff9; color: white; padding: 10px 22px; }
-  .bar { position: fixed; left: 24px; bottom: 28px; max-width: calc(100vw - 16px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; border-radius: 18px; background: #232826; color: white; box-shadow: 0 10px 34px #0007; }
-  .bar button, .bar select { background: transparent; color: white; }
-  .bar .pause { background: #ffffff1a; }
-  .bar .save { background: #4a7c59; }
-  .bar .dot { width: 10px; height: 10px; background: #ef6b63; }
-  .bar.paused .dot { animation: none; background: #c4c8bc; }
-  .time { font: 16px 'JetBrains Mono', monospace; padding: 0 8px; }
+  .notice { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); width: min(532px, calc(100vw - 24px)); display: flex; align-items: center; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); border: 1px solid var(--ds-border-strong); background: var(--ds-surface-raised); color: var(--ds-fg); box-shadow: var(--ds-shadow-md); }
+  .notice button { background: transparent; color: var(--ds-fg-muted); }
+  .shade { position: fixed; inset: 0; background: var(--ds-scrim-strong); color: var(--ds-on-scrim); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--ds-space-3); text-align: center; padding: var(--ds-space-4); }
+  .shade strong { font: 600 clamp(100px, 25vw, 200px)/1 var(--ds-font-sans); font-variant-numeric: tabular-nums; }
+  .shade h2 { font-size: var(--ds-text-xl); font-weight: 600; margin: 0; }
+  .shade button { margin-top: var(--ds-space-3); background: transparent; border: 1px solid var(--ds-on-scrim); color: var(--ds-on-scrim); padding: var(--ds-space-2) var(--ds-space-6); }
+  .shade button:focus-visible { outline-color: var(--ds-on-scrim); }
+  .bar { position: fixed; left: 24px; bottom: 28px; max-width: calc(100vw - 16px); display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); padding: var(--ds-space-2); border-radius: var(--ds-radius-lg); border: 1px solid var(--ds-border-strong); background: var(--ds-surface-raised); color: var(--ds-fg); box-shadow: var(--ds-shadow-md); }
+  .bar button, .bar select { background: transparent; color: var(--ds-fg); }
+  .bar .pause { background: var(--ds-fill); }
+  .bar .save { background: var(--ds-accent); color: var(--ds-accent-fg); }
+  .bar .dot { width: 10px; height: 10px; }
+  .bar.paused .dot { animation: none; background: var(--ds-fg-subtle); }
+  .time { font: var(--ds-text-base) var(--ds-font-mono); font-variant-numeric: tabular-nums; padding: 0 var(--ds-space-2); }
   .handle { touch-action: none; cursor: grab; }
-  .bar select { max-width: 150px; border: 1px solid #ffffff33; }
-  .bar option { color: #2e3230; background: #faf6f0; }
-  .confirmation { position: fixed; left: 24px; bottom: 100px; width: min(340px, calc(100vw - 32px)); padding: 18px; border-radius: 16px; background: white; box-shadow: 0 12px 38px #0006; }
-  .confirmation p { color: #4a4e4a; font-size: 14px; }
-  .confirmation button { background: #f0e8db; color: #3b6a49; margin: 4px; }
-  .confirmation .discard { background: #b83230; color: white; }
-  .error { flex-basis: 100%; color: #ffb4ab; }
+  .bar select { max-width: 150px; border: 1px solid var(--ds-border-strong); background: var(--ds-surface); }
+  .bar option { color: var(--ds-fg); background: var(--ds-surface-raised); }
+  .confirmation { position: fixed; left: 24px; bottom: 100px; width: min(340px, calc(100vw - 32px)); padding: var(--ds-space-4); border-radius: var(--ds-radius-lg); border: 1px solid var(--ds-border-strong); background: var(--ds-surface-raised); color: var(--ds-fg); box-shadow: var(--ds-shadow-md); }
+  .confirmation p { color: var(--ds-fg-muted); font-size: var(--ds-text-md); }
+  .confirmation button { background: var(--ds-fill-hover); color: var(--ds-accent-text); margin: var(--ds-space-1); }
+  .confirmation .discard { background: var(--ds-danger); color: var(--ds-danger-fg); }
+  .error { flex-basis: 100%; color: var(--ds-danger-text); }
 `;
 
 function createHost(id: string): ShadowRoot {
   const host = document.createElement('div');
   host.id = id;
-  host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
+  host.style.cssText = 'all:initial;color-scheme:light dark;position:fixed;inset:0;z-index:2147483647;pointer-events:none;';
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
   style.textContent = `${styles} .notice, .shade, .bar, .confirmation { pointer-events: auto; }`;

@@ -1,0 +1,49 @@
+/* Entry point for the extension pages (side panel, options, detail): tokens plus base styles. */
+@import "./tokens.css";
+
+/*
+ * Legacy aliases for code that predates the --ds-* contract (open branches).
+ * No value of their own: remove once those branches are merged.
+ */
+:root {
+  --color-background: var(--ds-bg);
+  --color-surface: var(--ds-surface);
+  --color-surface-alt: var(--ds-fill-hover);
+  --color-primary: var(--ds-accent);
+  --color-text: var(--ds-fg);
+  --color-text-muted: var(--ds-fg-muted);
+  --color-error: var(--ds-danger-text);
+  --color-recording: var(--ds-recording);
+  --color-focus: var(--ds-focus);
+  --color-border: var(--ds-border);
+  --color-input-border: var(--ds-border-strong);
+  --color-input: var(--ds-sidebar);
+  --color-track: var(--ds-fill);
+  --color-success-bg: var(--ds-accent-soft);
+  --color-success-text: var(--ds-accent-soft-fg);
+  --color-progress-bg: var(--ds-warning-soft);
+  --color-progress-text: var(--ds-warning-soft-fg);
+  --color-error-bg: var(--ds-danger-soft);
+  --color-error-text: var(--ds-danger-soft-fg);
+  --font-heading: var(--ds-font-sans);
+  --font-mono: var(--ds-font-mono);
+  --base-font: var(--ds-font-sans);
+}
+
+body {
+  margin: 0;
+  background: var(--ds-bg);
+  color: var(--ds-fg);
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-text-md);
+  line-height: var(--ds-leading);
+}
+
+:focus-visible {
+  outline: var(--ds-focus-width) solid var(--ds-focus);
+  outline-offset: var(--ds-focus-offset);
+}
+
+time, .ds-numeric {
+  font-variant-numeric: tabular-nums;
+}

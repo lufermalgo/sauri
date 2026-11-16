@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { permissionCopy as copy } from "./copy";
 import { PanelHeader } from "../panel/components/PanelHeader";
-import "../core/design/tokens.css";
+import "../core/design/base.css";
 import "../panel/panel.css";
 import "./options.css";
 

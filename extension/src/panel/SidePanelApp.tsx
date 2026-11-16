@@ -21,7 +21,7 @@ import { DEFAULT_RECORDING_SETTINGS, parseRecordingSettings } from "./recordingS
 import type { RecordingSettings } from "../core/types";
 import "./panel.css";
 import type { CaptureState, CaptureSource, CaptureStartResult, NoteDTO, RemoteRequest } from "../core/types";
-import "../core/design/tokens.css";
+import "../core/design/base.css";
 
 interface SauriBackgroundState {
   status: "idle" | "pending" | "recording";
