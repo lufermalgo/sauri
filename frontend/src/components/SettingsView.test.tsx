@@ -111,7 +111,7 @@ describe("settings navigation", () => {
       event.preventDefault(); // keeps jsdom from trying to navigate
     };
     window.addEventListener("click", onWindowClick);
-    fireEvent.click(screen.getByRole("link", { name: labels.recording.label }), { ctrlKey: true });
+    fireEvent.click(screen.getByRole("link", { name: labels.summaries.label }), { ctrlKey: true });
     window.removeEventListener("click", onWindowClick);
     expect(componentPrevented).toBe(false);
     expect(window.location.pathname).toBe("/settings");
@@ -450,19 +450,6 @@ describe("appearance: side panel", () => {
     expect(sidebarSwitch()).toHaveAttribute("aria-checked", "true");
     fireEvent.click(sidebarSwitch());
     expect(sidebarSwitch()).toHaveAttribute("aria-checked", "false");
-  });
-});
-
-describe("recording", () => {
-  it("is informational: it points to the extension and has no controls", () => {
-    open("recording");
-    render(<Harness />);
-    expect(screen.getByText(copy.settings.recording.body)).toBeInTheDocument();
-    const detail = document.querySelector<HTMLElement>(".settings-detail")!;
-    expect(within(detail).queryAllByRole("button")).toHaveLength(0);
-    expect(within(detail).queryAllByRole("switch")).toHaveLength(0);
-    expect(within(detail).queryAllByRole("textbox")).toHaveLength(0);
-    expect(within(detail).queryAllByRole("radio")).toHaveLength(0);
   });
 });
 

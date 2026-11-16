@@ -201,8 +201,8 @@ describe("settings categories pane toggle in the side panel", () => {
     const { rerender } = renderShell(settingsRoute("appearance"));
     expect(slot()).toHaveAttribute("data-hidden");
     expect(gear()).toHaveAttribute("aria-expanded", "false");
-    rerender(shellFor(settingsRoute("recording")));
-    expect(screen.getByRole("heading", { level: 2, name: copy.settings.categories.recording.label })).toBeInTheDocument();
+    rerender(shellFor(settingsRoute("summaries")));
+    expect(screen.getByRole("heading", { level: 2, name: copy.settings.categories.summaries.label })).toBeInTheDocument();
     expect(slot()).toHaveAttribute("data-hidden");
     expect(gear()).toHaveAttribute("aria-expanded", "false");
   });

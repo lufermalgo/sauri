@@ -17,7 +17,6 @@ export const SETTINGS_CATEGORIES = [
   "transcription",
   "speakers",
   "summaries",
-  "recording",
 ] as const;
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 
@@ -25,7 +24,6 @@ export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 export const SETTINGS_GROUPS = [
   { id: "general", categories: ["account", "appearance"] },
   { id: "models", categories: ["engines", "transcription", "speakers", "summaries"] },
-  { id: "recording", categories: ["recording"] },
 ] as const satisfies ReadonlyArray<{ id: string; categories: readonly SettingsCategory[] }>;
 export type SettingsGroupId = (typeof SETTINGS_GROUPS)[number]["id"];
 
@@ -43,7 +41,11 @@ const SETTINGS_PATH = "/settings";
 const SETTINGS_PREFIX = "/settings/";
 const NOT_FOUND_PATH = "/not-found";
 
+/** Slugs of removed categories: an old link still opens Settings (on the default category) instead of "not found". */
+const REMOVED_SETTINGS_SLUGS: readonly string[] = ["grabacion"]; // spanish-sample-data: a shipped URL slug
+
 function settingsRoute(slug: string): Route {
+  if (REMOVED_SETTINGS_SLUGS.includes(slug)) return { name: "settings" };
   const category = SETTINGS_CATEGORIES.find((name) => copy.settings.categories[name].slug === slug);
   return category ? { name: "settings", category } : { name: "notFound" };
 }

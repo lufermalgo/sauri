@@ -3,7 +3,6 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import {
   ChevronLeft,
   ChevronRight,
-  CircleDot,
   FileText,
   Mic,
   Palette,
@@ -28,7 +27,6 @@ import { AccountSettings } from "./settings/AccountSettings";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
 import { EnginesSettings } from "./settings/EnginesSettings";
 import { ProcessSettings } from "./settings/ProcessSettings";
-import { RecordingSettings } from "./settings/RecordingSettings";
 import { filterSettingsGroups } from "./settings/settingsSearch";
 import { SummarySettings } from "./settings/SummarySettings";
 import { Button, Icon } from "./ui";
@@ -54,7 +52,6 @@ const ICONS: Record<SettingsCategory, LucideIcon> = {
   transcription: Mic,
   speakers: UsersRound,
   summaries: FileText,
-  recording: CircleDot,
 };
 
 function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
@@ -233,7 +230,5 @@ function renderCategory(category: SettingsCategory, user: SessionUser | null, on
       return <ProcessSettings process="diarization" />;
     case "summaries":
       return <SummarySettings />;
-    case "recording":
-      return <RecordingSettings />;
   }
 }

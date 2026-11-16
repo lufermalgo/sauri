@@ -13,7 +13,6 @@ export const settings = {
   groups: {
     general: "General",
     models: "Modelos",
-    recording: "Grabación",
   },
   // Slugs are the ASCII URL of each category (`/settings/<slug>`); keywords feed the search only.
   categories: {
@@ -52,12 +51,6 @@ export const settings = {
       label: "Resúmenes",
       description: "Plantillas con las que se redactan",
       keywords: "plantillas instrucciones categorías redactar modelo",
-    },
-    recording: {
-      slug: "grabacion",
-      label: "Grabación",
-      description: "Opciones de la extensión de Chrome",
-      keywords: "extensión chrome meet cuenta regresiva micrófono barra de control",
     },
   },
   account: {
@@ -123,9 +116,5 @@ export const settings = {
     nameRequired: "Escribe un nombre.",
     nameTooLong: "El nombre admite hasta 128 caracteres.",
     error: "No pudimos crear la categoría. Inténtalo de nuevo.",
-  },
-  recording: {
-    title: "Opciones de la grabación",
-    body: "La cuenta regresiva antes de grabar, la barra de control en Meet y el aviso de micrófono se configuran en la extensión de Chrome de Sauri, desde su pantalla de configuración. Desde el portal no se pueden cambiar.",
   },
 } as const;
