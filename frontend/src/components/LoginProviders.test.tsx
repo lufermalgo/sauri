@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { ENABLED_LOGIN_PROVIDERS, LoginProviders } from "./LoginProviders";
+import { cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import { LoginProviders, startGoogleSignIn, useLoginProviders } from "./LoginProviders";
 import { t } from "../i18n";
 
 afterEach(cleanup);
 
 describe("login providers area", () => {
-  it("is empty today: no external sign-in is enabled", () => {
-    expect(ENABLED_LOGIN_PROVIDERS).toHaveLength(0);
+  it("has Google as the only default option, still inactive: its flag is unset", () => {
+    expect(startGoogleSignIn).toBeUndefined();
+    const { result } = renderHook(() => useLoginProviders());
+    expect(result.current.map((provider) => provider.id)).toEqual(["google"]);
+    expect(result.current[0].label).toBe(t("login:continueWithGoogle"));
+    expect(result.current[0].onSelect).toBeUndefined();
   });
 
   it("renders nothing when the provider list is empty", () => {
@@ -43,5 +47,16 @@ describe("login providers area", () => {
     render(<LoginProviders disabled providers={[{ id: "first", label: "Continuar con uno", onSelect: vi.fn() }]} />);
 
     expect((screen.getByRole("button", { name: "Continuar con uno" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows an option without a handler as coming soon: focusable, aria-disabled, no action", () => {
+    render(<LoginProviders providers={[{ id: "soon", label: "Continuar con pronto", icon: <svg data-testid="glyph" /> }]} />);
+
+    const button = screen.getByRole("button", { name: "Continuar con pronto" }) as HTMLButtonElement;
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    expect(button.disabled).toBe(false);
+    expect(document.getElementById(button.getAttribute("aria-describedby")!)!.textContent).toBe(t("login:soon"));
+    fireEvent.click(button);
+    expect(screen.getByTestId("glyph")).toBeTruthy();
   });
 });

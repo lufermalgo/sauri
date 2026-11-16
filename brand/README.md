@@ -21,7 +21,7 @@ El isotipo ocupa todo su lienzo, sin margen: los íconos de la extensión y el f
 
 ## Logo horizontal
 
-Úsalo donde haya espacio para el nombre (cabecera del README, documentos, presentaciones): `sauri-logo.svg` sobre fondos claros y `sauri-logo-dark.svg` sobre fondos oscuros. El texto es vectorial, no necesita tipografía instalada (DM Sans, licencia SIL OFL). Altura mínima: 24 px; por debajo de eso se usa solo el isotipo. En la barra lateral del portal y en el panel de la extensión se dibuja el isotipo junto al texto «Sauri» de la interfaz, no el logo.
+Úsalo donde haya espacio para el nombre (cabecera del README, documentos, presentaciones): `sauri-logo.svg` sobre fondos claros y `sauri-logo-dark.svg` sobre fondos oscuros. El texto es vectorial, no necesita tipografía instalada (DM Sans, licencia SIL OFL). Altura mínima: 24 px; por debajo de eso se usa solo el isotipo. En la interfaz (barra lateral y encabezado de inicio de sesión del portal, cabecera del panel y de las opciones de la extensión) se dibuja con los componentes `BrandLogo` y `BrandWordmark` (portal: `frontend/src/components/ui/BrandLogo.tsx`; extensión: `extension/src/core/design/BrandLogo.tsx`), que repiten estos trazos tal cual. La palabra «Sauri» como marca nunca es texto vivo en otra fuente.
 
 ## Colores
 
@@ -36,5 +36,5 @@ El isotipo ocupa todo su lienzo, sin margen: los íconos de la extensión y el f
 - Espacio libre alrededor: un cuarto del ancho del isotipo (o de la altura del logo) por cada lado.
 - No cambiar los colores, ni siquiera en modo oscuro: las dos mitades se ven bien sobre fondos claros y oscuros.
 - No rotarlo, deformarlo ni cambiar la proporción.
-- No agregarle texto, sombras ni contornos. El nombre «Sauri» va al lado, escrito con el texto normal de la interfaz, nunca dentro del isotipo.
+- No agregarle texto, sombras ni contornos. El nombre «Sauri» va al lado como la palabra oficial en trazos (`BrandWordmark`), nunca como texto de la interfaz ni dentro del isotipo.
 - En la interfaz se dibuja con el componente `BrandMark` del portal (`frontend/src/components/ui/BrandMark.tsx`), que elige solo la variante pequeña cuando el tamaño es de 32 px o menos.

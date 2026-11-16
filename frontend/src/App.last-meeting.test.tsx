@@ -173,7 +173,7 @@ describe("reopening at start", () => {
     stubApi(["a"]);
     vi.stubGlobal("localStorage", createLocalStorage({ [KEY]: "a" }));
     render(<App />);
-    expect(screen.getByRole("heading", { name: t("login:title") })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: `${t("login:titleLead")} ${t("shell:brand")}` })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(t("login:emailLabel")), { target: { value: "owner@example.test" } });
     fireEvent.change(screen.getByLabelText(t("login:passwordLabel")), { target: { value: "synthetic-password" } });
     fireEvent.click(screen.getByRole("button", { name: t("login:submit") }));

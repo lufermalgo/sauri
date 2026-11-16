@@ -52,10 +52,17 @@ afterEach(() => {
 });
 
 describe("login screen", () => {
-  it("shows the title, subtitle, and only the email and password fields", () => {
+  it("shows the lockup heading, subtitle and only the email and password fields as inputs", () => {
     const { container } = render(<LoginScreen onLogin={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy();
+    // The logo is the product name: the heading still reads "<lead> Sauri" for assistive technology.
+    const heading = screen.getByRole("heading", { level: 1, name: `${t("login:titleLead")} ${t("shell:brand")}` });
+    expect(heading.querySelector('svg[role="img"]')!.getAttribute("aria-label")).toBe(t("shell:brand"));
+    expect(heading.querySelector(".ui-brand-word")).toBeTruthy();
+    expect(heading.textContent).toBe(`${t("login:titleLead")} `);
+    // The isotype now lives in the lockup: there is no separate tile above the heading.
+    expect(container.querySelector(".login-brand")).toBeNull();
+    expect(container.querySelectorAll("svg polygon[fill='#4a7c59']")).toHaveLength(1);
     expect(screen.getByText(t("login:subtitle"))).toBeTruthy();
     expect(screen.getByRole("button", { name: t("login:submit") })).toBeTruthy();
     const email = screen.getByLabelText(t("login:emailLabel")) as HTMLInputElement;
@@ -68,9 +75,53 @@ describe("login screen", () => {
     expect(password.required).toBe(true);
     // The language choice adds radios; the sign-in form itself still has only these two fields.
     expect(container.querySelectorAll("input:not([type=radio])")).toHaveLength(2);
-    expect(container.querySelectorAll("a")).toHaveLength(0);
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByText(t("login:providersSeparator"))).toBeNull();
+  });
+
+  it("shows the reference's future options visibly but inert: aria-disabled, focusable, 'Coming soon' description", () => {
+    const { container } = render(<LoginScreen onLogin={vi.fn()} />);
+    const soonText = t("login:soon");
+
+    const links = [
+      t("login:forgotPassword"),
+      t("login:joinFree"),
+      t("login:legalTerms"),
+      t("login:legalPrivacy"),
+      t("login:legalDataNotice"),
+    ].map((name) => screen.getByRole("link", { name }));
+    const google = screen.getByRole("button", { name: t("login:continueWithGoogle") });
+    expect(links).toHaveLength(5);
+    for (const control of [...links, google]) {
+      expect(control.getAttribute("aria-disabled")).toBe("true");
+      expect(control.getAttribute("href")).toBeNull();
+      expect(control.tabIndex).toBe(0);
+      const description = document.getElementById(control.getAttribute("aria-describedby")!)!;
+      expect(description.textContent).toBe(soonText);
+      expect(description.getAttribute("role")).toBe("tooltip");
+    }
+    expect((google as HTMLButtonElement).disabled).toBe(false); // aria-disabled only: it must stay focusable
+    expect(google.querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
+    expect(google.querySelectorAll("svg path")).toHaveLength(4);
+    expect(screen.getByText(t("login:providersSeparator"))).toBeTruthy();
+    expect(screen.getByText(t("login:newToSauri"), { exact: false })).toBeTruthy();
+    // Exactly the five links and the Google button: nothing else became a link.
+    expect(container.querySelectorAll("a")).toHaveLength(5);
+  });
+
+  it("does nothing when an inert option is activated", () => {
+    const onLogin = vi.fn();
+    render(<LoginScreen onLogin={onLogin} />);
+    enterCredentials();
+
+    fireEvent.click(screen.getByRole("button", { name: t("login:continueWithGoogle") }));
+    for (const name of [t("login:forgotPassword"), t("login:joinFree"), t("login:legalTerms")]) {
+      const link = screen.getByRole("link", { name });
+      fireEvent.click(link);
+      fireEvent.keyDown(link, { key: "Enter" });
+    }
+
+    expect(api.login).not.toHaveBeenCalled();
+    expect(onLogin).not.toHaveBeenCalled();
   });
 
   it("keeps the submit button disabled until both fields are filled", () => {
@@ -124,12 +175,14 @@ describe("login screen", () => {
     expect(screen.getByRole("button", { name: t("login:showPassword") })).toBeTruthy();
   });
 
-  it("renders the providers area only when providers are given", () => {
+  it("renders the given providers instead of the default ones, and an active one works", () => {
     const onSelect = vi.fn();
     render(<LoginScreen onLogin={vi.fn()} providers={[{ id: "test", label: "Continuar con prueba", onSelect }]} />);
 
-    expect(screen.getByText(t("login:providersSeparator"))).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Continuar con prueba" }));
+    expect(screen.queryByRole("button", { name: t("login:continueWithGoogle") })).toBeNull();
+    const button = screen.getByRole("button", { name: "Continuar con prueba" });
+    expect(button.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(button);
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 

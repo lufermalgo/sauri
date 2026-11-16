@@ -40,7 +40,7 @@ it("holds a direct meeting review behind portal login, then fetches only that me
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: `${t("login:titleLead")} ${t("shell:brand")}` })).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText(t("login:emailLabel")), { target: { value: "owner@example.test" } });
   fireEvent.change(screen.getByLabelText(t("login:passwordLabel")), { target: { value: "synthetic-password" } });
@@ -60,7 +60,7 @@ it("does not reveal a direct target denied by the server and preserves the targe
   const fetchMock = vi.fn(async (_input: RequestInfo | URL) => json({ detail: "Unauthorized" }, 401));
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  await waitFor(() => expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("heading", { name: `${t("login:titleLead")} ${t("shell:brand")}` })).toBeTruthy());
   expect(screen.queryByText("Synthetic private turn")).toBeNull();
   expect(localStorage.getItem("sauri_token")).toBeNull();
   expect(window.location.pathname).toBe("/meetings/meeting-614");
@@ -87,7 +87,7 @@ it("opens a clean /meetings/:id route after login and returns to the library wit
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: `${t("login:titleLead")} ${t("shell:brand")}` })).toBeTruthy();
   fireEvent.change(screen.getByLabelText(t("login:emailLabel")), { target: { value: "owner@example.test" } });
   fireEvent.change(screen.getByLabelText(t("login:passwordLabel")), { target: { value: "synthetic-password" } });
   fireEvent.click(screen.getByRole("button", { name: t("login:submit") }));

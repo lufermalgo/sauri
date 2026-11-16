@@ -10,6 +10,8 @@
 
 .login-card {
   --login-field-h: 64px;
+  --login-button-h: 48px;
+  --login-logo-h: 56px;
   position: relative;
   z-index: 1;
   box-sizing: border-box;
@@ -22,23 +24,24 @@
   border-radius: 0;
 }
 
-.login-brand {
+/* Heading lockup: a lead line over the official logo (isotype + word). The logo's word has a cap height
+   close to the lead line's, so the pair reads as one phrase: "Welcome to" + brand. */
+.login-title {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 64px;
-  height: 64px;
-  margin-bottom: var(--ds-space-8);
-  background: var(--ds-fill);
-  border-radius: var(--ds-radius-xl);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ds-space-3);
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
-.login-title {
-  margin: 0;
-  font-size: 2.5rem;
-  font-weight: 700;
-  line-height: 1.15;
-  letter-spacing: -0.015em;
+.login-title-logo {
+  display: block;
+  width: auto;
+  height: var(--login-logo-h);
 }
 
 .login-subtitle {
@@ -53,12 +56,21 @@
   gap: var(--ds-space-4);
 }
 
+.login-form .ui-input {
+  min-height: var(--login-field-h);
+}
+
 .login-form .ui-input,
 .login-submit,
 .login-provider {
-  min-height: var(--login-field-h);
   border-radius: var(--ds-radius-lg);
   font-size: 1.125rem;
+}
+
+/* The reference has 64px fields and 48px buttons. */
+.login-submit,
+.login-provider {
+  min-height: var(--login-button-h);
 }
 
 .login-form .ui-input {
@@ -113,39 +125,91 @@
 .login-providers {
   display: grid;
   gap: var(--ds-space-4);
-  margin-top: var(--ds-space-4);
+  margin-top: var(--ds-space-3);
 }
 
+/* Plain centered word, as in the reference (no rules beside it). */
 .login-separator {
-  display: flex;
-  align-items: center;
-  gap: var(--ds-space-3);
   margin: 0;
-  color: var(--ds-fg-muted);
-  font-size: var(--ds-text-sm);
-}
-
-.login-separator::before,
-.login-separator::after {
-  content: "";
-  flex: 1;
-  border-top: 1px solid var(--ds-border);
+  text-align: center;
+  color: var(--ds-fg);
+  font-size: var(--ds-text-md);
 }
 
 .login-provider {
-  gap: var(--ds-space-2);
+  gap: var(--ds-space-3);
   color: var(--ds-fg);
   background: transparent;
   border-color: var(--ds-border-strong);
 }
 
-.login-provider:not(:disabled):hover {
+.login-provider:not(:disabled):not([aria-disabled="true"]):hover {
   background: var(--ds-fill-hover);
 }
 
+/* "Coming soon" options: visible and focusable but inert, in grey. */
+.login-provider[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.login-link {
+  color: var(--ds-fg-subtle);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: not-allowed;
+}
+
+/* Wraps an inert control with its "Coming soon" tooltip, placed under it, at its start. */
+.login-soon-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.login-providers .login-soon-wrap {
+  display: block;
+}
+
+.login-soon-wrap .login-soon-tip {
+  right: auto;
+  left: 0;
+}
+
+.login-forgot,
+.login-join,
+.login-legal {
+  margin: 0;
+}
+
+.login-forgot {
+  margin: calc(-1 * var(--ds-space-2)) 0 var(--ds-space-1);
+  font-size: 1rem;
+}
+
+.login-join {
+  margin-top: var(--ds-space-8);
+  font-size: 1.125rem;
+  color: var(--ds-fg);
+}
+
+.login-join .login-link {
+  font-weight: var(--ds-weight-semibold);
+}
+
+.login-legal {
+  margin-top: var(--ds-space-6);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--ds-fg-subtle);
+}
+
 @media (max-width: 480px) {
+  .login-card {
+    --login-logo-h: 44px;
+  }
+
   .login-title {
-    font-size: 2rem;
+    font-size: 1.5rem;
   }
 
   .login-subtitle {

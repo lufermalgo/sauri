@@ -1,5 +1,6 @@
 export const panelCopy = {
   panelTitle: "Grabar reunión",
+  brandName: "Sauri",
   settings: "Ajustes de grabación",
   back: "Volver",
   countdown: "Cuenta regresiva",

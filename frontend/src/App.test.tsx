@@ -41,7 +41,7 @@ describe("global authentication gate", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: `${t("login:titleLead")} ${t("shell:brand")}` })).toBeTruthy());
     expect(storage.getItem("sauri_token")).toBeNull();
     expect(screen.queryByText("Error 401")).toBeNull();
   });
@@ -66,7 +66,7 @@ describe("global authentication gate", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: `${t("login:titleLead")} ${t("shell:brand")}` })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: t("library:title") })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
 
@@ -145,7 +145,7 @@ describe("global authentication gate", () => {
     fireEvent.click(screen.getByRole("button", { name: t("shell:profile.fallbackName") }));
     fireEvent.click(screen.getByRole("menuitem", { name: t("shell:logout") }));
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: `${t("login:titleLead")} ${t("shell:brand")}` })).toBeTruthy());
     expect(storage.getItem("sauri_token")).toBeNull();
     expect(window.location.pathname).toBe("/");
   });

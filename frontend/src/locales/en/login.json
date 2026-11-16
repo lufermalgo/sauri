@@ -1,5 +1,5 @@
 {
-  "title": "Welcome to Sauri",
+  "titleLead": "Welcome to",
   "subtitle": "Log in to review your meetings",
   "emailLabel": "Email",
   "passwordLabel": "Password",
@@ -8,5 +8,13 @@
   "submit": "Log in",
   "submitting": "Logging in…",
   "error": "Couldn't log in. Check your details and try again.",
-  "providersSeparator": "or"
+  "providersSeparator": "or",
+  "continueWithGoogle": "Continue with Google",
+  "forgotPassword": "Forgot your password?",
+  "newToSauri": "New to Sauri?",
+  "joinFree": "Join for free",
+  "legalTerms": "Terms of service",
+  "legalPrivacy": "Privacy policy",
+  "legalDataNotice": "Data collection notice",
+  "soon": "Coming soon"
 }
