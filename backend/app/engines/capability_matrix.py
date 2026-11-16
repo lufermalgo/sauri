@@ -124,12 +124,12 @@ _GEMINI = Support(
 _CODEX = Support(
     "chatgpt-responses",
     None,
-    "NO VERIFICADO against documentation. Offered by the owner's decision of 2026-11-16, who accepts that this "
-    "is not a documented access path and may break: device-code sign-in with the user's ChatGPT account and "
-    "the Responses API at chatgpt.com/backend-api/codex, the way APX does it. Checked live 2026-11-16 "
-    "(gpt-6-luna, gpt-6.1-terra, synthetic text): text.format json_schema strict is honored (minItems/maxItems included, every object "
-    "must be closed), the event stream has no Content-Type header, temperature is refused; the originator "
-    "and user agent Sauri sends are accepted.",
+    "NO VERIFICADO against documentation. Offered by the owner's decision of 2026-11-16, who accepts that"
+    " this is not a documented access path and may break: device-code sign-in with the user's ChatGPT "
+    "account and the Responses API at chatgpt.com/backend-api/codex, the way APX does it. Checked live "
+    "2026-11-16 (gpt-6-luna, gpt-6.1-terra, synthetic text): text.format json_schema strict is honored "
+    "(minItems/maxItems included, every object must be closed), the event stream has no Content-Type "
+    "header, temperature is refused; the originator and user agent Sauri sends are accepted.",
     accepted_on="2026-11-16",
 )
 _GROQ_ASR = Support(
