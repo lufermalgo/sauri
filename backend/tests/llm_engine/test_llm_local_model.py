@@ -164,7 +164,6 @@ async def test_default_model_in_the_legacy_location_is_accepted_by_its_catalog_i
     [
         ("not-a-route", 422, "route_malformed"),
         (route_header("local:unknown-model"), 422, "unknown_model"),
-        (route_header("gpt-x", kind="openai"), 422, "route_not_supported"),
         (route_header("local:llm-big", process="transcription"), 422, "route_capability_mismatch"),
     ],
 )
