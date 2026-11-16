@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sauri · Tus reuniones, transcritas y resumidas en tu Mac</title>
+  <meta name="description" content="Sauri graba tus reuniones desde una pestaña de Chrome, reconoce quién habló y te deja un resumen en borrador para revisar. Todo se procesa en tu Mac.">
+  <meta name="color-scheme" content="light dark">
+  <meta property="og:title" content="Sauri · Tus reuniones, transcritas y resumidas en tu Mac">
+  <meta property="og:description" content="Graba desde Chrome, revisa quién habló y recibe un resumen en borrador. La grabación no sale de tu equipo.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/meeting-detail.png">
+  <link rel="icon" type="image/svg+xml" href="assets/brand/sauri-isotype-small.svg">
+  <link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="brand" href="#inicio" aria-label="Sauri, ir al inicio">
+        <picture>
+          <source srcset="assets/brand/sauri-logo-dark.svg" media="(prefers-color-scheme: dark)">
+          <img src="assets/brand/sauri-logo.svg" alt="" width="96" height="30">
+        </picture>
+      </a>
+      <nav class="site-nav" aria-label="Secciones">
+        <a href="#como-funciona">Cómo funciona</a>
+        <a href="#privacidad">Privacidad</a>
+        <a href="#preguntas">Preguntas</a>
+      </nav>
+      <a class="button button--primary button--sm" href="#acceso">Solicitar acceso</a>
+    </div>
+  </header>
+
+  <main id="contenido">
+    <section class="hero" id="inicio" aria-labelledby="hero-title">
+      <div class="container hero__inner">
+        <p class="eyebrow"><span class="eyebrow__dot" aria-hidden="true"></span>En desarrollo · acceso anticipado para Mac</p>
+        <h1 id="hero-title">Tus reuniones, transcritas y resumidas en tu propio Mac</h1>
+        <p class="lead">Sauri graba la reunión desde una pestaña de Chrome, reconoce quién habló y te deja un resumen en borrador para revisar. La grabación no sale de tu equipo.</p>
+        <div class="actions">
+          <a class="button button--primary" href="#acceso">Solicitar acceso anticipado</a>
+          <a class="button button--secondary" href="#como-funciona">Ver cómo funciona</a>
+        </div>
+      </div>
+      <div class="container">
+        <figure class="shot shot--hero">
+          <picture>
+            <source srcset="assets/meeting-detail.webp" type="image/webp">
+            <img src="assets/meeting-detail.png" width="1746" height="1092" fetchpriority="high"
+              alt="Una reunión abierta en Sauri: arriba el video con tres participantes, debajo la transcripción con cada hablante en un color y, a la derecha, el resumen con el asunto principal y los puntos clave.">
+          </picture>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="como-funciona" aria-labelledby="steps-title">
+      <div class="container">
+        <header class="section__header">
+          <p class="section__label">Cómo funciona</p>
+          <h2 id="steps-title">De la reunión al resumen en tres pasos</h2>
+        </header>
+        <ol class="steps">
+          <li class="step">
+            <div class="step__text">
+              <span class="step__number" aria-hidden="true">1</span>
+              <h3>Graba desde Chrome</h3>
+              <p>Abre la extensión, elige la pestaña de la reunión y pulsa grabar. Funciona con Google Meet y con cualquier reunión que tengas abierta en el navegador.</p>
+            </div>
+            <figure class="shot shot--narrow">
+              <picture>
+                <source srcset="assets/extension-panel.webp" type="image/webp">
+                <img src="assets/extension-panel.png" width="400" height="310" loading="lazy"
+                  alt="Panel de la extensión de Sauri en Chrome, con el título «Grabar reunión» y el botón para empezar a grabar.">
+              </picture>
+            </figure>
+          </li>
+          <li class="step">
+            <div class="step__text">
+              <span class="step__number" aria-hidden="true">2</span>
+              <h3>Revisa quién habló</h3>
+              <p>Sauri separa las voces y pone cada intervención a nombre de su hablante. Si no reconoce una voz, la deja como «Hablante 2» hasta que tú le pongas nombre, y la próxima vez la recuerda.</p>
+            </div>
+            <figure class="shot">
+              <picture>
+                <source srcset="assets/speakers.webp" type="image/webp">
+                <img src="assets/speakers.png" width="1188" height="660" loading="lazy"
+                  alt="Panel de hablantes junto al video, con tres personas nombradas: Laura Méndez, Andrés Ríos y Sofía Vargas.">
+              </picture>
+            </figure>
+          </li>
+          <li class="step">
+            <div class="step__text">
+              <span class="step__number" aria-hidden="true">3</span>
+              <h3>Revisa el resumen</h3>
+              <p>Recibes un borrador con el asunto principal, los puntos clave y los próximos pasos. Tú lo lees, lo ajustas y decides qué compartir.</p>
+            </div>
+            <div class="shot-pair">
+              <figure class="shot">
+                <picture>
+                  <source srcset="assets/summary.webp" type="image/webp">
+                  <img src="assets/summary.png" width="462" height="975" loading="lazy"
+                    alt="Resumen de la reunión: asunto principal y puntos clave con marcas de tiempo.">
+                </picture>
+              </figure>
+              <figure class="shot">
+                <picture>
+                  <source srcset="assets/summary-steps.webp" type="image/webp">
+                  <img src="assets/summary-steps.png" width="462" height="725" loading="lazy"
+                    alt="Final del resumen: próximos pasos con sus responsables y la conclusión de la reunión.">
+                </picture>
+              </figure>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section section--tinted" id="funciones" aria-labelledby="features-title">
+      <div class="container">
+        <header class="section__header">
+          <p class="section__label">Lo que puedes hacer</p>
+          <h2 id="features-title">Todo lo de la reunión, en un solo lugar</h2>
+        </header>
+        <div class="features">
+          <article class="feature feature--wide">
+            <div class="feature__text">
+              <h3>La transcripción sigue al video</h3>
+              <p>Mientras reproduces, la frase que se está diciendo se resalta. Haz clic en cualquier frase para saltar a ese momento.</p>
+            </div>
+            <figure class="shot">
+              <video class="motion" width="1280" height="800" muted loop playsinline preload="none"
+                poster="assets/transcript.png" aria-label="La transcripción resalta la frase que se dice mientras avanza el video.">
+                <source src="assets/follow.webm" type="video/webm">
+              </video>
+              <button class="motion-toggle" type="button" hidden aria-pressed="false">Pausar animación</button>
+            </figure>
+          </article>
+          <article class="feature">
+            <figure class="shot">
+              <picture>
+                <source srcset="assets/library.webp" type="image/webp">
+                <img src="assets/library.png" width="396" height="308" loading="lazy"
+                  alt="Biblioteca de Sauri con tres reuniones, cada una con su miniatura, fecha, duración y número de hablantes.">
+              </picture>
+            </figure>
+            <h3>Encuentra cualquier reunión</h3>
+            <p>Tu biblioteca ordena las grabaciones por fecha, con búsqueda y filtros.</p>
+          </article>
+          <article class="feature">
+            <figure class="shot">
+              <picture>
+                <source srcset="assets/upload.webp" type="image/webp">
+                <img src="assets/upload.png" width="920" height="380" loading="lazy"
+                  alt="Pantalla «Subir grabación» con una zona para arrastrar el archivo.">
+              </picture>
+            </figure>
+            <h3>Sube grabaciones que ya tienes</h3>
+            <p>¿Grabaste con otra herramienta? Sube el archivo y Sauri lo procesa igual.</p>
+          </article>
+        </div>
+        <ul class="mini-features">
+          <li><h3>Llévate lo que necesites</h3><p>Descarga el video, la transcripción o el resumen.</p></li>
+          <li><h3>Resúmenes a tu manera</h3><p>Crea plantillas para que cada tipo de reunión tenga el resumen que necesitas.</p></li>
+          <li><h3>Notas aparte</h3><p>Toma notas durante la grabación; quedan junto a la reunión, separadas de la transcripción.</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="privacidad" aria-labelledby="privacy-title">
+      <div class="container">
+        <header class="section__header">
+          <p class="section__label">Privacidad</p>
+          <h2 id="privacy-title">Tus reuniones se quedan contigo</h2>
+          <p class="section__intro">Sauri hace el trabajo pesado en tu Mac: transcribir, reconocer voces y resumir. No hace falta subir tus reuniones a la nube.</p>
+        </header>
+        <ul class="privacy">
+          <li class="privacy__item">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/></svg>
+            <h3>Se queda en tu Mac</h3>
+            <p>Las grabaciones, las transcripciones, los resúmenes y los nombres que asignas a cada voz.</p>
+          </li>
+          <li class="privacy__item">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+            <h3>Sale solo si tú lo eliges</h3>
+            <p>Si prefieres que un servicio externo haga una tarea, por ejemplo el resumen, lo conectas tú y solo para esa tarea. Ese servicio recibe lo que necesita para hacerla.</p>
+          </li>
+          <li class="privacy__item">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+            <h3>Te avisa antes</h3>
+            <p>Al activar un servicio externo, Sauri te muestra qué sale del equipo y hacia dónde, y te pide confirmarlo.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section section--tinted" id="estado" aria-labelledby="status-title">
+      <div class="container status">
+        <h2 id="status-title">Sauri está en desarrollo</h2>
+        <p>Lo usamos a diario y lo mejoramos cada semana, pero todavía no es una versión final. Hoy funciona en Mac con Apple silicon y con Google Chrome.</p>
+      </div>
+    </section>
+
+    <section class="section" id="preguntas" aria-labelledby="faq-title">
+      <div class="container faq">
+        <h2 id="faq-title">Preguntas frecuentes</h2>
+        <details>
+          <summary>¿Mis reuniones se suben a internet?</summary>
+          <p>No. Sauri las procesa en tu Mac. Solo sale algo si tú conectas un servicio externo para una tarea, y Sauri te avisa antes.</p>
+        </details>
+        <details>
+          <summary>¿Qué reuniones puedo grabar?</summary>
+          <p>Cualquier reunión que tengas abierta en una pestaña de Chrome, como Google Meet. También puedes subir grabaciones que ya tengas.</p>
+        </details>
+        <details>
+          <summary>¿Debo avisar a los participantes?</summary>
+          <p>Sí. Pide permiso antes de grabar, como harías con cualquier grabadora.</p>
+        </details>
+        <details>
+          <summary>¿Qué necesito para usarlo?</summary>
+          <p>Un Mac con Apple silicon y Google Chrome.</p>
+        </details>
+        <details>
+          <summary>¿En qué idiomas funciona?</summary>
+          <p>La aplicación está en español e inglés, y transcribe reuniones en esos idiomas.</p>
+        </details>
+        <details>
+          <summary>¿Puedo corregir los nombres de los hablantes?</summary>
+          <p>Sí. Puedes renombrar a cualquier hablante en cualquier momento, y Sauri usa tus correcciones en tus siguientes reuniones.</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="section cta" id="acceso" aria-labelledby="cta-title">
+      <div class="container cta__inner">
+        <h2 id="cta-title">¿Quieres probar Sauri?</h2>
+        <p>Escríbenos y te contamos cómo empezar.</p>
+        <!-- Correo de acceso: pendiente de que el dueño lo defina antes de publicar. -->
+        <a class="button button--primary button--lg" href="mailto:CORREO_POR_DEFINIR?subject=Acceso%20anticipado%20a%20Sauri">Solicitar acceso anticipado</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <img class="site-footer__mark" src="assets/brand/sauri-isotype.svg" alt="" width="24" height="24">
+      <p>Sauri está en desarrollo.</p>
+      <nav aria-label="Pie de página">
+        <a href="#como-funciona">Cómo funciona</a>
+        <a href="#privacidad">Privacidad</a>
+        <a href="#preguntas">Preguntas</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="motion.js" defer></script>
+</body>
+</html>
