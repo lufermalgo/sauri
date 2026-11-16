@@ -3,6 +3,7 @@ import type { MeetingSummary, SummaryBlock, SummaryKeyPoint, SummaryRequestStatu
 import type { SummarySignal } from "../processing-estimate";
 import { getLatestSummaryRequest, getMeetingSummary, requestMeetingSummary } from "../api";
 import { copy } from "../copy/es";
+import { StageProgress } from "./StageProgress";
 import { Button, Skeleton, SkeletonLines, StatusBadge } from "./ui";
 import "../styles/summary.css";
 
@@ -17,11 +18,13 @@ interface SummaryPanelProps {
   expectAutoRequest?: boolean;
   // Lets the meeting view show summary progress without a second request.
   onSignalChange?: (signal: SummarySignal) => void;
+  // Inputs of the generation progress shown while the summary is being written.
+  progress?: { audioSeconds: number | null; createdAt: string | null; stageStartedAt: number | null };
 }
 
 const SKELETON_POINT_WIDTHS = ["72%", "58%", "66%"];
 
-function GeneratingSkeleton() {
+function GeneratingSkeleton({ progress }: { progress: NonNullable<SummaryPanelProps["progress"]> }) {
   const text = copy.summary;
   return (
     <>
@@ -30,6 +33,7 @@ function GeneratingSkeleton() {
           <StatusBadge tone="progress">{text.generatingBadge}</StatusBadge>
           <span role="status" className="summary-generating-status">{text.generating}</span>
         </div>
+        <StageProgress stage="summary" label={copy.processing.summarizing} {...progress} />
         <div className="summary-skeleton-block" aria-hidden="true">
           <Skeleton width={60} height={12} />
           <Skeleton height={22} />
@@ -145,6 +149,7 @@ export function SummaryPanel(props: SummaryPanelProps) {
 
 function MeetingSummaryPanel({
   meetingId, onSeek, transcriptReady = true, onSummaryChange, expectAutoRequest = false, onSignalChange,
+  progress = { audioSeconds: null, createdAt: null, stageStartedAt: null },
 }: SummaryPanelProps) {
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
   useEffect(() => { onSummaryChange?.(summary); }, [summary, onSummaryChange]);
@@ -290,7 +295,7 @@ function MeetingSummaryPanel({
     <section aria-label={text.tab} className="summary-panel">
       {requestError && <p role="alert" className="summary-notice summary-notice--error">{text.requestFailed}</p>}
       {submitting ? <p role="status" className="summary-state">{text.submitting}</p> : waiting ? (
-        <GeneratingSkeleton />
+        <GeneratingSkeleton progress={progress} />
       ) : currentRequest?.status === "failed" ? (
         <div className="summary-notice summary-notice--error">
           <p role="alert">{text.failed} {text.failureCause(currentRequest.failureCause)}</p>

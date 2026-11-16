@@ -146,6 +146,56 @@ describe("SummaryPanel", () => {
     expect(screen.queryByRole("button", { name: text.generate })).not.toBeInTheDocument();
   });
 
+  it.each(["pending", "running"] as const)(
+    "shows the estimated progress, elapsed time and estimate while the summary is %s", async (status) => {
+      latest = { ...pending, status };
+      vi.useFakeTimers({ now: new Date("2026-11-15T10:00:00Z") });
+      // 54 min of audio uploaded 25 min ago; this page saw the summary begin 30 s ago.
+      const progress = { audioSeconds: 54 * 60, createdAt: "2026-11-15T09:35:00Z",
+        stageStartedAt: Date.now() - 30_000 };
+      render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} progress={progress} />);
+      await act(async () => {});
+      const bar = screen.getByRole("progressbar", { name: copy.processing.summarizing });
+      expect(bar).toHaveAttribute("aria-valuemin", "0");
+      expect(bar).toHaveAttribute("aria-valuemax", "100");
+      expect(bar).toHaveAttribute("aria-valuenow", "51");
+      expect(bar).toHaveAttribute("aria-valuetext", copy.processing.percent(51));
+      expect(screen.getByText(copy.processing.percent(51))).toBeVisible();
+      expect(screen.getByText(copy.processing.elapsed("25:00"))).toBeVisible();
+      expect(screen.getByText(copy.processing.remaining(6))).toBeVisible();
+      expect(screen.getByText(copy.processing.explain.summary(6))).toBeVisible();
+      expect(screen.getByText(copy.processing.leaveHint)).toBeVisible();
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(screen.getByText(copy.processing.elapsed("25:03"))).toBeVisible();
+    },
+  );
+
+  it("shows an indeterminate bar and no percentage while the recording length is unknown", async () => {
+    latest = pending;
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    const bar = await screen.findByRole("progressbar", { name: copy.processing.summarizing });
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+    expect(screen.getByText(copy.processing.noEstimate)).toBeVisible();
+    expect(screen.queryByText(/≈/)).not.toBeInTheDocument();
+  });
+
+  it("hides the progress once the summary succeeded, failed or never started", async () => {
+    artifact = summary;
+    latest = null;
+    const view = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    expect(await screen.findByText(text.draft)).toBeVisible();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.processing.leaveHint)).not.toBeInTheDocument();
+    view.unmount();
+
+    artifact = null;
+    latest = { ...pending, status: "failed", failure_cause: "summary_invalid" };
+    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(text.failureCause("summary_invalid"));
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.processing.leaveHint)).not.toBeInTheDocument();
+  });
+
   it("removes the skeleton once the summary succeeds", async () => {
     latest = pending;
     vi.useFakeTimers();
