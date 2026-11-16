@@ -18,7 +18,7 @@ Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con 
 1. **Spec antes de código:** `.spectra/specs/<slug>/` con `requirements.md` → `design.md` → `tasks.md` (skills `spectra-req`, `spectra-design`, `spectra-tasks`; `spectra-bugfix` para fallos). Respeta las fases ya aprobadas. Documentación terminada no es código ni aceptación.
 2. **Una unidad de entrega = un issue, una rama y un worktree propios**, creados desde `origin/main` en `.worktrees/`. Nunca se trabaja en el checkout raíz ni en `main`.
 3. **Cada encargo incluye:** spec y tarea, issue, objetivo, alcance y exclusiones, archivos permitidos, criterios de aceptación y comandos de verificación.
-4. **Implementa Codex o un subagente; Claude revisa el diff, ejecuta las pruebas por su cuenta e integra.** Un informe de un agente nunca se acepta sin verificarlo.
+4. **Implementa Codex o un subagente (Claude se reserva lo complejo); Claude revisa el diff, ejecuta las pruebas por su cuenta e integra.** Publica el PR quien desarrolló la unidad; el trabajo de Codex lo publica un subagente con acceso a git. Un informe de un agente nunca se acepta sin verificarlo.
 5. **Calidad insuficiente:** se devuelve una sola vez al mismo agente con hallazgos concretos. Si vuelve a fallar, Claude lo corrige o lo reasigna a un modelo más fuerte.
 6. **Integración:** merge del PR tras la verificación de Claude; las ramas remotas se borran solas al integrar. Publicación, integración y aceptación del dueño son estados distintos.
 7. **Skills:** usa `skills-manager` para buscar o vincular las skills que la tarea necesite.
