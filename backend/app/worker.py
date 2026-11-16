@@ -18,6 +18,7 @@ from app.infra.object_store import create_object_store
 from app.infra.queue import create_job_queue
 from app.retention.worker import start_retention_worker
 from app.summaries.worker import start_worker as start_summary_worker
+from app.thumbnails.service import run_thumbnail_sweeper
 from app.transcription.worker import start_worker as start_transcription_worker
 
 logging.basicConfig(
@@ -55,6 +56,9 @@ async def main() -> None:
         start_retention_worker(session_factory, object_store)
     )
 
+    # Library thumbnails: derived data, cut one recording at a time outside the transcription path.
+    thumbnail_task = asyncio.create_task(run_thumbnail_sweeper(session_factory, object_store))
+
     # Wait for shutdown signal
     stop_event = asyncio.Event()
 
@@ -70,6 +74,7 @@ async def main() -> None:
 
     # Cleanup
     retention_task.cancel()
+    thumbnail_task.cancel()
     await queue.disconnect()
     await engine.dispose()
     logger.info("sauri worker finished")

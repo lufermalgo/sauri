@@ -30,9 +30,9 @@ def test_v2_text_follows_the_reference_structure_and_forbids_timestamps() -> Non
 def test_revision_chain_has_a_single_head() -> None:
     from alembic.script import ScriptDirectory
 
-    assert ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini"))).get_heads() == [
-        "020_default_summary_structure",
-    ]
+    script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
+    assert script.get_heads() == ["021_recording_thumbnail"]
+    assert script.get_revision("021_recording_thumbnail").down_revision == "020_default_summary_structure"
 
 
 async def test_postgres_020_updates_only_unedited_seeded_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -331,6 +331,9 @@ async def delete_meeting(
         if recording.video_ref is not None:
             with contextlib.suppress(Exception):
                 await object_store.delete(recording.video_ref)
+        if recording.thumbnail_ref is not None:
+            with contextlib.suppress(Exception):
+                await object_store.delete(recording.thumbnail_ref)
 
     await session.delete(meeting)
     await session.flush()

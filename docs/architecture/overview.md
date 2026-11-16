@@ -33,7 +33,7 @@ En el Mac, los servicios de Sauri corren en **Docker Desktop** como el proyecto 
 |---|---|---|
 | `portal` (Nginx con el portal construido) | `127.0.0.1:5173` (`PORTAL_PORT`) | — |
 | `api` (FastAPI) | `127.0.0.1:8000` | — |
-| `worker` (transcripción, diarización, resumen, retención) | — | — |
+| `worker` (transcripción, diarización, resumen, retención, miniaturas de la biblioteca con `ffmpeg` estático) | — | — |
 | `postgres` (PostgreSQL 16) | `127.0.0.1:5432` | volumen `sauri_pgdata` |
 | `minio` (RustFS, compatible S3; conserva el nombre MinIO) | `127.0.0.1:9000` (API) y `127.0.0.1:9001` (consola) | volumen `sauri_minio-data` |
 | `rabbitmq` (RabbitMQ 3 con consola de administración) | `127.0.0.1:5672` y `127.0.0.1:15672` | volumen `sauri_rabbitmq-data` |

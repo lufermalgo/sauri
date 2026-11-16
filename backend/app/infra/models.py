@@ -76,6 +76,10 @@ class SessionRecording(Base):
     __table_args__ = (
         UniqueConstraint("meeting_id", name="uq_session_recording_meeting_id"),
         UniqueConstraint("idempotency_key", name="uq_session_recording_idempotency_key"),
+        CheckConstraint(
+            "thumbnail_state IS NULL OR thumbnail_state IN ('ready', 'audio_only', 'unavailable')",
+            name="ck_session_recordings_thumbnail_state",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -95,6 +99,9 @@ class SessionRecording(Base):
     video_presence: Mapped[str] = mapped_column(
         String(16), nullable=False, default="unknown", server_default="unknown"
     )
+    # Preview frame for the library: NULL state = not attempted yet.
+    thumbnail_ref: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    thumbnail_state: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ready | audio_only | unavailable
 
     media_sources: Mapped[list["RecordingMediaSource"]] = relationship(
         back_populates="recording", cascade="all, delete-orphan"
