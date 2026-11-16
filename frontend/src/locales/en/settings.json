@@ -23,8 +23,8 @@
     },
     "appearance": {
       "label": "Appearance",
-      "description": "Language, theme and side panel",
-      "keywords": "language english spanish idioma theme light dark system colors side panel collapse"
+      "description": "Language and theme",
+      "keywords": "language english spanish idioma theme light dark system colors"
     },
     "engines": {
       "label": "Engines and models",
@@ -61,10 +61,7 @@
       "system": "System",
       "light": "Light",
       "dark": "Dark"
-    },
-    "sidebarTitle": "Side panel",
-    "sidebarSwitch": "Start with the panel collapsed",
-    "sidebarHelp": "Leaves only the icons in view. You can also collapse it with the panel button; your choice is remembered in this browser."
+    }
   },
   "summaries": {
     "templatesTitle": "Templates",

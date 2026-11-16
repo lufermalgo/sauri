@@ -8,20 +8,9 @@ const NARROW_QUERY = "(max-width: 1319px)";
 
 export type SidebarMode = "full" | "rail" | "drawer";
 
-// The collapsed/expanded choice is shared by every hook instance (the shell and the settings
-// switch), so a change anywhere shows up everywhere.
+// The collapsed/expanded choice is whatever the user last left with the panel toggle, remembered
+// per device. Without one, narrow screens (under 1320px) start collapsed.
 const sidebarFlag = createStoredFlag(SIDEBAR_STORAGE_KEY);
-
-/**
- * The remembered sidebar choice. Without a stored choice, narrow screens (under 1320px) start
- * collapsed. `setCollapsed` stores the choice per device.
- */
-export function useSidebarCollapsed() {
-  const narrowViewport = useMediaQuery(NARROW_QUERY);
-  const choice = useSyncExternalStore(sidebarFlag.subscribe, sidebarFlag.read);
-  const collapsed = choice ?? narrowViewport;
-  return { collapsed, setCollapsed: sidebarFlag.write };
-}
 
 /**
  * Sidebar state. Wide screens show the full panel or a rail (the choice is remembered per device,
@@ -29,7 +18,10 @@ export function useSidebarCollapsed() {
  */
 export function useSidebar() {
   const drawerViewport = useMediaQuery(DRAWER_QUERY);
-  const { collapsed, setCollapsed } = useSidebarCollapsed();
+  const narrowViewport = useMediaQuery(NARROW_QUERY);
+  const choice = useSyncExternalStore(sidebarFlag.subscribe, sidebarFlag.read);
+  const collapsed = choice ?? narrowViewport;
+  const setCollapsed = sidebarFlag.write;
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const mode: SidebarMode = drawerViewport ? "drawer" : collapsed ? "rail" : "full";

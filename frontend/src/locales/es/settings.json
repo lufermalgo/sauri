@@ -23,8 +23,8 @@
     },
     "appearance": {
       "label": "Apariencia",
-      "description": "Idioma, tema y panel lateral",
-      "keywords": "idioma español inglés language tema claro oscuro sistema colores panel lateral plegar"
+      "description": "Idioma y tema",
+      "keywords": "idioma español inglés language tema claro oscuro sistema colores"
     },
     "engines": {
       "label": "Motores y modelos",
@@ -61,10 +61,7 @@
       "system": "Sistema",
       "light": "Claro",
       "dark": "Oscuro"
-    },
-    "sidebarTitle": "Panel lateral",
-    "sidebarSwitch": "Iniciar con el panel plegado",
-    "sidebarHelp": "Deja solo los iconos a la vista. También puedes plegarlo con el botón del panel; la elección se recuerda en este navegador."
+    }
   },
   "summaries": {
     "templatesTitle": "Plantillas",

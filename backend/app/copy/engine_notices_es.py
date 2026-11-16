@@ -21,7 +21,7 @@ PROVIDER_NAMES: dict[str, str] = {
     "ollama": "Ollama",
     "lmstudio": "LM Studio",
     "openai_compatible": "tu servicio compatible con OpenAI",
-    "chatgpt_plan": "ChatGPT (plan)",
+    "chatgpt_plan": "Codex (plan ChatGPT)",
     "assemblyai": "AssemblyAI",
     "deepgram": "Deepgram",
     "groq": "Groq",

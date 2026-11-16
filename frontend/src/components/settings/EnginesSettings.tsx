@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EngineKindInfo, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
 import {
   createEngineProvider,
@@ -82,7 +82,13 @@ export function EnginesSettings() {
     accountIds.split("|").filter(Boolean).forEach(loadAccount);
   }, [accountIds, loadAccount]);
 
-  const catalogs = useModelCatalogs(ready ? load.providers : [], ready ? load.kinds : [], ready);
+  // An account provider lists its models only while its account is connected, and as soon as it is.
+  const connectedIds = Object.entries(accounts)
+    .filter(([, view]) => view.status === "ready" && view.account.state === "connected")
+    .map(([id]) => id)
+    .join("|");
+  const connectedAccounts = useMemo(() => new Set(connectedIds.split("|").filter(Boolean)), [connectedIds]);
+  const catalogs = useModelCatalogs(ready ? load.providers : [], ready ? load.kinds : [], ready, connectedAccounts);
 
   /** Replaces a provider with the version the API returned, or appends a new one. */
   function providerChanged(changed: EngineProvider) {

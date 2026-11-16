@@ -16,7 +16,7 @@
     "ollama": { "label": "Ollama", "description": "Program that runs models on this computer." },
     "lmstudio": { "label": "LM Studio", "description": "Program that runs models on this computer." },
     "openai_compatible": { "label": "OpenAI-compatible server", "description": "Your own server, or a third party's, with the same format." },
-    "chatgpt_plan": { "label": "ChatGPT (plan)", "description": "Uses your ChatGPT plan, with no API key." },
+    "chatgpt_plan": { "label": "Codex (ChatGPT plan)", "description": "Uses your ChatGPT plan, with no API key." },
     "assemblyai": { "label": "AssemblyAI", "description": "Cloud service with your API key." },
     "deepgram": { "label": "Deepgram", "description": "Cloud service with your API key." },
     "groq": { "label": "Groq", "description": "Cloud service with your API key." }
@@ -65,7 +65,7 @@
     "unsupported_provider": "That provider can't serve this process.",
     "invalid_model": "The model name isn't valid.",
     "host_unavailable": "The service on this computer that stores keys and queries providers isn't responding.",
-    "provider_account_missing": "ChatGPT is not connected. Connect it in Engines and models.",
+    "provider_account_missing": "Codex is not connected. Connect it in Engines and models.",
     "base_url_fixed": "This provider's address is fixed.",
     "provider_has_no_key": "This provider uses no key: it connects with your account.",
     "provider_has_no_account": "This provider does not connect with an account.",
@@ -81,8 +81,8 @@
     "checking": "Checking…",
     "unconfigured": "Sign in with your ChatGPT account. No key is needed.",
     "unofficial": "OpenAI does not document this route officially and it could stop working.",
-    "connect": "Connect with ChatGPT",
-    "connectLabel": "Connect “{{name}}” with ChatGPT",
+    "connect": "Connect with Codex",
+    "connectLabel": "Connect “{{name}}”",
     "disconnect": "Disconnect",
     "disconnectLabel": "Disconnect “{{name}}”",
     "errors": {
@@ -92,7 +92,7 @@
       "session_expired": "The ChatGPT session expired. Connect again."
     },
     "dialog": {
-      "title": "Connect with ChatGPT",
+      "title": "Connect with Codex",
       "close": "Close",
       "starting": "Asking for the code…",
       "openPage": "Open the ChatGPT page",
@@ -108,7 +108,7 @@
       "done": "Done"
     },
     "disconnectDialog": {
-      "title": "Disconnect ChatGPT",
+      "title": "Disconnect Codex",
       "body": "Sauri will forget the “{{name}}” session on this computer. You can connect it again whenever you like.",
       "reverts": "These processes will go back to the local engine: {{list}}.",
       "confirm": "Disconnect",
@@ -118,7 +118,8 @@
     "disconnectedReverted": "We disconnected “{{name}}”. Back on the local engine: {{list}}.",
     "disconnectFailed": "We could not disconnect. Nothing was changed.",
     "createFailed": "We could not set up the provider.",
-    "notNeeded": "No key needed: it connects with your account."
+    "notNeeded": "No key needed: it connects with your account.",
+    "modelsFailed": "We could not read the models of your account. Try again."
   },
   "card": {
     "usedBy": "Used in: {{list}}",

@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { deleteMeeting, renameMeeting } from "../api";
 import { notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
 import { stageLabel, type DetectedStage } from "../processing-estimate";
 import { ArrowLeft, Ellipsis, Pencil, Trash2, UsersRound } from "lucide-react";
-import { Button, ConfirmDialog, Icon, Popover, StatusBadge, TextField, Menu, MenuItem, useTooltip } from "./ui";
+import { Button, ConfirmDialog, Icon, Popover, StatusBadge, Menu, MenuItem, useTooltip } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
 import { t, useT } from "../i18n";
@@ -27,6 +27,8 @@ interface MeetingHeaderProps extends MeetingDownloadsProps {
 }
 
 const MAX_TITLE_LENGTH = 512;
+/** How long the floating rename message stays up. */
+const HINT_MS = 5000;
 
 export interface SpeakerReviewEntry {
   /** Speakers still waiting for a decision; the red dot shows while this is above zero. */
@@ -61,27 +63,36 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  // Set once the draft was edited or submitted, so a blank title is only flagged after the person acted.
-  const [touched, setTouched] = useState(false);
+  // Quiet, floating message about a rename that did not go through (blank name, failed request).
+  const [hint, setHint] = useState<{ tone: "info" | "error"; text: string } | null>(null);
   // Screen-reader confirmation of a saved rename; the page already shows the new title.
   const [notice, setNotice] = useState("");
   const startTitle = useRef("");
-  const form = useRef<HTMLFormElement>(null);
+  // True while the field is open and nobody has decided yet, so Enter followed by blur cannot save twice.
+  const open = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
   const pencil = useRef<HTMLButtonElement>(null);
   const returnFocus = useRef(false);
   const pencilTip = useTooltip(t("meeting:renameTitle"));
   // A newer title from outside (renamed in the library list) replaces the one saved here.
   useEffect(() => setRenamedTitle(null), [title]);
+  useEffect(() => {
+    if (!hint) return;
+    const timer = window.setTimeout(() => setHint(null), HINT_MS);
+    return () => window.clearTimeout(timer);
+  }, [hint]);
   const currentTitle = renamedTitle ?? title ?? t("meeting:untitled");
-  const blank = draft.trim().length === 0;
-  const validTitle = !blank && draft.trim().length <= MAX_TITLE_LENGTH;
 
-  // The input takes the title's place focused and selected; closing it hands the focus back to the pencil.
+  // The field takes the title's place focused and selected; closing it with the keyboard hands the focus
+  // back to the pencil (a click elsewhere keeps the focus where the person put it).
   useEffect(() => {
     if (editing) {
-      const input = form.current?.querySelector("input");
-      input?.focus();
-      input?.select();
+      const field = input.current;
+      if (!field) return;
+      field.focus();
+      field.select();
+      // Selecting scrolls to the end of a long title; the person expects to see its start, as before.
+      field.scrollLeft = 0;
     } else if (returnFocus.current) {
       returnFocus.current = false;
       pencil.current?.focus();
@@ -89,56 +100,60 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
   }, [editing]);
 
   function startEditing() {
+    if (open.current || pending.current) return;
     startTitle.current = renamedTitle ?? title ?? "";
     setDraft(startTitle.current);
-    setTouched(false);
     setNotice("");
+    setHint(null);
     setError(null);
+    open.current = true;
     setEditing(true);
   }
 
-  function stopEditing() {
-    returnFocus.current = true;
+  function stopEditing(keyboard: boolean) {
+    open.current = false;
+    returnFocus.current = keyboard;
     setEditing(false);
-    setTouched(false);
-    setError(null);
   }
 
-  async function save() {
-    if (pending.current) return;
-    if (!validTitle) { setTouched(true); return; }
-    // Nothing changed: no request, just close.
-    if (draft.trim() === startTitle.current.trim()) { stopEditing(); return; }
+  // Saves a changed, non-blank name. A blank or unchanged one closes the field on the old title.
+  async function commit(keyboard: boolean) {
+    if (!open.current || pending.current) return;
+    const next = draft.trim();
+    if (next === startTitle.current.trim()) { stopEditing(keyboard); return; }
+    if (next.length === 0) {
+      stopEditing(keyboard);
+      setHint({ tone: "info", text: t("meeting:titleRequired") });
+      return;
+    }
     pending.current = true;
     setBusy(true);
     setError(null);
     try {
-      const result = await renameMeeting(downloads.meetingId, draft.trim());
+      const result = await renameMeeting(downloads.meetingId, next);
       setRenamedTitle(result.title);
       setNotice(t("meeting:renamed"));
-      stopEditing();
       notifyLibraryChanged();
     } catch {
-      setError(t("meeting:renameFailed"));
+      setHint({ tone: "error", text: t("meeting:renameFailed") });
     } finally {
       pending.current = false;
       setBusy(false);
+      stopEditing(keyboard);
     }
   }
 
-  // Escape closes the editor (never while saving); Enter submits through the form.
-  function onRenameKeyDown(event: KeyboardEvent<HTMLFormElement>) {
-    if (event.key !== "Escape" || busy) return;
-    event.preventDefault();
-    event.stopPropagation();
-    stopEditing();
-  }
-
-  // Leaving the field with nothing changed closes it; a changed draft stays open so no typing is lost
-  // (the same rule as renaming from the library list). Moving to Save or Cancel is not leaving.
-  function onRenameBlur(event: FocusEvent<HTMLFormElement>) {
-    if (busy || form.current?.contains(event.relatedTarget as Node | null)) return;
-    if (draft === startTitle.current) stopEditing();
+  // Enter saves, Escape reverts; neither reaches the shortcuts outside the header.
+  function onTitleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (busy || event.nativeEvent.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void commit(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      stopEditing(true);
+    }
   }
 
   async function remove() {
@@ -164,24 +179,22 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
       {onBack && <button type="button" className="ui-icon-button ui-icon-button--ghost meeting-back"
         aria-label={t("meeting:backToList")} onClick={onBack}><Icon icon={ArrowLeft} /></button>}
       <div className="meeting-heading">
-        {editing ? <form ref={form} className="meeting-rename" onSubmit={event => { event.preventDefault(); void save(); }}
-          onKeyDown={onRenameKeyDown} onBlur={onRenameBlur}>
-          <TextField label={t("meeting:titleLabel")} value={draft} disabled={busy} maxLength={MAX_TITLE_LENGTH}
-            autoComplete="off" error={touched && blank ? t("meeting:titleRequired") : undefined}
-            onChange={event => { setDraft(event.target.value); setTouched(true); }} />
-          <div className="meeting-actions">
-            <Button variant="primary" size="sm" type="submit" disabled={busy}>{t("meeting:save")}</Button>
-            <Button variant="ghost" size="sm" disabled={busy} onClick={stopEditing}>{t("meeting:cancel")}</Button>
-          </div>
-        </form> : <div className="meeting-title-row">
-          <h1 title={currentTitle}>{currentTitle}</h1>
-          <span className="meeting-title-edit">
+        <div className={`meeting-title-row${editing ? " meeting-title-row--editing" : ""}`}>
+          <h1 title={currentTitle} onDoubleClick={startEditing}>
+            {editing ? <span className="meeting-title-field" data-value={draft || currentTitle}>
+              <input ref={input} value={draft} maxLength={MAX_TITLE_LENGTH} readOnly={busy} autoComplete="off"
+                spellCheck={false} placeholder={t("meeting:untitled")} aria-label={t("meeting:titleLabel")} aria-busy={busy || undefined}
+                onChange={event => setDraft(event.target.value)} onKeyDown={onTitleKeyDown}
+                onBlur={() => { void commit(false); }} />
+            </span> : currentTitle}
+          </h1>
+          <span className="meeting-title-edit" aria-hidden={editing || undefined}>
             <button type="button" ref={pencil} className="ui-icon-button ui-icon-button--ghost"
-              aria-label={t("meeting:renameTitle")} disabled={busy} {...pencilTip.triggerProps}
+              aria-label={t("meeting:renameTitle")} disabled={editing} {...pencilTip.triggerProps}
               onClick={() => { pencilTip.hide(); startEditing(); }}><Icon icon={Pencil} size={16} /></button>
             {pencilTip.tooltip}
           </span>
-        </div>}
+        </div>
         <div className="meeting-details">
         {stage && <StatusBadge tone={stage === "done" ? "success" : stage === "failed" ? "error" : "progress"}>
           {stageLabel(stage, processState)}
@@ -218,8 +231,11 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
       </div>
     </div>
     <p role="status" className="meeting-sr-only">{notice}</p>
-    {busy && <p role="status">{confirming ? t("meeting:deleting") : t("meeting:saving")}</p>}
+    {busy && <p role="status" className={confirming ? undefined : "meeting-sr-only"}>
+      {confirming ? t("meeting:deleting") : t("meeting:saving")}</p>}
     {error && <p role="alert" className="meeting-error">{error}</p>}
+    {hint && <p role={hint.tone === "error" ? "alert" : "status"}
+      className={`meeting-title-hint meeting-title-hint--${hint.tone}`}>{hint.text}</p>}
     {confirming && <ConfirmDialog title={t("meeting:deleteTitle")} body={t("meeting:deleteBody")}
       confirmLabel={t("meeting:delete")} cancelLabel={t("meeting:cancel")} onConfirm={() => { void remove(); }}
       onCancel={() => { if (!pending.current) setConfirming(false); }} />}
