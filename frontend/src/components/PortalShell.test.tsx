@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { PortalShell } from "./PortalShell";
 import { copy } from "../copy/es";
 
@@ -296,5 +298,35 @@ describe("PortalShell drawer", () => {
     expect(screen.queryByRole("banner")).toBeNull();
     resizeTo(375);
     expect(sidebar().dataset.open).toBe("false");
+  });
+});
+
+describe("PortalShell app frame", () => {
+  const shellCss = readFileSync(join(__dirname, "../styles/shell.css"), "utf8");
+  const rule = (selector: string) =>
+    new RegExp(`(?:^|\\n)${selector.replace(/[.[\]"=-]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(shellCss)?.[1] ?? "";
+
+  it("renders the page inside the one content region, next to the side panel", () => {
+    renderShell();
+    const regions = document.querySelectorAll(".shell-content");
+    expect(regions).toHaveLength(1);
+    expect(regions[0].parentElement).toBe(root());
+    expect(regions[0].contains(screen.getByRole("main"))).toBe(true);
+    expect(sidebar().parentElement).toBe(root());
+  });
+
+  it("pins the frame to the window and makes the content region the only scroller", () => {
+    expect(rule(".shell-root")).toMatch(/position:\s*fixed/);
+    expect(rule(".shell-root")).toMatch(/inset:\s*0/);
+    expect(rule(".shell-root")).not.toMatch(/(?<!-)height:/);
+    expect(rule(".shell-content")).toMatch(/overflow-y:\s*auto/);
+    expect(rule(".shell-content")).toMatch(/min-height:\s*0/);
+    expect(rule(".shell-content")).toMatch(/position:\s*relative/);
+    expect(rule(".shell-sidebar")).not.toMatch(/overflow/);
+  });
+
+  it("does not center the page in a max-width column", () => {
+    expect(rule(".shell-main")).not.toMatch(/max-width|margin/);
+    expect(shellCss).not.toContain("--ds-layout-max");
   });
 });
