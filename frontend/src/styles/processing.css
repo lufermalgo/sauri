@@ -1,5 +1,5 @@
 /* Processing progress: stepper, estimate meter and plain-language explanation. */
-.processing { display: grid; gap: var(--ds-space-4); }
+.processing, .processing-stage { display: grid; gap: var(--ds-space-4); }
 
 .processing-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -29,8 +29,8 @@
 
 .processing-meter { display: grid; gap: var(--ds-space-2); }
 /* Without an estimate the bar still shows that work is happening. */
-.processing .ui-progress:indeterminate::-webkit-progress-bar { background: var(--ds-accent-muted); animation: processing-sweep 1.8s ease-in-out infinite; }
-.processing .ui-progress:indeterminate::-moz-progress-bar { background: var(--ds-accent-muted); }
+.processing .ui-progress:indeterminate::-webkit-progress-bar, .processing-stage .ui-progress:indeterminate::-webkit-progress-bar { background: var(--ds-accent-muted); animation: processing-sweep 1.8s ease-in-out infinite; }
+.processing .ui-progress:indeterminate::-moz-progress-bar, .processing-stage .ui-progress:indeterminate::-moz-progress-bar { background: var(--ds-accent-muted); }
 .processing-figures { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--ds-space-2) var(--ds-space-4); color: var(--ds-fg-muted); font-size: var(--ds-text-md); }
 .processing-percent { color: var(--ds-accent-text); font-family: var(--ds-font-mono); font-size: var(--ds-text-base); font-weight:var(--ds-weight-semibold); }
 .processing-elapsed { font-family: var(--ds-font-mono); font-size: var(--ds-text-sm); }
@@ -49,7 +49,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .processing .ui-progress:indeterminate::-webkit-progress-bar { animation: none; }
+  .processing .ui-progress:indeterminate::-webkit-progress-bar, .processing-stage .ui-progress:indeterminate::-webkit-progress-bar { animation: none; }
   .processing-step--current .processing-step-marker { animation: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ds-accent) 18%, transparent); }
 }
 

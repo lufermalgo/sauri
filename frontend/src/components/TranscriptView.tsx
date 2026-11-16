@@ -16,6 +16,7 @@ import { selectListeningInterval } from "../speaker-review-interval";
 import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
 import { ProcessingStatus } from "./ProcessingStatus";
 import { SummaryPanel } from "./SummaryPanel";
+import { useStageStart } from "../useStageStart";
 import { MeetingHeader } from "./MeetingHeader";
 import { ChatTab } from "./ChatTab";
 import { Avatar, Button, Card, Dialog, Tabs, Skeleton, SkeletonLines } from "./ui";
@@ -436,6 +437,7 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
   const summaryForStage: SummarySignal = summarySignal === "waiting" ? "waiting"
     : expectSummary && summarySignal !== "settled" ? "expected" : summarySignal;
   const stage = stageSignals ? detectProcessingStage({ ...stageSignals, summary: summaryForStage }) : null;
+  const stageStartedAt = useStageStart(stage);
   // Only work finished during this visit earns the brief success state; a meeting opened done shows none.
   const successNow = sawWork && stage === "done" && success === "pending";
   if (successNow) setSuccess("showing");
@@ -512,7 +514,9 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
           { id: "summary", label: text.summaryTab, panel: meeting
             // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
             ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
-              expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal} /> : null },
+              expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal}
+              progress={{ audioSeconds: playbackManifest?.duration_seconds ?? metadata.durationSeconds,
+                createdAt: metadata.createdAt, stageStartedAt: stage === "summary" ? stageStartedAt : null }} /> : null },
           { id: "chat", label: text.chatTab, panel: <ChatTab /> },
         ]} />
       </Card>

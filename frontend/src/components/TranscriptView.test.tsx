@@ -628,8 +628,11 @@ describe("TranscriptView — processing polling", () => {
     // Speakers are done; the automatic summary request is expected next, so the header is not ready yet.
     expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
     expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
-    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status"))
-      .toHaveTextContent(copy.processing.summarizing);
+    // The summary stage keeps only the stepper in the card: no headline, bar, figures or hint.
+    const summaryCard = document.querySelector(".meeting-processing") as HTMLElement;
+    expect(summaryCard.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.steps.summary);
+    expect(within(summaryCard).queryByRole("status")).not.toBeInTheDocument();
+    expect(within(summaryCard).queryByRole("progressbar")).not.toBeInTheDocument();
     const calls = vi.mocked(api.getMeeting).mock.calls.length;
     await advance(10000);
     // No summary request appeared: the card briefly confirms completion, then goes away.
@@ -748,14 +751,19 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
     vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "pending" });
     await advance();
-    expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.summarizing);
     expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
     expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
     expect(card()!.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.steps.summary);
+    // The progress moved out of the card into the summary section.
+    expect(within(card()!).queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(within(card()!).queryByText(copy.processing.leaveHint)).not.toBeInTheDocument();
+    const summarySection = screen.getByRole("region", { name: copy.summary.tab });
+    expect(within(summarySection).getByRole("progressbar", { name: copy.processing.summarizing })).toBeInTheDocument();
+    expect(within(summarySection).getByText(copy.processing.leaveHint)).toBeVisible();
     // A running summary keeps the card past the short wait for the automatic request.
     vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "running" });
     await advance(15000);
-    expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.summarizing);
+    expect(card()!.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.steps.summary);
     expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
     vi.mocked(api.getMeetingSummary).mockResolvedValue({
       summaryId: "s-1", meetingId: "r-1", templateId: "t", templateName: "General", templateVersion: 1,

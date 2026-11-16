@@ -258,3 +258,9 @@
   margin-top: var(--ds-space-2);
   color: var(--ds-fg-muted);
 }
+
+/* The side column is narrow: the estimate sits on its own line, aligned with the other figures. */
+.summary-generating .processing-remaining {
+  margin-left: 0;
+  flex-basis: 100%;
+}
