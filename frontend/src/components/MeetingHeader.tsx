@@ -3,21 +3,21 @@ import { deleteMeeting, renameMeeting } from "../api";
 import { meeting as text } from "../copy/meeting";
 import { navigate } from "../router";
 import { stageLabel, type DetectedStage } from "../processing-estimate";
-import { Button, ConfirmDialog, StatusBadge, TextField, Menu, MenuItem } from "./ui";
+import { Ellipsis, Pencil, Trash2 } from "lucide-react";
+import { Button, ConfirmDialog, Icon, StatusBadge, TextField, Menu, MenuItem } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
 
 interface MeetingHeaderProps extends MeetingDownloadsProps {
   title: string | null;
   createdAt: string | null;
-  onBack: () => void;
   /** Stage derived once by the page, the same one the processing stepper shows. */
   stage?: DetectedStage;
   processState?: string;
   speakerCount?: number;
 }
 
-export function MeetingHeader({ title, createdAt, onBack, stage, processState, speakerCount, ...downloads }: MeetingHeaderProps) {
+export function MeetingHeader({ title, createdAt, stage, processState, speakerCount, ...downloads }: MeetingHeaderProps) {
   const duration = downloads.manifest?.duration_seconds;
   const totalSeconds = duration === undefined ? null : Math.max(0, Math.floor(duration));
   const durationLabel = totalSeconds === null ? null : totalSeconds >= 3600
@@ -68,12 +68,6 @@ export function MeetingHeader({ title, createdAt, onBack, stage, processState, s
   }
 
   return <header className="meeting-header" aria-busy={busy || undefined}>
-    <a className="meeting-back" href="/" onClick={event => {
-      if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
-        event.preventDefault();
-        onBack();
-      }
-    }}>{text.back}</a>
     <div className="meeting-heading-row">
       <div className="meeting-heading">
         {editing ? <form className="meeting-rename" onSubmit={event => { event.preventDefault(); void save(); }}>
@@ -97,12 +91,13 @@ export function MeetingHeader({ title, createdAt, onBack, stage, processState, s
       </div>
       <div className="meeting-actions">
         <MeetingDownloads {...downloads} title={renamedTitle ?? title} />
-        {!editing && <Button variant="secondary" disabled={busy} onClick={() => {
-          setDraft(renamedTitle ?? title ?? ""); setEditing(true); setError(null);
-        }}>{text.rename}</Button>}
-        <Menu label={text.moreActions}>
+        <Menu label={text.moreActions} tooltip trigger={<Icon icon={Ellipsis} />}
+          triggerClassName="ui-icon-button ui-icon-button--quiet">
+          {!editing && <MenuItem disabled={busy} onSelect={() => {
+            setDraft(renamedTitle ?? title ?? ""); setEditing(true); setError(null);
+          }}><Icon icon={Pencil} />{text.rename}</MenuItem>}
           <MenuItem tone="danger" disabled={busy || editing}
-            onSelect={() => { setConfirming(true); setError(null); }}>{text.deleteRecording}</MenuItem>
+            onSelect={() => { setConfirming(true); setError(null); }}><Icon icon={Trash2} />{text.deleteRecording}</MenuItem>
         </Menu>
       </div>
     </div>

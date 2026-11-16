@@ -16,8 +16,8 @@ from sqlalchemy.engine import make_url
 from alembic import command
 
 BACKEND = Path(__file__).parents[2]
-REVISION = "021_recording_thumbnail"
-PARENT = "020_default_summary_structure"
+REVISION = "022_recording_thumbnail"
+PARENT = "021_default_summary_legacy_default"
 
 
 def test_revision_is_the_single_head_after_the_summary_structure_revision() -> None:

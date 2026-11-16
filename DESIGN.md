@@ -203,7 +203,7 @@ Mediciones (Chrome en macOS, 14px): con `font-variant-numeric: tabular-nums`, `0
 - *Panel lateral:* 236px expandido; carril de 60px (solo iconos, con tooltip al pasar el cursor o enfocar) y botón `PanelLeft` para alternar. La elección se recuerda por dispositivo en `localStorage` (si el almacenamiento está bloqueado, solo dura la visita); bajo 1320px arranca contraído. Bajo 640px es un cajón fuera de pantalla que se abre desde una barra superior delgada: foco dentro al abrir y de vuelta al cerrar, Escape y velo lo cierran, `aria-expanded` en el botón. Contenido: «Biblioteca» (fila seleccionada con `accent-soft`) y, abajo, la tarjeta de perfil (avatar con iniciales, nombre con elipsis, correo en `fg-subtle`) con un menú de «Cerrar sesión» y el engranaje hacia `/settings`.
 - *Biblioteca:* título, tarjeta de búsqueda, grupos por fecha y filas-tarjeta en una columna. Cada fila lleva borde izquierdo de estado, miniatura, título, tema, metadatos, insignia y chevron. La miniatura es un recuadro fijo de 96×54 (16:9, radio `sm`, borde `border`, fondo `fill`) con `object-fit: cover`, carga diferida y `alt` vacío (el título está al lado); sin imagen disponible, o si falla al cargar, muestra un icono Lucide (`Video`, o `AudioLines` si es solo audio) en `fg-subtle`.
 - *Subir:* columna de máximo 880px; zona de arrastre con borde discontinuo 2px, un único botón primario.
-- *Reunión:* una columna hasta 1023px; desde 1024px, rejilla 2fr/1fr con reproductor y transcripción a la izquierda y resumen/hablantes a la derecha. La transcripción son turnos de lectura (16px, interlineado 1.7) con avatar, hablante en su color y marca de tiempo.
+- *Reunión:* sin enlace de regreso (el panel lateral lleva a la biblioteca). La tarjeta del reproductor abre con la cabecera de la reunión (título como único `h1`, insignia de estado, fecha, duración, hablantes y los iconos de acción a la derecha; en móvil las acciones pasan a su propia fila) y está siempre presente; la tarjeta de progreso va justo debajo. Una columna hasta 1023px; desde 1024px, rejilla 2fr/1fr con reproductor y transcripción a la izquierda y resumen/hablantes a la derecha. La transcripción son turnos de lectura (16px, interlineado 1.7) con avatar, hablante en su color y marca de tiempo.
 
 **Panel lateral de la extensión.** Una columna de ancho variable (320–480px). Cabecera con marca e iconos de 44px, cuerpo con tarjetas de 16px de padding, acciones a todo el ancho (la principal con peso 1.4). Cronómetro de 40–56px con cifras tabulares.
 
@@ -223,14 +223,14 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 - **Insignias.** Pastilla con texto siempre presente: éxito (`accent-soft`/`accent-soft-fg`), progreso (`warning-soft`/`warning-soft-fg`), error (`danger-soft`/`danger-soft-fg`), neutral (`fill`/`fg-muted`).
 - **Diálogos.** `<dialog>` nativo: borde, radio `lg`, `shadow-md`, velo `scrim`, título, acción secundaria antes de la principal, foco inicial dentro, cierre con Escape y retorno del foco al disparador.
 - **Menús.** Panel `surface`, borde, `shadow-md`, filas de 44px, hover `fill-hover`, elemento destructivo en `danger-text`, navegación por teclado.
-- **Tooltips.** (Hoy solo los de los iconos del carril del panel lateral, hechos con CSS a partir de la etiqueta oculta; sin componente propio.) Solo texto breve, complemento (no reemplazo) del nombre accesible. Sin botones dentro.
+- **Tooltips.** Solo texto breve, complemento (no reemplazo) del nombre accesible; sin botones dentro. Los iconos del carril del panel lateral usan CSS a partir de la etiqueta oculta. En el portal, `useTooltip` (`ui/Tooltip.tsx`, hoy en el disparador de `Menu` con `tooltip`) usa `role="tooltip"` enlazado con `aria-describedby`, aparece tras 400ms con el puntero o el foco de teclado y se cierra con Escape.
 - **Avisos (toasts).** (Regla para cuando se creen.) Esquina inferior, `surface-raised`, borde y `shadow-md`; se anuncian con `role="status"` (error: `role="alert"`).
 - **Progreso y pasos.** Barra de 12px, pista `fill-strong`, relleno `accent`. Sin estimación, la barra indeterminada pulsa en `accent-muted` (sin degradados). El paso actual se marca con número, contorno de acento y texto en negrita, no solo color.
 
 ## 8. Iconos
 
 - Familia **Lucide**, lineal, heredan `currentColor`. Los componentes React usan `core/design/Icon.tsx` y el overlay `overlay/icons.ts`; ambos toman tamaño (18) y trazo (1.75) de `core/design/iconDefaults.ts`, un único punto de cambio. No se cambia la librería ni el trazo sin necesidad documentada.
-- Escala: `icon-xs` 12, `icon-sm` 14, `icon-md` 16, `icon-lg` 18. Botón de icono: 44×44 con icono 16–18.
+- Escala: `icon-xs` 12, `icon-sm` 14, `icon-md` 16, `icon-lg` 18. Botón de icono: 44×44 con icono 16–18. En el portal, `.ui-icon-button` (primario `--primary` para la acción principal del grupo, `--quiet` para las secundarias).
 - Decorativo: `aria-hidden="true"`; acción solo con icono: nombre accesible (`aria-label`).
 - El color de un icono lo da el texto que lo rodea (`fg-muted`, `accent-text`, `danger-text`).
 

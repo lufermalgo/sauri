@@ -4,8 +4,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "021_recording_thumbnail"
-down_revision = "020_default_summary_structure"
+revision = "022_recording_thumbnail"
+down_revision = "021_default_summary_legacy_default"
 branch_labels = None
 depends_on = None
 
