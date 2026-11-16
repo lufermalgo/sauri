@@ -1,11 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, MouseEvent } from "react";
-import { AudioLines, Download, Ellipsis, Pencil, Trash2, Video } from "lucide-react";
+import { AudioLines, Ellipsis, FileText, Pencil, ScrollText, Trash2, Video } from "lucide-react";
 import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { copy } from "../copy/es";
 import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
-import { Icon, Menu, MenuItem, ProgressBar, StatusBadge, useTooltip } from "./ui";
+import { Icon, Menu, MenuItem, MenuSeparator, ProgressBar, StatusBadge, useTooltip } from "./ui";
 
 const text = copy.library;
 
@@ -70,6 +70,13 @@ export function formatDuration(totalSeconds: number): string {
 export function isReady(meeting: MeetingListItem): boolean {
   return meeting.processState === ProcessState.Completed;
 }
+
+/** A recording whose summary can be downloaded: the list reports its topic only once a summary exists. */
+export function hasSummary(meeting: MeetingListItem): boolean {
+  return isReady(meeting) && meeting.summaryTopic !== null;
+}
+
+export type RowDownloadKind = "transcript" | "summary" | "media";
 
 /** Compact estimate for rows in transcription; nothing when there is no honest estimate. */
 function RowProgress({ meeting }: { meeting: MeetingListItem }) {
@@ -176,19 +183,21 @@ export interface LibraryRowProps {
   renaming: boolean;
   /** Last failed action on this row (download, delete). */
   error: string | null;
+  /** Progress or outcome of a download in flight, shown under the row. */
+  notice: string | null;
   onOpen: (meeting: MeetingListItem, modifiers: { range: boolean; toggle: boolean }) => void;
   onToggleChecked: (id: string, range: boolean) => void;
   onFocusRow: (id: string) => void;
   onStartRename: (id: string) => void;
   onRename: (id: string, title: string) => Promise<void>;
   onCancelRename: () => void;
-  onDownload: (meeting: MeetingListItem) => void;
+  onDownload: (meeting: MeetingListItem, kind: RowDownloadKind) => void;
   onDelete: (meeting: MeetingListItem) => void;
 }
 
 /** One recording: title line, meta line and status chip; selection checkbox and actions menu beside it. */
 export function LibraryRow({
-  meeting, open, checked, tabbable, renaming, error, onOpen, onToggleChecked, onFocusRow,
+  meeting, open, checked, tabbable, renaming, error, notice, onOpen, onToggleChecked, onFocusRow,
   onStartRename, onRename, onCancelRename, onDownload, onDelete,
 }: LibraryRowProps) {
   const tone = STATE_TONES[meeting.processState];
@@ -204,6 +213,8 @@ export function LibraryRow({
     ? meeting.speakerCount
     : null;
   const ready = isReady(meeting);
+  const summaryReady = hasSummary(meeting);
+  const audioOnly = meeting.mediaKind === "audio";
 
   const item = useRef<HTMLLIElement>(null);
   const openButton = useRef<HTMLButtonElement>(null);
@@ -281,9 +292,19 @@ export function LibraryRow({
                 <Icon icon={Pencil} size={16} />{text.row.rename}
               </MenuItem>
               <MenuItem disabled={!ready} hint={ready ? undefined : text.row.downloadUnavailable}
-                onSelect={() => onDownload(meeting)}>
-                <Icon icon={Download} size={16} />{text.row.downloadTranscript}
+                onSelect={() => onDownload(meeting, "transcript")}>
+                <Icon icon={FileText} size={16} />{text.row.downloadTranscript}
               </MenuItem>
+              <MenuItem disabled={!summaryReady} hint={summaryReady ? undefined : text.row.downloadSummaryUnavailable}
+                onSelect={() => onDownload(meeting, "summary")}>
+                <Icon icon={ScrollText} size={16} />{text.row.downloadSummary}
+              </MenuItem>
+              <MenuItem disabled={!ready} hint={ready ? undefined : text.row.downloadMediaUnavailable}
+                onSelect={() => onDownload(meeting, "media")}>
+                <Icon icon={audioOnly ? AudioLines : Video} size={16} />
+                {audioOnly ? text.row.downloadAudio : text.row.downloadVideo}
+              </MenuItem>
+              <MenuSeparator />
               <MenuItem tone="danger" onSelect={() => onDelete(meeting)}>
                 <Icon icon={Trash2} size={16} />{text.row.delete}
               </MenuItem>
@@ -292,6 +313,7 @@ export function LibraryRow({
           {tip.tooltip}
         </>
       )}
+      {notice && <p role="status" className="library-row-notice">{notice}</p>}
       {error && <p role="alert" className="library-row-error">{error}</p>}
     </li>
   );

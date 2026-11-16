@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import type { MeetingSummary, SummaryBlock, SummaryKeyPoint, SummaryRequestStatus, SummarySource } from "@sauri/shared-types";
+import type { MeetingSummary, SummaryRequestStatus, SummarySource } from "@sauri/shared-types";
 import type { SummarySignal } from "../processing-estimate";
 import { getLatestSummaryRequest, getMeetingSummary, requestMeetingSummary } from "../api";
 import { copy } from "../copy/es";
+import { isBlock, summaryPlainText } from "../summary-export";
+import { saveSummary } from "../summary-download";
 import { StageProgress } from "./StageProgress";
 import { Button, Skeleton, SkeletonLines, StatusBadge } from "./ui";
 import "../styles/summary.css";
 
 interface SummaryPanelProps {
   meetingId: string;
+  /** Current meeting title: names the downloaded file. */
+  title?: string | null;
   onSeek: (startMs: number) => void;
   // False while the transcript is still being produced: summary generation starts on its own then.
   transcriptReady?: boolean;
@@ -60,30 +64,6 @@ function GeneratingSkeleton({ progress }: { progress: NonNullable<SummaryPanelPr
 function timestamp(ms: number): string {
   const seconds = Math.floor(ms / 1000);
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
-}
-
-function isBlock(point: SummaryKeyPoint | SummaryBlock | string): point is SummaryBlock {
-  return typeof point !== "string" && "title" in point;
-}
-
-// The exact plain text that "Copy" puts on the clipboard and "Download" saves. It never carries
-// minutes or timestamps: sources are only offered as links in the panel.
-function summaryPlainText(summary: MeetingSummary): string {
-  const text = copy.summary;
-  if (summary.schemaVersion !== 2) {
-    return [summary.topic, ...summary.keyPoints.map((point) =>
-      `- ${typeof point === "string" ? point : isBlock(point) ? point.title : point.text}`,
-    )].join("\n");
-  }
-  const blocks = summary.keyPoints.filter(isBlock).map((block, index) => [
-    `${index + 1}. ${block.title}`,
-    ...block.items.flatMap((item) => [`- ${item.text}`, ...item.subItems.map((sub) => `  - ${sub}`)]),
-  ].join("\n"));
-  return [
-    `${text.mainTopic}\n${summary.topic}`,
-    `${text.detailedKeyPoints}\n${blocks.join("\n\n")}`,
-    ...(summary.conclusion ? [`${text.conclusion}\n${summary.conclusion}`] : []),
-  ].join("\n\n");
 }
 
 function SourceChips({ sources, onSeek }: { sources: SummarySource[]; onSeek: (startMs: number) => void }) {
@@ -148,7 +128,7 @@ export function SummaryPanel(props: SummaryPanelProps) {
 }
 
 function MeetingSummaryPanel({
-  meetingId, onSeek, transcriptReady = true, onSummaryChange, expectAutoRequest = false, onSignalChange,
+  meetingId, title, onSeek, transcriptReady = true, onSummaryChange, expectAutoRequest = false, onSignalChange,
   progress = { audioSeconds: null, createdAt: null, stageStartedAt: null },
 }: SummaryPanelProps) {
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
@@ -254,16 +234,7 @@ function MeetingSummaryPanel({
   }
 
   function downloadSummary() {
-    if (!summary) return;
-    const blob = new Blob([summaryPlainText(summary)], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `resumen-${meetingId}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    if (summary) saveSummary(summary, title);
   }
 
   const currentRequest = request && (!summary || request.generation > summary.generation) ? request : null;
