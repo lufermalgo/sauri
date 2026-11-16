@@ -10,7 +10,6 @@ import { THEME_STORAGE_KEY, initTheme } from "../theme";
 import { answerEnginesApi } from "./engineApiStub";
 import { PortalShell } from "./PortalShell";
 import { SettingsView } from "./SettingsView";
-import { SIDEBAR_STORAGE_KEY } from "./useSidebar";
 import { t } from "../i18n";
 
 const owner = { name: "Ana Maria Perez", email: "ana@example.test" };
@@ -200,6 +199,15 @@ describe("settings search", () => {
     expect(shown()).toEqual([t("settings:categories.account.label")]);
     type("quien habla");
     expect(shown()).toEqual([t("settings:categories.speakers.label")]);
+  });
+
+  it("no longer finds the removed side panel setting", () => {
+    open();
+    render(<Harness />);
+    type("plegar");
+    expect(shown()).toEqual([]);
+    type("panel lateral");
+    expect(shown()).toEqual([]);
   });
 
   it("hides empty groups and announces the count politely", () => {
@@ -401,53 +409,12 @@ describe("appearance: theme", () => {
   });
 });
 
-describe("appearance: side panel", () => {
-  const sidebarSwitch = () => screen.getByRole("switch", { name: t("settings:appearance.sidebarSwitch") });
-
-  it("reflects and changes the stored sidebar preference", () => {
+describe("appearance: no side panel setting", () => {
+  it("only offers language and theme; the panel is controlled by its own toggle", () => {
     open("appearance");
     render(<Harness />);
-    expect(sidebarSwitch()).toHaveAttribute("aria-checked", "false");
-    fireEvent.click(sidebarSwitch());
-    expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe("1");
-    expect(sidebarSwitch()).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(sidebarSwitch());
-    expect(localStorage.getItem(SIDEBAR_STORAGE_KEY)).toBe("0");
-    expect(sidebarSwitch()).toHaveAttribute("aria-checked", "false");
-  });
-
-  it("starts from the stored preference", () => {
-    localStorage.setItem(SIDEBAR_STORAGE_KEY, "1");
-    open("appearance");
-    render(<Harness />);
-    expect(sidebarSwitch()).toHaveAttribute("aria-checked", "true");
-  });
-
-  it("collapses the live side panel without a reload and stays in sync with its toggle", () => {
-    open("appearance");
-    render(
-      <PortalShell route={{ name: "settings", category: "appearance" }} user={owner} onLogout={vi.fn()}>
-        <Harness />
-      </PortalShell>,
-    );
-    const root = document.querySelector<HTMLElement>(".shell-root")!;
-    expect(root.dataset.mode).toBe("full");
-    fireEvent.click(sidebarSwitch());
-    expect(root.dataset.mode).toBe("rail");
-
-    fireEvent.click(screen.getByRole("button", { name: t("shell:sidebar.toggle") }));
-    expect(root.dataset.mode).toBe("full");
-    expect(sidebarSwitch()).toHaveAttribute("aria-checked", "false");
-  });
-
-  it("keeps the choice for this visit when storage is blocked", () => {
-    vi.stubGlobal("localStorage", blockedStorage());
-    open("appearance");
-    render(<Harness />);
-    fireEvent.click(sidebarSwitch());
-    expect(sidebarSwitch()).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(sidebarSwitch());
-    expect(sidebarSwitch()).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByRole("switch")).toBeNull();
+    expect(screen.queryByText(/panel/i)).toBeNull();
   });
 });
 
