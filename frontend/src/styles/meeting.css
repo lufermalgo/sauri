@@ -168,10 +168,10 @@
 .meeting-dock { min-width: 0; margin-top: var(--ds-space-3); border: 1px solid var(--ds-border); background: var(--ds-surface); }
 .meeting-dock-inner { display: flex; flex-direction: column; max-height: min(45vh, 26rem); min-height: 0; }
 .meeting-dock-header { display: flex; flex: none; align-items: center; justify-content: space-between; gap: var(--ds-space-2); box-sizing: border-box; min-height: 40px; padding: 0 var(--ds-space-1) 0 var(--ds-space-3); border-bottom: 1px solid var(--ds-border); }
-.meeting-dock-title { margin: 0; font-size: var(--ds-text-md); font-weight: var(--ds-weight-semibold); }
+.meeting-dock-title { margin: 0; font-size: var(--ds-text-lg); font-weight: var(--ds-weight-semibold); }
 .meeting-dock-close { position: relative; flex: none; }
 .meeting-dock-close .ui-tooltip { right: 0; left: auto; }
-.meeting-dock-body { flex: 1 1 auto; min-height: 0; padding: var(--ds-space-2) var(--ds-space-3) var(--ds-space-3); overflow-y: auto; overscroll-behavior: contain; }
+.meeting-dock-body { flex: 1 1 auto; min-height: 0; padding: 0 0 var(--ds-space-2); overflow-y: auto; overscroll-behavior: contain; }
 @media (prefers-reduced-motion: no-preference) {
   .meeting-dock { animation: meeting-dock-in var(--ds-duration) var(--ds-ease); }
 }
@@ -193,40 +193,47 @@
   .meeting-player--docked > .meeting-dock > .meeting-dock-inner { position: absolute; inset: 0; max-height: none; }
 }
 
-/* Speaker identification rows, shown in the panel beside the video. */
-.meeting-review-item { padding-block: var(--ds-space-2); border-top: 1px solid var(--ds-border); overflow-wrap: anywhere; }
-.meeting-review-item:first-of-type { padding-top: 0; border-top: 0; }
-/* The speaker talking at the current playback position, so a face on screen can be matched to a row. */
-.meeting-review-item--speaking { background: var(--ds-highlight); box-shadow: inset 3px 0 0 var(--meeting-speaker); }
-.meeting-review-item > p { margin: 0 0 var(--ds-space-2); padding-inline-start: calc(var(--ds-icon-button-sm) + var(--ds-space-2) + 28px + var(--ds-space-2)); font-size: var(--ds-text-xs); color: var(--ds-fg-muted); }
-/* One line per speaker: [play] [avatar] [name + status] [pencil]. */
-.meeting-review-row { display: flex; align-items: center; gap: var(--ds-space-2); min-height: 44px; min-width: 0; }
+/*
+ * Speaker identification rows, shown in the panel beside the video. Each row is a three-column grid
+ * [ avatar | name | actions ] so avatars, names and buttons line up from row to row. Assigned rows show only
+ * the name; a speaker that still needs a name carries a small state badge under it.
+ */
+.meeting-review-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; column-gap: var(--ds-space-2); padding: var(--ds-space-1) var(--ds-space-3); border-top: 1px solid var(--ds-fill-strong); overflow-wrap: anywhere; box-shadow: inset 3px 0 0 transparent; transition: background-color var(--ds-duration) var(--ds-ease); }
+@media (hover: hover) {
+  .meeting-review-item:hover { background: var(--ds-fill-hover); }
+}
+/* The speaker talking at the current playback position: the transcript's highlight, softened, plus the speaker's color bar. */
+.meeting-review-item--speaking, .meeting-review-item--speaking:hover { background: color-mix(in srgb, var(--ds-highlight) 55%, var(--ds-surface)); box-shadow: inset 3px 0 0 var(--meeting-speaker); }
+.meeting-review-item--speaking .meeting-review-name { font-weight: var(--ds-weight-semibold); }
+.meeting-review-item > p { grid-column: 2 / -1; margin: 0; padding-block: var(--ds-space-1); font-size: var(--ds-text-xs); color: var(--ds-fg-muted); }
+.meeting-review-identity { position: relative; min-width: 0; padding-block: var(--ds-space-1); }
+.meeting-review-name { margin: 0; overflow: hidden; font-size: var(--ds-text-md); font-weight: var(--ds-weight-medium); line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+/* "Name - Organization": the organization is secondary and is the first part to be cut by the ellipsis. */
+.meeting-review-org { font-weight: var(--ds-weight-regular); color: var(--ds-fg-muted); }
+.meeting-review-identity .ui-tooltip { right: auto; left: 0; width: max-content; max-width: min(18rem, 70vw); white-space: normal; }
+.meeting-review-status { margin-top: 2px; }
+.meeting-review-actions { display: flex; align-items: center; gap: 2px; }
 .meeting-review-play, .meeting-review-edit-trigger { position: relative; flex: none; }
-.meeting-review-play .ui-tooltip { right: auto; left: 0; }
-/* Names can be long: let tooltips wrap inside the panel instead of widening its scroll area. */
-.meeting-review-play .ui-tooltip, .meeting-review-edit-trigger .ui-tooltip { width: max-content; max-width: min(16rem, 60vw); white-space: normal; }
-.meeting-review-identity { flex: 1; min-width: 0; }
-.meeting-review-name { margin: 0; overflow: hidden; font-size: var(--ds-text-md); font-weight: var(--ds-weight-semibold); text-overflow: ellipsis; white-space: nowrap; }
-.meeting-review-status { display: block; font-size: var(--ds-text-xs); color: var(--ds-fg-muted); }
-.meeting-review-edit + .meeting-review-status { margin-top: var(--ds-space-1); }
-.meeting-review-status--pending { color: var(--ds-warning); }
+.meeting-review-play .ui-tooltip, .meeting-review-edit-trigger .ui-tooltip { right: 0; left: auto; width: max-content; max-width: min(16rem, 60vw); white-space: normal; }
+.meeting-review-play .ui-icon-button--ghost { color: var(--ds-accent-text); }
 .meeting-review-edit { position: relative; display: flex; align-items: center; }
-.meeting-review-input { padding-inline-end: calc(var(--ds-space-3) + var(--ds-space-6)); font: inherit; font-size: var(--ds-text-md); font-weight: var(--ds-weight-semibold); }
+.meeting-review-input { min-height: var(--ds-control-h-sm); padding-inline-end: calc(var(--ds-space-3) + var(--ds-space-6)); font: inherit; font-size: var(--ds-text-md); font-weight: var(--ds-weight-medium); }
 .meeting-review-edit .meeting-review-spinner { position: absolute; right: var(--ds-space-3); display: inline-flex; color: var(--ds-fg-muted); }
-.meeting-speaker-review > p[role="status"]:not(.meeting-sr-only) { margin: 0 0 var(--ds-space-2); color: var(--ds-fg-muted); font-size: var(--ds-text-xs); }
+.meeting-speaker-review > p[role="status"]:not(.meeting-sr-only) { margin: 0; padding: var(--ds-space-2) var(--ds-space-3); color: var(--ds-fg-muted); font-size: var(--ds-text-xs); }
 .meeting-review-field-error { margin: var(--ds-space-1) 0 0; font-size: var(--ds-text-xs); color: var(--ds-danger-text); }
-.meeting-review-suggest { padding-inline-start: calc(var(--ds-icon-button-sm) + var(--ds-space-2) + 28px + var(--ds-space-2)); }
-.meeting-review-chip { min-height: var(--ds-control-h-sm); padding: 0 var(--ds-space-3); font: inherit; font-size: var(--ds-text-xs); font-weight: var(--ds-weight-semibold); color: var(--ds-accent-soft-fg); background: var(--ds-accent-soft); border: 0; border-radius: var(--ds-radius-pill); cursor: pointer; }
+.meeting-review-suggest { grid-column: 2 / -1; padding-block: 0 var(--ds-space-1); }
+.meeting-review-chip { position: relative; min-height: 24px; padding: 0 var(--ds-space-2); font: inherit; font-size: var(--ds-text-xs); font-weight: var(--ds-weight-semibold); color: var(--ds-accent-soft-fg); background: var(--ds-accent-soft); border: 0; border-radius: var(--ds-radius-pill); cursor: pointer; }
 .meeting-review-chip:disabled, .meeting-review-leave:disabled { opacity: 0.5; cursor: default; }
-.meeting-review-footer { margin-top: var(--ds-space-2); padding-top: var(--ds-space-2); border-top: 1px solid var(--ds-border); }
-.meeting-review-leave { min-height: var(--ds-control-h-sm); padding: 0 var(--ds-space-1); font: inherit; font-size: var(--ds-text-sm); color: var(--ds-accent-text); background: transparent; border: 0; text-decoration: underline; cursor: pointer; }
+.meeting-review-footer { padding: var(--ds-space-2) var(--ds-space-3) 0; border-top: 1px solid var(--ds-fill-strong); }
+.meeting-review-leave { min-height: var(--ds-control-h-sm); padding: 0; font: inherit; font-size: var(--ds-text-sm); color: var(--ds-accent-text); background: transparent; border: 0; text-decoration: underline; cursor: pointer; }
 .meeting-review-leave:hover:not(:disabled) { color: var(--ds-accent-hover); }
 @media (prefers-reduced-motion: no-preference) {
   .meeting-review-spinner svg { animation: meeting-review-spin 1s linear infinite; }
 }
 @keyframes meeting-review-spin { to { transform: rotate(360deg); } }
-@media (max-width: 480px) {
-  .meeting-review-row { gap: var(--ds-space-1); }
+@media (pointer: coarse) {
+  /* Touch: the chip keeps its look and gains a 44px hit area. */
+  .meeting-review-chip::after { content: ""; position: absolute; inset: -10px -4px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .meeting-turn-play { transition: none; }

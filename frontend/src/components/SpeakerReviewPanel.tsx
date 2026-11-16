@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent, RefObject } from "react";
 import { LoaderCircle, Pause, Pencil, Play } from "lucide-react";
 import type { SpeakerDisposition } from "../api";
 import type { ListeningInterval } from "../speaker-review-interval";
-import { Avatar, Icon, useTooltip } from "./ui";
+import { Avatar, Icon, StatusBadge, useTooltip } from "./ui";
 import { t, useT } from "../i18n";
 import { toUpperLocale } from "../i18n/format";
 
@@ -54,6 +54,32 @@ export function avatarText(label: string, generic: boolean): string {
   const numbered = /^(\S+)\s+(\d+)$/.exec(label.trim());
   if (numbered) return firstGrapheme(numbered[1]) + numbered[2];
   return label.trim().split(/\s+/).slice(0, 2).map(firstGrapheme).join("");
+}
+
+/**
+ * Splits the "Name - Organization" convention used for speakers (for example "Ana Perez - Summan") so the
+ * organization can be shown as secondary text. The stored label is never changed: `tail` keeps the original
+ * separator, so name + tail is exactly the label.
+ */
+export function splitOrganization(label: string): { name: string; tail: string } {
+  const match = /^(.+?)(\s+[-\u2013\u2014]\s+\S.*)$/.exec(label.trim());
+  return match ? { name: match[1], tail: match[2] } : { name: label, tail: "" };
+}
+
+/** True while the text of `ref` is cut by its ellipsis, so a tooltip can show the whole name. */
+function useIsTruncated(ref: RefObject<HTMLElement>, key: unknown): boolean {
+  const [truncated, setTruncated] = useState(false);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) { setTruncated(false); return; }
+    const measure = () => setTruncated(element.scrollWidth > element.clientWidth + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, key]);
+  return truncated;
 }
 
 /** Speaker identification list shown in the panel beside the video: one row per speaker. */
@@ -126,6 +152,9 @@ function SpeakerRow({ row, busy, playing, speaking, playbackReady, playbackLoadi
   const playTip = useTooltip(playing ? t("speakerReview:stopFor", { label }) : playName);
   const editName = t("speakerReview:editName", { label });
   const editTip = useTooltip(editName);
+  const nameRef = useRef<HTMLHeadingElement>(null);
+  const truncated = useIsTruncated(nameRef, `${label}|${editing}`);
+  const nameTip = useTooltip(truncated && !editing ? label : undefined);
 
   useEffect(() => {
     if (editing) {
@@ -192,34 +221,42 @@ function SpeakerRow({ row, busy, playing, speaking, playbackReady, playbackLoadi
   }
 
   const status = statusText(row);
+  const pending = row.generic && row.disposition === null;
   const suggested = !row.generic && row.disposition === null;
-  return <article className={`meeting-review-item${speaking ? " meeting-review-item--speaking" : ""}`}
+  const { name: person, tail } = row.generic ? { name: label, tail: "" } : splitOrganization(label);
+  return <article className={`meeting-review-item${speaking ? " meeting-review-item--speaking" : ""}${pending ? " meeting-review-item--pending" : ""}`}
     style={{ "--meeting-speaker": row.color } as CSSProperties}
     aria-current={speaking ? "true" : undefined} aria-busy={busy || saving || undefined}>
-    <div className="meeting-review-row">
+    <Avatar initials={avatarText(label, row.generic)} color={row.color} size="md" />
+    <div className="meeting-review-identity">
+      {editing
+        ? <div className="meeting-review-edit">
+          <input ref={inputRef} className="ui-input meeting-review-input" type="text" value={draft}
+            maxLength={64} aria-label={t("speakerReview:nameFor", { label })} readOnly={saving} aria-busy={saving || undefined}
+            aria-invalid={rowError ? true : undefined} aria-describedby={rowError ? errorId : undefined}
+            onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={() => void commit("blur")} />
+          {saving && <span className="meeting-review-spinner"><Icon icon={LoaderCircle} size={16} /></span>}
+        </div>
+        : <h3 ref={nameRef} className="meeting-review-name" {...nameTip.triggerProps}>
+          {person}{tail && <span className="meeting-review-org">{tail}</span>}
+        </h3>}
+      {!editing && nameTip.tooltip}
+      {editing && rowError
+        ? <p id={errorId} className="meeting-review-field-error">{rowError}</p>
+        // Only a speaker that still needs a name shows its state; for the rest it stays available to screen readers.
+        : editing ? null
+          : pending ? <StatusBadge tone="progress" dot className="meeting-review-status">{status}</StatusBadge>
+          : <span className="meeting-sr-only">{status}</span>}
+    </div>
+    <div className="meeting-review-actions">
       <span className="meeting-review-play">
-        <button type="button" className={`ui-icon-button${playing ? " ui-icon-button--primary" : ""}`}
+        <button type="button" className={`ui-icon-button ${playing ? "ui-icon-button--primary" : "ui-icon-button--ghost"}`}
           aria-label={playName} aria-pressed={playing} {...playTip.triggerProps}
           onClick={() => { playTip.hide(); onListen(row); }} disabled={!interval || !playbackReady}>
           <Icon icon={playing ? Pause : Play} size={16} />
         </button>
         {playTip.tooltip}
       </span>
-      <Avatar initials={avatarText(label, row.generic)} color={row.color} size="md" />
-      <div className="meeting-review-identity">
-        {editing
-          ? <div className="meeting-review-edit">
-            <input ref={inputRef} className="ui-input meeting-review-input" type="text" value={draft}
-              maxLength={64} aria-label={t("speakerReview:nameFor", { label })} readOnly={saving} aria-busy={saving || undefined}
-              aria-invalid={rowError ? true : undefined} aria-describedby={rowError ? errorId : undefined}
-              onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={() => void commit("blur")} />
-            {saving && <span className="meeting-review-spinner"><Icon icon={LoaderCircle} size={16} /></span>}
-          </div>
-          : <h3 className="meeting-review-name">{label}</h3>}
-        {editing && rowError
-          ? <p id={errorId} className="meeting-review-field-error">{rowError}</p>
-          : <span className={`meeting-review-status${row.generic && row.disposition === null ? " meeting-review-status--pending" : ""}`}>{status}</span>}
-      </div>
       {!editing && <span className="meeting-review-edit-trigger">
         <button ref={pencilRef} type="button" className="ui-icon-button ui-icon-button--ghost"
           aria-label={editName} {...editTip.triggerProps} onClick={startEdit} disabled={busy}>
