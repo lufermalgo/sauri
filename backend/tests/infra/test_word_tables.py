@@ -160,7 +160,7 @@ async def _counts(factory: async_sessionmaker[AsyncSession], transcript_id: str)
 
 def test_head_is_single_and_chains_after_summary_failure_cause() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["020_default_summary_structure"]
+    assert script.get_heads() == ["021_default_summary_legacy_default"]
     assert script.get_revision("019_failed_summary_request").down_revision == "018_transcript_language_default"
     assert script.get_revision("017_transcript_words").down_revision == "016_summary_failure_cause"
 
