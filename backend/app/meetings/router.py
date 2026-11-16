@@ -61,7 +61,7 @@ from app.meetings.service import (
     rename_meeting,
     request_join,
 )
-from app.meetings.signed_urls import signed_url_ttl_seconds
+from app.meetings.signed_urls import playback_url_ttl_seconds, signed_url_ttl_seconds
 from app.meetings.speaker_review_service import SpeakerReviewService
 from app.regeneration import service as regeneration_service
 
@@ -522,7 +522,7 @@ async def get_playback_manifest(
                 raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
 
             object_store = _get_object_store()
-            ttl_seconds = signed_url_ttl_seconds()
+            ttl_seconds = playback_url_ttl_seconds()
             audio_url = await object_store.temporary_read_url(
                 inventory.audio_source.object_ref, ttl_seconds=ttl_seconds
             )

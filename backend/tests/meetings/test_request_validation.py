@@ -15,7 +15,9 @@ from app.auth.token import create_token
 from app.infra.models import Meeting
 from app.meetings.schemas import MAX_INT32, MeetingCreate
 from app.meetings.signed_urls import (
+    DEFAULT_PLAYBACK_URL_TTL_SECONDS,
     DEFAULT_SIGNED_URL_TTL_SECONDS,
+    playback_url_ttl_seconds,
     signed_url_ttl_seconds,
 )
 
@@ -283,3 +285,31 @@ def test_signed_link_lifetime_outside_the_range_raises(
     monkeypatch.setenv("SIGNED_URL_TTL_SECONDS", raw)
     with pytest.raises(ValueError):
         signed_url_ttl_seconds()
+
+
+def test_playback_link_lifetime_defaults_to_four_hours_to_outlast_a_long_recording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PLAYBACK_URL_TTL_SECONDS", raising=False)
+    monkeypatch.setenv("SIGNED_URL_TTL_SECONDS", "60")  # the two settings are independent
+    assert playback_url_ttl_seconds() == DEFAULT_PLAYBACK_URL_TTL_SECONDS == 14_400
+    assert playback_url_ttl_seconds() > 94 * 60  # the longest recording measured so far
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"), [("300", 300), ("43200", 43200), ("7200", 7200), ("", 14_400)]
+)
+def test_playback_link_lifetime_accepts_the_documented_range(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: int
+) -> None:
+    monkeypatch.setenv("PLAYBACK_URL_TTL_SECONDS", raw)
+    assert playback_url_ttl_seconds() == expected
+
+
+@pytest.mark.parametrize("raw", ["299", "43201", "0", "-5", "four", "1.5"])
+def test_playback_link_lifetime_outside_the_range_raises(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("PLAYBACK_URL_TTL_SECONDS", raw)
+    with pytest.raises(ValueError):
+        playback_url_ttl_seconds()

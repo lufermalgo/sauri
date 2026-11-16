@@ -130,14 +130,14 @@ async def test_owner_manifest_contains_only_signed_playback_contract(
     assert body["audio_source"]["url"].startswith(("http://", "https://"))
     assert body["audio_source"]["source_id"]
     assert body["video_sources"] == []
-    assert store.signed == [("private/test/audio.webm", 900)]
+    assert store.signed == [("private/test/audio.webm", 14400)]
     assert "private/test/audio.webm" not in response.text
     assert "audio_ref" not in body
     assert "object_ref" not in body
 
 
 @pytest.mark.asyncio
-async def test_signed_link_lifetime_follows_the_environment(
+async def test_playback_link_lifetime_follows_the_environment(
     api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.meetings import router
@@ -145,12 +145,13 @@ async def test_signed_link_lifetime_follows_the_environment(
     meeting_id = await _meeting_with_recording(api_db_url)
     store = _SyntheticObjectStore()
     monkeypatch.setattr(router, "_get_object_store", lambda: store)
-    monkeypatch.setenv("SIGNED_URL_TTL_SECONDS", "120")
+    monkeypatch.setenv("PLAYBACK_URL_TTL_SECONDS", "1200")
+    monkeypatch.setenv("SIGNED_URL_TTL_SECONDS", "120")  # thumbnails only; must not shorten playback
     response = await api_client.get(
         f"/api/v1/meetings/{meeting_id}/playback", headers=_auth_header()
     )
     assert response.status_code == 200
-    assert store.signed == [("private/test/audio.webm", 120)]
+    assert store.signed == [("private/test/audio.webm", 1200)]
 
 
 @pytest.mark.asyncio
@@ -321,7 +322,7 @@ async def test_explicit_muxed_evidence_returns_muxed_video_source(
     assert body["muxed_video_source"]["source_id"] == "muxed-id"
     assert body["muxed_video_source"]["mime_type"] == "video/webm"
     assert body["video_sources"] == []
-    assert store.signed == [("private/synthetic/muxed.webm", 900)]
+    assert store.signed == [("private/synthetic/muxed.webm", 14400)]
     assert "private/" not in response.text
 
 
@@ -390,7 +391,7 @@ async def test_only_explicit_muxed_evidence_selects_muxed_container(
 
 
 @pytest.mark.asyncio
-async def test_separate_video_choices_include_only_known_signed_offsets_and_sign_with_ttl_900(
+async def test_separate_video_choices_include_only_known_signed_offsets_and_sign_with_ttl_14400(
     api_client: AsyncClient, api_db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.meetings import router, service
@@ -420,8 +421,8 @@ async def test_separate_video_choices_include_only_known_signed_offsets_and_sign
     assert [source["video_offset_ms"] for source in body["video_sources"]] == [250, -125]
     assert len(body["video_sources"]) == 2
     assert store.signed == [
-        ("private/synthetic/audio.opus", 900),
-        ("private/synthetic/video-positive.webm", 900),
-        ("private/synthetic/video-negative.webm", 900),
+        ("private/synthetic/audio.opus", 14400),
+        ("private/synthetic/video-positive.webm", 14400),
+        ("private/synthetic/video-negative.webm", 14400),
     ]
     assert "private/" not in response.text
