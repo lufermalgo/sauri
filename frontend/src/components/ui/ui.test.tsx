@@ -3,7 +3,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { Avatar, Button, Card, ConfirmDialog, Menu, MenuItem, ProgressBar, Skeleton, SkeletonLines, StatusBadge, Tabs,
+import { Avatar, Button, Card, ConfirmDialog, Dialog, Menu, MenuItem, ProgressBar, Skeleton, SkeletonLines, StatusBadge, Tabs,
   TextField, TimeChip } from "./index";
 
 afterEach(() => {
@@ -334,5 +334,98 @@ describe("Menu custom trigger", () => {
     expect(trigger.parentElement).toHaveClass("ui-menu", "custom-root");
     fireEvent.click(trigger);
     expect(screen.getByRole("menuitem", { name: "Sign out" })).toHaveFocus();
+  });
+});
+
+describe("Dialog", () => {
+  function Harness({ onClose = () => {} }: { onClose?: () => void }) {
+    const [open, setOpen] = useState(false);
+    return <div>
+      <button type="button" onClick={() => setOpen(true)}>Open</button>
+      <input aria-label="Behind" />
+      {open && <Dialog title="Speakers" closeLabel="Close" onClose={() => { onClose(); setOpen(false); }}>
+        <button type="button">First</button>
+        <button type="button">Last</button>
+      </Dialog>}
+    </div>;
+  }
+
+  function open() {
+    const result = render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Open" });
+    opener.focus();
+    fireEvent.click(opener);
+    return { ...result, opener };
+  }
+
+  it("is a labelled modal dialog rendered in a portal on the body", () => {
+    const { container } = open();
+    const dialog = screen.getByRole("dialog", { name: "Speakers" });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(container.contains(dialog)).toBe(false);
+    expect(document.body.contains(dialog)).toBe(true);
+    expect(dialog).toHaveClass("ui-modal--md");
+    expect(screen.getByRole("heading", { name: "Speakers" })).toBeInTheDocument();
+  });
+
+  it("moves focus inside on open, makes the page inert and locks body scroll until it closes", () => {
+    const { container, opener } = open();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+    expect(container).toHaveAttribute("inert");
+    expect(document.body.style.overflow).toBe("hidden");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(container).not.toHaveAttribute("inert");
+    expect(document.body.style.overflow).toBe("");
+    expect(opener).toHaveFocus();
+  });
+
+  it("traps Tab and Shift+Tab inside the dialog", () => {
+    open();
+    const close = screen.getByRole("button", { name: "Close" });
+    const last = screen.getByRole("button", { name: "Last" });
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(last).toHaveFocus();
+  });
+
+  it("pulls focus back when it escapes the dialog", () => {
+    open();
+    screen.getByLabelText("Behind").focus();
+    expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+  });
+
+  it("closes with Escape, the close button and a click on the backdrop, but not on a drag that ends there", () => {
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    const reopen = () => fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    reopen();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    reopen();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(2);
+    reopen();
+    const backdrop = document.querySelector(".ui-modal-backdrop")!;
+    fireEvent.mouseDown(screen.getByRole("dialog"));
+    fireEvent.click(backdrop);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.mouseDown(backdrop);
+    fireEvent.click(backdrop);
+    expect(onClose).toHaveBeenCalledTimes(3);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("returns focus to the requested element, then to the opener, when that is gone", () => {
+    const target = document.createElement("button");
+    document.body.append(target);
+    const { rerender, unmount } = render(<Dialog title="T" closeLabel="Close" onClose={() => {}} returnFocus={() => target}>x</Dialog>);
+    rerender(<div />);
+    expect(target).toHaveFocus();
+    unmount();
+    target.remove();
   });
 });

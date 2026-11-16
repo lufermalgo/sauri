@@ -60,10 +60,6 @@
 .meeting-speaker { font-weight:var(--ds-weight-semibold); }
 .meeting-ambiguous { color: var(--ds-speaker-unresolved); }
 .meeting-error { color: var(--ds-danger-text); overflow-wrap: anywhere; }
-.meeting-review-item { padding-block: var(--ds-space-4); border-top: 1px solid var(--ds-border); overflow-wrap: anywhere; }
-.meeting-review-item h4 { margin: 0 0 var(--ds-space-2); }
-.meeting-review-actions { display: flex; flex-wrap: wrap; align-items: end; gap: var(--ds-space-2); margin-top: var(--ds-space-3); }
-.meeting-review-actions .ui-text-field { flex: 1 1 180px; min-width: 0; }
 .meeting-chat-notice { color: var(--ds-fg-muted); }
 @media (min-width: 1024px) {
   .meeting-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
@@ -101,18 +97,28 @@
 .meeting-transcript-heading h2 { margin: 0; }
 .meeting-follow { display: inline-flex; align-items: center; gap: var(--ds-space-2); color: var(--ds-fg-muted); font-size: var(--ds-text-md); }
 .meeting-follow input { width: 18px; height: 18px; accent-color: var(--ds-accent); }
+/* Speaker identification rows, shown inside the review dialog. */
+.meeting-review-item { padding-block: var(--ds-space-4); border-top: 1px solid var(--ds-border); overflow-wrap: anywhere; }
+.meeting-review-item:first-of-type { padding-top: 0; border-top: 0; }
+.meeting-review-item:last-of-type { padding-bottom: 0; }
+.meeting-review-item h4 { margin: 0; font-size: var(--ds-text-base); }
+.meeting-review-item > p { margin: var(--ds-space-2) 0 0; font-size: var(--ds-text-sm); color: var(--ds-fg-muted); }
 .meeting-review-row { display: flex; align-items: center; gap: var(--ds-space-3); min-width: 0; }
 .meeting-review-identity { flex: 1; min-width: 0; }
-.meeting-review-identity h4 { margin: 0; font-size: var(--ds-text-base); }
-.meeting-review-row .ui-button { padding: var(--ds-space-2) var(--ds-space-3); font-size: var(--ds-text-sm); flex-shrink: 0; }
-.meeting-speaker-select { text-align: left; font-weight:var(--ds-weight-semibold); border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.meeting-speaker-select { display: inline-flex; align-items: center; min-height: var(--ds-target); max-width: 100%; padding: 0; text-align: left; font: inherit; font-weight: var(--ds-weight-semibold); border: 0; background: transparent; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.meeting-review-listen { position: relative; flex: none; }
+.meeting-review-editor { display: grid; gap: var(--ds-space-3); margin-top: var(--ds-space-3); padding: var(--ds-space-3); background: var(--ds-fill); border-radius: var(--ds-radius-md); }
+.meeting-review-name { display: flex; flex-wrap: wrap; align-items: end; gap: var(--ds-space-2); }
+.meeting-review-name .ui-text-field { flex: 1 1 10rem; min-width: 0; }
+.meeting-review-decision { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); }
+@media (max-width: 480px) {
+  .meeting-review-row { flex-wrap: wrap; }
+  .meeting-review-listen { margin-left: calc(36px + var(--ds-space-3)); }
+}
 .meeting-speaker-select:hover { text-decoration: underline; }
 .meeting-review-pending, .meeting-review-confirmed { display: block; font-size: var(--ds-text-sm); }
 .meeting-review-pending { color: var(--ds-warning); }
 .meeting-review-confirmed { color: var(--ds-accent-text); }
-.meeting-speaker-review h3 { margin: 0 0 var(--ds-space-3); font-size: var(--ds-text-xl); }
-.meeting-review-item p { font-size: var(--ds-text-sm); color: var(--ds-fg-muted); }
-.meeting-review-actions > .ui-button:first-of-type { background: var(--ds-accent); color: var(--ds-accent-fg); }
 .meeting-timeline { min-width: 0; margin-top: var(--ds-space-3); }
 .meeting-timeline-track { position: relative; padding-top: var(--ds-space-4); }
 .meeting-timeline-slider { position: relative; height: 28px; cursor: pointer; }
