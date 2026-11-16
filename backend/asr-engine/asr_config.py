@@ -46,6 +46,13 @@ def vad_enabled() -> bool:
     return value == "on"
 
 
+def default_prompt_enabled() -> bool:
+    value = os.environ.get("SAURI_ASR_DEFAULT_PROMPT", "on")
+    if value not in {"on", "off"}:
+        raise ValueError("SAURI_ASR_DEFAULT_PROMPT must be on or off")
+    return value == "on"
+
+
 def vad_threshold() -> float:
     value = float(os.environ.get("SAURI_ASR_VAD_THRESHOLD", "0.5"))
     if not math.isfinite(value) or not 0 <= value <= 1:

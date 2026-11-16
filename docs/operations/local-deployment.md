@@ -99,6 +99,31 @@ duplicados, hasta 224 bytes UTF-8 (límite conservador de 224 tokens); las entra
 que no caben se omiten. El prompt se conserva entre ventanas internas, pero no
 garantiza la ortografía ni acredita una mejora de puntuación en audio largo.
 
+**Prompt inicial predeterminado (`SAURI_ASR_DEFAULT_PROMPT=on`, predeterminado; `off` lo desactiva).**
+Sin ningún prompt, whisper.cpp cae de forma intermitente en un modo de decodificación
+«sin puntuación y en minúsculas» según dónde empieza cada trozo. Por eso el motor siempre
+pasa `--prompt` con `--carry-initial-prompt`: si el vocabulario privado produce un prompt,
+se usa ese (su prefijo ya prepara la puntuación); si no, se usa el texto fijo
+`Buenos días. Empecemos.` (constante `DEFAULT_PROMPT` en `asr_prompt.py`). Solo se aplica
+cuando el idioma de la petición es español (`es`, incluidas las variantes regionales que el
+motor normaliza a `es`); con otro idioma, o con `auto` en el primer trozo, no se pasa prompt
+por defecto para que un texto en español no sesgue otro idioma (con `auto`, los trozos
+siguientes lo usan si el idioma detectado es español). El valor debe ser `on` u `off`; otro
+valor impide arrancar. El prompt nunca se escribe en los registros ni en las respuestas:
+`diagnostics.default_prompt` es solo un booleano (si se aplicó el prompt por defecto, según
+el idioma final de la respuesta).
+
+Evidencia medida (grabación real de 94 min del dueño; el audio y el texto no se copian al
+repositorio): sin prompt, 130 de 757 segmentos (20,5 % de las palabras) salieron sin
+puntuación ni mayúsculas. Con `Buenos días. Empecemos.` más `--carry-initial-prompt`, en
+ventanas de 45 s y 60 s hubo 0 de 24 sin puntuación (base: 9 de 24); el primer trozo pasó de
+0 a 49 signos (30,5 por minuto); el conteo de palabras varió dentro de ±2 %, 0 marcas de
+tiempo de palabra invertidas, desplazamiento mediano del inicio de palabra ≈ 0,3 s y
+velocidad dentro del ruido. Descartados: `Hola, ¿cómo están? Muy bien, gracias.` (omitió
+unas 50 de 148 palabras en una ventana), `Hola, buenos días. Vamos a empezar la reunión:
+¿cómo están todos?` (2 de 24 aún sin puntuación) y `Hola.` (demasiado débil). La
+repetición sobre el archivo completo de 94 min queda **NO VERIFICADA** en esta entrega.
+
 Ante `engine_failed`, revisar `~/.local/state/sauri/native-engines/asr.log`
 (o `asr.log` bajo `SAURI_NATIVE_ENGINE_STATE_DIR`). Los fallos de `whisper-cli` y del VAD
 registran código de salida y hasta 600 caracteres de las últimas ocho líneas de
