@@ -19,6 +19,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from providers import build_router
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sauri_engine_common.route import RouteError, origin_of
 from sauri_engine_common.secrets import (
@@ -215,3 +216,6 @@ async def engines_status() -> dict[str, Any]:
         engines = await asyncio.gather(*(_engine_state(engine_id, port, client) for engine_id, port in ENGINES))
     store = await get_store()
     return {"engines": list(engines), "secret_store": store.name}
+
+
+app.include_router(build_router(get_store, require_management_token))
