@@ -12,8 +12,11 @@ Rules (design.md, properties 1, 2, 14):
 * An external route is built only from an enabled provider that the matrix offers for the process and a
   consent of the current notice version for exactly (owner, process, provider); otherwise
   ``ProviderError("consent_missing")`` and no gateway call.
-* The only second call is to the local engine, after a retryable class. User-action classes (rejected key,
-  missing consent, bad request, invalid output) never change engine, and no external-to-external chain exists.
+* The only second call is to the local engine, after any provider failure except the ones that need the owner
+  to act (rejected sign-in or key, missing consent, a route the origin refuses, an unreadable secret, an
+  unsupported pair): those never change engine. A provider that answers something unusable (invalid output,
+  a refused request, an unavailable model) falls back too, with the class recorded as the reason. No
+  external-to-external chain exists.
 
 The helpers are generic over the process: transcription uses them first, and summaries and speakers reuse
 ``resolve_route`` and ``call_with_fallback`` unchanged.
@@ -52,6 +55,10 @@ from app.infra.models import EnginePrivacyConsent, EngineProcessSetting, EngineP
 T = TypeVar("T")
 
 LOCAL_DEFAULT_MODEL: Final = "local:default"
+# Failures the owner has to fix (reconnect, consent, settings): running the local engine would hide them.
+NO_FALLBACK: Final = frozenset(
+    {"provider_auth", "consent_missing", "origin_mismatch", "secret_unavailable", "provider_unsupported"}
+)
 # Ceiling of one external attempt, below ENGINE_CALL_TIMEOUT_S so a local fallback keeps time to run.
 EXTERNAL_TOTAL_S: Final = 600.0
 
@@ -156,15 +163,15 @@ async def call_with_fallback(
     call: Callable[[Route | None], Awaitable[T]],
     identify: Callable[[T], tuple[str | None, str | None]],
 ) -> tuple[T, Provenance]:
-    """Run ``call(route)``; on a retryable provider failure with fallback enabled, run ``call`` once on the
-    local engine. ``identify`` returns (engine name, engine model) from a result, so the provenance is what
-    the engine reported, never what was asked for."""
+    """Run ``call(route)``; on a provider failure that does not need the owner (``NO_FALLBACK``) with fallback
+    enabled, run ``call`` once on the local engine. ``identify`` returns (engine name, engine model) from a
+    result, so the provenance is what the engine reported, never what was asked for."""
     external = is_external(resolved.route)
     reason: str | None = None
     try:
         value = await call(resolved.route)
     except ProviderError as error:
-        if not (external and error.retryable and resolved.local_fallback):
+        if not (external and error.code not in NO_FALLBACK and resolved.local_fallback):
             raise
         reason = error.code
     else:
