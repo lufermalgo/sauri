@@ -14,6 +14,7 @@ Requirements: 4.5, 7.1, 7.2, 8.3, 8.4
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
@@ -53,6 +54,7 @@ from app.meetings.service import (
 from app.meetings.speaker_review_service import SpeakerReviewService
 
 router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"])
+logger = logging.getLogger(__name__)
 
 
 def _get_queue() -> JobQueue:
@@ -150,7 +152,40 @@ _EMPTY_LIST_FIELDS: dict[str, Any] = {
     "duration_seconds": None,
     "speaker_count": None,
     "summary_topic": None,
+    "thumbnail_url": None,
+    "media_kind": None,
 }
+
+# A thumbnail link is a bearer capability for one image, same lifetime as playback links.
+THUMBNAIL_URL_TTL_SECONDS = 3600
+
+
+def _media_kind(video_presence: str, thumbnail_state: str | None) -> str | None:
+    """Return video or audio when the recording is known to be one, else None."""
+    if thumbnail_state == "audio_only":
+        return "audio"
+    if thumbnail_state == "ready" or video_presence in {"muxed", "separate"}:
+        return "video"
+    return "audio" if video_presence == "absent" else None
+
+
+async def _sign_thumbnail_urls(extras: dict[str, dict[str, Any]]) -> None:
+    """Replace each internal `thumbnail_ref` with a short-lived signed `thumbnail_url`.
+
+    Signing is local (no object-store call). The store is only created when a thumbnail exists.
+    """
+    object_store: ObjectStore | None = None
+    for fields in extras.values():
+        reference = fields.pop("thumbnail_ref", None)
+        if reference is None:
+            continue
+        try:
+            object_store = object_store or _get_object_store()
+            fields["thumbnail_url"] = await object_store.temporary_read_url(
+                reference, ttl_seconds=THUMBNAIL_URL_TTL_SECONDS
+            )
+        except Exception:
+            logger.warning("Could not sign a thumbnail link; the row falls back to the generic image")
 
 
 async def _list_summary_fields(
@@ -168,12 +203,19 @@ async def _list_summary_fields(
     }
 
     recordings = await session.execute(
-        select(SessionRecording.meeting_id, SessionRecording.duration_seconds).where(
-            SessionRecording.meeting_id.in_(meeting_ids)
-        )
+        select(
+            SessionRecording.meeting_id,
+            SessionRecording.duration_seconds,
+            SessionRecording.video_presence,
+            SessionRecording.thumbnail_state,
+            SessionRecording.thumbnail_ref,
+        ).where(SessionRecording.meeting_id.in_(meeting_ids))
     )
-    for meeting_id, duration_seconds in recordings.all():
+    for meeting_id, duration_seconds, video_presence, thumbnail_state, thumbnail_ref in recordings.all():
         extras[meeting_id]["duration_seconds"] = duration_seconds
+        extras[meeting_id]["media_kind"] = _media_kind(video_presence, thumbnail_state)
+        if thumbnail_state == "ready":
+            extras[meeting_id]["thumbnail_ref"] = thumbnail_ref
 
     # Latest completed revision per meeting, same rule as `_latest_completed_diarization`.
     diarizations = await session.execute(
@@ -219,6 +261,7 @@ async def list_meetings(
             result = await session.execute(stmt)
             meetings = result.scalars().all()
             extras = await _list_summary_fields(session, [m.id for m in meetings])
+            await _sign_thumbnail_urls(extras)
             return [
                 {
                     "meeting_id": m.id,

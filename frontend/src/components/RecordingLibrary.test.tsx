@@ -34,6 +34,8 @@ function meeting(overrides: Partial<MeetingListItem> = {}): MeetingListItem {
     durationSeconds: null,
     speakerCount: null,
     summaryTopic: null,
+    thumbnailUrl: null,
+    mediaKind: null,
     ...overrides,
   };
 }
@@ -452,5 +454,103 @@ describe("RecordingLibrary processing progress", () => {
     expect(screen.queryByText(text.loading)).toBeNull();
     await vi.advanceTimersByTimeAsync(30_000);
     expect(list).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("RecordingLibrary thumbnails", () => {
+  const URL_A = "https://storage.invalid/a/thumbnail.jpg?sig=1";
+
+  async function openWith(items: MeetingListItem[]) {
+    const list = vi.spyOn(api, "listMeetings").mockResolvedValue(items);
+    const view = render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
+    await listLoaded();
+    return { view, list };
+  }
+
+  const thumb = (container: HTMLElement) => container.querySelector(".library-item-thumb") as HTMLElement;
+
+  it("shows the preview frame as a decorative lazy image at the start of the row", async () => {
+    const { view } = await openWith([meeting({ thumbnailUrl: URL_A, mediaKind: "video" })]);
+    const image = thumb(view.container).querySelector("img") as HTMLImageElement;
+
+    expect(image.getAttribute("src")).toBe(URL_A);
+    expect(image.getAttribute("alt")).toBe("");
+    expect(image.getAttribute("loading")).toBe("lazy");
+    expect(thumb(view.container).querySelector("svg")).toBeNull();
+    // The thumbnail is the first thing in the row button, before the title block.
+    const button = view.container.querySelector("button.library-item") as HTMLElement;
+    expect(button.firstElementChild).toBe(thumb(view.container));
+  });
+
+  it("shows the generic video tile when the frame is not available yet", async () => {
+    const { view } = await openWith([meeting({ thumbnailUrl: null, mediaKind: "video" })]);
+
+    expect(thumb(view.container).querySelector("img")).toBeNull();
+    expect(thumb(view.container).querySelector("svg.lucide-video")).not.toBeNull();
+  });
+
+  it("shows the audio tile for recordings without video", async () => {
+    const { view } = await openWith([meeting({ thumbnailUrl: null, mediaKind: "audio" })]);
+
+    expect(thumb(view.container).querySelector("svg.lucide-audio-lines")).not.toBeNull();
+    expect(thumb(view.container).querySelector("img")).toBeNull();
+  });
+
+  it("falls back to the generic tile when the image fails to load", async () => {
+    const { view } = await openWith([meeting({ thumbnailUrl: URL_A, mediaKind: "video" })]);
+
+    fireEvent.error(thumb(view.container).querySelector("img") as HTMLImageElement);
+
+    await waitFor(() => expect(thumb(view.container).querySelector("img")).toBeNull());
+    expect(thumb(view.container).querySelector("svg")).not.toBeNull();
+  });
+
+  it("adds no tab stop and no accessible name to the row", async () => {
+    const { view } = await openWith([meeting({ thumbnailUrl: URL_A, mediaKind: "video" })]);
+
+    expect(view.container.querySelectorAll("button.library-item")).toHaveLength(1);
+    expect(thumb(view.container).querySelector("[tabindex], a, button")).toBeNull();
+    expect(screen.getByRole("button", { name: /Synthetic meeting/ })).toBeDefined();
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("keeps the same preview link across quiet refreshes so the image is not reloaded", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { view, list } = await openWith([
+        meeting({ processState: ProcessState.Transcribing, thumbnailUrl: URL_A, mediaKind: "video" }),
+      ]);
+      list.mockResolvedValue([
+        meeting({
+          processState: ProcessState.Transcribing,
+          thumbnailUrl: "https://storage.invalid/a/thumbnail.jpg?sig=2", mediaKind: "video",
+        }),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(list).toHaveBeenCalledTimes(2);
+      expect(thumb(view.container).querySelector("img")?.getAttribute("src")).toBe(URL_A);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("picks up a preview link that appears while the recording is still processing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { view, list } = await openWith([
+        meeting({ processState: ProcessState.Transcribing, thumbnailUrl: null, mediaKind: "video" }),
+      ]);
+      list.mockResolvedValue([
+        meeting({ processState: ProcessState.Transcribing, thumbnailUrl: URL_A, mediaKind: "video" }),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await waitFor(() => expect(thumb(view.container).querySelector("img")?.getAttribute("src")).toBe(URL_A));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

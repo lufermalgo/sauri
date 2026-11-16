@@ -54,7 +54,13 @@ export interface MeetingListApiResponse {
   duration_seconds?: number | null;
   speaker_count?: number | null;
   summary_topic?: string | null;
+  /** Short-lived signed link to the preview frame; absent until one exists. */
+  thumbnail_url?: string | null;
+  media_kind?: MediaKind | null;
 }
+
+/** What the recording turned out to be, when the backend knows. */
+export type MediaKind = "video" | "audio";
 
 /** Meeting-list record normalized for frontend presentation and selection. */
 export interface MeetingListItem {
@@ -68,6 +74,8 @@ export interface MeetingListItem {
   durationSeconds: number | null;
   speakerCount: number | null;
   summaryTopic: string | null;
+  thumbnailUrl: string | null;
+  mediaKind: MediaKind | null;
 }
 
 /** Record of a Google Meet meeting in sauri. */

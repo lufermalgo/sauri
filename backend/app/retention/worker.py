@@ -34,6 +34,7 @@ async def run_retention_deletion(
     b. For each expired recording:
        - Deletes the audio blob via object_store.delete(audio_ref).
        - Deletes the video blob via object_store.delete(video_ref) if present.
+       - Deletes the library thumbnail if present.
        - Deletes the associated Transcript (by meeting_id).
        - Deletes the SessionRecording record.
     c. Queries Transcript with expires_at <= now (independently expired).
@@ -73,6 +74,17 @@ async def run_retention_deletion(
                 logger.warning(
                     "Could not delete video_ref=%s for recording=%s",
                     recording.video_ref,
+                    recording.id,
+                )
+
+        # Delete the library thumbnail if one was cut
+        if recording.thumbnail_ref is not None:
+            try:
+                await object_store.delete(recording.thumbnail_ref)
+            except Exception:
+                logger.warning(
+                    "Could not delete thumbnail_ref=%s for recording=%s",
+                    recording.thumbnail_ref,
                     recording.id,
                 )
 

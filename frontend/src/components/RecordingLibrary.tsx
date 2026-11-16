@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { AudioLines, Video } from "lucide-react";
 import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { listMeetings } from "../api";
@@ -6,7 +7,7 @@ import { copy } from "../copy/es";
 import { applyLibraryQuery, type LibraryQuery, type LibrarySort } from "../library-query";
 import { navigate } from "../router";
 import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
-import { Button, ProgressBar, Skeleton, StatusBadge, TextField } from "./ui";
+import { Button, Icon, ProgressBar, Skeleton, StatusBadge, TextField } from "./ui";
 import "../styles/library.css";
 import "../styles/processing.css";
 
@@ -173,6 +174,36 @@ function ChevronIcon() {
   );
 }
 
+const THUMBNAIL_ICON_SIZE = 24;
+
+/**
+ * Preview frame of the recording. The image is decorative (the title sits next to it), and the
+ * generic tile replaces it when there is no frame or the signed link no longer loads.
+ */
+function RowThumbnail({ meeting }: { meeting: MeetingListItem }) {
+  const url = meeting.thumbnailUrl;
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const showImage = url !== null && url !== failedUrl;
+  return (
+    <span className="library-item-thumb">
+      {showImage ? (
+        <img src={url} alt="" loading="lazy" decoding="async" onError={() => setFailedUrl(url)} />
+      ) : (
+        <Icon icon={meeting.mediaKind === "audio" ? AudioLines : Video} size={THUMBNAIL_ICON_SIZE} />
+      )}
+    </span>
+  );
+}
+
+/** A quiet refresh keeps each row's current preview link: a new signature would reload the image. */
+function keepThumbnailUrls(previous: MeetingListItem[], next: MeetingListItem[]): MeetingListItem[] {
+  const urls = new Map(previous.map((item) => [item.id, item.thumbnailUrl]));
+  return next.map((item) => {
+    const current = urls.get(item.id);
+    return current && item.thumbnailUrl ? { ...item, thumbnailUrl: current } : item;
+  });
+}
+
 function LibraryRow({ meeting, onSelect }: { meeting: MeetingListItem; onSelect: () => void }) {
   const tone = STATE_TONES[meeting.processState];
   const topic = topicLine(meeting);
@@ -188,6 +219,7 @@ function LibraryRow({ meeting, onSelect }: { meeting: MeetingListItem; onSelect:
         className={`ui-card library-item library-item--${ROW_EDGES[tone]}`}
         onClick={onSelect}
       >
+        <RowThumbnail meeting={meeting} />
         <span className="library-item-main">
           <span className="library-item-title">{meeting.title.trim() || text.untitled}</span>
           {topic && <span className="library-item-topic">{topic}</span>}
@@ -210,6 +242,7 @@ function LibrarySkeleton() {
     <ul className="library-list library-skeleton" aria-hidden="true">
       {SKELETON_ROWS.map((row) => (
         <li key={row.title} className="library-skeleton-row">
+          <Skeleton className="library-skeleton-thumb" />
           <span className="library-skeleton-main">
             <Skeleton height={20} width={row.title} />
             <Skeleton height={14} width={row.topic} />
@@ -263,7 +296,10 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibra
       if (document.hidden) return;
       listMeetings()
         .then((data) => {
-          if (!cancelled) setMeetings(data.map((item) => ({ ...item, title: item.title ?? "" })));
+          if (!cancelled) {
+            const refreshed = data.map((item) => ({ ...item, title: item.title ?? "" }));
+            setMeetings((current) => keepThumbnailUrls(current, refreshed));
+          }
         })
         .catch(() => undefined);
     }, LIBRARY_REFRESH_MS);
