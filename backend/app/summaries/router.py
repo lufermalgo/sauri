@@ -1,6 +1,6 @@
 """Authenticated owner-scoped summary artifacts and request status API."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.authorization import require_sales
 from app.auth.schemas import AuthenticatedUser
+from app.infra.models import SummaryRequestOutbox
 from app.summaries import repository, service
 from app.summaries.passages import KeyPoint, KeyPointBlock, decode_key_points
 from app.templates.router import get_session
@@ -27,6 +28,21 @@ class SummaryRequestStatus(BaseModel):
     generation: int
     status: str
     failure_cause: str | None = None
+    requested_at: datetime | None = None
+    started_at: datetime | None = None
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _request_status(row: SummaryRequestOutbox) -> SummaryRequestStatus:
+    return SummaryRequestStatus(
+        event_id=row.event_id, generation=row.generation, status=row.status, failure_cause=row.failure_cause,
+        requested_at=_utc(row.requested_at), started_at=_utc(row.started_at),
+    )
 
 
 class SummaryResponse(BaseModel):
@@ -77,9 +93,7 @@ async def request_summary(
 ) -> SummaryRequestStatus:
     async with session.begin():
         row = await service.accept_request(session, meeting_id, user.id, data.template_id)
-    return SummaryRequestStatus(
-        event_id=row.event_id, generation=row.generation, status=row.status, failure_cause=row.failure_cause,
-    )
+    return _request_status(row)
 
 
 @router.get("/summary-requests/latest", response_model_exclude_none=True)
@@ -87,9 +101,7 @@ async def latest_request(meeting_id: str, session: Session, user: AuthorizedUser
     row = await repository.request_for_owner(session, meeting_id, user.id)
     if row is None:
         raise HTTPException(status_code=404, detail="Summary request not found")
-    return SummaryRequestStatus(
-        event_id=row.event_id, generation=row.generation, status=row.status, failure_cause=row.failure_cause,
-    )
+    return _request_status(row)
 
 
 @router.get("/summary-requests/{event_id}", response_model_exclude_none=True)
@@ -102,6 +114,4 @@ async def request_status(
     row = await repository.request_for_owner(session, meeting_id, user.id, event_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Summary request not found")
-    return SummaryRequestStatus(
-        event_id=row.event_id, generation=row.generation, status=row.status, failure_cause=row.failure_cause,
-    )
+    return _request_status(row)

@@ -440,7 +440,13 @@ async def test_summary_identity_survives_template_change_and_new_revision(
         manual = await accept_request(session, message["meeting_id"], message["owner_id"], None)
         assert same.event_id == first.event_id and same.instructions_snapshot == "Custom brief"
         assert second.event_id != first.event_id and second.template_version == 4
-        assert (same.generation, second.generation, manual.generation) == (1, 2, 3)
+        # A manual request converges on the newest request still in flight (#1045).
+        assert manual.event_id == second.event_id
+        assert (same.generation, second.generation, manual.generation) == (1, 2, 2)
+        same.status = second.status = "succeeded"
+    async with pg_factory() as session, session.begin():
+        manual = await accept_request(session, message["meeting_id"], message["owner_id"], None)
+        assert manual.generation == 3 and manual.event_id not in (first.event_id, second.event_id)
 
 
 async def test_transcript_words_rollback_with_transcript(

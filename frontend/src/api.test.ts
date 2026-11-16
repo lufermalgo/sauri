@@ -644,6 +644,21 @@ describe("meeting summary API adapters", () => {
       expect.objectContaining({ method: "GET", headers: expect.objectContaining({ Authorization: "Bearer synthetic-token" }) }));
   });
 
+  it("maps the optional request and start times and tolerates their absence", async () => {
+    mockFetch({
+      event_id: "event-1", generation: 3, status: "running",
+      requested_at: "2026-11-16T10:00:00Z", started_at: "2026-11-16T10:00:05Z",
+    });
+    await expect(api.getLatestSummaryRequest("meeting-1")).resolves.toEqual({
+      eventId: "event-1", generation: 3, status: "running",
+      requestedAt: "2026-11-16T10:00:00Z", startedAt: "2026-11-16T10:00:05Z",
+    });
+    mockFetch({ event_id: "event-2", generation: 1, status: "succeeded", requested_at: null });
+    await expect(api.getLatestSummaryRequest("meeting-1")).resolves.toEqual({
+      eventId: "event-2", generation: 1, status: "succeeded", requestedAt: null,
+    });
+  });
+
   it("posts JSON using the default template and maps the accepted request", async () => {
     const fetchMock = mockFetch({ event_id: "event-1", generation: 3, status: "pending" }, 202);
     await expect(api.requestMeetingSummary("meeting / 1")).resolves.toEqual({

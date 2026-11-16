@@ -35,7 +35,8 @@ async def test_real_broker_exhaustion_marks_failed_without_losing_success(
     if not url:
         pytest.fail("Set SAURI_QA_RABBITMQ_URL to exclusively disposable RabbitMQ")
     monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "t12-synthetic-signing-key-with-more-than-32-bytes")
-    monkeypatch.setenv("ASR_MAX_RETRIES", "1")
+    monkeypatch.setenv("SUMMARIZE_MAX_RETRIES", "1")
+    monkeypatch.setenv("SUMMARIZE_RETRY_DELAY_SECONDS", "1")  # exercises the delay queue on the real broker
     monkeypatch.delenv("QUEUE_DLX_EXCHANGE", raising=False)
     from app.summaries import worker
 
@@ -86,6 +87,7 @@ async def test_terminal_delivery_is_not_discarded_on_failure(
     topic: str, expected_requeue: bool, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "t12-synthetic-signing-key-with-more-than-32-bytes")
+    monkeypatch.setenv("SUMMARIZE_MAX_RETRIES", "0")
     monkeypatch.setenv("ASR_MAX_RETRIES", "0")
     monkeypatch.delenv("QUEUE_DLX_EXCHANGE", raising=False)
     queue = RabbitMQJobQueue("amqp://not-used/")
@@ -111,3 +113,55 @@ async def test_terminal_delivery_is_not_discarded_on_failure(
     await callback(message)
     message.ack.assert_not_awaited()
     message.nack.assert_awaited_once_with(requeue=expected_requeue)
+
+
+async def test_real_broker_delays_the_summarize_retry_without_blocking_the_consumer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    url = os.environ.get("SAURI_QA_RABBITMQ_URL")
+    if not url:
+        pytest.skip("SAURI_QA_RABBITMQ_URL required (disposable RabbitMQ)")
+    monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "t12-synthetic-signing-key-with-more-than-32-bytes")
+    monkeypatch.setenv("SUMMARIZE_MAX_RETRIES", "1")
+    monkeypatch.setenv("SUMMARIZE_RETRY_DELAY_SECONDS", "2")
+    monkeypatch.delenv("QUEUE_DLX_EXCHANGE", raising=False)
+    queue = RabbitMQJobQueue(url)
+    await queue.connect()
+    attempts: list[tuple[str, float]] = []
+    parked: list[int] = []
+    loop = asyncio.get_running_loop()
+
+    async def flaky(message: dict[str, object]) -> None:
+        attempts.append((str(message["event_id"]), loop.time()))
+        if len(attempts) == 1:
+            # The retry is parked in the broker, not held by this consumer.
+            raise RuntimeError("synthetic transient failure")
+
+    try:
+        assert queue._channel is not None
+        for name in ("summarize", "summarize.retry"):
+            await (await queue._channel.declare_queue(name, durable=True, arguments=(
+                {"x-dead-letter-exchange": "", "x-dead-letter-routing-key": "summarize"}
+                if name.endswith(".retry") else None
+            ))).purge()
+        await queue.subscribe("summarize", flaky)
+        await queue.publish("summarize", {"event_id": "delayed-retry"})
+        # A fresh channel asks the broker; the robust channel above would answer from its cache.
+        observer = await aio_pika.connect_robust(url)
+        try:
+            observer_channel = await observer.channel()
+            async with asyncio.timeout(20):
+                while len(attempts) < 2:
+                    if len(attempts) == 1:
+                        retry_queue = await observer_channel.declare_queue("summarize.retry", passive=True)
+                        parked.append(retry_queue.declaration_result.message_count)
+                    await asyncio.sleep(0.1)
+        finally:
+            await observer.close()
+        assert attempts[0][0] == attempts[1][0] == "delayed-retry"
+        assert attempts[1][1] - attempts[0][1] >= 1.8  # the configured 2 s pause, not an immediate redelivery
+        assert max(parked) == 1  # the message waited in summarize.retry
+        await asyncio.sleep(0.3)
+        assert len(attempts) == 2  # exactly one retry
+    finally:
+        await queue.disconnect()

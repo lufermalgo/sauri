@@ -1,8 +1,9 @@
 """JobQueue implementation using RabbitMQ via aio-pika.
 
 Provides at-least-once delivery, persistent messages (delivery_mode=2),
-retries bounded by ASR_MAX_RETRIES with counting via a custom header
-(x-sauri-retries), and automatic dead-lettering once retries are
+retries bounded per topic (ASR_MAX_RETRIES by default) with counting via a
+custom header (x-sauri-retries), an optional fixed delay between attempts
+(see _RETRY_DELAY_DEFAULTS_S) and automatic dead-lettering once retries are
 exhausted (nack without requeue).
 """
 
@@ -12,6 +13,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -33,7 +35,17 @@ _MAX_RETRIES_DEFAULT = 3
 _TOPIC_TO_ENV_RETRIES: dict[str, str] = {
     "transcribe": "ASR_MAX_RETRIES",
     "diarize": "DIARIZATION_MAX_RETRIES",
+    "summarize": "SUMMARIZE_MAX_RETRIES",
 }
+# Topics whose default differs from _MAX_RETRIES_DEFAULT. A summary occupies the single
+# heavy engine for up to ~25 minutes per attempt, so one retry is the most it can afford.
+_TOPIC_DEFAULT_RETRIES: dict[str, int] = {"summarize": 1}
+
+# Topic → (environment variable, default seconds) of the fixed pause before a retry.
+# Topics absent here retry immediately, as they always did.
+_RETRY_DELAY_ENV: dict[str, tuple[str, float]] = {"summarize": ("SUMMARIZE_RETRY_DELAY_SECONDS", 30.0)}
+_RETRY_DELAY_MAX_S = 3600.0
+_RETRY_QUEUE_SUFFIX = ".retry"
 
 
 def _read_max_retries(topic: str = "transcribe") -> int:
@@ -42,13 +54,15 @@ def _read_max_retries(topic: str = "transcribe") -> int:
     Topic map:
     - "transcribe" → ASR_MAX_RETRIES
     - "diarize" → DIARIZATION_MAX_RETRIES
+    - "summarize" → SUMMARIZE_MAX_RETRIES (default 1)
 
-    Valid range: 0-10. Default: 3.
+    Valid range: 0-10. Default: 3 (1 for "summarize").
     """
     env_var = _TOPIC_TO_ENV_RETRIES.get(topic, "ASR_MAX_RETRIES")
+    default = _TOPIC_DEFAULT_RETRIES.get(topic, _MAX_RETRIES_DEFAULT)
     raw = os.environ.get(env_var, "")
     if not raw.strip():
-        return _MAX_RETRIES_DEFAULT
+        return default
     try:
         value = int(raw.strip())
     except ValueError:
@@ -56,9 +70,9 @@ def _read_max_retries(topic: str = "transcribe") -> int:
             "%s='%s' is not a valid integer. Using default %d.",
             env_var,
             raw,
-            _MAX_RETRIES_DEFAULT,
+            default,
         )
-        return _MAX_RETRIES_DEFAULT
+        return default
     if value < _MAX_RETRIES_MIN or value > _MAX_RETRIES_MAX:
         logger.warning(
             "%s=%d out of range [%d, %d]. Using default %d.",
@@ -66,9 +80,27 @@ def _read_max_retries(topic: str = "transcribe") -> int:
             value,
             _MAX_RETRIES_MIN,
             _MAX_RETRIES_MAX,
-            _MAX_RETRIES_DEFAULT,
+            default,
         )
-        return _MAX_RETRIES_DEFAULT
+        return default
+    return value
+
+
+def _read_retry_delay(topic: str) -> float:
+    """Seconds to wait before a retry of `topic` is redelivered (0 = immediately)."""
+    if topic not in _RETRY_DELAY_ENV:
+        return 0.0
+    env_var, default = _RETRY_DELAY_ENV[topic]
+    raw = os.environ.get(env_var, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not math.isfinite(value) or value < 0 or value > _RETRY_DELAY_MAX_S:
+        logger.warning("%s='%s' must be between 0 and %d. Using default %g.", env_var, raw, _RETRY_DELAY_MAX_S, default)
+        return default
     return value
 
 
@@ -180,7 +212,8 @@ class RabbitMQJobQueue(JobQueue):
 
         - Acks after the handler processes the message successfully.
         - If accumulated retries < max_retries for the topic: republishes a
-          copy of the message with x-sauri-retries incremented and acks the
+          copy of the message (after the topic's retry delay, if any) with
+          x-sauri-retries incremented and acks the
           original (see _count_retries for why nack(requeue=True) isn't used
           here).
         - Nacks with requeue=False once max_retries is reached (routes to
@@ -196,6 +229,7 @@ class RabbitMQJobQueue(JobQueue):
         await channel.set_qos(prefetch_count=1, global_=False)
 
         max_retries = _read_max_retries(topic)
+        retry_delay = _read_retry_delay(topic)
 
         queue_arguments: dict[str, Any] = {}
         if self._dlx_exchange:
@@ -239,10 +273,21 @@ class RabbitMQJobQueue(JobQueue):
                         delivery_mode=DeliveryMode.PERSISTENT,
                         content_type=message.content_type,
                         headers=retry_headers,
+                        expiration=retry_delay if retry_delay > 0 else None,
                     )
                     try:
+                        routing_key = topic
+                        if retry_delay > 0:
+                            # Parked in a consumer-less queue; when the per-message TTL expires
+                            # the broker dead-letters it back into the topic queue. The wait
+                            # blocks no consumer and survives worker restarts.
+                            routing_key = f"{topic}{_RETRY_QUEUE_SUFFIX}"
+                            await channel.declare_queue(routing_key, durable=True, arguments={
+                                "x-dead-letter-exchange": "",
+                                "x-dead-letter-routing-key": topic,
+                            })
                         confirmation = await channel.default_exchange.publish(
-                            retry_message, routing_key=topic, mandatory=True,
+                            retry_message, routing_key=routing_key, mandatory=True,
                         )
                         if not isinstance(confirmation, Basic.Ack):
                             raise RuntimeError("Broker did not confirm retry publication")
@@ -292,4 +337,4 @@ class RabbitMQJobQueue(JobQueue):
                     await message.nack(requeue=False)
 
         await queue.consume(_on_message)
-        logger.info("Subscribed to queue '%s'. Max retries: %d.", topic, max_retries)
+        logger.info("Subscribed to queue '%s'. Max retries: %d. Retry delay: %gs.", topic, max_retries, retry_delay)

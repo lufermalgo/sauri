@@ -11,7 +11,7 @@ from app.summaries.factory import create_summarization_engine
 from app.summaries.passages import Turn, build_passages
 
 
-@pytest.mark.parametrize("configured,expected", [(None, 1025.0), ("240.5", 365.5)])
+@pytest.mark.parametrize("configured,expected", [(None, 1625.0), ("240.5", 365.5), ("1515", 1640.0)])
 def test_factory_generation_budget(monkeypatch: pytest.MonkeyPatch, configured: str | None, expected: float) -> None:
     monkeypatch.setenv("SUMMARIZATION_BASE_URL", "http://localhost:11434")
     monkeypatch.setenv("SUMMARIZATION_MODEL", "local-model")
@@ -19,6 +19,17 @@ def test_factory_generation_budget(monkeypatch: pytest.MonkeyPatch, configured: 
     if configured is not None:
         monkeypatch.setenv("SUMMARIZATION_TIMEOUT_SECONDS", configured)
     assert create_summarization_engine().timeout_seconds == expected
+
+
+@pytest.mark.parametrize("configured", ["1515.1", "3600"])
+def test_budget_beyond_the_broker_consumer_timeout_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, configured: str,
+) -> None:
+    monkeypatch.setenv("SUMMARIZATION_BASE_URL", "http://localhost:11434")
+    monkeypatch.setenv("SUMMARIZATION_MODEL", "local-model")
+    monkeypatch.setenv("SUMMARIZATION_TIMEOUT_SECONDS", configured)
+    with pytest.raises(ValueError, match="SUMMARIZATION_TIMEOUT_SECONDS must be at most 1515"):
+        create_summarization_engine()
 
 
 @pytest.mark.parametrize("configured", ["", "zero", "0", "-1", "nan", "inf", "-inf"])

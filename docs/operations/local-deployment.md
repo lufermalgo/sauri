@@ -268,6 +268,21 @@ Cada fila de la biblioteca muestra un cuadro del video: el del minuto 10 de la g
 - **Imagen Docker:** la imagen del backend incluye `ffmpeg` y `ffprobe` estáticos (`mwader/static-ffmpeg`, fijados por digest). Para desplegar: `make build` (reconstruye, migra con Alembic y reinicia).
 - **Grabaciones existentes (backfill):** al desplegar, el barrido las procesa solas, una por una, sin intervención. Para forzarlo o repetirlo a pedido, dentro del worker: `docker compose -p sauri exec -T worker python -m app.thumbnails` (opcional `--limit N` para parar tras N grabaciones y `--retry-unavailable` para reintentar las marcadas `unavailable`, por ejemplo tras actualizar `ffmpeg`). Es idempotente: no toca lo que ya tiene miniatura. Imprime solo conteos (`ready`, `audio_only`, `unavailable`, `error`); un `error` es una falla de infraestructura que deja la grabación pendiente para el siguiente intento.
 
+## Fiabilidad de los resúmenes (#1045)
+
+- **Una sola solicitud activa:** `POST /api/v1/meetings/{id}/summary-requests` devuelve la solicitud `pending` o `running` de la transcripción (HTTP 202, mismo `event_id` y `generation`) en lugar de crear otra generación. Solo una solicitud terminada (`succeeded` o `failed`) permite crear una nueva. El resumen automático tras la diarización no cambia.
+- **Tiempos en la API:** `GET /summary-requests/latest` y `/{event_id}` (y el 202) incluyen `requested_at` (cuándo se aceptó) y `started_at` (cuándo el worker tomó el trabajo por primera vez), en ISO 8601 UTC; se omiten si no existen (filas anteriores a la migración `023_summary_request_timestamps` sin `delivered_at`). La tabla guarda además `finished_at`.
+- **Barrido de solicitudes atascadas:** el worker revisa cada 60 s y marca `failed` con `failure_cause='stale_request'` las solicitudes `running` (o `pending` ya entregadas al broker) cuyo `started_at`/`delivered_at` supera el límite. Nunca toca una solicitud con resumen guardado y es idempotente.
+- **Reintentos:** `summarize` reintenta una vez (los demás temas siguen con 3). El reintento espera un intervalo fijo en una cola auxiliar `summarize.retry` (TTL por mensaje y reenvío automático a `summarize`), sin bloquear al consumidor ni a otros temas.
+- **Presupuesto de tiempo:** el gateway nativo permite `SUMMARIZATION_TIMEOUT_SECONDS` (1500 s) de inferencia más 120 s de arranque; el cliente espera 5 s más (1625 s). Con 120 s de espera del slot, una entrega dura como máximo 120 + 1640 = 1760 s, por debajo del `consumer_timeout` de RabbitMQ (1800 s, valor por defecto que no debe bajarse). El worker rechaza al arrancar un valor superior a 1515 s.
+
+| Variable | Dónde | Por defecto | Efecto |
+|---|---|---|---|
+| `SUMMARIZATION_TIMEOUT_SECONDS` | worker y gateway nativo (`llm-engine`) | 1500 | Presupuesto de inferencia del resumen. Máximo 1515 para respetar el `consumer_timeout` del broker. Reiniciar el gateway nativo para que lo lea. |
+| `SUMMARIZE_MAX_RETRIES` | worker | 1 | Reintentos del tema `summarize` (0 a 10). |
+| `SUMMARIZE_RETRY_DELAY_SECONDS` | worker | 30 | Pausa fija antes de cada reintento (0 a 3600; 0 = inmediato). |
+| `SUMMARY_STALE_AFTER_SECONDS` | worker | 4500 (75 min) | Edad a partir de la cual una solicitud sin terminar se marca `stale_request`. Debe superar el peor caso de dos intentos (unos 61 min). |
+
 ## Recuperación y espacio de disco
 
 - Fallo de bucket/migración/API: el arranque termina no cero; investigar la etapa, sin borrar datos para conseguir un verde.

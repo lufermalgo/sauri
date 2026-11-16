@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 BROKER_CONSUMER_TIMEOUT_S = 1800.0
 SLOT_WAIT_TIMEOUT_S = 120.0
 ENGINE_CALL_TIMEOUT_S = 1200.0
+# Summaries run on a slower local LLM: the gateway budget (SUMMARIZATION_TIMEOUT_SECONDS,
+# default 1500 s) plus its 120 s cold start and 5 s HTTP margin must fit inside this limit.
+# 120 s slot wait + 1640 s = 1760 s < 1800 s, which leaves 40 s for SQL, publication and ack
+# (pinned by tests/summaries/test_delivery_budget.py).
+SUMMARY_ENGINE_CALL_TIMEOUT_S = 1640.0
 
 
 SLOT_KEY: int = int.from_bytes(

@@ -44,7 +44,7 @@ class LlamaServer:
         self.url = "http://127.0.0.1:8004"
         self.idle_seconds = 120.0
         self.startup_seconds = 120.0
-        self.request_seconds = float(os.getenv("SUMMARIZATION_TIMEOUT_SECONDS", "900"))
+        self.request_seconds = float(os.getenv("SUMMARIZATION_TIMEOUT_SECONDS", "1500"))
         if not math.isfinite(self.request_seconds) or self.request_seconds <= 0:
             raise ValueError("SUMMARIZATION_TIMEOUT_SECONDS must be finite and positive")
         self.process: asyncio.subprocess.Process | None = None

@@ -166,6 +166,10 @@ export interface SummaryRequestStatus {
   generation: number;
   status: "pending" | "running" | "succeeded" | "failed";
   failureCause?: string | null;
+  /** ISO 8601 UTC time the request was accepted; absent on requests that predate the field. */
+  requestedAt?: string | null;
+  /** ISO 8601 UTC time the worker first took the job; absent until it starts. */
+  startedAt?: string | null;
 }
 
 /** User-owned summary template; instructions are opaque and preserved unchanged. */

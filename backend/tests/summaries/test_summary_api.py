@@ -10,7 +10,7 @@ import json
 import os
 import re
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -124,6 +124,14 @@ async def summary_api(
             await engine.dispose()
 
 
+async def _settle(factory: async_sessionmaker[AsyncSession], event_id: str, status: str = "succeeded") -> None:
+    """A pending/running request absorbs later posts; settle it to allow a new generation."""
+    async with factory() as session, session.begin():
+        row = await session.get(SummaryRequestOutbox, event_id)
+        assert row is not None
+        row.status = status
+
+
 @pytest.mark.asyncio
 async def test_explicit_owned_request_freezes_version_instructions_and_increments_generation(
     summary_api: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str, str, str],
@@ -151,6 +159,10 @@ async def test_explicit_owned_request_freezes_version_instructions_and_increment
         assert template is not None
         template.instructions = "Edited after acceptance"
         template.version = 2
+    async with factory() as session, session.begin():
+        accepted = await session.get(SummaryRequestOutbox, event_id)
+        assert accepted is not None
+        accepted.status = "succeeded"
     second = await client.post(path, json={"template_id": own}, headers=_headers(owner))
     assert second.status_code == 202, second.text
     assert second.json()["generation"] == 2
@@ -185,6 +197,7 @@ async def test_implicit_request_resolves_current_personal_default_at_acceptance(
             1,
             "  Exactly these opaque instructions.\n",
         )
+    await _settle(factory, response.json()["event_id"])
     # A later default change applies to the next request, never to this event.
     replacement = _id()
     now = datetime.now(UTC)
@@ -267,6 +280,8 @@ async def test_request_status_latest_resumes_and_never_replaces_old_status(
         response = await client.post(path, json={"template_id": own}, headers=_headers(owner))
         assert response.status_code == 202, response.text
         accepted.append(response.json())
+        if len(accepted) == 1:
+            await _settle(factory, accepted[0]["event_id"], "failed")
     async with factory() as session, session.begin():
         previous = await session.get(SummaryRequestOutbox, accepted[0]["event_id"])
         assert previous is not None
@@ -317,7 +332,8 @@ async def _persist_successes(fixture: ApiFixture) -> list[dict[str, object]]:
         async with factory() as session, session.begin():
             row = await session.get(SummaryRequestOutbox, body["event_id"])
             assert row is not None
-            row.status = state
+            # An active request absorbs later posts: settle it now and reopen it afterwards.
+            row.status = "failed" if state == "pending" else state
             if state == "succeeded":
                 now = datetime.now(UTC)
                 session.add(
@@ -335,6 +351,10 @@ async def _persist_successes(fixture: ApiFixture) -> list[dict[str, object]]:
                         updated_at=now,
                     )
                 )
+    async with factory() as session, session.begin():
+        reopened = await session.get(SummaryRequestOutbox, accepted[2]["event_id"])
+        assert reopened is not None
+        reopened.status = "pending"
     return accepted
 
 
@@ -428,7 +448,9 @@ async def test_latest_summary_request_route_resolves_before_event_id(summary_api
     events = await _persist_successes(summary_api)
     response = await client.get(f"/api/v1/meetings/{meeting}/summary-requests/latest", headers=_headers(owner))
     assert response.status_code == 200, response.text
-    assert response.json() == {"event_id": events[-1]["event_id"], "generation": 4, "status": "failed"}
+    body = response.json()
+    assert body.pop("requested_at")  # accepted through the API, so the acceptance time is recorded
+    assert body == {"event_id": events[-1]["event_id"], "generation": 4, "status": "failed"}
 
 
 @pytest.mark.asyncio
@@ -439,7 +461,9 @@ async def test_status_routes_enforce_meeting_association_sales_and_owner(summary
     event = events[0]["event_id"]
     own = await client.get(f"{path}/{event}", headers=_headers(owner))
     assert own.status_code == 200, own.text
-    assert own.json() == {"event_id": event, "generation": 1, "status": "succeeded"}
+    own_body = own.json()
+    assert own_body.pop("requested_at")
+    assert own_body == {"event_id": event, "generation": 1, "status": "succeeded"}
     for suffix in ("latest", str(event)):
         no_auth = await client.get(f"{path}/{suffix}")
         assert no_auth.status_code == 401, no_auth.text
@@ -498,6 +522,7 @@ async def test_no_personal_default_seeds_editable_starter_and_accepts(summary_ap
     updated = await client.patch(f"/api/v1/templates/{template_id}", json={"instructions": "Edited synthetic"},
                                  headers=_headers(owner))
     assert updated.status_code == 200
+    await _settle(factory, response.json()["event_id"])
     later = await client.post(path, json={}, headers=_headers(owner))
     assert later.status_code == 202
     async with factory() as session:
@@ -608,3 +633,88 @@ async def test_categorized_failure_is_returned_by_status_routes(summary_api: Api
         response = await client.get(f"{base}/{suffix}", headers=_headers(owner))
         assert response.status_code == 200
         assert response.json()["failure_cause"] == "context_exceeded"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("active", ["pending", "running"])
+async def test_active_request_is_returned_instead_of_a_new_generation(summary_api: ApiFixture, active: str) -> None:
+    client, factory, owner, _, meeting, own, _ = summary_api
+    path = f"/api/v1/meetings/{meeting}/summary-requests"
+    first = await client.post(path, json={"template_id": own}, headers=_headers(owner))
+    assert first.status_code == 202, first.text
+    if active == "running":
+        async with factory() as session, session.begin():
+            row = await session.get(SummaryRequestOutbox, first.json()["event_id"])
+            assert row is not None
+            row.status = "running"
+    for body in ({"template_id": own}, {}):
+        again = await client.post(path, json=body, headers=_headers(owner))
+        assert again.status_code == 202, again.text
+        assert again.json() == {**first.json(), "status": active}
+    async with factory() as session:
+        rows = (await session.scalars(select(SummaryRequestOutbox))).all()
+        assert [(row.event_id, row.generation) for row in rows] == [(first.json()["event_id"], 1)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("settled", ["succeeded", "failed"])
+async def test_settled_request_allows_a_new_generation(summary_api: ApiFixture, settled: str) -> None:
+    client, factory, owner, _, meeting, own, _ = summary_api
+    path = f"/api/v1/meetings/{meeting}/summary-requests"
+    first = await client.post(path, json={"template_id": own}, headers=_headers(owner))
+    await _settle(factory, first.json()["event_id"], settled)
+    second = await client.post(path, json={"template_id": own}, headers=_headers(owner))
+    assert second.status_code == 202, second.text
+    assert second.json()["generation"] == 2 and second.json()["event_id"] != first.json()["event_id"]
+    # The new request is now the active one: a third post converges on it.
+    third = await client.post(path, json={"template_id": own}, headers=_headers(owner))
+    assert third.json()["event_id"] == second.json()["event_id"]
+
+
+@pytest.mark.asyncio
+async def test_auto_request_path_is_independent_of_the_active_manual_request(summary_api: ApiFixture) -> None:
+    from app.summaries.service import accept_request
+
+    client, factory, owner, _, meeting, own, _ = summary_api
+    manual = await client.post(
+        f"/api/v1/meetings/{meeting}/summary-requests", json={"template_id": own}, headers=_headers(owner),
+    )
+    assert manual.json()["generation"] == 1
+
+    async def auto(revision: int) -> SummaryRequestOutbox:
+        async with factory() as session, session.begin():
+            return await accept_request(session, meeting, owner, own, processing_revision=revision)
+
+    first_auto, repeated_auto = await auto(1), await auto(1)
+    assert first_auto.generation == 2 and first_auto.event_id != manual.json()["event_id"]
+    assert repeated_auto.event_id == first_auto.event_id  # deterministic identity is unchanged
+    assert (await auto(2)).generation == 3  # a newer processing revision is always accepted
+
+
+@pytest.mark.asyncio
+async def test_status_exposes_request_and_start_times_and_omits_missing_ones(summary_api: ApiFixture) -> None:
+    client, factory, owner, _, meeting, own, _ = summary_api
+    path = f"/api/v1/meetings/{meeting}/summary-requests"
+    before = datetime.now(UTC)
+    accepted = await client.post(path, json={"template_id": own}, headers=_headers(owner))
+    event_id = accepted.json()["event_id"]
+    assert "started_at" not in accepted.json()
+    requested = datetime.fromisoformat(accepted.json()["requested_at"])
+    assert requested.utcoffset() == timedelta(0) and before <= requested <= datetime.now(UTC)
+    assert accepted.json()["requested_at"].endswith("Z")
+    started = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+    async with factory() as session, session.begin():
+        row = await session.get(SummaryRequestOutbox, event_id)
+        assert row is not None
+        row.status, row.started_at = "running", started
+    for url in (f"{path}/latest", f"{path}/{event_id}"):
+        body = (await client.get(url, headers=_headers(owner))).json()
+        assert body["requested_at"] == accepted.json()["requested_at"]
+        assert datetime.fromisoformat(body["started_at"]) == started and body["started_at"].endswith("Z")
+    # A row created before the timestamps existed exposes neither field.
+    async with factory() as session, session.begin():
+        row = await session.get(SummaryRequestOutbox, event_id)
+        assert row is not None
+        row.status, row.requested_at, row.started_at = "succeeded", None, None
+    legacy = (await client.get(f"{path}/latest", headers=_headers(owner))).json()
+    assert legacy == {"event_id": event_id, "generation": 1, "status": "succeeded"}
