@@ -98,7 +98,7 @@ function localIso(year: number, month: number, day: number, hour = 10, minute = 
 }
 
 describe("RecordingLibrary list", () => {
-  it("keeps the order received from the API within a group", async () => {
+  it("orders by the date the recording was made, not by the API order", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([
       meeting({ id: "b", title: "Second by name", createdAt: "2026-01-02T10:00:00Z" }),
       meeting({ id: "a", title: "First by name", createdAt: "2026-01-01T10:00:00Z" }),
@@ -108,7 +108,7 @@ describe("RecordingLibrary list", () => {
     await screen.findByRole("heading", { name: t("library:title") });
     await listLoaded();
 
-    expect(renderedTitles()).toEqual(["Second by name", "First by name", "Third by name"]);
+    expect(renderedTitles()).toEqual(["Third by name", "Second by name", "First by name"]);
   });
 
   it("shows readable Spanish state labels and the formatted date", async () => {
@@ -258,7 +258,85 @@ describe("RecordingLibrary date groups", () => {
     expect(headings).toEqual([t("library:groups.today"), t("library:groups.thisWeek"), t("library:groups.earlier")]);
     expect(groupTitles(t("library:groups.today"))).toEqual(["Today one"]);
     expect(groupTitles(t("library:groups.thisWeek"))).toEqual(["Week one", "Six days ago"]);
-    expect(groupTitles(t("library:groups.earlier"))).toEqual(["Old one", "Seven days ago"]);
+    expect(groupTitles(t("library:groups.earlier"))).toEqual(["Seven days ago", "Old one"]);
+  });
+
+  describe("recording date and processed date", () => {
+    // Uploaded today, recorded months ago; and one recorded today.
+    const uploaded = [
+      meeting({ id: "old", title: "Old video", createdAt: localIso(2026, 11, 14, 11, 0), recordedAt: localIso(2026, 6, 2, 9, 30) }),
+      meeting({ id: "live", title: "Recorded today", createdAt: localIso(2026, 11, 14, 10, 0), recordedAt: localIso(2026, 11, 14, 8, 0) }),
+      meeting({ id: "week", title: "Last week", createdAt: localIso(2026, 11, 13, 10, 0), recordedAt: localIso(2026, 11, 13, 9, 0) }),
+    ];
+    const shown = (iso: string) => new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+
+    it("is the default: an old video uploaded today is not under HOY, and its card shows the recording date", async () => {
+      vi.spyOn(api, "listMeetings").mockResolvedValue(uploaded);
+      renderLibrary();
+      await listLoaded();
+
+      expect(groupTitles(t("library:groups.today"))).toEqual(["Recorded today"]);
+      expect(groupTitles(t("library:groups.thisWeek"))).toEqual(["Last week"]);
+      expect(groupTitles(t("library:groups.earlier"))).toEqual(["Old video"]);
+      expect(within(rowOpen(/Old video/)).getByText(shown(localIso(2026, 6, 2, 9, 30)))).toBeDefined();
+      expect(sortButton().getAttribute("aria-label")).toBe(
+        t("library:search.sortCurrent", { choice: t("library:search.sortRecordedNewest") }));
+    });
+
+    it("sorting by processed date groups by that date and shows it on the cards", async () => {
+      vi.spyOn(api, "listMeetings").mockResolvedValue(uploaded);
+      renderLibrary();
+      await listLoaded();
+
+      chooseSort(t("library:search.sortProcessedNewest"));
+      expect(groupTitles(t("library:groups.today"))).toEqual(["Old video", "Recorded today"]);
+      expect(groupTitles(t("library:groups.thisWeek"))).toEqual(["Last week"]);
+      expect(screen.queryByRole("heading", { name: t("library:groups.earlier") })).toBeNull();
+      expect(within(rowOpen(/Old video/)).getByText(shown(localIso(2026, 11, 14, 11, 0)))).toBeDefined();
+    });
+
+    it("each oldest-first option is a flat list ordered by its own date", async () => {
+      vi.spyOn(api, "listMeetings").mockResolvedValue(uploaded);
+      renderLibrary();
+      await listLoaded();
+
+      chooseSort(t("library:search.sortRecordedOldest"));
+      expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
+      expect(renderedTitles()).toEqual(["Old video", "Last week", "Recorded today"]);
+
+      chooseSort(t("library:search.sortProcessedOldest"));
+      expect(renderedTitles()).toEqual(["Last week", "Recorded today", "Old video"]);
+
+      chooseSort(t("library:search.sortTitle"));
+      expect(renderedTitles()).toEqual(["Last week", "Old video", "Recorded today"]);
+
+      chooseSort(t("library:search.sortRecordedNewest"));
+      expect(renderedTitles()).toEqual(["Recorded today", "Last week", "Old video"]);
+    });
+
+    it("the calendar filter uses the date of the active sort", async () => {
+      vi.spyOn(api, "listMeetings").mockResolvedValue(uploaded);
+      renderLibrary();
+      await listLoaded();
+
+      setDates("2026-11-14", "2026-11-14");
+      expect(renderedTitles()).toEqual(["Recorded today"]);
+
+      chooseSort(t("library:search.sortProcessedNewest"));
+      expect(renderedTitles()).toEqual(["Old video", "Recorded today"]);
+
+      chooseSort(t("library:search.sortTitle"));
+      expect(renderedTitles()).toEqual(["Recorded today"]);
+    });
+
+    it("a recording from an older backend, with no recording date, uses its processed date", async () => {
+      vi.spyOn(api, "listMeetings").mockResolvedValue([
+        meeting({ id: "legacy", title: "Legacy", createdAt: localIso(2026, 11, 14, 9, 0) }),
+      ]);
+      renderLibrary();
+      await listLoaded();
+      expect(groupTitles(t("library:groups.today"))).toEqual(["Legacy"]);
+    });
   });
 
   it("does not show empty groups", async () => {
@@ -298,7 +376,7 @@ describe("RecordingLibrary date groups", () => {
     renderLibrary();
     await listLoaded();
 
-    chooseSort(t("library:search.sortOldest"));
+    chooseSort(t("library:search.sortRecordedOldest"));
     expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
   });
 });
@@ -477,7 +555,7 @@ describe("RecordingLibrary search", () => {
   it("changing the order reorders the list", async () => {
     await openSearch();
 
-    chooseSort(t("library:search.sortOldest"));
+    chooseSort(t("library:search.sortRecordedOldest"));
     expect(renderedTitles()).toEqual(["Client interview", "Planning meeting", "Closing notes"]);
 
     chooseSort(t("library:search.sortTitle"));
@@ -522,7 +600,7 @@ describe("RecordingLibrary toolbar", () => {
     const toolbar = screen.getByRole("search", { name: t("library:search.regionLabel") });
     const buttons = within(toolbar).getAllByRole("button");
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
-      t("library:search.text"), t("library:search.dates"), t("library:search.sortCurrent", { choice: t("library:search.sortNewest") }),
+      t("library:search.text"), t("library:search.dates"), t("library:search.sortCurrent", { choice: t("library:search.sortRecordedNewest") }),
     ]);
     for (const button of buttons) expect(describedText(button)).toBe(button.getAttribute("aria-label"));
     expect(toolbar.querySelector("input:not([type=checkbox])")).toBeNull();
@@ -643,12 +721,14 @@ describe("RecordingLibrary toolbar", () => {
     fireEvent.click(trigger);
     const radios = screen.getAllByRole("menuitemradio");
     expect(radios.map((radio) => [radio.textContent, radio.getAttribute("aria-checked")])).toEqual([
-      [t("library:search.sortNewest"), "true"], [t("library:search.sortOldest"), "false"], [t("library:search.sortTitle"), "false"],
+      [t("library:search.sortRecordedNewest"), "true"], [t("library:search.sortRecordedOldest"), "false"],
+      [t("library:search.sortProcessedNewest"), "false"], [t("library:search.sortProcessedOldest"), "false"],
+      [t("library:search.sortTitle"), "false"],
     ]);
     expect(radios[0].querySelector("svg")).not.toBeNull();
     expect(radios[1].querySelector("svg")).toBeNull();
 
-    fireEvent.click(radios[2]);
+    fireEvent.click(radios[4]);
     expect(screen.queryByRole("menu")).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: t("library:search.sortCurrent", { choice: t("library:search.sortTitle") }) }));
     expect(screen.getByRole("button", { name: t("library:search.sortCurrent", { choice: t("library:search.sortTitle") }) }).className)

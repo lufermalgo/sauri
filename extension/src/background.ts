@@ -144,6 +144,8 @@ async function uploadRecording(job: UploadJob): Promise<void> {
       interrupted: false,
       video_presence: videoPresence,
       notice_issued_at: notificationEmittedAt ?? null,
+      // When capture began: the backend orders the library by when a recording was made.
+      ...(completion.startedAt !== undefined ? { recorded_at: new Date(completion.startedAt).toISOString() } : {}),
       title: title ?? null,
       meet_link: meetLink ?? null,
     };
@@ -471,7 +473,7 @@ async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; re
     if (!latest || latest.cancelled) return { ok: false, reason: "cancelled" };
     await createCompletion({
       sessionId: state.sessionId, meetingId, provider: state.provider ?? "meet",
-      capturedTabId: state.tabId, status: "capturing", updatedAt: Date.now(),
+      capturedTabId: state.tabId, status: "capturing", updatedAt: Date.now(), startedAt: Date.now(),
     });
     await setState(state);
     return { ok: true };

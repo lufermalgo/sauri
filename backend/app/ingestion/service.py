@@ -17,6 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infra.http_errors import CONFLICT, NOT_FOUND, api_error
 from app.infra.models import Meeting, RecordingMediaSource, RecordingNotice, SessionRecording
 from app.ingestion.schemas import IngestionData
+from app.meetings.recorded_at import (
+    SOURCE_CAPTURE,
+    SOURCE_FILE_MODIFIED,
+    SOURCE_RECEIVED,
+    is_stronger_source,
+    parse_timestamp,
+    plausible_recorded_at,
+)
 
 
 async def _find_recording_by_key(
@@ -74,6 +82,24 @@ def resolve_upload_title(title: str | None, filename: str | None) -> str:
     return (basename or "Untitled recording")[:512]
 
 
+def resolve_recorded_at(data: IngestionData, now: datetime) -> tuple[datetime, str]:
+    """Best known moment the recording was made, with the source that gave it.
+
+    The sender's own date wins: the capture start for the extension (or, for an older extension,
+    the moment it issued the consent notice, which happens when capture starts) and the file's
+    last-modified time for a web upload. Without one, the moment Sauri received it.
+    The container's creation tag is read later, when the media is probed, and can improve a web upload.
+    """
+    if data.recorded_at is not None:
+        source = SOURCE_FILE_MODIFIED if data.capture_origin == "web_upload" else SOURCE_CAPTURE
+        return data.recorded_at, source
+    if data.capture_origin != "web_upload" and data.notice_issued_at is not None:
+        noticed = plausible_recorded_at(parse_timestamp(data.notice_issued_at), now)
+        if noticed is not None:
+            return noticed, SOURCE_CAPTURE
+    return now, SOURCE_RECEIVED
+
+
 async def process_ingestion(
     session: AsyncSession,
     data: IngestionData,
@@ -98,6 +124,7 @@ async def process_ingestion(
     # 2. Ensure Meeting exists (auto-create upload-only meetings without a Meet link).
     now = datetime.now(UTC)
     meeting = await session.get(Meeting, data.meeting_id)
+    recorded_at, recorded_at_source = resolve_recorded_at(data, now)
     if meeting is None:
         meeting = Meeting(
             id=data.meeting_id,
@@ -107,9 +134,15 @@ async def process_ingestion(
             process_state="recording",
             created_by=created_by,
             created_at=now,
+            recorded_at=recorded_at,
+            recorded_at_source=recorded_at_source,
         )
         session.add(meeting)
         await session.flush()
+    elif is_stronger_source(recorded_at_source, meeting.recorded_at_source):
+        # A meeting registered before the upload (extension) only knew when it was registered.
+        meeting.recorded_at = recorded_at
+        meeting.recorded_at_source = recorded_at_source
 
     # 3. Create SessionRecording
     recording = SessionRecording(

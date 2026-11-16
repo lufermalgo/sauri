@@ -3,7 +3,9 @@ import type { KeyboardEvent } from "react";
 import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { deleteMeeting, listMeetings, renameMeeting } from "../api";
-import { applyLibraryQuery, type LibraryQuery } from "../library-query";
+import {
+  applyLibraryQuery, DEFAULT_LIBRARY_SORT, isGroupedSort, meetingDate, sortDateField, type LibraryDateField, type LibraryQuery,
+} from "../library-query";
 import { LIBRARY_CHANGED_EVENT, notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
 import { forgetLastMeeting } from "../last-meeting";
@@ -27,10 +29,10 @@ const IN_PROGRESS_STATES: ReadonlySet<ProcessState> = new Set([
 ]);
 const LIBRARY_REFRESH_MS = 10_000;
 
-const EMPTY_QUERY: LibraryQuery = { text: "", from: null, to: null, sort: "newest" };
+const EMPTY_QUERY: LibraryQuery = { text: "", from: null, to: null, sort: DEFAULT_LIBRARY_SORT };
 
-function isQueryActive(query: LibraryQuery): boolean {
-  return query.text.trim() !== "" || query.from !== null || query.to !== null || query.sort !== "newest";
+function hasFilters(query: LibraryQuery): boolean {
+  return query.text.trim() !== "" || query.from !== null || query.to !== null;
 }
 
 type GroupKey = "today" | "thisWeek" | "earlier";
@@ -49,10 +51,10 @@ function startOfLocalDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
-/** Groups by the local calendar date of createdAt, relative to `now`. Missing dates are "earlier". */
-function groupKeyFor(createdAt: string | null, now: Date): GroupKey {
-  if (!createdAt) return "earlier";
-  const date = new Date(createdAt);
+/** Groups by the local calendar date of the active date field, relative to `now`. Missing dates are "earlier". */
+function groupKeyFor(isoDate: string | null, now: Date): GroupKey {
+  if (!isoDate) return "earlier";
+  const date = new Date(isoDate);
   if (Number.isNaN(date.getTime())) return "earlier";
   const daysAgo = Math.round((startOfLocalDay(now) - startOfLocalDay(date)) / MS_PER_DAY);
   if (daysAgo <= 0) return "today";
@@ -62,9 +64,10 @@ function groupKeyFor(createdAt: string | null, now: Date): GroupKey {
 function groupMeetings(
   items: MeetingListItem[],
   now: Date,
+  field: LibraryDateField,
 ): Array<{ key: GroupKey; items: MeetingListItem[] }> {
   const buckets: Record<GroupKey, MeetingListItem[]> = { today: [], thisWeek: [], earlier: [] };
-  for (const item of items) buckets[groupKeyFor(item.createdAt, now)].push(item);
+  for (const item of items) buckets[groupKeyFor(meetingDate(item, field), now)].push(item);
   return GROUP_ORDER.filter((key) => buckets[key].length > 0).map((key) => ({ key, items: buckets[key] }));
 }
 
@@ -185,11 +188,12 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     };
   }, [inProgress]);
 
-  // Without criteria the list keeps the order received from the API and is grouped by date;
-  // any search, filter or non-default sort shows a flat list.
-  const active = isQueryActive(query);
-  const visible = useMemo(() => (active ? applyLibraryQuery(meetings, query) : meetings), [active, meetings, query]);
-  const groups = useMemo(() => (active ? null : groupMeetings(visible, new Date())), [active, visible]);
+  // The list is ordered by the chosen sort (recording date by default). It is grouped by day, by the
+  // date the sort is about, only while it runs newest first with no search or date filter; otherwise it is flat.
+  const dateField = sortDateField(query.sort);
+  const grouped = !hasFilters(query) && isGroupedSort(query.sort);
+  const visible = useMemo(() => applyLibraryQuery(meetings, query), [meetings, query]);
+  const groups = useMemo(() => (grouped ? groupMeetings(visible, new Date(), dateField) : null), [grouped, visible, dateField]);
   const order = useMemo(
     () => (groups ? groups.flatMap((group) => group.items) : visible).map((meeting) => meeting.id),
     [groups, visible],
@@ -405,7 +409,7 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     const tabbableId = activeId !== null && order.includes(activeId) ? activeId
       : selectedId !== undefined && order.includes(selectedId) ? selectedId : order[0];
     const renderRow = (meeting: MeetingListItem) => (
-      <LibraryRow key={meeting.id} meeting={meeting} open={meeting.id === selectedId}
+      <LibraryRow key={meeting.id} meeting={meeting} dateField={dateField} open={meeting.id === selectedId}
         checked={selection.selected.has(meeting.id)} tabbable={meeting.id === tabbableId}
         renaming={meeting.id === renamingId} error={rowErrors[meeting.id] ?? null} notice={rowNotices[meeting.id] ?? null}
         onOpen={openRow} onToggleChecked={toggleChecked} onFocusRow={setActiveId}

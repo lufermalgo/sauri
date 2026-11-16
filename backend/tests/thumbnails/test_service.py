@@ -79,13 +79,14 @@ async def add_recording(
     finished_offset: int = 0,
     video_offset_ms: int | None = None,
     state: str | None = None,
+    recorded_at_source: str | None = "capture",  # a known recording date: no probe for it
 ) -> tuple[str, str]:
     meeting_id, recording_id = str(uuid.uuid4()), str(uuid.uuid4())
     now = datetime.now(UTC)
     async with factory() as session, session.begin():
         session.add(Meeting(
             id=meeting_id, meet_link=None, origin="manual", process_state="transcribing",
-            created_by="owner", created_at=now,
+            created_by="owner", created_at=now, recorded_at=now, recorded_at_source=recorded_at_source,
         ))
         await session.flush()
         session.add(SessionRecording(

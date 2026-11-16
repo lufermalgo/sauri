@@ -160,6 +160,16 @@ export interface RecordingUploadData {
   capture_origin: "web_upload";
   video_presence: "absent" | "muxed";
   title: string;
+  /** The file's last-modified time (ISO-8601), a hint of when it was recorded; the server validates it. */
+  recorded_at?: string;
+}
+
+/** ISO-8601 of `File.lastModified`, or undefined when the browser gave no usable value (0, negative, out of range). */
+export function fileModifiedIso(file: Pick<File, "lastModified">): string | undefined {
+  const time = file.lastModified;
+  if (!Number.isFinite(time) || time <= 0) return undefined;
+  const date = new Date(time);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
 export interface RecordingUploadResult {
@@ -290,6 +300,8 @@ export async function listMeetings(): Promise<MeetingListItem[]> {
     processState: meeting.process_state,
     failureCause: meeting.failure_cause,
     createdAt: meeting.created_at,
+    recordedAt: meeting.recorded_at ?? meeting.created_at,
+    recordedAtSource: meeting.recorded_at_source ?? null,
     title: meeting.title,
     durationSeconds: meeting.duration_seconds ?? null,
     speakerCount: meeting.speaker_count ?? null,

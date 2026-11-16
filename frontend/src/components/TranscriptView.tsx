@@ -65,8 +65,9 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   const onResolvedRef = useRef(onResolved);
   onResolvedRef.current = onResolved;
   const [meeting, setMeeting] = useState<MeetingState | null>(null);
-  const [metadata, setMetadata] = useState<{ title: string | null; createdAt: string | null; durationSeconds: number | null }>(
-    { title: null, createdAt: null, durationSeconds: null });
+  const [metadata, setMetadata] = useState<{
+    title: string | null; createdAt: string | null; recordedAt: string | null; durationSeconds: number | null;
+  }>({ title: null, createdAt: null, recordedAt: null, durationSeconds: null });
   const [metadataError, setMetadataError] = useState(false);
   const authorizedMeetingId = meeting?.meetingId;
 
@@ -77,7 +78,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       if (cancelled) return;
       const item = items.find(candidate => candidate.id === meetingId);
       if (item) setMetadata({
-        title: item.title ?? null, createdAt: item.createdAt,
+        title: item.title ?? null, createdAt: item.createdAt, recordedAt: item.recordedAt ?? item.createdAt,
         durationSeconds: typeof item.durationSeconds === "number" ? item.durationSeconds : null,
       });
       else setMetadataError(true);
@@ -505,7 +506,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
 
   return (
     <section className="meeting-view" tabIndex={-1}>
-      <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
+      <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt} recordedAt={metadata.recordedAt}
         stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
         speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} hasSummary={hasSummary}
         speakerReview={speakerReview} onBack={onBack} />

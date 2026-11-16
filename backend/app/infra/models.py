@@ -45,6 +45,10 @@ class Meeting(Base):
     )  # could_not_join | meeting_cancelled | engine_failure
     created_by: Mapped[str] = mapped_column(String(36), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # When the recording was made (not when Sauri received it) and where that value came from:
+    # capture | file_metadata | file_modified | received. Null only on rows older than the column.
+    recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    recorded_at_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 # ---------------------------------------------------------------------------

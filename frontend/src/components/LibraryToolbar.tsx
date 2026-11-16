@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent, Ref } from "react";
 import { ArrowUpDown, CalendarRange, Check, FilterX, Search, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { LibraryQuery, LibrarySort } from "../library-query";
+import { DEFAULT_LIBRARY_SORT, type LibraryQuery, type LibrarySort } from "../library-query";
 import { Button, Icon, Menu, MenuItem, Popover, TextField, useTooltip } from "./ui";
 import { SelectAllCheckbox } from "./LibraryBulkBar";
 import type { SelectAllState } from "./useLibrarySelection";
@@ -10,8 +10,10 @@ import { useT } from "../i18n";
 import { formatDate } from "../i18n/format";
 
 const SORT_OPTIONS = [
-  { value: "newest", labelKey: "library:search.sortNewest" },
-  { value: "oldest", labelKey: "library:search.sortOldest" },
+  { value: "recordedNewest", labelKey: "library:search.sortRecordedNewest" },
+  { value: "recordedOldest", labelKey: "library:search.sortRecordedOldest" },
+  { value: "processedNewest", labelKey: "library:search.sortProcessedNewest" },
+  { value: "processedOldest", labelKey: "library:search.sortProcessedOldest" },
   { value: "title", labelKey: "library:search.sortTitle" },
 ] as const satisfies ReadonlyArray<{ value: LibrarySort; labelKey: string }>;
 
@@ -140,7 +142,7 @@ export function LibraryToolbar({ query, onChange, selectAll }: LibraryToolbarPro
         )}
       </Popover>
       <Menu className="library-tool" label={t("library:search.sortCurrent", { choice: sortLabel })} tooltip trigger={<Icon icon={ArrowUpDown} />}
-        triggerClassName={toolClass(query.sort !== "newest")}>
+        triggerClassName={toolClass(query.sort !== DEFAULT_LIBRARY_SORT)}>
         {SORT_OPTIONS.map((option) => (
           <MenuItem key={option.value} checked={option.value === query.sort}
             onSelect={() => onChange({ ...query, sort: option.value })}>

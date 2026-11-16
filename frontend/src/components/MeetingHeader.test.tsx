@@ -46,6 +46,26 @@ function save() {
 }
 
 describe("MeetingHeader", () => {
+  it("shows the recording date, with both dates in the tooltip when they differ", () => {
+    render(<MeetingHeader title="Old video" createdAt="2026-11-14T12:00:00Z" recordedAt="2026-06-02T09:30:00Z"
+      meetingId="m1" manifest={null} turns={[]} />);
+    const time = document.querySelector("time");
+    expect(time).toHaveAttribute("datetime", "2026-06-02T09:30:00Z");
+    expect(time).toHaveTextContent("2026");
+    expect(time).toHaveTextContent("junio");
+    expect(time?.getAttribute("title")).toMatch(/^Grabada el .+ · Procesada el .+/);
+  });
+
+  it("has no dates tooltip when the recording is processed as it is recorded or the date is unknown", () => {
+    const { unmount } = render(<MeetingHeader title="Live" createdAt="2026-11-14T12:00:20Z"
+      recordedAt="2026-11-14T12:00:00Z" meetingId="m1" manifest={null} turns={[]} />);
+    expect(document.querySelector("time")).not.toHaveAttribute("title");
+    unmount();
+    render(<MeetingHeader title="Legacy" createdAt="2026-11-14T12:00:00Z" meetingId="m1" manifest={null} turns={[]} />);
+    expect(document.querySelector("time")).toHaveAttribute("datetime", "2026-11-14T12:00:00Z");
+    expect(document.querySelector("time")).not.toHaveAttribute("title");
+  });
+
   it("renders the fallback title and a localized real date", () => {
     open(null);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(t("meeting:untitled"));

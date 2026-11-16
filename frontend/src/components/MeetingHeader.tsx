@@ -7,12 +7,15 @@ import { ArrowLeft, Ellipsis, Pencil, Trash2, UsersRound } from "lucide-react";
 import { Button, ConfirmDialog, Icon, Popover, StatusBadge, Menu, MenuItem, useTooltip } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
-import { useT } from "../i18n";
+import { t, useT } from "../i18n";
 import { formatDate } from "../i18n/format";
 
 interface MeetingHeaderProps extends MeetingDownloadsProps {
   title: string | null;
+  /** When Sauri received the recording. */
   createdAt: string | null;
+  /** When the recording was made; this is the date shown, with `createdAt` in its tooltip. */
+  recordedAt?: string | null;
   /** Stage derived once by the page, the same one the processing stepper shows. */
   stage?: DetectedStage;
   processState?: string;
@@ -35,7 +38,18 @@ export interface SpeakerReviewEntry {
   onReview: () => void;
 }
 
-export function MeetingHeader({ title, createdAt, stage, processState, speakerCount, speakerReview, onBack, ...downloads }: MeetingHeaderProps) {
+/** "Grabada el … · Procesada el …" when the two dates differ by more than a minute; otherwise no tooltip. */
+function datesTooltip(recordedAt: string | null, createdAt: string | null): string | undefined {
+  if (!recordedAt || !createdAt) return undefined;
+  const recorded = new Date(recordedAt);
+  const processed = new Date(createdAt);
+  if (Number.isNaN(recorded.getTime()) || Number.isNaN(processed.getTime())) return undefined;
+  if (Math.abs(recorded.getTime() - processed.getTime()) < 60_000) return undefined;
+  const style = { dateStyle: "medium", timeStyle: "short" } as const;
+  return t("meeting:datesTooltip", { recorded: formatDate(recorded, style), processed: formatDate(processed, style) });
+}
+
+export function MeetingHeader({ title, createdAt, recordedAt, stage, processState, speakerCount, speakerReview, onBack, ...downloads }: MeetingHeaderProps) {
   const { t } = useT();
   const duration = downloads.manifest?.duration_seconds;
   const totalSeconds = duration === undefined ? null : Math.max(0, Math.floor(duration));
@@ -185,8 +199,9 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
         {stage && <StatusBadge tone={stage === "done" ? "success" : stage === "failed" ? "error" : "progress"}>
           {stageLabel(stage, processState)}
         </StatusBadge>}
-        {createdAt && <time className="meeting-date" dateTime={createdAt}>
-          {formatDate(new Date(createdAt), { day: "numeric", month: "long", year: "numeric" })}
+        {(recordedAt ?? createdAt) && <time className="meeting-date" dateTime={recordedAt ?? createdAt ?? undefined}
+          title={datesTooltip(recordedAt ?? null, createdAt)}>
+          {formatDate(new Date((recordedAt ?? createdAt)!), { day: "numeric", month: "long", year: "numeric" })}
         </time>}
         {durationLabel !== null && <span className="meeting-duration">{durationLabel}</span>}
         {speakerCount !== undefined && <span>{t("meeting:speakerCount", { count: speakerCount })}</span>}

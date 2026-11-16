@@ -62,6 +62,29 @@ describe("UploadView", () => {
     expect(upload.mock.calls[0][1]).not.toHaveProperty("meet_link");
   });
 
+  it("sends the file's last-modified time as the recording date hint", async () => {
+    const upload = vi.mocked(api.uploadWithProgress);
+    upload.mockResolvedValue({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" });
+    render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
+    const file = new File(["synthetic recording"], "old.webm", { type: "video/webm", lastModified: Date.UTC(2025, 5, 2, 9, 30) });
+    fireEvent.change(screen.getByLabelText(t("upload:fileLabel")), { target: { files: [file] } });
+    const media = document.querySelector("video")!;
+    Object.defineProperty(media, "duration", { configurable: true, value: 30 });
+    fireEvent.loadedMetadata(media);
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
+    await waitFor(() => expect(upload).toHaveBeenCalledWith(file, expect.objectContaining({
+      recorded_at: "2025-06-02T09:30:00.000Z",
+    }), expect.any(Function)));
+  });
+
+  it("omits the recording date hint when the browser gives no usable file date", () => {
+    expect(api.fileModifiedIso({ lastModified: 0 })).toBeUndefined();
+    expect(api.fileModifiedIso({ lastModified: -5 })).toBeUndefined();
+    expect(api.fileModifiedIso({ lastModified: Number.NaN })).toBeUndefined();
+    expect(api.fileModifiedIso({ lastModified: 8.64e15 + 1 })).toBeUndefined();
+    expect(api.fileModifiedIso({ lastModified: Date.UTC(2025, 5, 2) })).toBe("2025-06-02T00:00:00.000Z");
+  });
+
   it("declares muxed video when browser metadata reports a video track", async () => {
     const upload = vi.mocked(api.uploadWithProgress);
     upload.mockResolvedValue({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" });

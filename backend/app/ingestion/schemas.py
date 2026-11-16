@@ -11,6 +11,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
+from app.meetings.recorded_at import parse_timestamp, plausible_recorded_at
+
 # `meetings.id` is a 36-character column (a UUID); the key column holds 256.
 MeetingIdField = Annotated[
     str, StringConstraints(min_length=1, max_length=36, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
@@ -94,6 +96,14 @@ class IngestionData(BaseModel):
             "Used only when auto-creating the Meeting if it doesn't exist yet."
         ),
     )
+    recorded_at: datetime | None = Field(
+        default=None,
+        description=(
+            "When the recording was made, as the sender knows it: the capture start for the Chrome "
+            "extension, the file's last-modified time for a web upload. Ignored when it is not a "
+            "plausible date (before 1990 or in the future beyond a small clock skew)."
+        ),
+    )
     meet_link: str | None = Field(
         default=None,
         max_length=512,
@@ -102,6 +112,16 @@ class IngestionData(BaseModel):
             "Used only when auto-creating the Meeting if it doesn't exist yet."
         ),
     )
+
+    @field_validator("recorded_at", mode="before")
+    @classmethod
+    def ignore_implausible_recorded_at(cls, value: object) -> datetime | None:
+        """A bad file date must never fail an upload: it is dropped and the next source is used."""
+        if isinstance(value, str):
+            value = parse_timestamp(value)
+        elif not isinstance(value, datetime):
+            return None
+        return plausible_recorded_at(value)
 
     @field_validator("notice_issued_at")
     @classmethod
