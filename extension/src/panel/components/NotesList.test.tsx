@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { NotesList } from "./NotesList";
-import { panelCopy as copy } from "../copy";
+import { panelCopy as copy } from "../../i18n/spanish";
 import type { NoteDTO } from "../../core/types";
 const notes: NoteDTO[] = [
   { meetingId: "r1", title: "Test A", processState: "completed", createdAt: "2024-05-01T10:00:00Z" },
@@ -59,5 +59,17 @@ describe("NotesList approved library", () => {
     view.rerender(<NotesList state="error" notes={[]} onRetry={onRetry} onOpenNote={onOpenNote} />);
     fireEvent.click(screen.getByRole("button", { name: copy.retry }));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+});
+
+describe("NotesList in English", () => {
+  it("shows the English texts and the date in the language's order", async () => {
+    const { setLanguage } = await import("../../i18n");
+    await setLanguage("en", { persist: false });
+    render(<NotesList state="withData" notes={notes} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
+    expect(screen.getByText("Untitled recording")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "My recordings" })).toBeInTheDocument();
+    for (const label of ["Ready", "Transcribing", "Failed"]) expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.getByText(/^5\/1, \d{1,2}:\d{2}\s?(AM|PM)$/i)).toBeInTheDocument();
   });
 });

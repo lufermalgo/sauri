@@ -1,4 +1,4 @@
-import { panelCopy as copy } from "./copy";
+import { panelCopy as copy } from "../i18n/spanish";
 // Side Panel composition and chrome-recording-completion T1.9 (#618).
 // Exercise the public panel until RecordingCompletionStatus exists: missing
 // production UI must fail a visible assertion, not an unresolved import.

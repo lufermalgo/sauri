@@ -1,6 +1,6 @@
 import React from "react";
 import type { CaptureState } from "../../core/types";
-import { panelCopy as copy } from "../copy";
+import { useT } from "../../i18n";
 import { BrandLogo } from "../../core/design/BrandLogo";
 
 export interface PanelHeaderProps {
@@ -9,11 +9,12 @@ export interface PanelHeaderProps {
 }
 
 export function PanelHeader({ captureState = "idle", paused }: PanelHeaderProps) {
+  const { t } = useT();
   return <header className="panel-header">
     <span className="panel-brand">
-      <BrandLogo height={24} title={copy.brandName} />
-      <span className="panel-title panel-ellipsis">{copy.panelTitle}</span>
+      <BrandLogo height={24} title={t("panel:brandName")} />
+      <span className="panel-title panel-ellipsis">{t("panel:panelTitle")}</span>
     </span>
-    {captureState === "recording" && <span className="panel-badge panel-badge-recording"><span className={paused ? "panel-dot" : "panel-dot panel-record-dot"} aria-hidden="true" />{paused ? copy.paused : copy.recording}</span>}
+    {captureState === "recording" && <span className="panel-badge panel-badge-recording"><span className={paused ? "panel-dot" : "panel-dot panel-record-dot"} aria-hidden="true" />{paused ? t("panel:paused") : t("panel:recording")}</span>}
   </header>;
 }

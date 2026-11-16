@@ -1,0 +1,10 @@
+{
+  "extensionDescription": {
+    "message": "Graba el audio y el video de cualquier pestaña del navegador y Sauri lo transcribe y lo resume.",
+    "description": "Extension description shown in the Chrome Web Store and chrome://extensions."
+  },
+  "actionTitle": {
+    "message": "Sauri — Abrir panel",
+    "description": "Tooltip of the toolbar button."
+  }
+}

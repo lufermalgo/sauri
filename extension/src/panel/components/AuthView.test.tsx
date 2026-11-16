@@ -1,7 +1,7 @@
 // Example-based test: Auth_View (Req. 13.2, 13.6, 13.7)
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { panelCopy as copy } from "../copy";
+import { panelCopy as copy } from "../../i18n/spanish";
 import { AuthView } from "./AuthView";
 
 describe("AuthView", () => {

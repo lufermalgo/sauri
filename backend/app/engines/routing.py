@@ -48,7 +48,7 @@ from sauri_engine_common.route import (  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
-from app.copy.engine_notices_es import NOTICE_VERSIONS  # noqa: E402
+from app.copy.engine_notices import NOTICE_VERSIONS  # noqa: E402
 from app.engines import capability_matrix as matrix  # noqa: E402
 from app.infra.models import EnginePrivacyConsent, EngineProcessSetting, EngineProvider  # noqa: E402
 

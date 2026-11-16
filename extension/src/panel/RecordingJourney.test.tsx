@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { SidePanelApp } from "./SidePanelApp";
-import { panelCopy as copy } from "./copy";
+import { panelCopy as copy } from "../i18n/spanish";
 import { chooseSource, sourceTrigger } from "./test-helpers";
 import { DEFAULT_RECORDING_SETTINGS, parseRecordingSettings } from "./recordingSettings";
 import type { RecordingSettings } from "../core/types";

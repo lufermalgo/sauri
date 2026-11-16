@@ -350,6 +350,13 @@ describe("privacy notice before an external provider", () => {
     expect(screen.getByText(t("engines:process.current", { name: t("engines:process.localName") }))).toBeInTheDocument();
   });
 
+  it("asks for the notice in the portal's language", async () => {
+    await renderReady("transcription");
+    await pick(/gpt-a/);
+    await screen.findByRole("dialog");
+    expect(backend.calls.find((call) => call.path.endsWith("/notice"))?.search).toContain("lang=es");
+  });
+
   it("saves nothing when the notice is cancelled, and today's engine does not change", async () => {
     await renderReady("transcription");
     await pick(/gpt-a/);

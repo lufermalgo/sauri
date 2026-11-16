@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { createCompletion, getChunksBySession, getCompletion, storeChunk, type RecordingCompletion } from "../../recording-db";
 import { RecordingCompletionStatus } from "./RecordingCompletionStatus";
-import { panelCopy as copy } from "../copy";
+import { panelCopy as copy } from "../../i18n/spanish";
 
 const failed: RecordingCompletion = { sessionId: "session-copy", meetingId: "meeting-copy", provider: "meet", capturedTabId: 7, status: "upload_failed", updatedAt: 1 };
 const createObjectURL = vi.fn(() => "blob:synthetic-copy");

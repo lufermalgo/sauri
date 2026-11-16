@@ -27,7 +27,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.copy.engine_notices_es import NOTICE_VERSIONS
+from app.copy.engine_notices import NOTICE_VERSIONS
 from app.infra.models import EnginePrivacyConsent, EngineProcessSetting, EngineProvider
 
 Factory = async_sessionmaker[AsyncSession]

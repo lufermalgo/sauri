@@ -9,3 +9,8 @@
 .permission-check { width: 56px; height: 56px; border-radius: var(--ds-radius-pill); display: grid; place-items: center; background: var(--ds-accent-soft); color: var(--ds-accent-soft-fg); }
 .permission-time { font-family: var(--ds-font-mono); }
 .permission-page [role="alert"] { color: var(--ds-danger-soft-fg); }
+.language-select { border: 0; margin: 0; min-width: 0; padding: var(--ds-space-6); border-radius: var(--ds-radius-xl); }
+.language-select legend { padding: 0; font-weight: 600; }
+.language-select p { margin: 0; color: var(--ds-fg-muted); }
+.language-options { display: flex; gap: var(--ds-space-6); }
+.language-options label { display: inline-flex; align-items: center; gap: var(--ds-space-2); }

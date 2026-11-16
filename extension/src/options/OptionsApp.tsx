@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Check } from "lucide-react";
-import { permissionCopy as copy } from "./copy";
+import { Trans } from "react-i18next";
+import { useT } from "../i18n";
+import { LanguageSelect } from "./LanguageSelect";
 import { Icon } from "../core/design/Icon";
 import { PanelHeader } from "../panel/components/PanelHeader";
 import "../core/design/base.css";
@@ -8,8 +10,10 @@ import "../panel/panel.css";
 import "./options.css";
 
 type MicrophonePermission = "waiting" | "granted" | "denied";
+const STEPS = ["stepIcon", "stepAllow", "stepReturn"] as const;
 
 export function OptionsApp() {
+  const { t } = useT();
   const [state, setState] = useState<MicrophonePermission>("waiting");
   const [device, setDevice] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +26,7 @@ export function OptionsApp() {
       const tab = await chrome.tabs.getCurrent();
       if (tab?.id === undefined) throw new Error("Permission tab unavailable");
       await chrome.tabs.remove(tab.id);
-    } catch { if (mounted.current) setError(copy.closeError); }
+    } catch { if (mounted.current) setError(t("permission:closeError")); }
   }, []);
 
   const checkPermission = useCallback(async () => {
@@ -57,9 +61,11 @@ export function OptionsApp() {
       catch { /* Keep the concrete request failure instead of exposing raw errors. */ }
       if (!mounted.current) return;
       setState("denied");
-      if (!denied) setError(copy.deviceError);
+      if (!denied) setError(t("permission:deviceError"));
     } finally { pending.current = false; }
   }, []);
+
+  useEffect(() => { document.title = t("permission:documentTitle"); }, [t]);
 
   useEffect(() => {
     mounted.current = true;
@@ -77,16 +83,17 @@ export function OptionsApp() {
   return <div className="permission-page">
     <PanelHeader />
     <main className="permission-main panel-stack">
-      <h1>{copy.heading}</h1>
-      <p>{copy.introduction}</p>
+      <h1>{t("permission:heading")}</h1>
+      <p>{t("permission:introduction")}</p>
       <section className="permission-card panel-stack panel-card">
-        <span className={`panel-badge panel-badge-${state === "granted" ? "success" : state === "denied" ? "error" : "progress"}`}>{state === "granted" ? copy.granted : state === "denied" ? copy.denied : copy.waiting}</span>
-        {state === "waiting" && <><h2>{copy.waitingHeading}</h2><p>{copy.waitingHelp}</p><p role="status">{copy.waitingStatus}</p></>}
-        {state === "granted" && <><span className="permission-check" aria-hidden="true"><Icon icon={Check} size={28} strokeWidth={2.25} /></span><h2>{copy.grantedHeading}</h2><p>{device ? `${copy.devicePrefix}${device}${copy.deviceSuffix}` : copy.grantedHelp}</p><p role="status">{copy.closingPrefix} <b className="permission-time">{remaining}</b> {copy.closingSuffix}</p><button onClick={() => { void close(); }}>{copy.close}</button></>}
-        {state === "denied" && <><h2>{copy.deniedHeading}</h2><ol>{copy.steps.map(step => <li key={step}>{step}</li>)}</ol><p>{copy.settingsPrefix} <code>chrome://settings/content/microphone</code> {copy.settingsSuffix}</p><button className="panel-primary" onClick={() => { void checkPermission(); }}>{copy.retry}</button></>}
+        <span className={`panel-badge panel-badge-${state === "granted" ? "success" : state === "denied" ? "error" : "progress"}`}>{state === "granted" ? t("permission:granted") : state === "denied" ? t("permission:denied") : t("permission:waiting")}</span>
+        {state === "waiting" && <><h2>{t("permission:waitingHeading")}</h2><p>{t("permission:waitingHelp")}</p><p role="status">{t("permission:waitingStatus")}</p></>}
+        {state === "granted" && <><span className="permission-check" aria-hidden="true"><Icon icon={Check} size={28} strokeWidth={2.25} /></span><h2>{t("permission:grantedHeading")}</h2><p>{device ? t("permission:grantedDevice", { device }) : t("permission:grantedHelp")}</p><p role="status"><Trans ns="permission" i18nKey="closing" values={{ seconds: remaining }} components={{ time: <b className="permission-time" /> }} /></p><button onClick={() => { void close(); }}>{t("permission:close")}</button></>}
+        {state === "denied" && <><h2>{t("permission:deniedHeading")}</h2><ol>{STEPS.map(step => <li key={step}>{t(`permission:${step}`)}</li>)}</ol><p><Trans ns="permission" i18nKey="settingsHelp" components={{ code: <code /> }} /></p><button className="panel-primary" onClick={() => { void checkPermission(); }}>{t("permission:retry")}</button></>}
         {error && <p role="alert">{error}</p>}
       </section>
-      <p>{copy.systemHelp}</p>
+      <p>{t("permission:systemHelp")}</p>
+      <LanguageSelect />
     </main>
   </div>;
 }

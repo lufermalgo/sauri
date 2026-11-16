@@ -14,7 +14,7 @@ from sauri_engine_common.external.errors import ERROR_CODES, ProviderError
 from sauri_engine_common.route import Route
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.copy.engine_notices_es import NOTICE_VERSIONS
+from app.copy.engine_notices import NOTICE_VERSIONS
 from app.engines.routing import (
     EXTERNAL_TOTAL_S,
     NO_FALLBACK,

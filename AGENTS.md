@@ -39,7 +39,7 @@ Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con 
 - Las recorridas visuales de la interfaz se hacen en el navegador integrado y no sustituyen las pruebas del backend.
 
 ## Código
-- Identificadores, comentarios y mensajes de commit en inglés, sin acentos. El texto que ve el usuario vive solo en `frontend/src/locales/` (español como fuente e inglés; único lugar exento del verificador de idioma; ver «Idioma y textos» en `DESIGN.md` y `npm run i18n:check`). No se eluden los hooks (`.githooks`, `.claude/hooks/block-main-git.sh`).
+- Identificadores, comentarios y mensajes de commit en inglés, sin acentos. El texto que ve el usuario vive solo en `frontend/src/locales/` y `extension/src/locales/` (español como fuente e inglés; únicos lugares exentos del verificador de idioma; ver «Idioma y textos» en `DESIGN.md` y `npm run i18n:check`). No se eluden los hooks (`.githooks`, `.claude/hooks/block-main-git.sh`).
 - Cambios acotados, simples y con nombres claros; sin código muerto ni defensas innecesarias; consistentes con el proyecto. Lee antes de editar.
 - Python con `cd backend && uv run --extra dev ...` (el `python3` de esta máquina no es el del proyecto). Secretos solo por archivo o variable de entorno, nunca en registros ni en el repositorio.
 - Los motores de IA (transcripción, hablantes, resumen) corren nativos en el Mac (fuera de Docker, puertos 8001–8003) para aprovechar el hardware; el resto corre en **Docker Desktop** como el proyecto de Compose **`sauri`** (portal, api, worker, postgres, minio/RustFS, rabbitmq). La arquitectura es hexagonal: cada motor tras un contrato estable, intercambiable por configuración. Servicios, puertos y comandos en `docs/architecture/overview.md` («Entorno local con Docker Desktop»).

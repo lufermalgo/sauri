@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { CaptureControls, type CaptureControlsProps } from "./CaptureControls";
-import { panelCopy as copy } from "../copy";
+import { panelCopy as copy } from "../../i18n/spanish";
 const defaults: CaptureControlsProps = { captureState: "idle", microphones: [], onToggleCapture: vi.fn(), elapsedTimeMs: 0 };
 
 function sourceButton() { return within(screen.getByRole("group", { name: copy.sourceMenu })).getAllByRole("button")[0]; }

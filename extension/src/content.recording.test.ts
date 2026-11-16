@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { copy } from './overlay/copy';
+import { overlayCopy as copy } from './i18n/spanish';
 import { cancelCountdown, hideRecordingUI, showCountdown, showNotice, syncRecordingUI, type RecordingUI } from './overlay/recording';
 
 const state: RecordingUI = { sessionId: 'current', paused: false, elapsedMs: 0, segmentStartedAt: 1000, showControlBar: true, micLabel: 'Test input' };

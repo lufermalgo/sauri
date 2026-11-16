@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.authorization import require_sales
 from app.auth.schemas import AuthenticatedUser
+from app.copy.engine_notices import DEFAULT_LANGUAGE, Language
 from app.engines import service
 from app.engines.capability_matrix import ProcessName
 from app.engines.host_client import HostClient, get_host_client
@@ -160,9 +161,14 @@ async def list_processes(session: Session, user: AuthorizedUser) -> list[Process
 # The literal /notice route and the process routes share the {capability} segment; none collide.
 @router.get("/processes/{capability}/notice")
 async def get_notice(
-    capability: ProcessName, provider_id: Annotated[ResourceId, Query()], session: Session, user: AuthorizedUser
+    capability: ProcessName,
+    provider_id: Annotated[ResourceId, Query()],
+    session: Session,
+    user: AuthorizedUser,
+    lang: Annotated[Language, Query()] = DEFAULT_LANGUAGE,
 ) -> NoticeOut:
-    return await service.get_notice(session, user.id, capability, provider_id)
+    """The notice in the portal's language (``lang``); both languages carry the same ``notice_version``."""
+    return await service.get_notice(session, user.id, capability, provider_id, lang)
 
 
 @router.put("/processes/{capability}")

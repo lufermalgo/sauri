@@ -1,4 +1,4 @@
-import { panelCopy as copy } from "../copy";
+import { panelCopy as copy } from "../../i18n/spanish";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";

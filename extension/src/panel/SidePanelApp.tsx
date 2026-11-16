@@ -16,7 +16,7 @@ import {
 import { isSignInRequired, onSessionChanged, readSessionToken } from "../core/session-token";
 import { ensureAccessToken } from "../core/api/session-refresh";
 import { portalDestination } from "./portal";
-import { panelCopy as copy } from "./copy";
+import { useT } from "../i18n";
 import { MicrophoneWarning } from "./components/MicrophoneWarning";
 import { DEFAULT_RECORDING_SETTINGS, parseRecordingSettings, readRecordingSettings, RECORDING_SETTINGS_KEY, writeRecordingSettings } from "./recordingSettings";
 import { RESOLUTION_DIMENSIONS } from "../core/resolution";
@@ -42,6 +42,7 @@ function mapCaptureState(status: SauriBackgroundState["status"]): CaptureState {
 }
 
 export function SidePanelApp() {
+  const { t } = useT();
   const [sessionExpired, setSessionExpired] = useState(false);
   const [settings, setSettings] = useState(DEFAULT_RECORDING_SETTINGS);
   const [settingsReady, setSettingsReady] = useState(false);
@@ -103,7 +104,7 @@ export function SidePanelApp() {
       try {
         const loaded = await readRecordingSettings();
         if (!cancelled && !changed) setSettings(loaded);
-      } catch { if (!cancelled) setSettingsError(copy.settingsLoadError); }
+      } catch { if (!cancelled) setSettingsError(t("panel:settingsLoadError")); }
       finally { if (!cancelled) setSettingsReady(true); }
     };
     const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
@@ -127,7 +128,7 @@ export function SidePanelApp() {
       try {
         setSettings(await writeRecordingSettings(change));
         return true;
-      } catch { setSettingsError(copy.settingsError); return false; }
+      } catch { setSettingsError(t("panel:settingsError")); return false; }
       finally {
         settingsPendingCount.current -= 1;
         if (settingsPendingCount.current === 0) setSettingsPending(false);
@@ -192,7 +193,7 @@ export function SidePanelApp() {
         const devices = await navigator.mediaDevices.enumerateDevices();
         if (cancelled) return;
         const options = devices.filter(device => device.kind === "audioinput").map((device, index) => ({
-          deviceId: device.deviceId || "default", label: device.label || `${copy.microphone} ${index + 1}`,
+          deviceId: device.deviceId || "default", label: device.label || `${t("panel:microphone")} ${index + 1}`,
         }));
         setMicrophones(options);
         setSelectedMicrophone(previous => previous ?? options[0]);
@@ -200,11 +201,11 @@ export function SidePanelApp() {
       } catch (error) {
         if (cancelled) return;
         if (error instanceof DOMException && error.name === "NotAllowedError") {
-          const fallback = { deviceId: "default", label: copy.defaultMicrophone };
+          const fallback = { deviceId: "default", label: t("panel:defaultMicrophone") };
           setMicrophones([fallback]);
           setSelectedMicrophone(previous => previous ?? fallback);
         } else {
-          setMicrophoneError(copy.microphoneListError);
+          setMicrophoneError(t("panel:microphoneListError"));
         }
       } finally {
         if (!cancelled) setMicrophonesReady(true);
@@ -292,9 +293,9 @@ export function SidePanelApp() {
   }, [captureState, loadNotes]);
 
   const openMicrophonePermission = useCallback(async () => {
-    setStartError(copy.permissionNeeded);
+    setStartError(t("panel:permissionNeeded"));
     try { await chrome.runtime.openOptionsPage(); }
-    catch { setStartError(copy.permissionOpenError); }
+    catch { setStartError(t("panel:permissionOpenError")); }
   }, []);
 
   const handleStartCapture = useCallback(async (source: CaptureSource, enableMicrophone = microphoneEnabled, confirmed = false) => {
@@ -328,16 +329,16 @@ export function SidePanelApp() {
       else if (result?.reason === "microphone-permission") {
         await openMicrophonePermission();
       } else if (result?.reason === "current-tab-unavailable" || (source === "current-tab" && result?.reason === "no-tab-audio")) {
-        setStartError(copy.tabError);
+        setStartError(t("panel:tabError"));
       } else if (result?.reason === "no-tab-audio") {
-        setStartError(copy.audioError);
+        setStartError(t("panel:audioError"));
       } else if (result?.reason === "unsupported-surface") {
-        setStartError(copy.surfaceError);
+        setStartError(t("panel:surfaceError"));
       } else if (result?.reason !== "cancelled" && result?.reason !== "busy") {
-        setStartError(copy.startError);
+        setStartError(t("panel:startError"));
       }
     } catch {
-      setStartError(copy.startError);
+      setStartError(t("panel:startError"));
     } finally {
       startPendingRef.current = false;
       setStartingSource(null);
@@ -365,7 +366,7 @@ export function SidePanelApp() {
       const result = await chrome.runtime.sendMessage({ type });
       if (!result?.ok) throw new Error("Control rejected");
       if (type === "stop-capture") setCaptureState(previous => previous === "recording" ? applyCaptureEvent(previous, "stop") : previous);
-    } catch { setStartError(copy.commandError); }
+    } catch { setStartError(t("panel:commandError")); }
     finally { commandPendingRef.current = false; setCommandPending(false); }
   };
 
@@ -378,7 +379,7 @@ export function SidePanelApp() {
       if (!result?.ok) throw new Error("Mode rejected");
       setCaptureMode(mode);
       setStartError(null);
-    } catch { setStartError(copy.commandError); }
+    } catch { setStartError(t("panel:commandError")); }
     finally { modePendingRef.current = false; setModePending(false); }
   };
 
@@ -391,7 +392,7 @@ export function SidePanelApp() {
 
   const handleOpenNote = async (meetingId: string) => {
     try { await chrome.tabs.create({ url: portalDestination(meetingId) }); }
-    catch { setStartError(copy.commandError); }
+    catch { setStartError(t("panel:commandError")); }
   };
 
   const handleLogin = useCallback(
@@ -418,7 +419,7 @@ export function SidePanelApp() {
   return <div className="panel-app">
     <PanelHeader captureState={captureState} paused={backgroundState.paused} />
     <main className="panel-main panel-stack">
-      {selecting && <p role="status">{startingSource === "picker" ? copy.choosing : copy.starting}</p>}
+      {selecting && <p role="status">{startingSource === "picker" ? t("panel:choosing") : t("panel:starting")}</p>}
       {projectionReady && captureState === "idle" && <RecordingCompletionStatus sessionId={recordingSessionId} onVisibleChange={setCompletionVisible} />}
       {(!completionVisible || captureState !== "idle") && <CaptureControls
         captureState={captureState}
@@ -441,7 +442,7 @@ export function SidePanelApp() {
         tabTitle={backgroundState.meetingTitle}
         overlayUnavailable={backgroundState.overlayAvailable === false}
         recordedVideo={backgroundState.videoPresence === "muxed"}
-        recordedMicrophone={backgroundState.micDeviceId ? microphones.find(mic => mic.deviceId === backgroundState.micDeviceId)?.label ?? copy.microphone : undefined}
+        recordedMicrophone={backgroundState.micDeviceId ? microphones.find(mic => mic.deviceId === backgroundState.micDeviceId)?.label ?? t("panel:microphone") : undefined}
         commandPending={commandPending}
         elapsedTimeMs={timerAvailable ? elapsedTimeMs : undefined}
         microphoneError={microphoneError}

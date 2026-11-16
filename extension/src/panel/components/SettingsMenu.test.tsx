@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { SettingsMenu } from "./SettingsMenu";
 import { DEFAULT_RECORDING_SETTINGS } from "../recordingSettings";
-import { panelCopy as copy } from "../copy";
+import { panelCopy as copy } from "../../i18n/spanish";
 
 const trigger = () => screen.getByRole("button", { name: copy.settings });
 
