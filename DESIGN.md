@@ -222,14 +222,14 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 - **Insignias.** Pastilla con texto siempre presente: éxito (`accent-soft`/`accent-soft-fg`), progreso (`warning-soft`/`warning-soft-fg`), error (`danger-soft`/`danger-soft-fg`), neutral (`fill`/`fg-muted`).
 - **Diálogos.** `<dialog>` nativo: borde, radio `lg`, `shadow-md`, velo `scrim`, título, acción secundaria antes de la principal, foco inicial dentro, cierre con Escape y retorno del foco al disparador.
 - **Menús.** Panel `surface`, borde, `shadow-md`, filas de 44px, hover `fill-hover`, elemento destructivo en `danger-text`, navegación por teclado.
-- **Tooltips.** (Regla para cuando se creen; hoy no hay componente.) Solo texto breve, complemento (no reemplazo) del nombre accesible. Sin botones dentro.
+- **Tooltips.** `useTooltip` (`ui/Tooltip.tsx`, hoy en el disparador de `Menu` con `tooltip`). Solo texto breve, complemento (no reemplazo) del nombre accesible: `role="tooltip"` enlazado con `aria-describedby`, aparece tras 400ms con el puntero o el foco de teclado y se cierra con Escape. Sin botones dentro.
 - **Avisos (toasts).** (Regla para cuando se creen.) Esquina inferior, `surface-raised`, borde y `shadow-md`; se anuncian con `role="status"` (error: `role="alert"`).
 - **Progreso y pasos.** Barra de 12px, pista `fill-strong`, relleno `accent`. Sin estimación, la barra indeterminada pulsa en `accent-muted` (sin degradados). El paso actual se marca con número, contorno de acento y texto en negrita, no solo color.
 
 ## 8. Iconos
 
 - Familia **Lucide**, lineal, heredan `currentColor`. Los componentes React usan `core/design/Icon.tsx` y el overlay `overlay/icons.ts`; ambos toman tamaño (18) y trazo (1.75) de `core/design/iconDefaults.ts`, un único punto de cambio. No se cambia la librería ni el trazo sin necesidad documentada.
-- Escala: `icon-xs` 12, `icon-sm` 14, `icon-md` 16, `icon-lg` 18. Botón de icono: 44×44 con icono 16–18.
+- Escala: `icon-xs` 12, `icon-sm` 14, `icon-md` 16, `icon-lg` 18. Botón de icono: 44×44 con icono 16–18. En el portal, `.ui-icon-button` (primario `--primary` para la acción principal del grupo, `--quiet` para las secundarias).
 - Decorativo: `aria-hidden="true"`; acción solo con icono: nombre accesible (`aria-label`).
 - El color de un icono lo da el texto que lo rodea (`fg-muted`, `accent-text`, `danger-text`).
 

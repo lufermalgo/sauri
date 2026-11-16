@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
+import { useTooltip } from "./Tooltip";
 
 type MenuContextValue = { close: () => void };
 const MenuContext = createContext<MenuContextValue | null>(null);
@@ -8,11 +9,18 @@ export type MenuProps = {
   label: string;
   triggerLabel?: string;
   triggerVariant?: "icon" | "primary" | "secondary";
+  /** Custom trigger content (e.g. a profile card). The caller styles it through `triggerClassName`. */
+  trigger?: ReactNode;
+  triggerClassName?: string;
+  className?: string;
+  /** Shows `label` as a tooltip on the trigger (hover and keyboard focus). */
+  tooltip?: boolean;
   children: ReactNode;
 };
 
-export function Menu({ label, triggerLabel, triggerVariant = "icon", children }: MenuProps) {
+export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, triggerClassName, className, tooltip, children }: MenuProps) {
   const [open, setOpen] = useState(false);
+  const tip = useTooltip(tooltip ? label : undefined);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -85,11 +93,14 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", children }:
   };
 
   return (
-    <div className="ui-menu" ref={rootRef}>
-      <button ref={triggerRef} type="button" className={`ui-menu-trigger ui-menu-trigger--${triggerLabel ? triggerVariant : "icon"}`} aria-label={label}
+    <div className={className ? `ui-menu ${className}` : "ui-menu"} ref={rootRef}>
+      <button ref={triggerRef} type="button"
+        className={trigger ? triggerClassName : `ui-menu-trigger ui-menu-trigger--${triggerLabel ? triggerVariant : "icon"}`} aria-label={label}
         aria-haspopup="menu" aria-expanded={open} aria-controls={open ? panelId : undefined}
-        onClick={() => (open ? close(false) : openMenu("first"))} onKeyDown={onTriggerKeyDown}>
-        {triggerLabel ? (
+        {...tip.triggerProps}
+        onClick={() => { tip.hide(); if (open) close(false); else openMenu("first"); }}
+        onKeyDown={event => { tip.triggerProps.onKeyDown?.(event); onTriggerKeyDown(event); }}>
+        {trigger ? trigger : triggerLabel ? (
           <>
             <span>{triggerLabel}</span>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
@@ -105,6 +116,7 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", children }:
           </svg>
         )}
       </button>
+      {tip.tooltip}
       {open && (
         <MenuContext.Provider value={{ close: () => close(true) }}>
           <div ref={panelRef} id={panelId} role="menu" aria-label={label} className="ui-menu-panel"

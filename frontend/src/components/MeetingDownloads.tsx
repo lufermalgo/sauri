@@ -3,7 +3,8 @@ import type { PlaybackManifest } from "../api";
 import { meeting as text } from "../copy/meeting";
 import { titleToFilename } from "../download-filename";
 import { transcriptToText, type ExportTurn } from "../transcript-export";
-import { Menu, MenuItem } from "./ui";
+import { Download } from "lucide-react";
+import { Icon, Menu, MenuItem } from "./ui";
 import "../styles/meeting.css";
 
 export interface MeetingDownloadsProps {
@@ -50,7 +51,8 @@ export function MeetingDownloads({ meetingId, title, manifest, turns }: MeetingD
   }
 
   return <div className="meeting-downloads">
-    <Menu label={text.download} triggerLabel={text.download} triggerVariant="primary">
+    <Menu label={text.download} tooltip trigger={<Icon icon={Download} />}
+      triggerClassName="ui-icon-button ui-icon-button--primary">
       <MenuItem disabled={!source?.url} onSelect={downloadMedia}>{mediaLabel}</MenuItem>
       <MenuItem disabled={!turns.length} onSelect={downloadTranscript}>{text.downloadTranscript}</MenuItem>
     </Menu>

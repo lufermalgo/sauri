@@ -11,3 +11,5 @@ export { Skeleton, SkeletonLines, type SkeletonProps, type SkeletonLinesProps } 
 export { Menu, MenuItem, type MenuProps, type MenuItemProps } from "./Menu";
 export { Avatar, type AvatarProps } from "./Avatar";
 export { TimeChip, type TimeChipProps } from "./TimeChip";
+export { Icon, type IconProps } from "./Icon";
+export { useTooltip, TOOLTIP_DELAY_MS } from "./Tooltip";
