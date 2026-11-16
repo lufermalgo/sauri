@@ -497,3 +497,8 @@ make engines-status
 | 3. Configuración empujada o leída por las pasarelas | La lee el worker por intento | Sin sincronización ni reinicios |
 | 4. Matriz con OpenAI en transcripción | OpenAI fuera de transcripción y hablantes | Retiro anunciado de los modelos con palabras o hablantes |
 | 8. Código de dispositivo de APX | Vía oficial «Sign in with ChatGPT» | La documentación de Codex desaconseja `backend-api`; existe vía oficial |
+
+
+## Adenda 2026-11-16: modelos de varios archivos y modelo preferido (#1180)
+
+El catálogo admite entradas formadas por varios archivos (`files`: ruta relativa, tamaño y SHA-256; `file` nombra el directorio, `size` es la suma y `sha256` es el resumen del listado, comprobado al leer el catálogo). `host-engine` los instala archivo por archivo en `<modelo>.part/` (cada archivo verificado, los completos se conservan al reintentar) y mueve el directorio a su nombre final solo si todos coinciden; el manifiesto guarda el resumen y el tamaño y `mtime_ns` de cada archivo, que las pasarelas comparan sin recalcular hashes. La adopción de un directorio ya presente y la copia verificada desde otra carpeta (`seed_model.py`) usan la misma comprobación. `preferred` marca el modelo al que apunta `local:default` mientras esté instalado y el motor administrado que `needs` esté presente (`fluidaudio-cli`: binario construido desde el commit fijado, con procedencia); el modelo `default` es el respaldo y nunca se quita mientras sea ese respaldo. La recomendación por hardware añade `min_macos` y no marca como «reducida» la elección cuando el modelo preferido no cabe. Evidencia y decisión de producto: `core-speech-pipeline/design.md`, adenda de la misma fecha.

@@ -1,0 +1,29 @@
+Sauri third-party notices
+=========================
+
+Sauri runs its speech engines locally. The components below are used under their own licenses.
+
+Parakeet-TDT-0.6B-v3 "ultra" speech recognition model (Core ML build)
+  - Parakeet-TDT-0.6B-v3 (c) NVIDIA, licensed under CC-BY-4.0
+    https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+  - parakeet-ultra, a post-training of the model above by Moondream, licensed under CC-BY-4.0
+    https://huggingface.co/moondream/parakeet-ultra
+  - parakeet-ultra-coreml, the Core ML conversion (int8 per-channel encoder) by FluidInference, licensed
+    under CC-BY-4.0
+    https://huggingface.co/FluidInference/parakeet-ultra-coreml
+  Changes made to the original model by these steps: post-training, int8 quantization of the encoder and
+  export to Core ML. Sauri downloads the files at a pinned revision, verifies each one against the SHA-256
+  recorded in scripts/engines/model-catalog.json and does not modify them. License text:
+  https://creativecommons.org/licenses/by/4.0/
+
+FluidAudio (fluidaudiocli)
+  Copyright FluidInference, licensed under the Apache License 2.0
+  https://github.com/FluidInference/FluidAudio
+  Sauri builds the command-line tool from the commit pinned in scripts/engines/engine-hashes.json and does
+  not redistribute it. License text: https://www.apache.org/licenses/LICENSE-2.0
+
+whisper.cpp and the Whisper large-v3-turbo model (MIT)
+  https://github.com/ggml-org/whisper.cpp, https://github.com/openai/whisper
+
+Silero VAD (MIT)
+  https://github.com/snakers4/silero-vad
