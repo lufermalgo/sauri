@@ -1,5 +1,5 @@
 /*
- * Settings console: category list on the left, the chosen category on the right (one column
+ * Settings console: search and grouped category list on the left, the chosen category on the right (one column
  * under 640px, where the list and the category are separate steps). Cards and forms keep a
  * readable width and stay left aligned; the screen itself fills the content region.
  */
@@ -21,6 +21,112 @@
   overflow-y: auto;
   background: var(--ds-bg);
   border-right: 1px solid var(--ds-border);
+}
+
+/* Search field: sits at the top of the nav, same 8px radius and focus ring as other fields. */
+.settings-search {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  box-sizing: border-box;
+  min-height: var(--ds-control-h-md);
+  margin-bottom: var(--ds-space-2);
+  padding-left: 10px;
+  color: var(--ds-fg-muted);
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-sm);
+}
+
+.settings-search:focus-within {
+  outline: var(--ds-focus-width) solid var(--ds-focus);
+  outline-offset: 1px;
+}
+
+.settings-search-icon {
+  flex: 0 0 auto;
+}
+
+.settings-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: calc(var(--ds-control-h-md) - 2px);
+  padding: 0;
+  color: var(--ds-fg);
+  font: inherit;
+  font-size: var(--ds-text-sm);
+  background: transparent;
+  border: 0;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.settings-search-input::placeholder {
+  color: var(--ds-fg-subtle);
+}
+
+.settings-search-input::-webkit-search-cancel-button {
+  display: none; /* The field has its own clear button. */
+}
+
+.settings-search-clear {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: calc(var(--ds-control-h-md) - 2px);
+  height: calc(var(--ds-control-h-md) - 2px);
+  padding: 0;
+  color: var(--ds-fg-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--ds-radius-sm);
+  cursor: pointer;
+}
+
+.settings-search-clear:hover {
+  color: var(--ds-fg);
+  background: var(--ds-fill-hover);
+}
+
+.settings-search-clear:focus-visible {
+  outline: var(--ds-focus-width) solid var(--ds-focus);
+  outline-offset: -2px;
+}
+
+.settings-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip-path: inset(50%);
+}
+
+.settings-nav-empty {
+  margin: 0;
+  padding: var(--ds-space-2) 10px;
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* Groups: a small muted label (11px section-label recipe) over its rows. */
+.settings-nav-group + .settings-nav-group {
+  margin-top: var(--ds-space-3);
+}
+
+.settings-nav-group-title {
+  display: block;
+  padding: 0 10px var(--ds-space-1);
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .settings-nav-list {
@@ -48,6 +154,11 @@
 
 .settings-nav-link svg {
   flex: 0 0 auto;
+}
+
+.settings-nav-link:focus-visible {
+  outline: var(--ds-focus-width) solid var(--ds-focus);
+  outline-offset: -2px;
 }
 
 .settings-nav-link:hover {
@@ -97,6 +208,10 @@
 
 .settings-detail-title:focus-visible {
   outline-offset: var(--ds-space-1);
+}
+
+.settings-coming-soon {
+  max-width: 60ch;
 }
 
 .settings-back {
