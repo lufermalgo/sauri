@@ -1,17 +1,20 @@
 import { useState } from "react";
 import type { PlaybackManifest } from "../api";
 import { meeting as text } from "../copy/meeting";
+import { titleToFilename } from "../download-filename";
 import { transcriptToText, type ExportTurn } from "../transcript-export";
 import { Menu, MenuItem } from "./ui";
 import "../styles/meeting.css";
 
 export interface MeetingDownloadsProps {
   meetingId: string;
+  /** Current meeting title (including a rename not yet reflected by the parent). */
+  title?: string | null;
   manifest: PlaybackManifest | null;
   turns: ExportTurn[];
 }
 
-export function MeetingDownloads({ meetingId, manifest, turns }: MeetingDownloadsProps) {
+export function MeetingDownloads({ meetingId, title, manifest, turns }: MeetingDownloadsProps) {
   const [error, setError] = useState(false);
   const audioOnly = manifest?.video_presence === "absent" || manifest?.video_presence === "unknown";
   const source = audioOnly ? manifest?.audio_source : manifest?.video_presence === "muxed"
@@ -24,7 +27,7 @@ export function MeetingDownloads({ meetingId, manifest, turns }: MeetingDownload
       const url = URL.createObjectURL(new Blob([transcriptToText(turns)], { type: "text/plain;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = text.transcriptFilename(meetingId);
+      link.download = titleToFilename(title, "txt") ?? text.transcriptFilename(meetingId);
       document.body.append(link);
       link.click();
       link.remove();
