@@ -186,7 +186,8 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
 
-    expect(await screen.findByText(copy.processing.identifying)).toBeVisible();
+    await waitFor(() => expect(processingCard()).toHaveTextContent(copy.processing.identifying));
+    expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
   });
 
   it("renders a speaker label on every transcript row, including unresolved rows", async () => {
@@ -578,6 +579,14 @@ describe("TranscriptView — attributed word turns", () => {
   });
 });
 
+function processingCard(): HTMLElement {
+  return document.querySelector(".meeting-processing") as HTMLElement;
+}
+
+function headerBadge(): HTMLElement {
+  return document.querySelector(".ui-status-badge") as HTMLElement;
+}
+
 describe("TranscriptView — processing polling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -610,15 +619,16 @@ describe("TranscriptView — processing polling", () => {
     expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(copy.processing.transcribing)).toBeVisible();
     vi.mocked(api.getTranscript).mockResolvedValue({ ...transcript([turn()]), presentation: "segments" });
     await advance();
-    expect(screen.getByText(copy.processing.identifying)).toBeVisible();
+    expect(within(processingCard()).getByText(copy.processing.identifying)).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
     vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
     await advance();
-    expect(screen.getByText(copy.meeting.ready)).toBeVisible();
     expect(screen.getByText("Synthetic attributed turn")).toBeVisible();
-    // Speakers are done; the automatic summary request is expected next.
+    // Speakers are done; the automatic summary request is expected next, so the header is not ready yet.
+    expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
+    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
     expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status"))
       .toHaveTextContent(copy.processing.summarizing);
     const calls = vi.mocked(api.getMeeting).mock.calls.length;
@@ -626,6 +636,7 @@ describe("TranscriptView — processing polling", () => {
     // No summary request appeared: the card briefly confirms completion, then goes away.
     expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status"))
       .toHaveTextContent(copy.processing.completed);
+    expect(headerBadge()).toHaveTextContent(copy.meeting.ready);
     await advance(20000);
     expect(document.querySelector(".meeting-processing")).not.toBeInTheDocument();
     expect(api.getMeeting).toHaveBeenCalledTimes(calls);
@@ -698,13 +709,15 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     await open();
-    expect(screen.getByText(copy.processing.identifying)).toBeVisible();
+    expect(within(processingCard()).getByText(copy.processing.identifying)).toBeVisible();
+    expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
+    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await advance(4999);
     expect(api.getDiarization).toHaveBeenCalledTimes(1);
     await advance(1);
     expect(api.getDiarization).toHaveBeenCalledTimes(2);
-    expect(screen.getByText(copy.processing.identifying)).toBeVisible();
+    expect(within(processingCard()).getByText(copy.processing.identifying)).toBeVisible();
 
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
     vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
@@ -714,7 +727,6 @@ describe("TranscriptView — processing polling", () => {
       vi.mocked(api.getDiarization).mock.invocationCallOrder.at(-1)!,
     );
     expect(screen.getByText("Synthetic attributed turn")).toBeVisible();
-    expect(screen.getByText(copy.meeting.ready)).toBeVisible();
     expect(screen.queryByText(copy.processing.identifying)).not.toBeInTheDocument();
     await advance(20000);
     expect(api.getMeeting).toHaveBeenCalledTimes(3);
@@ -732,15 +744,20 @@ describe("TranscriptView — processing polling", () => {
     await open();
     const card = () => document.querySelector(".meeting-processing") as HTMLElement | null;
     expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.identifying);
+    // Transcription is completed, yet the header follows the stage still running.
+    expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
     vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "pending" });
     await advance();
     expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.summarizing);
+    expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
+    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
     expect(card()!.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.steps.summary);
     // A running summary keeps the card past the short wait for the automatic request.
     vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "running" });
     await advance(15000);
     expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.summarizing);
+    expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
     vi.mocked(api.getMeetingSummary).mockResolvedValue({
       summaryId: "s-1", meetingId: "r-1", templateId: "t", templateName: "General", templateVersion: 1,
       topic: "Synthetic topic", keyPoints: [], reviewState: "draft", generation: 1,
@@ -749,8 +766,15 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "succeeded" });
     await advance();
     expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.completed);
+    expect(headerBadge()).toHaveTextContent(copy.meeting.ready);
     await advance(3000);
     expect(card()).toBeNull();
+    expect(headerBadge()).toHaveTextContent(copy.meeting.ready);
+    // Final state: no poll of the meeting, speakers or summary request keeps running.
+    const settledCalls = vi.mocked(api.getLatestSummaryRequest).mock.calls.length;
+    await advance(30000);
+    expect(api.getLatestSummaryRequest).toHaveBeenCalledTimes(settledCalls);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("stops speaker polling at fifteen minutes and explains the wait limit", async () => {
@@ -758,11 +782,11 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     await open();
     await advance(15 * 60 * 1000 - 1);
-    expect(screen.getByText(copy.processing.identifying)).toBeVisible();
+    expect(within(processingCard()).getByText(copy.processing.identifying)).toBeVisible();
     expect(api.getDiarization).toHaveBeenCalledTimes(180);
     await advance(1);
     expect(screen.getByText(copy.processing.speakerWaitExpired)).toBeVisible();
-    expect(screen.queryByText(copy.processing.identifying)).not.toBeInTheDocument();
+    expect(processingCard()).not.toHaveTextContent(copy.processing.identifying);
     expect(vi.getTimerCount()).toBe(0);
     await advance(20000);
     await act(async () => { fireEvent(document, new Event("visibilitychange")); });
@@ -1036,8 +1060,10 @@ describe("TranscriptView — visual QA refinements", () => {
   it("does not hide ongoing speaker identification when ASR is already completed", async () => {
     vi.mocked(api.getDiarization).mockRejectedValue(new Error("Error 404"));
     render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
-    expect((await screen.findByText(copy.processing.identifying)).closest(".meeting-processing")).toBeInTheDocument();
-    expect(screen.getByText(copy.meeting.ready)).toHaveClass("ui-status-badge--success");
+    await waitFor(() => expect(processingCard()).toHaveTextContent(copy.processing.identifying));
+    expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
+    expect(headerBadge()).toHaveClass("ui-status-badge--progress");
+    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
   });
 });
 
