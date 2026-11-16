@@ -9,6 +9,7 @@ import type {
   SummaryRequestStatus,
   TranscriptPresentation,
   AttributedTurn,
+  EngineAccount,
   EngineCapabilities,
   EngineKeyState,
   EngineModelList,
@@ -812,6 +813,23 @@ export function putEngineKey(providerId: string, key: string): Promise<EngineKey
 
 export function deleteEngineKey(providerId: string): Promise<EngineKeyState> {
   return enginesRequest(`${providerPath(providerId)}/key`, "DELETE");
+}
+
+// ChatGPT plan: sign in with the account (no key). Polling is the portal's job: one call per interval.
+export function getEngineAccount(providerId: string): Promise<EngineAccount> {
+  return enginesRequest(`${providerPath(providerId)}/account`);
+}
+
+export function startEngineAccount(providerId: string): Promise<EngineAccount> {
+  return enginesRequest(`${providerPath(providerId)}/account/start`, "POST");
+}
+
+export function pollEngineAccount(providerId: string): Promise<EngineAccount> {
+  return enginesRequest(`${providerPath(providerId)}/account/poll`, "POST");
+}
+
+export function disconnectEngineAccount(providerId: string): Promise<EngineAccount> {
+  return enginesRequest(`${providerPath(providerId)}/account`, "DELETE");
 }
 
 export function testEngineProvider(providerId: string): Promise<EngineProbeResult> {

@@ -25,6 +25,7 @@ function kindInfo(kind: EngineProviderKind, overrides: Partial<EngineKindInfo> =
     kind,
     default_base_url: localApp ? `http://127.0.0.1:${kind === "ollama" ? 11434 : 1234}/v1` : `https://api.${kind}.example/v1`,
     key_required: !localApp && kind !== "openai_compatible",
+    auth: "key",
     linkable: true,
     capabilities: [{ capability: "summary", transport: "openai-chat", verified_on: "2026-11-16" }],
     ...overrides,

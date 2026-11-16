@@ -21,6 +21,7 @@ function kindInfo(kind: EngineProviderKind, processes: EngineProcess[]): EngineK
     kind,
     default_base_url: `https://api.${kind}.example/v1`,
     key_required: true,
+    auth: "key",
     linkable: true,
     capabilities: processes.map((capability) => ({ capability, transport: "openai-chat", verified_on: "2026-11-16" })),
   };

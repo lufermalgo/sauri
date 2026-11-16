@@ -129,7 +129,11 @@ def test_models_are_listed_from_the_plan_with_its_first_as_starter(client: TestC
     connect(store)
     response = client.post("/v1/providers/models", json=models_body())
     assert response.status_code == 200, response.text
-    assert response.json()["models"] == [{"id": "gpt-5", "name": "GPT-5"}, {"id": "gpt-5-mini", "name": "gpt-5-mini"}]
+    assert response.json()["models"] == [
+        {"id": "gpt-5", "name": "GPT-5", "serves": ["summary"]},
+        {"id": "gpt-5-mini", "name": "gpt-5-mini", "serves": ["summary"]},
+    ]
+    assert response.json()["serves"] == ["summary"]  # the plan serves summaries only, from the model ids
     assert response.json()["starter"] == "gpt-5" and response.json()["cached"] is False
     assert not any(secret in response.text for secret in SECRETS)
 

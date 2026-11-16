@@ -8,6 +8,7 @@ database code: only the host service stores them, and rows keep a reference and 
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any, Final
 from urllib.parse import urlsplit
@@ -23,9 +24,12 @@ from app.engines import capability_matrix as matrix
 from app.engines.capability_matrix import ProcessName
 from app.engines.host_client import HostClient, HostError, HostRejectedError, HostUnavailableError, valid_secret_ref
 from app.engines.schemas import (
+    ACCOUNT_ERRORS,
     ERROR_CLASSES,
     LOCAL_DEFAULT_MODEL,
     LOCAL_MODEL,
+    AccountOut,
+    AccountPendingOut,
     CapabilitiesOut,
     CapabilityOut,
     EngineStateOut,
@@ -90,7 +94,7 @@ def capabilities() -> CapabilitiesOut:
             CapabilityOut(
                 capability=capability,
                 transport=support.transport,
-                verified_on=str(support.verified_on),
+                verified_on=support.verified_on,
             )
             for capability in matrix.VISIBLE_CAPABILITIES
             if matrix.is_offered(kind, capability) and (support := matrix.get_support(kind, capability)) is not None
@@ -99,7 +103,8 @@ def capabilities() -> CapabilitiesOut:
             KindOut(
                 kind=kind,
                 default_base_url=matrix.DEFAULT_BASE_URLS[kind],
-                key_required=kind not in matrix.KEY_OPTIONAL_KINDS,
+                key_required=matrix.key_needed(kind),
+                auth="account" if kind in matrix.ACCOUNT_KINDS else "key",
                 linkable=kind not in matrix.BLOCKED_KINDS,
                 capabilities=offered,
             )
@@ -118,7 +123,7 @@ def provider_status(row: EngineProvider) -> ProviderStatus:
         return "disabled"
     if row.base_url is None:
         return "unconfigured"
-    if row.secret_ref is None and row.kind not in matrix.KEY_OPTIONAL_KINDS:
+    if row.secret_ref is None and matrix.key_needed(row.kind):
         return "no_key"
     return "active"
 
@@ -212,6 +217,8 @@ async def create_provider(session: AsyncSession, owner_id: str, data: ProviderCr
     if data.kind in matrix.BLOCKED_KINDS:
         raise api_error(UNPROCESSABLE, "provider_kind_unavailable")
     raw_url = data.base_url or matrix.DEFAULT_BASE_URLS[data.kind]
+    if data.kind in matrix.ACCOUNT_KINDS and raw_url != matrix.DEFAULT_BASE_URLS[data.kind]:
+        raise api_error(UNPROCESSABLE, "base_url_fixed")  # the account only signs in at its own address
     if raw_url is None:
         raise api_error(UNPROCESSABLE, "base_url_required")
     base_url = await _checked_url(data.kind, raw_url)
@@ -296,6 +303,8 @@ async def update_provider(
         if await _label_taken(session, owner_id, data.label, except_id=row.id):
             raise api_error(status.HTTP_409_CONFLICT, CONFLICT)
         row.label = data.label
+    if data.base_url is not None and row.kind in matrix.ACCOUNT_KINDS and data.base_url != row.base_url:
+        raise api_error(UNPROCESSABLE, "base_url_fixed")
     if data.base_url is not None:
         new_url = await _checked_url(row.kind, data.base_url)
         if row.secret_ref is not None and origin_of(new_url) != origin_of(row.base_url or new_url):
@@ -342,6 +351,8 @@ async def delete_provider(
 
 async def set_key(session: AsyncSession, host: HostClient, owner_id: str, provider_id: str, key: str) -> KeyOut:
     row = await _load_provider(session, owner_id, provider_id)
+    if row.kind in matrix.ACCOUNT_KINDS:
+        raise api_error(UNPROCESSABLE, "provider_has_no_key")
     if row.base_url is None:
         raise api_error(UNPROCESSABLE, "base_url_required")
     ref = secret_ref_for(owner_id, row.id)
@@ -380,7 +391,7 @@ async def delete_key(session: AsyncSession, host: HostClient, owner_id: str, pro
     row.key_set_at = None
     row.updated_at = _now()
     reverted: list[ProcessName] = []
-    if row.kind not in matrix.KEY_OPTIONAL_KINDS:
+    if matrix.key_needed(row.kind):
         reverted = await _revert_processes(session, owner_id, row.id)
     await session.commit()
     return KeyOut(key_set=False, key_hint=None, reverted_processes=reverted)
@@ -606,7 +617,29 @@ async def get_notice(session: AsyncSession, owner_id: str, capability: ProcessNa
     )
 
 
-async def put_process(session: AsyncSession, owner_id: str, capability: ProcessName, data: ProcessIn) -> ProcessOut:
+async def _require_signed_in(session: AsyncSession, host: HostClient, owner_id: str, provider_id: str) -> None:
+    """An account provider can only be chosen while its account is connected (checked before any row lock)."""
+    row = (
+        await session.execute(
+            select(EngineProvider).where(EngineProvider.id == provider_id, EngineProvider.owner_id == owner_id)
+        )
+    ).scalar_one_or_none()
+    if row is None or row.kind not in matrix.ACCOUNT_KINDS:
+        return
+    await session.commit()  # no transaction stays open across the host call
+    try:
+        raw = await host.chatgpt_status()
+    except HostError as exc:
+        raise _host_failure(exc) from None
+    if raw.get("state") != "connected":
+        raise api_error(UNPROCESSABLE, "provider_account_missing")
+
+
+async def put_process(
+    session: AsyncSession, owner_id: str, capability: ProcessName, data: ProcessIn, host: HostClient | None = None
+) -> ProcessOut:
+    if host is not None and data.provider_id is not None:
+        await _require_signed_in(session, host, owner_id, data.provider_id)
     provider: EngineProvider | None = None
     setting = (
         await session.execute(
@@ -628,7 +661,7 @@ async def put_process(session: AsyncSession, owner_id: str, capability: ProcessN
             raise api_error(UNPROCESSABLE, "provider_disabled")
         if not matrix.is_offered(provider.kind, capability) or provider.base_url is None:
             raise api_error(UNPROCESSABLE, "unsupported_provider")
-        if provider.secret_ref is None and provider.kind not in matrix.KEY_OPTIONAL_KINDS:
+        if provider.secret_ref is None and matrix.key_needed(provider.kind):
             raise api_error(UNPROCESSABLE, "provider_key_missing")
         if data.model.startswith("local:"):
             raise api_error(UNPROCESSABLE, "invalid_model")
@@ -680,6 +713,101 @@ async def put_process(session: AsyncSession, owner_id: str, capability: ProcessN
         await session.rollback()
         raise api_error(status.HTTP_409_CONFLICT, CONFLICT) from None
     return _process_out(capability, setting, provider, kept)
+
+
+# --- Account sign-in (ChatGPT plan; proxied to the host service) ---------------------------------
+
+_CONTROL: Final = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_USER_CODE: Final = re.compile(r"[A-Za-z0-9-]{1,32}")
+_PLAN_LABEL: Final = re.compile(r"[a-z0-9_-]{1,32}")
+_VERIFICATION_PREFIX: Final = "https://auth.openai.com/"
+
+
+def _account_failure(exc: HostError) -> Exception:
+    """A refusal that names a provider class (rate limit, store locked) keeps it; the rest is generic."""
+    if isinstance(exc, HostRejectedError) and exc.code in ERROR_CLASSES:
+        limited = exc.code == "provider_rate_limited"
+        return api_error(status.HTTP_429_TOO_MANY_REQUESTS if limited else status.HTTP_502_BAD_GATEWAY, exc.code)
+    return _host_failure(exc)
+
+
+def _account_out(raw: dict[str, Any], reverted: list[ProcessName] | None = None) -> AccountOut:
+    """Built field by field from the host's answer: nothing else is passed through."""
+    state = raw.get("state")
+    account, plan, error = raw.get("account"), raw.get("plan"), raw.get("error")
+    pending: AccountPendingOut | None = None
+    found = raw.get("pending")
+    if state == "pending" and isinstance(found, dict):
+        code, url, expires, interval = (
+            found.get("user_code"), found.get("verification_url"), found.get("expires_at"), found.get("interval_s")
+        )  # fmt: skip
+        if (
+            isinstance(code, str) and _USER_CODE.fullmatch(code)
+            and isinstance(url, str) and url.startswith(_VERIFICATION_PREFIX) and len(url) <= 200
+            and isinstance(expires, int | float) and not isinstance(expires, bool)
+            and isinstance(interval, int | float) and not isinstance(interval, bool)
+        ):  # fmt: skip
+            pending = AccountPendingOut(
+                user_code=code,
+                verification_url=url,
+                expires_at=datetime.fromtimestamp(expires, UTC),
+                interval_s=min(max(round(interval), 1), 60),
+                slow_down=found.get("slow_down") is True,
+            )
+    clean_state = "connected" if state == "connected" else "pending" if pending is not None else "disconnected"
+    return AccountOut(
+        state=clean_state,
+        account=account if clean_state == "connected" and isinstance(account, str) and 0 < len(account) <= 254
+        and _CONTROL.search(account) is None else None,
+        plan=plan if clean_state == "connected" and isinstance(plan, str) and _PLAN_LABEL.fullmatch(plan) else None,
+        pending=pending,
+        error=error if clean_state == "disconnected" and isinstance(error, str) and error in ACCOUNT_ERRORS else None,
+        reverted_processes=reverted or [],
+    )
+
+
+async def _account_provider(session: AsyncSession, owner_id: str, provider_id: str) -> None:
+    row = await _load_provider(session, owner_id, provider_id)
+    if row.kind not in matrix.ACCOUNT_KINDS:
+        raise api_error(UNPROCESSABLE, "provider_has_no_account")
+    await session.commit()  # no transaction stays open across the host call
+
+
+async def account_status(session: AsyncSession, host: HostClient, owner_id: str, provider_id: str) -> AccountOut:
+    await _account_provider(session, owner_id, provider_id)
+    try:
+        return _account_out(await host.chatgpt_status())
+    except HostError as exc:
+        raise _account_failure(exc) from None
+
+
+async def account_start(session: AsyncSession, host: HostClient, owner_id: str, provider_id: str) -> AccountOut:
+    await _account_provider(session, owner_id, provider_id)
+    try:
+        return _account_out(await host.chatgpt_start())
+    except HostError as exc:
+        raise _account_failure(exc) from None
+
+
+async def account_poll(session: AsyncSession, host: HostClient, owner_id: str, provider_id: str) -> AccountOut:
+    await _account_provider(session, owner_id, provider_id)
+    try:
+        return _account_out(await host.chatgpt_poll())
+    except HostError as exc:
+        raise _account_failure(exc) from None
+
+
+async def account_disconnect(session: AsyncSession, host: HostClient, owner_id: str, provider_id: str) -> AccountOut:
+    """Forget the account on the host and send every process that used it back to the local engine."""
+    await _account_provider(session, owner_id, provider_id)
+    try:
+        await host.chatgpt_logout()
+    except HostError as exc:
+        raise _account_failure(exc) from None
+    await _load_provider(session, owner_id, provider_id, lock=True)
+    reverted = await _revert_processes(session, owner_id, provider_id)
+    await session.commit()
+    return _account_out({"state": "disconnected"}, reverted)
 
 
 # --- Status --------------------------------------------------------------------------------------

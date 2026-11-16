@@ -21,7 +21,7 @@ PROVIDER_NAMES: dict[str, str] = {
     "ollama": "Ollama",
     "lmstudio": "LM Studio",
     "openai_compatible": "tu servicio compatible con OpenAI",
-    "chatgpt_plan": "Codex (plan de ChatGPT)",
+    "chatgpt_plan": "ChatGPT (plan)",
     "assemblyai": "AssemblyAI",
     "deepgram": "Deepgram",
     "groq": "Groq",
@@ -97,7 +97,12 @@ def build_notice(capability: str, kind: str, address: str, *, runs_on_this_devic
             f"Lo que {provider} haga después con esos datos depende de sus condiciones y de su política "
             "de privacidad, no de Sauri. Revísalas antes de aceptar."
         )
-        billing = f"El uso se cobra en tu cuenta con {provider}, según tu plan con ellos; Sauri no lo cobra."
+        billing = (
+            "El uso cuenta contra los límites de tu plan de ChatGPT; Sauri no lo cobra. Es una vía que OpenAI no "
+            "documenta de forma oficial y podría dejar de funcionar: si falla, Sauri te lo avisa."
+            if kind == "chatgpt_plan"
+            else f"El uso se cobra en tu cuenta con {provider}, según tu plan con ellos; Sauri no lo cobra."
+        )
     reversible = (
         "Puedes volver al modelo local cuando quieras. Las reuniones que ya terminaron no se vuelven a procesar."
     )

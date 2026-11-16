@@ -25,6 +25,7 @@ PROBE_TIMEOUT_S: Final = 30.0
 MODELS_TIMEOUT_S: Final = 45.0
 STATUS_TIMEOUT_S: Final = 10.0
 LOCAL_TIMEOUT_S: Final = 15.0
+ACCOUNT_TIMEOUT_S: Final = 30.0  # one call to OpenAI plus the keychain
 # Same alphabet the host store accepts, but every segment starts with a letter or digit so a reference
 # can never climb out of /v1/secrets/ with ".." or "." segments.
 SECRET_REF: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*")
@@ -153,6 +154,19 @@ class HostClient:
 
     async def models(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/v1/providers/models", timeout=MODELS_TIMEOUT_S, json=payload) or {}
+
+    async def chatgpt_start(self) -> dict[str, Any]:
+        """Ask for a device code. A host refusal (rate limit, store locked) raises ``HostRejectedError``."""
+        return await self._request("POST", "/v1/oauth/chatgpt/start", timeout=ACCOUNT_TIMEOUT_S) or {}
+
+    async def chatgpt_poll(self) -> dict[str, Any]:
+        return await self._request("POST", "/v1/oauth/chatgpt/poll", timeout=ACCOUNT_TIMEOUT_S) or {}
+
+    async def chatgpt_status(self) -> dict[str, Any]:
+        return await self._request("GET", "/v1/oauth/chatgpt/status", timeout=STATUS_TIMEOUT_S) or {}
+
+    async def chatgpt_logout(self) -> None:
+        await self._request("POST", "/v1/oauth/chatgpt/logout", timeout=ACCOUNT_TIMEOUT_S)
 
     async def local(self, method: str, path: str) -> tuple[int, dict[str, Any] | None]:
         """One bodyless call to the local-model routes; returns the host's status and JSON body.

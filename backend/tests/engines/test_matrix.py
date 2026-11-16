@@ -34,12 +34,12 @@ def test_pairs_outside_the_matrix_are_never_offered(kind: str, capability: str) 
 def test_unverified_blocked_and_reserved_pairs_are_not_offered(kind: str, capability: str) -> None:
     support = matrix.get_support(kind, capability)
     offered = matrix.is_offered(kind, capability)
-    if support is None or support.verified_on is None:
+    if support is None or (support.verified_on is None and support.accepted_on is None):
         assert not offered
     if kind in matrix.BLOCKED_KINDS or capability == "chat":
         assert not offered
     if offered:
-        assert support is not None and support.verified_on is not None
+        assert support is not None and (support.verified_on is not None or support.accepted_on is not None)
         assert capability in matrix.VISIBLE_CAPABILITIES
 
 
@@ -61,9 +61,19 @@ def test_documented_expectations_of_the_design_table() -> None:
     assert not matrix.is_offered("assemblyai", "summary")
     assert not matrix.is_offered("deepgram", "summary")
     # Not verified against official documentation: not offered until checked.
-    assert not matrix.is_offered("chatgpt_plan", "summary")
     assert not matrix.is_offered("ollama", "summary")
     assert not matrix.is_offered("assemblyai", "diarization")
+
+
+def test_the_chatgpt_plan_is_offered_by_decision_for_summary_only_and_says_it_is_not_verified() -> None:
+    support = matrix.get_support("chatgpt_plan", "summary")
+    assert support is not None and support.verified_on is None and support.accepted_on == "2026-11-16"
+    assert "NO VERIFICADO" in support.notes
+    assert matrix.is_offered("chatgpt_plan", "summary")
+    assert not matrix.is_offered("chatgpt_plan", "transcription")
+    assert not matrix.is_offered("chatgpt_plan", "diarization")
+    assert not matrix.key_needed("chatgpt_plan") and matrix.key_needed("openai")
+    assert matrix.ApiCapabilityMatrix().supports("chatgpt_plan", "summary", "chatgpt-responses")
 
 
 def test_gemini_serves_summary_only() -> None:
@@ -103,7 +113,10 @@ def test_every_notice_names_process_provider_address_and_billing(capability: str
     assert PROCESS_NAMES[capability] in notice.title
     assert PROVIDER_NAMES[kind] in text
     assert address in text
-    assert "se cobra en tu cuenta" in text
+    # The plan has no per-use bill: its notice says the use counts against the plan and that the path is unofficial.
+    assert ("tu plan de ChatGPT" in text and "no documenta" in text) if kind == "chatgpt_plan" else (
+        "se cobra en tu cuenta" in text
+    )
     assert "no de Sauri" in text
     assert notice.version == NOTICE_VERSIONS[capability]
 

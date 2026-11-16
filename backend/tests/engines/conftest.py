@@ -50,6 +50,9 @@ class FakeHost:
         default_factory=lambda: {"engines": [{"id": "asr", "port": 8001, "state": "running"}], "secret_store": "file"}
     )
     secret_status: int | None = None
+    # The ChatGPT-plan account on the host: the answer of start/poll/status, and a refusal to send instead.
+    account: dict[str, Any] = field(default_factory=lambda: {"state": "disconnected"})
+    account_refusal: tuple[int, str] | None = None
 
 
 def build_fake_host(state: FakeHost) -> FastAPI:
@@ -93,6 +96,29 @@ def build_fake_host(state: FakeHost) -> FastAPI:
     @host.post("/v1/providers/models")
     async def models() -> Response:
         return JSONResponse(state.models_answer, status_code=state.models_status)
+
+    def account_answer() -> Response:
+        if state.account_refusal is not None:
+            status_code, code = state.account_refusal
+            return JSONResponse({"error": {"code": code, "retryable": False}}, status_code=status_code)
+        return JSONResponse(state.account)
+
+    @host.post("/v1/oauth/chatgpt/start")
+    async def chatgpt_start() -> Response:
+        return account_answer()
+
+    @host.post("/v1/oauth/chatgpt/poll")
+    async def chatgpt_poll() -> Response:
+        return account_answer()
+
+    @host.get("/v1/oauth/chatgpt/status")
+    async def chatgpt_status() -> Response:
+        return account_answer()
+
+    @host.post("/v1/oauth/chatgpt/logout")
+    async def chatgpt_logout() -> Response:
+        state.account = {"state": "disconnected"}
+        return Response(status_code=204)
 
     @host.get("/v1/engines/status")
     async def engines_status() -> Response:
