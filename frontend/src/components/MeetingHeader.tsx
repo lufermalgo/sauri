@@ -3,8 +3,8 @@ import { deleteMeeting, renameMeeting } from "../api";
 import { meeting as text } from "../copy/meeting";
 import { navigate } from "../router";
 import { stageLabel, type DetectedStage } from "../processing-estimate";
-import { Ellipsis, Pencil, Trash2 } from "lucide-react";
-import { Button, ConfirmDialog, Icon, StatusBadge, TextField, Menu, MenuItem } from "./ui";
+import { Ellipsis, Pencil, Trash2, UsersRound } from "lucide-react";
+import { Button, ConfirmDialog, Icon, Popover, StatusBadge, TextField, Menu, MenuItem } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
 
@@ -15,9 +15,19 @@ interface MeetingHeaderProps extends MeetingDownloadsProps {
   stage?: DetectedStage;
   processState?: string;
   speakerCount?: number;
+  /** Speaker-review entry point; omit it while there is no review to open. */
+  speakerReview?: SpeakerReviewEntry;
 }
 
-export function MeetingHeader({ title, createdAt, stage, processState, speakerCount, ...downloads }: MeetingHeaderProps) {
+export interface SpeakerReviewEntry {
+  /** Speakers still waiting for a decision; the red dot shows while this is above zero. */
+  pendingCount: number;
+  /** Some speakers were left without a name (only meaningful with no pending ones). */
+  hasUnnamed: boolean;
+  onReview: () => void;
+}
+
+export function MeetingHeader({ title, createdAt, stage, processState, speakerCount, speakerReview, ...downloads }: MeetingHeaderProps) {
   const duration = downloads.manifest?.duration_seconds;
   const totalSeconds = duration === undefined ? null : Math.max(0, Math.floor(duration));
   const durationLabel = totalSeconds === null ? null : totalSeconds >= 3600
@@ -90,6 +100,18 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
         </div>
       </div>
       <div className="meeting-actions">
+        {speakerReview && <Popover className="meeting-speakers" label={text.speakersButton(speakerReview.pendingCount)}
+          panelLabel={text.speakersPanel} triggerClassName={`ui-icon-button ui-icon-button--ghost${
+            speakerReview.pendingCount > 0 ? " ui-icon-button--alert" : ""}`}
+          trigger={<Icon icon={UsersRound} />}>
+          {close => <>
+            <p className="meeting-speakers-message">{speakerReview.pendingCount > 0
+              ? text.pendingSpeakers(speakerReview.pendingCount)
+              : speakerReview.hasUnnamed ? text.speakersSomeUnnamed : text.speakersAllNamed}</p>
+            <Button variant="secondary" onClick={() => { close(); speakerReview.onReview(); }}>
+              {speakerReview.pendingCount > 0 ? text.reviewSpeakers : text.editSpeakers}</Button>
+          </>}
+        </Popover>}
         <MeetingDownloads {...downloads} title={renamedTitle ?? title} />
         <Menu label={text.moreActions} tooltip trigger={<Icon icon={Ellipsis} />}
           triggerClassName="ui-icon-button ui-icon-button--quiet">
