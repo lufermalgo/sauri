@@ -159,7 +159,6 @@ async def test_default_model_without_manifest_uses_the_engine_file(setup: Setup)
     [
         ("not-a-route", "route_malformed"),
         (route_header("local:missing", process="transcription"), "unknown_model"),
-        (route_header("whisper-1", process="transcription", kind="openai"), "route_not_supported"),
         (route_header("local:asr-big", process="summary"), "route_capability_mismatch"),
     ],
 )

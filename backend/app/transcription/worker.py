@@ -17,6 +17,7 @@ import asyncio
 import logging
 import time
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -24,6 +25,14 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.engines.routing import (
+    Provenance,
+    ProviderError,
+    ResolvedRoute,
+    Route,
+    call_with_fallback,
+    resolve_route,
+)
 from app.infra.engine_slot import ENGINE_CALL_TIMEOUT_S, SLOT_WAIT_TIMEOUT_S, EngineSlotTimeout, engine_slot
 from app.infra.models import Meeting, MeetingProcessingClaim, SessionRecording, SpeechTurn, Transcript, TranscriptWord
 from app.infra.processing_claims import (
@@ -43,7 +52,8 @@ from app.transcription.asr_engine import (
     default_language,
 )
 from app.transcription.factory import create_asr_engine
-from app.transcription.repository import TranscriptRepository, replace_transcript_content
+from app.transcription.local_provider import LocalProvider
+from app.transcription.repository import TranscriptRepository, apply_provenance, replace_transcript_content
 
 logger = logging.getLogger(__name__)
 
@@ -205,10 +215,23 @@ async def _process_transcription(
     if message.get("language"):
         options.preferred_language = message["language"]
     started_at = time.monotonic()
+    provenance = Provenance(None, None, external=False)
     try:
+        resolved = ResolvedRoute(None)
+        if isinstance(engine, LocalProvider):
+            # Per attempt, so a change in Settings applies to the next one without restarting anything.
+            async with session_factory() as session:
+                resolved = await resolve_route(session, owner_id, "transcription")
+
+        async def attempt(route: Route | None) -> TranscriptionResult:
+            # No route means the plain call of every run before engines were selectable.
+            return await engine.transcribe(
+                recording_audio_ref, options if route is None else replace(options, route=route)
+            )
+
         async with engine_slot(session_factory.kw["bind"], kind="transcription", timeout_s=SLOT_WAIT_TIMEOUT_S):
             async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
-                result = await engine.transcribe(recording_audio_ref, options)
+                result, provenance = await call_with_fallback(resolved, attempt, _engine_names)
         if type(result.contract_version) is not int or result.contract_version != 2:
             raise EngineContractError("Unsupported ASR contract_version")
         if result.language == "auto":
@@ -228,8 +251,10 @@ async def _process_transcription(
                     claim.claim_id = operation_id if operation_id is not None else None
                     claim.claim_kind = "recovery" if operation_id is not None else None
         raise
-    except (httpx.HTTPError, ValueError, TimeoutError) as exc:
-        if isinstance(exc, EngineContractError):
+    except (httpx.HTTPError, ValueError, TimeoutError, ProviderError) as exc:
+        if isinstance(exc, ProviderError):
+            cause = exc.code  # a closed class code: what failed, never what was said
+        elif isinstance(exc, EngineContractError):
             cause = "engine_contract_mismatch"
         elif isinstance(exc, TimeoutError):
             cause = "engine_timeout"
@@ -305,21 +330,23 @@ async def _process_transcription(
 
         if regenerating:
             follow_up = await _settle_regeneration(
-                session, meeting, operation_id, result, engine.capabilities(),
+                session, meeting, operation_id, result, engine.capabilities(), provenance,
             )
         elif result.segments:
             # Text was produced -> persist Transcript and turns (Req. 3.4, 3.5)
             capabilities = engine.capabilities()
+            provenance = _with_capabilities(provenance, capabilities)
 
             transcript = Transcript(
                 id=str(uuid.uuid4()),
                 meeting_id=meeting_id,
                 language=result.language,
-                provider="local" if capabilities.is_local else "cloud",
+                provider="local" if capabilities.is_local and not provenance.external else "cloud",
                 supports_turns=capabilities.supports_turns,
                 expires_at=None,
                 created_at=datetime.now(UTC),
             )
+            apply_provenance(transcript, provenance)
 
             turns = []
             for sequence, segment in enumerate(result.segments, start=1):
@@ -389,9 +416,19 @@ async def _process_transcription(
             await regeneration.fail_unpublished(session_factory, follow_up)
 
 
+def _with_capabilities(provenance: Provenance, capabilities: ASRCapabilities) -> Provenance:
+    """An engine that is not local (the legacy cloud provider) sent the audio out whatever the route said."""
+    return provenance if capabilities.is_local else replace(provenance, external=True)
+
+
+def _engine_names(result: TranscriptionResult) -> tuple[str | None, str | None]:
+    """What the engine reported about itself (None for engines that do not say)."""
+    return (result.engine.name, result.engine.model) if result.engine is not None else (None, None)
+
+
 async def _settle_regeneration(
     session: AsyncSession, meeting: Meeting, operation_id: Any, result: TranscriptionResult,
-    capabilities: ASRCapabilities,
+    capabilities: ASRCapabilities, provenance: Provenance,
 ) -> regeneration.Dispatch | None:
     """Commit a regenerated transcript, or fail the operation, in the verified transaction."""
     live = await regeneration.locked_active_operation(session, operation_id, "transcription")
@@ -401,7 +438,8 @@ async def _settle_regeneration(
         await regeneration.fail_operation(session, live, "engine_failure")
         return None
     now = datetime.now(UTC)
-    provider = "local" if capabilities.is_local else "cloud"
+    provenance = _with_capabilities(provenance, capabilities)
+    provider = "local" if capabilities.is_local and not provenance.external else "cloud"
     transcript = await session.scalar(select(Transcript).where(Transcript.meeting_id == meeting.id))
     if transcript is None:
         # A failed meeting retried explicitly has no transcript to replace.
@@ -409,11 +447,13 @@ async def _settle_regeneration(
             id=str(uuid.uuid4()), meeting_id=meeting.id, language=result.language, provider=provider,
             supports_turns=capabilities.supports_turns, expires_at=None, created_at=now,
         )
+        apply_provenance(transcript, provenance)
         session.add(transcript)
         await session.flush()
     await replace_transcript_content(
         session, transcript, language=result.language, provider=provider,
         supports_turns=capabilities.supports_turns, segments=result.segments, words=result.words, now=now,
+        provenance=provenance,
     )
     transition = await record_transition(session, meeting, "transcription_completed")
     if transition.successful:

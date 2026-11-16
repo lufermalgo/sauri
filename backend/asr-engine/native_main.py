@@ -19,6 +19,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
+import asr_external
 import boto3
 from asr_assets import vad_cli_path, vad_model_path, verify_assets
 from asr_config import (
@@ -36,15 +37,20 @@ from asr_diagnostics import diagnostic_tail
 from asr_prompt import DEFAULT_PROMPT, DEFAULT_PROMPT_LANGUAGE, vocabulary_prompt
 from asr_vad import align_chunks, cut_wav, group_chunks, parse_vad
 from botocore.config import Config
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
 from sauri_engine_common.credentials import object_store_credentials
+from sauri_engine_common.external.asr_common import AdapterCancelled
+from sauri_engine_common.external.audio_prep import vad_cli_runner
+from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
 from sauri_engine_common.local_model_use import LocalModelError, LocalSelection, select_local_model
-from sauri_engine_common.route import ROUTE_HEADER
+from sauri_engine_common.route import ROUTE_HEADER, Route, RouteError
+from sauri_engine_common.secrets import SecretStore
 from whisper_words import NoSpeechError, NoWordTimestampsError, WordsResult, words_from_ggml_json
 
 logger = logging.getLogger("asr-engine-native")
@@ -75,6 +81,8 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 _bearer_dependency = Depends(_bearer_scheme)
 
 s3_client: Any = None
+# Host secret store for provider keys; None means the default store (Keychain, else private files).
+secret_store: SecretStore | None = None
 
 
 @asynccontextmanager
@@ -343,12 +351,19 @@ def _transcribe_wav(
 @app.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe(
     request: TranscribeRequest,
+    http_request: Request,
     _authorized: None = Depends(_require_engine_token),
     recording_capability: str | None = Header(default=None, alias="X-Sauri-Recording-Capability"),
     route: str | None = Header(default=None, alias=ROUTE_HEADER),
-) -> TranscribeResponse:
+) -> TranscribeResponse | JSONResponse:
     _validate_audio_ref(request.audio_ref)
     _require_recording_capability(request.audio_ref, recording_capability)
+    try:
+        provider_route = asr_external.external_route(route)
+    except RouteError as error:
+        raise HTTPException(status_code=422, detail=error.reason or "route_malformed") from None
+    if provider_route is not None:
+        return await _transcribe_external(request, http_request, provider_route)
     try:
         selection = await run_in_threadpool(
             select_local_model, route, process="transcription", legacy_default=ASR_MODEL_PATH
@@ -365,6 +380,108 @@ async def transcribe(
         )
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="engine_failed") from exc
+
+
+def _provider_failure(error: ProviderError) -> JSONResponse:
+    """The classified failure as ``{"error": {code, retryable, retry_after_s}}`` (no content, no key)."""
+    return JSONResponse(status_code=asr_external.error_status(error), content=error.to_payload())
+
+
+async def _transcribe_external(
+    request: TranscribeRequest, http_request: Request, route: Route
+) -> TranscribeResponse | JSONResponse:
+    """Run an external route; the answer has the same v2 body as a local run (``device`` is ``remote``)."""
+    if s3_client is None:
+        raise HTTPException(status_code=503, detail="Engine not initialized")
+    deadline = time.monotonic() + server_budget()
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(asr_external.watch_disconnect(http_request.is_disconnected, cancel))
+    try:
+        return await _run_external(request, route, deadline, cancel)
+    except AdapterCancelled:
+        # The worker closed the connection: nobody reads this answer.
+        return JSONResponse(status_code=499, content={"error": {"code": "cancelled"}})
+    except ProviderError as error:
+        logger.warning("External transcription failed (class=%s)", error.code)
+        return _provider_failure(error)
+    except NormalizeError as exc:
+        raise HTTPException(status_code=422, detail="normalize_failed") from exc
+    except KeepAwakeError as exc:
+        raise HTTPException(status_code=503, detail="keep_awake_failed") from exc
+    except TimeoutError:
+        return _provider_failure(ProviderError("provider_timeout", reason="deadline"))
+    except HTTPException:
+        raise
+    except Exception as exc:  # the type name only: messages may carry paths or provider text
+        logger.error("External transcription failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="engine_failed") from exc
+    finally:
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+
+
+def _vad_for_split() -> Any:
+    return (
+        vad_cli_runner(vad_cli_path(), vad_model_path(), vad_threshold(), timeout_s=300)
+        if vad_enabled() else None
+    )
+
+
+async def _run_external(
+    request: TranscribeRequest, route: Route, deadline: float, cancel: asyncio.Event
+) -> TranscribeResponse:
+    # Validation and the key come first: a refused route has not downloaded or sent anything.
+    secret = await run_in_threadpool(asr_external.load_secret, route, secret_store)
+    from sauri_engine_common.external.safe_http import SafeHttp  # httpx stays optional for local-only runs
+
+    audio_path: str | None = None
+    try:
+        with KeepAwake(), tempfile.TemporaryDirectory(prefix="sauri-asr-") as temporary:
+            started = time.monotonic()
+            audio_path = await run_in_threadpool(_download_audio, request.audio_ref, deadline)
+            download_ms = round((time.monotonic() - started) * 1000)
+            if cancel.is_set():
+                raise AdapterCancelled
+            wav_path = Path(temporary) / "audio.wav"
+            report = await run_in_threadpool(
+                lambda: normalize_to_wav(Path(audio_path or ""), wav_path, timeout_s=min(300, remaining(deadline)))
+            )
+            outcome = await asr_external.transcribe_external(
+                http=SafeHttp(max_response_bytes=asr_external.MAX_PROVIDER_RESPONSE_BYTES),
+                route=route,
+                secret=secret,
+                wav=wav_path,
+                language=request.language,
+                cancel=cancel,
+                deadline_s=remaining(deadline),
+                allow_local=asr_external.allow_local_providers(),
+                vad=_vad_for_split(),
+            )
+            if not outcome.result.words:
+                raise HTTPException(status_code=422, detail="no_speech")
+            return TranscribeResponse(
+                segments=[Segment(text=s.text.strip(), start_ms=s.start_ms, end_ms=s.end_ms)
+                          for s in outcome.segments],
+                words=[Word(text=w.text, start_ms=w.start_ms, end_ms=w.end_ms, probability=w.probability,
+                            timing_repaired=w.timing_repaired) for w in outcome.result.words],
+                language=outcome.result.language,
+                engine=EngineInfo(name=route.kind, model=route.model, device="remote"),
+                diagnostics={
+                    "audio_ms": report.audio_ms,
+                    "inverted_words": 0,
+                    "external": {
+                        "parts": outcome.parts, "dropped_ms": outcome.dropped_ms,
+                        "bitrate_bps": outcome.bitrate_bps,
+                        "remote_deleted": outcome.result.diagnostics.get("remote_deleted"),
+                    },
+                    "stage_ms": {"download": download_ms, "normalize": round(report.seconds * 1000),
+                                 "prepare": outcome.prepare_ms, "provider": outcome.provider_ms},
+                },
+            )
+    finally:
+        if audio_path is not None:
+            with suppress(OSError):
+                os.unlink(audio_path)
 
 
 def _transcribe_serialized(

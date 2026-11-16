@@ -10,6 +10,10 @@ import os
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.engines.routing import Route
 
 
 def default_language() -> str:
@@ -44,6 +48,8 @@ class TranscriptionOptions:
     """Options for audio transcription."""
 
     preferred_language: str = field(default_factory=default_language)
+    # Route resolved by the worker for this attempt; None is the default local engine (no header sent).
+    route: Route | None = None
 
 
 @dataclass

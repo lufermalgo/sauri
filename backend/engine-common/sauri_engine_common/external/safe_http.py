@@ -248,9 +248,17 @@ def transport_error(exc: httpx.HTTPError) -> ProviderError:
 class SafeHttp:
     """The only outbound HTTP path of this module (see the module docstring for the guarantees)."""
 
-    def __init__(self, resolver: Resolver = system_resolver, ssl_context: ssl.SSLContext | None = None) -> None:
+    def __init__(
+        self,
+        resolver: Resolver = system_resolver,
+        ssl_context: ssl.SSLContext | None = None,
+        *,
+        max_response_bytes: int = MAX_RESPONSE_BYTES,
+    ) -> None:
+        """``max_response_bytes`` caps buffered bodies of ``request``; word-level transcripts need more."""
         self._resolver = resolver
         self._ssl_context = ssl_context
+        self._max_response_bytes = max_response_bytes
 
     async def _addresses(self, target: Target, *, allow_local: bool) -> list[IPAddress]:
         if target.literal is not None:
@@ -360,7 +368,7 @@ class SafeHttp:
         async with AsyncExitStack() as stack:
             response = await self._connect(stack, method, target, addresses, headers, body, timeout)
             try:
-                return await _read_capped(response)
+                return await _read_capped(response, self._max_response_bytes)
             except httpx.HTTPError as exc:
                 raise transport_error(exc) from None
 
@@ -424,15 +432,15 @@ class HttpStream:
             ) from None
 
 
-async def _read_capped(response: httpx.Response) -> HttpResult:
+async def _read_capped(response: httpx.Response, limit: int = MAX_RESPONSE_BYTES) -> HttpResult:
     declared = response.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > MAX_RESPONSE_BYTES:
+    if declared is not None and declared.isdigit() and int(declared) > limit:
         raise ProviderError("provider_bad_request", reason="response_too_large")
     chunks: list[bytes] = []
     size = 0
     async for chunk in response.aiter_bytes():
         size += len(chunk)
-        if size > MAX_RESPONSE_BYTES:
+        if size > limit:
             raise ProviderError("provider_bad_request", reason="response_too_large")
         chunks.append(chunk)
     return HttpResult(response.status_code, response.headers.get("retry-after"), b"".join(chunks))

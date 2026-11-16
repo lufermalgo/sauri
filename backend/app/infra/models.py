@@ -178,6 +178,8 @@ class Transcript(Base):
     engine_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     engine_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     engine_external: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Error class that sent a transient provider failure to the local engine; NULL when none acted.
+    engine_fallback_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     turns: Mapped[list["SpeechTurn"]] = relationship(
         "SpeechTurn", back_populates="transcript", lazy="select"
@@ -321,6 +323,8 @@ class Diarization(Base):
     engine_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     engine_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     engine_external: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Error class that sent a transient provider failure to the local engine; NULL when none acted.
+    engine_fallback_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     speakers: Mapped[list["Speaker"]] = relationship(
         "Speaker", back_populates="diarization", lazy="select"
@@ -780,6 +784,8 @@ class MeetingSummary(Base):
     engine_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     engine_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
     engine_external: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Error class that sent a transient provider failure to the local engine; NULL when none acted.
+    engine_fallback_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 # ---------------------------------------------------------------------------
