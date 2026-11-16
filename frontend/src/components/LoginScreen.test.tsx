@@ -54,11 +54,11 @@ afterEach(() => {
 });
 
 describe("login screen", () => {
-  it("shows the brand, title, and only the email and password fields", () => {
+  it("shows the title, subtitle, and only the email and password fields", () => {
     const { container } = render(<LoginScreen onLogin={vi.fn()} />);
 
-    expect(screen.getByText(text.brand)).toBeTruthy();
     expect(screen.getByRole("heading", { name: text.title })).toBeTruthy();
+    expect(screen.getByText(text.subtitle)).toBeTruthy();
     expect(screen.getByRole("button", { name: text.submit })).toBeTruthy();
     const email = screen.getByLabelText(text.emailLabel) as HTMLInputElement;
     const password = screen.getByLabelText(text.passwordLabel) as HTMLInputElement;
@@ -71,6 +71,67 @@ describe("login screen", () => {
     expect(container.querySelectorAll("input")).toHaveLength(2);
     expect(container.querySelectorAll("a")).toHaveLength(0);
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(copy.login.providersSeparator)).toBeNull();
+  });
+
+  it("keeps the submit button disabled until both fields are filled", () => {
+    render(<LoginScreen onLogin={vi.fn()} />);
+    const submit = screen.getByRole("button", { name: text.submit }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(text.emailLabel), { target: { value: credentials.email } });
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(text.passwordLabel), { target: { value: credentials.password } });
+    expect(submit.disabled).toBe(false);
+
+    fireEvent.change(screen.getByLabelText(text.emailLabel), { target: { value: "   " } });
+    expect(submit.disabled).toBe(true);
+  });
+
+  it("does not call login when submitted with an empty field", () => {
+    render(<LoginScreen onLogin={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(text.emailLabel), { target: { value: credentials.email } });
+
+    fireEvent.submit(screen.getByLabelText(text.emailLabel).closest("form")!);
+
+    expect(api.login).not.toHaveBeenCalled();
+  });
+
+  it("submits through the form's own submit path, which is what Enter triggers", async () => {
+    vi.mocked(api.login).mockResolvedValue(tokenResponse);
+    const onLogin = vi.fn();
+    render(<LoginScreen onLogin={onLogin} />);
+    enterCredentials();
+
+    // Implicit submission by Enter is browser behavior (checked in the browser pass); here the form submits itself.
+    (screen.getByLabelText(text.passwordLabel).closest("form") as HTMLFormElement).requestSubmit();
+
+    await vi.waitFor(() => expect(onLogin).toHaveBeenCalledTimes(1));
+    expect(api.login).toHaveBeenCalledWith(credentials.email, credentials.password);
+  });
+
+  it("toggles the password between hidden and visible with an accessible name", () => {
+    render(<LoginScreen onLogin={vi.fn()} />);
+    const password = screen.getByLabelText(text.passwordLabel) as HTMLInputElement;
+    expect(password.type).toBe("password");
+
+    fireEvent.click(screen.getByRole("button", { name: text.showPassword }));
+    expect(password.type).toBe("text");
+    expect(screen.queryByRole("button", { name: text.showPassword })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: text.hidePassword }));
+    expect(password.type).toBe("password");
+    expect(screen.getByRole("button", { name: text.showPassword })).toBeTruthy();
+  });
+
+  it("renders the providers area only when providers are given", () => {
+    const onSelect = vi.fn();
+    render(<LoginScreen onLogin={vi.fn()} providers={[{ id: "test", label: "Continuar con prueba", onSelect }]} />);
+
+    expect(screen.getByText(text.providersSeparator)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con prueba" }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   it("calls login once with exactly the typed credentials and disables the form while waiting", async () => {

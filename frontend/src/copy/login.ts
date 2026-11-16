@@ -1,10 +1,12 @@
 export const login = {
-  brand: "Sauri",
-  title: "Iniciar sesión",
-  subtitle: "Entra para revisar tus reuniones.",
-  emailLabel: "Correo",
+  title: "Bienvenido a Sauri",
+  subtitle: "Inicia sesión para revisar tus reuniones",
+  emailLabel: "Correo electrónico",
   passwordLabel: "Contraseña",
-  submit: "Entrar",
-  submitting: "Entrando…",
+  showPassword: "Mostrar contraseña",
+  hidePassword: "Ocultar contraseña",
+  submit: "Iniciar sesión",
+  submitting: "Iniciando sesión…",
   error: "No se pudo iniciar sesión. Revisa tus datos e inténtalo de nuevo.",
+  providersSeparator: "o",
 } as const;

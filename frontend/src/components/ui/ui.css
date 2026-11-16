@@ -113,6 +113,22 @@
   font-size: var(--ds-text-md);
 }
 
+.ui-input-wrap {
+  position: relative;
+}
+
+.ui-input--has-trailing {
+  padding-inline-end: calc(var(--ds-icon-button-md) + var(--ds-space-3));
+}
+
+.ui-input-trailing {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--ds-space-1);
+  display: flex;
+  align-items: center;
+}
+
 textarea.ui-input {
   padding-block: 6px;
 }
