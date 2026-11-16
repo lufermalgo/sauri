@@ -62,10 +62,7 @@ export function App() {
       {route.name === "settings" && <SettingsView />}
 
       {route.name === "meeting" && (
-        <TranscriptView
-          meetingId={route.meetingId}
-          onBack={() => navigate({ name: "library" })}
-        />
+        <TranscriptView meetingId={route.meetingId} />
       )}
 
       {route.name === "notFound" && (

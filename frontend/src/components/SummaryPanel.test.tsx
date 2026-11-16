@@ -466,7 +466,7 @@ describe("meeting summary tab integration", () => {
       if (url.endsWith("/speaker-review")) return response(null, 404);
       return summaryFetch(url, init);
     });
-    const view = render(<TranscriptView meetingId="meeting-1" onBack={vi.fn()} />);
+    const view = render(<TranscriptView meetingId="meeting-1" />);
     const tab = await screen.findByRole("tab", { name: copy.meeting.summaryTab });
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
     Object.defineProperty(audio, "duration", { configurable: true, value: 180 });

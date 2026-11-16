@@ -11,14 +11,13 @@ import "../styles/meeting.css";
 interface MeetingHeaderProps extends MeetingDownloadsProps {
   title: string | null;
   createdAt: string | null;
-  onBack: () => void;
   /** Stage derived once by the page, the same one the processing stepper shows. */
   stage?: DetectedStage;
   processState?: string;
   speakerCount?: number;
 }
 
-export function MeetingHeader({ title, createdAt, onBack, stage, processState, speakerCount, ...downloads }: MeetingHeaderProps) {
+export function MeetingHeader({ title, createdAt, stage, processState, speakerCount, ...downloads }: MeetingHeaderProps) {
   const duration = downloads.manifest?.duration_seconds;
   const totalSeconds = duration === undefined ? null : Math.max(0, Math.floor(duration));
   const durationLabel = totalSeconds === null ? null : totalSeconds >= 3600
@@ -69,12 +68,6 @@ export function MeetingHeader({ title, createdAt, onBack, stage, processState, s
   }
 
   return <header className="meeting-header" aria-busy={busy || undefined}>
-    <a className="meeting-back" href="/" onClick={event => {
-      if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
-        event.preventDefault();
-        onBack();
-      }
-    }}>{text.back}</a>
     <div className="meeting-heading-row">
       <div className="meeting-heading">
         {editing ? <form className="meeting-rename" onSubmit={event => { event.preventDefault(); void save(); }}>
