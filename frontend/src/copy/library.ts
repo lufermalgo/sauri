@@ -16,9 +16,64 @@ export const library = {
     earlier: "ANTERIORES",
   },
   speakers: (count: number) => (count === 1 ? "1 hablante" : `${count} hablantes`),
-  topicGenerating: "Se está generando la transcripción…",
-  topicFailed: "No se pudo procesar la grabación.",
-  topicNoSpeech: "No se detectó voz en la grabación.",
+  row: {
+    actions: (title: string) => `Acciones de «${title}»`,
+    select: (title: string) => `Seleccionar «${title}»`,
+    rename: "Renombrar",
+    renameLabel: "Nuevo título",
+    renameFailed: "No se pudo renombrar la grabación. Vuelve a intentarlo.",
+    downloadTranscript: "Descargar transcripción",
+    downloadUnavailable: "Disponible cuando la transcripción esté lista.",
+    downloadFailed: "No se pudo descargar la transcripción. Vuelve a intentarlo.",
+    delete: "Eliminar",
+    deleteTitle: "¿Eliminar esta grabación?",
+    deleteBody: "Se quitarán de Sauri la grabación, su transcripción y su resumen. Esta acción no se puede deshacer.",
+    deleteFailed: "No se pudo eliminar la grabación. Vuelve a intentarlo.",
+    deleted: (title: string) => `Se eliminó «${title}».`,
+    cancel: "Cancelar",
+  },
+  selection: {
+    toolbar: "Acciones sobre la selección",
+    count: (count: number) => (count === 1 ? "1 seleccionada" : `${count} seleccionadas`),
+    selectAll: "Seleccionar todas",
+    clear: "Cancelar",
+    downloadAll: "Descargar transcripciones",
+    deleteAll: "Eliminar",
+  },
+  bulk: {
+    deleteConfirmTitle: (count: number) => (count === 1 ? "¿Eliminar 1 grabación?" : `¿Eliminar ${count} grabaciones?`),
+    deleteConfirmBody: "Se quitarán de Sauri las grabaciones seleccionadas, sus transcripciones y sus resúmenes. Esta acción no se puede deshacer.",
+    deleteConfirm: "Eliminar",
+    downloadConfirmTitle: (count: number) => `¿Descargar ${count} transcripciones?`,
+    downloadConfirmBody: "Se guardará un archivo de texto por grabación. Tu navegador puede pedirte permiso para descargar varios archivos a la vez.",
+    downloadConfirm: "Descargar",
+    cancel: "Cancelar",
+    runningDeleteTitle: "Eliminando grabaciones",
+    runningDownloadTitle: "Descargando transcripciones",
+    doneDeleteTitle: "Eliminación terminada",
+    doneDownloadTitle: "Descarga terminada",
+    deleting: (current: number, total: number) => `Eliminando ${current} de ${total}…`,
+    downloading: (current: number, total: number) => `Descargando ${current} de ${total}…`,
+    progressLabel: "Avance",
+    stop: "Detener",
+    stopping: "Se detendrá al terminar la grabación actual…",
+    retry: "Reintentar",
+    close: "Cerrar",
+    deleted: (done: number, failed: number) => {
+      if (failed === 0) return done === 1 ? "Se eliminó 1 grabación." : `Se eliminaron ${done} grabaciones.`;
+      return `Se eliminaron ${done}; ${failed === 1 ? "1 no se pudo eliminar" : `${failed} no se pudieron eliminar`}.`;
+    },
+    downloaded: (done: number, failed: number) => {
+      if (failed === 0) return done === 1 ? "Se descargó 1 transcripción." : `Se descargaron ${done} transcripciones.`;
+      return `Se descargaron ${done}; ${failed === 1 ? "1 no se pudo descargar" : `${failed} no se pudieron descargar`}.`;
+    },
+    skippedNotReady: (count: number) => (count === 1
+      ? "1 se omitió porque su transcripción aún no está lista."
+      : `${count} se omitieron porque su transcripción aún no está lista.`),
+    notProcessed: (count: number) => (count === 1 ? "1 quedó sin procesar." : `${count} quedaron sin procesar.`),
+    failedKept: "Las que fallaron siguen seleccionadas.",
+    noneReady: "Ninguna de las grabaciones seleccionadas tiene la transcripción lista.",
+  },
   search: {
     regionLabel: "Buscar en la biblioteca",
     text: "Buscar por título",

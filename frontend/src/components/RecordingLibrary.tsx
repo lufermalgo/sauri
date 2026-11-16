@@ -1,44 +1,24 @@
-import React, { useEffect, useState } from "react";
-import { AudioLines, Video } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
-import { listMeetings } from "../api";
+import { deleteMeeting, listMeetings, renameMeeting } from "../api";
 import { copy } from "../copy/es";
 import { applyLibraryQuery, type LibraryQuery } from "../library-query";
-import { LIBRARY_CHANGED_EVENT } from "../library-events";
+import { LIBRARY_CHANGED_EVENT, notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
-import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
-import { Button, Icon, ProgressBar, Skeleton, StatusBadge } from "./ui";
+import { downloadMeetingTranscript } from "../transcript-download";
+import { Button, ConfirmDialog, Skeleton } from "./ui";
+import { LibraryBulkBar } from "./LibraryBulkBar";
+import { LibraryBulkDialog } from "./LibraryBulkDialog";
+import { LibraryRow, isReady } from "./LibraryRow";
 import { LibraryToolbar } from "./LibraryToolbar";
+import { useLibraryBulk, type BulkKind } from "./useLibraryBulk";
+import { useLibrarySelection } from "./useLibrarySelection";
 import "../styles/library.css";
 import "../styles/processing.css";
 
 const text = copy.library;
-
-const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("es", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
-type BadgeTone = "neutral" | "progress" | "success" | "error";
-
-const STATE_LABELS: Record<ProcessState, string> = {
-  [ProcessState.Queued]: text.states.queued,
-  [ProcessState.Joining]: text.states.joining,
-  [ProcessState.Recording]: text.states.recording,
-  [ProcessState.Transcribing]: text.states.transcribing,
-  [ProcessState.Completed]: text.states.completed,
-  [ProcessState.Failed]: text.states.failed,
-};
-
-const STATE_TONES: Record<ProcessState, BadgeTone> = {
-  [ProcessState.Queued]: "neutral",
-  [ProcessState.Joining]: "progress",
-  [ProcessState.Recording]: "progress",
-  [ProcessState.Transcribing]: "progress",
-  [ProcessState.Completed]: "success",
-  [ProcessState.Failed]: "error",
-};
 
 // Rows still being worked on; while any is visible the list refreshes quietly.
 const IN_PROGRESS_STATES: ReadonlySet<ProcessState> = new Set([
@@ -51,21 +31,6 @@ const EMPTY_QUERY: LibraryQuery = { text: "", from: null, to: null, sort: "newes
 function isQueryActive(query: LibraryQuery): boolean {
   return query.text.trim() !== "" || query.from !== null || query.to !== null || query.sort !== "newest";
 }
-
-function formatCreatedAt(createdAt: string | null): string {
-  if (!createdAt) return text.noDate;
-  const date = new Date(createdAt);
-  return Number.isNaN(date.getTime()) ? text.noDate : CREATED_AT_FORMATTER.format(date);
-}
-
-type RowEdge = "ready" | "progress" | "failed" | "queued";
-
-const ROW_EDGES: Record<BadgeTone, RowEdge> = {
-  success: "ready",
-  progress: "progress",
-  error: "failed",
-  neutral: "queued",
-};
 
 type GroupKey = "today" | "thisWeek" | "earlier";
 
@@ -102,75 +67,11 @@ function groupMeetings(
   return GROUP_ORDER.filter((key) => buckets[key].length > 0).map((key) => ({ key, items: buckets[key] }));
 }
 
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-/** `mm:ss`, or `h:mm:ss` from one hour on. */
-export function formatDuration(totalSeconds: number): string {
-  const seconds = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${pad(minutes)}:${pad(rest)}`;
-}
-
-function topicLine(meeting: MeetingListItem): string | null {
-  const topic = meeting.summaryTopic?.trim();
-  if (topic) return topic;
-  const tone = STATE_TONES[meeting.processState];
-  // Only the transcription stage is "generating"; a meeting still being recorded has no such text.
-  if (meeting.processState === ProcessState.Transcribing) return text.topicGenerating;
-  if (tone === "error") return meeting.failureCause === NO_SPEECH_CAUSE ? text.topicNoSpeech : text.topicFailed;
-  return null;
-}
-
-/** Compact estimate for rows in transcription; nothing when there is no honest estimate. */
-function RowProgress({ meeting }: { meeting: MeetingListItem }) {
-  if (meeting.processState !== ProcessState.Queued && meeting.processState !== ProcessState.Transcribing) return null;
-  const elapsed = secondsSince(meeting.createdAt, Date.now());
-  if (elapsed === null) return null;
-  const estimate = estimateProgress({
-    stage: "transcription", audioSeconds: meeting.durationSeconds, elapsedSinceUploadSeconds: elapsed,
-  });
-  if (!estimate) return null;
-  const processing = copy.processing;
-  const stage = processing.steps.transcription;
-  const label = estimate.overtime ? processing.libraryOvertime(stage) : processing.libraryProgress(stage, estimate.percent);
-  return (
-    <span className="processing-compact library-item-progress">
-      <ProgressBar label={processing.libraryProgressLabel} value={estimate.percent} valueText={label} />
-      <span>{label}</span>
-    </span>
-  );
-}
-
 function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
     </svg>
-  );
-}
-
-const THUMBNAIL_ICON_SIZE = 16;
-
-/**
- * Preview frame of the recording. The image is decorative (the title sits next to it), and the
- * generic tile replaces it when there is no frame or the signed link no longer loads.
- */
-function RowThumbnail({ meeting }: { meeting: MeetingListItem }) {
-  const url = meeting.thumbnailUrl;
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const showImage = url !== null && url !== failedUrl;
-  return (
-    <span className="library-item-thumb">
-      {showImage ? (
-        <img src={url} alt="" loading="lazy" decoding="async" onError={() => setFailedUrl(url)} />
-      ) : (
-        <Icon icon={meeting.mediaKind === "audio" ? AudioLines : Video} size={THUMBNAIL_ICON_SIZE} />
-      )}
-    </span>
   );
 }
 
@@ -181,45 +82,6 @@ function keepThumbnailUrls(previous: MeetingListItem[], next: MeetingListItem[])
     const current = urls.get(item.id);
     return current && item.thumbnailUrl ? { ...item, thumbnailUrl: current } : item;
   });
-}
-
-function LibraryRow({ meeting, selected, onSelect }: {
-  meeting: MeetingListItem;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const tone = STATE_TONES[meeting.processState];
-  const topic = topicLine(meeting);
-  // The API may omit these fields for older recordings.
-  const duration = typeof meeting.durationSeconds === "number" ? meeting.durationSeconds : null;
-  const speakers = typeof meeting.speakerCount === "number" && meeting.speakerCount > 0
-    ? meeting.speakerCount
-    : null;
-  return (
-    <li>
-      <button
-        type="button"
-        className={`library-item library-item--${ROW_EDGES[tone]}`}
-        aria-current={selected ? "true" : undefined}
-        onClick={onSelect}
-      >
-        <RowThumbnail meeting={meeting} />
-        <span className="library-item-main">
-          <span className="library-item-head">
-            <span className="library-item-title">{meeting.title.trim() || text.untitled}</span>
-            <StatusBadge tone={tone}>{STATE_LABELS[meeting.processState]}</StatusBadge>
-          </span>
-          {topic && <span className="library-item-topic">{topic}</span>}
-          <span className="library-item-meta">
-            <span>{formatCreatedAt(meeting.createdAt)}</span>
-            {duration !== null && <span className="library-item-duration">{formatDuration(duration)}</span>}
-            {speakers !== null && <span>{text.speakers(speakers)}</span>}
-          </span>
-          <RowProgress meeting={meeting} />
-        </span>
-      </button>
-    </li>
-  );
 }
 
 function LibrarySkeleton() {
@@ -245,6 +107,11 @@ interface RecordingLibraryProps {
   selectedId?: string;
 }
 
+/** More transcripts than this are downloaded only after the user confirms: browsers may block bursts. */
+const DOWNLOAD_CONFIRM_ABOVE = 5;
+
+type BulkConfirm = { kind: BulkKind; ids: string[]; skipped: number };
+
 /** The list pane: header strip, icon toolbar and compact rows (DESIGN.md 6, master-detail). */
 export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId }: RecordingLibraryProps) {
   const [meetings, setMeetings] = useState<MeetingListItem[]>([]);
@@ -252,6 +119,16 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId }: Re
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState<LibraryQuery>(EMPTY_QUERY);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [pendingDelete, setPendingDelete] = useState<MeetingListItem | null>(null);
+  const [bulkConfirm, setBulkConfirm] = useState<BulkConfirm | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // Row to focus once a deletion has re-rendered the list.
+  const focusAfterRemoval = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -299,23 +176,164 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId }: Re
     };
   }, [inProgress]);
 
+  // Without criteria the list keeps the order received from the API and is grouped by date;
+  // any search, filter or non-default sort shows a flat list.
+  const active = isQueryActive(query);
+  const visible = useMemo(() => (active ? applyLibraryQuery(meetings, query) : meetings), [active, meetings, query]);
+  const groups = useMemo(() => (active ? null : groupMeetings(visible, new Date())), [active, visible]);
+  const order = useMemo(
+    () => (groups ? groups.flatMap((group) => group.items) : visible).map((meeting) => meeting.id),
+    [groups, visible],
+  );
+  const knownIds = useMemo(() => meetings.map((meeting) => meeting.id), [meetings]);
+  const selection = useLibrarySelection(order, knownIds);
+  const selectedCount = selection.selected.size;
+
+  const meetingsRef = useRef(meetings);
+  meetingsRef.current = meetings;
+
+  /** Deletes on the server, then takes the recording out of the list, the selection and, if open, the detail. */
+  const removeMeeting = useCallback(async (id: string, focusNext?: string) => {
+    await deleteMeeting(id);
+    if (focusNext !== undefined) focusAfterRemoval.current = focusNext;
+    setMeetings((current) => current.filter((meeting) => meeting.id !== id));
+    selection.remove([id]);
+    if (id === selectedId) navigate({ name: "library" });
+  }, [selection.remove, selectedId]);
+
+  const bulk = useLibraryBulk(async (kind, id) => {
+    if (kind === "delete") {
+      await removeMeeting(id);
+    } else {
+      const meeting = meetingsRef.current.find((candidate) => candidate.id === id);
+      await downloadMeetingTranscript(id, meeting?.title);
+    }
+  });
+
+  // After a deletion the keyboard lands on the neighbouring row, or on the header when none is left.
+  useEffect(() => {
+    const id = focusAfterRemoval.current;
+    if (id === null) return;
+    focusAfterRemoval.current = null;
+    const rows = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>("[data-row-id]") ?? []);
+    (rows.find((row) => row.dataset.rowId === id) ?? headerRef.current)?.focus();
+  }, [meetings]);
+
+  const setRowError = (id: string, message: string | null) => setRowErrors((current) => {
+    const { [id]: _removed, ...rest } = current;
+    return message === null ? rest : { ...rest, [id]: message };
+  });
+
   const goToUpload = () => navigate({ name: "upload" });
+
+  const openRow = (meeting: MeetingListItem, modifiers: { range: boolean; toggle: boolean }) => {
+    if (modifiers.range) selection.selectRange(meeting.id);
+    else if (modifiers.toggle) selection.toggle(meeting.id);
+    else onSelectMeeting(meeting);
+  };
+
+  const toggleChecked = (id: string, range: boolean) => {
+    if (range) selection.selectRange(id);
+    else selection.toggle(id);
+  };
+
+  const renameRow = async (id: string, title: string) => {
+    const result = await renameMeeting(id, title);
+    setMeetings((current) => current.map((meeting) => (meeting.id === id ? { ...meeting, title: result.title } : meeting)));
+    setRenamingId(null);
+    notifyLibraryChanged();
+  };
+
+  const downloadRow = async (meeting: MeetingListItem) => {
+    setRowError(meeting.id, null);
+    try {
+      await downloadMeetingTranscript(meeting.id, meeting.title);
+    } catch {
+      setRowError(meeting.id, text.row.downloadFailed);
+    }
+  };
+
+  const confirmRowDelete = async () => {
+    const meeting = pendingDelete;
+    setPendingDelete(null);
+    if (!meeting) return;
+    setRowError(meeting.id, null);
+    const index = order.indexOf(meeting.id);
+    try {
+      await removeMeeting(meeting.id, order[index + 1] ?? order[index - 1] ?? "");
+      setAnnouncement(text.row.deleted(meeting.title.trim() || text.untitled));
+    } catch {
+      setRowError(meeting.id, text.row.deleteFailed);
+    }
+  };
+
+  /** Selected ids in the order the rows are shown. */
+  const selectedIds = () => [
+    ...order.filter((id) => selection.selected.has(id)),
+    ...[...selection.selected].filter((id) => !order.includes(id)),
+  ];
+
+  const startBulkDownload = () => {
+    const ready = selectedIds().filter((id) => {
+      const meeting = meetings.find((candidate) => candidate.id === id);
+      return meeting !== undefined && isReady(meeting);
+    });
+    const skipped = selectedCount - ready.length;
+    if (ready.length === 0) bulk.showEmpty("download", skipped);
+    else if (ready.length > DOWNLOAD_CONFIRM_ABOVE) setBulkConfirm({ kind: "download", ids: ready, skipped });
+    else void bulk.start("download", ready, skipped);
+  };
+
+  const runConfirmedBulk = () => {
+    const confirmed = bulkConfirm;
+    setBulkConfirm(null);
+    if (confirmed) void bulk.start(confirmed.kind, confirmed.ids, confirmed.skipped);
+  };
+
+  const modalOpen = pendingDelete !== null || bulkConfirm !== null || bulk.run !== null;
+
+  // Escape clears the selection unless something inside the list already used it (a menu, a rename).
+  const onSectionKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape" && !event.defaultPrevented && selectedCount > 0 && !modalOpen) {
+      event.preventDefault();
+      selection.clear();
+    }
+  };
+
+  // Up/Down/Home/End move between rows; only one row is in the tab order, so the list is one Tab stop.
+  const onListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof HTMLElement) || !event.target.matches(".library-item")) return;
+    const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(".library-item"));
+    const index = rows.indexOf(event.target);
+    const target = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: rows.length - 1 }[event.key];
+    if (target === undefined) return;
+    event.preventDefault();
+    rows[Math.min(Math.max(target, 0), rows.length - 1)]?.focus();
+  };
 
   // The search tools belong to a list that exists: not while loading, on error or with no recordings.
   const showToolbar = !loading && !failed && meetings.length > 0;
   // With a recording open beside the list the page title belongs to that recording, so the list
   // title is a plain label: one h1 per screen.
   const Title = selectedId === undefined ? "h1" : "p";
-  const header = (
+  const selecting = showToolbar && selectedCount > 0;
+  const header = selecting ? (
+    <LibraryBulkBar count={selectedCount} allState={selection.allState} headerRef={headerRef}
+      onToggleAll={selection.toggleAllVisible} onClear={selection.clear}
+      onDownload={startBulkDownload} onDelete={() => setBulkConfirm({ kind: "delete", ids: selectedIds(), skipped: 0 })} />
+  ) : (
     <>
-      <div className="ui-pane-header">
+      <div ref={headerRef} tabIndex={-1} className="ui-pane-header">
         <Title className="ui-pane-title" id="library-title">{text.title}</Title>
         <Button variant="primary" size="sm" onClick={goToUpload}>
           <PlusIcon />
           {text.upload}
         </Button>
       </div>
-      {showToolbar && <LibraryToolbar query={query} onChange={setQuery} />}
+      {showToolbar && (
+        <LibraryToolbar query={query} onChange={setQuery}
+          selectAll={{ state: selection.allState, disabled: order.length === 0, onChange: selection.toggleAllVisible }} />
+      )}
     </>
   );
 
@@ -344,36 +362,55 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId }: Re
       </div>
     );
   } else {
-    // Without criteria the list keeps the order received from the API and is grouped by date;
-    // any search, filter or non-default sort shows a flat list.
-    const active = isQueryActive(query);
-    const visible = active ? applyLibraryQuery(meetings, query) : meetings;
+    const tabbableId = activeId !== null && order.includes(activeId) ? activeId
+      : selectedId !== undefined && order.includes(selectedId) ? selectedId : order[0];
     const renderRow = (meeting: MeetingListItem) => (
-      <LibraryRow key={meeting.id} meeting={meeting} selected={meeting.id === selectedId}
-        onSelect={() => onSelectMeeting(meeting)} />
+      <LibraryRow key={meeting.id} meeting={meeting} open={meeting.id === selectedId}
+        checked={selection.selected.has(meeting.id)} tabbable={meeting.id === tabbableId}
+        renaming={meeting.id === renamingId} error={rowErrors[meeting.id] ?? null}
+        onOpen={openRow} onToggleChecked={toggleChecked} onFocusRow={setActiveId}
+        onStartRename={(id) => { setRowError(id, null); setRenamingId(id); }}
+        onRename={renameRow} onCancelRename={() => setRenamingId(null)}
+        onDownload={(target) => { void downloadRow(target); }} onDelete={setPendingDelete} />
     );
 
-    let list: React.ReactNode;
     if (visible.length === 0) {
-      list = <p role="status" className="library-message">{text.noMatch}</p>;
-    } else if (active) {
-      list = <ul className="library-list" aria-label={text.listLabel}>{visible.map(renderRow)}</ul>;
+      body = <p role="status" className="library-message">{text.noMatch}</p>;
+    } else if (groups === null) {
+      body = <ul className="library-list" aria-label={text.listLabel}>{visible.map(renderRow)}</ul>;
     } else {
-      list = groupMeetings(visible, new Date()).map((group) => (
+      body = groups.map((group) => (
         <section key={group.key} className="library-group" aria-labelledby={`library-group-${group.key}`}>
           <h2 id={`library-group-${group.key}`} className="library-group-title">{text.groups[group.key]}</h2>
           <ul className="library-list">{group.items.map(renderRow)}</ul>
         </section>
       ));
     }
-
-    body = list;
   }
 
+  const deleteBulk = bulkConfirm?.kind === "delete";
   return (
-    <section className="ui-pane library" aria-labelledby="library-title">
+    <section className="ui-pane library" id="library-pane" aria-labelledby="library-title"
+      data-selecting={selecting || undefined} onKeyDown={onSectionKeyDown}>
       {header}
-      <div className="ui-pane-body library-body">{body}</div>
+      <div ref={bodyRef} className="ui-pane-body library-body" onKeyDown={onListKeyDown}>{body}</div>
+      <p role="status" className="library-sr-only">{announcement}</p>
+      {pendingDelete && (
+        <ConfirmDialog title={text.row.deleteTitle} body={text.row.deleteBody} confirmLabel={text.row.delete}
+          cancelLabel={text.row.cancel} onConfirm={() => { void confirmRowDelete(); }}
+          onCancel={() => setPendingDelete(null)} />
+      )}
+      {bulkConfirm && (
+        <ConfirmDialog
+          title={deleteBulk ? text.bulk.deleteConfirmTitle(bulkConfirm.ids.length) : text.bulk.downloadConfirmTitle(bulkConfirm.ids.length)}
+          body={deleteBulk ? text.bulk.deleteConfirmBody : text.bulk.downloadConfirmBody}
+          confirmLabel={deleteBulk ? text.bulk.deleteConfirm : text.bulk.downloadConfirm}
+          cancelLabel={text.bulk.cancel} onConfirm={runConfirmedBulk} onCancel={() => setBulkConfirm(null)} />
+      )}
+      {bulk.run && (
+        <LibraryBulkDialog run={bulk.run} onStop={bulk.stop} onRetry={bulk.retry} onClose={bulk.close}
+          returnFocus={() => headerRef.current} />
+      )}
     </section>
   );
 }

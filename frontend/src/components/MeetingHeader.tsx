@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { deleteMeeting, renameMeeting } from "../api";
 import { notifyLibraryChanged } from "../library-events";
 import { meeting as text } from "../copy/meeting";
@@ -43,6 +43,8 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  // A newer title from outside (renamed in the library list) replaces the one saved here.
+  useEffect(() => setRenamedTitle(null), [title]);
   const currentTitle = renamedTitle ?? title ?? text.untitled;
   const validTitle = draft.trim().length > 0 && draft.trim().length <= 512;
 

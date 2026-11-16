@@ -83,6 +83,13 @@ function chooseSort(label: string) {
   fireEvent.click(screen.getByRole("menuitemradio", { name: label }));
 }
 
+/** The button that opens a recording (a row also holds a checkbox and an actions menu button). */
+function rowOpen(name: RegExp): HTMLElement {
+  const matches = screen.getAllByRole("button", { name }).filter((button) => button.classList.contains("library-item"));
+  expect(matches).toHaveLength(1);
+  return matches[0];
+}
+
 function renderedTitles(): string[] {
   return screen.getAllByRole("button")
     .map((button) => button.querySelector(".library-item-title")?.textContent)
@@ -158,7 +165,8 @@ describe("RecordingLibrary list", () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([meeting({ id: "r-1" }), chosen]);
     const onSelectMeeting = renderLibrary();
 
-    fireEvent.click(await screen.findByRole("button", { name: /Chosen one/ }));
+    await listLoaded();
+    fireEvent.click(rowOpen(/Chosen one/));
     expect(onSelectMeeting).toHaveBeenCalledWith(chosen);
   });
 
@@ -185,7 +193,7 @@ describe("RecordingLibrary list", () => {
   it("shows a loading status and an aria-hidden skeleton while the list is requested", async () => {
     vi.spyOn(api, "listMeetings").mockReturnValue(new Promise(() => {}));
     const { container } = render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
-    expect((await screen.findByRole("status")).textContent).toBe(text.loading);
+    expect(await screen.findByText(text.loading)).toHaveAttribute("role", "status");
 
     const skeleton = container.querySelector(".library-skeleton");
     expect(skeleton?.getAttribute("aria-hidden")).toBe("true");
@@ -241,6 +249,7 @@ describe("RecordingLibrary date groups", () => {
   function groupTitles(heading: string): string[] {
     const section = screen.getByRole("heading", { name: heading }).closest("section") as HTMLElement;
     return within(section).getAllByRole("button")
+      .filter((button) => button.classList.contains("library-item"))
       .map((button) => button.querySelector(".library-item-title")?.textContent ?? "");
   }
 
@@ -306,16 +315,18 @@ describe("RecordingLibrary row content", () => {
     return view;
   }
 
-  it("shows the summary topic, the duration in mm:ss and the speaker count", async () => {
-    await openWith([meeting({
+  it("shows the duration in mm:ss and the speaker count, and no inline summary", async () => {
+    const { container } = await openWith([meeting({
       processState: ProcessState.Completed,
       summaryTopic: "Quarterly results and delivery plan",
       durationSeconds: 3260,
       speakerCount: 3,
     })]);
-    expect(screen.getByText("Quarterly results and delivery plan")).toBeDefined();
     expect(screen.getByText("54:20").className).toContain("library-item-duration");
     expect(screen.getByText(text.speakers(3))).toBeDefined();
+    // The summary is not a second line of the row any more: it only exists as the row's tooltip.
+    expect(container.querySelector(".library-item-topic")).toBeNull();
+    expect(container.querySelector(".library-item")?.textContent).not.toContain("Quarterly results");
   });
 
   it("formats durations of an hour or more as h:mm:ss", async () => {
@@ -338,32 +349,22 @@ describe("RecordingLibrary row content", () => {
     expect(container.textContent).not.toContain(text.speakers(2).slice(2));
   });
 
-  it("falls back to a generating message for an in-progress recording without topic", async () => {
-    await openWith([meeting({ processState: ProcessState.Transcribing })]);
-    expect(screen.getByText(text.topicGenerating)).toBeDefined();
-  });
-
-  it("falls back to a failure message for a failed recording without topic", async () => {
-    await openWith([meeting({ processState: ProcessState.Failed })]);
-    expect(screen.getByText(text.topicFailed)).toBeDefined();
-  });
-
-  it("explains a recording without detected speech in its row, with no retry", async () => {
-    await openWith([meeting({ processState: ProcessState.Failed, failureCause: FailureCause.NoSpeechDetected })]);
-    expect(screen.getByText(text.topicNoSpeech)).toBeDefined();
-    expect(screen.queryByText(text.topicFailed)).toBeNull();
+  it("has no extra line for in-progress, failed or no-speech recordings", async () => {
+    const { container } = await openWith([
+      meeting({ id: "1", processState: ProcessState.Transcribing }),
+      meeting({ id: "2", processState: ProcessState.Failed }),
+      meeting({ id: "3", processState: ProcessState.Failed, failureCause: FailureCause.NoSpeechDetected }),
+    ]);
+    for (const item of container.querySelectorAll(".library-item")) {
+      expect(item.querySelector(".library-item-topic")).toBeNull();
+    }
     expect(screen.queryByRole("button", { name: text.retry })).toBeNull();
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   it("does not use a fallback line for a queued recording", async () => {
     const { container } = await openWith([meeting({ processState: ProcessState.Queued })]);
     expect(container.querySelector(".library-item-topic")).toBeNull();
-  });
-
-  it("prefers the real topic over the fallback", async () => {
-    await openWith([meeting({ processState: ProcessState.Failed, summaryTopic: "Real topic" })]);
-    expect(screen.getByText("Real topic")).toBeDefined();
-    expect(screen.queryByText(text.topicFailed)).toBeNull();
   });
 
   it("colours the left edge by state", async () => {
@@ -406,8 +407,8 @@ describe("RecordingLibrary as the list pane", () => {
 
   it("marks only the open recording with aria-current", async () => {
     await openPane("b");
-    expect(screen.getByRole("button", { name: /Second/ })).toHaveAttribute("aria-current", "true");
-    expect(screen.getByRole("button", { name: /First/ })).not.toHaveAttribute("aria-current");
+    expect(rowOpen(/Second/)).toHaveAttribute("aria-current", "true");
+    expect(rowOpen(/First/)).not.toHaveAttribute("aria-current");
   });
 
   it("marks nothing when no recording is open", async () => {
@@ -425,7 +426,7 @@ describe("RecordingLibrary as the list pane", () => {
     const view = await openPane();
     const list = vi.spyOn(api, "listMeetings").mockResolvedValue([meeting({ id: "b", title: "Second renamed" })]);
     window.dispatchEvent(new Event(LIBRARY_CHANGED_EVENT));
-    await waitFor(() => expect(screen.getByRole("button", { name: /Second renamed/ })).toBeDefined());
+    await waitFor(() => expect(rowOpen(/Second renamed/)).toBeDefined());
     expect(screen.queryByRole("button", { name: /First/ })).toBeNull();
     expect(list).toHaveBeenCalledTimes(1);
     // No loading state in between: the toolbar never left.
@@ -516,7 +517,7 @@ describe("RecordingLibrary toolbar", () => {
       search.text, search.dates, search.sortCurrent(search.sortNewest),
     ]);
     for (const button of buttons) expect(describedText(button)).toBe(button.getAttribute("aria-label"));
-    expect(toolbar.querySelector("input")).toBeNull();
+    expect(toolbar.querySelector("input:not([type=checkbox])")).toBeNull();
     expect(screen.queryByLabelText(search.from)).toBeNull();
   });
 
@@ -795,7 +796,7 @@ describe("RecordingLibrary thumbnails", () => {
 
     expect(view.container.querySelectorAll("button.library-item")).toHaveLength(1);
     expect(thumb(view.container).querySelector("[tabindex], a, button")).toBeNull();
-    expect(screen.getByRole("button", { name: /Synthetic meeting/ })).toBeDefined();
+    expect(rowOpen(/Synthetic meeting/)).toBeDefined();
     expect(screen.queryByRole("img")).toBeNull();
   });
 

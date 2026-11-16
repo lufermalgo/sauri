@@ -14,4 +14,4 @@ export { Popover, type PopoverProps } from "./Popover";
 export { Avatar, type AvatarProps } from "./Avatar";
 export { TimeChip, type TimeChipProps } from "./TimeChip";
 export { Icon, type IconProps } from "./Icon";
-export { useTooltip, TOOLTIP_DELAY_MS } from "./Tooltip";
+export { useTooltip, TOOLTIP_DELAY_MS, type TooltipOptions } from "./Tooltip";

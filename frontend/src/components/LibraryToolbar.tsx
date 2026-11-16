@@ -5,6 +5,8 @@ import type { LucideIcon } from "lucide-react";
 import { copy } from "../copy/es";
 import type { LibraryQuery, LibrarySort } from "../library-query";
 import { Button, Icon, Menu, MenuItem, Popover, TextField, useTooltip } from "./ui";
+import { SelectAllCheckbox } from "./LibraryBulkBar";
+import type { SelectAllState } from "./useLibrarySelection";
 
 const text = copy.library.search;
 
@@ -48,13 +50,15 @@ function ToolButton({ label, icon, onClick, buttonRef }: {
 interface LibraryToolbarProps {
   query: LibraryQuery;
   onChange: (query: LibraryQuery) => void;
+  /** The header checkbox: selects or deselects every row that is shown. */
+  selectAll: { state: SelectAllState; disabled: boolean; onChange: () => void };
 }
 
 /**
  * Search, date range and sort as icon controls. Every control applies its value immediately,
  * as the labeled fields did; the search field stays open while it holds text.
  */
-export function LibraryToolbar({ query, onChange }: LibraryToolbarProps) {
+export function LibraryToolbar({ query, onChange, selectAll }: LibraryToolbarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [focusTick, setFocusTick] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -100,6 +104,8 @@ export function LibraryToolbar({ query, onChange }: LibraryToolbarProps) {
 
   return (
     <div className="library-toolbar" role="search" aria-label={text.regionLabel} data-searching={expanded || undefined}>
+      <SelectAllCheckbox className="library-selectall library-selectall--toolbar" state={selectAll.state}
+        disabled={selectAll.disabled} onChange={selectAll.onChange} />
       {/* First, so the other icons keep their place when it appears. */}
       {filtersActive && <ToolButton label={text.clearFilters} icon={FilterX} onClick={clearFilters} />}
       {expanded ? (

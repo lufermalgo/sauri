@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useTooltip } from "./Tooltip";
 
@@ -15,11 +15,29 @@ export type MenuProps = {
   className?: string;
   /** Shows `label` as a tooltip on the trigger (hover and keyboard focus). */
   tooltip?: boolean;
+  /** Tab order of the trigger; -1 for a control reached with the arrow keys of a roving list. */
+  triggerTabIndex?: number;
   children: ReactNode;
 };
 
-export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, triggerClassName, className, tooltip, children }: MenuProps) {
+/** Visible vertical range of the trigger's nearest scroll or clipping ancestor, within the window. */
+function visibleRange(element: HTMLElement): { top: number; bottom: number } {
+  let top = 0;
+  let bottom = window.innerHeight;
+  for (let parent = element.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+    const overflow = window.getComputedStyle(parent).overflowY;
+    if (overflow === "auto" || overflow === "scroll" || overflow === "hidden") {
+      const rect = parent.getBoundingClientRect();
+      top = Math.max(top, rect.top);
+      bottom = Math.min(bottom, rect.bottom);
+    }
+  }
+  return { top, bottom };
+}
+
+export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, triggerClassName, className, tooltip, triggerTabIndex, children }: MenuProps) {
   const [open, setOpen] = useState(false);
+  const [opensUp, setOpensUp] = useState(false);
   const tip = useTooltip(tooltip ? label : undefined);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -39,6 +57,18 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, tr
     pendingFocus.current = focus;
     setOpen(true);
   };
+
+  // A menu opened near the bottom of a scrolling pane opens upward instead of being clipped.
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const trigger = triggerRef.current;
+    if (!open || !panel || !trigger) { setOpensUp(false); return; }
+    const range = visibleRange(trigger);
+    const rect = trigger.getBoundingClientRect();
+    const below = range.bottom - rect.bottom;
+    const above = rect.top - range.top;
+    setOpensUp(below < panel.offsetHeight && above > below);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !pendingFocus.current) return;
@@ -96,7 +126,7 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, tr
   return (
     <div className={className ? `ui-menu ${className}` : "ui-menu"} ref={rootRef}>
       <button ref={triggerRef} type="button"
-        className={trigger ? triggerClassName : `ui-menu-trigger ui-menu-trigger--${triggerLabel ? triggerVariant : "icon"}`} aria-label={label}
+        className={trigger ? triggerClassName : `ui-menu-trigger ui-menu-trigger--${triggerLabel ? triggerVariant : "icon"}`} aria-label={label} tabIndex={triggerTabIndex}
         aria-haspopup="menu" aria-expanded={open} aria-controls={open ? panelId : undefined}
         {...tip.triggerProps}
         onClick={() => { tip.hide(); if (open) close(false); else openMenu("first"); }}
@@ -120,7 +150,7 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, tr
       {tip.tooltip}
       {open && (
         <MenuContext.Provider value={{ close: () => close(true) }}>
-          <div ref={panelRef} id={panelId} role="menu" aria-label={label} className="ui-menu-panel"
+          <div ref={panelRef} id={panelId} role="menu" aria-label={label} className={opensUp ? "ui-menu-panel ui-menu-panel--up" : "ui-menu-panel"}
             onKeyDown={onPanelKeyDown}>
             {children}
           </div>
@@ -132,6 +162,8 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, tr
 
 export type MenuItemProps = {
   onSelect: () => void;
+  /** Native tooltip and description, e.g. why a disabled item is unavailable. */
+  hint?: string;
   tone?: "default" | "danger";
   disabled?: boolean;
   /** Makes the item a radio-like choice (`menuitemradio`) that reports whether it is the selected one. */
@@ -139,12 +171,12 @@ export type MenuItemProps = {
   children: ReactNode;
 };
 
-export function MenuItem({ onSelect, tone = "default", disabled = false, checked, children }: MenuItemProps) {
+export function MenuItem({ onSelect, hint, tone = "default", disabled = false, checked, children }: MenuItemProps) {
   const menu = useContext(MenuContext);
   return (
     <button type="button" role={checked === undefined ? "menuitem" : "menuitemradio"} tabIndex={-1}
       className={`ui-menu-item ui-menu-item--${tone}`}
-      aria-checked={checked} aria-disabled={disabled || undefined}
+      title={hint} aria-checked={checked} aria-disabled={disabled || undefined}
       onClick={() => {
         if (disabled) return;
         onSelect();

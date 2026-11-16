@@ -65,6 +65,18 @@ describe("MeetingHeader", () => {
     expect(renameMeeting).toHaveBeenCalledWith("m1", "New title");
   });
 
+  it("shows a newer title that arrives from outside (renamed in the library list) over the one saved here", async () => {
+    vi.mocked(renameMeeting).mockResolvedValue({ meetingId: "m1", title: "Saved here" });
+    const view = open();
+    edit("Saved here");
+    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Saved here" })).toBeInTheDocument();
+
+    view.rerender(<MeetingHeader title="Renamed in the list" createdAt="2026-11-14T12:00:00Z" meetingId="m1"
+      manifest={null} turns={[]} />);
+    expect(screen.getByRole("heading", { level: 1, name: "Renamed in the list" })).toBeInTheDocument();
+  });
+
   it("names the transcript download after the renamed title", async () => {
     vi.mocked(renameMeeting).mockResolvedValue({ meetingId: "m1", title: "Canonical title" });
     const revoke = vi.fn();
