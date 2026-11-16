@@ -22,6 +22,35 @@ describe("NotesList approved library", () => {
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: copy.portal })).toHaveAttribute("href", "http://localhost:5173/");
   });
+  it("filters the loaded list from an inline search and restores it when closed", () => {
+    render(<NotesList state="withData" notes={notes} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
+    const toggle = screen.getByRole("button", { name: copy.search });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const field = screen.getByRole("searchbox", { name: copy.searchField });
+    expect(field).toHaveFocus();
+    fireEvent.change(field, { target: { value: "test b" } });
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByText("Test B")).toBeInTheDocument();
+    fireEvent.change(field, { target: { value: "zzz" } });
+    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(copy.noResults);
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(3);
+    expect(toggle).toHaveFocus();
+  });
+  it("matches the fallback title and offers search only when there is a list", () => {
+    const view = render(<NotesList state="withData" notes={notes} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: copy.search }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: copy.untitled.toLowerCase() } });
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    view.rerender(<NotesList state="empty" notes={[]} onRetry={vi.fn()} onOpenNote={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: copy.search })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: copy.portal })).toBeInTheDocument();
+  });
   it("opens the selected recording and retries a failed list request", () => {
     const onOpenNote = vi.fn(), onRetry = vi.fn();
     const view = render(<NotesList state="withData" notes={notes} onRetry={onRetry} onOpenNote={onOpenNote} />);

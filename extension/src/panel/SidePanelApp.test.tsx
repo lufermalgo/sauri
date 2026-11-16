@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { IDBFactory } from "fake-indexeddb";
 import { COMPLETION_STORE, createCompletion, getCompletion, openDB, type RecordingCompletion } from "../recording-db";
 import { SidePanelApp } from "./SidePanelApp";
+import { chooseSource, sourceTrigger } from "./test-helpers";
 
 function mockTabs() {
   return {
@@ -60,11 +61,28 @@ describe("SidePanelApp", () => {
   });
 
   it("renders Header + Controls + List with an active session (Req. 1.4)", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
     mockChrome(true);
     render(<SidePanelApp />);
-    await waitFor(() => expect(screen.getByText(copy.brand)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(copy.panelTitle)).toBeInTheDocument());
     expect(screen.getByText(copy.recordings)).toBeInTheDocument();
     expect(screen.getByText(copy.screenAudio)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(screen.queryByText("Sauri")).not.toBeInTheDocument();
+  });
+
+  it("opens the recording settings from the toolbar button only", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    mockChrome(true);
+    render(<SidePanelApp />);
+    const settings = await screen.findByRole("button", { name: copy.settings });
+    expect(screen.getAllByRole("button", { name: copy.settings })).toHaveLength(1);
+    fireEvent.click(settings);
+    expect(screen.getByRole("heading", { name: copy.settingsTitle })).toBeInTheDocument();
+    expect(screen.getByLabelText(copy.countdown)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: copy.back }));
+    expect(await screen.findByRole("button", { name: copy.newRecording })).toBeInTheDocument();
   });
 });
 
@@ -79,21 +97,22 @@ describe("native sharing picker feedback", () => {
     mockChrome(true);
   });
 
-  it("shows selection without a recording timer, disables both start buttons, and cancels silently", async () => {
+  it("shows selection without a recording timer, disables the start controls, and cancels silently", async () => {
     let finish!: (value: unknown) => void;
     vi.mocked(chrome.runtime.sendMessage).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
     render(<SidePanelApp />);
-    const record = await screen.findByRole("button", { name: copy.record });
+    const record = await screen.findByRole("button", { name: copy.newRecording });
     fireEvent.click(record);
     expect(await screen.findByText(copy.choosing)).toBeInTheDocument();
     expect(record).toBeDisabled();
-    expect(screen.getByRole("button", { name: copy.recordTab })).toBeDisabled();
+    expect(sourceTrigger()).toBeDisabled();
+    expect(screen.getByRole("switch", { name: copy.microphone })).toBeDisabled();
     fireEvent.click(record);
     expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("00:00")).not.toBeInTheDocument();
     await act(async () => finish({ ok: false, reason: "cancelled" }));
     expect(record).toBeEnabled();
-    expect(screen.getByRole("button", { name: copy.recordTab })).toBeEnabled();
+    expect(sourceTrigger()).toBeEnabled();
     expect(screen.queryByText(copy.choosing)).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledTimes(1); // Cancel is not a completed recording.
@@ -102,11 +121,11 @@ describe("native sharing picker feedback", () => {
   it("explains missing tab audio and permits choosing again", async () => {
     vi.mocked(chrome.runtime.sendMessage).mockResolvedValue({ ok: false, reason: "no-tab-audio" });
     render(<SidePanelApp />);
-    fireEvent.click(await screen.findByRole("button", { name: copy.record }));
+    fireEvent.click(await screen.findByRole("button", { name: copy.newRecording }));
     expect(await screen.findByRole("alert")).toHaveTextContent(copy.audioError);
-    expect(screen.getByRole("button", { name: copy.record })).toBeEnabled();
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeEnabled();
     expect(screen.getByRole("switch", { name: copy.microphone })).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(screen.getByRole("button", { name: copy.record }));
+    fireEvent.click(screen.getByRole("button", { name: copy.newRecording }));
     await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledTimes(2));
   });
 
@@ -114,7 +133,7 @@ describe("native sharing picker feedback", () => {
     let finish!: (value: unknown) => void;
     vi.mocked(chrome.runtime.sendMessage).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
     render(<SidePanelApp />);
-    fireEvent.click(await screen.findByRole("button", { name: copy.record }));
+    fireEvent.click(await screen.findByRole("button", { name: copy.newRecording }));
     await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledOnce());
     const listener = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[1][0];
     await act(async () => {
@@ -131,10 +150,10 @@ describe("native sharing picker feedback", () => {
     vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "pending" }, sauriCaptureRequest: { state: { sessionId: "selection" } } }));
     render(<SidePanelApp />);
     expect(await screen.findByText(copy.choosing)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: copy.record })).toBeDisabled();
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeDisabled();
     const listener = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[1][0];
     await act(async () => listener({ sauriCaptureRequest: { oldValue: {} } }, "session"));
-    expect(screen.getByRole("button", { name: copy.record })).toBeEnabled();
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeEnabled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
@@ -153,12 +172,52 @@ describe("current-tab shortcut and microphone permission", () => {
   });
 
   async function clickStart(source: "picker" | "current-tab") {
-    const button = source === "picker"
-      ? await screen.findByRole("button", { name: copy.record })
-      : await screen.findByRole("button", { name: copy.recordTab });
+    if (source === "current-tab") await chooseSource(copy.currentTab);
+    const button = await screen.findByRole("button", { name: copy.newRecording });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
   }
+
+  it("starts the picker with the selected mode and the current tab with video", async () => {
+    vi.mocked(chrome.runtime.sendMessage).mockResolvedValue({ ok: true });
+    render(<SidePanelApp />);
+    await chooseSource(copy.audioOnly);
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "set-capture-mode", captureMode: "audio_only" }));
+    await waitFor(() => expect(sourceTrigger()).toHaveTextContent(copy.audioOnly));
+    await clickStart("picker");
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "start-capture", source: "picker" })));
+    await chooseSource(copy.currentTab);
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "set-capture-mode", captureMode: "screen_audio" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: copy.newRecording })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: copy.newRecording }));
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenLastCalledWith(expect.objectContaining({ type: "start-capture", source: "current-tab" })));
+  });
+
+  it("chooses the input device and sends it when recording starts", async () => {
+    vi.mocked(navigator.mediaDevices.enumerateDevices).mockResolvedValue([
+      { kind: "audioinput", deviceId: "mic-1", label: "Test microphone" }, { kind: "audioinput", deviceId: "mic-2", label: "USB" },
+    ] as MediaDeviceInfo[]);
+    vi.mocked(chrome.runtime.sendMessage).mockResolvedValue({ ok: false, reason: "cancelled" });
+    render(<SidePanelApp />);
+    const device = await screen.findByRole("button", { name: copy.microphoneSelector });
+    await waitFor(() => expect(device).toBeEnabled());
+    fireEvent.click(device);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "USB" }));
+    await clickStart("picker");
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ source: "picker", micDeviceId: "mic-2" })));
+  });
+
+  it("disables the device control and starts without a microphone when the switch is off", async () => {
+    mockChrome(true);
+    vi.mocked(chrome.storage.local.get).mockResolvedValue({ recordingSettings: { countdownSeconds: 3, showControlBar: true, skipMicWarning: true } } as never);
+    vi.mocked(chrome.runtime.sendMessage).mockResolvedValue({ ok: false, reason: "cancelled" });
+    render(<SidePanelApp />);
+    fireEvent.click(await screen.findByRole("switch", { name: copy.microphone }));
+    expect(screen.getByRole("switch", { name: copy.microphone })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("button", { name: copy.microphoneSelector })).toBeDisabled();
+    await clickStart("picker");
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ source: "picker", micDeviceId: null })));
+  });
 
   it("uses a separate starting state for the shortcut and explains capture permission errors", async () => {
     let finish!: (value: unknown) => void;
@@ -167,27 +226,42 @@ describe("current-tab shortcut and microphone permission", () => {
     await clickStart("current-tab");
     expect(await screen.findByText(copy.starting)).toBeInTheDocument();
     expect(screen.queryByText(copy.choosing)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: copy.record })).toBeDisabled();
-    expect(screen.getByRole("button", { name: copy.recordTab })).toBeDisabled();
-    expect(screen.getByRole("button", { name: copy.recordTab })).toBeDisabled();
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeDisabled();
+    expect(sourceTrigger()).toBeDisabled();
     await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "start-capture", source: "current-tab", resolution: { width: 1280, height: 720 }, micDeviceId: "mic-1" }));
     await act(async () => finish({ ok: false, reason: "current-tab-unavailable" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(copy.tabError);
-    expect(screen.getByRole("button", { name: copy.recordTab })).toBeEnabled();
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeEnabled();
+    expect(sourceTrigger()).toHaveTextContent(copy.currentTab);
     expect(screen.getByRole("switch", { name: copy.microphone })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("disables the shortcut on restricted pages and refreshes on tab changes without disabling the picker", async () => {
+  it("disables the current-tab option on restricted pages and refreshes on tab changes without disabling the picker", async () => {
     vi.mocked(chrome.tabs.query).mockImplementation(async () => [{ id: 7, url: "chrome://settings" }] as chrome.tabs.Tab[]);
     render(<SidePanelApp />);
-    expect(await screen.findByRole("button", { name: copy.recordTab })).toBeDisabled();
-    await waitFor(() => expect(screen.getByRole("button", { name: copy.record })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: copy.recordTab }));
+    await waitFor(() => expect(screen.getByRole("button", { name: copy.newRecording })).toBeEnabled());
+    fireEvent.click(sourceTrigger());
+    const item = await screen.findByRole("menuitemradio", { name: copy.currentTab });
+    expect(item).toBeDisabled();
+    fireEvent.click(item);
     expect(chrome.runtime.sendMessage).not.toHaveBeenCalled();
     vi.mocked(chrome.tabs.query).mockImplementation(async () => [{ id: 8, url: "https://example.com" }] as chrome.tabs.Tab[]);
     const listener = vi.mocked(chrome.tabs.onActivated.addListener).mock.calls[0][0];
     await act(async () => listener({ tabId: 8, windowId: 1 }));
-    await waitFor(() => expect(screen.getByRole("button", { name: copy.recordTab })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("menuitemradio", { name: copy.currentTab })).toBeEnabled());
+  });
+
+  it("blocks the primary button with an explanation when the selected tab becomes unavailable", async () => {
+    render(<SidePanelApp />);
+    await chooseSource(copy.currentTab);
+    vi.mocked(chrome.tabs.query).mockImplementation(async () => [{ id: 9, url: "chrome://settings" }] as chrome.tabs.Tab[]);
+    const listener = vi.mocked(chrome.tabs.onActivated.addListener).mock.calls[0][0];
+    await act(async () => listener({ tabId: 9, windowId: 1 }));
+    await waitFor(() => expect(screen.getByRole("button", { name: copy.newRecording })).toBeDisabled());
+    expect(screen.getByRole("note")).toHaveTextContent(copy.tabUnavailable);
+    await chooseSource(copy.screenAudio);
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeEnabled();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
   it.each([
@@ -217,7 +291,7 @@ describe("current-tab shortcut and microphone permission", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(copy.permissionNeeded);
     expect(chrome.runtime.openOptionsPage).toHaveBeenCalledOnce();
     expect(screen.getByRole("switch", { name: copy.microphone })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("button", { name: copy.recordTab })).toBeEnabled();
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeEnabled();
   });
 
   it("checks permission for the default microphone even without enumerated devices", async () => {
@@ -259,7 +333,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
 
   async function mount() {
     const view = render(<SidePanelApp />);
-    await screen.findByText(copy.brand);
+    await screen.findByText(copy.panelTitle);
     // Drain the initial asynchronous auth/storage/list reads before assertions.
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     return view;

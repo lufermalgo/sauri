@@ -1,4 +1,5 @@
-.panel-app { min-height: 100vh; line-height: 1.5; }
+.panel-app { --panel-control-height: 40px; min-height: 100vh; line-height: 1.5; }
+@media (pointer: coarse) { .panel-app { --panel-control-height: var(--ds-target); } }
 .panel-app *, .permission-page * { box-sizing: border-box; }
 .panel-app h1, .permission-page h1 { font: 600 var(--ds-text-2xl)/1.2 var(--ds-font-sans); margin: 0; }
 .panel-app h2, .permission-page h2 { font: 600 var(--ds-text-xl)/1.25 var(--ds-font-sans); margin: 0; }
@@ -8,29 +9,47 @@
 .panel-app .panel-primary, .permission-page .panel-primary { background: var(--ds-accent); border-color: var(--ds-accent); color: var(--ds-accent-fg); }
 .panel-app input:not([type="checkbox"]), .panel-app select { min-height: var(--ds-target); padding: 0 var(--ds-space-3); width: 100%; border: 1px solid var(--ds-border-strong); border-radius: var(--ds-radius-sm); background: var(--ds-sidebar); color: var(--ds-fg); font: 400 var(--ds-text-md) var(--ds-font-sans); }
 .panel-app input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--ds-accent); }
-.panel-header { padding: var(--ds-space-4) var(--ds-space-4); border-bottom: 1px solid var(--ds-border); display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-2); }
-.panel-brand { display: flex; align-items: center; gap: var(--ds-space-2); font: 600 var(--ds-text-xl) var(--ds-font-sans); }
+.panel-header { padding: var(--ds-space-3) var(--ds-space-4); border-bottom: 1px solid var(--ds-border); display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-2); }
+.panel-brand { min-width: 0; display: flex; align-items: center; gap: var(--ds-space-2); font: 600 var(--ds-text-lg) var(--ds-font-sans); }
 .panel-brand svg { color: var(--ds-accent-text); }
 .panel-app svg, .permission-page svg { flex: 0 0 auto; }
 .panel-app .panel-with-icon, .permission-page .panel-with-icon { display: inline-flex; align-items: center; justify-content: center; gap: var(--ds-space-2); }
 .panel-dot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: var(--ds-radius-pill); background: currentColor; }
-.panel-app .panel-icon-button { width: var(--ds-target); padding: var(--ds-space-3); background: var(--ds-surface); color: var(--ds-fg-muted); display: grid; place-items: center; }
+.panel-app .panel-icon-button { width: var(--panel-control-height); min-height: var(--panel-control-height); padding: 0; background: transparent; border-color: transparent; color: var(--ds-fg-muted); display: grid; place-items: center; border-radius: var(--ds-radius-md); }
+.panel-app .panel-icon-button:hover { background: var(--ds-fill-hover); }
+.panel-app a.panel-icon-button { border: 1px solid transparent; text-decoration: none; }
 .panel-main { padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-4); }
 .panel-stack { display: flex; flex-direction: column; gap: var(--ds-space-4); min-width: 0; }
 .panel-row { display: flex; align-items: center; gap: var(--ds-space-3); }
 .panel-card { padding: var(--ds-space-4); background: var(--ds-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-lg); }
-.panel-segmented { display: flex; gap: var(--ds-space-2); padding: var(--ds-space-1); border-radius: var(--ds-radius-md); background: var(--ds-fill); }
-.panel-app .panel-segmented button { flex: 1; min-width: 0; padding: var(--ds-space-2) var(--ds-space-1); display: flex; align-items: center; justify-content: center; gap: var(--ds-space-2); border: 0; border-radius: var(--ds-radius-sm); background: transparent; color: var(--ds-fg-muted); font-size: var(--ds-text-md); }
-.panel-app .panel-segmented button[aria-checked="true"] { background: var(--ds-surface); color: var(--ds-fg); box-shadow: var(--ds-shadow-sm); }
-.panel-app .panel-switch { flex: 0 0 46px; width: 46px; min-height: 28px; height: 28px; padding: 3px; border: 0; border-radius: var(--ds-radius-pill); background: var(--ds-border-strong); display: flex; }
-.panel-switch span { width: 22px; height: 22px; border-radius: var(--ds-radius-pill); background: var(--ds-surface); }
-.panel-app .panel-switch[aria-checked="true"] { background: var(--ds-accent); justify-content: flex-end; }
-.panel-mic-label { flex: 1; min-width: 0; font-size: var(--ds-text-sm); font-weight: 600; color: var(--ds-fg-muted); }
 .panel-small { font-size: var(--ds-text-sm); }
-.panel-center { text-align: center; }
-.panel-start { gap: var(--ds-space-3); }
-.panel-app .panel-record-button { min-height: 52px; border-radius: var(--ds-radius-md); font-size: var(--ds-text-lg); }
-.panel-library-heading { justify-content: space-between; align-items: baseline; flex-wrap: wrap; }
+.panel-ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-controls { position: relative; display: flex; align-items: center; gap: var(--ds-space-2); min-width: 0; }
+.panel-control-group { display: flex; align-items: center; min-width: 0; height: var(--panel-control-height); border: 1px solid var(--ds-border-strong); border-radius: var(--ds-radius-md); background: var(--ds-surface); }
+.panel-source-group { flex: 1; padding-right: var(--ds-space-2); gap: var(--ds-space-1); }
+.panel-menu-root { display: flex; flex: 1; min-width: 0; height: 100%; }
+.panel-app .panel-control-trigger { flex: 1; min-width: 0; height: 100%; min-height: 0; padding: 0 var(--ds-space-2) 0 var(--ds-space-3); gap: var(--ds-space-2); display: flex; align-items: center; justify-content: flex-start; border: 0; border-radius: var(--ds-radius-md); background: transparent; color: var(--ds-fg); font-weight: 500; text-align: left; }
+.panel-app .panel-control-trigger:hover:not(:disabled) { background: var(--ds-fill-hover); }
+.panel-app .panel-control-trigger:disabled { opacity: .5; }
+.panel-app .panel-mic-trigger { padding: 0 var(--ds-space-2) 0 var(--ds-space-3); }
+.panel-chevron { margin-left: auto; color: var(--ds-fg-subtle); }
+.panel-mic-trigger .panel-chevron { margin-left: 0; }
+.panel-app .panel-settings-button { width: var(--panel-control-height); min-height: 0; padding: 0; justify-content: center; color: var(--ds-fg-muted); border-color: var(--ds-border-strong); background: var(--ds-surface); }
+.panel-app .panel-settings-button:hover { background: var(--ds-fill-hover); }
+.panel-app .panel-switch { position: relative; flex: 0 0 40px; width: 40px; min-height: 24px; height: 24px; padding: 2px; border: 0; border-radius: var(--ds-radius-pill); background: var(--ds-border-strong); display: flex; align-items: center; }
+.panel-switch::after { content: ""; position: absolute; inset: -8px -2px; }
+.panel-switch span { width: 20px; height: 20px; border-radius: var(--ds-radius-pill); background: var(--ds-surface); }
+.panel-app .panel-switch[aria-checked="true"] { background: var(--ds-accent); justify-content: flex-end; }
+@media (max-width: 340px) { .panel-controls { gap: var(--ds-space-1); } .panel-app .panel-control-trigger { padding-left: var(--ds-space-2); gap: var(--ds-space-1); } .panel-source-group { padding-right: var(--ds-space-1); } }
+.panel-menu { position: absolute; top: calc(100% + var(--ds-space-1)); left: 0; right: 0; z-index: var(--ds-z-menu); list-style: none; margin: 0; padding: var(--ds-space-1); background: var(--ds-surface-raised); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-md); box-shadow: var(--ds-shadow-md); }
+.panel-app .panel-menu button { width: 100%; min-height: var(--ds-target); display: flex; align-items: center; justify-content: flex-start; gap: var(--ds-space-3); padding: 0 var(--ds-space-3); border: 0; border-radius: var(--ds-radius-sm); background: transparent; color: var(--ds-fg); font-weight: 500; text-align: left; }
+.panel-app .panel-menu button:hover:not(:disabled), .panel-app .panel-menu button:focus-visible { background: var(--ds-fill-hover); }
+.panel-app .panel-menu button[aria-checked="true"] { font-weight: 600; }
+.panel-menu-check { margin-left: auto; color: var(--ds-accent-text); }
+.panel-app .panel-new-recording { width: 100%; min-height: var(--ds-target); border-radius: var(--ds-radius-md); }
+.panel-app .panel-primary:hover:not(:disabled) { background: var(--ds-accent-hover); border-color: var(--ds-accent-hover); }
+.panel-library-heading { justify-content: space-between; align-items: center; }
+.panel-library-tools { gap: var(--ds-space-1); }
 .panel-library h2 { font-size: var(--ds-text-lg); }
 .panel-app a { color: var(--ds-accent-text); font-weight: 600; }
 .panel-note-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--ds-space-2); }

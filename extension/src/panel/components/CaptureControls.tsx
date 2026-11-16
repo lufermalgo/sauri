@@ -1,9 +1,14 @@
 import React from "react";
-import { AppWindow, AudioLines, Check, Monitor, Pause, Play, Square } from "lucide-react";
+import { AppWindow, AudioLines, Check, Mic, Monitor, Pause, Play, Plus, SlidersHorizontal, Square } from "lucide-react";
 import { Icon } from "../../core/design/Icon";
 import { formatTimestamp } from "../../core/time";
 import type { CaptureState } from "../../core/types";
 import { panelCopy as copy } from "../copy";
+import { MenuButton, type MenuOption } from "./MenuButton";
+
+export type CaptureSourceChoice = "screen_audio" | "audio_only" | "current-tab";
+const SOURCE_ICONS = { screen_audio: Monitor, audio_only: AudioLines, "current-tab": AppWindow } as const;
+const SOURCE_LABELS: Record<CaptureSourceChoice, string> = { screen_audio: copy.screenAudio, audio_only: copy.audioOnly, "current-tab": copy.currentTab };
 
 export interface MicOption { deviceId: string | null; label: string }
 export interface CaptureControlsProps {
@@ -13,10 +18,10 @@ export interface CaptureControlsProps {
   onSelectMicrophone?: (mic: MicOption) => void;
   microphoneEnabled?: boolean;
   onToggleMicrophone?: () => void;
-  captureMode?: "screen_audio" | "audio_only";
-  onChangeMode?: (mode: "screen_audio" | "audio_only") => void;
+  source?: CaptureSourceChoice;
+  onChangeSource?: (source: CaptureSourceChoice) => void;
   onToggleCapture: () => void;
-  onCaptureCurrentTab?: () => void;
+  onOpenSettings?: () => void;
   currentTabAvailable?: boolean;
   onPause?: () => void;
   onCancel?: () => void;
@@ -33,8 +38,8 @@ export interface CaptureControlsProps {
 }
 
 export function CaptureControls({ captureState, microphones, selectedMicrophone, onSelectMicrophone,
-  microphoneEnabled = true, onToggleMicrophone, captureMode = "screen_audio", onChangeMode,
-  onToggleCapture, onCaptureCurrentTab, currentTabAvailable, onPause, onCancel,
+  microphoneEnabled = true, onToggleMicrophone, source = "screen_audio", onChangeSource,
+  onToggleCapture, onOpenSettings, currentTabAvailable, onPause, onCancel,
   paused, tabTitle, overlayUnavailable, recordedMicrophone, recordedVideo, commandPending, elapsedTimeMs, startError, selecting, microphoneError,
 }: CaptureControlsProps) {
   if (captureState === "recording" || captureState === "stopping") return <section className="panel-stack panel-recording">
@@ -61,32 +66,34 @@ export function CaptureControls({ captureState, microphones, selectedMicrophone,
     <button className="panel-danger-link" disabled={commandPending || captureState === "stopping"} onClick={onCancel}>{copy.discard}</button>
   </section>;
 
+  const sourceOptions: MenuOption<CaptureSourceChoice>[] = (["screen_audio", "audio_only", "current-tab"] as const).map(value => ({
+    value, label: SOURCE_LABELS[value], icon: SOURCE_ICONS[value],
+    ...(value === "current-tab" && !currentTabAvailable ? { disabled: true, title: copy.tabUnavailable } : {}),
+  }));
+  const microphoneOptions: MenuOption<string>[] = microphones.map(mic => ({ value: mic.deviceId ?? "", label: mic.label }));
+  const tabBlocked = source === "current-tab" && !currentTabAvailable;
+  const micMenuDisabled = !microphoneEnabled || selecting || microphones.length === 0;
+
   return <section className="panel-stack">
-    <div><h1>{copy.heading}</h1><p>{copy.introduction}</p></div>
-    <section className="panel-card panel-stack" aria-label={copy.capture}>
-      <div className="panel-segmented" role="radiogroup" aria-label={copy.captureMode}>
-        {(["screen_audio", "audio_only"] as const).map(mode => <button key={mode} role="radio" aria-checked={captureMode === mode} disabled={selecting} onClick={() => onChangeMode?.(mode)}><Icon icon={mode === "screen_audio" ? Monitor : AudioLines} size={16} />{mode === "screen_audio" ? copy.screenAudio : copy.audioOnly}</button>)}
+    <div className="panel-controls">
+      <div className="panel-control-group panel-source-group" role="group" aria-label={copy.sourceMenu}>
+        <MenuButton className="panel-control-trigger" options={sourceOptions} value={source} menuLabel={copy.sourceMenu} disabled={selecting} onSelect={value => onChangeSource?.(value)}>
+          <Icon icon={SOURCE_ICONS[source]} size={16} /><span className="panel-ellipsis">{SOURCE_LABELS[source]}</span>
+        </MenuButton>
+        <button type="button" className="panel-switch" role="switch" aria-checked={microphoneEnabled} aria-label={copy.microphone} title={copy.microphone} disabled={selecting} onClick={onToggleMicrophone}><span /></button>
       </div>
-      <div className="panel-row">
-        <button className="panel-switch" role="switch" aria-checked={microphoneEnabled} aria-label={copy.microphone} disabled={selecting} onClick={onToggleMicrophone}><span /></button>
-        <label className="panel-mic-label">{copy.microphone}
-          <select aria-label={copy.microphoneSelector} disabled={!microphoneEnabled || selecting || microphones.length === 0} value={selectedMicrophone?.deviceId ?? ""} onChange={event => {
-            const mic = microphones.find(item => item.deviceId === event.target.value);
-            if (mic) onSelectMicrophone?.(mic);
-          }}>
-            {microphones.length === 0 && <option value="">{copy.noMicrophones}</option>}
-            {microphones.map(mic => <option key={mic.deviceId ?? "none"} value={mic.deviceId ?? ""}>{mic.label}</option>)}
-          </select>
-        </label>
+      <div className="panel-control-group">
+        <MenuButton className="panel-control-trigger panel-mic-trigger" options={microphoneOptions} value={selectedMicrophone?.deviceId ?? undefined} menuLabel={copy.microphoneMenu}
+          triggerLabel={copy.microphoneSelector} title={!microphoneEnabled ? copy.enableMicrophoneHint : microphones.length === 0 ? copy.noMicrophones : copy.microphoneSelector} disabled={micMenuDisabled}
+          onSelect={value => { const mic = microphones.find(item => (item.deviceId ?? "") === value); if (mic) onSelectMicrophone?.(mic); }}>
+          <Icon icon={Mic} size={16} />
+        </MenuButton>
       </div>
-      <p className="panel-small">{copy.microphoneHelp}</p>
-      {microphoneError && <p role="alert">{microphoneError}</p>}
-    </section>
-    <div className="panel-stack panel-start">
-      <button className="panel-primary panel-record-button panel-with-icon" disabled={selecting} onClick={onToggleCapture}><span className="panel-dot" aria-hidden="true" />{copy.record}</button>
-      <p className="panel-small panel-center">{copy.pickerHelp}</p>
-      <button className="panel-with-icon" disabled={!currentTabAvailable || selecting} onClick={onCaptureCurrentTab}><Icon icon={AppWindow} size={16} />{copy.recordTab}</button>
+      <button type="button" className="panel-control-group panel-settings-button" aria-label={copy.settings} title={copy.settings} onClick={onOpenSettings}><Icon icon={SlidersHorizontal} size={16} /></button>
     </div>
+    {microphoneError && <p role="alert">{microphoneError}</p>}
+    <button type="button" className="panel-primary panel-new-recording panel-with-icon" disabled={selecting || tabBlocked} onClick={onToggleCapture}><Icon icon={Plus} size={18} />{copy.newRecording}</button>
+    {tabBlocked && <p className="panel-small" role="note">{copy.tabUnavailable}</p>}
     {startError && <p role="alert">{startError}</p>}
   </section>;
 }
