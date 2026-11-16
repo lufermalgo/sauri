@@ -551,7 +551,9 @@ async def test_failures_remove_all_temporaries(
     with pytest.raises(HTTPException) as error:
         await native.diarize(
             native.DiarizeRequest(audio_ref=audio_ref),
+            None,  # no HTTP request object: the local path never reads it
             recording_capability=capability(audio_ref, secret, int(time.time()) + 60),
+            route=None,
         )
     assert error.value.status_code == (422 if failure == "normalize" else 500)
     if failure == "normalize":

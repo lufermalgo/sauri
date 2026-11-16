@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.engines.routing import Route
 
 
 class EngineContractError(ValueError):
@@ -28,9 +32,12 @@ class DiarizationOptions:
     Attributes:
         duration_ms: Recording duration in milliseconds; lets the engine
             bound the end_ms of segments (Req. 5.4). None if unknown.
+        route: Route resolved by the worker for this attempt; None is the
+            default local engine (no header sent).
     """
 
     duration_ms: int | None = None
+    route: Route | None = None
 
 
 @dataclass
@@ -59,6 +66,8 @@ class DiarizationResult:
     speaker_count: int = 0
     engine: EngineInfo | None = None
     contract_version: int = 2
+    # Content-free counts of the gateway answer (label policy, per-part speaker counts...); empty when none.
+    diagnostics: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Sorts segments by ascending start_ms (Property 6)."""
