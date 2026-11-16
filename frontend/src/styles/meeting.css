@@ -1,23 +1,25 @@
 .meeting-view { display: grid; gap: var(--ds-space-6); min-width: 0; }
-.meeting-header { min-width: 0; }
-.meeting-back { color: var(--ds-accent-text); font-weight: 600; text-underline-offset: 4px; }
-.meeting-heading-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ds-space-6); margin-top: var(--ds-space-4); }
+.meeting-header { min-width: 0; margin-bottom: var(--ds-space-4); padding-bottom: var(--ds-space-4); border-bottom: 1px solid var(--ds-border); }
+.meeting-heading-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); }
 .meeting-heading { flex: 1 1 260px; min-width: 0; }
 .meeting-heading h1 { font-size: var(--ds-text-3xl); line-height: 1.3; margin: 0 0 var(--ds-space-2); overflow-wrap: anywhere; }
 .meeting-date { color: var(--ds-fg-muted); font-size: var(--ds-text-md); }
 .meeting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); min-width: 0; }
+.meeting-heading-row > .meeting-actions { flex: 0 0 auto; }
 .meeting-downloads { min-width: 0; }
 .meeting-actions > .ui-button { flex: 0 0 auto; width: auto; padding: var(--ds-space-2) var(--ds-space-3); font-size: var(--ds-text-md); }
 .meeting-details { color: var(--ds-fg-muted); font-size: var(--ds-text-md); display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-3); }
 .meeting-actions { max-width: 100%; }
-.meeting-rename { display: grid; gap: var(--ds-space-3); }
+.meeting-rename { display: grid; gap: var(--ds-space-3); margin-bottom: var(--ds-space-3); }
 .meeting-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ds-space-6); align-items: start; }
 .meeting-side-column { display: grid; gap: var(--ds-space-6); min-width: 0; }
+.meeting-notices { display: grid; gap: var(--ds-space-4); min-width: 0; }
+.meeting-notices > p { margin: 0; }
 .meeting-view .ui-card { min-width: 0; }
 .meeting-sidebar { overflow-wrap: anywhere; }
 .meeting-sidebar .ui-tab-list { flex-wrap: wrap; }
 .meeting-player { min-width: 0; }
-.meeting-player h2, .meeting-transcript h2 { margin: 0 0 var(--ds-space-4); font-size: var(--ds-text-xl); }
+.meeting-transcript h2 { margin: 0 0 var(--ds-space-4); font-size: var(--ds-text-xl); }
 .meeting-player video { display: block; width: 100%; max-height: 480px; border-radius: var(--ds-radius-md); background: var(--ds-fill-strong); }
 .meeting-player audio { max-width: 100%; }
 .meeting-player-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-1); margin-block: var(--ds-space-3); padding: var(--ds-space-2); border-radius: var(--ds-radius-md); background: var(--ds-sidebar); }
@@ -42,7 +44,7 @@
 .meeting-active-preview { display: block; margin-top: var(--ds-space-1); max-width: 100%; overflow: hidden; padding: var(--ds-space-1); text-overflow: ellipsis; white-space: nowrap; }
 .meeting-turns { list-style: none; padding: 0; margin: 0; }
 .meeting-turn { border-bottom: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent); border-left: 3px solid transparent; overflow-wrap: anywhere; }
-.meeting-turn:last-child { border-bottom: 0; }
+.meeting-turn:last-child { }
 .meeting-turn.meeting-turn--active { border-left-color: var(--meeting-speaker); }
 .meeting-turn-action { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--ds-space-3); width: 100%; min-width: 0; border: 0; padding: var(--ds-space-4) var(--ds-space-3); text-align: left; font: inherit; font-weight: 400; color: inherit; background: transparent; cursor: pointer; }
 .meeting-turn-action:hover:not(:disabled) { background: color-mix(in srgb, var(--ds-highlight) 35%, transparent); }
@@ -61,8 +63,9 @@
 .meeting-chat-notice { color: var(--ds-fg-muted); }
 @media (min-width: 1024px) {
   .meeting-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
-  .meeting-side-column { grid-column: 2; grid-row: 1 / 3; }
-  .meeting-transcript { grid-column: 1; grid-row: 2; }
+  .meeting-playback-card, .meeting-notices, .meeting-transcript { grid-column: 1; }
+  .meeting-side-column { grid-column: 2; grid-row: 1 / span 2; }
+  .meeting-grid--notices > .meeting-side-column { grid-row: 1 / span 3; }
   .meeting-player-controls { flex-wrap: nowrap; }
   .meeting-control-seek { min-width: 32px; }
 }

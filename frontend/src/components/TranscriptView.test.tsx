@@ -87,7 +87,7 @@ describe("TranscriptView — renders the transcript view", () => {
       ])
     );
 
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
 
     await waitFor(() => screen.getByRole("heading", { name: copy.meeting.transcript }));
 
@@ -128,7 +128,7 @@ describe("TranscriptView — renders the transcript view", () => {
       ],
     });
 
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
 
     const rows = await screen.findAllByRole("listitem");
     expect(rows).toHaveLength(2);
@@ -170,7 +170,7 @@ describe("TranscriptView — renders the transcript view", () => {
       video_sources: [],
     });
 
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
 
     const seekButton = await screen.findByRole("button", { name: copy.transcript.playAt("00:00") });
     await waitFor(() => expect(seekButton).toBeEnabled());
@@ -184,7 +184,7 @@ describe("TranscriptView — renders the transcript view", () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
     vi.spyOn(api, "getDiarization").mockRejectedValue(new Error("Error 404"));
 
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
 
     await waitFor(() => expect(processingCard()).toHaveTextContent(copy.processing.identifying));
     expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
@@ -236,7 +236,7 @@ describe("TranscriptView — renders the transcript view", () => {
       video_sources: [],
     });
 
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
 
     await waitFor(() => expect(screen.getAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(2));
     const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
@@ -280,7 +280,7 @@ describe("TranscriptView — renders the transcript view", () => {
       video_sources: [],
     });
 
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
 
     const player = await screen.findByTestId("playback-audio");
     const transcriptHeading = await screen.findByRole("heading", { name: copy.meeting.transcript });
@@ -292,20 +292,19 @@ describe("TranscriptView — renders the transcript view", () => {
   it("shows the empty-state message when there are no segments", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([]));
 
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
 
     await waitFor(() => screen.getByText(copy.meeting.emptyTranscript));
   });
 
-  it("the 'Back to list' button invokes onBack", async () => {
+  it("has no back link: the sidebar leads to the library", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
-    const onBack = vi.fn();
 
-    render(<TranscriptView meetingId="r-1" onBack={onBack} />);
+    render(<TranscriptView meetingId="r-1" />);
     await waitFor(() => screen.getByRole("heading", { name: copy.meeting.transcript }));
 
-    fireEvent.click(screen.getByRole("link", { name: copy.meeting.back }));
-    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("link", { name: copy.shell.notFound.backToLibrary })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("unauthenticated flow: API error is shown as an alert", async () => {
@@ -313,7 +312,7 @@ describe("TranscriptView — renders the transcript view", () => {
       new Error("Not authenticated: token not found")
     );
 
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
 
     const alert = await waitFor(() => screen.getByRole("alert"));
     expect(alert).toHaveTextContent(copy.meeting.transcriptLoadFailed);
@@ -358,7 +357,7 @@ describe("TranscriptView — speaker review", () => {
   it("shows the pending review with every action, and the complete state", async () => {
     loadTranscript();
     loadReview().mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     expect(await screen.findByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
     expect(screen.getByText(sr.pending)).toBeInTheDocument();
@@ -385,7 +384,7 @@ describe("TranscriptView — speaker review", () => {
     vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
     loadReview().mockResolvedValue(review());
     const play = vi.spyOn(PlaybackController.prototype, "playInterval").mockResolvedValue();
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     const button = await screen.findByRole("button", { name: sr.listenTo(copy.transcript.numberedSpeaker("1")) });
     await waitFor(() => expect(button).toBeEnabled());
@@ -401,7 +400,7 @@ describe("TranscriptView — speaker review", () => {
     vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [{ turn_id: "turn-1", speaker_id: "speaker-2" }] });
     loadReview().mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     await openReview();
     expect(await screen.findByRole("button", { name: sr.listenTo(copy.transcript.numberedSpeaker("1")) })).toBeDisabled();
@@ -418,7 +417,7 @@ describe("TranscriptView — speaker review", () => {
       { ...review().items[0], disposition },
       review().items[1],
     ] }));
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     if (label) {
       fireEvent.change(screen.getByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) }), { target: { value: ` ${label} ` } });
@@ -448,7 +447,7 @@ describe("TranscriptView — speaker review", () => {
       labelsBySpeakerId: { "speaker-1": "Ana", "speaker-2": "Known Speaker" },
       items: [{ ...review().items[0], currentLabel: "Ana", disposition: "named", expectedVersion: 2 }, review().items[1]],
     }));
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     fireEvent.change(await screen.findByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) }), { target: { value: "Ana" } });
     fireEvent.click(screen.getByRole("button", { name: sr.saveNameFor(copy.transcript.numberedSpeaker("1")) }));
@@ -461,7 +460,7 @@ describe("TranscriptView — speaker review", () => {
   it("reuses the idempotency key when the same action is retried after a failure", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     const update = submit().mockRejectedValueOnce(new Error("Error 503")).mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     const confirm = await screen.findByRole("button", { name: sr.confirmFor(copy.transcript.numberedSpeaker("1")) });
     fireEvent.click(confirm);
@@ -480,7 +479,7 @@ describe("TranscriptView — speaker review", () => {
   it("explains a stale review and uses a new key for the next action", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     const update = submit().mockRejectedValueOnce(reviewConflict()).mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     const confirm = await screen.findByRole("button", { name: sr.confirmFor(copy.transcript.numberedSpeaker("1")) });
     fireEvent.click(confirm);
@@ -493,12 +492,12 @@ describe("TranscriptView — speaker review", () => {
   it("asks for the review again after remounting", async () => {
     loadTranscript();
     const load = loadReview().mockResolvedValue(review());
-    const view = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const view = render(<TranscriptView meetingId="r-1" />);
     await openReview();
     expect(await screen.findByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
     view.unmount();
     loadTranscript();
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     expect(await screen.findByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
     expect(load).toHaveBeenCalledTimes(2);
@@ -506,7 +505,7 @@ describe("TranscriptView — speaker review", () => {
 
   it("exposes review actions as keyboard-operable native buttons", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     await screen.findByRole("button", { name: sr.confirmFor(copy.transcript.numberedSpeaker("1")) });
     const article = screen.getByRole("heading", { name: copy.transcript.numberedSpeaker("1") }).closest("article");
@@ -546,7 +545,7 @@ describe("TranscriptView — attributed word turns", () => {
 
   it("shows backend speaker labels, null attribution, ambiguity and exact timestamp seeks", async () => {
     const seek = vi.spyOn(PlaybackController.prototype, "seekTo");
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const panel = await screen.findByRole("region", { name: copy.meeting.transcript });
     const button = await within(panel).findByRole("button", { name: copy.transcript.playAt("01:05") });
     await screen.findByTestId("playback-audio");
@@ -563,7 +562,7 @@ describe("TranscriptView — attributed word turns", () => {
   });
 
   it("highlights and follows the visible word turn using the actual media clock, including seeks and gaps", async () => {
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
     const panel = screen.getByRole("region", { name: copy.meeting.transcript });
     const rows = within(panel).getAllByRole("listitem");
@@ -608,7 +607,7 @@ describe("TranscriptView — processing polling", () => {
 
   async function open() {
     let view!: ReturnType<typeof render>;
-    await act(async () => { view = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />); });
+    await act(async () => { view = render(<TranscriptView meetingId="r-1" />); });
     return view;
   }
 
@@ -893,7 +892,7 @@ describe("TranscriptView — processing polling", () => {
     let finish!: (state: api.MeetingState) => void;
     vi.mocked(api.getMeeting).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const view = await open();
-    await act(async () => { view.rerender(<TranscriptView meetingId="new-meeting" onBack={vi.fn()} />); });
+    await act(async () => { view.rerender(<TranscriptView meetingId="new-meeting" />); });
     expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(copy.processing.queued)).toBeVisible();
     await act(async () => { finish({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" }); });
     expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(copy.processing.queued)).toBeVisible();
@@ -909,7 +908,7 @@ describe("TranscriptView — Terra composition", () => {
   });
 
   it("keeps the transcript visible alongside exactly two side tabs without turn editing", async () => {
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const panel = await screen.findByRole("region", { name: copy.meeting.transcript });
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map(tab => tab.textContent)).toEqual([copy.meeting.summaryTab, copy.meeting.chatTab]);
@@ -936,7 +935,7 @@ describe("TranscriptView — Terra composition", () => {
   });
 
   it("keeps transcript-following active even when the chat tab is selected", async () => {
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
     const rows = within(screen.getByRole("region", { name: copy.meeting.transcript })).getAllByRole("listitem");
     const scroll = vi.fn();
@@ -951,7 +950,7 @@ describe("TranscriptView — Terra composition", () => {
 
   it("reports unavailable metadata without inventing a title or a date", async () => {
     vi.mocked(api.listMeetings).mockRejectedValueOnce(new Error("Synthetic failure"));
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     expect(await screen.findByText(copy.meeting.metadataFailed)).toBeVisible();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(copy.meeting.untitled);
     expect(document.querySelector("time")).not.toBeInTheDocument();
@@ -968,7 +967,7 @@ describe("TranscriptView — visual QA refinements", () => {
   it("makes the full two-line turn a native button that seeks and starts playback", async () => {
     const seek = vi.spyOn(PlaybackController.prototype, "seekTo");
     const play = vi.spyOn(PlaybackController.prototype, "resume");
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     const panel = screen.getByRole("region", { name: copy.meeting.transcript });
     const row = within(panel).getAllByRole("listitem")[0];
@@ -998,7 +997,7 @@ describe("TranscriptView — visual QA refinements", () => {
     const data = attributedTranscript();
     const untimed = { ...data, turns: [{ ...data.turns[0], startMs: null }, ...data.turns.slice(1)] };
     vi.mocked(api.getTranscript).mockResolvedValue(untimed as unknown as MeetingTranscript);
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     const panel = screen.getByRole("region", { name: copy.meeting.transcript });
     const row = within(panel).getAllByRole("listitem")[0];
@@ -1016,7 +1015,7 @@ describe("TranscriptView — visual QA refinements", () => {
       speakers: [{ id: "speaker-4", label: "Speaker 4", sequence: 4 }],
       assignments: [{ turn_id: data.turns[0].id, speaker_id: "speaker-4" }],
     });
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     const labels = screen.getAllByTestId("transcript-speaker-label");
     expect(labels).toHaveLength(2);
@@ -1035,7 +1034,7 @@ describe("TranscriptView — visual QA refinements", () => {
       // A second speaker stays pending so the banner offers the dialog.
       items: [{ ...review().items[0], currentLabel: "Speaker 4", disposition }, review().items[1]],
     }));
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     expect(await screen.findByRole("heading", { name: "Speaker 4" })).toBeVisible();
     const labels = screen.getAllByTestId("transcript-speaker-label");
@@ -1047,13 +1046,13 @@ describe("TranscriptView — visual QA refinements", () => {
     const data = attributedTranscript();
     data.turns = [{ ...data.turns[0], speakerLabel: label }];
     vi.mocked(api.getTranscript).mockResolvedValue(data);
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     screen.getAllByTestId("transcript-speaker-label").forEach(element => expect(element).toHaveTextContent(label));
   });
 
   it("moves completion to a success badge beside the date without a full-width status block", async () => {
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const badge = await screen.findByText(copy.meeting.ready);
     expect(badge).toHaveClass("ui-status-badge--success");
     expect(badge.parentElement?.querySelector("time")).toHaveAttribute("datetime", "2026-11-14T12:00:00Z");
@@ -1062,7 +1061,7 @@ describe("TranscriptView — visual QA refinements", () => {
 
   it("preserves the actual processing text in a soft card until completed", async () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findAllByText(copy.processing.transcribing);
     expect(document.querySelector(".meeting-processing")).toHaveTextContent(copy.processing.transcribing);
     expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
@@ -1070,7 +1069,7 @@ describe("TranscriptView — visual QA refinements", () => {
 
   it("does not hide ongoing speaker identification when ASR is already completed", async () => {
     vi.mocked(api.getDiarization).mockRejectedValue(new Error("Error 404"));
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await waitFor(() => expect(processingCard()).toHaveTextContent(copy.processing.identifying));
     expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
     expect(headerBadge()).toHaveClass("ui-status-badge--progress");
@@ -1087,7 +1086,7 @@ describe("TranscriptView — redesigned meeting", () => {
   it("shows the banner while speakers are pending and keeps the panel out of the page until the dialog opens", async () => {
     const pending = review({ items: [review().items[0]], labelsBySpeakerId: { "speaker-1": "Speaker 1" } });
     vi.mocked(api.getSpeakerReview).mockResolvedValue(pending);
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     expect(await screen.findByText(copy.meeting.pendingSpeakers(1))).toBeVisible();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByText(sr.pendingState)).not.toBeInTheDocument();
@@ -1101,7 +1100,7 @@ describe("TranscriptView — redesigned meeting", () => {
     vi.mocked(api.submitSpeakerDisposition).mockResolvedValue({
       ...pending, status: "complete", items: [{ ...pending.items[0], disposition: "confirmed", expectedVersion: 2 }],
     });
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const dialog = await openReview();
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(within(dialog).getByText(sr.pendingState)).toBeVisible();
@@ -1128,7 +1127,7 @@ describe("TranscriptView — redesigned meeting", () => {
     }],
   ])("closes the dialog with %s and returns focus to the banner button", async (_name, close) => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const opener = await screen.findByRole("button", { name: copy.meeting.reviewSpeakers });
     opener.focus();
     await openReview();
@@ -1147,7 +1146,7 @@ describe("TranscriptView — redesigned meeting", () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     const play = vi.spyOn(PlaybackController.prototype, "playInterval").mockResolvedValue();
     const pause = vi.spyOn(PlaybackController.prototype, "pause").mockImplementation(() => {});
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     await openReview();
     const first = copy.transcript.numberedSpeaker("1");
@@ -1165,7 +1164,7 @@ describe("TranscriptView — redesigned meeting", () => {
   it("does not touch playback when the dialog closes and no excerpt is playing", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     const pause = vi.spyOn(PlaybackController.prototype, "pause").mockImplementation(() => {});
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     await openReview();
     pause.mockClear();
@@ -1178,7 +1177,7 @@ describe("TranscriptView — redesigned meeting", () => {
       { ...review().items[0], disposition: "named" }, { ...review().items[1], disposition: "corrected" },
       { ...review().items[0], speakerId: "speaker-3", disposition: "confirmed" },
     ] }));
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByRole("region", { name: copy.meeting.transcript });
     expect(screen.queryByRole("button", { name: copy.meeting.reviewSpeakers })).not.toBeInTheDocument();
     expect(screen.queryByText(sr.confirmedState)).not.toBeInTheDocument();
@@ -1187,7 +1186,7 @@ describe("TranscriptView — redesigned meeting", () => {
 
   it("shows only the selected speaker editor and keeps drafts when switching speakers", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await openReview();
     const first = copy.transcript.numberedSpeaker("1");
     const input = await screen.findByRole("textbox", { name: sr.nameFor(first) });
@@ -1203,7 +1202,7 @@ describe("TranscriptView — redesigned meeting", () => {
   });
 
   it("disables both transcript and playback-passage following without disabling active highlighting", async () => {
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
     const panel = screen.getByRole("region", { name: copy.meeting.transcript });
     const rows = within(panel).getAllByRole("listitem");
@@ -1233,9 +1232,9 @@ describe("TranscriptView — redesigned meeting", () => {
   it("renders hidden skeletons for the header, player, transcript and panel while opening", async () => {
     let finish!: (data: MeetingTranscript) => void;
     vi.mocked(api.getTranscript).mockReturnValue(new Promise(resolve => { finish = resolve; }));
-    const { container } = render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    const { container } = render(<TranscriptView meetingId="r-1" />);
     expect(screen.getByRole("status")).toHaveTextContent(copy.meeting.opening);
-    expect(container.querySelector(".meeting-loading-heading")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector(".meeting-playback-card .meeting-loading-heading")).toBeInTheDocument();
     for (const selector of [".meeting-playback-card", ".meeting-transcript", ".meeting-side-column"]) {
       expect(container.querySelector(`${selector} .ui-skeleton`)).toBeInTheDocument();
     }
@@ -1249,7 +1248,7 @@ describe("TranscriptView — redesigned meeting", () => {
   it("keeps ghost turns and an estimated, labelled processing progress when no transcript exists yet", async () => {
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     const panel = await screen.findByRole("region", { name: copy.meeting.transcript });
     expect(within(panel).getByText(copy.meeting.transcriptPlaceholder)).toBeVisible();
     expect(within(panel).getByText(copy.processing.transcriptPending)).toBeVisible();
@@ -1265,13 +1264,118 @@ describe("TranscriptView — redesigned meeting", () => {
 
   it("places the sidebar between playback and transcript with no speaker panel in the page", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
-    render(<TranscriptView meetingId="r-1" onBack={vi.fn()} />);
+    render(<TranscriptView meetingId="r-1" />);
     await screen.findByText(copy.meeting.pendingSpeakers(2));
     const grid = document.querySelector(".meeting-grid")!;
     expect([...grid.children].map(child => child.className)).toEqual([
-      "ui-card meeting-playback-card", "meeting-side-column", "ui-card meeting-transcript",
+      "ui-card meeting-playback-card", "meeting-notices", "meeting-side-column", "ui-card meeting-transcript",
     ]);
     expect(grid.querySelector(".meeting-speaker-review")).toBeNull();
     expect(screen.queryByRole("region", { name: sr.heading })).not.toBeInTheDocument();
+  });
+});
+
+describe("TranscriptView — meeting header inside the player card", () => {
+  const muxedPlayback: api.PlaybackManifest = {
+    ...playback, video_presence: "muxed",
+    muxed_video_source: { source_id: "video-1", url: "http://localhost/synthetic.mp4", mime_type: "video/mp4" },
+  };
+
+  async function openCard() {
+    render(<TranscriptView meetingId="r-1" />);
+    const card = await screen.findByRole("region", { name: copy.meeting.playback });
+    await screen.findByRole("heading", { level: 1, name: "Synthetic meeting" });
+    return card;
+  }
+
+  function expectHeaderInside(card: HTMLElement) {
+    const title = within(card).getByRole("heading", { level: 1 });
+    expect(title).toHaveTextContent("Synthetic meeting");
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(within(card).getByRole("button", { name: copy.meeting.download })).toBeVisible();
+    expect(within(card).getByRole("button", { name: copy.meeting.moreActions })).toBeVisible();
+    expect(card.querySelector("time")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /biblioteca/i })).not.toBeInTheDocument();
+    // The header leads the card and comes before the player.
+    expect(card.firstElementChild).toHaveClass("meeting-header");
+  }
+
+  it("names the player region and shows the header, actions and video in the ready state", async () => {
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue(muxedPlayback);
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [{ id: "s1", label: "Speaker 1", sequence: 1 }], assignments: [] });
+    const card = await openCard();
+    expectHeaderInside(card);
+    expect(await within(card).findByText(copy.meeting.ready)).toBeVisible();
+    expect(within(card).getByText(copy.meeting.speakerCount(1))).toBeVisible();
+    expect(within(card).getByText("03:00")).toBeVisible();
+    expect(card.querySelector("video")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: copy.meeting.playback })).not.toBeInTheDocument();
+  });
+
+  it("shows the header with an audio-only recording", async () => {
+    vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    const card = await openCard();
+    expectHeaderInside(card);
+    expect(card.querySelector("audio")).toBeInTheDocument();
+    expect(card.querySelector("video")).not.toBeInTheDocument();
+  });
+
+  it("shows the header while processing and puts the processing card right below the player card", async () => {
+    vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
+    const card = await openCard();
+    expectHeaderInside(card);
+    expect(within(card).getByText(copy.processing.transcribing)).toBeVisible();
+    expect(within(card).getByText(copy.meeting.playbackUnavailable)).toBeVisible();
+    const processing = document.querySelector(".meeting-processing")!;
+    expect(card.parentElement).toBe(processing.closest(".meeting-grid"));
+    expect(card.nextElementSibling).toBe(processing.parentElement);
+    expect(processing.closest(".meeting-card, .ui-card")).toBeNull();
+  });
+
+  it("shows the header when the playback manifest cannot be loaded", async () => {
+    vi.mocked(api.getPlaybackManifest).mockRejectedValue(new Error("Error 500"));
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    const card = await openCard();
+    expectHeaderInside(card);
+    expect(await within(card).findByRole("alert")).toHaveTextContent(copy.meeting.playbackLoadFailed);
+  });
+
+  it("shows the header when processing failed", async () => {
+    vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" });
+    const card = await openCard();
+    expectHeaderInside(card);
+    expect(screen.getByText(new RegExp(copy.processing.failureCause("engine_failure")))).toBeVisible();
+  });
+
+  it("shows the header for a recording without speech", async () => {
+    vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
+    vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "no_speech_detected" });
+    const card = await openCard();
+    expectHeaderInside(card);
+    expect(screen.getByText(copy.processing.noSpeechTitle)).toBeVisible();
+  });
+
+  it("shows the header when the status cannot be loaded", async () => {
+    vi.mocked(api.getMeeting).mockRejectedValue(new Error("Error 500"));
+    vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
+    render(<TranscriptView meetingId="r-1" />);
+    const card = await screen.findByRole("region", { name: copy.meeting.playback });
+    expect(await within(card).findByRole("button", { name: copy.meeting.moreActions })).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
+  it("keeps rename and delete reachable from the card's more menu", async () => {
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    const card = await openCard();
+    fireEvent.click(within(card).getByRole("button", { name: copy.meeting.moreActions }));
+    expect(screen.getAllByRole("menuitem").map(item => item.textContent))
+      .toEqual([copy.meeting.rename, copy.meeting.deleteRecording]);
+    fireEvent.click(screen.getByRole("menuitem", { name: copy.meeting.rename }));
+    expect(within(card).getByRole("textbox", { name: copy.meeting.titleLabel })).toHaveValue("Synthetic meeting");
+    expect(within(card).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 });

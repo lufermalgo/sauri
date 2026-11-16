@@ -27,7 +27,6 @@ import { copy } from "../copy/es";
 
 interface TranscriptViewProps {
   meetingId: string;
-  onBack: () => void;
 }
 
 function formatTimestamp(ms: number): string {
@@ -66,7 +65,7 @@ export function TranscriptView(props: TranscriptViewProps) {
   return <MeetingTranscriptView key={props.meetingId} {...props} />;
 }
 
-function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
+function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
   const [meeting, setMeeting] = useState<MeetingState | null>(null);
   const [metadata, setMetadata] = useState<{ title: string | null; createdAt: string | null; durationSeconds: number | null }>(
     { title: null, createdAt: null, durationSeconds: null });
@@ -467,38 +466,26 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
 
   if (loading) return <section className="meeting-view" aria-busy="true">
     <p role="status">{text.opening}</p>
-    <header className="meeting-loading-heading" aria-hidden="true">
-      <Skeleton width="60%" height={34} /><Skeleton width="45%" height={16} />
-    </header>
     <div className="meeting-grid" aria-hidden="true">
-      <Card className="meeting-playback-card"><Skeleton className="meeting-video-skeleton" /><SkeletonLines lines={1} /></Card>
+      <Card className="meeting-playback-card">
+        <div className="meeting-header meeting-loading-heading"><Skeleton width="60%" height={34} /><Skeleton width="45%" height={16} /></div>
+        <Skeleton className="meeting-video-skeleton" /><SkeletonLines lines={1} />
+      </Card>
       <div className="meeting-side-column"><Card><SkeletonLines lines={6} /></Card></div>
       <Card className="meeting-transcript"><TranscriptSkeleton /></Card>
     </div>
   </section>;
 
+  const hasNotices = pendingCount > 0 || metadataError || speakerWaitExpired || showProcessing ||
+    diarizationError || Boolean(error);
+
   return (
     <section className="meeting-view" ref={viewRef} tabIndex={-1}>
+      <div className={`meeting-grid${hasNotices ? " meeting-grid--notices" : ""}`}>
+      <Card className="meeting-playback-card" aria-label={text.playback}>
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
-        onBack={onBack} stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
+        stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
         speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} />
-      {pendingCount > 0 && <div ref={bannerRef} className="meeting-pending-speakers">
-        <span role="status">{text.pendingSpeakers(pendingCount)}</span>
-        <Button variant="ghost" aria-haspopup="dialog" onClick={() => setReviewOpen(true)}>{text.reviewSpeakers}</Button>
-      </div>}
-      {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
-      {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{copy.processing.speakerWaitExpired}</p></div> :
-        showProcessing && <div className="meeting-processing">
-          <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
-            diarizationNotFound={diarizationNotFound} error={statusError}
-            hasDiarization={diarization !== null} summary={summaryForStage}
-            audioSeconds={playbackManifest?.duration_seconds ?? metadata.durationSeconds}
-            createdAt={metadata.createdAt} />
-        </div>}
-      {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
-      {error && <p role="alert" className="meeting-error">{error}</p>}
-      <div className="meeting-grid">
-      <Card className="meeting-playback-card">
       <div id="meeting-playback" ref={playbackRef} onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}
         onPause={() => setPlayingSpeakerId(null)} onEnded={() => setPlayingSpeakerId(null)}>
         <MeetingPlaybackView
@@ -516,6 +503,23 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         />
       </div>
       </Card>
+      {hasNotices && <div className="meeting-notices">
+        {pendingCount > 0 && <div ref={bannerRef} className="meeting-pending-speakers">
+          <span role="status">{text.pendingSpeakers(pendingCount)}</span>
+          <Button variant="ghost" aria-haspopup="dialog" onClick={() => setReviewOpen(true)}>{text.reviewSpeakers}</Button>
+        </div>}
+        {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
+        {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{copy.processing.speakerWaitExpired}</p></div> :
+          showProcessing && <div className="meeting-processing">
+            <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
+              diarizationNotFound={diarizationNotFound} error={statusError}
+              hasDiarization={diarization !== null} summary={summaryForStage}
+              audioSeconds={playbackManifest?.duration_seconds ?? metadata.durationSeconds}
+              createdAt={metadata.createdAt} />
+          </div>}
+        {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
+        {error && <p role="alert" className="meeting-error">{error}</p>}
+      </div>}
       <aside className="meeting-side-column">
       <Card className="meeting-sidebar">
         <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[

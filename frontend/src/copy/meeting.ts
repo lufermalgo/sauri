@@ -14,7 +14,6 @@ export const meeting = {
   keyPoints: "Puntos clave",
   keyPointAt: (time: string) => `Punto clave en ${time}`,
   timelinePosition: (time: string) => `Posición: ${time}`,
-  back: "Volver a la biblioteca",
   untitled: "Sin título",
   metadataFailed: "No se pudo consultar el título y la fecha de la reunión.",
   transcript: "Transcripción",

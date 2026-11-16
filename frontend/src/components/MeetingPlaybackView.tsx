@@ -228,8 +228,7 @@ export function MeetingPlaybackView({
     : null;
 
   return (
-    <section className="meeting-player" aria-label={text.playback}>
-      <h2>{text.playback}</h2>
+    <div className="meeting-player">
       {loading && <p role="status">{text.playbackMetadataLoading}</p>}
       {activeError && <p role="alert">{activeError}</p>}
       {!hasPlayableMedia && <p role="status">{text.playbackUnavailable}</p>}
@@ -404,6 +403,6 @@ export function MeetingPlaybackView({
           </ol>
         </details>
       )}
-    </section>
+    </div>
   );
 }
