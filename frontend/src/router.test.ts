@@ -17,6 +17,7 @@ describe("parseRoute", () => {
     expect(parseRoute("/settings/", "")).toEqual({ name: "settings" });
     expect(parseRoute("/settings/extra", "")).toEqual({ name: "notFound" });
     expect(parseRoute("/settings/account", "")).toEqual({ name: "notFound" });
+    expect(parseRoute("/settings/grabacion", "")).toEqual({ name: "settings" }); // spanish-sample-data: removed category, old links open Settings
     expect(parseRoute("/meetings/m1", "")).toEqual({ name: "meeting", meetingId: "m1" });
     expect(parseRoute("/anything-else", "")).toEqual({ name: "notFound" });
   });
@@ -39,12 +40,11 @@ describe("parseRoute", () => {
       transcription: "transcripcion", // spanish-sample-data
       speakers: "hablantes", // spanish-sample-data
       summaries: "resumenes",
-      recording: "grabacion", // spanish-sample-data
     });
   });
 
   it("groups every category once, in navigation order, and does not route the reserved chat", () => {
-    expect(SETTINGS_GROUPS.map((group) => group.id)).toEqual(["general", "models", "recording"]);
+    expect(SETTINGS_GROUPS.map((group) => group.id)).toEqual(["general", "models"]);
     expect(SETTINGS_GROUPS.flatMap((group) => group.categories)).toEqual([...SETTINGS_CATEGORIES]);
     expect(RESERVED_SETTINGS_CATEGORIES).toEqual(["chat"]);
     expect(SETTINGS_CATEGORIES).not.toContain("chat");
