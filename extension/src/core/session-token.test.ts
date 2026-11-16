@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   clearSessionToken,
+  clearSessionTokenIf,
   isSignInRequired,
   onSessionChanged,
   purgeLegacyToken,
@@ -105,5 +106,35 @@ describe("session change notifications", () => {
     expect(listener).toHaveBeenCalledTimes(2);
     stop();
     expect(changeListeners).toHaveLength(0);
+  });
+});
+
+describe("clearSessionTokenIf (a stale 401 must not sign the user out again, #1113)", () => {
+  it("removes the token that the rejected request was sent with", async () => {
+    await storeSessionToken("old-token");
+    expect(await clearSessionTokenIf("old-token")).toBe(true);
+    expect(await readSessionToken()).toBeUndefined();
+  });
+
+  it("keeps a newer token when the rejected one was already replaced by a new sign-in", async () => {
+    await storeSessionToken("old-token");
+    await storeSessionToken("fresh-token");
+    expect(await clearSessionTokenIf("old-token")).toBe(false);
+    expect(await readSessionToken()).toBe("fresh-token");
+  });
+
+  it("never removes a stored token on behalf of a request that carried none", async () => {
+    await storeSessionToken("fresh-token");
+    expect(await clearSessionTokenIf(undefined)).toBe(false);
+    expect(await readSessionToken()).toBe("fresh-token");
+  });
+});
+
+describe("every context re-reads the token from storage (page refresh, service worker restart)", () => {
+  it("a freshly loaded module instance sees the token another instance stored", async () => {
+    await storeSessionToken("shared-token");
+    vi.resetModules(); // A refreshed panel or a restarted service worker starts with empty memory.
+    const reloaded = await import("./session-token");
+    expect(await reloaded.readSessionToken()).toBe("shared-token");
   });
 });

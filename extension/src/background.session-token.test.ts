@@ -146,6 +146,20 @@ describe("service worker session token policy", () => {
     expect(await readJobs()).toEqual(expect.arrayContaining([expect.objectContaining({ status: "pending", retryCount: 0 })]));
   });
 
+  it("keeps a token the user signed in with while the upload was in flight when the old one is rejected (#1113)", async () => {
+    await boot({ sauriSessionToken: "expired-token" });
+    fetchMock.mockImplementation(async () => {
+      session.sauriSessionToken = "fresh-token"; // Signed in again during the (long) upload.
+      return new Response("", { status: 401 });
+    });
+    await createCompletion({ sessionId: "second-session", meetingId: "second-meeting", provider: "meet", capturedTabId: 7, status: "finalizing", updatedAt: 2 });
+    listener({ type: "recording-stopped", size: 20, mimeType: "video/webm", sessionId: "second-session" }, {}, vi.fn());
+    await settle();
+    expect(session.sauriSessionToken).toBe("fresh-token");
+    expect(session.sauriSignInRequired).toBeUndefined();
+    expect(await readJobs()).toEqual(expect.arrayContaining([expect.objectContaining({ status: "pending", retryCount: 0 })]));
+  });
+
   it("deletes the legacy synced token on start without copying it anywhere", async () => {
     await boot({});
     expect(syncRemove).toHaveBeenCalledWith("authToken");
