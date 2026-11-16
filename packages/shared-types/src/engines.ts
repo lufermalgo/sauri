@@ -224,6 +224,27 @@ export type LocalModelState =
   | "corrupt"
   | "managed";
 
+/**
+ * What this computer has of a model, apart from how it got there:
+ * `installed` (hash-verified, or a managed engine that is present), `present_unverified` (the file is
+ * there but was not verified, or differs from the catalog; see `reason`) or `available` (can be installed).
+ */
+export type LocalModelAvailability = "installed" | "available" | "present_unverified";
+
+/** Where the file lives: the models directory, the engine's legacy location (never moved) or a managed engine's environment. */
+export type LocalModelLocation = "models_dir" | "legacy" | "managed";
+
+/** What installing a model that is not installed still needs. */
+export interface LocalModelInstallNeeds {
+  method: "download" | "managed_command";
+  /** Command that installs a managed engine (`method: "managed_command"`). */
+  managed_by: string | null;
+  download_bytes: number | null;
+  /** Free space an install needs (download plus headroom). */
+  disk_required_bytes: number | null;
+  fits_on_disk: boolean | null;
+}
+
 export interface LocalModel {
   id: string;
   process: EngineProcess;
@@ -243,6 +264,28 @@ export interface LocalModel {
   state: LocalModelState;
   installed_size: number | null;
   installed_at: string | null;
+  /** Fields below come with adoption of models installed by hand; always present from the API. */
+  availability?: LocalModelAvailability;
+  /** True for the one model serving its process now (the chosen one, else the installed catalog default). Never set on `auxiliary` files. */
+  active?: boolean;
+  /** True when removal is blocked because a process runs it (chosen, default, or an auxiliary file). */
+  in_use?: boolean;
+  /** Where the file is; null when nothing is present. A `legacy` file is never removed by Sauri. */
+  location?: LocalModelLocation | null;
+  /** Why a present file was not adopted (`size_mismatch` or `hash_mismatch`); null otherwise. */
+  reason?: string | null;
+  /** True while an adoption run is still going to check this file. */
+  verifying?: boolean;
+  /** `hash` for catalog files; `presence` for a managed engine (found, never hashed). */
+  verified_by?: "hash" | "presence";
+  /** What is needed to install it; null when already installed. */
+  install?: LocalModelInstallNeeds | null;
+}
+
+/** How the last adoption run judged each present file: `adopted`, `present_unverified`, `changed`, `unreadable` or `write_failed`. */
+export interface LocalAdoption {
+  job_id: string;
+  outcomes: Record<string, string>;
 }
 
 /** Why a model is (or is not) recommended: a copy key plus its parameters, never a sentence. */
@@ -261,6 +304,10 @@ export interface LocalModelList {
   recommendations: Partial<Record<EngineProcess, LocalRecommendation>>;
   /** Id of the install or verification running now, if any (one at a time). */
   active_job: string | null;
+  /** Id of the model serving each process now, or null when none is installed. */
+  active?: Partial<Record<EngineProcess, string | null>>;
+  /** Result of the last adoption run since the host started; null before the first one. */
+  adoption?: LocalAdoption | null;
 }
 
 export type LocalJobState = "running" | "done" | "failed" | "cancelled";
@@ -268,12 +315,14 @@ export type LocalJobState = "running" | "done" | "failed" | "cancelled";
 export interface LocalJob {
   id: string;
   model_id: string;
-  type: "install" | "verify";
+  type: "install" | "verify" | "adopt";
   state: LocalJobState;
   bytes_done: number;
   bytes_total: number;
   /** Stable failure code, for example `hash_mismatch`. */
   error: string | null;
-  /** `installed`, `verified` or `corrupt` once the job is done. */
+  /** `installed`, `verified` or `corrupt` once the job is done; `adopted` or `nothing_adopted` for adoption. */
   result: string | null;
+  /** Adoption jobs only: the outcome per model id so far. */
+  outcomes?: Record<string, string>;
 }

@@ -11,6 +11,8 @@ import asyncio
 import logging
 import os
 import secrets
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Final
 
@@ -19,6 +21,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from local_models import adopt_on_startup
 from local_models import router as local_models_router
 from providers import build_router
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -47,6 +50,8 @@ MANAGEMENT_TOKEN_PATH = Path(
 # (id, port) of the host processes this service reports on; the gateways answer /health unauthenticated.
 ENGINES: tuple[tuple[str, int], ...] = (("asr", 8001), ("diar", 8002), ("llm", 8003), ("host", 8005))
 PROBE_TIMEOUT_S: Final = 1.0
+# Recognize models installed by hand when the service starts (tests turn it off: they never touch real files).
+ADOPT_ON_START = os.getenv("SAURI_ADOPT_ON_START", "1") != "0"
 
 logger = logging.getLogger("sauri.host_engine")
 _bearer_dependency = Depends(HTTPBearer(auto_error=False))
@@ -121,7 +126,14 @@ class HardenedMiddleware:
                 await _error(500, "internal_error")(scope, receive, guarded_send)
 
 
-app = FastAPI(title="Sauri Host Engine", docs_url=None, redoc_url=None, openapi_url=None)
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    if ADOPT_ON_START:
+        await adopt_on_startup()
+    yield
+
+
+app = FastAPI(title="Sauri Host Engine", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.add_middleware(HardenedMiddleware)
 app.include_router(local_models_router, dependencies=[Depends(require_management_token)])
 

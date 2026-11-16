@@ -47,6 +47,22 @@ def install_model(models_dir: Path, entry: dict[str, Any], data: bytes, *, statu
     return final
 
 
+def adopt_legacy(
+    models_dir: Path, entry: dict[str, Any], legacy: Path, *, status: str = "installed", location: str = "legacy"
+) -> Path:
+    """Write the manifest ``host-engine`` writes when it adopts a file that stays at its legacy location."""
+    models_dir.mkdir(parents=True, exist_ok=True)
+    info = legacy.stat()
+    record = {
+        "id": entry["id"], "file": entry["file"], "revision": entry["revision"], "sha256": entry["sha256"],
+        "size": info.st_size, "mtime_ns": info.st_mtime_ns, "installed_at": "2026-01-01T00:00:00+00:00",
+        "status": status, "location": location,
+    }  # fmt: skip
+    manifest = models_dir / (entry["file"] + MANIFEST_SUFFIX)
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    return manifest
+
+
 def route_header(model: str, *, process: Process = "summary", kind: str = "local") -> str:
     capability = "transcription" if process == "transcription" else "summary"
     return encode_route(Route(
@@ -56,4 +72,4 @@ def route_header(model: str, *, process: Process = "summary", kind: str = "local
     ))  # fmt: skip
 
 
-__all__ = ["BIG", "SMALL", "catalog_entry", "install_model", "route_header", "write_catalog"]
+__all__ = ["BIG", "SMALL", "adopt_legacy", "catalog_entry", "install_model", "route_header", "write_catalog"]
