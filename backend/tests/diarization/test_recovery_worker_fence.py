@@ -164,7 +164,7 @@ async def test_recovery_delivery_without_durable_claim_fails_closed(
 
 
 @pytest.mark.asyncio
-async def test_expired_claim_and_worker_restart_do_not_reset_or_reclaim(
+async def test_expired_claim_is_taken_over_once_and_the_old_holder_is_fenced_out(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     previous_claim = str(uuid.uuid4())
@@ -180,12 +180,16 @@ async def test_expired_claim_and_worker_restart_do_not_reset_or_reclaim(
     with patch("app.diarization.worker.create_diarization_engine", return_value=engine):
         await _process_diarization(message, session_factory)
         await _process_diarization(message, session_factory)
-    engine.diarize.assert_not_awaited()
+    assert engine.diarize.await_count == 1
     async with session_factory() as session:
         claim = await session.get(MeetingProcessingClaim, meeting_id)
-        assert claim is not None and claim.claim_id == previous_claim
-        assert claim.claim_kind == "diarization"
-        assert (await session.execute(select(Diarization))).scalars().all() == []
+        assert claim is not None and claim.claim_kind == "diarization"
+        assert claim.claim_id not in (previous_claim, message["job_id"])
+        assert claim.claim_expires_at is not None
+        # The worker that died (or merely stalled) cannot write any more.
+        assert not await verify_worker_generation(
+            session, meeting_id=meeting_id, generation=8, job_id=previous_claim, kind="diarization",
+        )
 
 
 @pytest.mark.asyncio

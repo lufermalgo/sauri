@@ -33,7 +33,7 @@ from app.infra.models import (
     SummaryRequestOutbox,
 )
 from app.infra.object_store import ObjectStore
-from app.infra.processing_claims import REGENERATION_ACTIVE
+from app.infra.processing_claims import REGENERATION_ACTIVE, lease_lapsed_at
 from app.meetings.service import record_transition
 from app.meetings.state_machine import TERMINAL_STATES
 from app.summaries import repository as summary_repository
@@ -213,24 +213,35 @@ async def _succeeded_finish_times(session: AsyncSession, meeting_id: str) -> dic
 async def _busy_reason(session: AsyncSession, meeting: Meeting, transcript_id: str | None) -> str | None:
     """The original pipeline (or a stuck run) that still owns this meeting, if any.
 
-    Anything older than the stale threshold is treated as abandoned, so a crashed
-    worker never blocks the owner from regenerating for good.
+    A worker that holds the stage's claim owns it for as long as its lease is live, and loses it the
+    moment the lease lapses, so a crashed worker frees the owner to regenerate right away. A stage
+    nobody holds yet (waiting in the queue) counts as busy until it is older than the stale threshold.
     """
     cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds())
+    claim = await session.get(MeetingProcessingClaim, meeting.id)
+
+    async def lease(kind: str) -> bool | None:
+        """True while a worker holds this kind of claim live, False once it lapsed, None without a holder."""
+        if claim is None or claim.claim_kind != kind or claim.claim_id is None:
+            return None
+        return await lease_lapsed_at(session, claim) is None
+
     if meeting.process_state not in TERMINAL_STATES:
+        held = await lease("transcription")
         entered = utc(await session.scalar(
             select(func.max(StateHistory.occurred_at)).where(
                 StateHistory.meeting_id == meeting.id, StateHistory.state == meeting.process_state
             )
         ))
-        if entered is None or entered > cutoff:
+        if held or (held is None and (entered is None or entered > cutoff)):
             return "transcription"
     running = (await session.scalars(
         select(Diarization.updated_at).where(
             Diarization.meeting_id == meeting.id, Diarization.diarization_state.in_(("pending", "in_progress"))
         )
     )).all()
-    if any((utc(at) or cutoff) > cutoff for at in running):
+    held = await lease("diarization")
+    if running and (held or (held is None and any((utc(at) or cutoff) > cutoff for at in running))):
         return "speakers"
     if transcript_id is not None and await summary_repository.active_request(session, transcript_id) is not None:
         return "summary"

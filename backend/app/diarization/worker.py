@@ -40,11 +40,11 @@ from app.engines.routing import (
     call_with_fallback,
     resolve_route,
 )
+from app.infra.claim_lease import ClaimLost, LeaseScope
 from app.infra.engine_slot import ENGINE_CALL_TIMEOUT_S, SLOT_WAIT_TIMEOUT_S, EngineSlotTimeout, engine_slot
 from app.infra.models import (
     Diarization,
     Meeting,
-    MeetingProcessingClaim,
     SessionRecording,
     Speaker,
     SpeakerAssignment,
@@ -53,6 +53,7 @@ from app.infra.models import (
 )
 from app.infra.object_store import create_object_store
 from app.infra.processing_claims import (
+    ClaimBusy,
     claim_worker_generation,
     verify_worker_binding,
     verify_worker_generation,
@@ -101,6 +102,19 @@ async def _settle_revision(
 async def _process_diarization(
     message: dict[str, Any],
     session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Process one delivery with its claim kept alive; an interrupted one gives the claim back."""
+    async with LeaseScope(session_factory) as scope:
+        try:
+            await _run_diarization(message, session_factory, scope)
+        except ClaimLost:
+            logger.warning("Diarization abandoned: its processing claim was lost to another worker")
+
+
+async def _run_diarization(
+    message: dict[str, Any],
+    session_factory: async_sessionmaker[AsyncSession],
+    scope: LeaseScope,
 ) -> None:
     """Processes a Diarization_Message from the "diarize" topic.
 
@@ -171,24 +185,34 @@ async def _process_diarization(
         completed = await session.scalar(query.order_by(Diarization.processing_revision.desc()).limit(1))
         can_request_summary = completed is not None and completed.diarization_state == "completed"
         if can_request_summary and has_processing_fence:
-            can_request_summary = await verify_worker_generation(
-                session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-                kind="diarization", operation_id=operation_id,
-            )
+            # The previous holder's lease has lapsed by now; the repair needs the claim like any other run.
+            try:
+                can_request_summary = await claim_worker_generation(
+                    session, meeting_id=meeting_id, generation=generation, job_id=job_id,
+                    kind="diarization", operation_id=operation_id,
+                ) is not None
+            except ClaimBusy:
+                # A live holder still finishes this stage; if it dies first, its own delivery repairs it.
+                logger.info("Diarization delivery dropped; reason=stage_complete")
+                return
     if can_request_summary and completed is not None:
         # Never recomputes the speakers; the summary request is a deterministic, once-only repair.
         logger.info("Diarization delivery dropped; reason=stage_complete")
         await _request_summary(session_factory, meeting_id, owner_id, completed.processing_revision)
         return
 
+    holder: str | None = None
     if has_processing_fence:
         async with session_factory() as session, session.begin():
-            if not await claim_worker_generation(
+            holder = await claim_worker_generation(
                 session, meeting_id=meeting_id, generation=generation, job_id=job_id,
                 kind="diarization", operation_id=operation_id,
-            ):
+            )
+            if holder is None:
                 logger.info("Diarization delivery acknowledged without claim; reason=fenced")
                 return
+            scope.arm(meeting_id=meeting_id, generation=generation, holder=holder, kind="diarization",
+                      operation_id=operation_id)
             live = (
                 await regeneration.locked_active_operation(session, operation_id, "speakers")
                 if regenerating else None
@@ -233,6 +257,8 @@ async def _process_diarization(
         # object under the meeting lock, and fail closed before engine creation.
         async with session_factory() as session, session.begin():
             await session.scalar(select(Meeting).where(Meeting.id == meeting_id).with_for_update())
+            if has_processing_fence:
+                await repo.reopen_orphaned_revision(session, meeting_id, revision)
             current = await session.scalar(select(Diarization).where(
                 Diarization.meeting_id == meeting_id,
                 Diarization.processing_revision == revision,
@@ -266,6 +292,8 @@ async def _process_diarization(
                 return
     else:
         async with session_factory() as session, session.begin():
+            if has_processing_fence:
+                await repo.reopen_orphaned_revision(session, meeting_id, revision)
             if not await repo.claim_revision(session, meeting_id, revision):
                 logger.info("Diarization delivery acknowledged without claim; reason=revision_not_pending")
                 return
@@ -287,9 +315,12 @@ async def _process_diarization(
                 recording.audio_ref, options if route is None else replace(options, route=route)
             )
 
-        async with engine_slot(session_factory.kw["bind"], kind="diarization", timeout_s=SLOT_WAIT_TIMEOUT_S):
-            async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
-                result, provenance = await call_with_fallback(resolved, attempt_call, _engine_names)
+        async def run_engine() -> tuple[DiarizationResult, Provenance]:
+            async with engine_slot(session_factory.kw["bind"], kind="diarization", timeout_s=SLOT_WAIT_TIMEOUT_S):
+                async with asyncio.timeout(ENGINE_CALL_TIMEOUT_S):
+                    return await call_with_fallback(resolved, attempt_call, _engine_names)
+
+        result, provenance = await scope.guard(run_engine())
         provenance = _with_capabilities(provenance, engine.capabilities().is_local)
         _log_external_diagnostics(result, provenance)
         domain_speakers = label_speakers(result.segments)
@@ -334,7 +365,7 @@ async def _process_diarization(
                 )
                 or (has_processing_fence and not await verify_worker_generation(
                     session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-                    kind="diarization", operation_id=operation_id,
+                    kind="diarization", operation_id=operation_id, holder=holder,
                 ))
             ):
                 logger.info("Diarization artifact write skipped; reason=fenced")
@@ -349,19 +380,17 @@ async def _process_diarization(
         async with session_factory() as session, session.begin():
             if not has_processing_fence or await verify_worker_generation(
                 session, meeting_id=meeting_id, generation=generation, job_id=job_id,
-                kind="diarization", operation_id=operation_id,
+                kind="diarization", operation_id=operation_id, holder=holder,
             ):
+                # The scope gives the claim back; the next delivery finds the attempt pending again.
                 await session.execute(update(Diarization).where(
                     Diarization.meeting_id == meeting_id,
                     Diarization.processing_revision == revision,
                     Diarization.diarization_state == "in_progress",
                 ).values(diarization_state="pending", updated_at=datetime.now(UTC)))
-                if has_processing_fence:
-                    claim = await session.get(MeetingProcessingClaim, meeting_id)
-                    if claim is not None:
-                        claim.claim_id = operation_id if operation_id is not None else None
-                        claim.claim_kind = "recovery" if operation_id is not None else None
         raise
+    except ClaimLost:
+        raise  # Another worker owns the attempt now; leave it as it is.
     except Exception as exc:
         if isinstance(exc, ProviderError):
             # A closed class code: what failed, never what was said. Retry is explicit, as for any failure.
