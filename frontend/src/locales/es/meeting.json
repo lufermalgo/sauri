@@ -1,7 +1,6 @@
 {
   "backToList": "Volver a las grabaciones",
   "download": "Descargar",
-  "moreActions": "Más acciones",
   "deleteRecording": "Eliminar grabación",
   "ready": "Lista",
   "speakerCount_one": "{{count}} hablante",
@@ -27,7 +26,6 @@
   "renameTitle": "Cambiar nombre",
   "titleRequired": "El nombre no puede quedar vacío. Se conservó el anterior.",
   "renamed": "Nombre actualizado.",
-  "rename": "Renombrar",
   "titleLabel": "Título de la reunión",
   "cancel": "Cancelar",
   "delete": "Eliminar",

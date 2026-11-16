@@ -1585,7 +1585,7 @@ describe("TranscriptView — meeting header strip", () => {
     expect(title).toHaveAttribute("title", "Synthetic meeting");
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(within(header).getByRole("button", { name: t("meeting:download") })).toBeVisible();
-    expect(within(header).getByRole("button", { name: t("meeting:moreActions") })).toBeVisible();
+    expect(within(header).getByRole("button", { name: t("meeting:deleteRecording") })).toBeVisible();
     expect(header.querySelector("time")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /biblioteca/i })).not.toBeInTheDocument();
     // The strip leads the view, above the player, the processing strip and the panes.
@@ -1660,18 +1660,17 @@ describe("TranscriptView — meeting header strip", () => {
     vi.mocked(api.getMeeting).mockRejectedValue(new Error("Error 500"));
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     render(<TranscriptView meetingId="r-1" />);
-    expect(await screen.findByRole("button", { name: t("meeting:moreActions") })).toBeVisible();
+    expect(await screen.findByRole("button", { name: t("meeting:deleteRecording") })).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
-  it("keeps rename and delete reachable from the header's more menu", async () => {
+  it("keeps rename (pencil) and delete (icon button) reachable from the header", async () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     const view = await openCard();
     const header = view.querySelector(".meeting-header") as HTMLElement;
-    fireEvent.click(within(header).getByRole("button", { name: t("meeting:moreActions") }));
-    expect(screen.getAllByRole("menuitem").map(item => item.textContent))
-      .toEqual([t("meeting:rename"), t("meeting:deleteRecording")]);
-    fireEvent.click(screen.getByRole("menuitem", { name: t("meeting:rename") }));
+    expect(within(header).queryByRole("menuitem")).not.toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: t("meeting:deleteRecording") })).toBeEnabled();
+    fireEvent.click(within(header).getByRole("button", { name: t("meeting:renameTitle") }));
     expect(within(header).getByRole("textbox", { name: t("meeting:titleLabel") })).toHaveValue("Synthetic meeting");
     expect(within(header).getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
