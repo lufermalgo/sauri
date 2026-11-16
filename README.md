@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/sauri-logo-dark.svg">
+    <img src="brand/sauri-logo.svg" alt="Sauri" height="64">
+  </picture>
+</p>
+
 # Sauri
 
 Sauri records virtual meetings from a Chrome tab and produces transcripts with speaker identification and draft summaries. Everything runs locally: audio, transcripts and summaries never leave your machine unless you explicitly configure an external service.

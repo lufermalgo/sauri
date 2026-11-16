@@ -188,6 +188,17 @@ describe("PortalShell collapse", () => {
     expect(root().dataset.mode).toBe("full");
   });
 
+  it("keeps the isotype in the sidebar, alone in the rail, with the brand name as its link name", () => {
+    renderShell();
+    const brand = () => screen.getByRole("link", { name: copy.shell.brand });
+    expect(brand().querySelector('svg polygon[fill="#4a7c59"]')).toBeTruthy();
+    expect(brand().querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.sidebar.toggle }));
+    expect(root().dataset.mode).toBe("rail");
+    expect(brand().querySelector("svg")).toBeTruthy();
+    expect(brand().querySelector(".shell-brand-name")!.classList.contains("shell-collapsible")).toBe(true);
+  });
+
   it("remembers the choice per device", () => {
     const first = renderShell();
     fireEvent.click(screen.getByRole("button", { name: copy.shell.sidebar.toggle }));

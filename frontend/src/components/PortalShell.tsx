@@ -17,7 +17,7 @@ import {
   useSecondaryPane,
   type SecondaryPaneControl,
 } from "./useSecondaryPane";
-import { Icon, useTooltip } from "./ui";
+import { BrandMark, Icon, useTooltip } from "./ui";
 import "../styles/shell.css";
 
 interface PortalShellProps {
@@ -34,21 +34,7 @@ function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
-function BrandMark() {
-  return (
-    <svg className="shell-brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.18" />
-      <path
-        d="M7 14c1.6-4.6 5-6.4 10-6-.4 5-3.4 8.4-8 8.4-.8 0-1.5-.1-2-.4"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+const BRAND_MARK_SIZE = 24;
 
 export function PortalShell({ route, user = null, onLogout, children }: PortalShellProps) {
   const { mode, drawerOpen, toggleCollapsed, openDrawer, closeDrawer } = useSidebar();
@@ -142,7 +128,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
             <Icon icon={PanelLeft} />
           </button>
           <span className="shell-brand">
-            <BrandMark />
+            <BrandMark className="shell-brand-mark" size={BRAND_MARK_SIZE} />
             <span className="shell-brand-name">{copy.shell.brand}</span>
           </span>
         </header>
@@ -156,9 +142,9 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
         data-open={drawer ? drawerOpen : undefined}
       >
         <div className="shell-sidebar-head">
-          <a className="shell-brand shell-collapsible" href={routePath(LIBRARY_ROUTE)} onClick={(event) => go(event, LIBRARY_ROUTE)}>
-            <BrandMark />
-            <span className="shell-brand-name">{copy.shell.brand}</span>
+          <a className="shell-brand" href={routePath(LIBRARY_ROUTE)} aria-label={copy.shell.brand} onClick={(event) => go(event, LIBRARY_ROUTE)}>
+            <BrandMark className="shell-brand-mark" size={BRAND_MARK_SIZE} />
+            <span className="shell-brand-name shell-collapsible">{copy.shell.brand}</span>
           </a>
           {drawer ? (
             <button

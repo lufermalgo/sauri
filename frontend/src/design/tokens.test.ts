@@ -24,10 +24,12 @@ function walk(dir: string): string[] {
     entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
   );
 }
+// The isotype keeps its two fixed brand greens in every theme (brand/README.md); they are not theme tokens.
+const BRAND_ASSET_FILES = ["components/ui/BrandMark.tsx"];
 const governed = walk(srcRoot)
   .map((path) => relative(srcRoot, path))
   .filter((path) => /\.(css|ts|tsx)$/.test(path))
-  .filter((path) => !/\.test\.tsx?$/.test(path) && !/^design\/(tokens\.css|contract\.ts)$/.test(path) && path !== "vite-env.d.ts")
+  .filter((path) => !/\.test\.tsx?$/.test(path) && !/^design\/(tokens\.css|contract\.ts)$/.test(path) && path !== "vite-env.d.ts" && !BRAND_ASSET_FILES.includes(path))
   .map((path) => [path, readFileSync(join(srcRoot, path), "utf8")] as const);
 
 describe("DESIGN.md palette table", () => {
