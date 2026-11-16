@@ -505,3 +505,27 @@ describe("Popover", () => {
     expect(tooltip).toHaveTextContent("Dates: none");
   });
 });
+
+describe("Button sizes", () => {
+  it("defaults to the 32px medium size and offers sm (28px) and lg (36px)", () => {
+    render(<>
+      <Button variant="primary">Medium</Button>
+      <Button variant="secondary" size="sm">Small</Button>
+      <Button variant="ghost" size="lg">Large</Button>
+    </>);
+    expect(screen.getByRole("button", { name: "Medium" })).toHaveClass("ui-button", "ui-button--primary", "ui-button--md");
+    expect(screen.getByRole("button", { name: "Small" })).toHaveClass("ui-button--sm");
+    expect(screen.getByRole("button", { name: "Large" })).toHaveClass("ui-button--lg");
+  });
+});
+
+describe("Pane header strip", () => {
+  it("is built from the pane classes that give it the 48px strip and its own scroll", () => {
+    const { container } = render(<section className="ui-pane">
+      <header className="ui-pane-header"><h2 className="ui-pane-title">Title</h2></header>
+      <div className="ui-pane-body">Body</div>
+    </section>);
+    expect(container.querySelector(".ui-pane > .ui-pane-header > .ui-pane-title")).toHaveTextContent("Title");
+    expect(container.querySelector(".ui-pane > .ui-pane-body")).toHaveTextContent("Body");
+  });
+});

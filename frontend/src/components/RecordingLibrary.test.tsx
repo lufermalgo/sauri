@@ -6,11 +6,13 @@
  */
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import "@testing-library/jest-dom/vitest";
 import { render, screen, cleanup, waitFor, fireEvent, within } from "@testing-library/react";
 import { FailureCause, ProcessState, MeetingOrigin } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 
 import { RecordingLibrary } from "./RecordingLibrary";
+import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import * as api from "../api";
 import { copy } from "../copy/es";
 
@@ -376,6 +378,58 @@ describe("RecordingLibrary row content", () => {
     expect(edges).toEqual([
       "library-item--ready", "library-item--progress", "library-item--failed", "library-item--queued",
     ]);
+  });
+});
+
+describe("RecordingLibrary as the list pane", () => {
+  async function openPane(selectedId?: string) {
+    vi.spyOn(api, "listMeetings").mockResolvedValue([
+      meeting({ id: "a", title: "First", processState: ProcessState.Completed }),
+      meeting({ id: "b", title: "Second", processState: ProcessState.Completed }),
+    ]);
+    const view = render(<RecordingLibrary refreshKey={0} selectedId={selectedId} onSelectMeeting={vi.fn()} />);
+    await listLoaded();
+    return view;
+  }
+
+  it("is a labelled pane whose header strip holds the title and the compact upload button", async () => {
+    const { container } = await openPane();
+    const pane = screen.getByRole("region", { name: text.title });
+    expect(pane).toHaveClass("ui-pane");
+    const header = container.querySelector(".ui-pane-header") as HTMLElement;
+    expect(within(header).getByRole("heading", { level: 1, name: text.title })).toHaveClass("ui-pane-title");
+    expect(within(header).getByRole("button", { name: text.upload })).toHaveClass("ui-button--primary", "ui-button--sm");
+    // The icon toolbar sits right under the header strip and the rows scroll in the pane body.
+    expect(header.nextElementSibling).toBe(screen.getByRole("search"));
+    expect(container.querySelector(".ui-pane-body .library-item")).not.toBeNull();
+  });
+
+  it("marks only the open recording with aria-current", async () => {
+    await openPane("b");
+    expect(screen.getByRole("button", { name: /Second/ })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: /First/ })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks nothing when no recording is open", async () => {
+    const { container } = await openPane();
+    expect(container.querySelector('.library-item[aria-current]')).toBeNull();
+  });
+
+  it("turns the list title into a plain label while a recording is open (one h1 per screen)", async () => {
+    await openPane("a");
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: text.title })).toBeInTheDocument();
+  });
+
+  it("refreshes quietly when a recording is renamed or deleted elsewhere", async () => {
+    const view = await openPane();
+    const list = vi.spyOn(api, "listMeetings").mockResolvedValue([meeting({ id: "b", title: "Second renamed" })]);
+    window.dispatchEvent(new Event(LIBRARY_CHANGED_EVENT));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Second renamed/ })).toBeDefined());
+    expect(screen.queryByRole("button", { name: /First/ })).toBeNull();
+    expect(list).toHaveBeenCalledTimes(1);
+    // No loading state in between: the toolbar never left.
+    expect(view.container.querySelector('[role="search"]')).not.toBeNull();
   });
 });
 

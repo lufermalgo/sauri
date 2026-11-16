@@ -19,7 +19,7 @@ import { SummaryPanel } from "./SummaryPanel";
 import { useStageStart } from "../useStageStart";
 import { MeetingHeader } from "./MeetingHeader";
 import { ChatTab } from "./ChatTab";
-import { Avatar, Button, Card, Dialog, Tabs, Skeleton, SkeletonLines } from "./ui";
+import { Avatar, Dialog, Tabs, Skeleton, SkeletonLines } from "./ui";
 import { SpeakerReviewPanel, type SpeakerRowModel } from "./SpeakerReviewPanel";
 import { meeting as text } from "../copy/meeting";
 import "../styles/meeting.css";
@@ -28,6 +28,8 @@ import { copy } from "../copy/es";
 
 interface TranscriptViewProps {
   meetingId: string;
+  /** Shown as a back button in the header when the list is not beside this view (narrow screens). */
+  onBack?: () => void;
 }
 
 function formatTimestamp(ms: number): string {
@@ -66,7 +68,7 @@ export function TranscriptView(props: TranscriptViewProps) {
   return <MeetingTranscriptView key={props.meetingId} {...props} />;
 }
 
-function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
+function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   const [meeting, setMeeting] = useState<MeetingState | null>(null);
   const [metadata, setMetadata] = useState<{ title: string | null; createdAt: string | null; durationSeconds: number | null }>(
     { title: null, createdAt: null, durationSeconds: null });
@@ -488,14 +490,16 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
   }, [success]);
 
   if (loading) return <section className="meeting-view" aria-busy="true">
-    <p role="status">{text.opening}</p>
-    <div className="meeting-grid" aria-hidden="true">
-      <Card className="meeting-playback-card">
-        <div className="meeting-header meeting-loading-heading"><Skeleton width="60%" height={34} /><Skeleton width="45%" height={16} /></div>
-        <Skeleton className="meeting-video-skeleton" /><SkeletonLines lines={1} />
-      </Card>
-      <div className="meeting-side-column"><Card><SkeletonLines lines={6} /></Card></div>
-      <Card className="meeting-transcript"><TranscriptSkeleton /></Card>
+    <p role="status" className="meeting-sr-only">{text.opening}</p>
+    <div className="meeting-body" aria-hidden="true">
+      <div className="meeting-main">
+        <div className="meeting-playback-card">
+          <div className="meeting-loading-heading"><Skeleton width="60%" height={20} /><Skeleton width="45%" height={12} /></div>
+          <Skeleton className="meeting-video-skeleton" /><SkeletonLines lines={1} />
+        </div>
+        <div className="meeting-transcript"><TranscriptSkeleton /></div>
+      </div>
+      <div className="meeting-side-column"><div className="meeting-sidebar"><SkeletonLines lines={6} /></div></div>
     </div>
   </section>;
 
@@ -509,12 +513,26 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
 
   return (
     <section className="meeting-view" tabIndex={-1}>
-      <div className={`meeting-grid${hasNotices ? " meeting-grid--notices" : ""}`}>
-      <Card className="meeting-playback-card" aria-label={text.playback}>
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
         stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
         speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns}
-        speakerReview={speakerReview} />
+        speakerReview={speakerReview} onBack={onBack} />
+      {hasNotices && <div className="meeting-notices">
+        {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
+        {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{copy.processing.speakerWaitExpired}</p></div> :
+          showProcessing && <div className="meeting-processing">
+            <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
+              diarizationNotFound={diarizationNotFound} error={statusError}
+              hasDiarization={diarization !== null} summary={summaryForStage}
+              audioSeconds={playbackManifest?.duration_seconds ?? metadata.durationSeconds}
+              createdAt={metadata.createdAt} />
+          </div>}
+        {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
+        {error && <p role="alert" className="meeting-error">{error}</p>}
+      </div>}
+      <div className="meeting-body">
+      <div className="meeting-main">
+      <section className="meeting-playback-card" aria-label={text.playback}>
       <div id="meeting-playback" ref={playbackRef} onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}
         onPause={() => setPlayingSpeakerId(null)} onEnded={() => setPlayingSpeakerId(null)}>
         <MeetingPlaybackView
@@ -529,40 +547,14 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
           onPauseReady={registerPause}
         />
       </div>
-      </Card>
-      {hasNotices && <div className="meeting-notices">
-        {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
-        {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{copy.processing.speakerWaitExpired}</p></div> :
-          showProcessing && <div className="meeting-processing">
-            <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
-              diarizationNotFound={diarizationNotFound} error={statusError}
-              hasDiarization={diarization !== null} summary={summaryForStage}
-              audioSeconds={playbackManifest?.duration_seconds ?? metadata.durationSeconds}
-              createdAt={metadata.createdAt} />
-          </div>}
-        {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
-        {error && <p role="alert" className="meeting-error">{error}</p>}
-      </div>}
-      <aside className="meeting-side-column">
-      <Card className="meeting-sidebar">
-        <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
-          { id: "summary", label: text.summaryTab, panel: meeting
-            // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
-            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
-              expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal}
-              progress={{ audioSeconds: playbackManifest?.duration_seconds ?? metadata.durationSeconds,
-                createdAt: metadata.createdAt, stageStartedAt: stage === "summary" ? stageStartedAt : null }} /> : null },
-          { id: "chat", label: text.chatTab, panel: <ChatTab /> },
-        ]} />
-      </Card>
-      {reviewError && !reviewOpen && <p role="alert" className="meeting-error">{reviewError}</p>}
-      </aside>
-      <Card className="meeting-transcript" aria-labelledby="meeting-transcript-heading">
+      </section>
+      <section className="meeting-transcript" aria-labelledby="meeting-transcript-heading">
       <div className="meeting-transcript-heading">
         <h2 id="meeting-transcript-heading">{text.transcript}</h2>
         <label className="meeting-follow"><input type="checkbox" checked={followPlayback}
           onChange={event => setFollowPlayback(event.target.checked)} />{text.followPlayback}</label>
       </div>
+      <div className="meeting-transcript-body">
       {!data && !error && !noSpeech && <>
         <p role="status">{copy.processing.transcriptPending}</p>
         <p>{text.transcriptPlaceholder}</p>
@@ -599,7 +591,7 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
                     if (turn.timestampMs !== null) seekToRef.current?.(turn.timestampMs, true);
                   }}
                 >
-                  <Avatar initials={speakerInitials(turn.speakerLabel)} color={turn.color} />
+                  <Avatar initials={speakerInitials(turn.speakerLabel)} color={turn.color} size="sm" />
                   <span className="meeting-turn-meta">
                     <span id={`turn-${turn.id}-speaker`} data-testid="transcript-speaker-label" className="meeting-speaker">
                       {turn.speakerLabel}
@@ -622,7 +614,23 @@ function MeetingTranscriptView({ meetingId }: TranscriptViewProps) {
         </ol>
       )}
       </>}
-      </Card>
+      </div>
+      </section>
+      </div>
+      <aside className="meeting-side-column">
+      <div className="meeting-sidebar">
+        <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
+          { id: "summary", label: text.summaryTab, panel: meeting
+            // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
+            ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
+              expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal}
+              progress={{ audioSeconds: playbackManifest?.duration_seconds ?? metadata.durationSeconds,
+                createdAt: metadata.createdAt, stageStartedAt: stage === "summary" ? stageStartedAt : null }} /> : null },
+          { id: "chat", label: text.chatTab, panel: <ChatTab /> },
+        ]} />
+      </div>
+      {reviewError && !reviewOpen && <p role="alert" className="meeting-error">{reviewError}</p>}
+      </aside>
       </div>
       {reviewOpen && review && <Dialog title={copy.speakerReview.heading} closeLabel={copy.speakerReview.close}
         onClose={closeReview}>

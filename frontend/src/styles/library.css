@@ -1,35 +1,38 @@
+/*
+ * Library list pane (master of the master-detail workspace). Flat, 340px on wide screens, compact
+ * rows of about 56-66px: thumbnail 64x36, one-line title, muted meta line and a status chip.
+ */
 .library {
-  display: grid;
-  gap: var(--ds-space-6);
+  flex: 0 0 var(--ds-list-w);
+  box-sizing: border-box;
+  width: var(--ds-list-w);
+  background: var(--ds-bg);
+  border-right: 1px solid var(--ds-border);
 }
 
-.library-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ds-space-3) var(--ds-space-6);
+/* Without a recording open (or on narrow screens) the list fills the window. */
+.workspace[data-layout="single"] .library {
+  flex: 1;
+  width: auto;
+  border-right: 0;
 }
 
-.library-title {
-  margin: 0;
-  font-size: var(--ds-text-3xl);
-  line-height: 1.2;
+.library-body {
+  padding: var(--ds-space-1) var(--ds-space-1) var(--ds-space-3);
+  overflow-x: hidden;
 }
 
-.library-upload {
-  padding: var(--ds-space-3) var(--ds-space-4);
-  font-size: var(--ds-text-base);
-}
-
-/* Toolbar: search, date range and sort as icon controls, on the title row. */
+/* Toolbar: search, date range and sort as icon controls, under the header strip. */
 .library-toolbar {
   display: flex;
-  flex: 0 1 auto;
+  flex: none;
   align-items: center;
-  gap: var(--ds-space-2);
-  margin-left: auto;
-  --library-searchbox-width: 18rem;
+  justify-content: flex-end;
+  gap: 2px;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 0 var(--ds-space-3);
+  border-bottom: 1px solid var(--ds-border);
 }
 
 .library-tool {
@@ -39,22 +42,22 @@
 
 .library-searchbox {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: var(--ds-space-1);
   box-sizing: border-box;
-  width: var(--library-searchbox-width);
-  max-width: 100%;
-  min-height: var(--ds-target);
-  padding-left: var(--ds-space-3);
+  min-width: 0;
+  min-height: var(--ds-control-h-sm);
+  padding-left: 10px;
   background: var(--ds-surface);
   border: 1px solid var(--ds-border-strong);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-sm);
   color: var(--ds-fg-muted);
 }
 
 .library-searchbox:focus-within {
   outline: 2px solid var(--ds-focus);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 .library-searchbox-icon {
@@ -64,12 +67,13 @@
 .library-searchbox-input {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: calc(var(--ds-target) - 2px);
+  min-height: calc(var(--ds-control-h-sm) - 2px);
   padding: 0;
   background: transparent;
   border: 0;
   color: var(--ds-fg);
   font: inherit;
+  font-size: var(--ds-text-sm);
   outline: none;
 }
 
@@ -79,13 +83,18 @@
 
 .library-searchbox .ui-icon-button {
   flex: 0 0 auto;
-  border-radius: var(--ds-radius-sm);
+  width: calc(var(--ds-control-h-sm) - 2px);
+  height: calc(var(--ds-control-h-sm) - 2px);
+}
+
+.library-toolbar[data-searching] > :not(.library-searchbox) {
+  display: none;
 }
 
 .library-check {
   display: inline-flex;
   flex: 0 0 auto;
-  width: var(--ds-text-lg);
+  width: var(--ds-icon-md);
   color: var(--ds-accent-text);
 }
 
@@ -97,11 +106,9 @@
 
 @keyframes library-searchbox-in {
   from {
-    width: var(--ds-target);
     opacity: 0.4;
   }
   to {
-    width: var(--library-searchbox-width);
     opacity: 1;
   }
 }
@@ -109,21 +116,28 @@
 /* Date groups and rows */
 .library-group {
   display: grid;
-  gap: var(--ds-space-3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+
+.library-group + .library-group {
+  margin-top: var(--ds-space-2);
 }
 
 .library-group-title {
-  margin: var(--ds-space-2) 0 0;
+  margin: var(--ds-space-1) 0 0;
+  padding: 0 var(--ds-space-2);
   color: var(--ds-fg-muted);
   font-family: var(--ds-font-sans);
-  font-size: var(--ds-text-sm);
-  font-weight:var(--ds-weight-semibold);
-  letter-spacing: 0.08em;
+  font-size: var(--ds-text-2xs);
+  font-weight: var(--ds-weight-semibold);
+  letter-spacing: 0.04em;
 }
 
 .library-list {
   display: grid;
-  gap: var(--ds-space-3);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -131,19 +145,24 @@
 
 .library-item {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--ds-space-3) var(--ds-space-4);
+  gap: var(--ds-space-2);
   width: 100%;
   box-sizing: border-box;
-  padding: var(--ds-space-4) var(--ds-space-6);
-  border-left: 6px solid var(--ds-border);
+  min-height: 56px;
+  padding: 6px var(--ds-space-2) 6px 6px;
+  color: var(--ds-fg);
+  background: transparent;
+  border: 0;
+  border-left: 3px solid var(--ds-border);
+  border-radius: var(--ds-radius-thumb);
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: border-color var(--ds-duration) var(--ds-ease), background-color var(--ds-duration) var(--ds-ease);
 }
 
+/* The status edge always sits beside the status chip, so state never rests on color alone. */
 .library-item--ready {
   border-left-color: var(--ds-accent);
 }
@@ -160,8 +179,16 @@
   border-left-color: var(--ds-border);
 }
 
-.library-item:is(:hover, :focus-visible) {
-  background: var(--ds-bg);
+.library-item:hover {
+  background: var(--ds-fill-hover);
+}
+
+.library-item[aria-current="true"] {
+  background: var(--ds-fill-strong);
+}
+
+.library-item[aria-current="true"] .library-item-title {
+  font-weight: var(--ds-weight-semibold);
 }
 
 /* Fixed 16:9 box so rows never shift while images load. */
@@ -169,12 +196,13 @@
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 6rem;
+  box-sizing: border-box;
+  width: 64px;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   background: var(--ds-fill);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-sm);
+  border-radius: var(--ds-radius-thumb);
   color: var(--ds-fg-subtle);
 }
 
@@ -187,115 +215,96 @@
 
 .library-item-main {
   display: flex;
-  flex: 1 1 10rem;
+  flex: 1 1 0;
   flex-direction: column;
   min-width: 0;
-  gap: var(--ds-space-1);
+  gap: 0;
+}
+
+.library-item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-width: 0;
 }
 
 .library-item-title {
-  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--ds-font-sans);
-  font-size: var(--ds-text-lg);
-  font-weight: 600;
-  line-height: 1.3;
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-medium);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .library-item-topic {
-  display: -webkit-box;
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2; /* The topic is a whole paragraph in structured summaries. */
   color: var(--ds-fg-muted);
-  font-size: var(--ds-text-base);
+  font-size: var(--ds-text-xs);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .library-item-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ds-space-1) var(--ds-space-4);
-  color: var(--ds-fg-muted);
-  font-size: var(--ds-text-sm);
+  gap: 0 6px;
+  color: var(--ds-fg-subtle);
+  font-size: var(--ds-text-xs);
+  line-height: 1.3;
 }
 
 .library-item-duration {
   font-family: var(--ds-font-mono);
-  font-size: var(--ds-text-sm);
+  font-size: var(--ds-text-xs);
 }
 
-.library-item .ui-status-badge {
+.library-item-head .ui-status-badge {
   flex: 0 0 auto;
-  font-size: var(--ds-text-sm);
-}
-
-.library-item-chevron {
-  flex: 0 0 auto;
-  color: var(--ds-border-strong);
 }
 
 /* Loading skeleton */
 .library-skeleton-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--ds-space-3) var(--ds-space-4);
-  padding: var(--ds-space-4) var(--ds-space-6);
-  background: var(--ds-surface);
-  border: 1px solid var(--ds-border);
-  border-left: 6px solid var(--ds-fill-strong);
-  border-radius: var(--ds-radius-lg);
+  gap: 10px;
+  padding: 8px 10px 8px 11px;
 }
 
 .library-skeleton-thumb {
   flex: 0 0 auto;
-  width: 6rem;
+  width: 64px;
   aspect-ratio: 16 / 9;
 }
 
 .library-skeleton-main {
   display: flex;
-  flex: 1 1 10rem;
+  flex: 1 1 0;
   flex-direction: column;
-  gap: var(--ds-space-3);
+  gap: 6px;
 }
 
 /* Messages and states */
 .library-message {
   margin: 0;
+  padding: var(--ds-space-2);
   color: var(--ds-fg-muted);
+  font-size: var(--ds-text-sm);
 }
 
 .library-state {
   display: grid;
   justify-items: start;
-  gap: var(--ds-space-4);
+  gap: var(--ds-space-3);
+  padding: var(--ds-space-2);
 }
 
-@media (max-width: 40rem) {
-  .library-title {
-    font-size: var(--ds-text-2xl);
-  }
-
-  /* The toolbar gets its own full row so the field can span it; the other icons make room. */
-  .library-toolbar {
-    --library-searchbox-width: 100%;
-    flex: 1 0 100%;
-    order: 3;
-    justify-content: flex-end;
-    margin-left: 0;
-  }
-
-  .library-toolbar[data-searching] > :not(.library-searchbox) {
-    display: none;
-  }
-
-  .library-toolbar[data-searching] .library-searchbox {
-    flex: 1 1 auto;
-  }
-
-  .library-item {
-    padding: var(--ds-space-4);
-  }
+.library-state .library-message {
+  padding: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -305,5 +314,14 @@
 }
 
 .library-item-progress {
-  margin-top: var(--ds-space-1);
+  display: flex;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.library-item-progress > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

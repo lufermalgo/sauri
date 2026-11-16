@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
 import { deleteMeeting, renameMeeting } from "../api";
+import { notifyLibraryChanged } from "../library-events";
 import { meeting as text } from "../copy/meeting";
 import { navigate } from "../router";
 import { stageLabel, type DetectedStage } from "../processing-estimate";
-import { Ellipsis, Pencil, Trash2, UsersRound } from "lucide-react";
+import { ArrowLeft, Ellipsis, Pencil, Trash2, UsersRound } from "lucide-react";
 import { Button, ConfirmDialog, Icon, Popover, StatusBadge, TextField, Menu, MenuItem } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
@@ -17,6 +18,8 @@ interface MeetingHeaderProps extends MeetingDownloadsProps {
   speakerCount?: number;
   /** Speaker-review entry point; omit it while there is no review to open. */
   speakerReview?: SpeakerReviewEntry;
+  /** Back to the list; given only when the list is not shown beside this header (narrow screens). */
+  onBack?: () => void;
 }
 
 export interface SpeakerReviewEntry {
@@ -27,7 +30,7 @@ export interface SpeakerReviewEntry {
   onReview: () => void;
 }
 
-export function MeetingHeader({ title, createdAt, stage, processState, speakerCount, speakerReview, ...downloads }: MeetingHeaderProps) {
+export function MeetingHeader({ title, createdAt, stage, processState, speakerCount, speakerReview, onBack, ...downloads }: MeetingHeaderProps) {
   const duration = downloads.manifest?.duration_seconds;
   const totalSeconds = duration === undefined ? null : Math.max(0, Math.floor(duration));
   const durationLabel = totalSeconds === null ? null : totalSeconds >= 3600
@@ -52,6 +55,7 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
       const result = await renameMeeting(downloads.meetingId, draft.trim());
       setRenamedTitle(result.title);
       setEditing(false);
+      notifyLibraryChanged();
     } catch {
       setError(text.renameFailed);
     } finally {
@@ -68,6 +72,7 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
     try {
       await deleteMeeting(downloads.meetingId);
       navigate({ name: "library" });
+      notifyLibraryChanged();
     } catch {
       setError(text.deleteFailed);
     } finally {
@@ -79,15 +84,17 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
 
   return <header className="meeting-header" aria-busy={busy || undefined}>
     <div className="meeting-heading-row">
+      {onBack && <button type="button" className="ui-icon-button ui-icon-button--ghost meeting-back"
+        aria-label={text.backToList} onClick={onBack}><Icon icon={ArrowLeft} /></button>}
       <div className="meeting-heading">
         {editing ? <form className="meeting-rename" onSubmit={event => { event.preventDefault(); void save(); }}>
           <TextField label={text.titleLabel} value={draft} autoFocus disabled={busy}
             onChange={event => setDraft(event.target.value)} />
           <div className="meeting-actions">
-            <Button variant="primary" type="submit" disabled={!validTitle || busy}>{text.save}</Button>
-            <Button variant="ghost" disabled={busy} onClick={() => { setEditing(false); setError(null); }}>{text.cancel}</Button>
+            <Button variant="primary" size="sm" type="submit" disabled={!validTitle || busy}>{text.save}</Button>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => { setEditing(false); setError(null); }}>{text.cancel}</Button>
           </div>
-        </form> : <h1>{currentTitle}</h1>}
+        </form> : <h1 title={currentTitle}>{currentTitle}</h1>}
         <div className="meeting-details">
         {stage && <StatusBadge tone={stage === "done" ? "success" : stage === "failed" ? "error" : "progress"}>
           {stageLabel(stage, processState)}
@@ -108,7 +115,7 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
             <p className="meeting-speakers-message">{speakerReview.pendingCount > 0
               ? text.pendingSpeakers(speakerReview.pendingCount)
               : speakerReview.hasUnnamed ? text.speakersSomeUnnamed : text.speakersAllNamed}</p>
-            <Button variant="secondary" onClick={() => { close(); speakerReview.onReview(); }}>
+            <Button variant="secondary" size="sm" onClick={() => { close(); speakerReview.onReview(); }}>
               {speakerReview.pendingCount > 0 ? text.reviewSpeakers : text.editSpeakers}</Button>
           </>}
         </Popover>}

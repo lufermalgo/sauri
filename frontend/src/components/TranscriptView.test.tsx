@@ -1181,7 +1181,7 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(icon).toHaveClass("ui-icon-button--alert");
     expect(icon).toHaveAttribute("aria-haspopup", "dialog");
     expect(icon).toHaveAttribute("aria-expanded", "false");
-    expect(icon.closest(".meeting-playback-card")).not.toBeNull();
+    expect(icon.closest(".meeting-header")).not.toBeNull();
     // The wide banner is gone: neither its text nor its link is on the page until the popover opens.
     expect(screen.queryByText(copy.meeting.pendingSpeakers(1))).not.toBeInTheDocument();
     expect(screen.queryByRole("button", reviewLink)).not.toBeInTheDocument();
@@ -1408,7 +1408,7 @@ describe("TranscriptView — redesigned meeting", () => {
     for (const selector of [".meeting-playback-card", ".meeting-transcript", ".meeting-side-column"]) {
       expect(container.querySelector(`${selector} .ui-skeleton`)).toBeInTheDocument();
     }
-    expect(container.querySelector(".meeting-grid")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector(".meeting-body")).toHaveAttribute("aria-hidden", "true");
     await waitFor(() => expect(api.getTranscript).toHaveBeenCalled());
     await act(async () => { finish(attributedTranscript()); });
     expect(screen.queryByText(copy.meeting.opening)).not.toBeInTheDocument();
@@ -1432,23 +1432,36 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status")).toHaveTextContent(copy.processing.transcribing);
   });
 
-  it("places the sidebar between playback and transcript with no speaker panel in the page", async () => {
+  it("lays the meeting out as a header strip over panes: player above transcript, notes beside them", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await speakersIcon();
-    const grid = document.querySelector(".meeting-grid")!;
-    // No notice is left, so the notices container is not rendered at all (no empty gap).
-    expect([...grid.children].map(child => child.className)).toEqual([
-      "ui-card meeting-playback-card", "meeting-side-column", "ui-card meeting-transcript",
-    ]);
+    const view = document.querySelector(".meeting-view")!;
+    // No notice is left, so the notices strip is not rendered at all (no empty gap).
+    expect([...view.children].map(child => child.className)).toEqual(["meeting-header", "meeting-body"]);
+    const body = view.querySelector(".meeting-body")!;
+    expect([...body.children].map(child => child.className)).toEqual(["meeting-main", "meeting-side-column"]);
+    const main = body.querySelector(".meeting-main")!;
+    expect([...main.children].map(child => child.className)).toEqual(["meeting-playback-card", "meeting-transcript"]);
+    // The transcript scrolls inside its own pane; the notes and chat live in the side pane.
+    expect(main.querySelector(".meeting-transcript > .meeting-transcript-body")).not.toBeNull();
+    expect(body.querySelector(".meeting-side-column .meeting-sidebar [role=tablist]")).not.toBeNull();
     expect(document.querySelector(".meeting-notices")).toBeNull();
     expect(screen.queryByText(copy.meeting.pendingSpeakers(2))).not.toBeInTheDocument();
-    expect(grid.querySelector(".meeting-speaker-review")).toBeNull();
+    expect(body.querySelector(".meeting-speaker-review")).toBeNull();
     expect(screen.queryByRole("region", { name: sr.heading })).not.toBeInTheDocument();
+  });
+
+  it("keeps the follow-playback toggle in the transcript pane header, not in the scrolling body", async () => {
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    render(<TranscriptView meetingId="r-1" />);
+    const follow = await screen.findByRole("checkbox", { name: copy.meeting.followPlayback });
+    expect(follow.closest(".meeting-transcript-heading")).not.toBeNull();
+    expect(follow.closest(".meeting-transcript-body")).toBeNull();
   });
 });
 
-describe("TranscriptView — meeting header inside the player card", () => {
+describe("TranscriptView — meeting header strip", () => {
   const muxedPlayback: api.PlaybackManifest = {
     ...playback, video_presence: "muxed",
     muxed_video_source: { source_id: "video-1", url: "http://localhost/synthetic.mp4", mime_type: "video/mp4" },
@@ -1456,79 +1469,85 @@ describe("TranscriptView — meeting header inside the player card", () => {
 
   async function openCard() {
     render(<TranscriptView meetingId="r-1" />);
-    const card = await screen.findByRole("region", { name: copy.meeting.playback });
     await screen.findByRole("heading", { level: 1, name: "Synthetic meeting" });
-    return card;
+    return document.querySelector(".meeting-view") as HTMLElement;
   }
 
-  function expectHeaderInside(card: HTMLElement) {
-    const title = within(card).getByRole("heading", { level: 1 });
+  function expectHeaderStrip(view: HTMLElement) {
+    const header = view.querySelector(".meeting-header") as HTMLElement;
+    const title = within(header).getByRole("heading", { level: 1 });
     expect(title).toHaveTextContent("Synthetic meeting");
+    expect(title).toHaveAttribute("title", "Synthetic meeting");
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(within(card).getByRole("button", { name: copy.meeting.download })).toBeVisible();
-    expect(within(card).getByRole("button", { name: copy.meeting.moreActions })).toBeVisible();
-    expect(card.querySelector("time")).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: copy.meeting.download })).toBeVisible();
+    expect(within(header).getByRole("button", { name: copy.meeting.moreActions })).toBeVisible();
+    expect(header.querySelector("time")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /biblioteca/i })).not.toBeInTheDocument();
-    // The header leads the card and comes before the player.
-    expect(card.firstElementChild).toHaveClass("meeting-header");
+    // The strip leads the view, above the player, the processing strip and the panes.
+    expect(view.firstElementChild).toBe(header);
+    return header;
   }
 
-  it("names the player region and shows the header, actions and video in the ready state", async () => {
+  it("shows the header strip, the actions and the video in the ready state", async () => {
     vi.mocked(api.getPlaybackManifest).mockResolvedValue(muxedPlayback);
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [{ id: "s1", label: "Speaker 1", sequence: 1 }], assignments: [] });
-    const card = await openCard();
-    expectHeaderInside(card);
-    expect(await within(card).findByText(copy.meeting.ready)).toBeVisible();
-    expect(within(card).getByText(copy.meeting.speakerCount(1))).toBeVisible();
-    expect(within(card).getByText("03:00")).toBeVisible();
-    expect(card.querySelector("video")).toBeInTheDocument();
+    const view = await openCard();
+    const header = expectHeaderStrip(view);
+    expect(await within(header).findByText(copy.meeting.ready)).toBeVisible();
+    expect(within(header).getByText(copy.meeting.speakerCount(1))).toBeVisible();
+    expect(within(header).getByText("03:00")).toBeVisible();
+    const player = screen.getByRole("region", { name: copy.meeting.playback });
+    expect(player.querySelector("video")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 2, name: copy.meeting.playback })).not.toBeInTheDocument();
   });
 
   it("shows the header with an audio-only recording", async () => {
     vi.mocked(api.getPlaybackManifest).mockResolvedValue(playback);
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
-    const card = await openCard();
-    expectHeaderInside(card);
-    expect(card.querySelector("audio")).toBeInTheDocument();
-    expect(card.querySelector("video")).not.toBeInTheDocument();
+    const view = await openCard();
+    expectHeaderStrip(view);
+    const player = await screen.findByRole("region", { name: copy.meeting.playback });
+    expect(player.querySelector("audio")).toBeInTheDocument();
+    expect(player.querySelector("video")).not.toBeInTheDocument();
   });
 
-  it("shows the header while processing and puts the processing card right below the player card", async () => {
+  it("shows the header while processing and puts the processing strip right below it", async () => {
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
-    const card = await openCard();
-    expectHeaderInside(card);
-    expect(within(card).getByText(copy.processing.transcribing)).toBeVisible();
-    expect(within(card).getByText(copy.meeting.playbackUnavailable)).toBeVisible();
+    const view = await openCard();
+    const header = expectHeaderStrip(view);
+    expect(within(header).getByText(copy.processing.transcribing)).toBeVisible();
+    const player = await screen.findByRole("region", { name: copy.meeting.playback });
+    expect(within(player).getByText(copy.meeting.playbackUnavailable)).toBeVisible();
     const processing = document.querySelector(".meeting-processing")!;
-    expect(card.parentElement).toBe(processing.closest(".meeting-grid"));
-    expect(card.nextElementSibling).toBe(processing.parentElement);
+    expect(header.nextElementSibling).toBe(processing.parentElement);
+    expect(processing.parentElement).toHaveClass("meeting-notices");
     expect(processing.closest(".meeting-card, .ui-card")).toBeNull();
   });
 
   it("shows the header when the playback manifest cannot be loaded", async () => {
     vi.mocked(api.getPlaybackManifest).mockRejectedValue(new Error("Error 500"));
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
-    const card = await openCard();
-    expectHeaderInside(card);
-    expect(await within(card).findByRole("alert")).toHaveTextContent(copy.meeting.playbackLoadFailed);
+    const view = await openCard();
+    expectHeaderStrip(view);
+    const player = screen.getByRole("region", { name: copy.meeting.playback });
+    expect(await within(player).findByRole("alert")).toHaveTextContent(copy.meeting.playbackLoadFailed);
   });
 
   it("shows the header when processing failed", async () => {
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" });
-    const card = await openCard();
-    expectHeaderInside(card);
+    const view = await openCard();
+    expectHeaderStrip(view);
     expect(screen.getByText(new RegExp(copy.processing.failureCause("engine_failure")))).toBeVisible();
   });
 
   it("shows the header for a recording without speech", async () => {
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "no_speech_detected" });
-    const card = await openCard();
-    expectHeaderInside(card);
+    const view = await openCard();
+    expectHeaderStrip(view);
     expect(screen.getByText(copy.processing.noSpeechTitle)).toBeVisible();
   });
 
@@ -1536,19 +1555,30 @@ describe("TranscriptView — meeting header inside the player card", () => {
     vi.mocked(api.getMeeting).mockRejectedValue(new Error("Error 500"));
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     render(<TranscriptView meetingId="r-1" />);
-    const card = await screen.findByRole("region", { name: copy.meeting.playback });
-    expect(await within(card).findByRole("button", { name: copy.meeting.moreActions })).toBeVisible();
+    expect(await screen.findByRole("button", { name: copy.meeting.moreActions })).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
-  it("keeps rename and delete reachable from the card's more menu", async () => {
+  it("keeps rename and delete reachable from the header's more menu", async () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
-    const card = await openCard();
-    fireEvent.click(within(card).getByRole("button", { name: copy.meeting.moreActions }));
+    const view = await openCard();
+    const header = view.querySelector(".meeting-header") as HTMLElement;
+    fireEvent.click(within(header).getByRole("button", { name: copy.meeting.moreActions }));
     expect(screen.getAllByRole("menuitem").map(item => item.textContent))
       .toEqual([copy.meeting.rename, copy.meeting.deleteRecording]);
     fireEvent.click(screen.getByRole("menuitem", { name: copy.meeting.rename }));
-    expect(within(card).getByRole("textbox", { name: copy.meeting.titleLabel })).toHaveValue("Synthetic meeting");
-    expect(within(card).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(within(header).getByRole("textbox", { name: copy.meeting.titleLabel })).toHaveValue("Synthetic meeting");
+    expect(within(header).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+
+  it("offers a back button only when the list is not beside the meeting", async () => {
+    vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
+    const onBack = vi.fn();
+    const { rerender } = render(<TranscriptView meetingId="r-1" />);
+    await screen.findByRole("heading", { level: 1, name: "Synthetic meeting" });
+    expect(screen.queryByRole("button", { name: copy.meeting.backToList })).not.toBeInTheDocument();
+    rerender(<TranscriptView meetingId="r-1" onBack={onBack} />);
+    fireEvent.click(await screen.findByRole("button", { name: copy.meeting.backToList }));
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

@@ -21,7 +21,7 @@ interface UploadViewProps {
 
 function UploadIcon() {
   return (
-    <svg className="upload-icon" viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor"
+    <svg className="upload-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
       strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       <path d="M12 16V5" />
       <path d="m7 10 5-5 5 5" />
@@ -32,7 +32,7 @@ function UploadIcon() {
 
 function FileIcon({ video }: { video: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
       strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       {video ? (
         <>
@@ -111,14 +111,15 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
   const canRetry = Boolean(error && recording?.data && !uploading);
 
   return (
-    <section className="upload-view" aria-labelledby="upload-heading">
-      <header className="upload-header">
-        <Button variant="ghost" className="upload-back" onClick={onBack} disabled={uploading}>
+    <section className="app-view upload-view" aria-labelledby="upload-heading">
+      <header className="ui-pane-header">
+        <Button variant="ghost" size="sm" className="upload-back" onClick={onBack} disabled={uploading}>
           {`← ${copy.upload.back}`}
         </Button>
-        <h1 id="upload-heading" className="upload-title">{copy.upload.heading}</h1>
-        <p className="upload-intro">{copy.upload.intro}</p>
+        <h1 id="upload-heading" className="ui-pane-title">{copy.upload.heading}</h1>
       </header>
+      <div className="app-view-body upload-body">
+      <p className="upload-intro">{copy.upload.intro}</p>
 
       <Card
         className={`upload-dropzone${dragging ? " upload-dropzone--active" : ""}`}
@@ -130,7 +131,7 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
         <span className="upload-dropzone-icon"><UploadIcon /></span>
         <p className="upload-dropzone-title">{copy.upload.dropTitle}</p>
         <p className="upload-dropzone-hint">{copy.upload.dropHint}</p>
-        <label className="ui-button ui-button--primary upload-pick">
+        <label className="ui-button ui-button--primary ui-button--md upload-pick">
           {copy.upload.fileLabel}
           <input
             className="upload-file-input"
@@ -179,11 +180,11 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
             onError={() => setError(copy.upload.errors.unreadableRecording)}
           />
           <div className="upload-actions">
-            <Button variant="ghost" onClick={() => selectFile(undefined)} disabled={uploading}>
+            <Button variant="ghost" size="sm" onClick={() => selectFile(undefined)} disabled={uploading}>
               {copy.upload.remove}
             </Button>
             {!canRetry && (
-              <Button variant="primary" onClick={submitUpload} disabled={!recording.data || uploading}>
+              <Button variant="primary" size="sm" onClick={submitUpload} disabled={!recording.data || uploading}>
                 {uploading ? copy.upload.uploading : copy.upload.submit}
               </Button>
             )}
@@ -213,9 +214,10 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
           <p className="upload-error-text">
             <strong>{copy.upload.errorHeading}</strong>{" "}{error}
           </p>
-          {canRetry && <Button variant="secondary" className="upload-retry" onClick={submitUpload}>{copy.upload.retry}</Button>}
+          {canRetry && <Button variant="secondary" size="sm" className="upload-retry" onClick={submitUpload}>{copy.upload.retry}</Button>}
         </Card>
       )}
+      </div>
     </section>
   );
 }

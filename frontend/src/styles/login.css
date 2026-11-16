@@ -13,21 +13,21 @@
   z-index: 1;
   box-sizing: border-box;
   width: 100%;
-  max-width: 480px;
-  padding: var(--ds-space-8);
-  border-radius: var(--ds-radius-xl);
+  max-width: 400px;
+  padding: var(--ds-space-6);
+  border-radius: var(--ds-radius-md);
 }
 
 .login-brand {
   display: flex;
   align-items: center;
   gap: var(--ds-space-3);
-  margin-bottom: var(--ds-space-6);
+  margin-bottom: var(--ds-space-4);
 }
 
 .login-mark {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
 }
 
 .login-mark-disc {
@@ -40,60 +40,60 @@
 
 .login-brand-name {
   font-family: var(--ds-font-sans);
-  font-size: var(--ds-text-2xl);
+  font-size: var(--ds-text-xl);
   font-weight: 600;
   color: var(--ds-fg);
 }
 
 .login-title {
   margin: 0;
-  font-size: var(--ds-text-3xl);
-  line-height: 1.2;
+  font-size: var(--ds-text-2xl);
+  line-height: 1.3;
 }
 
 .login-subtitle {
-  margin: var(--ds-space-2) 0 var(--ds-space-6);
-  font-size: var(--ds-text-base);
+  margin: var(--ds-space-1) 0 var(--ds-space-4);
+  font-size: var(--ds-text-md);
   color: var(--ds-fg-muted);
 }
 
 .login-form {
   display: grid;
-  gap: var(--ds-space-4);
+  gap: var(--ds-space-3);
 }
 
 .login-form .ui-input {
-  padding: var(--ds-space-3) var(--ds-space-4);
+  min-height: var(--ds-control-h-lg);
+  padding: 0 var(--ds-space-3);
   background: var(--ds-sidebar);
   border-color: var(--ds-border);
-  border-radius: var(--ds-radius-md);
-  font-size: var(--ds-text-base);
+  border-radius: var(--ds-radius-sm);
+  font-size: var(--ds-text-md);
 }
 
 .login-form .ui-text-field > label {
   font-weight: 600;
-  font-size: var(--ds-text-base);
+  font-size: var(--ds-text-sm);
   color: var(--ds-fg);
 }
 
 .login-error {
   margin: 0;
-  padding: var(--ds-space-3) var(--ds-space-4);
+  padding: var(--ds-space-2) var(--ds-space-3);
   background: var(--ds-danger-soft);
   color: var(--ds-danger-soft-fg);
-  border-radius: var(--ds-radius-md);
-  font-size: var(--ds-text-base);
+  border-radius: var(--ds-radius-sm);
+  font-size: var(--ds-text-md);
 }
 
 .login-submit {
   width: 100%;
   margin-top: var(--ds-space-2);
-  padding: var(--ds-space-3) var(--ds-space-4);
-  font-size: var(--ds-text-base);
+  min-height: var(--ds-control-h-lg);
 }
 
 @media (max-width: 480px) {
   .login-card {
-    padding: var(--ds-space-6);
+    padding: var(--ds-space-4);
   }
 }

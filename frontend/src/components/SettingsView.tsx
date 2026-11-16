@@ -66,8 +66,10 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
   const label = category ? copy.settings.categories[category].label : "";
 
   return (
-    <section className="settings" aria-labelledby="settings-title">
-      <h1 id="settings-title" className="shell-page-title">{copy.settings.title}</h1>
+    <section className="app-view settings" aria-labelledby="settings-title">
+      <header className="ui-pane-header">
+        <h1 id="settings-title" className="ui-pane-title">{copy.settings.title}</h1>
+      </header>
       <div className="settings-layout">
         {showList && (
           <nav className="settings-nav" aria-label={copy.settings.navLabel}>
@@ -97,10 +99,12 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
           </nav>
         )}
         {category && (
+          <div className="settings-content">
           <div className="settings-detail">
             {compact && (
               <Button
                 variant="ghost"
+                size="sm"
                 className="settings-back"
                 aria-label={copy.settings.backLabel}
                 onClick={() => navigate(SETTINGS_ROOT)}
@@ -111,6 +115,7 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
             )}
             <h2 ref={detailHeading} tabIndex={-1} className="settings-detail-title">{label}</h2>
             {renderCategory(category, user, onLogout)}
+          </div>
           </div>
         )}
       </div>

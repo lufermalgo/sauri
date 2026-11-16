@@ -1,5 +1,6 @@
 export const library = {
-  title: "Biblioteca de grabaciones",
+  title: "Grabaciones",
+  selectHint: "Elige una grabación para ver su transcripción y su resumen.",
   upload: "Subir grabación",
   loading: "Cargando grabaciones…",
   empty: "Todavía no hay grabaciones.",

@@ -182,6 +182,7 @@ function TemplateGroups({ templates, categories, pendingDefault, onMakeDefault, 
                     {!template.isDefault && (
                       <Button
                         variant="secondary"
+                        size="sm"
                         aria-label={text.useAsDefaultLabel(template.name)}
                         disabled={pendingDefault !== null}
                         onClick={() => onMakeDefault(template)}
@@ -189,7 +190,7 @@ function TemplateGroups({ templates, categories, pendingDefault, onMakeDefault, 
                         {text.useAsDefault}
                       </Button>
                     )}
-                    <Button variant="secondary" aria-label={text.editLabel(template.name)} onClick={() => onEdit(template)}>
+                    <Button variant="secondary" size="sm" aria-label={text.editLabel(template.name)} onClick={() => onEdit(template)}>
                       {text.edit}
                     </Button>
                   </div>

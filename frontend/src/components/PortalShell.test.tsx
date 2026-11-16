@@ -303,6 +303,7 @@ describe("PortalShell drawer", () => {
 
 describe("PortalShell app frame", () => {
   const shellCss = readFileSync(join(__dirname, "../styles/shell.css"), "utf8");
+  const tokensCss = readFileSync(join(__dirname, "../design/tokens.css"), "utf8");
   const rule = (selector: string) =>
     new RegExp(`(?:^|\\n)${selector.replace(/[.[\]"=-]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(shellCss)?.[1] ?? "";
 
@@ -315,14 +316,26 @@ describe("PortalShell app frame", () => {
     expect(sidebar().parentElement).toBe(root());
   });
 
-  it("pins the frame to the window and makes the content region the only scroller", () => {
+  it("pins the frame to the window; the content region never scrolls, each view owns its panes", () => {
     expect(rule(".shell-root")).toMatch(/position:\s*fixed/);
     expect(rule(".shell-root")).toMatch(/inset:\s*0/);
     expect(rule(".shell-root")).not.toMatch(/(?<!-)height:/);
-    expect(rule(".shell-content")).toMatch(/overflow-y:\s*auto/);
+    expect(rule(".shell-content")).toMatch(/overflow:\s*hidden/);
     expect(rule(".shell-content")).toMatch(/min-height:\s*0/);
     expect(rule(".shell-content")).toMatch(/position:\s*relative/);
     expect(rule(".shell-sidebar")).not.toMatch(/overflow/);
+    // A single-column view scrolls inside its own body, under its pane header strip.
+    expect(rule(".app-view-body")).toMatch(/overflow-y:\s*auto/);
+    expect(rule(".app-view-body")).toMatch(/min-height:\s*0/);
+  });
+
+  it("sizes the side panel for a desktop application: 220px, 60px rail, 32px rows, 13px labels", () => {
+    expect(rule(".shell-root")).toMatch(/--shell-sidebar-width:\s*var\(--ds-sidebar-w\)/);
+    expect(rule(".shell-link")).toMatch(/min-height:\s*var\(--ds-nav-row-h\)/);
+    expect(rule(".shell-link")).toMatch(/font-size:\s*var\(--ds-text-sm\)/);
+    expect(tokensCss).toMatch(/--ds-sidebar-w:\s*220px/);
+    expect(tokensCss).toMatch(/--ds-rail-w:\s*60px/);
+    expect(tokensCss).toMatch(/--ds-nav-row-h:\s*32px/);
   });
 
   it("does not center the page in a max-width column", () => {

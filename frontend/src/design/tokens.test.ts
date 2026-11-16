@@ -12,6 +12,7 @@ import {
 
 const tokensCss = readFileSync(join(__dirname, "tokens.css"), "utf8");
 const designMd = readFileSync(join(__dirname, "../../../DESIGN.md"), "utf8");
+const uiCss = readFileSync(join(__dirname, "../components/ui/ui.css"), "utf8");
 const tokens = parseColorTokens(tokensCss);
 const palette = parsePaletteTable(designMd);
 const contrastRows = parseContrastTable(designMd);
@@ -78,8 +79,7 @@ describe("token scales", () => {
     expect(scale("space")).toEqual([4, 8, 12, 16, 24, 32]);
   });
 
-  it("fixes the touch target, focus ring and icon scale", () => {
-    expect(tokensCss).toMatch(/--ds-target:\s*44px/);
+  it("fixes the focus ring and icon scale", () => {
     expect(tokensCss).toMatch(/--ds-focus-width:\s*2px/);
     expect(tokensCss).toMatch(/--ds-focus-offset:\s*2px/);
     expect(scale("icon")).toEqual([12, 14, 16, 18]);
@@ -94,6 +94,75 @@ describe("token scales", () => {
   it("uses the system font stacks", () => {
     expect(tokensCss).toMatch(/--ds-font-sans:\s*system-ui/);
     expect(tokensCss).toMatch(/--ds-font-mono:\s*ui-monospace/);
+  });
+});
+
+describe("desktop density scale (DESIGN.md, Densidad de escritorio)", () => {
+  const declared = (name: string, css = tokensCss) => css.match(new RegExp(`--ds-${name}:\\s*([^;]+);`))?.[1];
+  const [desktopRoot, coarseBlock] = (() => {
+    const at = tokensCss.indexOf("@media (pointer: coarse)");
+    return [tokensCss.slice(0, at), tokensCss.slice(at)];
+  })();
+
+  it("sets the type scale: 14px body, 13 secondary, 12 meta, 11 micro, 15/16 titles", () => {
+    expect(declared("text-base", desktopRoot)).toBe("14px");
+    expect(declared("text-md", desktopRoot)).toBe("14px");
+    expect(declared("text-sm", desktopRoot)).toBe("13px");
+    expect(declared("text-xs", desktopRoot)).toBe("12px");
+    expect(declared("text-2xs", desktopRoot)).toBe("11px");
+    expect(declared("text-lg", desktopRoot)).toBe("15px");
+    expect(declared("text-xl", desktopRoot)).toBe("16px");
+    expect(declared("leading", desktopRoot)).toBe("1.45");
+    expect(declared("leading-relaxed", desktopRoot)).toBe("1.55");
+  });
+
+  it("has no 24px or 30px text step for app screens (login keeps the 20px step)", () => {
+    expect(tokensCss).not.toMatch(/--ds-text-3xl/);
+    const sizes = [...desktopRoot.matchAll(/--ds-text-[\w]+:\s*(\d+)px/g)].map((m) => Number(m[1]));
+    expect(Math.max(...sizes)).toBe(20);
+  });
+
+  it("sizes controls for a desktop pointer: buttons 28/32/36, icon buttons 30/32, inputs 32", () => {
+    expect(declared("control-h-sm", desktopRoot)).toBe("28px");
+    expect(declared("control-h-md", desktopRoot)).toBe("32px");
+    expect(declared("control-h-lg", desktopRoot)).toBe("36px");
+    expect(declared("icon-button-sm", desktopRoot)).toBe("30px");
+    expect(declared("icon-button-md", desktopRoot)).toBe("32px");
+    expect(declared("target", desktopRoot)).toBe("32px");
+    expect(declared("nav-row-h", desktopRoot)).toBe("32px");
+    expect(uiCss).toMatch(/\.ui-input\s*{[^}]*min-height:\s*var\(--ds-control-h-md\)/);
+    expect(uiCss).toMatch(/\.ui-button--sm\s*{[^}]*min-height:\s*var\(--ds-control-h-sm\)/);
+    expect(uiCss).toMatch(/\.ui-button--lg\s*{[^}]*min-height:\s*var\(--ds-control-h-lg\)/);
+    expect(uiCss).toMatch(/\.ui-icon-button\s*{[^}]*width:\s*var\(--ds-icon-button-sm\)/);
+  });
+
+  it("raises every control to the 44px target only under a coarse pointer", () => {
+    expect(coarseBlock).toMatch(/^@media \(pointer: coarse\)/);
+    for (const name of ["control-h-sm", "control-h-md", "control-h-lg", "icon-button-sm", "icon-button-md", "nav-row-h", "target"]) {
+      expect(declared(name, coarseBlock), name).toBe("44px");
+    }
+    // Nothing outside that block asks for 44px.
+    expect(desktopRoot).not.toMatch(/44px/);
+  });
+
+  it("fixes the pane geometry: 48px header strip, 220px side panel, 60px rail, 340px list, 380px notes", () => {
+    expect(declared("header-h", desktopRoot)).toBe("48px");
+    expect(declared("sidebar-w", desktopRoot)).toBe("220px");
+    expect(declared("rail-w", desktopRoot)).toBe("60px");
+    expect(declared("list-w", desktopRoot)).toBe("340px");
+    expect(declared("side-w", desktopRoot)).toBe("380px");
+  });
+
+  it("keeps the radius split: 8px controls, 10px cards, 12px popovers and dialogs", () => {
+    expect(declared("radius-sm", desktopRoot)).toBe("8px");
+    expect(declared("radius-card", desktopRoot)).toBe("10px");
+    expect(declared("radius-md", desktopRoot)).toBe("12px");
+    expect(uiCss).toMatch(/\.ui-pane\s*{(?:(?!radius)[^}])*}/);
+  });
+
+  it("documents the same scale in DESIGN.md", () => {
+    expect(designMd).toMatch(/## 5b\. Densidad de escritorio|Densidad de escritorio/);
+    for (const value of ["14px", "28", "32", "36", "340px", "220px", "48px"]) expect(designMd).toContain(value);
   });
 });
 

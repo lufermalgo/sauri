@@ -1,4 +1,5 @@
 export const meeting = {
+  backToList: "Volver a las grabaciones",
   download: "Descargar",
   moreActions: "Más acciones",
   deleteRecording: "Eliminar grabación",
