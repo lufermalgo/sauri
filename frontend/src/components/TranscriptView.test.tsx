@@ -366,7 +366,8 @@ describe("TranscriptView — speaker review", () => {
     expect(within(generic).getByText("H1")).toBeInTheDocument();
     expect(within(generic).getByText(t("speakerReview:pendingState"))).toBeInTheDocument();
     expect(within(suggested).getByText("K")).toBeInTheDocument();
-    expect(within(suggested).getByText(t("speakerReview:suggestedState"))).toBeInTheDocument();
+    // Only a pending speaker shows its state; a suggested one has the accept chip and keeps the state for screen readers.
+    expect(within(suggested).getByText(t("speakerReview:suggestedState"))).toHaveClass("meeting-sr-only");
     for (const label of [t("transcript:numberedSpeaker", { number: "1" }), "Known Speaker"]) {
       expect(screen.getByRole("button", { name: t("speakerReview:listenTo", { label }) })).toBeDefined();
       expect(screen.getByRole("button", { name: t("speakerReview:editName", { label }) })).toBeEnabled();
@@ -478,6 +479,7 @@ describe("TranscriptView — speaker review", () => {
     expect(screen.getByText(t("speakerReview:complete"))).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: t("speakerReview:leaveUnnamed") })).not.toBeInTheDocument();
     expect(screen.getAllByText(t("speakerReview:unnamedState"))).toHaveLength(2);
+    for (const state of screen.getAllByText(t("speakerReview:unnamedState"))) expect(state).toHaveClass("meeting-sr-only");
     // The generic labels stay as the names.
     expect(screen.getByRole("heading", { name: t("transcript:numberedSpeaker", { number: "1" }) })).toBeDefined();
   });
@@ -505,7 +507,8 @@ describe("TranscriptView — speaker review", () => {
     expect(within(panel).getAllByText("Known Speaker", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Ana" })).toBeDefined();
     expect(within(screen.getByRole("heading", { name: "Ana" }).closest("article") as HTMLElement).getByText("A")).toBeInTheDocument();
-    expect(screen.getByText(t("speakerReview:namedState"))).toBeInTheDocument();
+    // The assigned state is no longer a visible label: it stays only for assistive technology.
+    expect(screen.getByText(t("speakerReview:namedState"))).toHaveClass("meeting-sr-only");
   });
 
   it("reuses the idempotency key when the same name is retried after a failure", async () => {
@@ -1233,7 +1236,8 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).not.toHaveClass("ui-icon-button--alert");
     // The panel stays until the user closes it.
     expect(screen.getByRole("complementary", { name: t("speakerReview:heading") })).toBeInTheDocument();
-    expect(within(dialog).getByText(t("speakerReview:namedState"))).toBeVisible();
+    expect(within(dialog).getByText(t("speakerReview:namedState"))).toHaveClass("meeting-sr-only");
+    expect(within(dialog).queryByText(t("speakerReview:pendingState"))).not.toBeInTheDocument();
     expect(within(dialog).getByText("L")).toBeVisible();
     expect(within(dialog).getByText(t("speakerReview:complete"))).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: t("speakerReview:close") }));
