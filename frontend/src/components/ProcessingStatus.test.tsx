@@ -139,6 +139,26 @@ describe("ProcessingStatus — estimate", () => {
     expect(screen.getByText(copy.processing.elapsed("2:05"))).toBeInTheDocument();
   });
 
+  it.each(["waiting", "expected"] as const)(
+    "keeps only the stepper during the summary stage (%s): the progress lives in the summary section", (summary) => {
+      vi.useFakeTimers({ now: NOW });
+      render(<ProcessingStatus {...base({
+        meeting: { meetingId: "m-1", processState: "completed" }, hasTranscript: true, diarizationNotFound: false,
+        hasDiarization: true, summary, audioSeconds: 54 * 60, createdAt: ago(1500),
+      })} />);
+      expect(currentStep()).toBe(copy.processing.steps.summary);
+      expect(document.querySelectorAll(".processing-step--done")).toHaveLength(3);
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain("%");
+      expect(screen.queryByText(copy.processing.elapsed("25:00"))).not.toBeInTheDocument();
+      expect(screen.queryByText(copy.processing.leaveHint)).not.toBeInTheDocument();
+      expect(document.querySelector("[aria-live='polite']")).toBeNull();
+      expect(document.body.textContent).not.toMatch(/Faltan|Falta|Llevamos/);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
   it("switches to overtime wording instead of a frozen percentage when the page opens late", () => {
     vi.useFakeTimers({ now: NOW });
     render(<ProcessingStatus {...base({ audioSeconds: 21 * 60, createdAt: ago(3 * 3600) })} />);
