@@ -8,6 +8,9 @@ import { deleteMeeting, renameMeeting } from "../api";
 import { navigate } from "../router";
 import { meeting as text } from "../copy/meeting";
 import { processing } from "../copy/processing";
+import { speakerReview } from "../copy/speakerReview";
+
+const speakersName = new RegExp(`^${speakerReview.heading}`);
 import type { DetectedStage } from "../processing-estimate";
 
 vi.mock("../api", () => ({ renameMeeting: vi.fn(), deleteMeeting: vi.fn() }));
@@ -264,4 +267,48 @@ it.each([
 it("shows no status badge while the stage is unknown to the page", () => {
   open();
   expect(document.querySelector(".ui-status-badge")).not.toBeInTheDocument();
+});
+
+describe("MeetingHeader speakers entry", () => {
+  function withSpeakers(speakerReview?: { pendingCount: number; hasUnnamed: boolean; onReview: () => void }) {
+    return render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1"
+      manifest={null} turns={[]} speakerReview={speakerReview} />);
+  }
+
+  it("renders no speakers icon without review data", () => {
+    withSpeakers();
+    expect(screen.queryByRole("button", { name: speakersName })).not.toBeInTheDocument();
+  });
+
+  it("puts the icon right before the download button and names the pending count; the dot is decorative", () => {
+    withSpeakers({ pendingCount: 3, hasUnnamed: false, onReview: vi.fn() });
+    const icon = screen.getByRole("button", { name: text.speakersButton(3) });
+    expect(icon).toHaveAccessibleName(text.speakersButton(3));
+    expect(icon).toHaveClass("ui-icon-button", "ui-icon-button--ghost", "ui-icon-button--alert");
+    expect(icon).toHaveAttribute("aria-haspopup", "dialog");
+    expect(icon).toHaveAttribute("aria-expanded", "false");
+    expect(icon.textContent).toBe("");
+    const order = screen.getAllByRole("button").map(button => button.getAttribute("aria-label"));
+    expect(order).toEqual([text.speakersButton(3), text.download, text.moreActions]);
+  });
+
+  it("shows the message and the link in a popover; the link closes it and calls onReview", () => {
+    const onReview = vi.fn();
+    withSpeakers({ pendingCount: 1, hasUnnamed: false, onReview });
+    fireEvent.click(screen.getByRole("button", { name: text.speakersButton(1) }));
+    const popover = screen.getByRole("dialog", { name: text.speakersPanel });
+    expect(popover).toHaveTextContent(text.pendingSpeakers(1));
+    fireEvent.click(within(popover).getByRole("button", { name: text.reviewSpeakers }));
+    expect(onReview).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("has no dot and offers editing when nothing is pending", () => {
+    withSpeakers({ pendingCount: 0, hasUnnamed: true, onReview: vi.fn() });
+    const icon = screen.getByRole("button", { name: text.speakersButton(0) });
+    expect(icon).not.toHaveClass("ui-icon-button--alert");
+    fireEvent.click(icon);
+    expect(screen.getByText(text.speakersSomeUnnamed)).toBeVisible();
+    expect(screen.getByRole("button", { name: text.editSpeakers })).toBeVisible();
+  });
 });

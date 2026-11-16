@@ -546,6 +546,30 @@
   border-radius: var(--ds-radius-pill);
 }
 
+/* Something needs attention: a danger dot at the top-right, ringed in the surface color so it reads in
+   both modes. Shape plus the state in the accessible name, not only color; the dot is decorative. */
+.ui-icon-button--alert {
+  position: relative;
+}
+
+.ui-icon-button--alert::after {
+  content: "";
+  position: absolute;
+  top: var(--ds-space-2);
+  right: var(--ds-space-2);
+  width: var(--ds-space-2);
+  height: var(--ds-space-2);
+  box-sizing: content-box;
+  background: var(--ds-danger);
+  border: 2px solid var(--ds-surface);
+  border-radius: var(--ds-radius-pill);
+  pointer-events: none;
+}
+
+.ui-icon-button--alert:hover::after {
+  border-color: var(--ds-fill-hover);
+}
+
 .ui-popover {
   position: relative;
   display: inline-block;

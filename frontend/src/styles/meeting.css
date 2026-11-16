@@ -7,6 +7,9 @@
 .meeting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-2); min-width: 0; }
 .meeting-heading-row > .meeting-actions { flex: 0 0 auto; }
 .meeting-downloads { min-width: 0; }
+.meeting-speakers .ui-popover-panel { width: 22rem; max-width: calc(100vw - 2 * var(--ds-space-3)); }
+.meeting-speakers-message { margin: 0; color: var(--ds-fg); font-size: var(--ds-text-md); overflow-wrap: anywhere; }
+.meeting-speakers .ui-button { justify-self: start; }
 .meeting-actions > .ui-button { flex: 0 0 auto; width: auto; padding: var(--ds-space-2) var(--ds-space-3); font-size: var(--ds-text-md); }
 .meeting-details { color: var(--ds-fg-muted); font-size: var(--ds-text-md); display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-3); }
 .meeting-actions { max-width: 100%; }
@@ -81,14 +84,11 @@
   .meeting-actions > *, .meeting-downloads { max-width: 100%; }
   /* Actions take their own row, so their menus open from the left edge and stay inside the viewport. */
   .meeting-heading-row > .meeting-actions { flex: 1 0 100%; }
-  .meeting-actions :is(.ui-menu-panel, .ui-tooltip) { left: 0; right: auto; }
+  .meeting-actions :is(.ui-menu-panel, .ui-tooltip, .ui-popover-panel) { left: 0; right: auto; }
 }
 .meeting-processing { display: grid; gap: var(--ds-space-3); padding: var(--ds-space-6); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-xl); background: var(--ds-surface); color: var(--ds-fg-muted); }
 .meeting-processing > p { margin: 0; }
 
-.meeting-pending-speakers { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); background: var(--ds-warning-soft); color: var(--ds-warning-soft-fg); font-size: var(--ds-text-base); }
-.meeting-pending-speakers > span { flex: 1 1 400px; }
-.meeting-pending-speakers .ui-button { color: inherit; text-decoration: underline; font-size: var(--ds-text-md); }
 .meeting-transcript-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--ds-space-3); padding-bottom: var(--ds-space-3); border-bottom: 1px solid var(--ds-fill-strong); }
 .meeting-transcript-heading h2 { margin: 0; }
 .meeting-follow { display: inline-flex; align-items: center; gap: var(--ds-space-2); color: var(--ds-fg-muted); font-size: var(--ds-text-md); }
