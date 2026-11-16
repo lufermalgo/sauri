@@ -61,8 +61,9 @@ hueco más grande hasta caber en `SAURI_ASR_CHUNK_SECONDS=120`, incluido el rell
 se acota al audio y comparte una frontera en el silencio cuando se solapa: no se
 duplica audio ni se corta voz. Los tiempos se trasladan al reloj original; los
 solapamientos del decodificador se recortan, sin extrapolar, y se marcan como reparados.
-Sin voz o sin palabras, la respuesta es `500 no_word_timestamps`; un trozo fallido
-invalida el trabajo completo. `SAURI_ASR_VAD=off` conserva la pasada única anterior.
+Si la detección de voz no encuentra voz, la respuesta es `422 no_speech` (resultado
+esperado, no una falla del motor); si hay voz pero Whisper no devuelve palabras, es
+`500 no_word_timestamps`. Un trozo fallido invalida el trabajo completo. `SAURI_ASR_VAD=off` conserva la pasada única anterior.
 
 Calibrar fuera del sandbox: `SAURI_ASR_VAD_THRESHOLD=0.5` (entre 0 y 1, inclusive),
 `SAURI_ASR_CHUNK_SECONDS=120` y `SAURI_ASR_SUPPRESS_NST=off` (`on` activa `-sns`).

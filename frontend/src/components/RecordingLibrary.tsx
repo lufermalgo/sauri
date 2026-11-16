@@ -5,7 +5,7 @@ import { listMeetings } from "../api";
 import { copy } from "../copy/es";
 import { applyLibraryQuery, type LibraryQuery, type LibrarySort } from "../library-query";
 import { navigate } from "../router";
-import { estimateProgress, secondsSince } from "../processing-estimate";
+import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
 import { Button, ProgressBar, Skeleton, StatusBadge, TextField } from "./ui";
 import "../styles/library.css";
 import "../styles/processing.css";
@@ -124,7 +124,7 @@ function topicLine(meeting: MeetingListItem): string | null {
   const tone = STATE_TONES[meeting.processState];
   // Only the transcription stage is "generating"; a meeting still being recorded has no such text.
   if (meeting.processState === ProcessState.Transcribing) return text.topicGenerating;
-  if (tone === "error") return text.topicFailed;
+  if (tone === "error") return meeting.failureCause === NO_SPEECH_CAUSE ? text.topicNoSpeech : text.topicFailed;
   return null;
 }
 

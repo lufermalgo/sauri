@@ -42,6 +42,10 @@ class NoWordTimestampsError(ValueError):
     """A segment has text but the engine reported no word-level tokens."""
 
 
+class NoSpeechError(ValueError):
+    """The voice-activity step found no speech in the recording."""
+
+
 @dataclass
 class _RawWord:
     text: str

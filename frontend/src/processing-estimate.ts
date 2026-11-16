@@ -1,3 +1,5 @@
+import { FailureCause } from "@sauri/shared-types";
+
 // Honest progress estimate for meeting processing. The backend reports stages, never a percentage,
 // so everything here is an estimate derived from measured speeds and elapsed wall-clock time.
 
@@ -14,6 +16,9 @@ export const ESTIMATE_FACTORS = {
 
 /** The estimate never claims more than this until the work really finishes. */
 export const PROGRESS_CAP = 0.95;
+
+/** Failure cause for a recording without detected speech: an expected outcome, shown as its own message. */
+export const NO_SPEECH_CAUSE = FailureCause.NoSpeechDetected;
 
 export type ActiveStage = "transcription" | "speakers" | "summary";
 export const ACTIVE_STAGES: readonly ActiveStage[] = ["transcription", "speakers", "summary"];
