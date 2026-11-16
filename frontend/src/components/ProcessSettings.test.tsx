@@ -133,20 +133,28 @@ function fakeBackend(setup: Setup = {}) {
 
 let backend: ReturnType<typeof fakeBackend>;
 
+const TRIGGER = new RegExp(text.engineLabel);
+
 async function renderReady(process: EngineProcess, setup: Setup = {}) {
   backend = fakeBackend(setup);
   vi.stubGlobal("fetch", backend.handler);
   render(<ProcessSettings process={process} />);
-  await screen.findByLabelText(text.engineLabel);
+  await screen.findByRole("button", { name: TRIGGER });
 }
 
-const engineSelect = () => screen.getByLabelText(text.engineLabel) as HTMLSelectElement;
+const trigger = () => screen.getByRole("button", { name: TRIGGER });
 const writes = () => backend.calls.filter((call) => call.method === "PUT");
-const choose = (value: string) => fireEvent.change(engineSelect(), { target: { value } });
+const panel = () => screen.getByRole("dialog", { name: text.pickerPanel });
 
-async function pickProvider(value: string) {
-  choose(value);
-  await screen.findByLabelText(text.model);
+function openPicker() {
+  fireEvent.click(trigger());
+  return panel();
+}
+
+/** Opens the picker and clicks the option whose name matches. */
+async function pick(name: RegExp | string) {
+  if (!screen.queryByRole("dialog", { name: text.pickerPanel })) openPicker();
+  fireEvent.click(await screen.findByRole("option", { name }));
 }
 
 beforeEach(() => {
@@ -163,29 +171,44 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const external = (capability: EngineProcess, id = "p1", label = "Work OpenAI", kind: EngineProviderKind = "openai", model = "gpt-a"): EngineProcessState => ({
+  ...localState(capability), provider_id: id, provider_kind: kind, provider_label: label, model, configured: true,
+});
+
 describe("what a process uses today", () => {
   it("says it uses the local engine and that nothing leaves the computer", async () => {
     await renderReady("transcription");
     expect(screen.getByText(text.current(text.localName))).toBeInTheDocument();
     expect(screen.getByText(text.badgeLocal)).toBeInTheDocument();
     expect(screen.getByText(text.staysHere)).toBeInTheDocument();
+    expect(trigger()).toHaveTextContent(text.localRecommended);
   });
 
   it("names the provider, the model and what is sent when the process is external", async () => {
     await renderReady("summary", {
-      processes: [localState("transcription"), localState("diarization"), {
-        ...localState("summary"), provider_id: "p1", provider_kind: "openai", provider_label: "Work OpenAI", model: "gpt-b", configured: true,
-      }],
+      processes: [localState("transcription"), localState("diarization"), external("summary", "p1", "Work OpenAI", "openai", "gpt-b")],
       consents: ["summary:p1"],
     });
     expect(screen.getByText(text.current(text.externalName("Work OpenAI", "gpt-b")))).toBeInTheDocument();
     expect(screen.getByText(text.badgeExternal)).toBeInTheDocument();
     expect(screen.getByText(text.leaves("Work OpenAI", text.sends.summary))).toBeInTheDocument();
+    expect(trigger()).toHaveTextContent("Work OpenAI");
+    expect(trigger()).toHaveTextContent("gpt-b");
   });
 });
 
-describe("engine and model selector", () => {
-  it("lists the local recommendation first, then installed local models, then compatible providers", async () => {
+describe("engine and model picker", () => {
+  it("is a popover button that opens a named dialog with search, and reports its state", async () => {
+    await renderReady("transcription");
+    expect(trigger()).toHaveAttribute("aria-haspopup", "dialog");
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+    openPicker();
+    expect(trigger()).toHaveAttribute("aria-expanded", "true");
+    expect(within(panel()).getByRole("searchbox", { name: text.pickerSearch })).toHaveFocus();
+    expect(within(panel()).getByRole("listbox", { name: text.pickerList })).toBeInTheDocument();
+  });
+
+  it("lists the local recommendation and installed models first, then one group per compatible provider", async () => {
     await renderReady("transcription", {
       models: [
         localModel({ id: "whisper-turbo", process: "transcription", default: true, state: "installed", size: 574_000_000 }),
@@ -194,90 +217,153 @@ describe("engine and model selector", () => {
         localModel({ id: "qwen-4b", process: "summary", engine: "llama.cpp", state: "installed" }),
       ],
     });
-    await screen.findByRole("option", { name: new RegExp("whisper-small") });
-    const labels = within(engineSelect()).getAllByRole("option").map((option) => option.textContent);
-    expect(labels[0]).toBe(text.localRecommended);
-    expect(labels[1]).toContain("whisper-small");
-    // Not installed, other process and the default model (already "Local (recomendado)") are not repeated.
-    expect(labels.join("|")).not.toMatch(/whisper-base|qwen-4b|whisper-turbo/);
-    // Anthropic does not serve transcription, so it is not offered; both OpenAI and Deepgram are.
-    expect(labels.slice(-2)).toEqual(["Work OpenAI", "Deepgram"]);
+    await waitFor(() => expect(backend.calls.some((call) => call.path === "/local/models")).toBe(true));
+    openPicker();
+    await screen.findByRole("option", { name: /whisper-small/ });
+    await screen.findByRole("option", { name: /gpt-a/ });
+    const groups = within(panel()).getAllByRole("group").map((group) => group.getAttribute("aria-labelledby"));
+    expect(groups).toHaveLength(3);
+    const names = within(panel()).getAllByRole("group").map((group) => within(group).queryAllByRole("option").map((item) => item.textContent));
+    expect(names[0][0]).toContain(text.localRecommended);
+    expect(names[0][1]).toContain("whisper-small");
+    expect(names[0][1]).toContain("190 MB");
+    // Not installed, another process and the default model (already «Local (recomendado)») are not repeated.
+    expect(names[0].join("|")).not.toMatch(/whisper-base|qwen-4b|whisper-turbo/);
+    expect(within(panel()).getByText("Work OpenAI")).toBeInTheDocument();
+    expect(within(panel()).getByText("Deepgram")).toBeInTheDocument();
+    // Anthropic does not serve transcription, so it has no group.
+    expect(within(panel()).queryByText(/Anthropic/)).toBeNull();
   });
 
-  it("offers only what /capabilities says each provider can serve, nothing hardcoded", async () => {
+  it("offers only providers that are on, hold a key and serve the process, as /capabilities says", async () => {
     await renderReady("diarization", { providers: [provider("p1", "Work OpenAI", "openai")] });
-    expect(within(engineSelect()).getAllByRole("option")).toHaveLength(1);
+    openPicker();
+    expect(within(panel()).getAllByRole("group")).toHaveLength(1);
     expect(screen.getByText(text.noProviders)).toBeInTheDocument();
-  });
+    cleanup();
 
-  it("does not offer providers that are off or without a key", async () => {
     await renderReady("transcription", {
       providers: [provider("p1", "Off", "openai", { enabled: false, status: "disabled" }), provider("p2", "No key", "deepgram", { status: "no_key", key_set: false })],
     });
-    expect(within(engineSelect()).getAllByRole("option")).toHaveLength(1);
+    openPicker();
+    expect(within(panel()).getAllByRole("group")).toHaveLength(1);
+    expect(backend.calls.some((call) => call.path.startsWith("/providers/"))).toBe(false);
   });
 
-  it("starts a new choice with the provider's suggested model and its cached catalog", async () => {
+  it("asks the providers for their live catalog when it opens, and marks the suggested and the one in use", async () => {
+    await renderReady("transcription", {
+      processes: [external("transcription", "p1", "Work OpenAI", "openai", "gpt-b"), localState("diarization"), localState("summary")],
+      consents: ["transcription:p1"],
+    });
+    expect(backend.calls.some((call) => call.path === "/providers/p1/models")).toBe(false);
+    openPicker();
+    const suggested = await screen.findByRole("option", { name: /gpt-a/ });
+    expect(suggested).toHaveTextContent(text.suggested);
+    expect(suggested).toHaveAttribute("aria-selected", "false");
+    const inUse = screen.getByRole("option", { name: /gpt-b/ });
+    expect(inUse).toHaveTextContent(text.inUse);
+    expect(inUse).toHaveAttribute("aria-selected", "true");
+    expect(backend.calls.filter((call) => call.path === "/providers/p1/models")[0].search).toBe("?capability=transcription");
+  });
+
+  it("filters the options with the search box and says when nothing matches", async () => {
     await renderReady("transcription");
-    await pickProvider("provider:p1");
-    const model = screen.getByLabelText(text.model) as HTMLSelectElement;
-    await waitFor(() => expect(model.value).toBe("gpt-a"));
-    expect(within(model).getByRole("option", { name: text.modelStarter("gpt-a") })).toBeInTheDocument();
-    expect(screen.getByText(text.modelsCached)).toBeInTheDocument();
-    expect(writes()).toHaveLength(0);
+    openPicker();
+    await screen.findByRole("option", { name: /gpt-a/ });
+    const search = within(panel()).getByRole("searchbox");
+    fireEvent.change(search, { target: { value: "gpt-b" } });
+    expect(within(panel()).getAllByRole("option")).toHaveLength(1);
+    fireEvent.change(search, { target: { value: "zzz" } });
+    expect(within(panel()).queryAllByRole("option")).toHaveLength(0);
+    expect(within(panel()).getByText(text.noMatches)).toBeInTheDocument();
   });
 
   it("asks the provider again on «Volver a pedir»", async () => {
     await renderReady("transcription");
-    await pickProvider("provider:p1");
-    fireEvent.click(screen.getByRole("button", { name: text.modelsRefresh }));
+    openPicker();
+    await screen.findByRole("option", { name: /gpt-a/ });
+    fireEvent.click(within(panel()).getByRole("button", { name: text.modelsRefreshLabel("Work OpenAI") }));
     await waitFor(() =>
       expect(backend.calls.some((call) => call.path === "/providers/p1/models" && call.search.includes("refresh=true"))).toBe(true));
   });
 
-  it("lets the person type the model when the list cannot be had, and saves that name", async () => {
+  it("lets the person type the model when the list cannot be had, and asks for consent before saving it", async () => {
     await renderReady("transcription");
-    choose("provider:p2"); // Deepgram: the fake gives no catalog
-    const field = await screen.findByLabelText(text.manualModel);
-    expect(screen.getByText(new RegExp(text.modelsFailed))).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: text.save })).toBeDisabled();
+    openPicker();
+    const field = await screen.findByLabelText(text.manualModel); // Deepgram: the fake gives no catalog
+    expect(within(panel()).getByText(new RegExp(text.modelsFailed))).toBeInTheDocument();
+    expect(within(panel()).getByRole("button", { name: text.manualModelUse })).toBeDisabled();
     fireEvent.change(field, { target: { value: "nova-3" } });
-    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    fireEvent.click(within(panel()).getByRole("button", { name: text.manualModelUse }));
     fireEvent.click(await screen.findByRole("button", { name: noticeText.accept }));
-    await waitFor(() => expect(writes()[0].body).toMatchObject({ provider_id: "p2", model: "nova-3" }));
+    await waitFor(() => expect(writes()[0].body).toMatchObject({ provider_id: "p2", model: "nova-3", notice_version: 1 }));
+  });
+
+  it("moves through the options with the arrow keys and back to the search box", async () => {
+    await renderReady("transcription");
+    openPicker();
+    await screen.findByRole("option", { name: /gpt-a/ });
+    const search = within(panel()).getByRole("searchbox");
+    const options = within(panel()).getAllByRole("option");
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    expect(options[0]).toHaveFocus();
+    fireEvent.keyDown(options[0], { key: "ArrowDown" });
+    expect(options[1]).toHaveFocus();
+    fireEvent.keyDown(options[1], { key: "End" });
+    expect(options[options.length - 1]).toHaveFocus();
+    fireEvent.keyDown(options[options.length - 1], { key: "Home" });
+    expect(options[0]).toHaveFocus();
+    fireEvent.keyDown(options[0], { key: "ArrowUp" });
+    expect(search).toHaveFocus();
+  });
+
+  it("opens with ArrowDown on the trigger and closes with Escape, returning focus to it", async () => {
+    await renderReady("transcription");
+    trigger().focus();
+    fireEvent.keyDown(trigger(), { key: "ArrowDown" });
+    const search = within(panel()).getByRole("searchbox");
+    expect(search).toHaveFocus();
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(trigger()).toHaveFocus();
+    expect(trigger()).toHaveAttribute("aria-expanded", "false");
+    expect(writes()).toHaveLength(0);
+  });
+
+  it("closes on a click outside without choosing anything", async () => {
+    await renderReady("transcription");
+    openPicker();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(writes()).toHaveLength(0);
   });
 });
 
 describe("privacy notice before an external provider", () => {
-  it("shows the notice from the API and saves nothing until it is accepted", async () => {
+  it("shows the notice from the API after choosing a model and saves nothing until it is accepted", async () => {
     await renderReady("transcription");
-    await pickProvider("provider:p1");
-    await waitFor(() => expect((screen.getByLabelText(text.model) as HTMLSelectElement).value).toBe("gpt-a"));
-    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    await pick(/gpt-a/);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("heading", { name: "Notice title" })).toBeInTheDocument();
     expect(within(dialog).getByText("Usage is billed to your account.")).toBeInTheDocument();
     expect(within(dialog).getByText(noticeText.address("https://api.openai.example/v1"))).toBeInTheDocument();
     expect(writes()).toHaveLength(0);
+    expect(screen.getByText(text.current(text.localName))).toBeInTheDocument();
   });
 
   it("saves nothing when the notice is cancelled, and today's engine does not change", async () => {
     await renderReady("transcription");
-    await pickProvider("provider:p1");
-    await waitFor(() => expect((screen.getByLabelText(text.model) as HTMLSelectElement).value).toBe("gpt-a"));
-    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    await pick(/gpt-a/);
     fireEvent.click(await screen.findByRole("button", { name: noticeText.cancel }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(writes()).toHaveLength(0);
     expect(screen.getByText(text.current(text.localName))).toBeInTheDocument();
-    expect(screen.getByText(text.unsaved)).toBeInTheDocument();
+    expect(trigger()).toHaveTextContent(text.localRecommended);
   });
 
   it("saves with the notice version once it is accepted", async () => {
     await renderReady("transcription");
-    await pickProvider("provider:p1");
-    await waitFor(() => expect((screen.getByLabelText(text.model) as HTMLSelectElement).value).toBe("gpt-a"));
-    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    await pick(/gpt-a/);
     fireEvent.click(await screen.findByRole("button", { name: noticeText.accept }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(writes()).toHaveLength(1);
@@ -289,17 +375,24 @@ describe("privacy notice before an external provider", () => {
     expect(screen.getByText(text.badgeExternal)).toBeInTheDocument();
   });
 
-  it("does not repeat the notice when only the model of the same provider changes", async () => {
+  it("asks again for a model of a different provider than the one in use", async () => {
     await renderReady("transcription", {
-      processes: [{
-        ...localState("transcription"), provider_id: "p1", provider_kind: "openai", provider_label: "Work OpenAI", model: "gpt-a", configured: true,
-      }, localState("diarization"), localState("summary")],
+      processes: [external("transcription"), localState("diarization"), localState("summary")],
       consents: ["transcription:p1"],
     });
-    expect(engineSelect().value).toBe("provider:p1");
-    const model = await screen.findByLabelText(text.model);
-    fireEvent.change(model, { target: { value: "gpt-b" } });
-    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    openPicker();
+    fireEvent.change(await screen.findByLabelText(text.manualModel), { target: { value: "nova-3" } });
+    fireEvent.click(within(panel()).getByRole("button", { name: text.manualModelUse }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(writes()).toHaveLength(0);
+  });
+
+  it("does not repeat the notice when only the model of the same provider changes, and saves at once", async () => {
+    await renderReady("transcription", {
+      processes: [external("transcription"), localState("diarization"), localState("summary")],
+      consents: ["transcription:p1"],
+    });
+    await pick(/gpt-b/);
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0].body).toEqual({ provider_id: "p1", model: "gpt-b", local_fallback: true });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -309,13 +402,10 @@ describe("privacy notice before an external provider", () => {
 
   it("shows the notice if the API says consent is missing for a same-provider save", async () => {
     await renderReady("transcription", {
-      processes: [{
-        ...localState("transcription"), provider_id: "p1", provider_kind: "openai", provider_label: "Work OpenAI", model: "gpt-a", configured: true,
-      }, localState("diarization"), localState("summary")],
+      processes: [external("transcription"), localState("diarization"), localState("summary")],
       consents: [], // the stored consent is gone (for example the notice version moved on)
     });
-    fireEvent.change(await screen.findByLabelText(text.model), { target: { value: "gpt-b" } });
-    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    await pick(/gpt-b/);
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(writes()).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: noticeText.accept }));
@@ -323,14 +413,13 @@ describe("privacy notice before an external provider", () => {
     expect(writes()[1].body).toMatchObject({ notice_version: 1, model: "gpt-b" });
   });
 
-  it("goes back to the local engine at once, without a notice or a confirmation", async () => {
+  it("goes back to the local engine at once from the footer, without a notice or a confirmation", async () => {
     await renderReady("transcription", {
-      processes: [{
-        ...localState("transcription"), provider_id: "p1", provider_kind: "openai", provider_label: "Work OpenAI", model: "gpt-a", configured: true,
-      }, localState("diarization"), localState("summary")],
+      processes: [external("transcription"), localState("diarization"), localState("summary")],
       consents: ["transcription:p1"],
     });
-    choose("local:default");
+    openPicker();
+    fireEvent.click(within(panel()).getByRole("button", { name: text.backToLocal }));
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0].body).toEqual({ provider_id: null, model: "local:default", local_fallback: true });
     expect(screen.queryByRole("dialog")).toBeNull();
@@ -339,12 +428,29 @@ describe("privacy notice before an external provider", () => {
     expect(screen.getByText(text.staysHere)).toBeInTheDocument();
   });
 
+  it("goes back to local at once when «Local (recomendado)» is chosen in the list", async () => {
+    await renderReady("transcription", {
+      processes: [external("transcription"), localState("diarization"), localState("summary")],
+      consents: ["transcription:p1"],
+    });
+    await pick(new RegExp(text.localRecommended.replace(/[()]/g, "\\$&")));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0].body).toMatchObject({ provider_id: null, model: "local:default" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("disables «Volver al local» while the local default is already in use", async () => {
+    await renderReady("transcription");
+    openPicker();
+    expect(within(panel()).getByRole("button", { name: text.backToLocal })).toBeDisabled();
+  });
+
   it("saves an installed local model as local:<id>", async () => {
     await renderReady("transcription", {
       models: [localModel({ id: "whisper-small", process: "transcription", state: "installed" })],
     });
-    await screen.findByRole("option", { name: new RegExp("whisper-small") });
-    choose("local:whisper-small");
+    await waitFor(() => expect(backend.calls.some((call) => call.path === "/local/models")).toBe(true));
+    await pick(/whisper-small/);
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0].body).toMatchObject({ provider_id: null, model: "local:whisper-small" });
     expect(await screen.findByText(text.current(text.localModelName("whisper-small")))).toBeInTheDocument();
@@ -353,9 +459,7 @@ describe("privacy notice before an external provider", () => {
   it("reports a refused save inside the notice and keeps today's engine", async () => {
     await renderReady("transcription");
     backend.failing.add("PUT /processes/transcription");
-    await pickProvider("provider:p1");
-    await waitFor(() => expect((screen.getByLabelText(text.model) as HTMLSelectElement).value).toBe("gpt-a"));
-    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    await pick(/gpt-a/);
     fireEvent.click(await screen.findByRole("button", { name: noticeText.accept }));
     expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent(copy.engines.genericError);
     expect(screen.getByText(text.current(text.localName))).toBeInTheDocument();
@@ -363,16 +467,12 @@ describe("privacy notice before an external provider", () => {
 });
 
 describe("fallback switch and warnings", () => {
-  const external = (capability: EngineProcess, id = "p1", label = "Work OpenAI", kind: EngineProviderKind = "openai"): EngineProcessState => ({
-    ...localState(capability), provider_id: id, provider_kind: kind, provider_label: label, model: "m", configured: true,
-  });
-
-  it("appears only for an external route and saves at once when nothing else is pending", async () => {
+  it("appears only for an external route and saves at once", async () => {
     await renderReady("transcription");
     expect(screen.queryByRole("switch")).toBeNull();
     cleanup();
     await renderReady("transcription", {
-      processes: [external("transcription"), localState("diarization"), localState("summary")],
+      processes: [external("transcription", "p1", "Work OpenAI", "openai", "m"), localState("diarization"), localState("summary")],
       consents: ["transcription:p1"],
     });
     const toggle = screen.getByRole("switch", { name: text.fallback });
@@ -383,24 +483,39 @@ describe("fallback switch and warnings", () => {
     await waitFor(() => expect(screen.getByRole("switch", { name: text.fallback })).not.toBeChecked());
   });
 
-  it("warns about the double send when speakers already use the same provider", async () => {
+  it("warns about the double send, in the notice, when speakers already use the same provider", async () => {
     await renderReady("transcription", {
-      processes: [localState("transcription"), external("diarization", "p2", "Deepgram", "deepgram"), localState("summary")],
+      processes: [localState("transcription"), external("diarization", "p2", "Deepgram", "deepgram", "nova-3"), localState("summary")],
       consents: ["diarization:p2"],
     });
-    expect(screen.queryByText(copy.engines.process.doubleSend("Deepgram", text.otherProcess.diarization))).toBeNull();
-    choose("provider:p2");
-    expect(await screen.findByText(text.doubleSend("Deepgram", text.otherProcess.diarization))).toBeInTheDocument();
+    expect(screen.queryByText(text.doubleSend("Deepgram", text.otherProcess.diarization))).toBeNull();
+    openPicker();
+    fireEvent.change(await screen.findByLabelText(text.manualModel), { target: { value: "nova-3" } });
+    fireEvent.click(within(panel()).getByRole("button", { name: text.manualModelUse }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(text.doubleSend("Deepgram", text.otherProcess.diarization))).toBeInTheDocument();
+    expect(writes()).toHaveLength(0);
   });
 
-  it("marks external speakers as quality not validated", async () => {
-    await renderReady("diarization", {
-      providers: [provider("p2", "Deepgram", "deepgram")],
-      processes: [localState("transcription"), localState("diarization"), localState("summary")],
+  it("keeps showing the double send after it is saved", async () => {
+    await renderReady("transcription", {
+      processes: [external("transcription", "p2", "Deepgram", "deepgram", "nova-3"), external("diarization", "p2", "Deepgram", "deepgram", "nova-3"), localState("summary")],
+      consents: ["diarization:p2", "transcription:p2"],
     });
+    expect(screen.getByText(text.doubleSend("Deepgram", text.otherProcess.diarization))).toBeInTheDocument();
+  });
+
+  it("marks external speakers as quality not validated, in the notice and once saved", async () => {
+    await renderReady("diarization", { providers: [provider("p2", "Deepgram", "deepgram")] });
     expect(screen.queryByText(text.speakersUnvalidated)).toBeNull();
-    choose("provider:p2");
-    expect(await screen.findByText(text.speakersUnvalidated)).toBeInTheDocument();
+    openPicker();
+    fireEvent.change(await screen.findByLabelText(text.manualModel), { target: { value: "nova-3" } });
+    fireEvent.click(within(panel()).getByRole("button", { name: text.manualModelUse }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(text.speakersUnvalidated)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: noticeText.accept }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText(text.speakersUnvalidated)).toBeInTheDocument();
   });
 });
 
@@ -413,6 +528,6 @@ describe("loading and failure", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(text.loadError);
     backend.failing.clear();
     fireEvent.click(screen.getByRole("button", { name: text.retry }));
-    expect(await screen.findByLabelText(text.engineLabel)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: TRIGGER })).toBeInTheDocument();
   });
 });

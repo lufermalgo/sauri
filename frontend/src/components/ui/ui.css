@@ -79,6 +79,16 @@
   border-radius: var(--ds-radius-card);
 }
 
+.ui-card--dashed {
+  border-style: dashed;
+  border-color: var(--ds-border-strong);
+}
+
+.ui-card--dimmed {
+  background: var(--ds-bg);
+  color: var(--ds-fg-muted);
+}
+
 .ui-card:is([tabindex="0"], [role="button"], [role="link"]) {
   cursor: pointer;
   transition: border-color var(--ds-duration) var(--ds-ease), background-color var(--ds-duration) var(--ds-ease);
@@ -209,6 +219,18 @@ textarea.ui-input {
 .ui-status-badge--error {
   background: var(--ds-danger-soft);
   color: var(--ds-danger-soft-fg);
+}
+
+.ui-status-badge--dot {
+  gap: 6px;
+}
+
+.ui-status-badge-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  border-radius: var(--ds-radius-pill);
 }
 
 .ui-dialog {

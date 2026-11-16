@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LucideIcon } from "lucide-react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
-import type { EngineKindInfo, EngineProvider } from "@sauri/shared-types";
-import { deleteEngineProvider, getEngineCapabilities, listEngineProviders } from "../../api";
+import type { EngineKindInfo, EngineProvider, EngineProviderKind } from "@sauri/shared-types";
+import {
+  deleteEngineProvider,
+  getEngineCapabilities,
+  listEngineProviders,
+  updateEngineProvider,
+} from "../../api";
 import { copy } from "../../copy/es";
-import { Button, Card, ConfirmDialog, Icon, Skeleton, StatusBadge, useTooltip } from "../ui";
+import { Button, ConfirmDialog, Skeleton } from "../ui";
 import { processList } from "./engineLabels";
+import { ModelsCatalog } from "./ModelsCatalog";
 import { ProviderDialog, describeEngineError } from "./ProviderDialog";
+import { AddProviderCard, ProviderCard, UnconfiguredCard } from "./ProviderCard";
+import { useModelCatalogs } from "./useModelCatalogs";
 import "../../styles/engines.css";
 
 type Load =
@@ -14,46 +20,25 @@ type Load =
   | { status: "error" }
   | { status: "ready"; providers: EngineProvider[]; kinds: EngineKindInfo[] };
 
-type OpenDialog = { kind: "provider"; provider: EngineProvider | null } | null;
+type OpenDialog = { provider: EngineProvider | null; kind?: EngineProviderKind } | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
 
 const text = copy.engines;
 
-const BADGE_TONE = {
-  active: "success",
-  no_key: "progress",
-  disabled: "neutral",
-  unconfigured: "neutral",
-} as const;
+/** Cards are listed by state: working ones first, then incomplete, then off. */
+const STATE_ORDER: Record<EngineProvider["status"], number> = { active: 0, no_key: 1, disabled: 2, unconfigured: 3 };
 
-function IconAction({ icon, label, onClick, disabled }: { icon: LucideIcon; label: string; onClick: () => void; disabled?: boolean }) {
-  const tip = useTooltip(label);
-  return (
-    <span className="engines-icon-action">
-      <button
-        type="button"
-        className="ui-icon-button ui-icon-button--quiet"
-        aria-label={label}
-        disabled={disabled}
-        {...tip.triggerProps}
-        onClick={onClick}
-      >
-        <Icon icon={icon} />
-      </button>
-      {tip.tooltip}
-    </span>
-  );
-}
-
-/** Providers the person linked, as cards: state in words, the processes each one serves, and the
- * actions to manage, edit and delete it. Keys never reach this screen, only their last four characters. */
+/** Everything Sauri can link, preloaded: the providers the person set up (on, off), one dashed card per
+ * kind not set up yet, and a last tile to add any provider. Keys never reach this screen, only their last
+ * four characters. Below, the models each active provider offers. */
 export function EnginesSettings() {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [deleting, setDeleting] = useState<EngineProvider | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [turningOff, setTurningOff] = useState<EngineProvider | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
-  const toolbar = useRef<HTMLDivElement>(null);
+  const grid = useRef<HTMLUListElement>(null);
 
   const fetchAll = useCallback(() => {
     let current = true;
@@ -69,6 +54,9 @@ export function EnginesSettings() {
 
   useEffect(() => fetchAll(), [fetchAll]);
 
+  const ready = load.status === "ready";
+  const catalogs = useModelCatalogs(ready ? load.providers : [], ready ? load.kinds : [], ready);
+
   /** Replaces a provider with the version the API returned, or appends a new one. */
   function providerChanged(changed: EngineProvider) {
     setLoad((previous) => {
@@ -83,9 +71,37 @@ export function EnginesSettings() {
     });
   }
 
+  async function setEnabled(provider: EngineProvider, enabled: boolean) {
+    setTurningOff(null);
+    setPending(provider.id);
+    setNotice(null);
+    try {
+      const { reverted_processes: reverted, ...updated } = await updateEngineProvider(provider.id, { enabled });
+      providerChanged(updated);
+      setNotice({
+        kind: "success",
+        text: enabled
+          ? text.turnOff.turnedOn(provider.label)
+          : reverted.length > 0
+            ? text.turnOff.doneReverted(provider.label, processList(reverted))
+            : text.turnOff.done(provider.label),
+      });
+    } catch (error) {
+      setNotice({ kind: "error", text: `${text.turnOff.failed} ${describeEngineError(error)}` });
+    } finally {
+      setPending(null);
+    }
+  }
+
+  /** Turning on sends nothing, so it is immediate; turning off sends processes back to local, so it asks. */
+  function toggle(provider: EngineProvider, enabled: boolean) {
+    if (!enabled && provider.used_by.length > 0) setTurningOff(provider);
+    else void setEnabled(provider, enabled);
+  }
+
   async function confirmDelete(provider: EngineProvider) {
     setDeleting(null);
-    setPendingDelete(provider.id);
+    setPending(provider.id);
     setNotice(null);
     try {
       const { reverted_processes: reverted } = await deleteEngineProvider(provider.id);
@@ -102,77 +118,106 @@ export function EnginesSettings() {
     } catch (error) {
       setNotice({ kind: "error", text: `${text.remove.failed} ${describeEngineError(error)}` });
     } finally {
-      setPendingDelete(null);
+      setPending(null);
       // The card that held focus is gone or still there; either way focus returns to a stable control.
-      toolbar.current?.querySelector("button")?.focus();
+      grid.current?.querySelector<HTMLElement>(".engines-add-card")?.focus();
     }
   }
 
-  const ready = load.status === "ready";
+  const providers = ready ? [...load.providers].sort((a, b) => STATE_ORDER[a.status] - STATE_ORDER[b.status]) : [];
+  const notSetUp = ready
+    ? load.kinds.filter((info) => info.linkable && !load.providers.some((provider) => provider.kind === info.kind))
+    : [];
 
   return (
     <div className="settings-stack engines">
-      <p className="settings-help">{text.help}</p>
-      <div ref={toolbar} className="settings-toolbar">
-        <Button
-          variant="primary"
-          disabled={!ready}
-          onClick={() => setDialog({ kind: "provider", provider: null })}
-        >
-          <Icon icon={Plus} />
-          {text.add}
-        </Button>
+      <div className="engines-intro">
+        <p className="settings-help">{text.subtitle}</p>
+        <p className="settings-help">{text.help}</p>
       </div>
-      <div role="status" className="settings-notice">{notice?.kind === "success" ? notice.text : null}</div>
-      {notice?.kind === "error" && <p role="alert" className="ui-field-error settings-notice">{notice.text}</p>}
 
-      {load.status === "loading" && (
-        <div role="status" className="settings-loading">
-          <p className="settings-help">{text.loading}</p>
-          <div className="engines-grid" aria-hidden="true">
-            <Skeleton width="100%" height="9rem" radius="md" />
-            <Skeleton width="100%" height="9rem" radius="md" />
+      <section className="engines-section" aria-labelledby="engines-providers-title">
+        <div className="engines-section-head">
+          <h3 id="engines-providers-title" className="engines-section-title">{text.providersTitle}</h3>
+          <p className="settings-help">{text.providersHelp}</p>
+        </div>
+        <div role="status" className="settings-notice">{notice?.kind === "success" ? notice.text : null}</div>
+        {notice?.kind === "error" && <p role="alert" className="ui-field-error settings-notice">{notice.text}</p>}
+
+        {load.status === "loading" && (
+          <div role="status" className="settings-loading">
+            <p className="settings-help">{text.loading}</p>
+            <div className="engines-grid" aria-hidden="true">
+              <Skeleton width="100%" height="9rem" radius="md" />
+              <Skeleton width="100%" height="9rem" radius="md" />
+            </div>
           </div>
-        </div>
-      )}
-      {load.status === "error" && (
-        <div className="settings-load-error">
-          <p role="alert" className="ui-field-error">{text.loadError}</p>
-          <Button variant="secondary" onClick={fetchAll}>{text.retry}</Button>
-        </div>
-      )}
-      {load.status === "ready" && load.providers.length === 0 && (
-        <div className="engines-empty">
-          <h3 className="engines-empty-title">{text.emptyTitle}</h3>
-          <p className="settings-help">{text.emptyBody}</p>
-          <Button variant="secondary" onClick={() => setDialog({ kind: "provider", provider: null })}>
-            <Icon icon={Plus} />
-            {text.add}
-          </Button>
-        </div>
-      )}
-      {load.status === "ready" && load.providers.length > 0 && (
-        <ul className="engines-grid" aria-label={text.listLabel}>
-          {load.providers.map((provider) => (
-            <li key={provider.id} className="engines-grid-item">
-              <ProviderCard
-                provider={provider}
-                kinds={load.kinds}
-                busy={pendingDelete === provider.id}
-                onManage={() => setDialog({ kind: "provider", provider })}
-                onDelete={() => setDeleting(provider)}
-              />
+        )}
+        {load.status === "error" && (
+          <div className="settings-load-error">
+            <p role="alert" className="ui-field-error">{text.loadError}</p>
+            <Button variant="secondary" onClick={fetchAll}>{text.retry}</Button>
+          </div>
+        )}
+        {load.status === "ready" && (
+          <ul ref={grid} className="engines-grid" aria-label={text.listLabel}>
+            {providers.map((provider) => (
+              <li key={provider.id} className="engines-grid-item">
+                <ProviderCard
+                  provider={provider}
+                  kinds={load.kinds}
+                  catalog={catalogs.entries[provider.id]}
+                  busy={pending === provider.id}
+                  onToggle={(enabled) => toggle(provider, enabled)}
+                  onEdit={() => setDialog({ provider })}
+                  onDelete={() => setDeleting(provider)}
+                />
+              </li>
+            ))}
+            {notSetUp.map((info) => (
+              <li key={info.kind} className="engines-grid-item">
+                <UnconfiguredCard info={info} onConfigure={() => setDialog({ provider: null, kind: info.kind })} />
+              </li>
+            ))}
+            <li className="engines-grid-item">
+              <AddProviderCard onAdd={() => setDialog({ provider: null })} />
             </li>
-          ))}
-        </ul>
+          </ul>
+        )}
+      </section>
+
+      {load.status === "ready" && (
+        <ModelsCatalog
+          providers={catalogs.targets}
+          entries={catalogs.entries}
+          refreshing={catalogs.refreshing}
+          onRefresh={() => void catalogs.refreshAll()}
+        />
       )}
 
       {dialog && load.status === "ready" && (
         <ProviderDialog
           provider={dialog.provider}
+          initialKind={dialog.kind}
           kinds={load.kinds}
+          linked={load.providers}
           onChanged={providerChanged}
           onClose={() => setDialog(null)}
+        />
+      )}
+      {turningOff && (
+        <ConfirmDialog
+          title={text.turnOff.title}
+          body={
+            <>
+              <p>{text.turnOff.body(turningOff.label)}</p>
+              <p>{text.turnOff.reverts(processList(turningOff.used_by))}</p>
+            </>
+          }
+          confirmLabel={text.turnOff.confirm}
+          cancelLabel={text.turnOff.cancel}
+          onConfirm={() => void setEnabled(turningOff, false)}
+          onCancel={() => setTurningOff(null)}
         />
       )}
       {deleting && (
@@ -191,49 +236,5 @@ export function EnginesSettings() {
         />
       )}
     </div>
-  );
-}
-
-interface ProviderCardProps {
-  provider: EngineProvider;
-  kinds: EngineKindInfo[];
-  busy: boolean;
-  onManage: () => void;
-  onDelete: () => void;
-}
-
-function ProviderCard({ provider, kinds, busy, onManage, onDelete }: ProviderCardProps) {
-  const titleId = `engines-card-${provider.id}`;
-  const info = kinds.find((candidate) => candidate.kind === provider.kind);
-  const serves = info?.capabilities.map((entry) => entry.capability) ?? [];
-  const keyLine = provider.key_set
-    ? text.card.keySaved(provider.key_hint)
-    : info?.key_required === false
-      ? text.card.keyOptional
-      : text.card.keyMissing;
-
-  return (
-    <Card className="engines-card" aria-labelledby={titleId}>
-      <div className="engines-card-head">
-        <h3 id={titleId} className="engines-card-title">{provider.label}</h3>
-        <StatusBadge tone={BADGE_TONE[provider.status]}>{text.statuses[provider.status]}</StatusBadge>
-      </div>
-      <p className="engines-card-kind">{text.kinds[provider.kind].label}</p>
-      <ul className="engines-card-facts">
-        <li>{provider.used_by.length > 0 ? text.card.usedBy(processList(provider.used_by)) : text.card.unused}</li>
-        <li>{serves.length > 0 ? text.card.serves(processList(serves)) : text.card.servesNone}</li>
-        <li>{keyLine}</li>
-        {provider.base_url && <li className="engines-card-url">{provider.base_url}</li>}
-      </ul>
-      <div className="engines-card-actions">
-        <Button variant="secondary" size="sm" aria-label={text.card.manageLabel(provider.label)} disabled={busy} onClick={onManage}>
-          {text.card.manage}
-        </Button>
-        <span className="engines-card-icons">
-          <IconAction icon={Pencil} label={text.card.edit(provider.label)} disabled={busy} onClick={onManage} />
-          <IconAction icon={Trash2} label={text.card.remove(provider.label)} disabled={busy} onClick={onDelete} />
-        </span>
-      </div>
-    </Card>
   );
 }
