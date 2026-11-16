@@ -1,5 +1,6 @@
 """Atomic, owner-scoped acceptance of an immutable summary request."""
 
+from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException
@@ -27,6 +28,11 @@ async def accept_request(
     transcript = await repository.transcript_for_meeting(session, meeting_id)
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    if processing_revision is None:
+        # Repeated clicks, a second tab or a retried request converge on the work in flight.
+        active = await repository.active_request(session, transcript.id)
+        if active is not None:
+            return active
     template = await repository.selected_template(session, owner_id, template_id)
     if template is None:
         if template_id is None:
@@ -37,7 +43,7 @@ async def accept_request(
         template_id=template.id, template_version=template.version,
         instructions_snapshot=template.instructions,
         generation=await repository.next_generation(session, transcript.id), status="pending",
-        delivered_at=None,
+        delivered_at=None, requested_at=datetime.now(UTC),
     )
     session.add(row)
     await session.flush()
@@ -57,6 +63,7 @@ async def record_failed_request(
     transcript = await repository.transcript_for_meeting(session, meeting_id)
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    now = datetime.now(UTC)
     # Read only the configured owned snapshot, without repeating default seeding
     # or changing the owner's preference after acceptance has already failed.
     template = await session.scalar(select(SummaryTemplate).join(
@@ -69,6 +76,7 @@ async def record_failed_request(
         instructions_snapshot=template.instructions if template else None,
         generation=await repository.next_generation(session, transcript.id), status="failed",
         failure_cause="request_failed" if template else "no_default_template", delivered_at=None,
+        requested_at=now, finished_at=now,
     )
     session.add(row)
     await session.flush()

@@ -10,7 +10,12 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.infra.engine_slot import ENGINE_CALL_TIMEOUT_S, SLOT_WAIT_TIMEOUT_S, EngineSlotTimeout, engine_slot
+from app.infra.engine_slot import (
+    SLOT_WAIT_TIMEOUT_S,
+    SUMMARY_ENGINE_CALL_TIMEOUT_S,
+    EngineSlotTimeout,
+    engine_slot,
+)
 from app.infra.models import Meeting, MeetingSummary, ProcessedSummaryEvent, SummaryRequestOutbox, Transcript
 from app.infra.queue import JobQueue
 from app.summaries.engine import ContextExceededError, SummaryProviderError
@@ -19,6 +24,9 @@ from app.summaries.passages import SummaryInvalidError, encode_key_points
 from app.summaries.repository import locked_request, transcript_passages
 
 logger = logging.getLogger(__name__)
+
+# Hard limit for one engine call; module-level so tests can shrink it.
+ENGINE_CALL_TIMEOUT_S = SUMMARY_ENGINE_CALL_TIMEOUT_S
 
 
 def _event_id(message: dict[str, Any]) -> str | None:
@@ -56,6 +64,7 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
             request.failure_cause = cause
             if terminal:
                 request.status = "failed"
+                request.finished_at = datetime.now(UTC)
 
     async def consume(message: dict[str, Any]) -> None:
         meeting_id = message.get("meeting_id")
@@ -85,6 +94,8 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
             if instructions is None:
                 raise ValueError("Accepted summary request has no instruction snapshot")
             request.status = "running"
+            if request.started_at is None:  # Redeliveries and retries keep the first attempt's time.
+                request.started_at = datetime.now(UTC)
 
         # Only provider availability/timeouts are retryable generation failures.
         # Acknowledge deterministic failures after persisting a terminal outcome.
@@ -134,6 +145,7 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
             )
             request.status = "succeeded"
             request.failure_cause = None
+            request.finished_at = now
 
     async def terminal(message: dict[str, Any]) -> None:
         event_id = _event_id(message)
@@ -149,6 +161,7 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
             if processed is None and request.status not in ("succeeded", "failed"):
                 request.status = "failed"
                 request.failure_cause = "llm_unavailable"
+                request.finished_at = datetime.now(UTC)
 
     await queue.subscribe("summarize", consume)
     await queue.subscribe("summarize.failed", terminal)

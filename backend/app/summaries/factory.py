@@ -11,6 +11,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from app.infra.engine_slot import SUMMARY_ENGINE_CALL_TIMEOUT_S
 from app.summaries.engine import OpenAICompatibleSummarizationEngine
 
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]*\Z")
@@ -35,11 +36,19 @@ def create_summarization_engine() -> OpenAICompatibleSummarizationEngine:
     if _MODEL.fullmatch(model) is None:
         raise ValueError("SUMMARIZATION_MODEL must name a model")
     try:
-        timeout_seconds = float(os.getenv("SUMMARIZATION_TIMEOUT_SECONDS", "900"))
+        timeout_seconds = float(os.getenv("SUMMARIZATION_TIMEOUT_SECONDS", "1500"))
     except ValueError:
         raise ValueError("SUMMARIZATION_TIMEOUT_SECONDS must be finite and positive") from None
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("SUMMARIZATION_TIMEOUT_SECONDS must be finite and positive")
+    # The client waits for the gateway's cold start (120 s) plus 5 s for the HTTP response.
+    client_timeout_seconds = timeout_seconds + 120.0 + 5.0
+    if client_timeout_seconds > SUMMARY_ENGINE_CALL_TIMEOUT_S:
+        # Otherwise the worker would cut the call short, or the broker would drop the delivery.
+        raise ValueError(
+            "SUMMARIZATION_TIMEOUT_SECONDS must be at most "
+            f"{SUMMARY_ENGINE_CALL_TIMEOUT_S - 125.0:g} to finish within the broker consumer timeout"
+        )
     local_token_file = Path(os.getenv("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config/sauri/engine_token"))
     hostname = (parsed.hostname or "").rstrip(".").lower()
     is_local = hostname in ("localhost", "host.docker.internal")
@@ -65,8 +74,7 @@ def create_summarization_engine() -> OpenAICompatibleSummarizationEngine:
             local_token = ""
         if local_token and secrets.compare_digest(api_key.encode(), local_token.encode()):
             raise ValueError("The local engine token cannot be used for an external summary provider")
-    # The environment variable is the gateway's inference budget. The client also
-    # waits for its cold start (120 s), plus 5 s for the HTTP response to arrive.
+    # The environment variable is the gateway's inference budget; the client adds its cold start.
     return OpenAICompatibleSummarizationEngine(
-        url, model, api_key=api_key, timeout_seconds=timeout_seconds + 120.0 + 5.0,
+        url, model, api_key=api_key, timeout_seconds=client_timeout_seconds,
     )

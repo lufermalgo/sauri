@@ -20,6 +20,8 @@ from app.infra.models import (
 from app.summaries.passages import Passage, Turn, build_passages
 from app.templates.seed import ensure_default
 
+ACTIVE_STATUSES = ("pending", "running")
+
 
 async def current_summary_for_owner(
     session: AsyncSession,
@@ -87,6 +89,22 @@ async def next_generation(session: AsyncSession, transcript_id: str) -> int:
         )
     )
     return (latest or 0) + 1
+
+
+async def active_request(session: AsyncSession, transcript_id: str) -> SummaryRequestOutbox | None:
+    """The newest request still waiting for or undergoing generation, if any."""
+    return cast(
+        SummaryRequestOutbox | None,
+        await session.scalar(
+            select(SummaryRequestOutbox)
+            .where(
+                SummaryRequestOutbox.transcript_id == transcript_id,
+                SummaryRequestOutbox.status.in_(ACTIVE_STATUSES),
+            )
+            .order_by(SummaryRequestOutbox.generation.desc())
+            .limit(1)
+        ),
+    )
 
 
 async def request_for_owner(

@@ -317,6 +317,8 @@ interface SummaryRequestStatusResponse {
   generation: number;
   status: SummaryRequestStatus["status"];
   failure_cause?: string | null;
+  requested_at?: string | null;
+  started_at?: string | null;
 }
 
 function mapSummaryRequest(request: SummaryRequestStatusResponse): SummaryRequestStatus {
@@ -325,6 +327,8 @@ function mapSummaryRequest(request: SummaryRequestStatusResponse): SummaryReques
     generation: request.generation,
     status: request.status,
     failureCause: request.failure_cause,
+    requestedAt: request.requested_at,
+    startedAt: request.started_at,
   };
 }
 

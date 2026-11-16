@@ -29,6 +29,7 @@ type StatusContract = Assert<Equal<SummaryRequestStatus, {
   eventId: string; generation: number;
   status: "pending" | "running" | "succeeded" | "failed";
   failureCause?: string | null;
+  requestedAt?: string | null; startedAt?: string | null;
 }>>;
 type TemplateContract = Assert<Equal<SummaryTemplate, {
   id: string; name: string; ownerId: string; categoryId?: string;
