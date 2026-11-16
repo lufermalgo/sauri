@@ -161,6 +161,8 @@ class ModelOut(BaseModel):
 
 class ModelsOut(BaseModel):
     models: list[ModelOut]
+    # The model a new choice starts with ("Auto"), always one of `models`.
+    starter: str | None
     from_cache: bool
     fetched_at: str | None
     # True when the list is missing or failed, so the portal lets the user type the model name.

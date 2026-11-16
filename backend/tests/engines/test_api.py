@@ -722,9 +722,10 @@ async def test_connection_test_classifies_failures_and_drops_unknown_values(
 async def test_models_are_filtered_through_the_host_and_shaped_here(api: AsyncClient, fake_host: FakeHost) -> None:
     provider = await _with_key(api, "anthropic")
     fake_host.models_answer = {
-        "models": [{"id": "a", "label": "Model A"}, {"id": ""}, {"nope": 1}, "plain-id", {"id": "x" * 300}],
-        "from_cache": True,
-        "fetched_at": "2026-11-16T10:00:00Z",
+        "models": [{"id": "a", "name": "Model A"}, {"id": ""}, {"nope": 1}, "plain-id", {"id": "x" * 300}],
+        "starter": "a",
+        "cached": True,
+        "fetched_at": "2026-11-16T10:00:00+00:00",
         "secret": KEY,
     }
     response = await api.get(
@@ -732,27 +733,51 @@ async def test_models_are_filtered_through_the_host_and_shaped_here(api: AsyncCl
     )
     assert response.json() == {
         "models": [{"id": "a", "label": "Model A"}, {"id": "plain-id", "label": None}],
+        "starter": "a",
         "from_cache": True,
-        "fetched_at": "2026-11-16T10:00:00Z",
+        "fetched_at": "2026-11-16T10:00:00+00:00",
         "manual_entry": False,
         "error_class": None,
     }
     body = [call for call in fake_host.calls if call[1] == "/v1/providers/models"][-1][2]
     assert body["refresh"] is True and body["capability"] == "summary" and "key" not in body
-    fake_host.models_answer = {"models": []}
-    assert (
+    assert "allow_local" not in body
+    fake_host.models_answer = {"models": [{"id": "a"}], "starter": "not-listed"}
+    unlisted = (
         await api.get(f"{BASE}/providers/{provider['id']}/models?capability=summary", headers=auth_headers())
-    ).json()["manual_entry"] is True
+    ).json()
+    assert unlisted["starter"] is None  # a starter outside the list is dropped
+    fake_host.models_answer = {"models": []}
+    empty = (
+        await api.get(f"{BASE}/providers/{provider['id']}/models?capability=summary", headers=auth_headers())
+    ).json()
+    assert empty["manual_entry"] is True
     fake_host.models_status = 502
-    fake_host.models_answer = {"error": {"code": "provider_unavailable"}}
+    fake_host.models_answer = {"error": {"code": "provider_unavailable", "retryable": True, "cause": "connect"}}
     failed = (
         await api.get(f"{BASE}/providers/{provider['id']}/models?capability=summary", headers=auth_headers())
     ).json()
     assert (failed["manual_entry"], failed["error_class"], failed["models"]) == (True, "provider_unavailable", [])
+    fake_host.models_status = 503  # a locked keychain is a classified answer, not a missing host
+    fake_host.models_answer = {"error": {"code": "secret_unavailable"}}
+    locked = (
+        await api.get(f"{BASE}/providers/{provider['id']}/models?capability=summary", headers=auth_headers())
+    ).json()
+    assert (locked["error_class"], locked["manual_entry"]) == ("secret_unavailable", True)
     assert (
         await api.get(f"{BASE}/providers/{provider['id']}/models?capability=transcription", headers=auth_headers())
     ).status_code == 422
     assert (await api.get(f"{BASE}/providers/{provider['id']}/models", headers=auth_headers())).status_code == 422
+
+
+async def test_local_servers_are_marked_for_the_host_as_local_apps(api: AsyncClient, fake_host: FakeHost) -> None:
+    provider = await _create(api, "openai_compatible", base_url="http://localhost:4000/v1")
+    await api.post(f"{BASE}/providers/{provider['id']}/test", json={}, headers=auth_headers())
+    body = [call for call in fake_host.calls if call[1] == "/v1/providers/probe"][-1][2]
+    assert body["allow_local"] is True and body["base_url"] == "http://localhost:4000/v1"
+    remote = await _create(api, "openai_compatible", "Remote", base_url="https://models.example.org/v1")
+    await api.post(f"{BASE}/providers/{remote['id']}/test", json={}, headers=auth_headers())
+    assert "allow_local" not in [call for call in fake_host.calls if call[1] == "/v1/providers/probe"][-1][2]
 
 
 async def test_status_is_a_sanitized_view_of_the_host(api: AsyncClient, fake_host: FakeHost) -> None:

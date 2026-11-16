@@ -118,6 +118,8 @@ export interface EngineModel {
 
 export interface EngineModelList {
   models: EngineModel[];
+  /** The model a new choice starts with ("Auto"); always one of `models`. */
+  starter: string | null;
   from_cache: boolean;
   fetched_at: string | null;
   /** True when the list is empty or failed: let the user type the model name. */

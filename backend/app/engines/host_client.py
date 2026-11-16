@@ -106,8 +106,11 @@ class HostClient:
         except httpx.HTTPError as exc:
             logger.warning("host_engine_unreachable error=%s", type(exc).__name__)
             raise HostUnavailableError from None
-        if response.status_code in (401, 503):
-            # 401: the token does not match; 503: the host has no token or store. Both mean "not usable".
+        if response.status_code == 401 or (
+            response.status_code == 503 and _error_code(response) != "secret_unavailable"
+        ):
+            # 401: the token does not match; 503: the host has no token. Both mean "not usable". A 503 that
+            # names secret_unavailable is a classified answer (a locked keychain) and is handled as one.
             logger.warning("host_engine_unavailable status=%s", response.status_code)
             raise HostUnavailableError
         if response.status_code >= 400:

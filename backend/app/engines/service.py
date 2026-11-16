@@ -394,6 +394,8 @@ def _host_payload(row: EngineProvider, capability: str | None) -> dict[str, Any]
     if transport is None or row.base_url is None:
         raise api_error(UNPROCESSABLE, "unsupported_provider")
     payload: dict[str, Any] = {"kind": row.kind, "transport": transport, "base_url": row.base_url}
+    if is_loopback_name(urlsplit(row.base_url).hostname or ""):
+        payload["allow_local"] = True  # the host admits loopback only for an app on this computer
     if row.secret_ref is not None:
         payload["secret_ref"] = row.secret_ref
     if capability is not None:
@@ -448,6 +450,7 @@ async def list_models(
     except HostRejectedError as exc:
         return ModelsOut(
             models=[],
+            starter=None,
             from_cache=False,
             fetched_at=None,
             manual_entry=True,
@@ -459,13 +462,15 @@ async def list_models(
     listed = raw.get("models")
     for item in listed[:MAX_MODELS_LISTED] if isinstance(listed, list) else []:
         entry_id = item.get("id") if isinstance(item, dict) else item
-        label = item.get("label") if isinstance(item, dict) else None
+        label = item.get("name") if isinstance(item, dict) else None
         if isinstance(entry_id, str) and 0 < len(entry_id) <= 200:
             models.append(ModelOut(id=entry_id, label=label if isinstance(label, str) and len(label) <= 200 else None))
     fetched_at = raw.get("fetched_at")
+    starter = raw.get("starter")
     return ModelsOut(
         models=models,
-        from_cache=raw.get("from_cache") is True,
+        starter=starter if isinstance(starter, str) and starter in {m.id for m in models} else None,
+        from_cache=raw.get("cached") is True,
         fetched_at=fetched_at if isinstance(fetched_at, str) and len(fetched_at) <= 64 else None,
         manual_entry=not models,
         error_class=None,
