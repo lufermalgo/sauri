@@ -32,8 +32,9 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TypeVar
 
 from sauri_engine_common.external.asr_common import (
     AUTO,
@@ -60,6 +61,7 @@ from sauri_engine_common.route import Route
 from sauri_engine_common.secrets import SecretRecord
 
 logger = logging.getLogger("sauri.engine_common.asr_assemblyai")
+_T = TypeVar("_T")
 
 TRANSPORT: Final = "assemblyai"
 LIMITS: Final = ProviderLimits(max_upload_bytes=None, max_audio_s=None)
@@ -216,6 +218,42 @@ class _Job:
         return True
 
 
+def language_fields(wanted: str) -> dict[str, object]:
+    """Request fields for a language from ``request_language``: a code, or detection for ``auto``."""
+    return {"language_detection": True} if wanted == AUTO else {"language_code": wanted}
+
+
+async def run_transcript_job(
+    http: HttpTransport,
+    audio: Path,
+    *,
+    request: dict[str, object],
+    parse: Callable[[dict[str, Any]], _T],
+    route: Route,
+    secret: SecretRecord,
+    cancel: asyncio.Event,
+    allow_local: bool,
+    deadline_s: float,
+) -> tuple[_T, bool]:
+    """Upload, create, poll and parse one transcript job; also shared with ``diar_assemblyai``.
+
+    ``parse`` receives the finished transcript document. The remote transcript is deleted in every
+    ending (the second return value says whether the deletion of the successful job worked).
+    """
+    try:
+        data = await asyncio.to_thread(audio.read_bytes)
+    except OSError:
+        raise ProviderError("provider_bad_request", reason="audio_unreadable") from None
+    job = _Job(http, route, secret.key, cancel, allow_local, deadline_s)
+    try:
+        await job.create(data, request)
+        parsed = parse(await job.wait_completed())
+    except BaseException:
+        await _cleanup(job)
+        raise
+    return parsed, await _cleanup(job)
+
+
 async def transcribe(
     http: HttpTransport,
     audio: Path,
@@ -230,24 +268,18 @@ async def transcribe(
 ) -> AsrResult:
     """Transcribe one prepared part; the remote job is deleted whatever the outcome."""
     wanted = request_language(language)
-    try:
-        data = await asyncio.to_thread(audio.read_bytes)
-    except OSError:
-        raise ProviderError("provider_bad_request", reason="audio_unreadable") from None
-    request: dict[str, object] = {"speech_models": [safe_model(route.model)]}
-    if wanted == AUTO:
-        request["language_detection"] = True
-    else:
-        request["language_code"] = wanted
-    job = _Job(http, route, secret.key, cancel, allow_local, deadline_s)
-    try:
-        await job.create(data, request)
-        doc = await job.wait_completed()
-        result = _parse_completed(doc, language=wanted, audio_ms=audio_ms)
-    except BaseException:
-        await _cleanup(job)
-        raise
-    deleted = await _cleanup(job)
+    request: dict[str, object] = {"speech_models": [safe_model(route.model)], **language_fields(wanted)}
+    result, deleted = await run_transcript_job(
+        http,
+        audio,
+        request=request,
+        parse=lambda doc: _parse_completed(doc, language=wanted, audio_ms=audio_ms),
+        route=route,
+        secret=secret,
+        cancel=cancel,
+        allow_local=allow_local,
+        deadline_s=deadline_s,
+    )
     return AsrResult(result.words, result.language, result.segments, result.audio_ms, {"remote_deleted": deleted})
 
 

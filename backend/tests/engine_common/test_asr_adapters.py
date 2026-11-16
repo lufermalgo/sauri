@@ -852,6 +852,13 @@ def test_merge_parts_refuses_to_hide_a_large_overlap() -> None:
     assert caught.value.code == "provider_invalid_output" and caught.value.reason == "overlapping_times"
 
 
+def test_merge_parts_refuses_overlaps_that_cascade_past_the_limit() -> None:
+    """Words whose starts go backwards make a clipped end overlap its neighbour by more than the limit."""
+    with pytest.raises(ProviderError) as caught:
+        merge_parts([part(("a", 0, 501), ("b", 300, 300), ("c", 0, 0))], [0])
+    assert caught.value.code == "provider_invalid_output" and caught.value.reason == "overlapping_times"
+
+
 def test_merge_parts_rejects_inconsistent_arguments() -> None:
     for results, offsets in (([], []), ([part(("a", 0, 1))], [0, 1]), ([part(("a", 0, 1))], [-1])):
         with pytest.raises(ValueError, match="invalid_parts"):
@@ -875,11 +882,17 @@ def test_merge_parts_reports_remote_deletion_across_parts() -> None:
     cut=st.integers(0, 14),
 )
 def test_property_merged_words_are_monotonic_and_only_ever_shrink(steps: list[tuple[int, int, int]], cut: int) -> None:
-    """Each word starts ``gap - overlap`` after the previous start+duration; overlaps stay within the trim limit."""
+    """Each word starts ``gap - overlap`` after the previous end, never before the previous start.
+
+    Starts never go backwards, so clipping an end at the next start cannot cascade and every overlap stays
+    at most ``overlap`` (300 ms), inside the 500 ms trim limit of ``merge_parts``.
+    """
     words: list[tuple[str, int, int]] = []
     cursor = 0
+    previous_start = 0
     for index, (gap, duration, overlap) in enumerate(steps):
-        start = max(cursor + gap - overlap, 0)
+        start = max(cursor + gap - overlap, previous_start)
+        previous_start = start
         words.append((f"w{index}", start, start + duration))
         cursor = start + duration
     cut = min(cut, len(words))
