@@ -1,0 +1,186 @@
+/*
+ * Models and engines screen: a grid of provider cards and the provider dialog. Only design tokens;
+ * the state of a provider is always a word in a badge, never a color alone (DESIGN.md section 10).
+ */
+.engines {
+  min-width: 0;
+}
+
+.engines-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: var(--ds-space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.engines-grid-item {
+  display: flex;
+  min-width: 0;
+}
+
+.engines-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+
+.engines-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-1) var(--ds-space-2);
+}
+
+.engines-card-title {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.engines-card-kind {
+  margin: 0;
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-sm);
+}
+
+.engines-card-facts {
+  display: grid;
+  gap: var(--ds-space-1);
+  margin: 0;
+  padding: 0;
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-sm);
+  list-style: none;
+}
+
+.engines-card-url {
+  color: var(--ds-fg-subtle);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.engines-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-2);
+  margin-top: auto;
+  padding-top: var(--ds-space-2);
+}
+
+.engines-card-icons {
+  display: inline-flex;
+  gap: var(--ds-space-1);
+}
+
+.engines-icon-action {
+  position: relative;
+  display: inline-flex;
+}
+
+.engines-empty {
+  display: grid;
+  gap: var(--ds-space-2);
+  justify-items: start;
+  padding: var(--ds-space-4);
+  background: var(--ds-surface);
+  border: 1px dashed var(--ds-border-strong);
+  border-radius: var(--ds-radius-card);
+}
+
+.engines-empty-title {
+  margin: 0;
+  font-size: var(--ds-text-md);
+}
+
+/* Provider dialog */
+.engines-fixed-type {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: var(--ds-text-md);
+}
+
+.engines-fixed-type-label,
+.engines-key-label {
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
+}
+
+.engines-field-help {
+  margin-top: calc(var(--ds-space-2) * -1);
+}
+
+.engines-key {
+  display: grid;
+  gap: var(--ds-space-1);
+}
+
+.engines-key-state {
+  font-size: var(--ds-text-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.engines-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2);
+}
+
+.engines-key-confirm {
+  display: grid;
+  gap: var(--ds-space-2);
+}
+
+.engines-save-error {
+  margin: 0;
+}
+
+.engines-outcome-slot:empty {
+  display: none;
+}
+
+.engines-outcome-slot {
+  display: grid;
+  gap: var(--ds-space-1);
+}
+
+.engines-outcome {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-space-2);
+  margin: 0;
+  padding: var(--ds-space-2) var(--ds-space-3);
+  font-size: var(--ds-text-sm);
+  border-radius: var(--ds-radius-sm);
+}
+
+.engines-outcome svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.engines-outcome--ok {
+  color: var(--ds-accent-soft-fg);
+  background: var(--ds-accent-soft);
+}
+
+.engines-outcome--fail {
+  color: var(--ds-danger-soft-fg);
+  background: var(--ds-danger-soft);
+}
+
+.engines-outcome--info {
+  color: var(--ds-fg-muted);
+  background: var(--ds-fill);
+}
