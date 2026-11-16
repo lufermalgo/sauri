@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
+from app.engines.router import router as engines_router
 from app.infra.database import create_engine, create_session_factory
 from app.infra.http_errors import request_validation_exception_handler, unhandled_exception_handler
 from app.infra.http_security import SecurityHeadersMiddleware, cors_options, docs_paths
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     application.include_router(auth_router)
     application.include_router(templates_router)
     application.include_router(summaries_router)
+    application.include_router(engines_router)
 
     @application.get("/health")
     async def health() -> dict[str, str]:

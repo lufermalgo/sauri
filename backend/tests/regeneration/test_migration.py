@@ -22,7 +22,7 @@ PARENT = "023_summary_request_timestamps"
 
 def test_revision_is_the_single_head_after_summary_timestamps() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["025_auth_hardening"]  # The auth revision follows.
+    assert script.get_heads() == ["026_engine_providers"]  # The auth revision follows.
     assert script.get_revision(REVISION).down_revision == PARENT
     assert len(REVISION) <= 32  # alembic_version.version_num is VARCHAR(32) unless widened
 

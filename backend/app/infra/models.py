@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -172,6 +173,12 @@ class Transcript(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    # Provenance (#1087): which engine produced the row. NULL on rows written before engines were
+    # selectable, which the portal reads as "previous local engine". Never holds keys or content.
+    engine_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    engine_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    engine_external: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     turns: Mapped[list["SpeechTurn"]] = relationship(
         "SpeechTurn", back_populates="transcript", lazy="select"
     )
@@ -308,6 +315,12 @@ class Diarization(Base):
     )  # engine_failure when failed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Provenance (#1087): which engine produced the row. NULL on rows written before engines were
+    # selectable, which the portal reads as "previous local engine". Never holds keys or content.
+    engine_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    engine_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    engine_external: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     speakers: Mapped[list["Speaker"]] = relationship(
         "Speaker", back_populates="diarization", lazy="select"
@@ -762,6 +775,12 @@ class MeetingSummary(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    # Provenance (#1087): which engine produced the row. NULL on rows written before engines were
+    # selectable, which the portal reads as "previous local engine". Never holds keys or content.
+    engine_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    engine_model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    engine_external: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
 
 # ---------------------------------------------------------------------------
 # Explicit stage regeneration (#1053)
@@ -821,3 +840,105 @@ class RegenerationOperation(Base):
     failure_cause: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Content-free outcome details, e.g. how many speaker names were carried over.
     details: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Engines and models: linked providers, per-process choice, privacy consent (#1087)
+# ---------------------------------------------------------------------------
+
+
+class EngineProvider(Base):
+    """A provider the user linked (OpenAI, AssemblyAI, a local Ollama...). Never stores a key.
+
+    ``secret_ref`` names the entry in the host secret store; ``key_hint`` holds at most the last four
+    characters of a key of 12 or more characters.
+    """
+
+    __tablename__ = "engine_providers"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "label", name="uq_engine_provider_owner_label"),
+        # Target of the composite foreign keys below, so a setting or consent can never point at another
+        # owner's provider.
+        UniqueConstraint("id", "owner_id", name="uq_engine_provider_id_owner"),
+        Index("ix_engine_providers_owner", "owner_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+    base_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    secret_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    key_hint: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    key_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EngineProcessSetting(Base):
+    """The engine one owner chose for one process; no row (or a NULL provider) means the local engine."""
+
+    __tablename__ = "engine_process_settings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["provider_id", "owner_id"],
+            ["engine_providers.id", "engine_providers.owner_id"],
+            name="fk_engine_process_settings_provider_owner",
+        ),
+        CheckConstraint(
+            "capability IN ('transcription', 'diarization', 'summary', 'chat')",
+            name="ck_engine_process_settings_capability",
+        ),
+        CheckConstraint("version >= 1", name="ck_engine_process_settings_version"),
+        CheckConstraint(
+            "provider_id IS NOT NULL OR model LIKE 'local:%'", name="ck_engine_process_settings_local_model"
+        ),
+    )
+
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    capability: Mapped[str] = mapped_column(String(16), primary_key=True)
+    provider_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    model: Mapped[str] = mapped_column(String(256), nullable=False)
+    local_fallback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EnginePrivacyConsent(Base):
+    """Accepted privacy notice for one (owner, process, provider); revoked rows stay as the audit trail."""
+
+    __tablename__ = "engine_privacy_consents"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["provider_id", "owner_id"],
+            ["engine_providers.id", "engine_providers.owner_id"],
+            ondelete="CASCADE",
+            name="fk_engine_privacy_consents_provider_owner",
+        ),
+        CheckConstraint(
+            "capability IN ('transcription', 'diarization', 'summary', 'chat')",
+            name="ck_engine_privacy_consents_capability",
+        ),
+        CheckConstraint("notice_version >= 1", name="ck_engine_privacy_consents_notice_version"),
+        # At most one current consent per (owner, process, provider).
+        Index(
+            "uq_engine_privacy_consents_current",
+            "owner_id",
+            "capability",
+            "provider_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+            sqlite_where=text("revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    capability: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    notice_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
