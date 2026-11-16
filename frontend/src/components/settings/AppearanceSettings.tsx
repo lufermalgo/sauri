@@ -5,17 +5,14 @@ import { THEME_CHOICES, readAppliedTheme, setTheme, type ThemeChoice } from "../
 import { useT } from "../../i18n";
 import { LanguageSelect } from "../LanguageSelect";
 import { Card, Icon } from "../ui";
-import { useSidebarCollapsed } from "../useSidebar";
 
 const THEME_ICONS: Record<ThemeChoice, LucideIcon> = { system: Monitor, light: Sun, dark: Moon };
 
-/** Theme (applied at once and remembered per device) and the side panel's starting state. */
+/** Language and theme (applied at once and remembered per device). */
 export function AppearanceSettings() {
   const { t } = useT();
   const name = useId();
-  const sidebarHelpId = useId();
   const [theme, setThemeState] = useState<ThemeChoice>(readAppliedTheme);
-  const { collapsed, setCollapsed } = useSidebarCollapsed();
 
   function choose(choice: ThemeChoice) {
     setTheme(choice);
@@ -47,24 +44,6 @@ export function AppearanceSettings() {
           ))}
         </fieldset>
         <p className="settings-help">{t("settings:appearance.themeHelp")}</p>
-      </Card>
-      <Card className="settings-card" aria-labelledby={`${name}-sidebar-title`}>
-        <h3 id={`${name}-sidebar-title`} className="settings-card-title">{t("settings:appearance.sidebarTitle")}</h3>
-        <div className="settings-switch-row">
-          <span id={`${name}-sidebar-label`} className="settings-switch-label">{t("settings:appearance.sidebarSwitch")}</span>
-          <button
-            type="button"
-            role="switch"
-            className="settings-switch"
-            aria-checked={collapsed}
-            aria-labelledby={`${name}-sidebar-label`}
-            aria-describedby={sidebarHelpId}
-            onClick={() => setCollapsed(!collapsed)}
-          >
-            <span className="settings-switch-thumb" aria-hidden="true" />
-          </button>
-        </div>
-        <p id={sidebarHelpId} className="settings-help">{t("settings:appearance.sidebarHelp")}</p>
       </Card>
     </div>
   );
