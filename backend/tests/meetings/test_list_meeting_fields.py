@@ -227,5 +227,6 @@ async def test_listing_statement_count_does_not_grow_with_meetings(
     assert all(item["summary_topic"] == "Synthetic topic" for item in resp.json())
 
     assert len(many) == len(few)
-    # Meetings query plus at most three batched queries for the new fields.
-    assert len(many) <= 4
+    # Meetings query plus at most three batched queries for the new fields, plus the account lookup
+    # that authentication performs on every request.
+    assert len(many) <= 5

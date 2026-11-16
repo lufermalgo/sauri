@@ -391,6 +391,10 @@ async def test_current_summary_requires_auth_sales_and_meeting_ownership(summary
         user.is_sales = False
     denied = await client.get(path, headers=_headers(other, sales=False))
     assert denied.status_code == 403, denied.text
+    async with factory() as session, session.begin():
+        user = await session.get(User, other)
+        assert user is not None
+        user.is_sales = True
     foreign = await client.get(path, headers=_headers(other))
     assert foreign.status_code == 404, foreign.text
     missing = await client.get(f"/api/v1/meetings/{_id()}/summary", headers=_headers(owner))

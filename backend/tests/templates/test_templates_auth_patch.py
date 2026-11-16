@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.token import create_token
-from app.infra.models import AccessLog, SummaryTemplate
+from app.infra.models import AccessLog, SummaryTemplate, User
 from tests.templates.test_templates_api import BASE, OTHER, OWNER, _headers, _seed_category
 
 pytest_plugins = ["tests.templates.test_templates_api"]
@@ -61,6 +61,11 @@ async def test_authentication_and_sales_gate_apply_to_all_template_routes(
     template_api: tuple[AsyncClient, async_sessionmaker[AsyncSession]],
 ) -> None:
     client, factory = template_api
+    # The role comes from the account row on every request, not from the token claim.
+    async with factory() as session, session.begin():
+        other_user = await session.get(User, OTHER)
+        assert other_user is not None
+        other_user.is_sales = False
     no_sales = {"Authorization": "Bearer " + create_token(
         OTHER, f"{OTHER}@sauri.local", "Other user", False,
     )}

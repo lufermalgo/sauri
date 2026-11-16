@@ -190,8 +190,16 @@ async def test_unknown_stage_is_rejected_with_422(api: Api) -> None:
 async def test_requires_an_authorized_owner(api: Api) -> None:
     path = f"/api/v1/meetings/{api.meeting}/regenerate"
     assert (await api.client.post(path, json={"stage": "summary"})).status_code in (401, 403)
+    async with api.factory() as session, session.begin():  # The role is read from the account row.
+        owner_row = await session.get(User, api.owner)
+        assert owner_row is not None
+        owner_row.is_sales = False
     denied = await api.client.post(path, json={"stage": "summary"}, headers=api.headers(sales=False))
     assert denied.status_code == 403
+    async with api.factory() as session, session.begin():
+        owner_row = await session.get(User, api.owner)
+        assert owner_row is not None
+        owner_row.is_sales = True
     foreign = await api.client.post(path, json={"stage": "summary"}, headers=api.headers(api.other))
     assert foreign.status_code == 404
     for suffix in ("latest", str(uuid4())):

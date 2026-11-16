@@ -83,10 +83,11 @@ async def factory(
     migrated_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     monkeypatch.setenv("DATABASE_URL", migrated_url)
+    monkeypatch.setenv("JWT_SECRET", secrets.token_hex(32))  # Login signs a real token.
     engine = create_async_engine(migrated_url, poolclass=NullPool)
     async with engine.begin() as connection:
         await connection.execute(text(
-            "TRUNCATE users, meetings, access_log, meeting_recovery_operations, "
+            "TRUNCATE users, meetings, access_log, login_attempts, meeting_recovery_operations, "
             "template_categories, summary_templates CASCADE"
         ))
     yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -139,6 +140,7 @@ async def test_creates_admin_from_password_file_and_login_works(
     admin = await _admin(factory)
     assert admin is not None and admin.is_sales and admin.name == "Administrador"
     assert verify_password(_secret(password_file), admin.password_hash)
+    assert admin.password_hash.startswith("$argon2id$")
     assert await _login(ADMIN_EMAIL, _secret(password_file)) == 200
     assert await _login(ADMIN_EMAIL, "wrong-password-wrong-password") == 401
     captured = capsys.readouterr()
@@ -186,6 +188,8 @@ async def test_is_idempotent_and_reset_password_replaces_it(
         assert await session.scalar(select(func.count()).select_from(User)) == 1
     assert await _login(ADMIN_EMAIL, replacement) == 200
     assert await _login(ADMIN_EMAIL, original) == 401
+    reset = await _admin(factory)
+    assert reset is not None and reset.token_version == first.token_version + 1  # sessions revoked
     captured = capsys.readouterr()
     assert "password reset" in captured.out
     for secret in (original, replacement):

@@ -10,12 +10,11 @@ from datetime import UTC, datetime
 
 import pytest
 from httpx import AsyncClient
-from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth.passwords import hash_password
 from app.auth.seed import seed_users
-from app.auth.token import JWT_ALGORITHM, JWT_SECRET
+from app.auth.token import decode_token
 from app.infra.models import User
 
 
@@ -44,7 +43,7 @@ async def test_login_valid_credentials_issues_jwt(
     body = resp.json()
     assert body["token_type"] == "bearer"
     assert body["expires_in"] > 0
-    payload = jwt.decode(body["access_token"], JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    payload = decode_token(body["access_token"])
     assert payload["email"] == "valid@summan.com"
     assert payload["is_sales"] is True
 
