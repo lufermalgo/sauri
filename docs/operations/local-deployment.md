@@ -50,6 +50,60 @@ Los motores nativos ASR y diarización leen las llaves del almacén desde `~/.co
 
 **Ver o rotar un valor.** Para abrir la consola de RabbitMQ o RustFS, o usar `psql`, el dueño ejecuta él mismo `cat ~/.config/sauri/<archivo>`; ningún script imprime ni versiona los valores. Rotar = borrar el archivo y volver a ejecutar `make up`: base de datos y cola se resincronizan en el arranque, las llaves raíz de RustFS siguen al archivo y la contraseña de administrador se cambia con `python -m app.auth.seed_admin --reset-password`. Cambiar `jwt_secret` cierra la sesión de todos los usuarios.
 
+## Voz, vocabulario y fallos del motor ASR
+
+`SAURI_ASR_VAD=on` (predeterminado) detecta voz con el ejecutable externo
+`whisper-vad-speech-segments`, nunca con `whisper-cli --vad`: este último puede
+devolver tokens en tiempo comprimido. Cada trozo se transcribe en un proceso nuevo,
+sin contexto previo. Se omiten huecos mayores de 4 s; los grupos se dividen por el
+hueco más grande hasta caber en `SAURI_ASR_CHUNK_SECONDS=120`, incluido el relleno de
+300 ms por lado. Un intervalo de voz que ya exceda el máximo no se corta. El relleno
+se acota al audio y comparte una frontera en el silencio cuando se solapa: no se
+duplica audio ni se corta voz. Los tiempos se trasladan al reloj original; los
+solapamientos del decodificador se recortan, sin extrapolar, y se marcan como reparados.
+Sin voz o sin palabras, la respuesta es `500 no_word_timestamps`; un trozo fallido
+invalida el trabajo completo. `SAURI_ASR_VAD=off` conserva la pasada única anterior.
+
+Calibrar fuera del sandbox: `SAURI_ASR_VAD_THRESHOLD=0.5` (entre 0 y 1, inclusive),
+`SAURI_ASR_CHUNK_SECONDS=120` y `SAURI_ASR_SUPPRESS_NST=off` (`on` activa `-sns`).
+La eliminación de palabras inventadas, la puntuación, precisión del vocabulario y
+rendimiento quedan **NO VERIFICADOS con audio real** en esta entrega.
+
+El [modelo oficial Silero v6.2.0](https://huggingface.co/ggml-org/whisper-vad/blob/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin)
+coincide con el archivo de pruebas medido: 885098 bytes, SHA-256
+`2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987`.
+El manifiesto fija también el ejecutable de Homebrew whisper.cpp 1.9.2, macOS arm64
+(452336 bytes); otra compilación requiere verificar y actualizar su procedencia,
+no eludir el hash. Las dependencias dinámicas del binario no quedan cubiertas por su hash.
+Rutas alternativas: `SAURI_ASR_VAD_MODEL_PATH` y `SAURI_ASR_VAD_CLI`.
+El destino del modelo es `~/.local/share/sauri/models/ggml-silero-v6.2.0.bin`.
+El instalador ASR incorpora el modelo por descarga verificada o copia desde
+`SAURI_ASR_VAD_MODEL_SOURCE`, exige el ejecutable ya instalado y amplía la procedencia
+antigua solo tras verificar ambos activos. `--check` no escribe ni migra; con VAD
+activo, modelo/binario ausente, hash incorrecto o procedencia antigua impiden arrancar.
+El orquestador debe aprovisionar los activos antes del despliegue: esta ejecución no
+instaló ni reinició servicios del dueño.
+
+`diagnostics.vad` contiene `enabled`, `speech_segments`, `chunks`, `speech_ms`,
+`skipped_ms`, `vad_ms` e `inference_ms`; este último suma las inferencias y coincide
+con `stage_ms.inference`. `speech_ms` mide voz detectada y `skipped_ms` audio no enviado
+al ASR (el relleno y los silencios internos sí se envían). Con VAD apagado, los conteos
+de voz no medidos son `null`. `audio_ms` conserva la duración original completa;
+descarga, normalización, VAD y trozos comparten un único plazo, sin renovarlo por trozo.
+
+El vocabulario privado opcional vive en `~/.config/sauri/vocabulary.txt`, un nombre
+por línea; `SAURI_ASR_VOCABULARY_FILE` permite otra ruta. Se lee en cada trabajo.
+Ausente o vacío no añade prompt. Se incluyen entradas completas, en orden, sin
+duplicados, hasta 224 bytes UTF-8 (límite conservador de 224 tokens); las entradas
+que no caben se omiten. El prompt se conserva entre ventanas internas, pero no
+garantiza la ortografía ni acredita una mejora de puntuación en audio largo.
+
+Ante `engine_failed`, revisar `~/.local/state/sauri/native-engines/asr.log`
+(o `asr.log` bajo `SAURI_NATIVE_ENGINE_STATE_DIR`). Los fallos de `whisper-cli` y del VAD
+registran código de salida y hasta 600 caracteres de las últimas ocho líneas de
+stderr: solo se conservan plantillas técnicas conocidas, sin rutas ni texto de voz;
+el resto aparece como `[stderr redacted]`. No se registra stdout ni el vocabulario.
+
 ## Diarización nativa Senko (U1 #921)
 
 El adaptador conserva puerto 8002, token de motor, capability HMAC por grabación y

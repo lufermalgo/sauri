@@ -20,8 +20,20 @@ from pathlib import Path
 from typing import Any, Literal
 
 import boto3
-from asr_assets import verify_assets
-from asr_config import default_language, language_code, remaining, server_budget
+from asr_assets import vad_cli_path, vad_model_path, verify_assets
+from asr_config import (
+    chunk_ms,
+    default_language,
+    language_code,
+    remaining,
+    server_budget,
+    suppress_nst,
+    vad_enabled,
+    vad_threshold,
+)
+from asr_diagnostics import diagnostic_tail
+from asr_prompt import vocabulary_prompt
+from asr_vad import align_chunks, cut_wav, group_chunks, parse_vad
 from botocore.config import Config
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -30,7 +42,7 @@ from pydantic import BaseModel, Field, field_validator
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
 from sauri_engine_common.credentials import object_store_credentials
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
-from whisper_words import NoWordTimestampsError, words_from_ggml_json
+from whisper_words import NoWordTimestampsError, WordsResult, words_from_ggml_json
 
 logger = logging.getLogger("asr-engine-native")
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +80,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     global s3_client
     default_language()
     server_budget()
+    suppress_nst()
+    if vad_enabled():
+        vad_threshold()
+        chunk_ms()
     try:
         verify_assets(ASR_MODEL_PATH, Path(WHISPER_CLI))
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -213,17 +229,91 @@ def _download_audio(audio_ref: str, deadline: float) -> str:
 
 
 def _run_whisper(wav_path: Path, output: Path, language: str, timeout_s: float) -> dict[str, Any]:
-    subprocess.run(
-        [WHISPER_CLI, "-m", str(ASR_MODEL_PATH), "-f", str(wav_path),
+    prompt = vocabulary_prompt(Path(os.environ.get(
+        "SAURI_ASR_VOCABULARY_FILE", "~/.config/sauri/vocabulary.txt",
+    )).expanduser())
+    command = [WHISPER_CLI, "-m", str(ASR_MODEL_PATH), "-f", str(wav_path),
          "-l", language_code(language), "-t", str(ASR_THREADS),
-         "-bs", "5", "-bo", "5", "-fa", "-ojf", "-of", str(output)],
-        check=True, capture_output=True, timeout=timeout_s,
-    )
+         "-bs", "5", "-bo", "5", "-fa"]
+    if suppress_nst():
+        command.append("-sns")
+    if prompt:
+        command.extend(["--prompt", prompt, "--carry-initial-prompt"])
+    command.extend(["-ojf", "-of", str(output)])
+    try:
+        subprocess.run(command, check=True, capture_output=True, timeout=timeout_s)
+    except subprocess.CalledProcessError as exc:
+        logger.error("whisper-cli failed (exit_code=%s); stderr_tail=%s", exc.returncode, diagnostic_tail(exc.stderr))
+        raise
     with output.with_suffix(".json").open() as result_file:
         result = json.load(result_file)
     if not isinstance(result, dict) or not isinstance(result.get("transcription"), list):
         raise ValueError("Invalid whisper output")
     return result
+
+
+def _detected_language(doc: dict[str, Any]) -> str:
+    language = doc.get("result", {}).get("language")
+    if not isinstance(language, str) or language_code(language) == "auto":
+        raise ValueError("Missing detected language")
+    return language_code(language)
+
+
+def _transcribe_wav(
+    wav_path: Path, audio_ms: int, language: str, deadline: float,
+) -> tuple[WordsResult, str, dict[str, object], int]:
+    if not vad_enabled():
+        started = time.monotonic()
+        doc = _run_whisper(wav_path, wav_path.parent / "out", language, remaining(deadline))
+        inference_ms = round((time.monotonic() - started) * 1000)
+        remaining(deadline)
+        return words_from_ggml_json(doc, audio_ms), _detected_language(doc), {
+            "enabled": False, "speech_segments": None, "chunks": 1, "speech_ms": None,
+            "skipped_ms": 0, "vad_ms": 0, "inference_ms": inference_ms,
+        }, inference_ms
+    started = time.monotonic()
+    try:
+        process = subprocess.run(
+            [str(vad_cli_path()), "-f", str(wav_path), "-vm", str(vad_model_path()), "-vt", str(vad_threshold())],
+            check=True, capture_output=True, text=True, timeout=remaining(deadline),
+        )
+    except subprocess.CalledProcessError as exc:
+        logger.error("VAD failed (exit_code=%s); stderr_tail=%s", exc.returncode, diagnostic_tail(exc.stderr))
+        raise
+    vad_ms = round((time.monotonic() - started) * 1000)
+    remaining(deadline)
+    intervals = parse_vad(process.stdout, audio_ms)
+    chunks = group_chunks(intervals, audio_ms, chunk_ms())
+    if not chunks:
+        raise NoWordTimestampsError("no_word_timestamps")
+    results = []
+    detected: str | None = None
+    inference_seconds = 0.0
+    for interval in chunks:
+        with tempfile.TemporaryDirectory(prefix="chunk-", dir=wav_path.parent) as temporary:
+            chunk_path = Path(temporary) / "audio.wav"
+            cut_wav(wav_path, chunk_path, interval, deadline)
+            chunk_language = detected if language == "auto" and detected else language
+            started = time.monotonic()
+            doc = _run_whisper(chunk_path, Path(temporary) / "out", chunk_language, remaining(deadline))
+            inference_seconds += time.monotonic() - started
+            remaining(deadline)
+            result = words_from_ggml_json(doc, interval[1] - interval[0])
+            if any(segment.words for segment in result.segments):
+                if detected is None:
+                    detected = _detected_language(doc)
+                results.append((interval, result))
+    if detected is None:
+        raise NoWordTimestampsError("no_word_timestamps")
+    inference_ms = round(inference_seconds * 1000)
+    combined = align_chunks(results)
+    remaining(deadline)
+    return combined, detected, {
+        "enabled": True, "speech_segments": len(intervals), "chunks": len(chunks),
+        "speech_ms": sum(end - start for start, end in intervals),
+        "skipped_ms": audio_ms - sum(end - start for start, end in chunks),
+        "vad_ms": vad_ms, "inference_ms": inference_ms,
+    }, inference_ms
 
 
 @app.post("/transcribe", response_model=TranscribeResponse)
@@ -263,13 +353,7 @@ def _transcribe_audio(request: TranscribeRequest, deadline: float) -> Transcribe
             download_ms = round((time.monotonic() - started) * 1000)
             wav_path = Path(temporary) / "audio.wav"
             report = normalize_to_wav(Path(audio_path), wav_path, timeout_s=min(300, remaining(deadline)))
-            started = time.monotonic()
-            doc = _run_whisper(wav_path, Path(temporary) / "out", request.language, remaining(deadline))
-            inference_ms = round((time.monotonic() - started) * 1000)
-            result = words_from_ggml_json(doc, report.audio_ms)
-            language = doc.get("result", {}).get("language")
-            if not isinstance(language, str) or not language or language == "auto":
-                raise ValueError("Missing detected language")
+            result, language, vad, inference_ms = _transcribe_wav(wav_path, report.audio_ms, request.language, deadline)
             return TranscribeResponse(
                 segments=[Segment(text=s.text.strip(), start_ms=s.start_ms, end_ms=s.end_ms) for s in result.segments],
                 words=[Word(**asdict(word)) for segment in result.segments for word in segment.words],
@@ -277,6 +361,7 @@ def _transcribe_audio(request: TranscribeRequest, deadline: float) -> Transcribe
                 engine=EngineInfo(name="whisper.cpp", model=MODEL_ID, device=MODEL_DEVICE),
                 diagnostics={
                     "audio_ms": report.audio_ms,
+                    "vad": vad,
                     "inverted_words": result.inverted_words,
                     "stage_ms": {"download": download_ms, "normalize": round(report.seconds * 1000),
                                  "inference": inference_ms},

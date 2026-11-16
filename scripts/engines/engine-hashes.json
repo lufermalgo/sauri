@@ -28,6 +28,16 @@
   "asr": {
     "model_file": "ggml-large-v3-turbo-q5_0.bin",
     "model_size": 574041195,
-    "model_sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+    "model_sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+    "vad": {
+      "model_file": "ggml-silero-v6.2.0.bin",
+      "model_size": 885098,
+      "model_sha256": "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+      "model_url": "https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin",
+      "binary_file": "whisper-vad-speech-segments",
+      "binary_size": 452336,
+      "binary_sha256": "f6b922e2a4c2c8428c5a8c25a07d9953d35457d2b7567dfbc82e05c2ab94613f",
+      "binary_source": "Homebrew whisper.cpp 1.9.2, macOS arm64; /opt/homebrew/Cellar/whisper.cpp/1.9.2/bin/whisper-vad-speech-segments"
+    }
   }
 }
