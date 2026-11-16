@@ -41,6 +41,8 @@ async def fail_stale_requests(
     stored summary are excluded as a defense (success commits status and summary together).
     ``pending`` rows count only once delivered; undelivered ones are still the outbox's job.
     """
+    from app.regeneration.service import settle_summary_operations  # Avoids an import cycle.
+
     limit = stale_after if stale_after is not None else timedelta(seconds=stale_after_seconds())
     now = datetime.now(UTC)
     async with factory() as session, session.begin():
@@ -55,6 +57,7 @@ async def fail_stale_requests(
             .values(status="failed", failure_cause=STALE_CAUSE, finished_at=now)
             .execution_options(synchronize_session=False)
         )
+        await settle_summary_operations(session)
     return int(getattr(result, "rowcount", 0) or 0)
 
 

@@ -26,19 +26,55 @@ class SpeakerReviewService:
         self._session = session
 
     async def get_active_review(
-        self, owner_id: str, meeting_id: str
+        self, owner_id: str, meeting_id: str, revision_id: int | None = None
     ) -> dict[str, Any] | None:
-        """Return all speakers in the owner's latest completed revision."""
+        """Return all speakers in the owner's latest completed revision, or in ``revision_id``."""
         meeting = await self._session.scalar(
             select(Meeting).where(Meeting.id == meeting_id, Meeting.created_by == owner_id)
         )
         if meeting is None:
             return None
 
-        review = await self._active_review(meeting_id)
+        review = (
+            await self._active_review(meeting_id)
+            if revision_id is None
+            else await self._completed_review(meeting_id, revision_id)
+        )
         if review is None:
             return None
         return await self._snapshot(review)
+
+    async def available_revisions(self, meeting_id: str) -> list[int]:
+        """Completed revisions with a review, oldest first."""
+        return list(
+            (
+                await self._session.scalars(
+                    select(Diarization.processing_revision)
+                    .join(
+                        SpeakerReview,
+                        (SpeakerReview.meeting_id == Diarization.meeting_id)
+                        & (SpeakerReview.processing_revision == Diarization.processing_revision),
+                    )
+                    .where(Diarization.meeting_id == meeting_id, Diarization.diarization_state == "completed")
+                    .order_by(Diarization.processing_revision)
+                )
+            ).all()
+        )
+
+    async def _completed_review(self, meeting_id: str, revision_id: int) -> SpeakerReview | None:
+        return await self._session.scalar(
+            select(SpeakerReview)
+            .join(
+                Diarization,
+                (Diarization.meeting_id == SpeakerReview.meeting_id)
+                & (Diarization.processing_revision == SpeakerReview.processing_revision),
+            )
+            .where(
+                SpeakerReview.meeting_id == meeting_id,
+                SpeakerReview.processing_revision == revision_id,
+                Diarization.diarization_state == "completed",
+            )
+        )
 
     async def _active_review(self, meeting_id: str) -> SpeakerReview | None:
         revision = (

@@ -52,6 +52,7 @@ from app.meetings.service import (
     request_join,
 )
 from app.meetings.speaker_review_service import SpeakerReviewService
+from app.regeneration import service as regeneration_service
 
 router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"])
 logger = logging.getLogger(__name__)
@@ -347,6 +348,8 @@ async def get_meeting_endpoint(
             )
             if recording is not None:
                 result["recording_id"] = recording
+            # Optional hints; omitted when empty so existing clients see no change.
+            result.update(await regeneration_service.meeting_hints(session, meeting_id))
             return result
     except ValueError as exc:
         raise HTTPException(
@@ -400,8 +403,13 @@ async def request_join_endpoint(
 async def get_speaker_review(
     meeting_id: str,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    revision_id: int | None = None,
 ) -> dict[str, Any]:
-    """Reload the authenticated owner's persisted speaker-review state."""
+    """Reload the authenticated owner's persisted speaker-review state.
+
+    Defaults to the latest completed revision; ``revision_id`` reads an earlier one,
+    which stays accessible after the speakers are regenerated.
+    """
     engine = create_engine()
     session_factory = create_session_factory(engine)
     try:
@@ -412,14 +420,17 @@ async def get_speaker_review(
                 user,
                 f"GET /api/v1/meetings/{meeting_id}/speaker-review",
             )
-            result = await SpeakerReviewService(session).get_active_review(
-                user.id, meeting_id
-            )
+            service = SpeakerReviewService(session)
+            result = await service.get_active_review(user.id, meeting_id, revision_id)
             if result is None:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Speaker review not found: {meeting_id}",
                 )
+            if revision_id is None:
+                revisions = await service.available_revisions(meeting_id)
+                if len(revisions) > 1:
+                    result = {**result, "available_revisions": revisions}
             return result
     finally:
         await engine.dispose()

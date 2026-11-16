@@ -49,7 +49,16 @@ VALID_TRANSITIONS: dict[str, dict[str, str]] = {
     "transcribing": {
         "transcription_completed": "completed",
         "engine_failed": "failed",
+        # A user-requested re-run failed: the previous outputs stay usable.
+        "regeneration_failed": "completed",
     },
+}
+
+# The only events a terminal state accepts: an explicit user request to run the
+# transcription stage again (#1053). Nothing automatic ever produces them.
+REGENERATION_TRANSITIONS: dict[str, dict[str, str]] = {
+    "completed": {"regeneration_started": "transcribing"},
+    "failed": {"regeneration_started": "transcribing"},
 }
 
 # Map of events leading to "failed" -> corresponding failure_cause
@@ -89,7 +98,8 @@ def apply_event(current_state: str, event: str) -> TransitionResult:
     """Applies an event to the current state and returns the transition result.
 
     Rules:
-    - If `current_state` is terminal (completed/failed): returns successful=False.
+    - If `current_state` is terminal (completed/failed): returns successful=False,
+      except for `regeneration_started`, which re-opens the transcription stage.
     - If `event` isn't valid for `current_state`: returns successful=False.
     - If the transition leads to 'failed': includes the corresponding failure_cause.
     - Otherwise: returns the new state with successful=True.
@@ -97,9 +107,12 @@ def apply_event(current_state: str, event: str) -> TransitionResult:
     This function is PURE: it doesn't access the database or produce side
     effects. It only computes the next state.
     """
-    # Terminal states: immutable
+    # Terminal states: immutable, except for an explicit regeneration request
     if current_state in TERMINAL_STATES:
-        return TransitionResult(successful=False, new_state=current_state)
+        regenerated = REGENERATION_TRANSITIONS.get(current_state, {}).get(event)
+        if regenerated is None:
+            return TransitionResult(successful=False, new_state=current_state)
+        return TransitionResult(successful=True, new_state=regenerated)
 
     # Look up valid transitions from the current state
     transitions_from_state = VALID_TRANSITIONS.get(current_state)

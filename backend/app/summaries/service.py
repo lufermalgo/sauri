@@ -1,5 +1,6 @@
 """Atomic, owner-scoped acceptance of an immutable summary request."""
 
+import logging
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.models import SummaryRequestOutbox, SummaryTemplate, User
 from app.summaries import repository
+
+logger = logging.getLogger(__name__)
 
 
 async def accept_request(
@@ -28,6 +31,13 @@ async def accept_request(
     transcript = await repository.transcript_for_meeting(session, meeting_id)
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    if processing_revision is not None:
+        # Automatic requests exist only for the first summary of a transcript. Once any
+        # request or summary exists, a new summary needs an explicit user request.
+        prior = await repository.latest_request(session, transcript.id)
+        if prior is not None:
+            logger.info("Automatic summary request skipped; reason=summary_already_requested")
+            return prior
     if processing_revision is None:
         # Repeated clicks, a second tab or a retried request converge on the work in flight.
         active = await repository.active_request(session, transcript.id)
@@ -63,6 +73,9 @@ async def record_failed_request(
     transcript = await repository.transcript_for_meeting(session, meeting_id)
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
+    prior = await repository.latest_request(session, transcript.id)
+    if prior is not None:
+        return prior  # A request already exists; a failed automatic attempt must not add another.
     now = datetime.now(UTC)
     # Read only the configured owned snapshot, without repeating default seeding
     # or changing the owner's preference after acceptance has already failed.

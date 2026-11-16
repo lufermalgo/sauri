@@ -107,6 +107,19 @@ async def active_request(session: AsyncSession, transcript_id: str) -> SummaryRe
     )
 
 
+async def latest_request(session: AsyncSession, transcript_id: str) -> SummaryRequestOutbox | None:
+    """The newest request of any status, or None when the transcript never had one."""
+    return cast(
+        SummaryRequestOutbox | None,
+        await session.scalar(
+            select(SummaryRequestOutbox)
+            .where(SummaryRequestOutbox.transcript_id == transcript_id)
+            .order_by(SummaryRequestOutbox.generation.desc())
+            .limit(1)
+        ),
+    )
+
+
 async def request_for_owner(
     session: AsyncSession,
     meeting_id: str,

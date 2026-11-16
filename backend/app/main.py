@@ -11,6 +11,7 @@ from app.infra.database import create_engine, create_session_factory
 from app.infra.queue import create_job_queue
 from app.ingestion.router import router as ingestion_router
 from app.meetings.router import router as meetings_router
+from app.regeneration.router import router as regeneration_router
 from app.summaries.outbox import recover_outbox
 from app.summaries.router import router as summaries_router
 from app.templates.router import router as templates_router
@@ -47,6 +48,7 @@ app.add_middleware(
 # Routers
 app.include_router(ingestion_router)
 app.include_router(meetings_router)
+app.include_router(regeneration_router)
 app.include_router(auth_router)
 app.include_router(templates_router)
 app.include_router(summaries_router)

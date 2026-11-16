@@ -34,9 +34,16 @@ from app.infra.processing_claims import (
 )
 from app.infra.queue import JobQueue
 from app.meetings.service import record_transition
-from app.transcription.asr_engine import EngineContractError, TranscriptionOptions, default_language
+from app.regeneration import service as regeneration
+from app.transcription.asr_engine import (
+    ASRCapabilities,
+    EngineContractError,
+    TranscriptionOptions,
+    TranscriptionResult,
+    default_language,
+)
 from app.transcription.factory import create_asr_engine
-from app.transcription.repository import TranscriptRepository
+from app.transcription.repository import TranscriptRepository, replace_transcript_content
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +63,8 @@ def _is_no_speech_response(exc: httpx.HTTPError) -> bool:
 
 async def _publish_diarization(
     message: dict[str, Any], session_factory: async_sessionmaker[AsyncSession], queue: JobQueue,
-) -> None:
+) -> bool:
+    """Hand a committed transcript to diarization once; False when the fence says it already moved on."""
     meeting_id = message["meeting_id"]
     async with session_factory() as session, session.begin():
         if not await verify_worker_binding(
@@ -65,19 +73,20 @@ async def _publish_diarization(
             session, meeting_id=meeting_id, generation=message.get("generation"), job_id=message.get("job_id"),
             kind="transcription", operation_id=message.get("operation_id"),
         ):
-            return
+            return False
         job = {key: message[key] for key in ("meeting_id", "owner_id", "recording_id")}
         generation = message.get("generation")
         if type(generation) is int:
             next_generation = await advance_processing_generation(session, meeting_id, generation)
             if next_generation is None:
-                return
+                return False
             job.update(generation=next_generation, job_id=str(uuid.uuid5(
                 uuid.NAMESPACE_URL, f"sauri:diarize:{meeting_id}:{next_generation}",
             )))
         # Keep the generation lock until broker confirmation. Failed publication
         # rolls back advancement; redelivery finds the transcript and retries here.
         await queue.publish("diarize", job)
+        return True
 
 
 async def _process_transcription(
@@ -146,9 +155,16 @@ async def _process_transcription(
 
     async with session_factory() as session:
         persisted_transcript = await session.scalar(select(Transcript.id).where(Transcript.meeting_id == meeting_id))
-    if persisted_transcript is not None:
-        if queue is not None:
-            await _publish_diarization(message, session_factory, queue)
+        # Only an explicit, live regeneration operation may compute a finished stage again.
+        regenerating = await regeneration.is_live_operation(session, operation_id, "transcription")
+    if persisted_transcript is not None and not regenerating:
+        published = queue is not None and await _publish_diarization(message, session_factory, queue)
+        if not published:
+            logger.info("Transcription delivery dropped; reason=stage_complete")
+        return
+    if operation_id is None and meeting.process_state in ("completed", "failed"):
+        # A settled meeting never starts transcription from an ordinary message.
+        logger.info("Transcription delivery dropped; reason=meeting_settled")
         return
 
     async with session_factory() as session, session.begin():
@@ -168,7 +184,12 @@ async def _process_transcription(
             kind="transcription", operation_id=operation_id,
         ):
             return
-        if meeting.process_state == "recording":
+        if regenerating:
+            live = await regeneration.locked_active_operation(session, operation_id, "transcription")
+            if live is None:
+                return
+            await regeneration.mark_running(session, live)
+        elif meeting.process_state == "recording":
             await record_transition(session, meeting, "recording_uploaded")
 
     logger.info("Processing transcription for meeting_id=%s", meeting_id)
@@ -229,9 +250,17 @@ async def _process_transcription(
                     kind="transcription", operation_id=operation_id,
                 )
             ):
-                if meeting.process_state == "recording":
-                    await record_transition(session, meeting, "recording_uploaded")
-                await record_transition(session, meeting, "engine_failed", failure_cause=cause)
+                live = (
+                    await regeneration.locked_active_operation(session, operation_id, "transcription")
+                    if regenerating else None
+                )
+                if live is not None:
+                    # The previous transcript, speakers and summary stay usable.
+                    await regeneration.fail_operation(session, live, cause)
+                else:
+                    if meeting.process_state == "recording":
+                        await record_transition(session, meeting, "recording_uploaded")
+                    await record_transition(session, meeting, "engine_failed", failure_cause=cause)
         if cause == NO_SPEECH_CAUSE:
             # An expected outcome: retrying the same audio cannot produce text.
             logger.info(
@@ -257,6 +286,7 @@ async def _process_transcription(
 
     # 3. Evaluate the result and persist
     transcript_created = False
+    follow_up: regeneration.Dispatch | None = None
     async with session_factory() as session, session.begin():
         # Re-fetch meeting within the transaction for state transitions
         meeting = await session.get(Meeting, meeting_id)
@@ -273,7 +303,11 @@ async def _process_transcription(
             logger.info("Transcription artifact write skipped; reason=fenced")
             return
 
-        if result.segments:
+        if regenerating:
+            follow_up = await _settle_regeneration(
+                session, meeting, operation_id, result, engine.capabilities(),
+            )
+        elif result.segments:
             # Text was produced -> persist Transcript and turns (Req. 3.4, 3.5)
             capabilities = engine.capabilities()
 
@@ -346,6 +380,46 @@ async def _process_transcription(
 
     if queue is not None and transcript_created:
         await _publish_diarization(message, session_factory, queue)
+    if follow_up is not None and queue is not None:
+        # The cascade continues with speakers, one turn at a time through the engine slot.
+        try:
+            await queue.publish(follow_up.topic, follow_up.message)
+        except Exception:
+            logger.error("Cascade publication failed for meeting_id=%s", meeting_id)
+            await regeneration.fail_unpublished(session_factory, follow_up)
+
+
+async def _settle_regeneration(
+    session: AsyncSession, meeting: Meeting, operation_id: Any, result: TranscriptionResult,
+    capabilities: ASRCapabilities,
+) -> regeneration.Dispatch | None:
+    """Commit a regenerated transcript, or fail the operation, in the verified transaction."""
+    live = await regeneration.locked_active_operation(session, operation_id, "transcription")
+    if live is None:
+        return None
+    if not result.segments:
+        await regeneration.fail_operation(session, live, "engine_failure")
+        return None
+    now = datetime.now(UTC)
+    provider = "local" if capabilities.is_local else "cloud"
+    transcript = await session.scalar(select(Transcript).where(Transcript.meeting_id == meeting.id))
+    if transcript is None:
+        # A failed meeting retried explicitly has no transcript to replace.
+        transcript = Transcript(
+            id=str(uuid.uuid4()), meeting_id=meeting.id, language=result.language, provider=provider,
+            supports_turns=capabilities.supports_turns, expires_at=None, created_at=now,
+        )
+        session.add(transcript)
+        await session.flush()
+    await replace_transcript_content(
+        session, transcript, language=result.language, provider=provider,
+        supports_turns=capabilities.supports_turns, segments=result.segments, words=result.words, now=now,
+    )
+    transition = await record_transition(session, meeting, "transcription_completed")
+    if transition.successful:
+        meeting.failure_cause = None
+    await regeneration.succeed_operation(session, live, finished_at=now)
+    return await regeneration.follow_up(session, live)
 
 
 async def start_worker(
@@ -368,6 +442,12 @@ async def start_worker(
         meeting_id = message.get("meeting_id")
         if not isinstance(meeting_id, str):
             return
+        async with session_factory() as session, session.begin():
+            live = await regeneration.locked_active_operation(session, message.get("operation_id"), "transcription")
+            if live is not None and live.meeting_id == meeting_id:
+                # Exhausted retries of an explicit run: fail it and keep the previous outputs.
+                await regeneration.fail_operation(session, live, "processing_retries_exhausted")
+                return
         async with session_factory() as session:
             transcript = await session.scalar(select(Transcript.id).where(Transcript.meeting_id == meeting_id))
         if transcript is not None:

@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -742,3 +743,63 @@ class MeetingSummary(Base):
     generation: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Explicit stage regeneration (#1053)
+# ---------------------------------------------------------------------------
+
+
+class RegenerationOperation(Base):
+    """One explicit, user-requested re-run of a pipeline stage and its audit trail.
+
+    The only way a completed stage is computed again. A meeting has at most one
+    active (accepted or running) operation; the partial unique index backs the
+    meeting row lock that the endpoint takes.
+    """
+
+    __tablename__ = "regeneration_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "requested_by", "meeting_id", "idempotency_key", name="uq_regeneration_idempotency_scope"
+        ),
+        CheckConstraint(
+            "stage IN ('transcription', 'speakers', 'summary')", name="ck_regeneration_stage_valid"
+        ),
+        CheckConstraint(
+            "status IN ('accepted', 'running', 'succeeded', 'failed')", name="ck_regeneration_status_valid"
+        ),
+        Index(
+            "uq_regeneration_one_active_per_meeting",
+            "meeting_id",
+            unique=True,
+            postgresql_where=text("status IN ('accepted', 'running')"),
+            sqlite_where=text("status IN ('accepted', 'running')"),
+        ),
+        Index("ix_regeneration_operations_meeting_requested", "meeting_id", "requested_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), nullable=False
+    )
+    stage: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    # Digest of the caller's Idempotency-Key header; NULL when none was sent.
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cascade: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Template for a summary run, or for the summary that ends a cascade.
+    template_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("summary_templates.id", ondelete="SET NULL"), nullable=True
+    )
+    parent_operation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    processing_generation: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    diarization_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    summary_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    failure_cause: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Content-free outcome details, e.g. how many speaker names were carried over.
+    details: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)

@@ -439,14 +439,15 @@ async def test_summary_identity_survives_template_change_and_new_revision(
         second = await accept_request(session, message["meeting_id"], message["owner_id"], None, processing_revision=2)
         manual = await accept_request(session, message["meeting_id"], message["owner_id"], None)
         assert same.event_id == first.event_id and same.instructions_snapshot == "Custom brief"
-        assert second.event_id != first.event_id and second.template_version == 4
+        # A newer revision never adds an automatic summary: the first one is the only one (#1053).
+        assert second.event_id == first.event_id
         # A manual request converges on the newest request still in flight (#1045).
-        assert manual.event_id == second.event_id
-        assert (same.generation, second.generation, manual.generation) == (1, 2, 2)
-        same.status = second.status = "succeeded"
+        assert manual.event_id == first.event_id
+        assert (same.generation, second.generation, manual.generation) == (1, 1, 1)
+        same.status = "succeeded"
     async with pg_factory() as session, session.begin():
         manual = await accept_request(session, message["meeting_id"], message["owner_id"], None)
-        assert manual.generation == 3 and manual.event_id not in (first.event_id, second.event_id)
+        assert manual.generation == 2 and manual.event_id != first.event_id and manual.template_version == 4
 
 
 async def test_transcript_words_rollback_with_transcript(
@@ -532,7 +533,8 @@ async def test_reserved_revision_timeout_and_completion_preserve_previous_revisi
         } == previous_assignments
         assert await session.scalar(select(func.count()).select_from(WordSpeakerAssignment)) == 2 * len(WORDS)
         requests = list(await session.scalars(select(SummaryRequestOutbox).order_by(SummaryRequestOutbox.generation)))
-        assert [request.generation for request in requests] == [1, 2]
+        # The second revision completes, but only the first one ever requests a summary (#1053).
+        assert [request.generation for request in requests] == [1]
     assert engines.calls == ["transcription", "diarization", "diarization"]
 
 

@@ -16,6 +16,7 @@ from app.diarization.worker import start_worker as start_diarization_worker
 from app.infra.database import create_engine, create_session_factory
 from app.infra.object_store import create_object_store
 from app.infra.queue import create_job_queue
+from app.regeneration.sweeper import run_stale_operation_sweeper
 from app.retention.worker import start_retention_worker
 from app.summaries.sweeper import run_stale_request_sweeper
 from app.summaries.worker import start_worker as start_summary_worker
@@ -63,6 +64,9 @@ async def main() -> None:
     # Requests whose broker message was lost would otherwise stay pending/running forever.
     stale_summary_task = asyncio.create_task(run_stale_request_sweeper(session_factory))
 
+    # Explicit regeneration runs whose worker never reported back must release the meeting.
+    stale_operation_task = asyncio.create_task(run_stale_operation_sweeper(session_factory))
+
     # Wait for shutdown signal
     stop_event = asyncio.Event()
 
@@ -80,6 +84,7 @@ async def main() -> None:
     retention_task.cancel()
     thumbnail_task.cancel()
     stale_summary_task.cancel()
+    stale_operation_task.cancel()
     await queue.disconnect()
     await engine.dispose()
     logger.info("sauri worker finished")
