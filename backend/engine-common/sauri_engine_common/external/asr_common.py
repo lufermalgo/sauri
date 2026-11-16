@@ -12,7 +12,7 @@ No fabricated times (design Property 7)
     answer that has text but no word times raises ``no_word_timestamps``; times are never interpolated.
 
 Transport
-    Adapters do not own a socket. They receive an ``HttpTransport``: the host service's ``SafeHttp``
+    Adapters do not own a socket. They receive an ``HttpTransport``: ``SafeHttp`` from ``safe_http.py``
     (the single outbound path with the address policy, pinning and body caps) satisfies it as is, and the
     SSRF logic is not duplicated here.
 
@@ -101,7 +101,7 @@ class HttpResponse(Protocol):
 
 
 class HttpTransport(Protocol):
-    """Same call shape as ``SafeHttp.request`` in ``host-engine/providers.py``."""
+    """Same call shape as ``SafeHttp.request`` in ``safe_http.py``."""
 
     async def request(
         self,

@@ -8,10 +8,8 @@ real size limits are NO VERIFICADO until U10; nothing here proves them.
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import logging
-import sys
 import time
 import traceback
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -34,6 +32,7 @@ from sauri_engine_common.external.asr_common import (
     merge_parts,
 )
 from sauri_engine_common.external.errors import ProviderError, classify
+from sauri_engine_common.external.safe_http import SafeHttp
 from sauri_engine_common.route import Route, RouteTimeouts
 from sauri_engine_common.secrets import SecretRecord
 
@@ -966,30 +965,10 @@ def test_secret_record_never_prints_the_key() -> None:
 # --- interface with the real SafeHttp of the host service --------------------------------------------
 
 
-def _load_safe_http() -> Any:
-    try:
-        from sauri_engine_common.external.safe_http import SafeHttp  # type: ignore[import-not-found]  # noqa: PLC0415
-
-        return SafeHttp
-    except ImportError:
-        pass
-    path = Path(__file__).resolve().parents[2] / "host-engine" / "providers.py"
-    spec = importlib.util.spec_from_file_location("providers_for_asr_adapters", path)
-    if spec is None or spec.loader is None:
-        return None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return getattr(module, "SafeHttp", None)
-
-
 async def test_adapters_work_with_the_real_safe_http_transport(fake: FakeProvider, audio: Path) -> None:
-    safe_http = _load_safe_http()
-    if safe_http is None:
-        pytest.skip("SafeHttp is not available")
     fake.routes[f"POST {GROQ_PATH}"] = Reply(body=VERBOSE)
     fake.routes["POST /v1/listen"] = Reply(body=DG_DONE)
-    transport = safe_http()
+    transport = SafeHttp()
     assert len((await openai_call(fake, transport, audio)).words) == 3
     assert len((await deepgram_call(fake, transport, audio)).words) == 3
     # The same transport enforces its address policy: a loopback target is refused without allow_local.
