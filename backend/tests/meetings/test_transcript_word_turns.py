@@ -291,7 +291,7 @@ async def test_another_users_meeting_is_denied_and_audited(
     response = await client.get(f"/api/v1/meetings/{meeting_id}/{endpoint}", headers=_headers(intruder))
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Meeting not found"}
+    assert response.json() == {"detail": "not_found"}
     assert "Hola" not in response.text
     async with factory() as session:
         records = (await session.scalars(select(AccessLog).where(AccessLog.user_id == intruder))).all()

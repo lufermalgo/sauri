@@ -10,11 +10,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.infra.http_errors import CONFLICT, NOT_FOUND, api_error
 from app.infra.models import Meeting, RecordingMediaSource, RecordingNotice, SessionRecording
 from app.ingestion.schemas import IngestionData
 
@@ -39,9 +39,9 @@ async def _classify_existing_recording(
         meeting if recording.meeting_id == meeting_id else await session.get(Meeting, recording.meeting_id)
     )
     if existing_meeting is None or existing_meeting.created_by != created_by:
-        raise HTTPException(status_code=404, detail="Recording not found")
+        raise api_error(404, NOT_FOUND)
     if recording.meeting_id != meeting_id:
-        raise HTTPException(status_code=409, detail="Idempotency key conflict")
+        raise api_error(409, CONFLICT)
     return recording
 
 
@@ -51,7 +51,7 @@ async def preflight_ingestion(
     """Check ownership and classify a retry before any media object is written."""
     meeting = await session.get(Meeting, data.meeting_id)
     if meeting is not None and meeting.created_by != created_by:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+        raise api_error(404, NOT_FOUND)
     recording = await _find_recording_by_key(session, data.idempotency_key)
     if recording is None:
         return None
@@ -61,11 +61,16 @@ async def preflight_ingestion(
 
 
 def resolve_upload_title(title: str | None, filename: str | None) -> str:
-    """Use an explicit title or a bounded filename basename for uploaded meetings."""
+    """Use an explicit title or a sanitized filename basename for uploaded meetings.
+
+    The client file name is never used for storage; it only seeds a default title, so
+    path components and control characters (NUL, newlines, escapes) are dropped.
+    """
     if title is not None and title.strip():
         return title
 
-    basename = (filename or "").replace("\\", "/").rsplit("/", maxsplit=1)[-1].strip()
+    basename = (filename or "").replace("\\", "/").rsplit("/", maxsplit=1)[-1]
+    basename = "".join(char for char in basename if char.isprintable()).strip()
     return (basename or "Untitled recording")[:512]
 
 

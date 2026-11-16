@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from importlib import import_module
 from io import BytesIO
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -20,6 +21,7 @@ from app.auth.schemas import AuthenticatedUser
 from app.infra import models
 from app.ingestion import router as ingestion_router
 from app.retention import worker
+from tests.media_samples import WEBM
 
 drain_pending_object_deletions = import_module(
     "app.retention.cleanup"
@@ -46,6 +48,9 @@ class _RecordingObjectStore:
     def __init__(self, failures: set[str] | None = None) -> None:
         self.failures = failures or set()
         self.deleted: list[str] = []
+
+    async def save_stream(self, key: str, content: Any, content_type: str) -> str:
+        return await self.save(key, content.read(), content_type)  # type: ignore[attr-defined]
 
     async def delete(self, reference: str) -> None:
         self.deleted.append(reference)
@@ -249,7 +254,7 @@ async def test_duplicate_retry_drains_only_its_pending_scope_before_success(
     )
 
     response = await ingestion_router.upload_recording(
-        audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic-audio")),
+        audio=UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"synthetic-audio")),
         video=None,
         data=json.dumps(
             {
@@ -334,8 +339,8 @@ async def test_precommit_failure_persists_all_unique_refs_before_any_delete(
         raise RuntimeError("synthetic pre-commit database failure")
 
     monkeypatch.setattr(ingestion_router, "process_ingestion", fail_before_recording_commit)
-    audio = UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic-audio"))
-    video = UploadFile(filename="synthetic-video.webm", file=BytesIO(b"synthetic-video"))
+    audio = UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"synthetic-audio"))
+    video = UploadFile(filename="synthetic-video.webm", file=BytesIO(WEBM + b"synthetic-video"))
     payload = {
         "meeting_id": "synthetic-meeting-precommit",
         "idempotency_key": "synthetic-precommit-key",
@@ -375,7 +380,7 @@ async def test_postcommit_queue_failure_never_queues_committed_recording_refs(
     async def save(_key: str, _content: bytes, _content_type: str) -> str:
         return audio_ref
 
-    store.save = save  # type: ignore[attr-defined]
+    store.save_stream = save  # type: ignore[attr-defined]
     queue = SimpleNamespace(
         connect=AsyncMock(),
         publish=AsyncMock(side_effect=RuntimeError("synthetic queue unavailable")),
@@ -391,7 +396,7 @@ async def test_postcommit_queue_failure_never_queues_committed_recording_refs(
         "record_transition",
         AsyncMock(return_value=SimpleNamespace(successful=True)),
     )
-    audio = UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic-audio"))
+    audio = UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"synthetic-audio"))
     payload = {
         "meeting_id": "synthetic-meeting-postcommit",
         "idempotency_key": "synthetic-postcommit-key",
@@ -454,8 +459,8 @@ async def test_video_save_failure_persists_and_cleans_previously_saved_audio(
     }
     with pytest.raises(OSError, match="synthetic video storage failure"):
         await ingestion_router.upload_recording(
-            audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic-audio")),
-            video=UploadFile(filename="synthetic-video.webm", file=BytesIO(b"synthetic-video")),
+            audio=UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"synthetic-audio")),
+            video=UploadFile(filename="synthetic-video.webm", file=BytesIO(WEBM + b"synthetic-video")),
             data=json.dumps(payload),
             user=_authenticated_user("synthetic-owner"),
         )
@@ -507,7 +512,7 @@ async def test_preflight_duplicate_does_not_return_success_when_cleanup_fails(
 
     with pytest.raises(OSError, match="synthetic object-store failure"):
         await ingestion_router.upload_recording(
-            audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"unused")),
+            audio=UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"unused")),
             video=None,
             data=json.dumps(
                 {
@@ -569,7 +574,7 @@ async def test_late_race_duplicate_does_not_return_success_when_cleanup_fails(
 
     with pytest.raises(OSError, match="synthetic object-store failure"):
         await ingestion_router.upload_recording(
-            audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic-audio")),
+            audio=UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"synthetic-audio")),
             video=None,
             data=json.dumps(
                 {

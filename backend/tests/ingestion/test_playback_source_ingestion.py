@@ -13,6 +13,7 @@ from fastapi import HTTPException, UploadFile
 
 from app.ingestion import router
 from app.ingestion.schemas import IngestionData
+from tests.media_samples import WEBM
 
 
 def _payload(**overrides: object) -> dict[str, Any]:
@@ -108,7 +109,7 @@ async def test_invalid_capture_metadata_returns_422_before_object_storage(
 
 @pytest.mark.asyncio
 async def test_invalid_json_returns_same_422_detail_and_chains_parse_error() -> None:
-    audio = UploadFile(filename="synthetic.webm", file=BytesIO(b"audio"))
+    audio = UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"audio"))
 
     with pytest.raises(HTTPException) as error:
         await router.upload_recording(
@@ -120,9 +121,7 @@ async def test_invalid_json_returns_same_422_detail_and_chains_parse_error() -> 
 
     assert type(error.value) is HTTPException
     assert error.value.status_code == 422
-    assert error.value.detail == (
-        "Invalid ingestion data: Expecting value: line 1 column 1 (char 0)"
-    )
+    assert error.value.detail == "invalid_request"
     assert isinstance(error.value.__cause__, json.JSONDecodeError)
 
 
@@ -142,16 +141,16 @@ async def test_upload_rejects_video_evidence_inconsistent_with_object_path_befor
     video_offset_ms: int | None,
 ) -> None:
     object_store = Mock()
-    object_store.save = AsyncMock(return_value="synthetic-object-ref")
+    object_store.save_stream = AsyncMock(return_value="synthetic-object-ref")
     monkeypatch.setattr(router, "_get_object_store", Mock(return_value=object_store))
     monkeypatch.setattr(router, "_get_queue", Mock())
     create_engine = Mock(
         side_effect=AssertionError("invalid metadata must be rejected before persistence")
     )
     monkeypatch.setattr(router, "create_engine", create_engine)
-    audio = UploadFile(filename="synthetic-audio.webm", file=BytesIO(b"audio"))
+    audio = UploadFile(filename="synthetic-audio.webm", file=BytesIO(WEBM + b"audio"))
     video = (
-        UploadFile(filename="synthetic-video.webm", file=BytesIO(b"video"))
+        UploadFile(filename="synthetic-video.webm", file=BytesIO(WEBM + b"video"))
         if include_video
         else None
     )
@@ -168,7 +167,7 @@ async def test_upload_rejects_video_evidence_inconsistent_with_object_path_befor
         )
 
     assert error.value.status_code == 422
-    object_store.save.assert_not_awaited()
+    object_store.save_stream.assert_not_awaited()
     create_engine.assert_not_called()
 
 
@@ -207,7 +206,7 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
     session.get = AsyncMock(return_value=foreign_meeting)  # type: ignore[attr-defined]
     engine = AsyncMock()
     store = Mock()
-    store.save = AsyncMock(return_value="private/staged-object")
+    store.save_stream = AsyncMock(return_value="private/staged-object")
     queue = Mock()
     queue.connect = AsyncMock()
     queue.publish = AsyncMock()
@@ -223,7 +222,7 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
     monkeypatch.setattr(
         router, "record_transition", AsyncMock(return_value=SimpleNamespace(successful=True))
     )
-    audio = UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic media"))
+    audio = UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"synthetic media"))
 
     with pytest.raises(HTTPException) as error:
         await router.upload_recording(
@@ -245,8 +244,8 @@ async def test_upload_checks_meeting_owner_before_writing_any_media(
         )
 
     assert error.value.status_code == 404
-    assert error.value.detail == "Meeting not found"
-    store.save.assert_not_awaited()
+    assert error.value.detail == "not_found"
+    store.save_stream.assert_not_awaited()
     process_ingestion_mock.assert_not_awaited()
 
 
@@ -288,7 +287,7 @@ async def test_upload_binds_transcription_job_to_authenticated_owner_and_recordi
     engine = Mock()
     engine.dispose = AsyncMock()
     store = Mock()
-    store.save = AsyncMock(return_value="synthetic/audio-object")
+    store.save_stream = AsyncMock(return_value="synthetic/audio-object")
     queue = Mock()
     queue.connect = AsyncMock()
     queue.publish = AsyncMock()
@@ -310,7 +309,7 @@ async def test_upload_binds_transcription_job_to_authenticated_owner_and_recordi
     monkeypatch.setattr(router, "create_processing_generation", AsyncMock(return_value=1))
 
     result = await router.upload_recording(
-        audio=UploadFile(filename="synthetic.webm", file=BytesIO(b"synthetic audio")),
+        audio=UploadFile(filename="synthetic.webm", file=BytesIO(WEBM + b"synthetic audio")),
         video=None,
         data=json.dumps(_payload(meeting_id=meeting_id, video_presence="absent")),
         user=AuthenticatedUser(

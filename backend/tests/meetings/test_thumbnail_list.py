@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.auth.token import create_token
 from app.infra.models import Meeting, SessionRecording
 from app.meetings import router
+from app.meetings.signed_urls import signed_url_ttl_seconds
 
 OWNER_ID = "thumb-owner"
 OTHER_ID = "thumb-other"
@@ -86,7 +87,7 @@ async def test_a_ready_thumbnail_is_listed_as_a_short_lived_signed_url(
     key = f"recordings/{meeting_id}/{recording_id}/thumbnail.jpg"
     assert item["thumbnail_url"] == f"https://storage.invalid/{key}?X-Amz-Signature=abc"
     assert item["media_kind"] == "video"
-    assert store.signed == [(key, router.THUMBNAIL_URL_TTL_SECONDS)]
+    assert store.signed == [(key, signed_url_ttl_seconds())]
     assert "thumbnail_ref" not in item
 
 

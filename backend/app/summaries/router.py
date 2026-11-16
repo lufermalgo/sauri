@@ -3,24 +3,30 @@
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, status
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.authorization import require_sales
 from app.auth.schemas import AuthenticatedUser
+from app.infra.http_errors import NOT_FOUND, SafeErrorRoute, api_error
 from app.infra.models import SummaryRequestOutbox
+from app.meetings.schemas import ResourceId
 from app.summaries import repository, service
 from app.summaries.passages import KeyPoint, KeyPointBlock, decode_key_points
 from app.templates.router import get_session
 
-router = APIRouter(prefix="/api/v1/meetings/{meeting_id}", tags=["summaries"])
+router = APIRouter(
+    prefix="/api/v1/meetings/{meeting_id}", tags=["summaries"], route_class=SafeErrorRoute
+)
 Session = Annotated[AsyncSession, Depends(get_session)]
 AuthorizedUser = Annotated[AuthenticatedUser, Depends(require_sales(get_session))]
 
 
 class SummaryRequestInput(BaseModel):
-    template_id: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: ResourceId | None = None
 
 
 class SummaryRequestStatus(BaseModel):
@@ -62,10 +68,10 @@ class SummaryResponse(BaseModel):
 
 
 @router.get("/summary")
-async def current_summary(meeting_id: str, session: Session, user: AuthorizedUser) -> SummaryResponse:
+async def current_summary(meeting_id: ResourceId, session: Session, user: AuthorizedUser) -> SummaryResponse:
     result = await repository.current_summary_for_owner(session, meeting_id, user.id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Summary not available")
+        raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
     summary, template_name = result
     content = decode_key_points(summary.key_points_json)
     return SummaryResponse(
@@ -86,7 +92,7 @@ async def current_summary(meeting_id: str, session: Session, user: AuthorizedUse
 
 @router.post("/summary-requests", status_code=202, response_model_exclude_none=True)
 async def request_summary(
-    meeting_id: str,
+    meeting_id: ResourceId,
     data: SummaryRequestInput,
     session: Session,
     user: AuthorizedUser,
@@ -97,21 +103,21 @@ async def request_summary(
 
 
 @router.get("/summary-requests/latest", response_model_exclude_none=True)
-async def latest_request(meeting_id: str, session: Session, user: AuthorizedUser) -> SummaryRequestStatus:
+async def latest_request(meeting_id: ResourceId, session: Session, user: AuthorizedUser) -> SummaryRequestStatus:
     row = await repository.request_for_owner(session, meeting_id, user.id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Summary request not found")
+        raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
     return _request_status(row)
 
 
 @router.get("/summary-requests/{event_id}", response_model_exclude_none=True)
 async def request_status(
-    meeting_id: str,
-    event_id: str,
+    meeting_id: ResourceId,
+    event_id: ResourceId,
     session: Session,
     user: AuthorizedUser,
 ) -> SummaryRequestStatus:
     row = await repository.request_for_owner(session, meeting_id, user.id, event_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Summary request not found")
+        raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
     return _request_status(row)

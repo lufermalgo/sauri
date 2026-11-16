@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.auth.schemas import AuthenticatedUser
 from app.infra.models import Meeting
 from app.meetings import router
+from app.meetings.schemas import MeetingCreate
 
 
 @pytest.fixture
@@ -33,11 +34,18 @@ async def test_create_meeting_chains_value_error_as_http_422_cause(
     monkeypatch.setattr(router, "create_engine", lambda: async_engine)
     monkeypatch.setattr(router, "create_session_factory", lambda _: session_factory)
 
+    async def _reject(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("Invalid input: internal detail that must not reach the client")
+
+    monkeypatch.setattr(router, "register_meeting", _reject)
+
     with pytest.raises(HTTPException) as raised:
-        await router.create_meeting({}, authenticated_user)
+        await router.create_meeting(
+            MeetingCreate(meet_link="https://meet.google.com/abc-defg-hij"), authenticated_user
+        )
 
     assert raised.value.status_code == 422
-    assert str(raised.value.detail).startswith("Invalid input:")
+    assert raised.value.detail == "invalid_request"
     assert isinstance(raised.value.__cause__, ValueError)
     assert str(raised.value.__cause__).startswith("Invalid input:")
 
@@ -56,7 +64,7 @@ async def test_get_meeting_missing_meeting_returns_helper_404(
         await router.get_meeting_endpoint("missing-meeting", authenticated_user)
 
     assert raised.value.status_code == 404
-    assert raised.value.detail == "Meeting not found"
+    assert raised.value.detail == "not_found"
 
 
 @pytest.mark.asyncio
@@ -91,6 +99,6 @@ async def test_get_meeting_chains_value_error_as_http_404_cause(
         await router.get_meeting_endpoint("missing-meeting", authenticated_user)
 
     assert raised.value.status_code == 404
-    assert raised.value.detail == "Meeting not found: missing-meeting"
+    assert raised.value.detail == "not_found"
     assert isinstance(raised.value.__cause__, ValueError)
     assert str(raised.value.__cause__) == "Meeting not found: missing-meeting"

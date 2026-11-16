@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
-from typing import Literal
+from typing import BinaryIO, Literal
 
 ObjectAvailability = Literal["available", "missing"]
 
@@ -28,6 +28,20 @@ class ObjectStore(ABC):
     ) -> str:
         """Stores an object and returns the reference key."""
         ...
+
+    async def save_stream(
+        self,
+        key: str,
+        content: BinaryIO,
+        content_type: str = "application/octet-stream",
+    ) -> str:
+        """Stores a seekable file object without requiring the adapter to hold it in memory.
+
+        Adapters able to stream (S3) override this. The fallback reads the whole file, so it
+        suits only stores of small objects, such as test doubles.
+        """
+        content.seek(0)
+        return await self.save(key, content.read(), content_type)
 
     @abstractmethod
     async def get(self, reference: str) -> bytes:

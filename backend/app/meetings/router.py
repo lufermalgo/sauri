@@ -17,9 +17,9 @@ from __future__ import annotations
 import logging
 from typing import Annotated, Any, Literal, cast
 
-from fastapi import APIRouter, Body, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,6 +28,15 @@ from app.auth.dependencies import get_current_user
 from app.auth.schemas import AuthenticatedUser
 from app.diarization.word_attribution import WordAttribution, WordTime, group_words_into_turns
 from app.infra.database import create_engine, create_session_factory
+from app.infra.http_errors import (
+    CONFLICT,
+    FORBIDDEN,
+    INVALID_REQUEST,
+    NOT_FOUND,
+    SafeErrorRoute,
+    api_error,
+    set_page_headers,
+)
 from app.infra.models import (
     Diarization,
     Meeting,
@@ -44,6 +53,7 @@ from app.infra.models import (
 from app.infra.object_store import ObjectStore, create_object_store
 from app.infra.queue import JobQueue, create_job_queue
 from app.meetings import service as meeting_service
+from app.meetings.schemas import MeetingCreate, ResourceId, RevisionId
 from app.meetings.service import (
     delete_meeting,
     get_meeting,
@@ -51,11 +61,18 @@ from app.meetings.service import (
     rename_meeting,
     request_join,
 )
+from app.meetings.signed_urls import signed_url_ttl_seconds
 from app.meetings.speaker_review_service import SpeakerReviewService
 from app.regeneration import service as regeneration_service
 
-router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"])
+router = APIRouter(prefix="/api/v1/meetings", tags=["meetings"], route_class=SafeErrorRoute)
 logger = logging.getLogger(__name__)
+
+# The portal loads the whole library in one call, so the default page is large; the
+# maximum bounds the work a single request can ask of the database.
+DEFAULT_LIST_LIMIT = 200
+MAX_LIST_LIMIT = 500
+MAX_LIST_OFFSET = 1_000_000
 
 
 def _get_queue() -> JobQueue:
@@ -70,25 +87,19 @@ def _get_object_store() -> ObjectStore:
 
 async def _get_authorized_meeting(
     session: AsyncSession,
-    meeting_id: str,
+    meeting_id: ResourceId,
     user: AuthenticatedUser,
     resource: str,
 ) -> Meeting:
     """Require an authorized sales user who owns the requested meeting."""
     if not user.is_sales:
         await record_access(session, user.id, resource, "denied")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access restricted to authorized sales users",
-        )
+        raise api_error(status.HTTP_403_FORBIDDEN, FORBIDDEN)
 
     meeting = await session.get(Meeting, meeting_id)
     if meeting is None or meeting.created_by != user.id:
         await record_access(session, user.id, resource, "denied")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Meeting not found",
-        )
+        raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
     return meeting
 
 
@@ -112,12 +123,14 @@ class DispositionInput(BaseModel):
 class RenameInput(BaseModel):
     """Body of PATCH /{meeting_id} — the note's new title."""
 
+    model_config = ConfigDict(extra="forbid")
+
     title: str = Field(..., min_length=1, max_length=512)
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_meeting(
-    meeting_data: Annotated[dict[str, Any], Body(title="Input")],
+    meeting_data: MeetingCreate,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Registers a new meeting in state 'queued'.
@@ -131,7 +144,7 @@ async def create_meeting(
         async with session_factory() as session, session.begin():
             meeting = await register_meeting(
                 session=session,
-                meeting_data=meeting_data,
+                meeting_data=meeting_data.model_dump(exclude_none=True),
                 created_by=user.id,
             )
             return {
@@ -141,10 +154,7 @@ async def create_meeting(
                 "origin": meeting.origin,
             }
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise api_error(422, INVALID_REQUEST) from exc
     finally:
         await engine.dispose()
 
@@ -156,9 +166,6 @@ _EMPTY_LIST_FIELDS: dict[str, Any] = {
     "thumbnail_url": None,
     "media_kind": None,
 }
-
-# A thumbnail link is a bearer capability for one image, same lifetime as playback links.
-THUMBNAIL_URL_TTL_SECONDS = 3600
 
 
 def _media_kind(video_presence: str, thumbnail_state: str | None) -> str | None:
@@ -183,7 +190,7 @@ async def _sign_thumbnail_urls(extras: dict[str, dict[str, Any]]) -> None:
         try:
             object_store = object_store or _get_object_store()
             fields["thumbnail_url"] = await object_store.temporary_read_url(
-                reference, ttl_seconds=THUMBNAIL_URL_TTL_SECONDS
+                reference, ttl_seconds=signed_url_ttl_seconds()
             )
         except Exception:
             logger.warning("Could not sign a thumbnail link; the row falls back to the generic image")
@@ -242,11 +249,30 @@ async def _list_summary_fields(
     return extras
 
 
+async def _owner_meeting_count(session: AsyncSession, owner_id: str, offset: int) -> int:
+    """Total for an empty page: zero without a query unless the offset skipped real rows."""
+    if offset == 0:
+        return 0
+    return int(
+        await session.scalar(
+            select(func.count()).select_from(Meeting).where(Meeting.created_by == owner_id)
+        )
+        or 0
+    )
+
+
 @router.get("/")
 async def list_meetings(
+    request: Request,
+    response: Response,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
+    offset: Annotated[int, Query(ge=0, le=MAX_LIST_OFFSET)] = 0,
 ) -> list[dict[str, Any]]:
-    """Lists the authenticated user's meetings.
+    """Lists the authenticated user's meetings, newest first.
+
+    The body stays a bare list. ``X-Total-Count`` carries the owner's total and a
+    ``Link: <...>; rel="next"`` header is present while more rows remain.
 
     Requirements: 4.5, 9.1
     """
@@ -254,13 +280,18 @@ async def list_meetings(
     session_factory = create_session_factory(engine)
     try:
         async with session_factory() as session:
+            # The window count rides on the page query, so listing stays a fixed number of statements.
             stmt = (
-                select(Meeting)
+                select(Meeting, func.count().over())
                 .where(Meeting.created_by == user.id)
-                .order_by(Meeting.created_at.desc())
+                .order_by(Meeting.created_at.desc(), Meeting.id.desc())
+                .limit(limit)
+                .offset(offset)
             )
-            result = await session.execute(stmt)
-            meetings = result.scalars().all()
+            rows = (await session.execute(stmt)).all()
+            meetings = [row[0] for row in rows]
+            total = rows[0][1] if rows else await _owner_meeting_count(session, user.id, offset)
+            set_page_headers(response, request, total, limit, offset, len(meetings))
             extras = await _list_summary_fields(session, [m.id for m in meetings])
             await _sign_thumbnail_urls(extras)
             return [
@@ -282,7 +313,7 @@ async def list_meetings(
 
 @router.patch("/{meeting_id}")
 async def rename_meeting_endpoint(
-    meeting_id: str,
+    meeting_id: ResourceId,
     rename_input: RenameInput,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
@@ -306,7 +337,7 @@ async def rename_meeting_endpoint(
 
 @router.delete("/{meeting_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_meeting_endpoint(
-    meeting_id: str,
+    meeting_id: ResourceId,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> None:
     """Deletes a note and everything associated with it (My_Notes -> delete).
@@ -328,7 +359,7 @@ async def delete_meeting_endpoint(
 
 @router.get("/{meeting_id}")
 async def get_meeting_endpoint(
-    meeting_id: str,
+    meeting_id: ResourceId,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Looks up the current state of a meeting.
@@ -352,17 +383,14 @@ async def get_meeting_endpoint(
             result.update(await regeneration_service.meeting_hints(session, meeting_id))
             return result
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
+        raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND) from exc
     finally:
         await engine.dispose()
 
 
 @router.post("/{meeting_id}/request-join")
 async def request_join_endpoint(
-    meeting_id: str,
+    meeting_id: ResourceId,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Requests a manual join of the assistant to a queued meeting.
@@ -382,13 +410,7 @@ async def request_join_endpoint(
         async with session_factory() as session, session.begin():
             result = await request_join(session, meeting_id, queue)
             if not result.successful:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Cannot request join: the meeting is in state "
-                        f"'{result.new_state}'"
-                    ),
-                )
+                raise api_error(status.HTTP_409_CONFLICT, CONFLICT)
             return {
                 "meeting_id": meeting_id,
                 "process_state": result.new_state,
@@ -401,9 +423,9 @@ async def request_join_endpoint(
 
 @router.get("/{meeting_id}/speaker-review")
 async def get_speaker_review(
-    meeting_id: str,
+    meeting_id: ResourceId,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
-    revision_id: int | None = None,
+    revision_id: Annotated[RevisionId | None, Query()] = None,
 ) -> dict[str, Any]:
     """Reload the authenticated owner's persisted speaker-review state.
 
@@ -423,10 +445,7 @@ async def get_speaker_review(
             service = SpeakerReviewService(session)
             result = await service.get_active_review(user.id, meeting_id, revision_id)
             if result is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Speaker review not found: {meeting_id}",
-                )
+                raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
             if revision_id is None:
                 revisions = await service.available_revisions(meeting_id)
                 if len(revisions) > 1:
@@ -438,9 +457,9 @@ async def get_speaker_review(
 
 @router.put("/{meeting_id}/speaker-review/revisions/{revision_id}/speakers/{speaker_id}")
 async def put_speaker_disposition(
-    meeting_id: str,
-    revision_id: int,
-    speaker_id: str,
+    meeting_id: ResourceId,
+    revision_id: RevisionId,
+    speaker_id: ResourceId,
     payload: DispositionInput,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
@@ -460,11 +479,11 @@ async def put_speaker_disposition(
                 payload.model_dump(exclude_none=True), payload.expected_version,
             )
             if outcome["outcome"] == "not_found":
-                raise HTTPException(status_code=404, detail="Speaker review not found")
+                raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
             if outcome["outcome"].startswith("conflict_"):
-                raise HTTPException(status_code=409, detail="Speaker review conflict")
+                raise api_error(status.HTTP_409_CONFLICT, CONFLICT)
             if outcome["outcome"] == "invalid_request":
-                raise HTTPException(status_code=422, detail="Invalid disposition")
+                raise api_error(422, INVALID_REQUEST)
             return cast(dict[str, Any], outcome["result"])
     finally:
         await engine.dispose()
@@ -472,7 +491,7 @@ async def put_speaker_disposition(
 
 @router.get("/{meeting_id}/playback")
 async def get_playback_manifest(
-    meeting_id: str,
+    meeting_id: ResourceId,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Return short-lived media URLs after verifying meeting ownership."""
@@ -494,23 +513,18 @@ async def get_playback_manifest(
             )
             recording = recording_result.scalar_one_or_none()
             if recording is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Playback not available for meeting: {meeting_id}",
-                )
+                raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
 
             inventory = await meeting_service.load_playback_source_inventory(
                 session, recording.id
             )
             if inventory is None or inventory.audio_source is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Playback not available for meeting: {meeting_id}",
-                )
+                raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
 
             object_store = _get_object_store()
+            ttl_seconds = signed_url_ttl_seconds()
             audio_url = await object_store.temporary_read_url(
-                inventory.audio_source.object_ref, ttl_seconds=3600
+                inventory.audio_source.object_ref, ttl_seconds=ttl_seconds
             )
             audio_source = {
                 "source_id": inventory.audio_source.id,
@@ -530,7 +544,7 @@ async def get_playback_manifest(
                         {
                             "source_id": source.id,
                             "url": await object_store.temporary_read_url(
-                                source.object_ref, ttl_seconds=3600
+                                source.object_ref, ttl_seconds=ttl_seconds
                             ),
                             "mime_type": source.mime_type,
                             "quality_label": source.quality_label,
@@ -657,7 +671,7 @@ async def _attributed_turns(
 
 @router.get("/{meeting_id}/transcript")
 async def get_transcript(
-    meeting_id: str,
+    meeting_id: ResourceId,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Gets the full transcript of a meeting.
@@ -681,10 +695,7 @@ async def get_transcript(
             transcript = result.scalar_one_or_none()
 
             if transcript is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Transcript not available for meeting: {meeting_id}",
-                )
+                raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
 
             # Get the turns/segments
             stmt_turns = (
@@ -726,7 +737,7 @@ async def get_transcript(
 
 @router.get("/{meeting_id}/diarization")
 async def get_diarization(
-    meeting_id: str,
+    meeting_id: ResourceId,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> dict[str, Any]:
     """Gets the Diarization (speakers + assignments) of a meeting.
@@ -753,10 +764,7 @@ async def get_diarization(
             )
 
             if diarization is None:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Diarization not available for meeting: {meeting_id}",
-                )
+                raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
 
             ordered_speakers = sorted(diarization.speakers, key=lambda s: s.sequence)
 
