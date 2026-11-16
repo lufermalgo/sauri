@@ -120,6 +120,18 @@ describe("TextField", () => {
   });
 });
 
+describe("TextField trailing control", () => {
+  it("renders the control inside the field and leaves a plain field untouched", () => {
+    const { container, rerender } = render(<TextField label="Name" trailing={<button type="button" aria-label="Toggle" />} />);
+    expect(container.querySelector(".ui-input-wrap")).toContainElement(screen.getByRole("button", { name: "Toggle" }));
+    expect(screen.getByLabelText("Name")).toHaveClass("ui-input--has-trailing");
+
+    rerender(<TextField label="Name" />);
+    expect(container.querySelector(".ui-input-wrap")).toBeNull();
+    expect(screen.getByLabelText("Name")).not.toHaveClass("ui-input--has-trailing");
+  });
+});
+
 describe("ProgressBar", () => {
   it("is indeterminate when no value is provided", () => {
     render(<ProgressBar label="Upload progress" />);
