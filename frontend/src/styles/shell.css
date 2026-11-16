@@ -48,12 +48,19 @@
   padding-inline: 4px 0;
 }
 
+/* In the rail the isotype stays (alone, its name shows as a tooltip) above the collapse button. */
 .shell-root[data-mode="rail"] .shell-sidebar-head {
+  flex-direction: column;
   justify-content: center;
+  gap: var(--ds-space-2);
+  padding-inline: 0;
 }
 
 .shell-root[data-mode="rail"] .shell-sidebar-head .shell-brand {
-  display: none;
+  position: relative;
+  justify-content: center;
+  width: var(--ds-icon-button-md);
+  height: var(--ds-icon-button-md);
 }
 
 .shell-brand {
@@ -68,8 +75,8 @@
 
 .shell-brand-mark {
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
 }
 
 .shell-brand-name {

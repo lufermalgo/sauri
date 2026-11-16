@@ -62,3 +62,20 @@ describe("manifest.json — minimal exposure to web pages", () => {
     expect(manifest.web_accessible_resources).toBeUndefined();
   });
 });
+
+describe("manifest.json — brand icons", () => {
+  const SIZES = ["16", "32", "48", "128"];
+
+  it("declares the isotype at 16, 32, 48 and 128 px for the extension and the toolbar action", () => {
+    expect(Object.keys(manifest.icons).sort()).toEqual([...SIZES].sort());
+    expect(manifest.action.default_icon).toEqual(manifest.icons);
+  });
+
+  it.each(SIZES)("ships a %s px PNG with the declared size", (size) => {
+    const file = path.resolve(__dirname, "..", "public", manifest.icons[size]);
+    const png = fs.readFileSync(file);
+    expect(png.subarray(1, 4).toString()).toBe("PNG");
+    expect(png.readUInt32BE(16)).toBe(Number(size));
+    expect(png.readUInt32BE(20)).toBe(Number(size));
+  });
+});
