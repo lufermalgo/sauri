@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { IDBFactory } from "fake-indexeddb";
 import { SidePanelApp } from "./SidePanelApp";
 import { panelCopy as copy } from "./copy";
+import { chooseSource, sourceTrigger } from "./test-helpers";
 import { DEFAULT_RECORDING_SETTINGS, parseRecordingSettings } from "./recordingSettings";
 import type { RecordingSettings } from "../core/types";
 
@@ -34,7 +35,7 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 async function ready() {
-  const record = await screen.findByRole("button", { name: copy.record });
+  const record = await screen.findByRole("button", { name: copy.newRecording });
   await waitFor(() => expect(record).toBeEnabled());
   return record;
 }
@@ -183,9 +184,9 @@ describe("Terra recording journey", () => {
   it("uses the existing capture-mode message", async () => {
     render(<SidePanelApp />);
     await ready();
-    fireEvent.click(screen.getByRole("radio", { name: copy.audioOnly }));
+    await chooseSource(copy.audioOnly);
     await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "set-capture-mode", captureMode: "audio_only" }));
-    await waitFor(() => expect(screen.getByRole("radio", { name: copy.audioOnly })).toHaveAttribute("aria-checked", "true"));
+    await waitFor(() => expect(sourceTrigger()).toHaveTextContent(copy.audioOnly));
   });
   it("validates invalid and partial settings independently", () => {
     expect(parseRecordingSettings(null)).toEqual(DEFAULT_RECORDING_SETTINGS);

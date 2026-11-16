@@ -1,7 +1,7 @@
 // Side_Panel composition — Req. 1.3, 1.4, 1.5, 1.6, 13.2, 13.3, 13.4
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { PanelHeader } from "./components/PanelHeader";
-import { CaptureControls, type MicOption } from "./components/CaptureControls";
+import { CaptureControls, type CaptureSourceChoice, type MicOption } from "./components/CaptureControls";
 import { NotesList } from "./components/NotesList";
 import { AuthView } from "./components/AuthView";
 import { RecordingCompletionStatus } from "./components/RecordingCompletionStatus";
@@ -49,6 +49,7 @@ export function SidePanelApp() {
   const settingsPendingRef = useRef(false);
   const [microphoneEnabled, setMicrophoneEnabled] = useState(true);
   const [captureMode, setCaptureMode] = useState<"screen_audio" | "audio_only">("screen_audio");
+  const [currentTabSelected, setCurrentTabSelected] = useState(false);
   const [modePending, setModePending] = useState(false);
   const modePendingRef = useRef(false);
   const [warningSource, setWarningSource] = useState<CaptureSource | null>(null);
@@ -331,7 +332,7 @@ export function SidePanelApp() {
     }
   }, [selectedMicrophone, selecting, captureState, currentTabAvailable, openMicrophonePermission, microphonesReady, projectionReady, microphoneEnabled, settings, settingsReady]);
 
-  const handleNewNote = useCallback(() => handleStartCapture("picker"), [handleStartCapture]);
+  const handleNewNote = useCallback(() => handleStartCapture(currentTabSelected ? "current-tab" : "picker"), [handleStartCapture, currentTabSelected]);
 
   const sendControl = async (type: "stop-capture" | "pause-capture" | "resume-capture" | "cancel-capture") => {
     if (commandPendingRef.current) return;
@@ -360,6 +361,13 @@ export function SidePanelApp() {
     finally { modePendingRef.current = false; setModePending(false); }
   };
 
+  // "This tab" is a start shortcut, not a background capture mode: it records the tab with video.
+  const changeSource = (source: CaptureSourceChoice) => {
+    setCurrentTabSelected(source === "current-tab");
+    const mode = source === "current-tab" ? "screen_audio" : source;
+    if (mode !== captureMode) void changeMode(mode);
+  };
+
   const handleOpenNote = async (meetingId: string) => {
     try { await chrome.tabs.create({ url: portalDestination(meetingId) }); }
     catch { setStartError(copy.commandError); }
@@ -385,7 +393,7 @@ export function SidePanelApp() {
   const notesViewState = deriveViewState(notesRequest);
 
   return <div className="panel-app">
-    <PanelHeader captureState={captureState} paused={backgroundState.paused} onOpenSettings={captureState === "idle" ? () => setSettingsOpen(true) : undefined} />
+    <PanelHeader captureState={captureState} paused={backgroundState.paused} />
     <main className="panel-main panel-stack">
       {settingsOpen ? <RecordingSettingsView settings={settings} onChange={change => { void saveSettings(change); }} onBack={() => setSettingsOpen(false)} pending={settingsPending || !settingsReady} error={settingsError} /> : <>
         {selecting && <p role="status">{startingSource === "picker" ? copy.choosing : copy.starting}</p>}
@@ -397,10 +405,10 @@ export function SidePanelApp() {
           onSelectMicrophone={setSelectedMicrophone}
           microphoneEnabled={microphoneEnabled}
           onToggleMicrophone={() => setMicrophoneEnabled(value => !value)}
-          captureMode={captureMode}
-          onChangeMode={mode => { void changeMode(mode); }}
+          source={currentTabSelected ? "current-tab" : captureMode}
+          onChangeSource={changeSource}
+          onOpenSettings={() => setSettingsOpen(true)}
           onToggleCapture={() => { if (captureState === "idle") void handleNewNote(); else void sendControl("stop-capture"); }}
-          onCaptureCurrentTab={() => { void handleStartCapture("current-tab"); }}
           currentTabAvailable={currentTabAvailable}
           onPause={() => { void sendControl(backgroundState.paused ? "resume-capture" : "pause-capture"); }}
           onCancel={() => { void sendControl("cancel-capture"); }}
