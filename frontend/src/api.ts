@@ -28,7 +28,7 @@ import type {
   LocalJob,
   LocalModelList,
 } from "@sauri/shared-types";
-import { t } from "./i18n";
+import i18n, { t } from "./i18n";
 
 export interface PlaybackSource {
   source_id: string;
@@ -869,9 +869,13 @@ export function listEngineProcesses(): Promise<EngineProcessState[]> {
   return enginesRequest("/processes");
 }
 
-/** The notice the person must accept before `providerId` serves `capability`; it carries its version. */
+/**
+ * The notice the person must accept before `providerId` serves `capability`, written in the portal's
+ * language; it carries its version, which is the same in every language.
+ */
 export function getEnginePrivacyNotice(capability: EngineProcess, providerId: string): Promise<EnginePrivacyNotice> {
-  return enginesRequest(`/processes/${capability}/notice?provider_id=${encodeURIComponent(providerId)}`);
+  const params = new URLSearchParams({ provider_id: providerId, lang: i18n.language });
+  return enginesRequest(`/processes/${capability}/notice?${params}`);
 }
 
 export function putEngineProcess(capability: EngineProcess, choice: EngineProcessChoice): Promise<EngineProcessState> {

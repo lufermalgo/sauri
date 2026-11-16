@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { isLocked } from "../../core/authLock";
 import type { AuthAttempt } from "../../core/types";
 import { PanelHeader } from "./PanelHeader";
-import { panelCopy as copy } from "../copy";
+import { useT } from "../../i18n";
 
 export interface AuthViewProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -11,6 +11,7 @@ export interface AuthViewProps {
 }
 
 export function AuthView({ onLogin, unavailable, sessionExpired }: AuthViewProps) {
+  const { t } = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [attempts, setAttempts] = useState<AuthAttempt[]>([]);
@@ -31,15 +32,15 @@ export function AuthView({ onLogin, unavailable, sessionExpired }: AuthViewProps
     } finally { setPending(false); }
   };
   return <div className="panel-app"><PanelHeader /><main className="panel-stack panel-auth">
-    <h1>{copy.loginHeading}</h1>
-    {sessionExpired && <><p>{copy.sessionExpired}</p><p className="panel-warning" role="alert">{copy.sessionAlert}</p></>}
-    {unavailable && <p role="alert">{copy.unavailable}</p>}
-    {locked && <p role="alert">{copy.locked}</p>}
-    {error && !locked && <p role="alert">{copy.loginError}</p>}
+    <h1>{t("panel:loginHeading")}</h1>
+    {sessionExpired && <><p>{t("panel:sessionExpired")}</p><p className="panel-warning" role="alert">{t("panel:sessionAlert")}</p></>}
+    {unavailable && <p role="alert">{t("panel:unavailable")}</p>}
+    {locked && <p role="alert">{t("panel:locked")}</p>}
+    {error && !locked && <p role="alert">{t("panel:loginError")}</p>}
     <form className="panel-stack" onSubmit={handleSubmit}>
-      <label className="panel-stack">{copy.email}<input type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required /></label>
-      <label className="panel-stack">{copy.password}<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></label>
-      <button className="panel-primary" type="submit" disabled={locked || unavailable || pending}>{copy.login}</button>
+      <label className="panel-stack">{t("panel:email")}<input type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required /></label>
+      <label className="panel-stack">{t("panel:password")}<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></label>
+      <button className="panel-primary" type="submit" disabled={locked || unavailable || pending}>{t("panel:login")}</button>
     </form>
   </main></div>;
 }

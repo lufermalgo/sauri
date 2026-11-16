@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { copy } from "./copy";
+import i18n from "../i18n";
+import { overlayCopy as copy } from "../i18n/spanish";
 import { installOverlayMessaging } from "./messaging";
 import { cancelCountdown, hideRecordingUI } from "./recording";
 
@@ -106,6 +107,36 @@ describe("overlay messaging installation", () => {
     vi.mocked(chrome.runtime.sendMessage).mockRejectedValueOnce(new Error("no worker"));
     delete (globalThis as Record<string, unknown>).__sauriOverlayInstall;
     expect(installOverlayMessaging()).toBe(true);
+  });
+});
+
+describe("overlay language", () => {
+  it("speaks the saved language, in the page's notice and in its controls", async () => {
+    vi.stubGlobal("chrome", {
+      i18n: { getUILanguage: () => "es-CO" },
+      storage: { local: { get: vi.fn(async () => ({ sauriLanguage: "en" })) }, onChanged: { addListener: vi.fn() } },
+      runtime: {
+        get id() { return runtimeId; },
+        onMessage: { addListener: (listener: Listener) => listeners.push(listener) },
+        sendMessage: vi.fn(async () => ({ ok: true })),
+      },
+    });
+    installOverlayMessaging();
+    await vi.waitFor(() => expect(i18n.language).toBe("en"));
+    const { showNotice } = await import("./recording");
+    expect(showNotice("tab")).toBe(true);
+    expect(noticeText()).toContain("This tab is being recorded with Sauri.");
+    expect(noticeText()).not.toContain(copy.tabNotice);
+  });
+
+  it("follows the browser language when none is saved", async () => {
+    vi.stubGlobal("chrome", {
+      i18n: { getUILanguage: () => "en-GB" },
+      storage: { local: { get: vi.fn(async () => ({})) }, onChanged: { addListener: vi.fn() } },
+      runtime: { get id() { return runtimeId; }, onMessage: { addListener: vi.fn() }, sendMessage: vi.fn(async () => ({ ok: true })) },
+    });
+    installOverlayMessaging();
+    await vi.waitFor(() => expect(i18n.language).toBe("en"));
   });
 });
 

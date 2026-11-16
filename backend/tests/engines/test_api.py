@@ -18,7 +18,7 @@ from httpx import AsyncClient, Response
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.copy.engine_notices_es import NOTICE_VERSIONS, PROCESS_NAMES
+from app.copy.engine_notices import NOTICE_VERSIONS, PROCESS_NAMES
 from app.infra.models import EnginePrivacyConsent, EngineProcessSetting, EngineProvider
 from app.summaries.engine import probe_schema
 from tests.engines.conftest import OTHER, OWNER, FakeHost, auth_headers
@@ -670,6 +670,25 @@ async def test_notice_names_process_provider_address_and_billing(api: AsyncClien
         await api.get(f"{BASE}/processes/summary/notice?provider_id={ollama['id']}", headers=auth_headers())
     ).json()
     assert "este mismo equipo" in " ".join(local["paragraphs"]) and local["address"] == "http://localhost:4000"
+
+
+async def test_notice_comes_in_the_requested_language_with_the_same_version(api: AsyncClient) -> None:
+    provider = await _with_key(api, "deepgram")
+    url = f"{BASE}/processes/transcription/notice?provider_id={provider['id']}"
+    spanish = (await api.get(url, headers=auth_headers())).json()
+    explicit = (await api.get(f"{url}&lang=es", headers=auth_headers())).json()
+    english_response = await api.get(f"{url}&lang=en", headers=auth_headers())
+    english = english_response.json()
+    assert explicit == spanish
+    assert english_response.status_code == 200
+    assert english["title"] == "Transcription with Deepgram"
+    assert "full audio" in " ".join(english["paragraphs"]) and "audio completo" not in " ".join(english["paragraphs"])
+    assert english["notice_version"] == spanish["notice_version"] == NOTICE_VERSIONS["transcription"]
+    assert len(english["paragraphs"]) == len(spanish["paragraphs"])
+    assert (await api.get(f"{url}&lang=fr", headers=auth_headers())).status_code == 422
+    # A consent accepted from the English notice is the same consent the Spanish notice asks for.
+    chosen = await _choose(api, "transcription", provider["id"], "nova-3", notice_version=english["notice_version"])
+    assert chosen.status_code == 200, chosen.text
 
 
 async def test_the_notice_version_in_the_choice_matches_the_notice_served(api: AsyncClient) -> None:

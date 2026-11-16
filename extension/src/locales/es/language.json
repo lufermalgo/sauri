@@ -1,0 +1,5 @@
+{
+  "title": "Idioma",
+  "label": "Idioma de la extensión",
+  "help": "Cambia el idioma del panel, el aviso de grabación y los controles de Sauri. La elección se recuerda solo en este navegador. Si no eliges ninguno, se usa el del navegador."
+}

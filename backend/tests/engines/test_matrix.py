@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from app.copy.engine_notices_es import NOTICE_VERSIONS, PROCESS_NAMES, PROVIDER_NAMES, build_notice
+from app.copy.engine_notices import NOTICE_VERSIONS, PROCESS_NAMES, PROVIDER_NAMES, build_notice
 from app.engines import capability_matrix as matrix
 from app.engines.schemas import ERROR_CLASSES, ProviderKind
 
@@ -152,3 +152,22 @@ def test_notices_avoid_technical_vocabulary() -> None:
                 notice = build_notice(capability, kind, "https://api.example.com", runs_on_this_device=local)
                 text = " ".join([notice.title, *notice.paragraphs])
                 assert not [word for word in forbidden if word in text], (capability, kind, local)
+
+
+@pytest.mark.parametrize("capability", matrix.VISIBLE_CAPABILITIES)
+@pytest.mark.parametrize("kind", matrix.PROVIDER_KINDS)
+@pytest.mark.parametrize("local", [False, True])
+def test_english_notice_says_the_same_as_the_spanish_one(capability: str, kind: str, local: bool) -> None:
+    spanish = build_notice(capability, kind, "https://api.example.com", runs_on_this_device=local)
+    english = build_notice(capability, kind, "https://api.example.com", runs_on_this_device=local, language="en")
+    assert english.version == spanish.version == NOTICE_VERSIONS[capability]
+    assert len(english.paragraphs) == len(spanish.paragraphs)
+    assert english.address == spanish.address
+    text = " ".join([english.title, *english.paragraphs])
+    assert "https://api.example.com" in text
+    assert english.provider_name in text
+    assert "not on Sauri" in text or "not by Sauri" in text or "Sauri does not charge" in text
+    # No Spanish is left behind in the English text.
+    assert not re.search(r"[áéíóúñ¿¡]|\b(de|el|la|los|con|tu|tus|para)\b", text.replace("Codex (plan ChatGPT)", ""))
+    forbidden = ("token", "endpoint", "JSON", "payload", "HTTP", "SDK", "streaming", "prompt")
+    assert not [word for word in forbidden if word in text]

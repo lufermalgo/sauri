@@ -3,6 +3,7 @@
 // Installation is idempotent per page and tolerates a script left behind by a
 // previous extension load (its runtime context is gone, so it can no longer act).
 
+import { initLanguage, watchLanguage } from "../i18n";
 import { cancelCountdown, hideRecordingUI, showCountdown, showNotice, syncRecordingUI, type OverlayVariant, type RecordingUI } from "./recording";
 
 const INSTALL_KEY = "__sauriOverlayInstall";
@@ -38,6 +39,10 @@ export function installOverlayMessaging(options: { currentTitle?: () => string }
   // Controls bound by a dead script cannot reach the extension; start from a clean page.
   if (previous) OVERLAY_HOST_IDS.forEach(id => document.getElementById(id)?.remove());
   holder[INSTALL_KEY] = { alive: contextAlive };
+
+  // The overlay speaks the language chosen in the options page, or the browser's.
+  void initLanguage().catch(() => { /* Spanish stays when the preference cannot be read. */ });
+  watchLanguage();
 
   chrome.runtime.onMessage.addListener(
     (message: OverlayMessage, _sender, sendResponse) => {

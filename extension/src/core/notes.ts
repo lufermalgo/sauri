@@ -10,14 +10,9 @@ export function displayTitle(title: string | null | undefined): string {
   return title;
 }
 
-/** Formats an ISO-8601 date as "D/M, HH:MM" (Req. 4.5) */
-export function formatNoteDate(createdAt: string): string {
-  const date = new Date(createdAt);
-  const day = date.getDate();
-  const month = date.getMonth() + 1;
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${day}/${month}, ${hours}:${minutes}`;
+/** Formats an ISO-8601 date as day/month and time in the given language ("5/3, 14:07" / "3/5, 2:07 PM") (Req. 4.5) */
+export function formatNoteDate(createdAt: string, locale = "es"): string {
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(createdAt));
 }
 
 /** Projects Notes to Cards (1:1 by meetingId) — Req. 4.2, 4.3 */

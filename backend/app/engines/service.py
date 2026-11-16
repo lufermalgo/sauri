@@ -19,7 +19,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.copy.engine_notices_es import NOTICE_VERSIONS, build_notice
+from app.copy.engine_notices import DEFAULT_LANGUAGE, NOTICE_VERSIONS, Language, build_notice
 from app.engines import capability_matrix as matrix
 from app.engines.capability_matrix import ProcessName
 from app.engines.host_client import HostClient, HostError, HostRejectedError, HostUnavailableError, valid_secret_ref
@@ -615,13 +615,23 @@ async def list_processes(session: AsyncSession, owner_id: str) -> list[ProcessOu
     return result
 
 
-async def get_notice(session: AsyncSession, owner_id: str, capability: ProcessName, provider_id: str) -> NoticeOut:
+async def get_notice(
+    session: AsyncSession,
+    owner_id: str,
+    capability: ProcessName,
+    provider_id: str,
+    language: Language = DEFAULT_LANGUAGE,
+) -> NoticeOut:
     row = await _load_provider(session, owner_id, provider_id)
     if not matrix.is_offered(row.kind, capability) or row.base_url is None:
         raise api_error(UNPROCESSABLE, "unsupported_provider")
     address = origin_of(row.base_url)
     notice = build_notice(
-        capability, row.kind, address, runs_on_this_device=is_loopback_name(urlsplit(row.base_url).hostname or "")
+        capability,
+        row.kind,
+        address,
+        runs_on_this_device=is_loopback_name(urlsplit(row.base_url).hostname or ""),
+        language=language,
     )
     return NoticeOut(
         capability=capability,

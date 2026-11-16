@@ -35,9 +35,9 @@ EXCLUDED_PATH_PARTS = (
     # Portal translations (Spanish is the source language) and the i18n module that tests and checks them.
     "/frontend/src/locales/",
     "/frontend/src/i18n/",
-    # Extension UI copy follows the same localization boundary as the portal.
-    "/extension/src/panel/copy/",
-    "/extension/src/options/copy/",
+    # Extension translations (Spanish is the source language), like the portal's.
+    "/extension/src/locales/",
+    "/extension/src/i18n/",
     # A rename migration (and the test that verifies it happened) must name
     # both the old and new identifiers — that's not leftover Spanish code,
     # it's the record of the rename itself.

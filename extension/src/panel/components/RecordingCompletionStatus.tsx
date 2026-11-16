@@ -5,24 +5,7 @@ import { COMPLETION_STORE, acknowledgeCompletion, getCompletion, getChunksBySess
 import { isOutcomeAcknowledged, isTerminalOutcome } from "../../core/completion-visibility";
 import { portalDestination } from "../portal";
 
-import { panelCopy as copy } from "../copy";
-
-const outcomes: Record<RecordingCompletion["status"], string> = {
-  capturing: copy.recording,
-  finalizing: copy.saving,
-  upload_pending: copy.saving,
-  uploading: copy.saving,
-  upload_succeeded: copy.saved,
-  upload_failed: copy.uploadFailed,
-  upload_outcome_unavailable: copy.uploadUnknown,
-  processing: copy.saved,
-  processing_assets_unavailable: copy.processingUnavailable,
-  processing_status_unavailable: copy.processingUnavailable,
-  processing_failed: copy.processingFailed,
-  processing_succeeded: copy.reviewReady,
-  review_launch_pending: copy.reviewPending,
-  review_opened: copy.reviewOpened,
-};
+import { useT } from "../../i18n";
 
 /** A lost worker projection may recover the latest durable recording, never an
  * arbitrary successful one. An explicit selection must never fall back. The
@@ -55,6 +38,23 @@ interface Feedback {
  * IndexedDB emits no cross-context storage event, so re-read while open and on
  * reopen. No worker RPC, auth token or raw server error is needed for this UI. */
 export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sessionId?: string; onVisibleChange?: (visible: boolean) => void }) {
+  const { t } = useT();
+  const outcomes: Record<RecordingCompletion["status"], string> = {
+    capturing: t("panel:recording"),
+    finalizing: t("panel:saving"),
+    upload_pending: t("panel:saving"),
+    uploading: t("panel:saving"),
+    upload_succeeded: t("panel:saved"),
+    upload_failed: t("panel:uploadFailed"),
+    upload_outcome_unavailable: t("panel:uploadUnknown"),
+    processing: t("panel:saved"),
+    processing_assets_unavailable: t("panel:processingUnavailable"),
+    processing_status_unavailable: t("panel:processingUnavailable"),
+    processing_failed: t("panel:processingFailed"),
+    processing_succeeded: t("panel:reviewReady"),
+    review_launch_pending: t("panel:reviewPending"),
+    review_opened: t("panel:reviewOpened"),
+  };
   // Keyed by session and status: a later, different outcome must not stay hidden.
   const [dismissedOutcome, setDismissedOutcome] = useState<string | undefined>();
   const [actionPending, setActionPending] = useState(false);
@@ -95,7 +95,7 @@ export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sess
       // The upload owner handles retries; the panel must not mutate queue state.
       const result = await chrome.runtime.sendMessage({ type: "retry-upload", sessionId: record.sessionId });
       if (!result?.ok) throw new Error("Retry rejected");
-    } catch { setActionError(copy.retryError); }
+    } catch { setActionError(t("panel:retryError")); }
     finally { setActionPending(false); }
   };
 
@@ -109,7 +109,7 @@ export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sess
   const openPortal = async () => {
     if (!record) return;
     try { await chrome.tabs.create({ url: portalDestination(record.meetingId) }); }
-    catch { setActionError(copy.commandError); }
+    catch { setActionError(t("panel:commandError")); }
   };
 
   const download = async () => {
@@ -129,7 +129,7 @@ export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sess
       document.body.append(link);
       link.click();
       link.remove();
-    } catch { setActionError(copy.downloadError); }
+    } catch { setActionError(t("panel:downloadError")); }
     finally {
       if (url) { const blobUrl = url; setTimeout(() => URL.revokeObjectURL(blobUrl), 1000); }
       setActionPending(false);
@@ -143,21 +143,21 @@ export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sess
   const uploading = record && ["finalizing", "upload_pending", "uploading"].includes(record.status) && !record.captureError;
   const uploadFailed = record && record.status === "upload_failed" && !record.captureError;
   const noSpeech = !record?.captureError && record?.status === "processing_failed" && record.failureCause === "no_speech_detected";
-  const title = unavailable ? copy.statusUnavailable : record!.captureError ? copy.captureError : noSpeech ? copy.noSpeech : outcomes[record!.status];
+  const title = unavailable ? t("panel:statusUnavailable") : record!.captureError ? t("panel:captureError") : noSpeech ? t("panel:noSpeech") : outcomes[record!.status];
   // The portal only knows the recording once the upload was accepted.
   const portalReady = Boolean(record?.recordingId);
   return <section className="panel-completion panel-stack" data-session-id={record?.sessionId ?? sessionId} data-meeting-id={record?.meetingId}>
     <div className="panel-stack panel-card" role={failed ? "alert" : "status"}>
       <h1 className="panel-status-title"><Icon icon={failed ? TriangleAlert : uploading ? Upload : Check} size={24} className={`panel-status-icon panel-status-${failed ? "error" : uploading ? "progress" : "success"}`} />{title}</h1>
-      {uploading && <><strong>{copy.uploading}</strong><div className="panel-upload-track" role="progressbar" aria-label={copy.uploading}><span /></div><p>{copy.uploadHelp}</p></>}
-      {uploadFailed && <><p>{copy.uploadFailureHelp}</p><button disabled={actionPending} className="panel-primary panel-with-icon" onClick={() => { void retry(); }}><Icon icon={RotateCcw} size={16} />{copy.retry}</button><button disabled={actionPending} className="panel-with-icon" onClick={() => { void download(); }}><Icon icon={Download} size={16} />{copy.download}</button></>}
-      {record && ["upload_succeeded", "processing"].includes(record.status) && !record.captureError && <p>{copy.processing}</p>}
-      {unavailable && <p>{copy.persistenceError}</p>}
-      {record?.captureError && <p>{copy.captureErrorHelp}</p>}
-      {record?.status === "processing_failed" && !record.captureError && <p>{noSpeech ? copy.noSpeechHelp : copy.processingFailedHelp}</p>}
-      {portalReady && <button className="panel-with-icon" onClick={() => { void openPortal(); }}><Icon icon={ExternalLink} size={16} />{copy.openPortal}</button>}
+      {uploading && <><strong>{t("panel:uploading")}</strong><div className="panel-upload-track" role="progressbar" aria-label={t("panel:uploading")}><span /></div><p>{t("panel:uploadHelp")}</p></>}
+      {uploadFailed && <><p>{t("panel:uploadFailureHelp")}</p><button disabled={actionPending} className="panel-primary panel-with-icon" onClick={() => { void retry(); }}><Icon icon={RotateCcw} size={16} />{t("panel:retry")}</button><button disabled={actionPending} className="panel-with-icon" onClick={() => { void download(); }}><Icon icon={Download} size={16} />{t("panel:download")}</button></>}
+      {record && ["upload_succeeded", "processing"].includes(record.status) && !record.captureError && <p>{t("panel:processing")}</p>}
+      {unavailable && <p>{t("panel:persistenceError")}</p>}
+      {record?.captureError && <p>{t("panel:captureErrorHelp")}</p>}
+      {record?.status === "processing_failed" && !record.captureError && <p>{noSpeech ? t("panel:noSpeechHelp") : t("panel:processingFailedHelp")}</p>}
+      {portalReady && <button className="panel-with-icon" onClick={() => { void openPortal(); }}><Icon icon={ExternalLink} size={16} />{t("panel:openPortal")}</button>}
     </div>
     {actionError && <p role="alert">{actionError}</p>}
-    {record && !uploading && <button className="panel-with-icon" onClick={dismiss}><Icon icon={ArrowLeft} size={16} />{copy.back}</button>}
+    {record && !uploading && <button className="panel-with-icon" onClick={dismiss}><Icon icon={ArrowLeft} size={16} />{t("panel:back")}</button>}
   </section>;
 }

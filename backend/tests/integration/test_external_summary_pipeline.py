@@ -25,7 +25,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from app.copy.engine_notices_es import NOTICE_VERSIONS
+from app.copy.engine_notices import NOTICE_VERSIONS
 from app.infra.models import MeetingSummary, ProcessedSummaryEvent, SummaryRequestOutbox
 from app.summaries.engine import SummaryProviderError
 from app.summaries.worker import start_worker

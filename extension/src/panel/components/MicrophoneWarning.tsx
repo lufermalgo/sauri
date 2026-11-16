@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { MicOff } from "lucide-react";
 import { Icon } from "../../core/design/Icon";
-import { panelCopy as copy } from "../copy";
+import { useT } from "../../i18n";
 
 export function MicrophoneWarning({ skip, onSkip, onContinue, onDismiss, pending, error }: {
   pending?: boolean;
@@ -11,6 +11,7 @@ export function MicrophoneWarning({ skip, onSkip, onContinue, onDismiss, pending
   onContinue: (enableMicrophone: boolean) => void;
   onDismiss: () => void;
 }) {
+  const { t } = useT();
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current!;
@@ -20,12 +21,12 @@ export function MicrophoneWarning({ skip, onSkip, onContinue, onDismiss, pending
   return <dialog className="panel-mic-dialog" ref={ref} aria-labelledby="mic-off-heading" aria-describedby="mic-off-description" onCancel={event => { if (pending) event.preventDefault(); else onDismiss(); }}>
     <div className="panel-stack">
       <span className="panel-warning-icon" aria-hidden="true"><Icon icon={MicOff} size={24} /></span>
-      <h2 id="mic-off-heading">{copy.micOffHeading}</h2>
-      <p id="mic-off-description">{copy.micOffDescription}</p>
-      <button disabled={pending} className="panel-primary" onClick={() => onContinue(true)}>{copy.enableMic}</button>
-      <button disabled={pending} onClick={() => onContinue(false)}>{copy.withoutMic}</button>
+      <h2 id="mic-off-heading">{t("panel:micOffHeading")}</h2>
+      <p id="mic-off-description">{t("panel:micOffDescription")}</p>
+      <button disabled={pending} className="panel-primary" onClick={() => onContinue(true)}>{t("panel:enableMic")}</button>
+      <button disabled={pending} onClick={() => onContinue(false)}>{t("panel:withoutMic")}</button>
       {error && <p role="alert">{error}</p>}
-      <label className="panel-row"><input disabled={pending} type="checkbox" checked={skip} onChange={event => onSkip(event.target.checked)} />{copy.skipWarning}</label>
+      <label className="panel-row"><input disabled={pending} type="checkbox" checked={skip} onChange={event => onSkip(event.target.checked)} />{t("panel:skipWarning")}</label>
     </div>
   </dialog>;
 }

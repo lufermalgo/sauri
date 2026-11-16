@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { OptionsApp } from "./OptionsApp";
-import { permissionCopy as copy } from "./copy";
+import { LANGUAGE_NAMES } from "../i18n";
+import { permissionCopy as copy } from "../i18n/spanish";
 
 beforeEach(() => {
   vi.stubGlobal("chrome", { tabs: { getCurrent: vi.fn(async () => ({ id: 12 })), remove: vi.fn(async () => {}) } });
@@ -26,7 +27,7 @@ describe("microphone permission page", () => {
     vi.mocked(navigator.mediaDevices.getUserMedia).mockResolvedValue({ getTracks: () => [{ stop }], getAudioTracks: () => [{ label: "USB test" }] } as unknown as MediaStream);
     render(<OptionsApp />);
     expect(await screen.findByText(copy.granted)).toBeInTheDocument();
-    expect(screen.getByText(`${copy.devicePrefix}USB test${copy.deviceSuffix}`)).toBeInTheDocument();
+    expect(screen.getByText(copy.grantedDevice.replace("{{device}}", "USB test"))).toBeInTheDocument();
     expect(stop).toHaveBeenCalledOnce();
   });
   it("does not request again when already granted and closes only its own tab after three seconds", async () => {
@@ -97,5 +98,49 @@ describe("microphone permission page", () => {
     fireEvent.click(await screen.findByRole("button", { name: copy.close }));
     expect(await screen.findByRole("alert")).toHaveTextContent(copy.closeError);
     expect(chrome.tabs.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe("language choice", () => {
+  const stubStorage = () => {
+    const set = vi.fn(async () => {});
+    vi.stubGlobal("chrome", {
+      tabs: { getCurrent: vi.fn(async () => ({ id: 12 })), remove: vi.fn(async () => {}) },
+      i18n: { getUILanguage: () => "es" },
+      storage: { local: { get: vi.fn(async () => ({})), set } },
+    });
+    return set;
+  };
+
+  it("offers both languages, each in its own name, with the current one selected", () => {
+    stubStorage();
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementation(() => new Promise(() => {}));
+    render(<OptionsApp />);
+    expect(screen.getByRole("radio", { name: LANGUAGE_NAMES.es })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "English" })).not.toBeChecked();
+  });
+
+  it("switches the page to English, saves the choice and sets the page title and language", async () => {
+    const set = stubStorage();
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockImplementation(() => new Promise(() => {}));
+    render(<OptionsApp />);
+    expect(document.title).toBe("Sauri — Ajustes");
+    fireEvent.click(screen.getByRole("radio", { name: "English" }));
+    expect(await screen.findByRole("heading", { name: "Allow the microphone" })).toBeInTheDocument();
+    expect(screen.getByText("1 · Waiting")).toBeInTheDocument();
+    expect(set).toHaveBeenCalledWith({ sauriLanguage: "en" });
+    expect(document.title).toBe("Sauri — Settings");
+    expect(document.documentElement.lang).toBe("en");
+  });
+
+  it("shows the interpolated closing countdown and the settings link in English", async () => {
+    stubStorage();
+    const { setLanguage } = await import("../i18n");
+    await setLanguage("en", { persist: false });
+    vi.mocked(navigator.mediaDevices.getUserMedia).mockRejectedValue(new DOMException("no", "NotAllowedError"));
+    render(<OptionsApp />);
+    expect(await screen.findByText("Chrome has blocked the microphone")).toBeInTheDocument();
+    expect(screen.getByText("chrome://settings/content/microphone").tagName).toBe("CODE");
+    expect(screen.getByText("Click the lock or microphone icon to the left of the address.")).toBeInTheDocument();
   });
 });

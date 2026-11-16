@@ -1,0 +1,5 @@
+{
+  "title": "Language",
+  "label": "Extension language",
+  "help": "Changes the language of Sauri's panel, recording notice and controls. Your choice is remembered only in this browser. If you pick none, the browser's language is used."
+}

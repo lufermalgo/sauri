@@ -1,5 +1,5 @@
 import { ChevronDown, GripVertical, Mic, Pause, Play, Square, X } from 'lucide';
-import { copy } from './copy';
+import { t } from '../i18n';
 import tokens from '../core/design/tokens.css?raw';
 import { icon, iconHtml } from './icons';
 
@@ -78,8 +78,8 @@ export function showNotice(variant: OverlayVariant = 'meeting'): boolean {
   const notice = document.createElement('div');
   notice.className = 'notice';
   notice.setAttribute('role', 'status');
-  const [title, hint] = variant === 'tab' ? [copy.tabNotice, copy.tabNoticeHint] : [copy.notice, copy.noticeHint];
-  notice.innerHTML = `<span class="dot" aria-hidden="true"></span><span><b>${title}</b> ${hint}</span><button aria-label="${copy.close}">${iconHtml(X, 16)}</button>`;
+  const [title, hint] = variant === 'tab' ? [t('overlay:tabNotice'), t('overlay:tabNoticeHint')] : [t('overlay:notice'), t('overlay:noticeHint')];
+  notice.innerHTML = `<span class="dot" aria-hidden="true"></span><span><b>${title}</b> ${hint}</span><button aria-label="${t('overlay:close')}">${iconHtml(X, 16)}</button>`;
   notice.querySelector('button')!.onclick = () => shadow.host.remove();
   shadow.append(notice);
   return true;
@@ -95,8 +95,8 @@ export function showCountdown(seconds: number, requestId: string, variant: Overl
   dialog.className = 'shade';
   dialog.setAttribute('role', 'dialog');
   dialog.setAttribute('aria-modal', 'true');
-  dialog.setAttribute('aria-label', copy.countdown);
-  dialog.innerHTML = `<h2>${copy.countdown}</h2><strong aria-live="polite"></strong><span>${variant === 'tab' ? copy.tabCountdownHint : copy.countdownHint}</span><button>${copy.cancel}</button>`;
+  dialog.setAttribute('aria-label', t('overlay:countdown'));
+  dialog.innerHTML = `<h2>${t('overlay:countdown')}</h2><strong aria-live="polite"></strong><span>${variant === 'tab' ? t('overlay:tabCountdownHint') : t('overlay:countdownHint')}</span><button>${t('overlay:cancel')}</button>`;
   shadow.append(dialog);
   const previousFocus = document.activeElement as HTMLElement | null;
   return new Promise(resolve => {
@@ -191,8 +191,8 @@ export function syncRecordingUI(state: RecordingUI): void {
     const bar = document.createElement('div');
     bar.className = 'bar';
     bar.setAttribute('role', 'toolbar');
-    bar.setAttribute('aria-label', copy.controls);
-    bar.innerHTML = `<button class="handle" aria-label="${copy.drag}">${iconHtml(GripVertical)}</button><span class="dot" aria-hidden="true"></span><span class="time" role="timer"></span><span class="status"></span><button class="cancel" aria-label="${copy.cancelRecording}">${iconHtml(X)}</button><button class="pause"></button><button class="save" aria-label="${copy.stop}" title="${copy.stop}">${iconHtml(Square, 16)}</button><span class="mic">${iconHtml(Mic, 16, 'lead')}<select aria-label="${copy.microphone}" title="${copy.microphoneHint}"></select>${iconHtml(ChevronDown, 14, 'chevron')}</span><span class="error" role="alert"></span>`;
+    bar.setAttribute('aria-label', t('overlay:controls'));
+    bar.innerHTML = `<button class="handle" aria-label="${t('overlay:drag')}">${iconHtml(GripVertical)}</button><span class="dot" aria-hidden="true"></span><span class="time" role="timer"></span><span class="status"></span><button class="cancel" aria-label="${t('overlay:cancelRecording')}">${iconHtml(X)}</button><button class="pause"></button><button class="save" aria-label="${t('overlay:stop')}" title="${t('overlay:stop')}">${iconHtml(Square, 16)}</button><span class="mic">${iconHtml(Mic, 16, 'lead')}<select aria-label="${t('overlay:microphone')}" title="${t('overlay:microphoneHint')}"></select>${iconHtml(ChevronDown, 14, 'chevron')}</span><span class="error" role="alert"></span>`;
     shadow.append(bar);
     const root = shadow;
     const command = async (type: string) => {
@@ -204,7 +204,7 @@ export function syncRecordingUI(state: RecordingUI): void {
         const response = await chrome.runtime.sendMessage({ type, sessionId });
         if (!response?.ok) throw new Error('Capture control rejected');
       } catch {
-        root.querySelector('.error')!.textContent = copy.controlError;
+        root.querySelector('.error')!.textContent = t('overlay:controlError');
       } finally { buttons.forEach(button => { button.disabled = false; }); }
     };
     bar.querySelector<HTMLButtonElement>('.pause')!.onclick = () => { void command(currentUI?.paused ? 'resume-capture' : 'pause-capture'); };
@@ -215,8 +215,8 @@ export function syncRecordingUI(state: RecordingUI): void {
       confirmation.className = 'confirmation';
       confirmation.setAttribute('role', 'alertdialog');
       confirmation.setAttribute('aria-modal', 'true');
-      confirmation.setAttribute('aria-label', copy.confirm);
-      confirmation.innerHTML = `<b>${copy.confirm}</b><p>${copy.discardHint}</p><button class="keep">${copy.keep}</button><button class="discard">${copy.discard}</button>`;
+      confirmation.setAttribute('aria-label', t('overlay:confirm'));
+      confirmation.innerHTML = `<b>${t('overlay:confirm')}</b><p>${t('overlay:discardHint')}</p><button class="keep">${t('overlay:keep')}</button><button class="discard">${t('overlay:discard')}</button>`;
       const close = () => { confirmation.remove(); bar.querySelector<HTMLButtonElement>('.cancel')!.focus(); };
       confirmation.querySelector<HTMLButtonElement>('.keep')!.onclick = close;
       confirmation.querySelector<HTMLButtonElement>('.discard')!.onclick = () => { void command('cancel-capture'); };
@@ -241,14 +241,14 @@ export function syncRecordingUI(state: RecordingUI): void {
     root.querySelector('.time')!.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   };
   root.querySelector('.bar')!.classList.toggle('paused', state.paused);
-  root.querySelector('.status')!.textContent = state.paused ? copy.paused : '';
+  root.querySelector('.status')!.textContent = state.paused ? t('overlay:paused') : '';
   const pause = root.querySelector<HTMLButtonElement>('.pause')!;
   pause.replaceChildren(icon(state.paused ? Play : Pause));
-  pause.setAttribute('aria-label', state.paused ? copy.resume : copy.pause);
-  pause.title = state.paused ? copy.resume : copy.pause;
+  pause.setAttribute('aria-label', state.paused ? t('overlay:resume') : t('overlay:pause'));
+  pause.title = state.paused ? t('overlay:resume') : t('overlay:pause');
   // Only the active device is shown. Device changes apply to the next session.
   const select = root.querySelector('select')!;
-  select.replaceChildren(new Option(state.micLabel || (state.micActive ? copy.defaultMicrophone : copy.noMicrophone)));
+  select.replaceChildren(new Option(state.micLabel || (state.micActive ? t('overlay:defaultMicrophone') : t('overlay:noMicrophone'))));
   clearInterval(timer);
   update();
   timer = setInterval(update, 250);

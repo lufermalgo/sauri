@@ -16,13 +16,13 @@ const ACTIVE_CALL_SIGNALS: string[] = [
   "Turn on microphone",
   "Turn off camera",
   "Turn on camera",
-  // Spanish — literal ARIA labels Google Meet's Spanish UI renders, kept
-  // verbatim so bilingual detection keeps working (not leftover domain code).
+  // Spanish — literal ARIA labels Google Meet's Spanish UI renders. They are Meet's own texts, not
+  // Sauri's: both languages are recognized whatever language the extension itself speaks.
   "Salir de la llamada",
-  "Desactivar micrófono", // spanish-sample-data
-  "Activar micrófono", // spanish-sample-data
-  "Desactivar cámara", // spanish-sample-data
-  "Activar cámara", // spanish-sample-data
+  "Desactivar micrófono", // spanish-sample-data i18n-ignore
+  "Activar micrófono", // spanish-sample-data i18n-ignore
+  "Desactivar cámara", // spanish-sample-data i18n-ignore
+  "Activar cámara", // spanish-sample-data i18n-ignore
 ];
 
 const END_SIGNALS: string[] = [
@@ -42,7 +42,7 @@ const SCREEN_SHARE_SIGNALS: string[] = [
   // Spanish — literal ARIA labels, see note above
   "Presentar ahora",
   "Dejar de presentar",
-  "Estás presentando", // spanish-sample-data
+  "Estás presentando", // spanish-sample-data i18n-ignore
 ];
 
 // --- State machine (replaces boolean flags) ---

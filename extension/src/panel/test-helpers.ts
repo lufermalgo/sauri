@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { panelCopy as copy } from "./copy";
+import { panelCopy as copy } from "../i18n/spanish";
 
 export function sourceTrigger() {
   return within(screen.getByRole("group", { name: copy.sourceMenu })).getAllByRole("button")[0];

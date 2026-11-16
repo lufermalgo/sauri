@@ -7,6 +7,18 @@ const manifest = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, "../manifest.json"), "utf-8")
 );
 
+function messages(language: string): Record<string, { message: string }> {
+  return JSON.parse(fs.readFileSync(path.resolve(__dirname, `../public/_locales/${language}/messages.json`), "utf-8"));
+}
+
+describe("manifest.json — localized name and description", () => {
+  it("defaults to Spanish and ships the same message keys in both languages", () => {
+    expect(manifest.default_locale).toBe("es");
+    expect(Object.keys(messages("en")).sort()).toEqual(Object.keys(messages("es")).sort());
+    for (const key of ["extensionDescription", "actionTitle"]) expect(Object.keys(messages("es"))).toContain(key);
+  });
+});
+
 describe("manifest.json — migration to chrome.sidePanel (Req. 1.2)", () => {
   it("declares the 'sidePanel' permission", () => {
     expect(manifest.permissions).toContain("sidePanel");
@@ -29,10 +41,15 @@ describe("manifest.json — migration to chrome.sidePanel (Req. 1.2)", () => {
 });
 
 describe("manifest.json — recording any browser tab with least privilege", () => {
-  it("describes a generic tab recorder, not a Meet-only tool", () => {
-    expect(manifest.description).toMatch(/cualquier pesta/);
-    expect(manifest.description).not.toMatch(/meet/i);
-    expect(manifest.action.default_title).not.toMatch(/meet/i);
+  it("describes a generic tab recorder, not a Meet-only tool, in every language", () => {
+    expect(manifest.description).toBe("__MSG_extensionDescription__");
+    expect(manifest.action.default_title).toBe("__MSG_actionTitle__");
+    expect(messages("es").extensionDescription.message).toMatch(/cualquier pesta/);
+    expect(messages("en").extensionDescription.message).toMatch(/any browser tab/);
+    for (const language of ["es", "en"]) {
+      expect(messages(language).extensionDescription.message).not.toMatch(/meet/i);
+      expect(messages(language).actionTitle.message).not.toMatch(/meet/i);
+    }
   });
 
   it("adds no host permission: only Meet (static script) and the local backend", () => {
@@ -83,8 +100,10 @@ describe("manifest.json — brand icons", () => {
 describe("manifest.json — brand name", () => {
   it("writes the product name as «Sauri» in the name and the toolbar title (never lowercase)", () => {
     expect(manifest.name).toBe("Sauri");
-    expect(manifest.action.default_title).toMatch(/^Sauri\b/);
-    expect(manifest.action.default_title).not.toMatch(/\bsauri\b/);
+    for (const language of ["es", "en"]) {
+      expect(messages(language).actionTitle.message).toMatch(/^Sauri\b/);
+      expect(messages(language).actionTitle.message).not.toMatch(/\bsauri\b/);
+    }
   });
 
   it("uses «Sauri» in the title of every extension page", () => {

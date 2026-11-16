@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { PanelHeader } from "./PanelHeader";
-import { panelCopy as copy } from "../copy";
+import { panelCopy as copy } from "../../i18n/spanish";
 
 describe("PanelHeader", () => {
   it("shows the official Sauri logo and the panel title, with no settings button", () => {
