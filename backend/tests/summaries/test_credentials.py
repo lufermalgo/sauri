@@ -32,26 +32,27 @@ async def test_local_destination_uses_only_engine_token(
 
 
 @pytest.mark.parametrize("host", ["provider.example", "localhost.evil.test", "host.docker.internal.evil.test"])
-def test_external_host_requires_explicit_file(
+def test_external_host_is_refused_whatever_the_environment_holds(
     keys: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, host: str
 ) -> None:
+    """External providers go through the host gateway (X-Sauri-Route); this process never calls one directly."""
+    local, external = keys
     monkeypatch.setenv("SUMMARIZATION_BASE_URL", f"https://{host}/v1")
-    with pytest.raises(ValueError, match="SUMMARIZATION_API_KEY_FILE.*external"):
+    monkeypatch.setenv("SUMMARIZATION_API_KEY_FILE", str(external))
+    with pytest.raises(ValueError, match="local engine gateway"):
         create_summarization_engine()
 
 
-async def test_external_request_never_uses_local_token(
+async def test_a_provider_key_file_in_the_environment_is_never_read_or_sent(
     keys: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     local, external = keys
-    monkeypatch.setenv("SUMMARIZATION_BASE_URL", "https://provider.example/v1")
+    monkeypatch.setenv("SUMMARIZATION_BASE_URL", "http://host.docker.internal:8003/v1")
     monkeypatch.setenv("SUMMARIZATION_API_KEY_FILE", str(external))
     requests = []
 
     def respond(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        assert request.headers["Authorization"] == f"Bearer {external.read_text()}"
-        assert local.read_text() not in str(request.headers)
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({
     "topic": "Synthetic", "conclusion": "Synthetic conclusion",
     "key_points": [{
@@ -65,13 +66,8 @@ async def test_external_request_never_uses_local_token(
         engine._client = client
         await engine.generate(build_passages([Turn("Synthetic", 0, 1000)]), "Summarize")
     assert len(requests) == 1
-    monkeypatch.setenv("SUMMARIZATION_API_KEY_FILE", str(local))
-    with pytest.raises(ValueError, match="local engine token"):
-        create_summarization_engine()
-    external.write_text(local.read_text())
-    monkeypatch.setenv("SUMMARIZATION_API_KEY_FILE", str(external))
-    with pytest.raises(ValueError, match="local engine token"):
-        create_summarization_engine()
+    assert requests[0].headers["Authorization"] == f"Bearer {local.read_text()}"
+    assert external.read_text() not in str(requests[0].headers)
 
 
 async def test_local_redirect_cannot_forward_engine_token(

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.authorization import require_sales
 from app.auth.schemas import AuthenticatedUser
+from app.copy.summary_failures_es import summary_failure_message
 from app.infra.http_errors import NOT_FOUND, SafeErrorRoute, api_error
 from app.infra.models import SummaryRequestOutbox
 from app.meetings.schemas import ResourceId
@@ -34,6 +35,7 @@ class SummaryRequestStatus(BaseModel):
     generation: int
     status: str
     failure_cause: str | None = None
+    failure_message: str | None = None  # Spanish text for ``failure_cause``; None when there is none
     requested_at: datetime | None = None
     started_at: datetime | None = None
 
@@ -47,6 +49,7 @@ def _utc(value: datetime | None) -> datetime | None:
 def _request_status(row: SummaryRequestOutbox) -> SummaryRequestStatus:
     return SummaryRequestStatus(
         event_id=row.event_id, generation=row.generation, status=row.status, failure_cause=row.failure_cause,
+        failure_message=summary_failure_message(row.failure_cause),
         requested_at=_utc(row.requested_at), started_at=_utc(row.started_at),
     )
 

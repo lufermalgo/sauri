@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.diarization.remap import Span, remap_spans
+from app.engines.repository import apply_provenance
 from app.engines.routing import Provenance
 from app.infra.models import (
     Diarization,
@@ -19,14 +20,6 @@ from app.infra.models import (
     WordSpeakerAssignment,
 )
 from app.transcription.asr_engine import TranscriptionSegment, TranscriptionWord
-
-
-def apply_provenance(transcript: Transcript, provenance: Provenance) -> None:
-    """Record which engine really produced the transcript (names only; never content or keys)."""
-    transcript.engine_name = provenance.engine_name[:64] if provenance.engine_name else None
-    transcript.engine_model = provenance.engine_model[:256] if provenance.engine_model else None
-    transcript.engine_external = provenance.external
-    transcript.engine_fallback_reason = provenance.fallback_reason
 
 
 class TranscriptRepository:

@@ -9,12 +9,14 @@ import logging
 import math
 import time
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import httpx
 from pydantic import ValidationError
 
+from app.engines.routing import ROUTE_HEADER, ProviderError, Route, encode_route, is_external
 from app.summaries.passages import (
     CanonicalSummary,
     Passage,
@@ -23,6 +25,8 @@ from app.summaries.passages import (
 )
 
 logger = logging.getLogger(__name__)
+LOCAL_ENGINE_NAME = "llama.cpp"
+MAX_MODEL_NAME_CHARS = 256
 SYSTEM_PROMPT = (
     "Summarize only the supplied transcript, in its language, as a structured draft with three parts: "
     "a topic paragraph (what the meeting is about, its context and the central question or tension), "
@@ -54,6 +58,44 @@ class ContextExceededError(ValueError):
 
 class SummaryProviderError(RuntimeError):
     """Sanitized provider failure, safe for queue retry logs."""
+
+
+@dataclass(frozen=True)
+class SummaryAnswer:
+    """A validated summary and which engine answered (names only; never keys or content).
+
+    For an external route the engine is the provider type of the route and the model is what the provider
+    reported; for the local engine it is llama.cpp and the model the gateway reported.
+    """
+
+    summary: CanonicalSummary
+    engine_name: str
+    engine_model: str | None
+
+
+def _gateway_error(response: httpx.Response) -> ProviderError | None:
+    """The classified failure a gateway reports for an external route (``{"error": {"code", ...}}``)."""
+    try:
+        error = response.json()["error"]
+        retry_after = error.get("retry_after_s")
+        return ProviderError(error["code"], retry_after_s=retry_after if type(retry_after) is int else None)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def _context_exceeded(external: bool) -> Exception:
+    return ProviderError("provider_context_exceeded") if external else ContextExceededError("context_exceeded")
+
+
+def _invalid_output(external: bool) -> Exception:
+    return ProviderError("provider_invalid_output") if external else SummaryInvalidError("summary_invalid")
+
+
+def _answered_model(data: dict[str, Any], route: Route | None) -> str | None:
+    model = data.get("model")
+    if isinstance(model, str) and model:
+        return model[:MAX_MODEL_NAME_CHARS]
+    return route.model if route is not None else None
 
 
 def _record_generation(started: float, outcome: str, envelope: object) -> None:
@@ -116,7 +158,9 @@ def _request_schema(passage_ids: list[str]) -> dict[str, Any]:
 
 
 class SummarizationEngine(Protocol):
-    async def generate(self, passages: list[Passage], instructions_snapshot: str) -> CanonicalSummary: ...
+    async def generate(
+        self, passages: list[Passage], instructions_snapshot: str, route: Route | None = None,
+    ) -> SummaryAnswer: ...
 
 
 class OpenAICompatibleSummarizationEngine:
@@ -132,7 +176,12 @@ class OpenAICompatibleSummarizationEngine:
         self._client = client
         self.timeout_seconds = timeout_seconds
 
-    async def generate(self, passages: list[Passage], instructions_snapshot: str) -> CanonicalSummary:
+    async def generate(
+        self, passages: list[Passage], instructions_snapshot: str, route: Route | None = None,
+    ) -> SummaryAnswer:
+        """Ask the gateway for a summary. ``route`` is ``None`` for the default local engine (no header, exactly
+        as before engines were selectable); otherwise it travels in ``X-Sauri-Route`` and the key stays on the host."""
+        external = is_external(route)
         if not passages:
             raise SummaryInvalidError("summary_invalid")
         schema = _request_schema([p.passage_id for p in passages])
@@ -150,6 +199,8 @@ class OpenAICompatibleSummarizationEngine:
             }},
         }
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
+        if route is not None:
+            headers[ROUTE_HEADER] = encode_route(route)
         timeout = httpx.Timeout(self.timeout_seconds, connect=10.0)
         started, envelope, outcome = time.perf_counter(), None, "error"
         try:
@@ -166,6 +217,8 @@ class OpenAICompatibleSummarizationEngine:
                     )
             # Never propagate provider bodies or transport exception text into worker logs.
             if not response.is_success:
+                if (failure := _gateway_error(response)) is not None:
+                    raise failure
                 error_text = response.text.lower()
                 if any(marker in error_text for marker in (
                     "context_exceeded", "context_length_exceeded", "exceed_context_size",
@@ -177,10 +230,13 @@ class OpenAICompatibleSummarizationEngine:
             envelope = data
             choice = data["choices"][0]
             if choice.get("finish_reason") == "length":
-                raise ContextExceededError("context_exceeded")
+                raise _context_exceeded(external)
             result = validate_citations(json.loads(choice["message"]["content"]), passages)
             outcome = "succeeded"
-            return result
+            return SummaryAnswer(
+                result, route.kind if external and route is not None else LOCAL_ENGINE_NAME,
+                _answered_model(data, route),
+            )
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
@@ -189,7 +245,10 @@ class OpenAICompatibleSummarizationEngine:
             raise TimeoutError("llm_unavailable") from None
         except httpx.HTTPError:
             raise SummaryProviderError("llm_unavailable") from None
-        except (ValidationError, KeyError, IndexError, TypeError, AttributeError, json.JSONDecodeError):
-            raise SummaryInvalidError("summary_invalid") from None
+        except (
+            SummaryInvalidError, ValidationError, KeyError, IndexError, TypeError, AttributeError, json.JSONDecodeError,
+        ):
+            # A provider that broke the contract is a classified failure; the local engine keeps its own cause.
+            raise _invalid_output(external) from None
         finally:
             _record_generation(started, outcome, envelope)

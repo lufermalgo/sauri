@@ -21,6 +21,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.auth.token import create_token
+from app.copy.summary_failures_es import SUMMARY_FAILURE_MESSAGES
 from app.infra.database import Base
 from app.infra.models import Meeting, MeetingSummary, SummaryRequestOutbox, SummaryTemplate, Transcript, User
 from app.main import app
@@ -637,6 +638,13 @@ async def test_categorized_failure_is_returned_by_status_routes(summary_api: Api
         response = await client.get(f"{base}/{suffix}", headers=_headers(owner))
         assert response.status_code == 200
         assert response.json()["failure_cause"] == "context_exceeded"
+        assert response.json()["failure_message"] == SUMMARY_FAILURE_MESSAGES["context_exceeded"]
+    async with factory() as session, session.begin():
+        request = await session.get(SummaryRequestOutbox, event_id)
+        assert request is not None
+        request.failure_cause = "consent_missing"
+    response = await client.get(f"{base}/{event_id}", headers=_headers(owner))
+    assert response.json()["failure_message"] == SUMMARY_FAILURE_MESSAGES["consent_missing"]
 
 
 @pytest.mark.asyncio

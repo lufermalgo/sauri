@@ -43,7 +43,7 @@ async def generate(envelope: dict[str, object]) -> None:
             PASSAGES,
             SECRET,
         )
-    assert result.topic == "ok"
+    assert result.summary.topic == "ok"
 
 
 async def test_usage_and_file_credential_are_not_logged(
@@ -172,6 +172,6 @@ async def test_transcript_text_never_appears_in_logs(caplog: pytest.LogCaptureFi
                 await engine.generate(passages, "Summarize")
             assert transcript not in str(error.value)
         else:
-            assert (await engine.generate(passages, "Summarize")).topic == transcript
+            assert (await engine.generate(passages, "Summarize")).summary.topic == transcript
     assert events(caplog)
     assert transcript not in caplog.text

@@ -34,6 +34,19 @@ export const summary = {
       case "context_exceeded": return "La transcripción supera la capacidad del modelo de resumen.";
       case "summary_invalid": return "El modelo no devolvió un resumen con fuentes válidas.";
       case "llm_unavailable": return "El modelo de resumen no está disponible o agotó el tiempo de espera.";
+      case "provider_auth": return "El proveedor rechazó la clave. Revísala en Motores y modelos.";
+      case "provider_quota": return "Tu cuenta con el proveedor no tiene cuota.";
+      case "provider_rate_limited": return "El proveedor limitó las peticiones. Inténtalo de nuevo en unos minutos.";
+      case "provider_timeout": return "El proveedor tardó demasiado.";
+      case "provider_unavailable": return "No pudimos conectar con el proveedor.";
+      case "provider_bad_request": return "El proveedor no aceptó la petición.";
+      case "provider_invalid_output": return "El modelo no devolvió un resumen válido.";
+      case "provider_context_exceeded":
+      case "audio_too_large": return "La reunión es demasiado larga para ese modelo.";
+      case "provider_unsupported": return "Ese proveedor no sirve para generar resúmenes.";
+      case "consent_missing": return "Falta aceptar el aviso de privacidad. Acéptalo en Motores y modelos.";
+      case "origin_mismatch": return "La dirección no coincide con la de la clave guardada.";
+      case "secret_unavailable": return "No pudimos leer la clave guardada.";
       default: return "La generación falló sin una causa reconocida. Puedes reintentar.";
     }
   },

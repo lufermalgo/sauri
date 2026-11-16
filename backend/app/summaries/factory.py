@@ -1,11 +1,10 @@
-"""OpenAI-compatible provider configuration with file-only credentials."""
+"""Configuration of the summary client: the local gateway and its engine token (file only)."""
 
 from __future__ import annotations
 
 import math
 import os
 import re
-import secrets
 from contextlib import suppress
 from ipaddress import ip_address
 from pathlib import Path
@@ -49,31 +48,21 @@ def create_summarization_engine() -> OpenAICompatibleSummarizationEngine:
             "SUMMARIZATION_TIMEOUT_SECONDS must be at most "
             f"{SUMMARY_ENGINE_CALL_TIMEOUT_S - 125.0:g} to finish within the broker consumer timeout"
         )
-    local_token_file = Path(os.getenv("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config/sauri/engine_token"))
     hostname = (parsed.hostname or "").rstrip(".").lower()
     is_local = hostname in ("localhost", "host.docker.internal")
     with suppress(ValueError):
         is_local = is_local or ip_address(hostname).is_loopback
-    explicit_file = os.getenv("SUMMARIZATION_API_KEY_FILE")
-    if not is_local and not explicit_file:
-        raise ValueError("SUMMARIZATION_API_KEY_FILE is required for external summary providers")
-    key_file = local_token_file if is_local else Path(explicit_file or "")
-    if not is_local and key_file.resolve() == local_token_file.resolve():
-        raise ValueError("The local engine token cannot be used for an external summary provider")
+    if not is_local:
+        # A provider key never reaches this process: external providers are chosen in Settings and called by the
+        # host gateway with a key from the host secret store (X-Sauri-Route).
+        raise ValueError("SUMMARIZATION_BASE_URL must point to the local engine gateway")
+    token_file = Path(os.getenv("SAURI_ENGINE_TOKEN_FILE", Path.home() / ".config/sauri/engine_token"))
     try:
-        api_key = key_file.read_text(encoding="utf-8").strip()
+        api_key = token_file.read_text(encoding="utf-8").strip()
         if not api_key or any(c.isspace() for c in api_key) or not api_key.isascii():
             raise ValueError
     except (OSError, ValueError):
-        setting = "SAURI_ENGINE_TOKEN_FILE" if is_local else "SUMMARIZATION_API_KEY_FILE"
-        raise ValueError(f"{setting} must contain a readable nonempty credential") from None
-    if not is_local:
-        try:
-            local_token = local_token_file.read_text(encoding="utf-8").strip()
-        except (OSError, UnicodeError):
-            local_token = ""
-        if local_token and secrets.compare_digest(api_key.encode(), local_token.encode()):
-            raise ValueError("The local engine token cannot be used for an external summary provider")
+        raise ValueError("SAURI_ENGINE_TOKEN_FILE must contain a readable nonempty credential") from None
     # The environment variable is the gateway's inference budget; the client adds its cold start.
     return OpenAICompatibleSummarizationEngine(
         url, model, api_key=api_key, timeout_seconds=client_timeout_seconds,

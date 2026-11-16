@@ -91,9 +91,9 @@ async def test_request_uses_long_generation_budget_without_changing_payload(
             build_passages([Turn(transcript, 0, 1000)]),
             instructions,
         )
-    assert result.topic == "Synthetic" and [
-        item.text for block in result.key_points for item in block.items
-    ] == ["Point"] and result.conclusion == "Synthetic conclusion"
+    assert result.summary.topic == "Synthetic" and [
+        item.text for block in result.summary.key_points for item in block.items
+    ] == ["Point"] and result.summary.conclusion == "Synthetic conclusion"
 
 
 async def test_total_deadline_cancels_generation_instead_of_waiting_forever() -> None:
