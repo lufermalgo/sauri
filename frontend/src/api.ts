@@ -9,6 +9,14 @@ import type {
   SummaryRequestStatus,
   TranscriptPresentation,
   AttributedTurn,
+  EngineCapabilities,
+  EngineKeyState,
+  EngineProbeResult,
+  EngineProvider,
+  EngineProviderCreate,
+  EngineProviderDeleted,
+  EngineProviderUpdate,
+  EngineProviderUpdated,
 } from "@sauri/shared-types";
 
 export interface PlaybackSource {
@@ -96,12 +104,16 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
-/** Ends the session on 401 and throws "Error <status>" for any other failure. */
-function rejectUnlessOk(response: Response): void {
+function endSessionOn401(response: Response): void {
   if (response.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new Event("sauri:unauthorized"));
   }
+}
+
+/** Ends the session on 401 and throws "Error <status>" for any other failure. */
+function rejectUnlessOk(response: Response): void {
+  endSessionOn401(response);
   if (!response.ok) {
     throw new Error(`Error ${response.status}`);
   }
@@ -715,4 +727,78 @@ export async function setDefaultTemplate(templateId: string): Promise<void> {
     body: JSON.stringify({ template_id: templateId }),
   });
   rejectUnlessOk(response);
+}
+
+// --- Engines: external providers, their keys and the connection test (/api/v1/engines) ---
+
+/** A refused engines request: the HTTP status and the API's machine code (`detail`), when it sent one. */
+export class EnginesApiError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(status: number, code: string | null) {
+    super(`Error ${status}`);
+    this.name = "EnginesApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function enginesRequest<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+  const response = await fetch(`${BASE_URL}/api/v1/engines${path}`, {
+    method,
+    headers: getAuthHeaders(),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  endSessionOn401(response);
+  if (!response.ok) {
+    let code: string | null = null;
+    try {
+      const detail = ((await response.json()) as { detail?: unknown }).detail;
+      if (typeof detail === "string") code = detail;
+    } catch {
+      // The body is not JSON: the status alone describes the failure.
+    }
+    throw new EnginesApiError(response.status, code);
+  }
+  return (await response.json()) as T;
+}
+
+const providerPath = (providerId: string) => `/providers/${encodeURIComponent(providerId)}`;
+
+export function getEngineCapabilities(): Promise<EngineCapabilities> {
+  return enginesRequest("/capabilities");
+}
+
+export function listEngineProviders(): Promise<EngineProvider[]> {
+  return enginesRequest("/providers");
+}
+
+export function getEngineProvider(providerId: string): Promise<EngineProvider> {
+  return enginesRequest(providerPath(providerId));
+}
+
+export function createEngineProvider(input: EngineProviderCreate): Promise<EngineProvider> {
+  return enginesRequest("/providers", "POST", input);
+}
+
+export function updateEngineProvider(providerId: string, changes: EngineProviderUpdate): Promise<EngineProviderUpdated> {
+  return enginesRequest(providerPath(providerId), "PATCH", changes);
+}
+
+export function deleteEngineProvider(providerId: string): Promise<EngineProviderDeleted> {
+  return enginesRequest(providerPath(providerId), "DELETE");
+}
+
+/** Sends a key to the API once; the answer never carries it back, only its last four characters. */
+export function putEngineKey(providerId: string, key: string): Promise<EngineKeyState> {
+  return enginesRequest(`${providerPath(providerId)}/key`, "PUT", { key });
+}
+
+export function deleteEngineKey(providerId: string): Promise<EngineKeyState> {
+  return enginesRequest(`${providerPath(providerId)}/key`, "DELETE");
+}
+
+export function testEngineProvider(providerId: string): Promise<EngineProbeResult> {
+  return enginesRequest(`${providerPath(providerId)}/test`, "POST");
 }

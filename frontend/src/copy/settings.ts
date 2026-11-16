@@ -62,7 +62,6 @@ export const settings = {
   },
   // Quiet placeholders until each screen exists (no controls that do nothing).
   comingSoon: {
-    engines: "Próximamente: aquí vincularás proveedores externos con sus claves y verás los modelos que usa Sauri.",
     transcription: "Próximamente: aquí elegirás el motor y el modelo que transcriben tus reuniones.",
     speakers: "Próximamente: aquí elegirás el motor y el modelo que identifican a los hablantes.",
   },
