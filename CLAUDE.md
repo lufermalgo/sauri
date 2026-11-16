@@ -24,7 +24,8 @@ Lee primero `AGENTS.md` (reglas comunes). Aquí van las reglas propias del orque
 
 ## Qué consultar al dueño
 - Producto, privacidad, gastos (incluida la facturación de GitHub y servicios externos) y seguridad. Todo lo demás se decide y se informa.
-- Su autorización vigente: integrar los PR que no pierdan avances importantes del core; cerrar los que el nuevo core reemplaza. Cualquier otra acción irreversible en el remoto se pregunta antes.
+- **Autorización permanente del dueño (aprobada el 2026-11-15; no vuelvas a preguntar):** crear issues, ramas y worktrees; hacer commit; subir ramas de trabajo (`git push`, nunca `--force` ni a `main`); publicar PR según la regla de publicación; integrar los PR verificados que no pierdan avances importantes del core; cerrar los PR e issues que el nuevo core reemplaza o que quedaron resueltos; borrar ramas y worktrees ya integrados; desplegar en local (instalar modelos fijados por hash, reiniciar motores y servicios del proyecto `sauri`) sin borrar ni recrear sus volúmenes.
+- Se pregunta antes: cualquier otra acción irreversible en el remoto (borrar ramas con trabajo sin integrar, reescribir historia, cambiar ajustes del repositorio), gastos y lo que toque producto, privacidad o seguridad.
 
 ## Memoria y contexto
 - Guarda en la memoria del proyecto las decisiones y aprendizajes durables. Lee `handoff.md` si existe.
