@@ -50,6 +50,25 @@ describe("MeetingHeader", () => {
     expect(renameMeeting).toHaveBeenCalledWith("m1", "New title");
   });
 
+  it("names the transcript download after the renamed title", async () => {
+    vi.mocked(renameMeeting).mockResolvedValue({ meetingId: "m1", title: "Canonical title" });
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: () => "blob:synthetic", revokeObjectURL: revoke });
+    let clicked: HTMLAnchorElement | undefined;
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicked = this; });
+    const turns = [{ timestampMs: 1000, speakerLabel: "Synthetic speaker", text: "Synthetic text" }];
+    render(<MeetingHeader title="Old title" createdAt="2026-11-14T12:00:00Z" meetingId="m1"
+      onBack={vi.fn()} manifest={null} turns={turns} />);
+    edit("New title");
+    fireEvent.click(screen.getByRole("button", { name: text.save }));
+    await screen.findByRole("heading", { name: "Canonical title" });
+    fireEvent.click(screen.getByRole("button", { name: text.download }));
+    fireEvent.click(screen.getByRole("menuitem", { name: text.downloadTranscript }));
+    expect(clicked).toHaveAttribute("download", "Canonical title.txt");
+    await waitFor(() => expect(revoke).toHaveBeenCalled());
+    vi.unstubAllGlobals();
+  });
+
   it.each(["", "  ", "x".repeat(513)])("rejects invalid titles (%s)", value => {
     open(); edit(value);
     expect(screen.getByRole("button", { name: text.save })).toBeDisabled();

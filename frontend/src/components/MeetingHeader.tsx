@@ -96,7 +96,7 @@ export function MeetingHeader({ title, createdAt, onBack, stage, processState, s
         </div>
       </div>
       <div className="meeting-actions">
-        <MeetingDownloads {...downloads} />
+        <MeetingDownloads {...downloads} title={renamedTitle ?? title} />
         {!editing && <Button variant="secondary" disabled={busy} onClick={() => {
           setDraft(renamedTitle ?? title ?? ""); setEditing(true); setError(null);
         }}>{text.rename}</Button>}
