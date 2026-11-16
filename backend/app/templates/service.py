@@ -18,9 +18,13 @@ from app.templates.schemas import CategoryCreate, CategoryOut, TemplateCreate, T
 from app.templates.seed import seed_id
 
 
-def _provenance(row: SummaryTemplate) -> str | None:
-    """Owner-proposal note, shown only while the seeded starter is unchanged."""
+def _provenance(row: SummaryTemplate, default_id: str | None) -> str | None:
+    """Owner-proposal note, shown only while the starter template is unchanged."""
     if row.id != seed_id(row.owner_user_id, "template"):
+        # Migration 021 moves a legacy-id default (created by an earlier mechanism) to the v2
+        # text; its category is unknown, so the unedited check is the text and the starter name.
+        if row.id == default_id and row.instructions == DEFAULT_INSTRUCTIONS_V2 and row.name == DEFAULT_NAME:
+            return DEFAULT_PROVENANCE_V2
         return None
     if row.version == 1 and row.updated_at == row.created_at and row.instructions != DEFAULT_INSTRUCTIONS_V2:
         return DEFAULT_PROVENANCE
@@ -39,7 +43,7 @@ def template_out(row: SummaryTemplate, default_id: str | None) -> TemplateOut:
         id=row.id, name=row.name, instructions=row.instructions,
         owner_user_id=row.owner_user_id, category_id=row.category_id,
         version=row.version, is_default=row.id == default_id,
-        provenance=_provenance(row),
+        provenance=_provenance(row, default_id),
         created_at=row.created_at.isoformat(), updated_at=row.updated_at.isoformat(),
     )
 

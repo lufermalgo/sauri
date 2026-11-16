@@ -565,6 +565,35 @@ async def test_editing_starter_removes_owner_proposal_provenance(
     assert (await client.get(path, headers=_headers(owner))).json()["provenance"] is None
 
 
+async def test_migrated_legacy_default_shows_owner_proposal_provenance_until_edited(
+    summary_api: ApiFixture,
+) -> None:
+    from app.copy.templates_es import DEFAULT_INSTRUCTIONS_V2, DEFAULT_NAME, DEFAULT_PROVENANCE_V2
+
+    client, factory, owner, _, _, _, _ = summary_api
+    legacy_id = "legacy-default-id"
+    now = datetime.now(UTC)
+    async with factory() as session, session.begin():
+        session.add(SummaryTemplate(
+            id=legacy_id, owner_user_id=owner, category_id=None, name=DEFAULT_NAME,
+            instructions=DEFAULT_INSTRUCTIONS_V2, version=2, created_at=now, updated_at=now,
+        ))
+        await session.flush()
+        user = await session.get(User, owner)
+        assert user is not None
+        user.default_summary_template_id = legacy_id
+    path = f"/api/v1/templates/{legacy_id}"
+    shown = (await client.get(path, headers=_headers(owner))).json()
+    assert shown["is_default"] and shown["provenance"] == DEFAULT_PROVENANCE_V2
+    # Same text and name, but not the user's default: no owner-proposal note.
+    copy = await client.post("/api/v1/templates", json={"name": DEFAULT_NAME, "instructions": DEFAULT_INSTRUCTIONS_V2},
+                             headers=_headers(owner))
+    assert copy.status_code == 201, copy.text
+    assert copy.json()["provenance"] is None
+    edited = await client.patch(path, json={"instructions": "Edited synthetic"}, headers=_headers(owner))
+    assert edited.status_code == 200 and edited.json()["provenance"] is None
+
+
 async def test_categorized_failure_is_returned_by_status_routes(summary_api: ApiFixture) -> None:
     client, factory, owner, _, meeting, template, _ = summary_api
     base = f"/api/v1/meetings/{meeting}/summary-requests"
