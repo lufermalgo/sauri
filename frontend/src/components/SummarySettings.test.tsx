@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { copy } from "../copy/es";
+import { answerEnginesApi } from "./engineApiStub";
 import { SummarySettings } from "./settings/SummarySettings";
 
 const text = copy.settings.summaries;
@@ -47,6 +48,8 @@ function fakeBackend(initial: { templates: FakeTemplate[]; categories: { id: str
 
   const handler = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
+    const engines = answerEnginesApi(url.pathname);
+    if (engines) return engines;
     const method = init?.method ?? "GET";
     const path = url.pathname.replace("/api/v1/templates", "") || "/";
     const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
@@ -105,6 +108,7 @@ async function renderReady(data = initial()) {
 }
 
 const row = (name: string) => screen.getByText(name, { selector: ".settings-template-name" }).closest("li")!;
+const templatesSection = () => screen.getByRole("region", { name: text.templatesTitle });
 const writes = () => backend.calls.filter((call) => call.method !== "GET");
 
 beforeEach(() => {
@@ -131,8 +135,8 @@ describe("summary templates list", () => {
 
   it("groups templates by category, then without category, and marks the default", async () => {
     await renderReady();
-    const headings = screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
-    expect(headings).toEqual(["Sales", "Support", text.uncategorized]);
+    const headings = within(templatesSection()).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
+    expect(headings).toEqual([text.templatesTitle, "Sales", "Support", text.uncategorized]);
 
     const commercial = screen.getByRole("region", { name: "Sales" });
     expect(within(commercial).getAllByRole("listitem").map((item) => item.querySelector(".settings-template-name")?.textContent))
@@ -164,7 +168,7 @@ describe("summary templates list", () => {
     vi.stubGlobal("fetch", backend.handler);
     backend.failing.add("GET /");
     render(<SummarySettings />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.loadError);
+    expect(await within(templatesSection()).findByRole("alert")).toHaveTextContent(text.loadError);
     expect(screen.getByRole("button", { name: text.newTemplate })).toBeDisabled();
 
     backend.failing.clear();
@@ -188,7 +192,7 @@ describe("choosing the default template", () => {
     fireEvent.click(screen.getByRole("button", { name: text.useAsDefaultLabel("Follow-up") }));
     expect(within(row("Follow-up")).getByText(text.defaultBadge)).toBeInTheDocument();
     expect(within(row("Key results")).queryByText(text.defaultBadge)).toBeNull();
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(text.defaultSaved("Follow-up")));
+    await waitFor(() => expect(within(templatesSection()).getByRole("status")).toHaveTextContent(text.defaultSaved("Follow-up")));
     expect(writes()).toEqual([{ method: "PUT", path: "/default", body: { template_id: "t2" } }]);
   });
 
@@ -196,7 +200,7 @@ describe("choosing the default template", () => {
     await renderReady();
     backend.failing.add("PUT /default");
     fireEvent.click(screen.getByRole("button", { name: text.useAsDefaultLabel("Follow-up") }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.defaultError);
+    expect(await within(templatesSection()).findByRole("alert")).toHaveTextContent(text.defaultError);
     expect(within(row("Key results")).getByText(text.defaultBadge)).toBeInTheDocument();
     expect(within(row("Follow-up")).queryByText(text.defaultBadge)).toBeNull();
     expect(screen.getAllByText(text.defaultBadge)).toHaveLength(1);
@@ -224,7 +228,7 @@ describe("editing a template", () => {
     expect(writes()).toEqual([{ method: "PATCH", path: "/t2", body: { name: "Weekly follow-up", category_id: null } }]);
     const uncategorized = screen.getByRole("region", { name: text.uncategorized });
     expect(within(uncategorized).getByText("Weekly follow-up")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(text.templateSaved("Weekly follow-up"));
+    expect(within(templatesSection()).getByRole("status")).toHaveTextContent(text.templateSaved("Weekly follow-up"));
   });
 
   it("sends the new instructions when they change", async () => {

@@ -60,11 +60,6 @@ export const settings = {
       keywords: "extensión chrome meet cuenta regresiva micrófono barra de control",
     },
   },
-  // Quiet placeholders until each screen exists (no controls that do nothing).
-  comingSoon: {
-    transcription: "Próximamente: aquí elegirás el motor y el modelo que transcriben tus reuniones.",
-    speakers: "Próximamente: aquí elegirás el motor y el modelo que identifican a los hablantes.",
-  },
   account: {
     fallbackName: "Cuenta",
     note: "Tu nombre y tu correo vienen de tu inicio de sesión y no se pueden cambiar aquí.",
@@ -81,6 +76,7 @@ export const settings = {
     sidebarHelp: "Deja solo los iconos a la vista. También puedes plegarlo con el botón del panel; la elección se recuerda en este navegador.",
   },
   summaries: {
+    templatesTitle: "Plantillas",
     help: "Las plantillas indican a Sauri cómo redactar el resumen de una reunión. La plantilla por defecto se usa en los resúmenes automáticos. Los cambios solo afectan a los resúmenes futuros: los que ya existen conservan la versión con la que se generaron.",
     newTemplate: "Nueva plantilla",
     newCategory: "Nueva categoría",

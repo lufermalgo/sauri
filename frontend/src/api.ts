@@ -11,12 +11,21 @@ import type {
   AttributedTurn,
   EngineCapabilities,
   EngineKeyState,
+  EngineModelList,
+  EnginePrivacyNotice,
   EngineProbeResult,
+  EngineProcess,
+  EngineProcessChoice,
+  EngineProcessState,
   EngineProvider,
   EngineProviderCreate,
   EngineProviderDeleted,
   EngineProviderUpdate,
   EngineProviderUpdated,
+  EngineStatus,
+  LocalHardware,
+  LocalJob,
+  LocalModelList,
 } from "@sauri/shared-types";
 
 export interface PlaybackSource {
@@ -731,16 +740,19 @@ export async function setDefaultTemplate(templateId: string): Promise<void> {
 
 // --- Engines: external providers, their keys and the connection test (/api/v1/engines) ---
 
-/** A refused engines request: the HTTP status and the API's machine code (`detail`), when it sent one. */
+/** A refused engines request: the HTTP status, the API's machine code (`detail`) and the figures it
+ * sent along (`needed_bytes`, `free_bytes`, `processes`, `job_id`), when it sent them. */
 export class EnginesApiError extends Error {
   readonly status: number;
   readonly code: string | null;
+  readonly figures: Readonly<Record<string, unknown>>;
 
-  constructor(status: number, code: string | null) {
+  constructor(status: number, code: string | null, figures: Record<string, unknown> = {}) {
     super(`Error ${status}`);
     this.name = "EnginesApiError";
     this.status = status;
     this.code = code;
+    this.figures = figures;
   }
 }
 
@@ -753,14 +765,17 @@ async function enginesRequest<T>(path: string, method = "GET", body?: unknown): 
   endSessionOn401(response);
   if (!response.ok) {
     let code: string | null = null;
+    let figures: Record<string, unknown> = {};
     try {
-      const detail = ((await response.json()) as { detail?: unknown }).detail;
+      const { detail, ...rest } = (await response.json()) as { detail?: unknown } & Record<string, unknown>;
       if (typeof detail === "string") code = detail;
+      figures = rest;
     } catch {
       // The body is not JSON: the status alone describes the failure.
     }
-    throw new EnginesApiError(response.status, code);
+    throw new EnginesApiError(response.status, code, figures);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -801,4 +816,59 @@ export function deleteEngineKey(providerId: string): Promise<EngineKeyState> {
 
 export function testEngineProvider(providerId: string): Promise<EngineProbeResult> {
   return enginesRequest(`${providerPath(providerId)}/test`, "POST");
+}
+
+// --- Engines: the engine and model chosen for each process, privacy notices and local models ---
+
+export function listEngineProcesses(): Promise<EngineProcessState[]> {
+  return enginesRequest("/processes");
+}
+
+/** The notice the person must accept before `providerId` serves `capability`; it carries its version. */
+export function getEnginePrivacyNotice(capability: EngineProcess, providerId: string): Promise<EnginePrivacyNotice> {
+  return enginesRequest(`/processes/${capability}/notice?provider_id=${encodeURIComponent(providerId)}`);
+}
+
+export function putEngineProcess(capability: EngineProcess, choice: EngineProcessChoice): Promise<EngineProcessState> {
+  return enginesRequest(`/processes/${capability}`, "PUT", choice);
+}
+
+/** Live model catalog of a provider for one process; `refresh` skips the 24 hour cache ("Volver a pedir"). */
+export function listEngineModels(providerId: string, capability: EngineProcess, refresh = false): Promise<EngineModelList> {
+  const query = `capability=${capability}${refresh ? "&refresh=true" : ""}`;
+  return enginesRequest(`${providerPath(providerId)}/models?${query}`);
+}
+
+export function getEngineStatus(): Promise<EngineStatus> {
+  return enginesRequest("/status");
+}
+
+export function getLocalHardware(): Promise<LocalHardware> {
+  return enginesRequest("/local/hardware");
+}
+
+export function listLocalModels(): Promise<LocalModelList> {
+  return enginesRequest("/local/models");
+}
+
+const localModelPath = (modelId: string) => `/local/models/${encodeURIComponent(modelId)}`;
+
+export function installLocalModel(modelId: string): Promise<LocalJob> {
+  return enginesRequest(`${localModelPath(modelId)}/install`, "POST");
+}
+
+export function verifyLocalModel(modelId: string): Promise<LocalJob> {
+  return enginesRequest(`${localModelPath(modelId)}/verify`, "POST");
+}
+
+export function removeLocalModel(modelId: string): Promise<void> {
+  return enginesRequest(localModelPath(modelId), "DELETE");
+}
+
+export function getLocalJob(jobId: string): Promise<LocalJob> {
+  return enginesRequest(`/local/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export function cancelLocalJob(jobId: string): Promise<LocalJob> {
+  return enginesRequest(`/local/jobs/${encodeURIComponent(jobId)}/cancel`, "POST");
 }

@@ -195,3 +195,85 @@ export interface EngineStatus {
   engines: EngineHostState[];
   secret_store: string | null;
 }
+
+// --- Local models (`/api/v1/engines/local`): hardware, catalog, installs and their jobs ---
+
+/** What the local model recommendation reads from this computer (`GET /local/hardware`). */
+export interface LocalHardware {
+  arch: string;
+  system: string;
+  memory_gib: number;
+  cores: number;
+  /** Metal acceleration: Apple silicon on macOS. */
+  metal: boolean;
+  disk_free_bytes: number;
+}
+
+/** Catalog mark: `measured` by the team with real recordings, or an unmeasured `proposal`. */
+export type LocalModelMark = "measured" | "proposal";
+
+/** `auxiliary` supports a model of its process (voice detection); `managed_engine` ships with its engine. */
+export type LocalModelKind = "model" | "auxiliary" | "managed_engine";
+
+/** State of the files on disk; `managed` has no download and `installing` is an install in progress. */
+export type LocalModelState =
+  | "not_installed"
+  | "installing"
+  | "installed"
+  | "unverified"
+  | "corrupt"
+  | "managed";
+
+export interface LocalModel {
+  id: string;
+  process: EngineProcess;
+  kind: LocalModelKind;
+  engine: string;
+  /** Download size in bytes; null for a managed engine. */
+  size: number | null;
+  min_ram_gib: number;
+  requires: string[];
+  status: LocalModelMark;
+  /** The model a process runs when none is chosen (`local:default`). */
+  default: boolean;
+  /** Command that installs a managed engine. */
+  managed_by: string | null;
+  recommended: boolean;
+  in_use_by: EngineProcess[];
+  state: LocalModelState;
+  installed_size: number | null;
+  installed_at: string | null;
+}
+
+/** Why a model is (or is not) recommended: a copy key plus its parameters, never a sentence. */
+export interface LocalRecommendation {
+  process: EngineProcess;
+  model_id: string | null;
+  status: LocalModelMark | null;
+  reason_key: string;
+  reason_params: Record<string, string | number | boolean | null>;
+  warnings: string[];
+}
+
+export interface LocalModelList {
+  catalog_version: number;
+  models: LocalModel[];
+  recommendations: Partial<Record<EngineProcess, LocalRecommendation>>;
+  /** Id of the install or verification running now, if any (one at a time). */
+  active_job: string | null;
+}
+
+export type LocalJobState = "running" | "done" | "failed" | "cancelled";
+
+export interface LocalJob {
+  id: string;
+  model_id: string;
+  type: "install" | "verify";
+  state: LocalJobState;
+  bytes_done: number;
+  bytes_total: number;
+  /** Stable failure code, for example `hash_mismatch`. */
+  error: string | null;
+  /** `installed`, `verified` or `corrupt` once the job is done. */
+  result: string | null;
+}

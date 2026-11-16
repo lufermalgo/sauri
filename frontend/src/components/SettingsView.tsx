@@ -26,8 +26,8 @@ import {
 import type { SessionUser } from "../session-user";
 import { AccountSettings } from "./settings/AccountSettings";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
-import { ComingSoonSettings } from "./settings/ComingSoonSettings";
 import { EnginesSettings } from "./settings/EnginesSettings";
+import { ProcessSettings } from "./settings/ProcessSettings";
 import { RecordingSettings } from "./settings/RecordingSettings";
 import { filterSettingsGroups } from "./settings/settingsSearch";
 import { SummarySettings } from "./settings/SummarySettings";
@@ -228,8 +228,9 @@ function renderCategory(category: SettingsCategory, user: SessionUser | null, on
     case "engines":
       return <EnginesSettings />;
     case "transcription":
+      return <ProcessSettings process="transcription" />;
     case "speakers":
-      return <ComingSoonSettings category={category} />;
+      return <ProcessSettings process="diarization" />;
     case "summaries":
       return <SummarySettings />;
     case "recording":

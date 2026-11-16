@@ -5,6 +5,7 @@ import type { SummaryTemplate, TemplateCategory } from "../../api";
 import { copy } from "../../copy/es";
 import { Button, Icon, Skeleton, StatusBadge } from "../ui";
 import { CategoryDialog } from "./CategoryDialog";
+import { ProcessSettings } from "./ProcessSettings";
 import { TemplateDialog } from "./TemplateDialog";
 
 type Load =
@@ -89,6 +90,9 @@ export function SummarySettings() {
 
   return (
     <div className="settings-stack">
+      <ProcessSettings process="summary" />
+      <section className="settings-stack" aria-labelledby="summary-templates-title">
+      <h3 id="summary-templates-title" className="settings-group-title">{text.templatesTitle}</h3>
       <p className="settings-help">{text.help}</p>
       <div className="settings-toolbar">
         <Button variant="primary" disabled={load.status !== "ready"} onClick={() => setDialog({ kind: "template", template: null })}>
@@ -124,6 +128,8 @@ export function SummarySettings() {
           onEdit={(template) => setDialog({ kind: "template", template })}
         />
       )}
+
+      </section>
 
       {dialog?.kind === "template" && load.status === "ready" && (
         <TemplateDialog
