@@ -30,6 +30,8 @@ MAX_ERROR_BODY_BYTES: Final = 64 * 1024
 
 _EOL: Final = re.compile(rb"\r\n|\n|\r")
 _HINT: Final = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+_TOKEN: Final = re.compile(r"[A-Za-z0-9_.:+/-]{1,64}")
+EVENT_STREAM: Final = frozenset({"text/event-stream"})
 _CONTEXT_PHRASES: Final = (
     "prompt is too long",
     "maximum context length",
@@ -151,7 +153,10 @@ def _error_object(body: bytes) -> Any:
         return None
     if isinstance(data, list) and data:
         data = data[0]
-    return data.get("error") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        return None
+    # The Codex backend answers some refusals as ``{"detail": "..."}`` with no ``error`` object.
+    return data.get("error") if "error" in data else data.get("detail")
 
 
 def _words(text: str) -> str:
@@ -298,21 +303,27 @@ def error_from_stream_error(error: Any, key: str | None) -> ProviderError:
     return ProviderError(base.code, retry_after_s=base.retry_after_s, reason=reason)
 
 
-def bad_response() -> ProviderError:
-    return ProviderError("provider_invalid_output", reason="bad_response")
+def bad_response(detail: str | None = None) -> ProviderError:
+    """``detail`` says which check failed (a closed phrase or a token such as a content type), never content."""
+    return ProviderError("provider_invalid_output", reason="bad_response", detail=detail)
 
 
-def stream_cut() -> ProviderError:
-    return ProviderError("provider_unavailable", reason="stream_cut")
+def stream_cut(detail: str | None = None) -> ProviderError:
+    return ProviderError("provider_unavailable", reason="stream_cut", detail=detail)
+
+
+def token(value: Any) -> str:
+    """A short identifier-like value (event name, content type, event type) for the log, or ``-``."""
+    return value if isinstance(value, str) and _TOKEN.fullmatch(value) else "-"
 
 
 def parse_event_json(event: SseEvent) -> dict[str, Any]:
     try:
         data = json.loads(event.data)
     except ValueError:
-        raise bad_response() from None
+        raise bad_response(f"event_not_json event={token(event.event)} bytes={len(event.data)}") from None
     if not isinstance(data, dict):
-        raise bad_response()
+        raise bad_response(f"event_not_object event={token(event.event)} json={type(data).__name__}")
     return data
 
 
@@ -339,8 +350,12 @@ async def stream_events(
     key: str | None,
     allow_local: bool,
     timeouts: RouteTimeouts,
+    content_types: frozenset[str] = EVENT_STREAM,
 ) -> AsyncGenerator[SseEvent, None]:
     """POST ``payload`` and yield server-sent events until the provider closes the stream.
+
+    ``content_types`` are the response media types accepted as an event stream (``""`` stands for a response
+    without a ``Content-Type`` header, which the Codex backend sends); any other type is ``bad_response``.
 
     ``first_byte_s`` bounds the wait for the first body byte, ``idle_s`` the silence between later chunks and
     ``total_s`` the whole call. Closing this iterator, or cancelling the task that reads it, closes the
@@ -376,8 +391,8 @@ async def stream_events(
                 phase="idle",
             )
             raise error_from_http(response.status, error_body, response.retry_after, key, sent_text(payload))
-        if response.content_type != "text/event-stream":
-            raise bad_response()
+        if response.content_type not in content_types:
+            raise bad_response(f"content_type={token(response.content_type) if response.content_type else 'missing'}")
         parser = SseParser()
         first = True
         async with aclosing(response.iter_bytes()) as chunks:
@@ -467,7 +482,8 @@ def _check_structured(text: str, finish_reason: str | None, validate_output: Cal
     try:
         parsed = json.loads(text)
     except ValueError:
-        raise ProviderError("provider_invalid_output", reason="invalid_json") from None
+        detail = "empty_output" if not text.strip() else f"chars={len(text)} finish={finish_reason or '-'}"
+        raise ProviderError("provider_invalid_output", reason="invalid_json", detail=detail) from None
     if validate_output is None:
         return
     try:

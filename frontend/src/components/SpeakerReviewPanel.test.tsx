@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { avatarText, firstGrapheme, SpeakerReviewPanel, type SpeakerRowModel } from "./SpeakerReviewPanel";
+import { avatarText, firstGrapheme, splitOrganization, SpeakerReviewPanel, type SpeakerRowModel } from "./SpeakerReviewPanel";
 import { t } from "../i18n";
 
 afterEach(cleanup);
@@ -53,7 +53,76 @@ describe("avatar text", () => {
   });
 });
 
+describe("name and organization", () => {
+  it("splits the Name - Organization convention without changing the label", () => {
+    expect(splitOrganization("Luis Fernando Maldonado - Summan")).toEqual({ name: "Luis Fernando Maldonado", tail: " - Summan" });
+    expect(splitOrganization("Ana \u2013 Acme Corp")).toEqual({ name: "Ana", tail: " \u2013 Acme Corp" });
+    expect(splitOrganization("Ana-Maria")).toEqual({ name: "Ana-Maria", tail: "" });
+    expect(splitOrganization("Ana")).toEqual({ name: "Ana", tail: "" });
+    for (const label of ["Luis - Summan", "Ana \u2013 Acme - Sur"]) {
+      const { name, tail } = splitOrganization(label);
+      expect(name + tail).toBe(label);
+    }
+  });
+
+  it("shows the organization as secondary text inside the same heading", () => {
+    panel({ rows: [{ ...rows[1], label: "Luis Fernando Maldonado - Summan" }] });
+    const heading = screen.getByRole("heading", { name: "Luis Fernando Maldonado - Summan" });
+    expect(heading.textContent).toBe("Luis Fernando Maldonado - Summan");
+    expect(heading.querySelector(".meeting-review-org")?.textContent).toBe(" - Summan");
+  });
+
+  it("does not split a generic numbered label", () => {
+    panel({ rows: [rows[0]] });
+    expect(screen.getByRole("heading", { name: G1 }).querySelector(".meeting-review-org")).toBeNull();
+  });
+});
+
+describe("speaker state indicator", () => {
+  it("is visible only for a speaker that still needs a name", () => {
+    panel();
+    const pending = within(article(0)).getByText(t("speakerReview:pendingState"));
+    expect(pending).toHaveClass("meeting-review-status");
+    expect(pending).not.toHaveClass("meeting-sr-only");
+    expect(article(0)).toHaveClass("meeting-review-item--pending");
+    expect(article(1)).not.toHaveClass("meeting-review-item--pending");
+    expect(article(1).querySelector(".meeting-review-status")).toBeNull();
+  });
+
+  it("places the badge right after the name on the same line", () => {
+    panel();
+    const heading = within(article(0)).getByRole("heading", { name: G1 });
+    const badge = within(article(0)).getByText(t("speakerReview:pendingState"));
+    expect(heading.parentElement).toHaveClass("meeting-review-line");
+    expect(heading.nextElementSibling).toBe(badge);
+  });
+
+  it("keeps the assigned state for screen readers only", () => {
+    panel();
+    expect(within(article(1)).getByText(t("speakerReview:namedState"))).toHaveClass("meeting-sr-only");
+  });
+
+  it("hides the badge while the name is being edited", () => {
+    panel();
+    fireEvent.click(pencil(G1));
+    expect(within(article(0)).queryByText(t("speakerReview:pendingState"))).not.toBeInTheDocument();
+  });
+
+  it("puts the avatar and name before the play and edit buttons", () => {
+    panel();
+    const order = Array.from(article(0).querySelectorAll(".ui-avatar, h3, button")).map(node => node.tagName + (node.className.toString().includes("ui-avatar") ? ":avatar" : ""));
+    expect(order).toEqual(["SPAN:avatar", "H3", "BUTTON", "BUTTON"]);
+  });
+});
+
 describe("SpeakerReviewPanel", () => {
+  it("marks only the speaker talking now as the current row", () => {
+    panel({ speakingId: "c" });
+    expect(article(2)).toHaveAttribute("aria-current", "true");
+    expect(article(2)).toHaveClass("meeting-review-item--speaking");
+    expect(article(0)).not.toHaveAttribute("aria-current");
+  });
+
   it("announces the pending and the complete state", () => {
     panel();
     expect(screen.getByText(t("speakerReview:pending"))).toBeInTheDocument();
@@ -65,7 +134,6 @@ describe("SpeakerReviewPanel", () => {
   it("lists one row per speaker with its status, a play icon first and a pencil last", () => {
     panel();
     expect(article(0)).toHaveTextContent(t("speakerReview:pendingState"));
-    expect(article(1)).toHaveTextContent(t("speakerReview:namedState"));
     const buttons = within(article(0)).getAllByRole("button");
     expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([t("speakerReview:listenTo", { label: G1 }), t("speakerReview:editName", { label: G1 })]);
     for (const button of buttons) {
@@ -232,7 +300,7 @@ describe("SpeakerReviewPanel", () => {
     it("disappears when no generic speaker is pending", () => {
       panel({ rows: [rows[1], { ...rows[0], disposition: "confirmed" }] });
       expect(screen.queryByRole("button", { name: t("speakerReview:leaveUnnamed") })).not.toBeInTheDocument();
-      expect(article(1)).toHaveTextContent(t("speakerReview:unnamedState"));
+      expect(within(article(1)).getByText(t("speakerReview:unnamedState"))).toHaveClass("meeting-sr-only");
     });
   });
 
@@ -241,7 +309,7 @@ describe("SpeakerReviewPanel", () => {
 
     it("shows a one-tap chip that keeps the suggestion, and the first letter in the avatar", () => {
       const props = panel({ rows: [suggested] });
-      expect(article(0)).toHaveTextContent(t("speakerReview:suggestedState"));
+      expect(within(article(0)).getByText(t("speakerReview:suggestedState"))).toHaveClass("meeting-sr-only");
       expect(within(article(0)).getByText("K")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: t("speakerReview:acceptSuggestion", { name: "Known Speaker" }) }));
       expect(props.onAcceptSuggestion).toHaveBeenCalledWith("s");
@@ -250,7 +318,7 @@ describe("SpeakerReviewPanel", () => {
     it("has no chip once the name is accepted", () => {
       panel({ rows: [{ ...suggested, disposition: "confirmed" }] });
       expect(screen.queryByRole("button", { name: t("speakerReview:acceptSuggestion", { name: "Known Speaker" }) })).not.toBeInTheDocument();
-      expect(article(0)).toHaveTextContent(t("speakerReview:namedState"));
+      expect(within(article(0)).getByText(t("speakerReview:namedState"))).toHaveClass("meeting-sr-only");
     });
   });
 });

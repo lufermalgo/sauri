@@ -4,7 +4,7 @@
   "namedState": "Nombre asignado",
   "unnamedState": "Sin nombre",
   "suggestedState": "Nombre sugerido",
-  "pending": "Revisión pendiente: escucha a cada hablante y escribe su nombre.",
+  "pending": "Escucha a cada hablante y escribe su nombre para que el resumen y la transcripción digan quién habló.",
   "complete": "Revisión completa.",
   "disposition": {
     "confirmed": "Confirmado",
@@ -14,7 +14,7 @@
   },
   "listenTo": "Escuchar a {{label}}",
   "stopFor": "Detener la reproducción de {{label}}",
-  "close": "Cerrar",
+  "close": "Cerrar panel de hablantes",
   "shortInterval": "Este hablante tiene poco audio continuo (menos de 5 segundos); puede no alcanzar para reconocer su voz.",
   "noInterval": "No hay un tramo de la grabación atribuido solo a este hablante para escuchar.",
   "playbackUnavailable": "La grabación original no está disponible para reproducir.",

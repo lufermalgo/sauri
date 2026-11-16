@@ -613,6 +613,12 @@ textarea.ui-input {
   background: var(--ds-fill-hover);
 }
 
+/* Destructive action: quiet at rest, danger color on hover and keyboard focus only. */
+.ui-icon-button--danger:is(:hover, :focus-visible):not(:disabled) {
+  color: var(--ds-danger-text);
+  background: var(--ds-danger-soft);
+}
+
 /* A control whose value is not the default: soft accent fill plus a dot (shape, not only color). */
 .ui-icon-button--active {
   position: relative;

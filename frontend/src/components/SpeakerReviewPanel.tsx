@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, KeyboardEvent, RefObject } from "react";
 import { LoaderCircle, Pause, Pencil, Play } from "lucide-react";
 import type { SpeakerDisposition } from "../api";
 import type { ListeningInterval } from "../speaker-review-interval";
-import { Avatar, Icon, useTooltip } from "./ui";
+import { Avatar, Icon, StatusBadge, useTooltip } from "./ui";
 import { t, useT } from "../i18n";
 import { toUpperLocale } from "../i18n/format";
 
@@ -18,12 +18,14 @@ export interface SpeakerRowModel {
   interval: ListeningInterval | null;
 }
 
-interface SpeakerReviewPanelProps {
+export interface SpeakerReviewPanelProps {
   rows: SpeakerRowModel[];
   complete: boolean;
   /** Speakers with a save in flight. */
   busyIds: readonly string[];
   playingId: string | null;
+  /** Speaker talking at the current playback position, highlighted so the video can be matched to a row. */
+  speakingId?: string | null;
   playbackReady: boolean;
   playbackLoading: boolean;
   error: string | null;
@@ -54,9 +56,35 @@ export function avatarText(label: string, generic: boolean): string {
   return label.trim().split(/\s+/).slice(0, 2).map(firstGrapheme).join("");
 }
 
-/** Speaker identification list shown inside the review dialog: one row per speaker. */
+/**
+ * Splits the "Name - Organization" convention used for speakers (for example "Ana Perez - Summan") so the
+ * organization can be shown as secondary text. The stored label is never changed: `tail` keeps the original
+ * separator, so name + tail is exactly the label.
+ */
+export function splitOrganization(label: string): { name: string; tail: string } {
+  const match = /^(.+?)(\s+[-\u2013\u2014]\s+\S.*)$/.exec(label.trim());
+  return match ? { name: match[1], tail: match[2] } : { name: label, tail: "" };
+}
+
+/** True while the text of `ref` is cut by its ellipsis, so a tooltip can show the whole name. */
+function useIsTruncated(ref: RefObject<HTMLElement>, key: unknown): boolean {
+  const [truncated, setTruncated] = useState(false);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) { setTruncated(false); return; }
+    const measure = () => setTruncated(element.scrollWidth > element.clientWidth + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, key]);
+  return truncated;
+}
+
+/** Speaker identification list shown in the panel beside the video: one row per speaker. */
 export function SpeakerReviewPanel({
-  rows, complete, busyIds, playingId, playbackReady, playbackLoading, error,
+  rows, complete, busyIds, playingId, speakingId = null, playbackReady, playbackLoading, error,
   onListen, onRename, onAcceptSuggestion, onLeaveUnnamed,
 }: SpeakerReviewPanelProps) {
   const { t } = useT();
@@ -76,13 +104,13 @@ export function SpeakerReviewPanel({
   }
 
   return <div className="meeting-speaker-review">
-    <p role="status" className="meeting-sr-only">{complete ? t("speakerReview:complete") : t("speakerReview:pending")}</p>
+    <p role="status" className={complete ? "meeting-sr-only" : undefined}>{complete ? t("speakerReview:complete") : t("speakerReview:pending")}</p>
     <div role="status" className="meeting-sr-only">
       {announcement && <span key={announcement.id}>{announcement.message}</span>}
     </div>
     {error && <p role="alert" className="meeting-error">{error}</p>}
     {rows.map(row => <SpeakerRow key={row.speakerId} row={row}
-      busy={busyIds.includes(row.speakerId)} playing={playingId === row.speakerId}
+      busy={busyIds.includes(row.speakerId)} playing={playingId === row.speakerId} speaking={speakingId === row.speakerId}
       playbackReady={playbackReady} playbackLoading={playbackLoading}
       onListen={onListen} onRename={onRename} onAcceptSuggestion={onAcceptSuggestion} onAnnounce={announce} />)}
     {pendingGeneric && <div className="meeting-review-footer">
@@ -96,6 +124,7 @@ interface SpeakerRowProps extends Pick<SpeakerReviewPanelProps, "playbackReady" 
   row: SpeakerRowModel;
   busy: boolean;
   playing: boolean;
+  speaking: boolean;
   onAnnounce: (message: string) => void;
 }
 
@@ -104,7 +133,7 @@ function statusText(row: SpeakerRowModel): string {
   return row.disposition === null ? t("speakerReview:suggestedState") : t("speakerReview:namedState");
 }
 
-function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onListen, onRename, onAcceptSuggestion, onAnnounce }: SpeakerRowProps) {
+function SpeakerRow({ row, busy, playing, speaking, playbackReady, playbackLoading, onListen, onRename, onAcceptSuggestion, onAnnounce }: SpeakerRowProps) {
   const { t } = useT();
   const { speakerId, label, interval } = row;
   const [editing, setEditing] = useState(false);
@@ -123,6 +152,9 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
   const playTip = useTooltip(playing ? t("speakerReview:stopFor", { label }) : playName);
   const editName = t("speakerReview:editName", { label });
   const editTip = useTooltip(editName);
+  const nameRef = useRef<HTMLHeadingElement>(null);
+  const truncated = useIsTruncated(nameRef, `${label}|${editing}`);
+  const nameTip = useTooltip(truncated && !editing ? label : undefined);
 
   useEffect(() => {
     if (editing) {
@@ -182,39 +214,50 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
       event.preventDefault();
       void commit("enter");
     } else if (event.key === "Escape") {
-      // Cancels the edit only: the dialog stays open.
+      // Cancels the edit only: the panel stays open.
       event.preventDefault();
       if (!inFlight.current) endEdit(true);
     }
   }
 
   const status = statusText(row);
+  const pending = row.generic && row.disposition === null;
   const suggested = !row.generic && row.disposition === null;
-  return <article className="meeting-review-item" aria-busy={busy || saving || undefined}>
-    <div className="meeting-review-row">
+  const { name: person, tail } = row.generic ? { name: label, tail: "" } : splitOrganization(label);
+  return <article className={`meeting-review-item${speaking ? " meeting-review-item--speaking" : ""}${pending ? " meeting-review-item--pending" : ""}`}
+    style={{ "--meeting-speaker": row.color } as CSSProperties}
+    aria-current={speaking ? "true" : undefined} aria-busy={busy || saving || undefined}>
+    <Avatar initials={avatarText(label, row.generic)} color={row.color} size="md" />
+    <div className="meeting-review-identity">
+      {editing
+        ? <div className="meeting-review-edit">
+          <input ref={inputRef} className="ui-input meeting-review-input" type="text" value={draft}
+            maxLength={64} aria-label={t("speakerReview:nameFor", { label })} readOnly={saving} aria-busy={saving || undefined}
+            aria-invalid={rowError ? true : undefined} aria-describedby={rowError ? errorId : undefined}
+            onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={() => void commit("blur")} />
+          {saving && <span className="meeting-review-spinner"><Icon icon={LoaderCircle} size={16} /></span>}
+        </div>
+        // The badge of a speaker that still needs a name sits right after the name on the same line; for the rest the state stays available to screen readers.
+        : <div className="meeting-review-line">
+          <h3 ref={nameRef} className="meeting-review-name" {...nameTip.triggerProps}>
+            {person}{tail && <span className="meeting-review-org">{tail}</span>}
+          </h3>
+          {pending
+            ? <StatusBadge tone="progress" dot className="meeting-review-status">{status}</StatusBadge>
+            : <span className="meeting-sr-only">{status}</span>}
+        </div>}
+      {!editing && nameTip.tooltip}
+      {editing && rowError && <p id={errorId} className="meeting-review-field-error">{rowError}</p>}
+    </div>
+    <div className="meeting-review-actions">
       <span className="meeting-review-play">
-        <button type="button" className={`ui-icon-button${playing ? " ui-icon-button--primary" : ""}`}
+        <button type="button" className={`ui-icon-button ${playing ? "ui-icon-button--primary" : "ui-icon-button--ghost"}`}
           aria-label={playName} aria-pressed={playing} {...playTip.triggerProps}
           onClick={() => { playTip.hide(); onListen(row); }} disabled={!interval || !playbackReady}>
           <Icon icon={playing ? Pause : Play} size={16} />
         </button>
         {playTip.tooltip}
       </span>
-      <Avatar initials={avatarText(label, row.generic)} color={row.color} size="md" />
-      <div className="meeting-review-identity">
-        {editing
-          ? <div className="meeting-review-edit">
-            <input ref={inputRef} className="ui-input meeting-review-input" type="text" value={draft}
-              maxLength={64} aria-label={t("speakerReview:nameFor", { label })} readOnly={saving} aria-busy={saving || undefined}
-              aria-invalid={rowError ? true : undefined} aria-describedby={rowError ? errorId : undefined}
-              onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={() => void commit("blur")} />
-            {saving && <span className="meeting-review-spinner"><Icon icon={LoaderCircle} size={16} /></span>}
-          </div>
-          : <h4 className="meeting-review-name">{label}</h4>}
-        {editing && rowError
-          ? <p id={errorId} className="meeting-review-field-error">{rowError}</p>
-          : <span className={`meeting-review-status${row.generic && row.disposition === null ? " meeting-review-status--pending" : ""}`}>{status}</span>}
-      </div>
       {!editing && <span className="meeting-review-edit-trigger">
         <button ref={pencilRef} type="button" className="ui-icon-button ui-icon-button--ghost"
           aria-label={editName} {...editTip.triggerProps} onClick={startEdit} disabled={busy}>

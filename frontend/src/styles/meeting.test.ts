@@ -32,3 +32,22 @@ describe("meeting transcript layout contract", () => {
     expect(css).not.toMatch(/\d+ch\b/);
   });
 });
+
+describe("speaker dock row density", () => {
+  it("lays each row out on a three-column grid with the avatar at the DS 28px size", () => {
+    expect(rule(".meeting-review-item")).toMatch(/grid-template-columns:\s*28px minmax\(0, 1fr\) auto/);
+  });
+
+  it("keeps the row compact and leaves the 44px target to coarse pointers (the control tokens grow there)", () => {
+    expect(rule(".meeting-review-item")).toMatch(/padding:\s*var\(--ds-space-1\) var\(--ds-space-3\)/);
+    expect(rule(".meeting-review-item")).not.toMatch(/min-height/);
+    expect(rule(".meeting-review-name")).toMatch(/font-size:\s*var\(--ds-text-md\)/);
+    expect(rule(".meeting-review-chip")).toMatch(/min-height:\s*24px/);
+  });
+
+  it("truncates a long name on one line", () => {
+    const name = rule(".meeting-review-name");
+    expect(name).toMatch(/text-overflow:\s*ellipsis/);
+    expect(name).toMatch(/white-space:\s*nowrap/);
+  });
+});

@@ -10,12 +10,19 @@ from typing import Any
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from sauri_engine_common.external.errors import ERROR_CODES, RETRYABLE, ProviderError
+from sauri_engine_common.external.errors import ERROR_CODES, ProviderError
 from sauri_engine_common.route import Route
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.copy.engine_notices_es import NOTICE_VERSIONS
-from app.engines.routing import EXTERNAL_TOTAL_S, Provenance, ResolvedRoute, call_with_fallback, resolve_route
+from app.engines.routing import (
+    EXTERNAL_TOTAL_S,
+    NO_FALLBACK,
+    Provenance,
+    ResolvedRoute,
+    call_with_fallback,
+    resolve_route,
+)
 from tests.engines.conftest import OTHER, OWNER
 from tests.external_asr_support import add_provider, choose, consent
 
@@ -232,7 +239,7 @@ def test_property_14_the_fallback_never_escalates(code: str, fallback: bool, has
 async def _property_14(code: str, fallback: bool, has_local_route: bool) -> None:
     calls = Calls({"external": failing(code), "local": lambda: ("whisper.cpp", "m")})
     resolved = ResolvedRoute(EXTERNAL, fallback, LOCAL if has_local_route else None)
-    if RETRYABLE[code] and fallback:
+    if code not in NO_FALLBACK and fallback:
         _value, provenance = await call_with_fallback(resolved, calls, identify)
         assert len(calls.routes) == 2 and calls.routes[0] == EXTERNAL
         second = calls.routes[1]
@@ -244,10 +251,27 @@ async def _property_14(code: str, fallback: bool, has_local_route: bool) -> None
         assert raised.value.code == code and calls.routes == [EXTERNAL]
 
 
-async def test_user_action_classes_do_not_change_engine() -> None:
-    for code in ("provider_auth", "consent_missing", "origin_mismatch", "provider_bad_request",
-                 "provider_invalid_output", "no_word_timestamps", "audio_too_large"):
+async def test_classes_that_need_the_owner_do_not_change_engine() -> None:
+    for code in ("provider_auth", "consent_missing", "origin_mismatch", "secret_unavailable", "provider_unsupported"):
         calls = Calls({"external": failing(code), "local": lambda: ("never", "called")})
         with pytest.raises(ProviderError):
             await call_with_fallback(ResolvedRoute(EXTERNAL, True), calls, identify)
         assert calls.routes == [EXTERNAL]
+
+
+async def test_a_provider_that_answers_something_unusable_falls_back_and_records_why() -> None:
+    for code in ("provider_invalid_output", "provider_bad_request", "provider_model_unavailable",
+                 "provider_context_exceeded", "provider_quota", "provider_rate_limited", "audio_too_large",
+                 "no_word_timestamps"):
+        calls = Calls({"external": failing(code), "local": lambda: ("llama.cpp", "local-model")})
+        value, provenance = await call_with_fallback(ResolvedRoute(EXTERNAL, True), calls, identify)
+        assert value == ("llama.cpp", "local-model")
+        assert provenance == Provenance("llama.cpp", "local-model", False, code)
+        assert calls.routes == [EXTERNAL, None]
+
+
+async def test_an_unusable_answer_without_fallback_still_fails() -> None:
+    calls = Calls({"external": failing("provider_invalid_output"), "local": lambda: ("never", "called")})
+    with pytest.raises(ProviderError) as raised:
+        await call_with_fallback(ResolvedRoute(EXTERNAL, False), calls, identify)
+    assert raised.value.code == "provider_invalid_output" and calls.routes == [EXTERNAL]

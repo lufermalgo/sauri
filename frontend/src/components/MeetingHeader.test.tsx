@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MeetingHeader } from "./MeetingHeader";
+import { MeetingHeader, SPEAKER_DOCK_ID } from "./MeetingHeader";
 import { TOOLTIP_DELAY_MS } from "./ui";
 import { deleteMeeting, renameMeeting } from "../api";
 import { navigate } from "../router";
@@ -27,13 +27,11 @@ function open(title: string | null = "Synthetic meeting") {
 }
 
 function openDelete() {
-  fireEvent.click(screen.getByRole("button", { name: t("meeting:moreActions") }));
-  fireEvent.click(screen.getByRole("menuitem", { name: t("meeting:deleteRecording") }));
+  fireEvent.click(screen.getByRole("button", { name: t("meeting:deleteRecording") }));
 }
 
 function startRename() {
-  fireEvent.click(screen.getByRole("button", { name: t("meeting:moreActions") }));
-  fireEvent.click(screen.getByRole("menuitem", { name: t("meeting:rename") }));
+  fireEvent.click(screen.getByRole("button", { name: t("meeting:renameTitle") }));
 }
 
 function edit(value: string) {
@@ -356,52 +354,63 @@ describe("inline title edit", () => {
   });
 });
 
-it("shows two icon-only actions with names, keeping rename and deletion inside the more menu", () => {
-  open();
-  const actions = document.querySelector(".meeting-heading-row > .meeting-actions")!;
-  const buttons = within(actions as HTMLElement).getAllByRole("button");
-  expect(buttons).toHaveLength(2);
-  expect(buttons[0]).toHaveAccessibleName(t("meeting:download"));
-  expect(buttons[0]).toHaveClass("ui-icon-button--primary");
-  expect(buttons[1]).toHaveAccessibleName(t("meeting:moreActions"));
+function actionButtons() {
+  const actions = document.querySelector(".meeting-title-row > .meeting-actions")!;
+  return within(actions as HTMLElement).getAllByRole("button");
+}
+
+it("shows Speakers, Download and Delete as icon-only buttons of one style, with no more menu", () => {
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" manifest={null} turns={[]}
+    speakerReview={{ pendingCount: 2, open: false, onToggle: vi.fn() }} />);
+  const buttons = actionButtons();
+  expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([
+    t("meeting:speakersButtonPending", { count: 2 }), t("meeting:download"), t("meeting:deleteRecording")]);
   for (const button of buttons) {
+    expect(button).toHaveClass("ui-icon-button", "ui-icon-button--ghost");
+    expect(button).not.toHaveClass("ui-icon-button--primary");
     expect(button).toHaveTextContent("");
+    expect(button.querySelectorAll("svg")).toHaveLength(1);
     expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(button.querySelector("svg")).toHaveClass("lucide");
   }
+  expect(buttons[2]).toHaveClass("ui-icon-button--danger");
+  expect(buttons).toHaveLength(3);
+  expect(document.querySelector(".lucide-ellipsis")).not.toBeInTheDocument();
   expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
-  fireEvent.click(buttons[1]);
-  const items = screen.getAllByRole("menuitem");
-  expect(items.map(item => item.textContent)).toEqual([t("meeting:rename"), t("meeting:deleteRecording")]);
-  expect(items[1]).toHaveClass("ui-menu-item--danger");
 });
 
-it("opens the more menu with the keyboard, focuses Rename, closes with Escape and returns focus", () => {
+it("places the actions in the title row right after the title and the always-visible pencil, with a divider between", () => {
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" manifest={null} turns={[]}
+    speakerReview={{ pendingCount: 0, open: false, onToggle: vi.fn() }} />);
+  const row = screen.getByRole("heading", { level: 1 }).parentElement!;
+  const children = Array.from(row.children);
+  expect(children.map(child => child.tagName.toLowerCase())).toEqual(["h1", "span", "span", "div"]);
+  expect(children[1]).toContainElement(screen.getByRole("button", { name: t("meeting:renameTitle") }));
+  expect(children[2]).toHaveClass("meeting-actions-divider");
+  expect(children[2]).toHaveAttribute("aria-hidden", "true");
+  expect(children[3]).toHaveClass("meeting-actions");
+  expect(screen.getByRole("button", { name: t("meeting:renameTitle") })).toBeEnabled();
+});
+
+it("keeps every download option in the Download menu", () => {
   open();
-  const trigger = screen.getByRole("button", { name: t("meeting:moreActions") });
-  trigger.focus();
-  fireEvent.keyDown(trigger, { key: "ArrowDown" });
-  expect(screen.getByRole("menuitem", { name: t("meeting:rename") })).toHaveFocus();
-  fireEvent.keyDown(screen.getByRole("menu"), { key: "ArrowDown" });
-  expect(screen.getByRole("menuitem", { name: t("meeting:deleteRecording") })).toHaveFocus();
-  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
-  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  expect(trigger).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: t("meeting:download") }));
+  expect(screen.getAllByRole("menuitem").map(item => item.textContent)).toEqual([
+    t("meeting:downloadVideo"), t("meeting:downloadTranscript"), t("meeting:downloadSummary")]);
 });
 
-it("focuses the title field after choosing Rename and offers no second Rename while editing", () => {
+it("renames from the title pencil and disables Delete while the title is being edited", () => {
   open(); startRename();
   expect(screen.getByRole("textbox", { name: t("meeting:titleLabel") })).toHaveFocus();
   expect(screen.getByRole("textbox", { name: t("meeting:titleLabel") })).toHaveValue("Synthetic meeting");
-  fireEvent.click(screen.getByRole("button", { name: t("meeting:moreActions") }));
-  expect(screen.queryByRole("menuitem", { name: t("meeting:rename") })).not.toBeInTheDocument();
-  expect(screen.getByRole("menuitem", { name: t("meeting:deleteRecording") })).toHaveAttribute("aria-disabled", "true");
+  expect(screen.getByRole("button", { name: t("meeting:deleteRecording") })).toBeDisabled();
 });
 
 describe("header tooltips", () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  it.each([t("meeting:download"), t("meeting:moreActions")])("describes the %s button with a delayed tooltip on hover and focus", name => {
+  it.each([t("meeting:download"), t("meeting:deleteRecording")])("describes the %s button with a delayed tooltip on hover and focus", name => {
     open();
     const button = screen.getByRole("button", { name });
     const tooltip = document.getElementById(button.getAttribute("aria-describedby")!)!;
@@ -425,7 +434,7 @@ describe("header tooltips", () => {
 
   it("hides the tooltip when the menu opens", () => {
     open();
-    const button = screen.getByRole("button", { name: t("meeting:moreActions") });
+    const button = screen.getByRole("button", { name: t("meeting:download") });
     fireEvent.mouseEnter(button);
     act(() => { vi.advanceTimersByTime(TOOLTIP_DELAY_MS); });
     fireEvent.click(button);
@@ -476,7 +485,7 @@ it("shows no status badge while the stage is unknown to the page", () => {
 });
 
 describe("MeetingHeader speakers entry", () => {
-  function withSpeakers(speakerReview?: { pendingCount: number; hasUnnamed: boolean; onReview: () => void }) {
+  function withSpeakers(speakerReview?: { pendingCount: number; open: boolean; onToggle: () => void }) {
     return render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1"
       manifest={null} turns={[]} speakerReview={speakerReview} />);
   }
@@ -486,35 +495,35 @@ describe("MeetingHeader speakers entry", () => {
     expect(screen.queryByRole("button", { name: speakersName })).not.toBeInTheDocument();
   });
 
-  it("puts the icon right before the download button and names the pending count; the dot is decorative", () => {
-    withSpeakers({ pendingCount: 3, hasUnnamed: false, onReview: vi.fn() });
+  it("puts the icon first, right before the download button and names the pending count; the dot is decorative", () => {
+    withSpeakers({ pendingCount: 3, open: false, onToggle: vi.fn() });
     const icon = screen.getByRole("button", { name: t("meeting:speakersButtonPending", { count: 3 }) });
     expect(icon).toHaveAccessibleName(t("meeting:speakersButtonPending", { count: 3 }));
     expect(icon).toHaveClass("ui-icon-button", "ui-icon-button--ghost", "ui-icon-button--alert");
-    expect(icon).toHaveAttribute("aria-haspopup", "dialog");
+    expect(icon).not.toHaveAttribute("aria-haspopup");
     expect(icon).toHaveAttribute("aria-expanded", "false");
     expect(icon.textContent).toBe("");
     const order = screen.getAllByRole("button").map(button => button.getAttribute("aria-label"));
-    expect(order).toEqual([t("meeting:renameTitle"), t("meeting:speakersButtonPending", { count: 3 }), t("meeting:download"), t("meeting:moreActions")]);
+    expect(order).toEqual([t("meeting:renameTitle"), t("meeting:speakersButtonPending", { count: 3 }), t("meeting:download"), t("meeting:deleteRecording")]);
   });
 
-  it("shows the message and the link in a popover; the link closes it and calls onReview", () => {
-    const onReview = vi.fn();
-    withSpeakers({ pendingCount: 1, hasUnnamed: false, onReview });
+  it("toggles the panel with a single click and no popover in between", () => {
+    const onToggle = vi.fn();
+    withSpeakers({ pendingCount: 1, open: false, onToggle });
     fireEvent.click(screen.getByRole("button", { name: t("meeting:speakersButtonPending", { count: 1 }) }));
-    const popover = screen.getByRole("dialog", { name: t("meeting:speakersPanel") });
-    expect(popover).toHaveTextContent(t("meeting:pendingSpeakers", { count: 1 }));
-    fireEvent.click(within(popover).getByRole("button", { name: t("meeting:reviewSpeakers") }));
-    expect(onReview).toHaveBeenCalledTimes(1);
+    expect(onToggle).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("has no dot and offers editing when nothing is pending", () => {
-    withSpeakers({ pendingCount: 0, hasUnnamed: true, onReview: vi.fn() });
-    const icon = screen.getByRole("button", { name: t("meeting:speakersButton") });
-    expect(icon).not.toHaveClass("ui-icon-button--alert");
-    fireEvent.click(icon);
-    expect(screen.getByText(t("meeting:speakersSomeUnnamed"))).toBeVisible();
-    expect(screen.getByRole("button", { name: t("meeting:editSpeakers") })).toBeVisible();
+  it("reports the open panel through aria-expanded and aria-controls", () => {
+    withSpeakers({ pendingCount: 1, open: true, onToggle: vi.fn() });
+    const icon = screen.getByRole("button", { name: t("meeting:speakersButtonPending", { count: 1 }) });
+    expect(icon).toHaveAttribute("aria-expanded", "true");
+    expect(icon).toHaveAttribute("aria-controls", SPEAKER_DOCK_ID);
+  });
+
+  it("has no dot when nothing is pending", () => {
+    withSpeakers({ pendingCount: 0, open: false, onToggle: vi.fn() });
+    expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).not.toHaveClass("ui-icon-button--alert");
   });
 });
