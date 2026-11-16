@@ -54,7 +54,7 @@ frontend/           web portal
 extension/          Chrome extension
 packages/           shared TypeScript types
 scripts/            development, engine, platform scripts and their tests (dev, engines, platform, tests)
-docs/
+docs/               documentation, indexed in docs/README.md
   product/          approved scope and discovery notes
   architecture/     overview and project structure
   operations/       local deployment and validation

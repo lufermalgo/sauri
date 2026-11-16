@@ -16,6 +16,12 @@ frontend/dist/
 .env
 .env.local
 
+# Editor and agent-tool local state (not part of the repository)
+.vscode/
+.idea/
+.kiro/
+.apc/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -57,6 +57,6 @@ Plataforma interna para grabar sesiones virtuales y ofrecer transcripciones con 
 - Sistema de diseño (tokens, paleta clara/oscura, accesibilidad) → `DESIGN.md` en la raíz. Referencias de diseño → `docs/design/`.
 - Informes antiguos → `docs/history/`.
 - Specs → `.spectra/specs/` (índice y estado en `.spectra/README.md`).
-- Scripts → `scripts/` (dev, engines, platform, tests).
+- Scripts → `scripts/` (dev, engines, platform, tests); sus pruebas con `make test-scripts`. Índice de toda la documentación en `docs/README.md`.
 - Configuración de agentes → `.claude/` (Claude) y `.agents/` (Codex). Las skills son enlaces a la biblioteca del dueño, gestionada con `skills-manager`: no se modifican, copian ni borran.
 - Los archivos generados (cachés, `node_modules`, builds, entornos virtuales) nunca se versionan.

@@ -153,6 +153,10 @@ jobs:
         working-directory: backend
         continue-on-error: true
         run: pytest --continue-on-collection-errors
+      - name: "Script tests (scripts/tests) - non-blocking until first measured in CI, issue #934"
+        working-directory: backend
+        continue-on-error: true
+        run: pytest ../scripts/tests -q
 
   web-and-extension:
     name: Web and extension checks
