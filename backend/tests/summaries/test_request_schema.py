@@ -50,5 +50,8 @@ def test_system_prompt_describes_structure_and_forbids_time_references():
     from app.summaries.engine import SYSTEM_PROMPT
 
     for required in ("topic paragraph", "thematic block", "sub_items", "conclusion paragraph",
-                     "never contain minutes, timestamps", "one to four supplied passage IDs", "Speaker N"):
+                     "never contain minutes, timestamps", "one to four supplied passage IDs",
+                     "goals, proposals, decisions and achievements",
+                     "exactly as they appear in the transcript", "never translate, rename or replace a label"):
         assert required in SYSTEM_PROMPT
+    assert "Speaker N" not in SYSTEM_PROMPT

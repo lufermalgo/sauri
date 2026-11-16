@@ -23,6 +23,7 @@ from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.copy.speaker_labels import unknown_speaker_label
 from app.infra.database import Base
 from app.infra.models import (
     Meeting,
@@ -239,7 +240,10 @@ async def test_snapshot_survives_template_edit_and_default_change(case: Case, mo
     queue = await registered(case, monkeypatch)
     await queue.handlers["summarize"](case.message.copy())
     assert case.engine_calls == [
-        (build_passages([Turn("Synthetic transcript.", 0, 1000)]), case.message["instructions_snapshot"])
+        (
+            build_passages([Turn("Synthetic transcript.", 0, 1000, unknown_speaker_label("es"))]),
+            case.message["instructions_snapshot"],
+        )
     ]
     status, rows, processed = await outcomes(case)
     assert status == "succeeded" and processed and len(rows) == 1

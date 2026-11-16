@@ -5,6 +5,7 @@ from typing import cast
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.copy.speaker_labels import speaker_label, unknown_speaker_label
 from app.infra.models import (
     Diarization,
     Meeting,
@@ -116,6 +117,7 @@ async def locked_request(session: AsyncSession, event_id: str) -> SummaryRequest
 
 
 async def transcript_passages(session: AsyncSession, transcript_id: str) -> list[Passage]:
+    language = await session.scalar(select(Transcript.language).where(Transcript.id == transcript_id)) or "es"
     revision = (
         select(Diarization.id)
         .where(Diarization.transcript_id == transcript_id, Diarization.diarization_state == "completed")
@@ -132,6 +134,9 @@ async def transcript_passages(session: AsyncSession, transcript_id: str) -> list
         .order_by(SpeechTurn.sequence)
     )).all()
     return build_passages([
-        Turn(turn.text, turn.start_ms, turn.end_ms, f"Speaker {speaker}" if speaker is not None else "Speaker ?")
+        Turn(
+            turn.text, turn.start_ms, turn.end_ms,
+            speaker_label(speaker, language) if speaker is not None else unknown_speaker_label(language),
+        )
         for turn, speaker in rows
     ])
