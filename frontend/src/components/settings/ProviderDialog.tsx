@@ -11,12 +11,10 @@ import {
   testEngineProvider,
   updateEngineProvider,
 } from "../../api";
-import { copy } from "../../copy/es";
 import { Button, Dialog, Icon, TextField } from "../ui";
 import { isLocalApp, processList } from "./engineLabels";
 import { ProviderLogo } from "./ProviderLogo";
-
-const text = copy.engines.dialog;
+import { t, translateIfKnown, useT } from "../../i18n";
 
 /** Same limit as the API schema (`MAX_LABEL_CHARS`). */
 const LABEL_MAX_LENGTH = 64;
@@ -39,7 +37,7 @@ const ADDRESS_PATTERN = /^https?:\/\/\S+$/i;
 
 export function describeEngineError(error: unknown): string {
   const code = error instanceof EnginesApiError ? error.code : null;
-  return (code && copy.engines.saveErrors[code]) || copy.engines.genericError;
+  return (code && translateIfKnown(`engines:saveErrors.${code}`)) || t("engines:genericError");
 }
 
 interface ProviderDialogProps {
@@ -59,12 +57,13 @@ interface ProviderDialogProps {
  * on/off switch. A key is typed into a password field that is never preloaded; once saved only its last
  * four characters appear, as the field's placeholder. the primary button saves and tests the connection in one go. */
 export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged, onClose }: ProviderDialogProps) {
+  const { t } = useT();
   const ids = useId();
   const linkable = kinds.filter((info) => info.linkable);
   const [current, setCurrent] = useState<EngineProvider | null>(provider);
   const [kind, setKind] = useState<EngineProviderKind>(provider?.kind ?? initialKind ?? linkable[0]?.kind ?? "openai");
   const info = kinds.find((candidate) => candidate.kind === kind);
-  const [label, setLabel] = useState(provider?.label ?? copy.engines.kinds[kind].label);
+  const [label, setLabel] = useState(provider?.label ?? t(`engines:kinds.${kind}.label`));
   const [baseUrl, setBaseUrl] = useState(provider?.base_url ?? info?.default_base_url ?? "");
   const [enabled, setEnabled] = useState(provider?.enabled ?? true);
   const [keyInput, setKeyInput] = useState("");
@@ -83,21 +82,21 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
   const errors: Fields = {};
   const trimmedLabel = label.trim();
   if (!trimmedLabel) {
-    if (touched.label) errors.label = text.nameRequired;
-  } else if (trimmedLabel.length > LABEL_MAX_LENGTH) errors.label = text.nameTooLong;
-  else if (linked.some((other) => other.id !== current?.id && other.label.trim().toLowerCase() === trimmedLabel.toLowerCase())) errors.label = text.nameDuplicate;
+    if (touched.label) errors.label = t("engines:dialog.nameRequired");
+  } else if (trimmedLabel.length > LABEL_MAX_LENGTH) errors.label = t("engines:dialog.nameTooLong");
+  else if (linked.some((other) => other.id !== current?.id && other.label.trim().toLowerCase() === trimmedLabel.toLowerCase())) errors.label = t("engines:dialog.nameDuplicate");
   const trimmedUrl = baseUrl.trim();
   if (!trimmedUrl) {
-    if (touched.baseUrl) errors.baseUrl = text.baseUrlRequired;
-  } else if (!ADDRESS_PATTERN.test(trimmedUrl)) errors.baseUrl = text.baseUrlInvalid;
-  if (/\s/.test(keyInput.trim())) errors.key = text.keyInvalid;
+    if (touched.baseUrl) errors.baseUrl = t("engines:dialog.baseUrlRequired");
+  } else if (!ADDRESS_PATTERN.test(trimmedUrl)) errors.baseUrl = t("engines:dialog.baseUrlInvalid");
+  if (/\s/.test(keyInput.trim())) errors.key = t("engines:dialog.keyInvalid");
   const valid = trimmedLabel !== "" && trimmedUrl !== "" && !errors.label && !errors.baseUrl && !errors.key;
 
   function chooseKind(next: EngineProviderKind) {
     const previous = kinds.find((candidate) => candidate.kind === kind);
     const nextInfo = kinds.find((candidate) => candidate.kind === next);
     // A name or address the person has not changed follows the type; one they typed is kept.
-    if (label === copy.engines.kinds[kind].label || label === "") setLabel(copy.engines.kinds[next].label);
+    if (label === t(`engines:kinds.${kind}.label`) || label === "") setLabel(t(`engines:kinds.${next}.label`));
     if (baseUrl === (previous?.default_base_url ?? "")) setBaseUrl(nextInfo?.default_base_url ?? "");
     setKind(next);
     setKeyInput("");
@@ -135,7 +134,7 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
           saved = updated;
           setCurrent(saved);
           onChanged(saved);
-          if (reverted.length > 0) setNote(text.revertedByEdit(processList(reverted)));
+          if (reverted.length > 0) setNote(t("engines:dialog.revertedByEdit", { list: processList(reverted) }));
         }
       }
       const typedKey = keyInput.trim();
@@ -151,14 +150,14 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
     }
 
     if (!saved.key_set && keyRequired) {
-      setOutcome({ tone: "info", text: text.savedNoKey });
+      setOutcome({ tone: "info", text: t("engines:dialog.savedNoKey") });
     } else {
       try {
         const result = await testEngineProvider(saved.id);
         setOutcome(
           result.ok
             ? { tone: "ok", latencyMs: result.latency_ms }
-            : { tone: "fail", cause: copy.engines.causes[result.error_class ?? "provider_unavailable"] },
+            : { tone: "fail", cause: t(`engines:causes.${result.error_class ?? "provider_unavailable"}`) },
         );
       } catch (error) {
         setOutcome({ tone: "fail", cause: describeEngineError(error) });
@@ -178,8 +177,8 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
       await refresh(current.id);
       setNote(
         state.reverted_processes.length > 0
-          ? text.keyRemovedReverted(processList(state.reverted_processes))
-          : text.keyRemoved,
+          ? t("engines:dialog.keyRemovedReverted", { list: processList(state.reverted_processes) })
+          : t("engines:dialog.keyRemoved"),
       );
       setConfirmingRemoval(false);
     } catch (error) {
@@ -190,24 +189,24 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
 
   const revertsOnRemoval: EngineProcess[] = keyRequired && current ? current.used_by : [];
   const closeIfIdle = busy ? () => undefined : onClose;
-  const typeHelp = `${copy.engines.kinds[kind].description}${servedBy.length > 0 ? ` ${text.typeServes(processList(servedBy))}` : ""}`;
-  const urlHelp = kind === "openai_compatible" ? text.baseUrlCompatibleHelp : text.baseUrlHelp;
+  const typeHelp = `${t(`engines:kinds.${kind}.description`)}${servedBy.length > 0 ? ` ${t("engines:dialog.typeServes", { list: processList(servedBy) })}` : ""}`;
+  const urlHelp = kind === "openai_compatible" ? t("engines:dialog.baseUrlCompatibleHelp") : t("engines:dialog.baseUrlHelp");
 
   return (
-    <Dialog title={current ? text.editTitle : text.createTitle} closeLabel={text.close} onClose={closeIfIdle}>
+    <Dialog title={current ? t("engines:dialog.editTitle") : t("engines:dialog.createTitle")} closeLabel={t("engines:dialog.close")} onClose={closeIfIdle}>
       <form className="settings-form engines-form" onSubmit={submit} noValidate>
-        {!current && <p className="settings-help">{text.createIntro}</p>}
+        {!current && <p className="settings-help">{t("engines:dialog.createIntro")}</p>}
         {current ? (
           <div className="engines-fixed-type">
-            <span className="engines-fixed-type-label">{text.typeFixed}</span>
+            <span className="engines-fixed-type-label">{t("engines:dialog.typeFixed")}</span>
             <span className="engines-chip engines-chip--static">
-              <ProviderLogo kind={kind} name={copy.engines.kinds[kind].label} size="sm" />
-              {copy.engines.kinds[kind].label}
+              <ProviderLogo kind={kind} name={t(`engines:kinds.${kind}.label`)} size="sm" />
+              {t(`engines:kinds.${kind}.label`)}
             </span>
           </div>
         ) : (
           <div className="engines-kind">
-            <span id={`${ids}-kind`} className="engines-fixed-type-label">{text.type}</span>
+            <span id={`${ids}-kind`} className="engines-fixed-type-label">{t("engines:dialog.type")}</span>
             <div role="radiogroup" aria-labelledby={`${ids}-kind`} aria-describedby={`${ids}-kind-help`} className="engines-chips">
               {linkable.map((entry) => (
                 <label key={entry.kind} className="engines-chip">
@@ -219,19 +218,19 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
                     disabled={busy}
                     onChange={() => chooseKind(entry.kind)}
                   />
-                  <ProviderLogo kind={entry.kind} name={copy.engines.kinds[entry.kind].label} size="sm" />
-                  {copy.engines.kinds[entry.kind].label}
+                  <ProviderLogo kind={entry.kind} name={t(`engines:kinds.${entry.kind}.label`)} size="sm" />
+                  {t(`engines:kinds.${entry.kind}.label`)}
                 </label>
               ))}
             </div>
             <span id={`${ids}-kind-help`} className="settings-help">{typeHelp}</span>
           </div>
         )}
-        {localApp && !current && <p className="settings-help">{text.localNote}</p>}
+        {localApp && !current && <p className="settings-help">{t("engines:dialog.localNote")}</p>}
 
         <div className="engines-field">
           <TextField
-            label={text.name}
+            label={t("engines:dialog.name")}
             value={label}
             error={errors.label}
             disabled={busy}
@@ -240,18 +239,18 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
             onBlur={() => setTouched((previous) => ({ ...previous, label: true }))}
             autoComplete="off"
           />
-          <span id={`${ids}-name-help`} className="settings-help">{text.nameHelp}</span>
+          <span id={`${ids}-name-help`} className="settings-help">{t("engines:dialog.nameHelp")}</span>
         </div>
         <div className="engines-field">
           <TextField
-            label={text.baseUrl}
+            label={t("engines:dialog.baseUrl")}
             value={baseUrl}
             error={errors.baseUrl}
             disabled={busy}
             inputMode="url"
             spellCheck={false}
             autoComplete="off"
-            placeholder={text.baseUrlPlaceholder}
+            placeholder={t("engines:dialog.baseUrlPlaceholder")}
             aria-describedby={`${ids}-url-help`}
             onChange={(event) => setBaseUrl(event.target.value)}
             onBlur={() => setTouched((previous) => ({ ...previous, baseUrl: true }))}
@@ -262,7 +261,7 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
         {!localApp && (
           <div className="engines-field">
             <TextField
-              label={text.key}
+              label={t("engines:dialog.key")}
               type="password"
               value={keyInput}
               error={errors.key}
@@ -270,29 +269,29 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
               autoComplete="new-password"
               autoCapitalize="off"
               spellCheck={false}
-              placeholder={current?.key_set ? text.keySavedPlaceholder(current.key_hint) : text.keyPlaceholder}
+              placeholder={current?.key_set ? (current.key_hint ? t("engines:dialog.keySavedPlaceholderHint", { hint: current.key_hint }) : t("engines:dialog.keySavedPlaceholder")) : t("engines:dialog.keyPlaceholder")}
               aria-describedby={`${ids}-key-help`}
               onChange={(event) => setKeyInput(event.target.value)}
             />
-            <span id={`${ids}-key-help`} className="settings-help">{keyRequired ? text.keyHelp : text.keyOptionalHelp}</span>
+            <span id={`${ids}-key-help`} className="settings-help">{keyRequired ? t("engines:dialog.keyHelp") : t("engines:dialog.keyOptionalHelp")}</span>
             {current?.key_set &&
               (confirmingRemoval ? (
                 <div className="engines-key-confirm">
                   <p className="settings-help">
-                    {text.removeKeyConfirm}
-                    {revertsOnRemoval.length > 0 && ` ${text.removeKeyReverts(processList(revertsOnRemoval))}`}
+                    {t("engines:dialog.removeKeyConfirm")}
+                    {revertsOnRemoval.length > 0 && ` ${t("engines:dialog.removeKeyReverts", { list: processList(revertsOnRemoval) })}`}
                   </p>
                   <div className="engines-key-actions">
-                    <Button variant="danger" size="sm" disabled={busy} onClick={removeKey}>{text.removeKey}</Button>
+                    <Button variant="danger" size="sm" disabled={busy} onClick={removeKey}>{t("engines:dialog.removeKey")}</Button>
                     <Button variant="secondary" size="sm" disabled={busy} onClick={() => setConfirmingRemoval(false)}>
-                      {text.removeKeyKeep}
+                      {t("engines:dialog.removeKeyKeep")}
                     </Button>
                   </div>
                 </div>
               ) : (
                 <div className="engines-key-actions">
                   <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmingRemoval(true)}>
-                    {text.removeKey}
+                    {t("engines:dialog.removeKey")}
                   </Button>
                 </div>
               ))}
@@ -301,7 +300,7 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
 
         <div className="engines-field">
           <div className="settings-switch-row">
-            <span id={`${ids}-enabled`} className="settings-switch-label">{text.enabled}</span>
+            <span id={`${ids}-enabled`} className="settings-switch-label">{t("engines:dialog.enabled")}</span>
             <button
               type="button"
               role="switch"
@@ -315,7 +314,7 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
               <span className="settings-switch-thumb" aria-hidden="true" />
             </button>
           </div>
-          <span id={`${ids}-enabled-help`} className="settings-help">{text.enabledHelp}</span>
+          <span id={`${ids}-enabled-help`} className="settings-help">{t("engines:dialog.enabledHelp")}</span>
         </div>
 
         {saveError && <p role="alert" className="ui-field-error engines-save-error">{saveError}</p>}
@@ -326,10 +325,10 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
 
         <div className="ui-dialog-actions">
           <Button variant="secondary" onClick={onClose} disabled={busy}>
-            {outcome || current ? text.done : text.cancel}
+            {outcome || current ? t("engines:dialog.done") : t("engines:dialog.cancel")}
           </Button>
           <Button variant="primary" type="submit" disabled={busy || !valid}>
-            {busy ? text.saving : text.saveAndTest}
+            {busy ? t("engines:dialog.saving") : t("engines:dialog.saveAndTest")}
           </Button>
         </div>
       </form>
@@ -339,6 +338,7 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
 
 /** The test result: an icon and words, never color alone. */
 function OutcomeLine({ outcome }: { outcome: Outcome }) {
+  const { t } = useT();
   if (outcome.tone === "info") {
     return (
       <p className="engines-outcome engines-outcome--info">
@@ -352,8 +352,8 @@ function OutcomeLine({ outcome }: { outcome: Outcome }) {
       <p className="engines-outcome engines-outcome--ok">
         <Icon icon={CircleCheck} />
         <span>
-          <strong>{text.testOk}</strong>
-          {outcome.latencyMs !== null && ` · ${text.latency(outcome.latencyMs)}`}
+          <strong>{t("engines:dialog.testOk")}</strong>
+          {outcome.latencyMs !== null && ` · ${t("engines:dialog.latency", { ms: outcome.latencyMs })}`}
         </span>
       </p>
     );
@@ -362,7 +362,7 @@ function OutcomeLine({ outcome }: { outcome: Outcome }) {
     <p className="engines-outcome engines-outcome--fail">
       <Icon icon={CircleAlert} />
       <span>
-        <strong>{text.testFail}</strong>
+        <strong>{t("engines:dialog.testFail")}</strong>
         {` · ${outcome.cause}`}
       </span>
     </p>

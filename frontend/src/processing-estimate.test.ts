@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { meeting as meetingText } from "./copy/meeting";
-import { processing as processingText } from "./copy/processing";
 import {
   detectProcessingStage, estimateProgress, expectedStageSeconds, formatElapsed, PROGRESS_CAP,
   roundMinutes, secondsSince, stageLabel, type StageSignals,
 } from "./processing-estimate";
+import { t } from "./i18n";
 
 const AUDIO_54_MIN = 54 * 60;
 
@@ -108,22 +107,22 @@ describe("detectProcessingStage", () => {
 
 describe("stageLabel", () => {
   it.each([
-    ["transcription", "queued", processingText.queued],
-    ["transcription", "transcribing", processingText.transcribing],
-    ["speakers", "completed", processingText.identifying],
-    ["summary", "completed", processingText.summarizing],
-    ["done", "completed", meetingText.ready],
-    ["failed", "failed", processingText.failed],
-    ["live", "joining", processingText.joining],
-    ["live", "recording", processingText.recording],
-    ["unknown", "something-new", processingText.unknown],
+    ["transcription", "queued", t("processing:queued")],
+    ["transcription", "transcribing", t("processing:transcribing")],
+    ["speakers", "completed", t("processing:identifying")],
+    ["summary", "completed", t("processing:summarizing")],
+    ["done", "completed", t("meeting:ready")],
+    ["failed", "failed", t("processing:failed")],
+    ["live", "joining", t("processing:joining")],
+    ["live", "recording", t("processing:recording")],
+    ["unknown", "something-new", t("processing:unknown")],
   ] as const)("labels %s (%s)", (stage, processState, label) => {
     expect(stageLabel(stage, processState)).toBe(label);
   });
 
   it("only says ready when no stage is left, even though ASR already completed", () => {
     for (const stage of ["transcription", "speakers", "summary", "failed"] as const) {
-      expect(stageLabel(stage, "completed")).not.toBe(meetingText.ready);
+      expect(stageLabel(stage, "completed")).not.toBe(t("meeting:ready"));
     }
   });
 });

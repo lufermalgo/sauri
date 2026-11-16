@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { FolderPlus, Plus } from "lucide-react";
 import { listTemplateCategories, listTemplates, setDefaultTemplate } from "../../api";
 import type { SummaryTemplate, TemplateCategory } from "../../api";
-import { copy } from "../../copy/es";
 import { Button, Icon, Skeleton, StatusBadge } from "../ui";
 import { CategoryDialog } from "./CategoryDialog";
 import { ProcessSettings } from "./ProcessSettings";
 import { TemplateDialog } from "./TemplateDialog";
+import { useT } from "../../i18n";
 
 type Load =
   | { status: "loading" }
@@ -16,8 +16,6 @@ type Load =
 type OpenDialog = { kind: "template"; template: SummaryTemplate | null } | { kind: "category" } | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
 
-const text = copy.settings.summaries;
-
 function withDefault(templates: SummaryTemplate[], defaultId: string | null): SummaryTemplate[] {
   return templates.map((template) => ({ ...template, isDefault: template.id === defaultId }));
 }
@@ -25,6 +23,7 @@ function withDefault(templates: SummaryTemplate[], defaultId: string | null): Su
 /** Templates grouped by category, with the default marked. Editing, creating and choosing the
  * default all go through the templates API; there is no delete because the API has none. */
 export function SummarySettings() {
+  const { t } = useT();
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -61,10 +60,10 @@ export function SummarySettings() {
     update((templates) => ({ templates: withDefault(templates, template.id) }));
     try {
       await setDefaultTemplate(template.id);
-      setNotice({ kind: "success", text: text.defaultSaved(template.name) });
+      setNotice({ kind: "success", text: t("settings:summaries.defaultSaved", { name: template.name }) });
     } catch {
       update((templates) => ({ templates: withDefault(templates, previousId) }));
-      setNotice({ kind: "error", text: text.defaultError });
+      setNotice({ kind: "error", text: t("settings:summaries.defaultError") });
     } finally {
       setPendingDefault(null);
     }
@@ -78,13 +77,13 @@ export function SummarySettings() {
         : [...templates, saved];
       return { templates: saved.isDefault ? withDefault(merged, saved.id) : merged };
     });
-    setNotice({ kind: "success", text: copy.settings.summaries.templateSaved(saved.name) });
+    setNotice({ kind: "success", text: t("settings:summaries.templateSaved", { name: saved.name }) });
     setDialog(null);
   }
 
   function categoryCreated(category: TemplateCategory) {
     update((_templates, categories) => ({ categories: [...categories, category] }));
-    setNotice({ kind: "success", text: copy.settings.summaries.categorySaved(category.name) });
+    setNotice({ kind: "success", text: t("settings:summaries.categorySaved", { name: category.name }) });
     setDialog(null);
   }
 
@@ -92,16 +91,16 @@ export function SummarySettings() {
     <div className="settings-stack">
       <ProcessSettings process="summary" />
       <section className="settings-stack" aria-labelledby="summary-templates-title">
-      <h3 id="summary-templates-title" className="settings-group-title">{text.templatesTitle}</h3>
-      <p className="settings-help">{text.help}</p>
+      <h3 id="summary-templates-title" className="settings-group-title">{t("settings:summaries.templatesTitle")}</h3>
+      <p className="settings-help">{t("settings:summaries.help")}</p>
       <div className="settings-toolbar">
         <Button variant="primary" disabled={load.status !== "ready"} onClick={() => setDialog({ kind: "template", template: null })}>
           <Icon icon={Plus} />
-          {text.newTemplate}
+          {t("settings:summaries.newTemplate")}
         </Button>
         <Button variant="secondary" disabled={load.status !== "ready"} onClick={() => setDialog({ kind: "category" })}>
           <Icon icon={FolderPlus} />
-          {text.newCategory}
+          {t("settings:summaries.newCategory")}
         </Button>
       </div>
       <div role="status" className="settings-notice">{notice?.kind === "success" ? notice.text : null}</div>
@@ -109,14 +108,14 @@ export function SummarySettings() {
 
       {load.status === "loading" && (
         <div role="status" className="settings-loading">
-          <p className="settings-help">{text.loading}</p>
+          <p className="settings-help">{t("settings:summaries.loading")}</p>
           <Skeleton width="100%" height="4.5rem" radius="md" />
         </div>
       )}
       {load.status === "error" && (
         <div className="settings-load-error">
-          <p role="alert" className="ui-field-error">{text.loadError}</p>
-          <Button variant="secondary" onClick={fetchAll}>{text.retry}</Button>
+          <p role="alert" className="ui-field-error">{t("settings:summaries.loadError")}</p>
+          <Button variant="secondary" onClick={fetchAll}>{t("settings:summaries.retry")}</Button>
         </div>
       )}
       {load.status === "ready" && (
@@ -153,6 +152,7 @@ interface TemplateGroupsProps {
 }
 
 function TemplateGroups({ templates, categories, pendingDefault, onMakeDefault, onEdit }: TemplateGroupsProps) {
+  const { t } = useT();
   const known = new Set(categories.map((category) => category.id));
   const uncategorized = templates.filter((template) => !template.categoryId || !known.has(template.categoryId));
   const groups = [
@@ -161,10 +161,10 @@ function TemplateGroups({ templates, categories, pendingDefault, onMakeDefault, 
       title: category.name,
       items: templates.filter((template) => template.categoryId === category.id),
     })),
-    ...(uncategorized.length > 0 ? [{ id: "uncategorized", title: text.uncategorized, items: uncategorized }] : []),
+    ...(uncategorized.length > 0 ? [{ id: "uncategorized", title: t("settings:summaries.uncategorized"), items: uncategorized }] : []),
   ];
 
-  if (groups.length === 0) return <p className="settings-help">{text.empty}</p>;
+  if (groups.length === 0) return <p className="settings-help">{t("settings:summaries.empty")}</p>;
 
   return (
     <div className="settings-stack">
@@ -172,7 +172,7 @@ function TemplateGroups({ templates, categories, pendingDefault, onMakeDefault, 
         <section key={group.id} className="settings-group" aria-labelledby={`settings-group-${group.id}`}>
           <h3 id={`settings-group-${group.id}`} className="settings-group-title">{group.title}</h3>
           {group.items.length === 0 ? (
-            <p className="settings-help">{text.emptyCategory}</p>
+            <p className="settings-help">{t("settings:summaries.emptyCategory")}</p>
           ) : (
             <ul className="settings-template-list">
               {group.items.map((template) => (
@@ -180,7 +180,7 @@ function TemplateGroups({ templates, categories, pendingDefault, onMakeDefault, 
                   <div className="settings-template-main">
                     <div className="settings-template-head">
                       <span className="settings-template-name">{template.name}</span>
-                      {template.isDefault && <StatusBadge tone="success">{text.defaultBadge}</StatusBadge>}
+                      {template.isDefault && <StatusBadge tone="success">{t("settings:summaries.defaultBadge")}</StatusBadge>}
                     </div>
                     {template.provenance && <p className="settings-template-note">{template.provenance}</p>}
                   </div>
@@ -189,15 +189,15 @@ function TemplateGroups({ templates, categories, pendingDefault, onMakeDefault, 
                       <Button
                         variant="secondary"
                         size="sm"
-                        aria-label={text.useAsDefaultLabel(template.name)}
+                        aria-label={t("settings:summaries.useAsDefaultLabel", { name: template.name })}
                         disabled={pendingDefault !== null}
                         onClick={() => onMakeDefault(template)}
                       >
-                        {text.useAsDefault}
+                        {t("settings:summaries.useAsDefault")}
                       </Button>
                     )}
-                    <Button variant="secondary" size="sm" aria-label={text.editLabel(template.name)} onClick={() => onEdit(template)}>
-                      {text.edit}
+                    <Button variant="secondary" size="sm" aria-label={t("settings:summaries.editLabel", { name: template.name })} onClick={() => onEdit(template)}>
+                      {t("settings:summaries.edit")}
                     </Button>
                   </div>
                 </li>

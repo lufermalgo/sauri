@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { CircleAlert, Eye, EyeOff } from "lucide-react";
 import { login as loginRequest } from "../api";
-import { copy } from "../copy/es";
+import { LanguageSelect } from "./LanguageSelect";
 import { LoginBrand } from "./LoginBrand";
 import { ENABLED_LOGIN_PROVIDERS, LoginProviders, type LoginProvider } from "./LoginProviders";
 import { Button, Card, Icon, TextField } from "./ui";
 import "../styles/login.css";
+import { useT } from "../i18n";
 
 interface LoginScreenProps {
   onLogin: () => void;
@@ -13,9 +14,8 @@ interface LoginScreenProps {
   providers?: readonly LoginProvider[];
 }
 
-const text = copy.login;
-
 export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: LoginScreenProps) {
+  const { t } = useT();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -46,12 +46,12 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
     <div className="login-page">
       <Card className="login-card" aria-labelledby="login-heading">
         <LoginBrand />
-        <h1 id="login-heading" className="login-title">{text.title}</h1>
-        <p className="login-subtitle">{text.subtitle}</p>
+        <h1 id="login-heading" className="login-title">{t("login:title")}</h1>
+        <p className="login-subtitle">{t("login:subtitle")}</p>
         <form className="login-form" onSubmit={handleSubmit} aria-busy={pending}>
           <TextField
-            label={text.emailLabel}
-            placeholder={text.emailLabel}
+            label={t("login:emailLabel")}
+            placeholder={t("login:emailLabel")}
             type="email"
             autoComplete="username"
             value={email}
@@ -61,8 +61,8 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
             required
           />
           <TextField
-            label={text.passwordLabel}
-            placeholder={text.passwordLabel}
+            label={t("login:passwordLabel")}
+            placeholder={t("login:passwordLabel")}
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
             value={password}
@@ -73,7 +73,7 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
               <button
                 type="button"
                 className="ui-icon-button ui-icon-button--ghost ui-icon-button--md"
-                aria-label={showPassword ? text.hidePassword : text.showPassword}
+                aria-label={showPassword ? t("login:hidePassword") : t("login:showPassword")}
                 onClick={() => setShowPassword((visible) => !visible)}
               >
                 <Icon icon={showPassword ? EyeOff : Eye} size={20} />
@@ -83,14 +83,15 @@ export function LoginScreen({ onLogin, providers = ENABLED_LOGIN_PROVIDERS }: Lo
           {error && (
             <p className="login-error" role="alert">
               <Icon icon={CircleAlert} size={16} />
-              <span>{text.error}</span>
+              <span>{t("login:error")}</span>
             </p>
           )}
           <Button variant="primary" size="lg" type="submit" className="login-submit" disabled={!canSubmit}>
-            {pending ? text.submitting : text.submit}
+            {pending ? t("login:submitting") : t("login:submit")}
           </Button>
         </form>
         <LoginProviders providers={providers} disabled={pending} />
+        <div className="login-language"><LanguageSelect /></div>
       </Card>
     </div>
   );

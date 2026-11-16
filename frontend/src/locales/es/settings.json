@@ -1,0 +1,118 @@
+{
+  "title": "Configuración",
+  "navLabel": "Categorías de configuración",
+  "back": "Configuración",
+  "backLabel": "Volver a Configuración",
+  "search": {
+    "label": "Buscar en la configuración",
+    "placeholder": "Buscar",
+    "clear": "Borrar búsqueda",
+    "noResultsFor": "Sin resultados para «{{query}}»",
+    "resultCount_one": "{{count}} resultado",
+    "resultCount_other": "{{count}} resultados"
+  },
+  "groups": {
+    "general": "General",
+    "models": "Modelos"
+  },
+  "categories": {
+    "account": {
+      "label": "Cuenta",
+      "description": "Tu sesión en Sauri",
+      "keywords": "sesión correo nombre usuario perfil cerrar sesión"
+    },
+    "appearance": {
+      "label": "Apariencia",
+      "description": "Idioma, tema y panel lateral",
+      "keywords": "idioma español inglés language tema claro oscuro sistema colores panel lateral plegar"
+    },
+    "engines": {
+      "label": "Motores y modelos",
+      "description": "Proveedores, claves y modelos",
+      "keywords": "proveedores claves api conexión openai groq ollama lm studio externos locales privacidad"
+    },
+    "transcription": {
+      "label": "Transcripción",
+      "description": "Qué motor convierte el audio en texto",
+      "keywords": "whisper voz audio texto motor modelo idioma privacidad"
+    },
+    "speakers": {
+      "label": "Hablantes",
+      "description": "Qué motor distingue quién habla",
+      "keywords": "diarización voces participantes quién habla motor modelo privacidad"
+    },
+    "summaries": {
+      "label": "Resúmenes",
+      "description": "Plantillas con las que se redactan",
+      "keywords": "plantillas instrucciones categorías redactar modelo"
+    }
+  },
+  "account": {
+    "fallbackName": "Cuenta",
+    "note": "Tu nombre y tu correo vienen de tu inicio de sesión y no se pueden cambiar aquí.",
+    "session": "Sesión",
+    "sessionHelp": "Cierra la sesión en este navegador."
+  },
+  "appearance": {
+    "themeTitle": "Tema",
+    "themeHelp": "«Sistema» sigue la configuración de tu dispositivo. La elección se recuerda solo en este navegador.",
+    "themeLabel": "Tema de la interfaz",
+    "themes": {
+      "system": "Sistema",
+      "light": "Claro",
+      "dark": "Oscuro"
+    },
+    "sidebarTitle": "Panel lateral",
+    "sidebarSwitch": "Iniciar con el panel plegado",
+    "sidebarHelp": "Deja solo los iconos a la vista. También puedes plegarlo con el botón del panel; la elección se recuerda en este navegador."
+  },
+  "summaries": {
+    "templatesTitle": "Plantillas",
+    "help": "Las plantillas indican a Sauri cómo redactar el resumen de una reunión. La plantilla por defecto se usa en los resúmenes automáticos. Los cambios solo afectan a los resúmenes futuros: los que ya existen conservan la versión con la que se generaron.",
+    "newTemplate": "Nueva plantilla",
+    "newCategory": "Nueva categoría",
+    "uncategorized": "Sin categoría",
+    "emptyCategory": "Aún no hay plantillas en esta categoría.",
+    "empty": "Aún no tienes plantillas.",
+    "loading": "Cargando plantillas…",
+    "loadError": "No pudimos cargar las plantillas.",
+    "retry": "Reintentar",
+    "defaultBadge": "Por defecto",
+    "useAsDefault": "Usar por defecto",
+    "useAsDefaultLabel": "Usar «{{name}}» por defecto",
+    "edit": "Editar",
+    "editLabel": "Editar «{{name}}»",
+    "defaultSaved": "«{{name}}» es ahora la plantilla por defecto.",
+    "defaultError": "No pudimos cambiar la plantilla por defecto. Se mantiene la anterior.",
+    "templateSaved": "Guardamos «{{name}}».",
+    "categorySaved": "Creamos la categoría «{{name}}»."
+  },
+  "templateDialog": {
+    "createTitle": "Nueva plantilla",
+    "editTitle": "Editar plantilla",
+    "close": "Cerrar",
+    "name": "Nombre",
+    "category": "Categoría",
+    "instructions": "Instrucciones",
+    "instructionsHelp": "Cómo debe redactar Sauri el resumen: estructura, tono y qué destacar.",
+    "cancel": "Cancelar",
+    "create": "Crear plantilla",
+    "save": "Guardar cambios",
+    "saving": "Guardando…",
+    "nameRequired": "Escribe un nombre.",
+    "nameTooLong": "El nombre admite hasta 128 caracteres.",
+    "instructionsRequired": "Escribe las instrucciones.",
+    "error": "No pudimos guardar la plantilla. Revisa los datos e inténtalo de nuevo."
+  },
+  "categoryDialog": {
+    "title": "Nueva categoría",
+    "close": "Cerrar",
+    "name": "Nombre",
+    "cancel": "Cancelar",
+    "create": "Crear categoría",
+    "saving": "Creando…",
+    "nameRequired": "Escribe un nombre.",
+    "nameTooLong": "El nombre admite hasta 128 caracteres.",
+    "error": "No pudimos crear la categoría. Inténtalo de nuevo."
+  }
+}

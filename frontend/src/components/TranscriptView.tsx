@@ -25,10 +25,10 @@ import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import { ChatTab } from "./ChatTab";
 import { Avatar, Dialog, Tabs, Skeleton, SkeletonLines } from "./ui";
 import { SpeakerReviewPanel, type SpeakerRowModel } from "./SpeakerReviewPanel";
-import { meeting as text } from "../copy/meeting";
 import "../styles/meeting.css";
 import { NO_SPEECH_CAUSE, detectProcessingStage, type SummarySignal } from "../processing-estimate";
-import { copy } from "../copy/es";
+import { useT } from "../i18n";
+import { toUpperLocale } from "../i18n/format";
 
 interface TranscriptViewProps {
   meetingId: string;
@@ -61,6 +61,7 @@ export function TranscriptView(props: TranscriptViewProps) {
 }
 
 function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptViewProps) {
+  const { t } = useT();
   const onResolvedRef = useRef(onResolved);
   onResolvedRef.current = onResolved;
   const [meeting, setMeeting] = useState<MeetingState | null>(null);
@@ -185,7 +186,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
           setPlaybackError(null);
         }
       } catch {
-        if (!cancelled) setPlaybackError(text.playbackLoadFailed);
+        if (!cancelled) setPlaybackError(t("meeting:playbackLoadFailed"));
       } finally {
         if (!cancelled) setPlaybackLoading(false);
       }
@@ -202,7 +203,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       } catch (err) {
         const notFound = isReviewFailure(err, "not_found") || (err instanceof Error && err.message === "Error 404");
         if (!cancelled && !notFound) {
-          setReviewError(copy.speakerReview.loadFailed);
+          setReviewError(t("speakerReview:loadFailed"));
         }
       }
     }
@@ -246,7 +247,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
           setData(null);
           setError(null);
         } else {
-          setError(text.transcriptLoadFailed);
+          setError(t("meeting:transcriptLoadFailed"));
         }
         if (speakers.status === "fulfilled") {
           setDiarization((current) => current ?? speakers.value);
@@ -304,7 +305,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   ): Promise<string | null> {
     const current = reviewRef.current;
     const item = current?.items.find((candidate) => candidate.speakerId === speakerId);
-    if (!current || !item) return copy.speakerReview.notFound;
+    if (!current || !item) return t("speakerReview:notFound");
     const signature = JSON.stringify([current.revisionId, disposition, label ?? null, item.expectedVersion]);
     const previous = pendingActions.current.get(speakerId);
     const action = previous?.signature === signature ? previous : { signature, key: newIdempotencyKey() };
@@ -332,8 +333,8 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
     } catch (err) {
       // A conflict or a missing meeting will not succeed on retry; anything else keeps the key.
       if (isReviewFailure(err, "conflict") || isReviewFailure(err, "not_found")) pendingActions.current.delete(speakerId);
-      return isReviewFailure(err, "conflict") ? copy.speakerReview.conflict
-        : isReviewFailure(err, "not_found") ? copy.speakerReview.notFound : copy.speakerReview.saveFailed;
+      return isReviewFailure(err, "conflict") ? t("speakerReview:conflict")
+        : isReviewFailure(err, "not_found") ? t("speakerReview:notFound") : t("speakerReview:saveFailed");
     } finally {
       setSubmittingSpeakerIds((ids) => ids.filter((id) => id !== speakerId));
     }
@@ -376,7 +377,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
     }
     const playInterval = playIntervalRef.current;
     if (!playInterval) {
-      setReviewError(copy.speakerReview.playbackUnavailable);
+      setReviewError(t("speakerReview:playbackUnavailable"));
       return;
     }
     setPlayingSpeakerId(speakerId);
@@ -384,7 +385,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       await playInterval(startMs, endMs);
     } catch {
       setPlayingSpeakerId(null);
-      setReviewError(copy.speakerReview.playbackFailed);
+      setReviewError(t("speakerReview:playbackFailed"));
     }
   }
 
@@ -397,7 +398,8 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
 
   const presentationTurns = useMemo(
     () => (data ? presentTranscriptTurns(data, diarization, review) : []),
-    [data, diarization, review],
+    // `t` changes with the language, so the speaker labels follow it.
+    [data, diarization, review, t],
   );
 
   const playbackIntervals = useMemo(() => createPlaybackIntervals(data?.turns ?? [], presentationTurns),
@@ -424,11 +426,11 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       return {
         id: turn.id, startMs: turn.startMs, endMs: turn.endMs,
         speakerId: turn.speakerId ?? undefined,
-        speakerLabel: presentation?.speakerLabel ?? copy.transcript.unknownSpeaker,
+        speakerLabel: presentation?.speakerLabel ?? t("transcript:unknownSpeaker"),
         color: presentation?.color ?? UNRESOLVED_SPEAKER_COLOR,
       };
     });
-  }, [intervalTurns, presentationTurns]);
+  }, [intervalTurns, presentationTurns, t]);
 
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
@@ -438,7 +440,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   reviewRef.current = review;
   const speakerRows: SpeakerRowModel[] = review?.items.map(item => {
     const raw = review.labelsBySpeakerId[item.speakerId]?.trim() || item.currentLabel;
-    const label = displaySpeakerLabel(raw || copy.transcript.legacyUnknownSpeaker, item.speakerId, review);
+    const label = displaySpeakerLabel(raw || t("transcript:legacyUnknownSpeaker"), item.speakerId, review);
     // Generic until a person typed a name: the numbered "Speaker N" label (or none) is not a name.
     const generic = !raw || (/^Speaker \d+$/.test(raw) && item.disposition !== "named" && item.disposition !== "corrected");
     return {
@@ -480,7 +482,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   }, [success]);
 
   if (loading) return <section className="meeting-view" aria-busy="true">
-    <p role="status" className="meeting-sr-only">{text.opening}</p>
+    <p role="status" className="meeting-sr-only">{t("meeting:opening")}</p>
     <div className="meeting-body" aria-hidden="true">
       <div className="meeting-main">
         <div className="meeting-playback-card">
@@ -508,8 +510,8 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
         speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} hasSummary={hasSummary}
         speakerReview={speakerReview} onBack={onBack} />
       {hasNotices && <div className="meeting-notices">
-        {metadataError && <p role="alert" className="meeting-error">{text.metadataFailed}</p>}
-        {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{copy.processing.speakerWaitExpired}</p></div> :
+        {metadataError && <p role="alert" className="meeting-error">{t("meeting:metadataFailed")}</p>}
+        {speakerWaitExpired ? <div className="meeting-processing"><p role="status">{t("processing:speakerWaitExpired")}</p></div> :
           showProcessing && <div className="meeting-processing">
             <ProcessingStatus meeting={meeting} hasTranscript={Boolean(data)}
               diarizationNotFound={diarizationNotFound} error={statusError}
@@ -517,12 +519,12 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
               audioSeconds={playbackManifest?.duration_seconds ?? metadata.durationSeconds}
               createdAt={metadata.createdAt} />
           </div>}
-        {diarizationError && <p role="alert">{copy.processing.diarizationFailed}</p>}
+        {diarizationError && <p role="alert">{t("processing:diarizationFailed")}</p>}
         {error && <p role="alert" className="meeting-error">{error}</p>}
       </div>}
       <div className="meeting-body">
       <div className="meeting-main">
-      <section className="meeting-playback-card" aria-label={text.playback}>
+      <section className="meeting-playback-card" aria-label={t("meeting:playback")}>
       <div id="meeting-playback" ref={playbackRef} onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}
         onPause={() => setPlayingSpeakerId(null)} onEnded={() => setPlayingSpeakerId(null)}>
         <MeetingPlaybackView
@@ -540,20 +542,20 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       </section>
       <section className="meeting-transcript" aria-labelledby="meeting-transcript-heading">
       <div className="meeting-transcript-heading">
-        <h2 id="meeting-transcript-heading">{text.transcript}</h2>
+        <h2 id="meeting-transcript-heading">{t("meeting:transcript")}</h2>
         <label className="meeting-follow"><input type="checkbox" checked={followPlayback}
-          onChange={event => setFollowPlayback(event.target.checked)} />{text.followPlayback}</label>
+          onChange={event => setFollowPlayback(event.target.checked)} />{t("meeting:followPlayback")}</label>
       </div>
       <div className="meeting-transcript-body">
       {!data && !error && !noSpeech && <>
-        <p role="status">{copy.processing.transcriptPending}</p>
-        <p>{text.transcriptPlaceholder}</p>
-        <span role="status" className="meeting-sr-only">{text.loading}</span>
+        <p role="status">{t("processing:transcriptPending")}</p>
+        <p>{t("meeting:transcriptPlaceholder")}</p>
+        <span role="status" className="meeting-sr-only">{t("meeting:loading")}</span>
         <TranscriptSkeleton />
       </>}
       {data && <>
       {presentationTurns.length === 0 ? (
-        <p>{text.emptyTranscript}</p>
+        <p>{t("meeting:emptyTranscript")}</p>
       ) : (
         <ol className="meeting-turns">
           {presentationTurns.map((turn) => {
@@ -573,7 +575,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
                 }}
               >
                 <button className="meeting-turn-action" type="button"
-                  aria-label={copy.transcript.playAt(formatTimestamp(turn.timestampMs ?? 0))}
+                  aria-label={t("transcript:playAt", { time: formatTimestamp(turn.timestampMs ?? 0) })}
                   aria-describedby={`turn-${turn.id}-speaker turn-${turn.id}-text${turn.hasAmbiguous ? ` turn-${turn.id}-ambiguous` : ""}`}
                   aria-current={isActive ? "true" : undefined}
                   disabled={turn.timestampMs === null || !playbackManifest || playbackLoading || Boolean(playbackError)}
@@ -587,10 +589,10 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
                       {turn.speakerLabel}
                     </span>
                     <span className="meeting-timestamp">{timestamp}</span>
-                    {turn.hasAmbiguous && <span title={copy.transcript.ambiguous}
-                      id={`turn-${turn.id}-ambiguous`} aria-label={copy.transcript.ambiguous} className="meeting-ambiguous">
+                    {turn.hasAmbiguous && <span title={t("transcript:ambiguous")}
+                      id={`turn-${turn.id}-ambiguous`} aria-label={t("transcript:ambiguous")} className="meeting-ambiguous">
                       <span aria-hidden="true"> · ? </span>
-                      <span className="meeting-sr-only">{copy.transcript.ambiguous}</span>
+                      <span className="meeting-sr-only">{t("transcript:ambiguous")}</span>
                     </span>}
                     <svg className="meeting-turn-play" aria-hidden="true" width="14" height="14" viewBox="0 0 16 16">
                       <path d="M5 3 13 8 5 13Z" fill="currentColor" />
@@ -609,20 +611,20 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       </div>
       <aside className="meeting-side-column">
       <div className="meeting-sidebar">
-        <Tabs aria-label={text.sideTabs} activeId={activeTab} onChange={setActiveTab} tabs={[
-          { id: "summary", label: text.summaryTab, panel: meeting
+        <Tabs aria-label={t("meeting:sideTabs")} activeId={activeTab} onChange={setActiveTab} tabs={[
+          { id: "summary", label: t("meeting:summaryTab"), panel: meeting
             // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
             ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
               expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal}
               progress={{ audioSeconds: playbackManifest?.duration_seconds ?? metadata.durationSeconds,
                 createdAt: metadata.createdAt, stageStartedAt: stage === "summary" ? stageStartedAt : null }} /> : null },
-          { id: "chat", label: text.chatTab, panel: <ChatTab /> },
+          { id: "chat", label: t("meeting:chatTab"), panel: <ChatTab /> },
         ]} />
       </div>
       {reviewError && !reviewOpen && <p role="alert" className="meeting-error">{reviewError}</p>}
       </aside>
       </div>
-      {reviewOpen && review && <Dialog title={copy.speakerReview.heading} closeLabel={copy.speakerReview.close}
+      {reviewOpen && review && <Dialog title={t("speakerReview:heading")} closeLabel={t("speakerReview:close")}
         onClose={closeReview}>
         <SpeakerReviewPanel rows={speakerRows} complete={review.status === "complete"}
           busyIds={submittingSpeakerIds} playingId={playingSpeakerId}
@@ -636,7 +638,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
 }
 
 function speakerInitials(label: string): string {
-  return label.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toLocaleUpperCase("es");
+  return toUpperLocale(label.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join(""));
 }
 
 function TranscriptSkeleton() {

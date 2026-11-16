@@ -1,0 +1,8 @@
+{
+  "unknownSpeaker": "Hablante ?",
+  "legacyUnknownSpeaker": "Hablante N",
+  "ambiguous": "Atribución de hablante incierta",
+  "numberedSpeaker": "Hablante {{number}}",
+  "playAt": "Reproducir desde este turno ({{time}})",
+  "play": "Reproducir turno"
+}

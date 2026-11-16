@@ -1,4 +1,5 @@
 import type { MeetingListItem } from "@sauri/shared-types";
+import { compareText } from "./i18n/format";
 
 export type LibrarySort = "newest" | "oldest" | "title";
 
@@ -64,7 +65,7 @@ export function applyLibraryQuery(
     case "oldest":
       return filtered.sort((a, b) => compareByDate(a, b, 1));
     case "title":
-      return filtered.sort((a, b) => a.title.localeCompare(b.title, "es"));
+      return filtered.sort((a, b) => compareText(a.title, b.title));
     case "newest":
     default:
       return filtered.sort((a, b) => compareByDate(a, b, -1));

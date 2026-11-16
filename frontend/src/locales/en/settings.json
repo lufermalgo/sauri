@@ -1,0 +1,118 @@
+{
+  "title": "Settings",
+  "navLabel": "Settings categories",
+  "back": "Settings",
+  "backLabel": "Back to Settings",
+  "search": {
+    "label": "Search settings",
+    "placeholder": "Search",
+    "clear": "Clear search",
+    "noResultsFor": "No results for “{{query}}”",
+    "resultCount_one": "{{count}} result",
+    "resultCount_other": "{{count}} results"
+  },
+  "groups": {
+    "general": "General",
+    "models": "Models"
+  },
+  "categories": {
+    "account": {
+      "label": "Account",
+      "description": "Your session in Sauri",
+      "keywords": "session email name user profile log out sign out"
+    },
+    "appearance": {
+      "label": "Appearance",
+      "description": "Language, theme and side panel",
+      "keywords": "language english spanish idioma theme light dark system colors side panel collapse"
+    },
+    "engines": {
+      "label": "Engines and models",
+      "description": "Providers, keys and models",
+      "keywords": "providers keys api connection openai groq ollama lm studio external local privacy"
+    },
+    "transcription": {
+      "label": "Transcription",
+      "description": "Which engine turns audio into text",
+      "keywords": "whisper voice audio text engine model language privacy"
+    },
+    "speakers": {
+      "label": "Speakers",
+      "description": "Which engine tells who is speaking",
+      "keywords": "diarization voices participants who is speaking engine model privacy"
+    },
+    "summaries": {
+      "label": "Summaries",
+      "description": "Templates used to write them",
+      "keywords": "templates instructions categories write model"
+    }
+  },
+  "account": {
+    "fallbackName": "Account",
+    "note": "Your name and email come from your login and can't be changed here.",
+    "session": "Session",
+    "sessionHelp": "Logs out of this browser."
+  },
+  "appearance": {
+    "themeTitle": "Theme",
+    "themeHelp": "“System” follows your device's setting. Your choice is remembered only in this browser.",
+    "themeLabel": "Interface theme",
+    "themes": {
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "sidebarTitle": "Side panel",
+    "sidebarSwitch": "Start with the panel collapsed",
+    "sidebarHelp": "Leaves only the icons in view. You can also collapse it with the panel button; your choice is remembered in this browser."
+  },
+  "summaries": {
+    "templatesTitle": "Templates",
+    "help": "Templates tell Sauri how to write a meeting's summary. The default template is used for automatic summaries. Changes only affect future summaries: existing ones keep the version they were generated with.",
+    "newTemplate": "New template",
+    "newCategory": "New category",
+    "uncategorized": "Uncategorized",
+    "emptyCategory": "There are no templates in this category yet.",
+    "empty": "You don't have any templates yet.",
+    "loading": "Loading templates…",
+    "loadError": "We couldn't load the templates.",
+    "retry": "Try again",
+    "defaultBadge": "Default",
+    "useAsDefault": "Use as default",
+    "useAsDefaultLabel": "Use “{{name}}” as default",
+    "edit": "Edit",
+    "editLabel": "Edit “{{name}}”",
+    "defaultSaved": "“{{name}}” is now the default template.",
+    "defaultError": "We couldn't change the default template. The previous one stays.",
+    "templateSaved": "Saved “{{name}}”.",
+    "categorySaved": "Created the category “{{name}}”."
+  },
+  "templateDialog": {
+    "createTitle": "New template",
+    "editTitle": "Edit template",
+    "close": "Close",
+    "name": "Name",
+    "category": "Category",
+    "instructions": "Instructions",
+    "instructionsHelp": "How Sauri should write the summary: structure, tone and what to highlight.",
+    "cancel": "Cancel",
+    "create": "Create template",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "nameRequired": "Type a name.",
+    "nameTooLong": "The name can be up to 128 characters.",
+    "instructionsRequired": "Type the instructions.",
+    "error": "We couldn't save the template. Check the details and try again."
+  },
+  "categoryDialog": {
+    "title": "New category",
+    "close": "Close",
+    "name": "Name",
+    "cancel": "Cancel",
+    "create": "Create category",
+    "saving": "Creating…",
+    "nameRequired": "Type a name.",
+    "nameTooLong": "The name can be up to 128 characters.",
+    "error": "We couldn't create the category. Try again."
+  }
+}

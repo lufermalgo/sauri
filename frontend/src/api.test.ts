@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
-import { copy } from "./copy/es";
+import { t } from "./i18n";
 
 const manifestMethod = api as typeof api & {
   getPlaybackManifest?: (meetingId: string) => Promise<PlaybackManifest>;
@@ -127,9 +127,9 @@ describe("byte-based recording upload", () => {
   });
 
   it.each([
-    { event: "error", message: copy.upload.errors.network },
-    { event: "timeout", message: copy.upload.errors.timeout },
-    { event: "abort", message: copy.upload.errors.aborted },
+    { event: "error", message: t("upload:errors.network") },
+    { event: "timeout", message: t("upload:errors.timeout") },
+    { event: "abort", message: t("upload:errors.aborted") },
   ])("rejects $event without exposing server data", async ({ event, message }) => {
     const { xhr } = mockXHR();
     const request = api.uploadWithProgress(file, data, vi.fn());
@@ -141,7 +141,7 @@ describe("byte-based recording upload", () => {
     const { xhr } = mockXHR();
     const request = api.uploadWithProgress(file, data, vi.fn());
     reply(xhr, "private server diagnostic", status);
-    await expect(request).rejects.toThrow(copy.upload.errors.http(status));
+    await expect(request).rejects.toThrow(t("upload:errors.http", { status }));
   });
 
   it("invalidates unauthorized sessions like the fetch adapter", async () => {
@@ -150,7 +150,7 @@ describe("byte-based recording upload", () => {
     window.addEventListener("sauri:unauthorized", unauthorized, { once: true });
     const request = api.uploadWithProgress(file, data, vi.fn());
     reply(xhr, "{}", 401);
-    await expect(request).rejects.toThrow(copy.upload.errors.http(401));
+    await expect(request).rejects.toThrow(t("upload:errors.http", { status: 401 }));
     expect(localStorage.removeItem).toHaveBeenCalledWith("sauri_token");
     expect(unauthorized).toHaveBeenCalledTimes(1);
   });
@@ -166,13 +166,13 @@ describe("byte-based recording upload", () => {
     const { xhr } = mockXHR();
     const request = api.uploadWithProgress(file, data, vi.fn());
     reply(xhr, body);
-    await expect(request).rejects.toThrow(copy.upload.errors.invalidResponse);
+    await expect(request).rejects.toThrow(t("upload:errors.invalidResponse"));
   });
 
   it("does not start a request without authentication", async () => {
     const { constructor } = mockXHR();
     vi.mocked(localStorage.getItem).mockReturnValue(null);
-    await expect(api.uploadWithProgress(file, data, vi.fn())).rejects.toThrow(copy.upload.errors.unauthenticated);
+    await expect(api.uploadWithProgress(file, data, vi.fn())).rejects.toThrow(t("upload:errors.unauthenticated"));
     expect(constructor).not.toHaveBeenCalled();
   });
 });
@@ -477,8 +477,8 @@ describe("speaker review API adapter", () => {
   });
 
   it.each([
-    [409, "conflict", copy.speakerReview.conflict],
-    [404, "not_found", copy.speakerReview.notFound],
+    [409, "conflict", t("speakerReview:conflict")],
+    [404, "not_found", t("speakerReview:notFound")],
   ] as const)("maps HTTP %i to a %s review error", async (status, reason, message) => {
     mockFetch({ detail: "synthetic" }, status);
 

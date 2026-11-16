@@ -1,6 +1,5 @@
 import { FailureCause } from "@sauri/shared-types";
-import { meeting as meetingText } from "./copy/meeting";
-import { processing as processingText } from "./copy/processing";
+import { t } from "./i18n";
 
 // Honest progress estimate for meeting processing. The backend reports stages, never a percentage,
 // so everything here is an estimate derived from measured speeds and elapsed wall-clock time.
@@ -67,13 +66,13 @@ export function detectProcessingStage(signals: StageSignals): DetectedStage {
  */
 export function stageLabel(stage: DetectedStage, processState: string | undefined): string {
   switch (stage) {
-    case "transcription": return processState === "queued" ? processingText.queued : processingText.transcribing;
-    case "speakers": return processingText.identifying;
-    case "summary": return processingText.summarizing;
-    case "done": return meetingText.ready;
-    case "failed": return processingText.failed;
-    case "live": return processState === "joining" ? processingText.joining : processingText.recording;
-    case "unknown": return processingText.unknown;
+    case "transcription": return processState === "queued" ? t("processing:queued") : t("processing:transcribing");
+    case "speakers": return t("processing:identifying");
+    case "summary": return t("processing:summarizing");
+    case "done": return t("meeting:ready");
+    case "failed": return t("processing:failed");
+    case "live": return processState === "joining" ? t("processing:joining") : t("processing:recording");
+    case "unknown": return t("processing:unknown");
   }
 }
 
@@ -152,4 +151,53 @@ export function secondsSince(iso: string | null | undefined, nowMs: number): num
   if (!iso) return null;
   const at = Date.parse(iso);
   return Number.isNaN(at) ? null : Math.max(0, (nowMs - at) / 1000);
+}
+
+/** "1 minute" / "3 minutes" (the plural form follows the active language). */
+function minutesPhrase(minutes: number): string {
+  return t("processing:minutes", { count: minutes });
+}
+
+/** Visible estimate of what is left, in whole minutes (a single minute reads "about a minute"). */
+export function remainingText(minutes: number): string {
+  return t("processing:remaining", { count: Math.max(1, minutes) });
+}
+
+export function explainTranscription(audioMinutes: number | null, stageMinutes: number | null): string {
+  return audioMinutes && stageMinutes
+    ? t("processing:explain.transcriptionTimed", { audio: minutesPhrase(audioMinutes), stage: minutesPhrase(stageMinutes) })
+    : t("processing:explain.transcription");
+}
+
+export function explainSummary(stageMinutes: number | null): string {
+  return stageMinutes
+    ? t("processing:explain.summaryTimed", { stage: minutesPhrase(stageMinutes) })
+    : t("processing:explain.summary");
+}
+
+/** What a screen reader hears about the stage: its name, the approximate percent and the time left. */
+export function announceEstimate(stage: string, percent: number | null, minutes: number | null): string {
+  return [
+    stage,
+    percent === null ? null : t("processing:announcePercent", { percent }),
+    minutes === null ? null : t("processing:announceRemaining", { count: Math.max(1, minutes) }),
+  ].filter(Boolean).join(", ");
+}
+
+/** Failure causes the backend reports as codes; `engine_failure` is the older spelling of `engine_failed`. */
+const PROCESSING_FAILURE_KEYS = {
+  could_not_join: "could_not_join",
+  meeting_cancelled: "meeting_cancelled",
+  engine_failure: "engine_failed",
+  engine_failed: "engine_failed",
+  engine_contract_mismatch: "engine_contract_mismatch",
+  invalid_response: "invalid_response",
+} as const;
+
+/** The translated sentence for a processing failure code; an unknown or missing code gets the generic one. */
+export function processingFailureText(cause?: string | null): string {
+  const key = cause && cause in PROCESSING_FAILURE_KEYS
+    ? PROCESSING_FAILURE_KEYS[cause as keyof typeof PROCESSING_FAILURE_KEYS]
+    : "unknown";
+  return t(`processing:failureCause.${key}`);
 }

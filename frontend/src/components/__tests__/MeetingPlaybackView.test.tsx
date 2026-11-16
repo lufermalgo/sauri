@@ -2,10 +2,9 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-import { meeting as text } from "../../copy/meeting";
 import type { PlaybackManifest } from "../../api";
 import { MeetingPlaybackView } from "../MeetingPlaybackView";
+import { t } from "../../i18n";
 
 const AUDIO_URL = "https://media.example.test/synthetic-audio.webm?signature=synthetic";
 const MUXED_URL = "https://media.example.test/synthetic-muxed.webm?signature=synthetic";
@@ -82,20 +81,20 @@ describe("MeetingPlaybackView", () => {
     Object.defineProperty(audio, "duration", { configurable: true, value: 30 });
     fireEvent.loadedMetadata(audio);
 
-    const seek = screen.getByRole("slider", { name: text.seek });
+    const seek = screen.getByRole("slider", { name: t("meeting:seek") });
     fireEvent.change(seek, { target: { value: "12000" } });
     expect(audio.currentTime).toBe(12);
 
-    fireEvent.click(screen.getByRole("button", { name: text.pause }));
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:pause") }));
     expect(pause).toHaveBeenCalledWith();
-    fireEvent.click(screen.getByRole("button", { name: text.resume }));
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:resume") }));
     await waitFor(() => expect(play).toHaveBeenCalled());
 
-    fireEvent.change(screen.getByRole("combobox", { name: text.speed }), { target: { value: "1.5" } });
+    fireEvent.change(screen.getByRole("combobox", { name: t("meeting:speed") }), { target: { value: "1.5" } });
     expect(audio.playbackRate).toBe(1.5);
-    fireEvent.change(screen.getByRole("slider", { name: text.volume }), { target: { value: "0.4" } });
+    fireEvent.change(screen.getByRole("slider", { name: t("meeting:volume") }), { target: { value: "0.4" } });
     expect(audio.volume).toBe(0.4);
-    fireEvent.click(screen.getByRole("button", { name: text.mute }));
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:mute") }));
     expect(audio.muted).toBe(true);
   });
 
@@ -124,7 +123,7 @@ describe("MeetingPlaybackView", () => {
     expect(video.src).toBe(MUXED_URL);
     expect(screen.queryByTestId("playback-audio")).toBeNull();
     expect(screen.queryByTestId("playback-video")).toBeNull();
-    expect(screen.queryByRole("combobox", { name: text.quality })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: t("meeting:quality") })).toBeNull();
   });
 
   it("keeps absent and every unknown legacy manifest audio-only, independent of MIME or video rows", () => {
@@ -137,7 +136,7 @@ describe("MeetingPlaybackView", () => {
       expect(mediaElement("audio").src).toBe(legacy.audio_source.url);
       expect(screen.queryByTestId("playback-media")).toBeNull();
       expect(screen.queryByTestId("playback-video")).toBeNull();
-      expect(screen.queryByRole("combobox", { name: text.quality })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: t("meeting:quality") })).toBeNull();
       unmount();
     }
   });
@@ -190,7 +189,7 @@ describe("MeetingPlaybackView", () => {
     const audio = mediaElement("audio");
     Object.defineProperty(audio, "currentTime", { configurable: true, writable: true, value: 7.25 });
     fireEvent.loadedMetadata(audio);
-    const quality = screen.getByRole("combobox", { name: text.quality });
+    const quality = screen.getByRole("combobox", { name: t("meeting:quality") });
     fireEvent.change(quality, { target: { value: "high" } });
     expect(mediaElement("video").src).toBe(VIDEO_HIGH_URL);
     expect(audio.src).toBe(AUDIO_URL);
@@ -199,7 +198,7 @@ describe("MeetingPlaybackView", () => {
 
     for (const video_sources of [[], [source("single", VIDEO_LOW_URL, 0)], [source("unknown-offset", VIDEO_LOW_URL, null)]]) {
       const view = renderView({ manifest: manifest({ video_presence: "separate", video_sources }) });
-      expect(screen.queryByRole("combobox", { name: text.quality })).toBeNull();
+      expect(screen.queryByRole("combobox", { name: t("meeting:quality") })).toBeNull();
       view.unmount();
     }
   });
@@ -249,7 +248,7 @@ describe("MeetingPlaybackView", () => {
     Object.defineProperty(audio, "duration", { configurable: true, value: 30 });
     fireEvent.loadedMetadata(audio);
 
-    fireEvent.click(screen.getByRole("button", { name: text.resume }));
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:resume") }));
     await waitFor(() => expect(screen.getByRole("alert")).toBeVisible());
     expect(play).toHaveBeenCalledTimes(2);
     expect(pause).toHaveBeenCalledTimes(2);
@@ -270,22 +269,20 @@ describe("MeetingPlaybackView", () => {
   });
 });
 
-
 it("shows a localized load failure even when no manifest is available", () => {
   render(<MeetingPlaybackView manifest={null} loading={false} error="Synthetic network failure" />);
-  expect(screen.getByRole("alert")).toHaveTextContent(text.playbackLoadFailed);
+  expect(screen.getByRole("alert")).toHaveTextContent(t("meeting:playbackLoadFailed"));
 });
-
 
 it("keeps exactly the existing controls together in one compact toolbar", () => {
   renderView({ manifest: manifest({ video_presence: "separate", video_sources: [source("low", VIDEO_LOW_URL), source("high", VIDEO_HIGH_URL)] }) });
   const toolbar = document.querySelector(".meeting-player-controls") as HTMLElement;
   expect(within(toolbar).getAllByRole("button").map(button => button.getAttribute("aria-label")))
-    .toEqual([text.pause, text.resume, text.mute]);
+    .toEqual([t("meeting:pause"), t("meeting:resume"), t("meeting:mute")]);
   expect(within(toolbar).getAllByRole("slider").map(slider => slider.getAttribute("aria-label")))
-    .toEqual([text.seek, text.volume]);
+    .toEqual([t("meeting:seek"), t("meeting:volume")]);
   expect(within(toolbar).getAllByRole("combobox").map(select => select.getAttribute("aria-label")))
-    .toEqual([text.speed, text.quality]);
+    .toEqual([t("meeting:speed"), t("meeting:quality")]);
   expect(toolbar.querySelector(".meeting-control-time")).toHaveTextContent("0:00 / --:--");
 });
 
@@ -296,10 +293,10 @@ it("seeks timeline markers through the original playback controller and tracks i
   const audio = mediaElement();
   Object.defineProperty(audio, "duration", { configurable: true, value: 30 });
   fireEvent.loadedMetadata(audio);
-  fireEvent.click(screen.getByRole("button", { name: text.keyPointAt("00:05") }));
+  fireEvent.click(screen.getByRole("button", { name: t("meeting:keyPointAt", { time: "00:05" }) }));
   expect(audio.currentTime).toBe(5);
   fireEvent.seeked(audio);
-  const timeline = screen.getByRole("slider", { name: text.timeline });
+  const timeline = screen.getByRole("slider", { name: t("meeting:timeline") });
   expect(timeline).toHaveAttribute("aria-valuenow", "5000");
   fireEvent.keyDown(timeline, { key: "ArrowRight" });
   expect(audio.currentTime).toBe(10);

@@ -13,11 +13,8 @@ import type { MeetingListItem } from "@sauri/shared-types";
 import { RecordingLibrary } from "./RecordingLibrary";
 import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import * as api from "../api";
-import { copy } from "../copy/es";
-import { meeting as meetingText } from "../copy/meeting";
 import { summaryPlainText } from "../summary-export";
-
-const text = copy.library;
+import { t } from "../i18n";
 
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
@@ -56,7 +53,7 @@ function open(title: string): HTMLElement {
 }
 
 function menuButton(title: string): HTMLElement {
-  return screen.getByRole("button", { name: text.row.actions(title) });
+  return screen.getByRole("button", { name: t("library:row.actions", { title }) });
 }
 
 function chooseFromMenu(title: string, itemName: string) {
@@ -118,15 +115,15 @@ describe("row actions menu", () => {
     const trigger = menuButton("Weekly sync");
     expect(trigger).toHaveAttribute("aria-haspopup", "menu");
     fireEvent.click(trigger);
-    const menu = screen.getByRole("menu", { name: text.row.actions("Weekly sync") });
+    const menu = screen.getByRole("menu", { name: t("library:row.actions", { title: "Weekly sync" }) });
     expect(within(menu).getAllByRole("menuitem").map((entry) => entry.textContent))
-      .toEqual([text.row.rename, text.row.downloadTranscript, text.row.downloadSummary, text.row.downloadVideo,
-        text.row.delete]);
+      .toEqual([t("library:row.rename"), t("library:row.downloadTranscript"), t("library:row.downloadSummary"), t("library:row.downloadVideo"),
+        t("library:row.delete")]);
     // A separator sets the destructive action apart, right before it.
     const separator = within(menu).getByRole("separator");
-    expect(separator.nextElementSibling).toBe(within(menu).getByRole("menuitem", { name: text.row.delete }));
-    expect(separator.previousElementSibling).toBe(within(menu).getByRole("menuitem", { name: text.row.downloadVideo }));
-    expect(within(menu).getByRole("menuitem", { name: text.row.delete })).toHaveClass("ui-menu-item--danger");
+    expect(separator.nextElementSibling).toBe(within(menu).getByRole("menuitem", { name: t("library:row.delete") }));
+    expect(separator.previousElementSibling).toBe(within(menu).getByRole("menuitem", { name: t("library:row.downloadVideo") }));
+    expect(within(menu).getByRole("menuitem", { name: t("library:row.delete") })).toHaveClass("ui-menu-item--danger");
     // Using the menu never opens the recording.
     expect(onSelectMeeting).not.toHaveBeenCalled();
   });
@@ -141,10 +138,10 @@ describe("row actions menu", () => {
     expect(download).toHaveFocus();
     // The summary is not there yet (disabled) and the separator is not an item: the arrows skip both.
     fireEvent.keyDown(download, { key: "ArrowDown" });
-    expect(screen.getByRole("menuitem", { name: text.row.downloadVideo })).toHaveFocus();
-    fireEvent.keyDown(screen.getByRole("menuitem", { name: text.row.downloadVideo }), { key: "ArrowDown" });
-    expect(screen.getByRole("menuitem", { name: text.row.delete })).toHaveFocus();
-    fireEvent.keyDown(screen.getByRole("menuitem", { name: text.row.delete }), { key: "Escape" });
+    expect(screen.getByRole("menuitem", { name: t("library:row.downloadVideo") })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: t("library:row.downloadVideo") }), { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: t("library:row.delete") })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: t("library:row.delete") }), { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
     expect(trigger).toHaveFocus();
   });
@@ -158,15 +155,15 @@ describe("row actions menu", () => {
     ]);
     for (const [title, enabled] of [["Ready one", true], ["Processing one", false], ["Failed one", false], ["Audio only", true]] as const) {
       fireEvent.click(menuButton(title));
-      const download = screen.getByRole("menuitem", { name: text.row.downloadTranscript });
-      expect(screen.getByRole("menuitem", { name: text.row.rename })).not.toHaveAttribute("aria-disabled");
-      expect(screen.getByRole("menuitem", { name: text.row.delete })).not.toHaveAttribute("aria-disabled");
+      const download = screen.getByRole("menuitem", { name: t("library:row.downloadTranscript") });
+      expect(screen.getByRole("menuitem", { name: t("library:row.rename") })).not.toHaveAttribute("aria-disabled");
+      expect(screen.getByRole("menuitem", { name: t("library:row.delete") })).not.toHaveAttribute("aria-disabled");
       if (enabled) {
         expect(download).not.toHaveAttribute("aria-disabled");
         expect(download).not.toHaveAttribute("title");
       } else {
         expect(download).toHaveAttribute("aria-disabled", "true");
-        expect(download).toHaveAttribute("title", text.row.downloadUnavailable);
+        expect(download).toHaveAttribute("title", t("library:row.downloadUnavailable"));
       }
       fireEvent.keyDown(download, { key: "Escape" });
     }
@@ -181,14 +178,14 @@ describe("row actions menu", () => {
     const entries = (title: string) => {
       fireEvent.click(menuButton(title));
       return {
-        summary: screen.getByRole("menuitem", { name: text.row.downloadSummary }),
-        media: screen.getByRole("menuitem", { name: text.row.downloadVideo }),
+        summary: screen.getByRole("menuitem", { name: t("library:row.downloadSummary") }),
+        media: screen.getByRole("menuitem", { name: t("library:row.downloadVideo") }),
       };
     };
     let { summary, media } = entries("No summary");
     expect(summary).toHaveAttribute("aria-disabled", "true");
-    expect(summary).toHaveAttribute("title", text.row.downloadSummaryUnavailable);
-    expect(text.row.downloadSummaryUnavailable).toBe(meetingText.summaryUnavailable);
+    expect(summary).toHaveAttribute("title", t("library:row.downloadSummaryUnavailable"));
+    expect(t("library:row.downloadSummaryUnavailable")).toBe(t("meeting:summaryUnavailable"));
     expect(media).not.toHaveAttribute("aria-disabled");
     fireEvent.keyDown(media, { key: "Escape" });
 
@@ -199,20 +196,20 @@ describe("row actions menu", () => {
 
     ({ summary, media } = entries("Processing one"));
     expect(summary).toHaveAttribute("aria-disabled", "true");
-    expect(summary).toHaveAttribute("title", text.row.downloadSummaryUnavailable);
+    expect(summary).toHaveAttribute("title", t("library:row.downloadSummaryUnavailable"));
     expect(media).toHaveAttribute("aria-disabled", "true");
-    expect(media).toHaveAttribute("title", text.row.downloadMediaUnavailable);
+    expect(media).toHaveAttribute("title", t("library:row.downloadMediaUnavailable"));
   });
 
   it("names the media download after its kind: video, or audio for an audio-only recording", async () => {
     await renderList([item("v", "Has video"), item("q", "Audio only", { mediaKind: "audio" })]);
     fireEvent.click(menuButton("Has video"));
-    expect(screen.getByRole("menuitem", { name: text.row.downloadVideo })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: text.row.downloadAudio })).toBeNull();
-    fireEvent.keyDown(screen.getByRole("menuitem", { name: text.row.rename }), { key: "Escape" });
+    expect(screen.getByRole("menuitem", { name: t("library:row.downloadVideo") })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: t("library:row.downloadAudio") })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: t("library:row.rename") }), { key: "Escape" });
     fireEvent.click(menuButton("Audio only"));
-    expect(screen.getByRole("menuitem", { name: text.row.downloadAudio })).not.toHaveAttribute("aria-disabled");
-    expect(screen.queryByRole("menuitem", { name: text.row.downloadVideo })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: t("library:row.downloadAudio") })).not.toHaveAttribute("aria-disabled");
+    expect(screen.queryByRole("menuitem", { name: t("library:row.downloadVideo") })).toBeNull();
   });
 
   it("is in the tab order only for the row that holds the list's Tab stop", async () => {
@@ -240,8 +237,8 @@ describe("inline rename", () => {
     const changed = vi.fn();
     window.addEventListener(LIBRARY_CHANGED_EVENT, changed);
 
-    chooseFromMenu("Weekly sync", text.row.rename);
-    const field = screen.getByRole("textbox", { name: text.row.renameLabel });
+    chooseFromMenu("Weekly sync", t("library:row.rename"));
+    const field = screen.getByRole("textbox", { name: t("library:row.renameLabel") });
     expect(field).toHaveFocus();
     expect(field).toHaveValue("Weekly sync");
     expect(screen.queryByText("Weekly sync", { selector: ".library-item-title" })).toBeNull();
@@ -259,14 +256,14 @@ describe("inline rename", () => {
   it("shows a failure inline, keeps what was typed and lets the user retry", async () => {
     await renderList([item("a", "Weekly sync")]);
     const rename = vi.spyOn(api, "renameMeeting").mockRejectedValueOnce(new Error("Error 500"));
-    chooseFromMenu("Weekly sync", text.row.rename);
-    const field = screen.getByRole("textbox", { name: text.row.renameLabel });
+    chooseFromMenu("Weekly sync", t("library:row.rename"));
+    const field = screen.getByRole("textbox", { name: t("library:row.renameLabel") });
     fireEvent.change(field, { target: { value: "Retry me" } });
     fireEvent.submit(field.closest("form") as HTMLFormElement);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.row.renameFailed);
-    expect(screen.getByRole("textbox", { name: text.row.renameLabel })).toHaveValue("Retry me");
-    expect(screen.getByRole("textbox", { name: text.row.renameLabel })).toHaveAttribute("aria-invalid", "true");
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.renameFailed"));
+    expect(screen.getByRole("textbox", { name: t("library:row.renameLabel") })).toHaveValue("Retry me");
+    expect(screen.getByRole("textbox", { name: t("library:row.renameLabel") })).toHaveAttribute("aria-invalid", "true");
 
     rename.mockResolvedValueOnce({ meetingId: "a", title: "Retry me" });
     fireEvent.submit(screen.getByRole("textbox").closest("form") as HTMLFormElement);
@@ -277,23 +274,23 @@ describe("inline rename", () => {
   it("Escape cancels without calling the API, returns the focus to the row and keeps the selection", async () => {
     await renderList([item("a", "Weekly sync"), item("b", "Other")]);
     const rename = vi.spyOn(api, "renameMeeting");
-    fireEvent.click(screen.getByRole("checkbox", { name: text.row.select("Other") }));
-    chooseFromMenu("Weekly sync", text.row.rename);
-    const field = screen.getByRole("textbox", { name: text.row.renameLabel });
+    fireEvent.click(screen.getByRole("checkbox", { name: t("library:row.select", { title: "Other" }) }));
+    chooseFromMenu("Weekly sync", t("library:row.rename"));
+    const field = screen.getByRole("textbox", { name: t("library:row.renameLabel") });
     fireEvent.change(field, { target: { value: "Never saved" } });
     fireEvent.keyDown(field, { key: "Escape" });
 
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(open("Weekly sync")).toHaveFocus();
     expect(rename).not.toHaveBeenCalled();
-    expect(screen.getByText(text.selection.count(1))).toBeInTheDocument();
+    expect(screen.getByText(t("library:selection.count", { count: 1 }))).toBeInTheDocument();
   });
 
   it("does not save an empty title", async () => {
     await renderList([item("a", "Weekly sync")]);
     const rename = vi.spyOn(api, "renameMeeting");
-    chooseFromMenu("Weekly sync", text.row.rename);
-    const field = screen.getByRole("textbox", { name: text.row.renameLabel });
+    chooseFromMenu("Weekly sync", t("library:row.rename"));
+    const field = screen.getByRole("textbox", { name: t("library:row.renameLabel") });
     fireEvent.change(field, { target: { value: "   " } });
     fireEvent.submit(field.closest("form") as HTMLFormElement);
     expect(rename).not.toHaveBeenCalled();
@@ -336,11 +333,11 @@ describe("row download", () => {
     vi.spyOn(api, "getDiarization").mockRejectedValue(new Error("Error 404"));
     vi.spyOn(api, "getSpeakerReview").mockRejectedValue(new Error("Error 404"));
 
-    chooseFromMenu("Weekly sync", text.row.downloadTranscript);
+    chooseFromMenu("Weekly sync", t("library:row.downloadTranscript"));
 
     await waitFor(() => expect(files).toHaveLength(1));
     expect(files[0].name).toBe("Weekly sync.txt");
-    expect(await files[0].content).toBe(`[00:00] ${copy.transcript.numberedSpeaker("1")}: Hola a todos`);
+    expect(await files[0].content).toBe(`[00:00] ${t("transcript:numberedSpeaker", { number: "1" })}: Hola a todos`);
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -353,7 +350,7 @@ describe("row download", () => {
       revisionId: "r", items: [{ speakerId: "s1", disposition: "named" }], labelsBySpeakerId: { s1: "Ana" },
     } as unknown as api.SpeakerReview);
 
-    chooseFromMenu("Weekly sync", text.row.downloadTranscript);
+    chooseFromMenu("Weekly sync", t("library:row.downloadTranscript"));
     await waitFor(() => expect(files).toHaveLength(1));
     expect(await files[0].content).toBe("[00:00] Ana: Hola a todos");
   });
@@ -361,7 +358,7 @@ describe("row download", () => {
   it("does nothing for a recording that is not ready", async () => {
     await renderList([item("p", "Processing one", { processState: ProcessState.Transcribing })]);
     const get = vi.spyOn(api, "getTranscript");
-    chooseFromMenu("Processing one", text.row.downloadTranscript);
+    chooseFromMenu("Processing one", t("library:row.downloadTranscript"));
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -370,8 +367,8 @@ describe("row download", () => {
     vi.spyOn(api, "getTranscript").mockRejectedValue(new Error("Error 500"));
     vi.spyOn(api, "getDiarization").mockResolvedValue({ speakers: [], assignments: [] } as unknown as api.MeetingDiarization);
     vi.spyOn(api, "getSpeakerReview").mockRejectedValue(new Error("Error 404"));
-    chooseFromMenu("Weekly sync", text.row.downloadTranscript);
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.row.downloadFailed);
+    chooseFromMenu("Weekly sync", t("library:row.downloadTranscript"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.downloadFailed"));
   });
 });
 
@@ -413,7 +410,7 @@ describe("row summary download", () => {
     const files = captureDownloads();
     const get = vi.spyOn(api, "getMeetingSummary").mockResolvedValue(summary);
 
-    chooseFromMenu("Weekly sync", text.row.downloadSummary);
+    chooseFromMenu("Weekly sync", t("library:row.downloadSummary"));
 
     await waitFor(() => expect(files).toHaveLength(1));
     expect(get).toHaveBeenCalledWith("a");
@@ -434,9 +431,9 @@ describe("row summary download", () => {
     } as unknown as api.MeetingTranscript);
     vi.spyOn(api, "getDiarization").mockRejectedValue(new Error("Error 404"));
     vi.spyOn(api, "getSpeakerReview").mockRejectedValue(new Error("Error 404"));
-    chooseFromMenu("Weekly sync", text.row.downloadTranscript);
+    chooseFromMenu("Weekly sync", t("library:row.downloadTranscript"));
     await waitFor(() => expect(files).toHaveLength(1));
-    chooseFromMenu("Weekly sync", text.row.downloadSummary);
+    chooseFromMenu("Weekly sync", t("library:row.downloadSummary"));
     await waitFor(() => expect(files).toHaveLength(2));
     expect(files.map((file) => file.name)).toEqual(["Weekly sync.txt", "Weekly sync - resumen.txt"]);
   });
@@ -444,7 +441,7 @@ describe("row summary download", () => {
   it("does nothing for a recording without a summary", async () => {
     await renderList([item("a", "Weekly sync")]);
     const get = vi.spyOn(api, "getMeetingSummary");
-    chooseFromMenu("Weekly sync", text.row.downloadSummary);
+    chooseFromMenu("Weekly sync", t("library:row.downloadSummary"));
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -452,12 +449,12 @@ describe("row summary download", () => {
     await renderList([item("a", "Weekly sync", { summaryTopic: "Topic" })]);
     const files = captureDownloads();
     const get = vi.spyOn(api, "getMeetingSummary").mockResolvedValue(null);
-    chooseFromMenu("Weekly sync", text.row.downloadSummary);
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.row.downloadSummaryFailed);
+    chooseFromMenu("Weekly sync", t("library:row.downloadSummary"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.downloadSummaryFailed"));
     get.mockRejectedValue(new Error("Error 500"));
-    chooseFromMenu("Weekly sync", text.row.downloadSummary);
+    chooseFromMenu("Weekly sync", t("library:row.downloadSummary"));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.row.downloadSummaryFailed);
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.downloadSummaryFailed"));
     expect(files).toHaveLength(0);
   });
 });
@@ -481,7 +478,7 @@ describe("row media download", () => {
     await renderList([item("a", "Weekly sync")]);
     const anchors = captureAnchor();
     const get = vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(manifest({}));
-    chooseFromMenu("Weekly sync", text.row.downloadVideo);
+    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
     await waitFor(() => expect(anchors).toHaveLength(1));
     expect(get).toHaveBeenCalledWith("a");
     expect(anchors[0]).toHaveAttribute("href", "http://store.test/v.webm");
@@ -494,7 +491,7 @@ describe("row media download", () => {
     vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(manifest({
       video_presence: "separate", muxed_video_source: null, video_sources: [source("http://store.test/v.mp4", "video/mp4")],
     }));
-    chooseFromMenu("Weekly sync", text.row.downloadVideo);
+    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
     await waitFor(() => expect(anchors).toHaveLength(1));
     expect(anchors[0]).toHaveAttribute("href", "http://store.test/v.mp4");
     expect(anchors[0]).toHaveAttribute("download", "Weekly sync.mp4");
@@ -504,7 +501,7 @@ describe("row media download", () => {
     await renderList([item("a", "Podcast", { mediaKind: "audio" })]);
     const anchors = captureAnchor();
     vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(manifest({ video_presence: "absent", muxed_video_source: null }));
-    chooseFromMenu("Podcast", text.row.downloadAudio);
+    chooseFromMenu("Podcast", t("library:row.downloadAudio"));
     await waitFor(() => expect(anchors).toHaveLength(1));
     expect(anchors[0]).toHaveAttribute("href", "http://store.test/a.m4a");
     expect(anchors[0]).toHaveAttribute("download", "Podcast.m4a");
@@ -514,27 +511,27 @@ describe("row media download", () => {
     await renderList([item("a", "Weekly sync")]);
     captureAnchor();
     vi.spyOn(api, "getPlaybackManifest").mockResolvedValue(manifest({}));
-    chooseFromMenu("Weekly sync", text.row.downloadVideo);
-    expect(await screen.findByText(meetingText.mediaOpened)).toHaveAttribute("role", "status");
+    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
+    expect(await screen.findByText(t("meeting:mediaOpened"))).toHaveAttribute("role", "status");
   });
 
   it("shows an inline error when there is no manifest or no source", async () => {
     await renderList([item("a", "Weekly sync")]);
     const anchors = captureAnchor();
     const get = vi.spyOn(api, "getPlaybackManifest").mockRejectedValue(new Error("Error 404"));
-    chooseFromMenu("Weekly sync", text.row.downloadVideo);
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.row.downloadMediaFailed);
+    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.downloadMediaFailed"));
     get.mockResolvedValue(manifest({ muxed_video_source: null }));
-    chooseFromMenu("Weekly sync", text.row.downloadVideo);
+    chooseFromMenu("Weekly sync", t("library:row.downloadVideo"));
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.row.downloadMediaFailed);
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.downloadMediaFailed"));
     expect(anchors).toHaveLength(0);
   });
 
   it("does nothing for a recording that is not ready", async () => {
     await renderList([item("p", "Processing one", { processState: ProcessState.Transcribing })]);
     const get = vi.spyOn(api, "getPlaybackManifest");
-    chooseFromMenu("Processing one", text.row.downloadVideo);
+    chooseFromMenu("Processing one", t("library:row.downloadVideo"));
     expect(get).not.toHaveBeenCalled();
   });
 });
@@ -544,25 +541,25 @@ describe("row delete", () => {
     await renderList([item("a", "Weekly sync"), item("b", "Other")]);
     const del = vi.spyOn(api, "deleteMeeting").mockResolvedValue(undefined);
 
-    chooseFromMenu("Weekly sync", text.row.delete);
-    const dialog = screen.getByRole("dialog", { name: text.row.deleteTitle, hidden: true });
-    expect(dialog).toHaveTextContent(text.row.deleteBody);
+    chooseFromMenu("Weekly sync", t("library:row.delete"));
+    const dialog = screen.getByRole("dialog", { name: t("library:row.deleteTitle"), hidden: true });
+    expect(dialog).toHaveTextContent(t("library:row.deleteBody"));
     expect(del).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole("button", { name: text.row.delete, hidden: true }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("library:row.delete"), hidden: true }));
 
     await waitFor(() => expect(screen.queryByText("Weekly sync", { selector: ".library-item-title" })).toBeNull());
     expect(del).toHaveBeenCalledWith("a");
     expect(window.location.pathname).toBe("/");
     // The keyboard lands on the neighbouring row.
     expect(open("Other")).toHaveFocus();
-    expect(document.querySelector(".library-sr-only")).toHaveTextContent(text.row.deleted("Weekly sync"));
+    expect(document.querySelector(".library-sr-only")).toHaveTextContent(t("library:row.deleted", { title: "Weekly sync" }));
   });
 
   it("keeps the row when the user cancels", async () => {
     await renderList([item("a", "Weekly sync")]);
     const del = vi.spyOn(api, "deleteMeeting");
-    chooseFromMenu("Weekly sync", text.row.delete);
-    fireEvent.click(screen.getByRole("button", { name: text.row.cancel, hidden: true }));
+    chooseFromMenu("Weekly sync", t("library:row.delete"));
+    fireEvent.click(screen.getByRole("button", { name: t("library:row.cancel"), hidden: true }));
     expect(del).not.toHaveBeenCalled();
     expect(open("Weekly sync")).toBeInTheDocument();
   });
@@ -571,8 +568,8 @@ describe("row delete", () => {
     window.history.replaceState(null, "", "/meetings/a");
     await renderList([item("a", "Weekly sync"), item("b", "Other")], { selectedId: "a" });
     vi.spyOn(api, "deleteMeeting").mockResolvedValue(undefined);
-    chooseFromMenu("Weekly sync", text.row.delete);
-    fireEvent.click(screen.getByRole("button", { name: text.row.delete, hidden: true }));
+    chooseFromMenu("Weekly sync", t("library:row.delete"));
+    fireEvent.click(screen.getByRole("button", { name: t("library:row.delete"), hidden: true }));
     await waitFor(() => expect(window.location.pathname).toBe("/"));
   });
 
@@ -585,21 +582,21 @@ describe("row delete", () => {
     });
     await renderList([item("a", "Weekly sync"), item("b", "Other")], { selectedId: "a" });
     vi.spyOn(api, "deleteMeeting").mockResolvedValue(undefined);
-    chooseFromMenu("Other", text.row.delete);
-    fireEvent.click(screen.getByRole("button", { name: text.row.delete, hidden: true }));
+    chooseFromMenu("Other", t("library:row.delete"));
+    fireEvent.click(screen.getByRole("button", { name: t("library:row.delete"), hidden: true }));
     await waitFor(() => expect(screen.queryByText("Other")).toBeNull());
     expect(values.get("sauri_last_meeting_id")).toBe("a");
-    chooseFromMenu("Weekly sync", text.row.delete);
-    fireEvent.click(screen.getByRole("button", { name: text.row.delete, hidden: true }));
+    chooseFromMenu("Weekly sync", t("library:row.delete"));
+    fireEvent.click(screen.getByRole("button", { name: t("library:row.delete"), hidden: true }));
     await waitFor(() => expect(values.has("sauri_last_meeting_id")).toBe(false));
   });
 
   it("shows an inline error and keeps the row when the API fails", async () => {
     await renderList([item("a", "Weekly sync")]);
     vi.spyOn(api, "deleteMeeting").mockRejectedValue(new Error("Error 500"));
-    chooseFromMenu("Weekly sync", text.row.delete);
-    fireEvent.click(screen.getByRole("button", { name: text.row.delete, hidden: true }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.row.deleteFailed);
+    chooseFromMenu("Weekly sync", t("library:row.delete"));
+    fireEvent.click(screen.getByRole("button", { name: t("library:row.delete"), hidden: true }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("library:row.deleteFailed"));
     expect(open("Weekly sync")).toBeInTheDocument();
   });
 });

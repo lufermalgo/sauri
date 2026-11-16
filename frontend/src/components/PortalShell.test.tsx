@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PortalShell } from "./PortalShell";
-import { copy } from "../copy/es";
+import { t } from "../i18n";
 
 const owner = { name: "Ana Maria Perez", email: "ana@example.test" };
 const STORAGE_KEY = "sauri_sidebar_collapsed";
@@ -53,7 +53,7 @@ function renderShell(props: Partial<Parameters<typeof PortalShell>[0]> = {}) {
 }
 
 const root = () => document.querySelector<HTMLElement>(".shell-root")!;
-const sidebar = () => screen.getByRole("complementary", { name: copy.shell.sidebar.region });
+const sidebar = () => screen.getByRole("complementary", { name: t("shell:sidebar.region") });
 
 beforeEach(() => {
   listeners.clear();
@@ -71,14 +71,14 @@ afterEach(() => {
 describe("PortalShell navigation and profile", () => {
   it("renders the library link, the profile card and no top bar or upload link", () => {
     renderShell({ route: { name: "upload" } });
-    expect(screen.getByRole("navigation", { name: copy.shell.navLabel })).toBeTruthy();
-    expect(screen.getByRole("link", { name: copy.shell.library })).toHaveProperty("pathname", "/");
-    expect(screen.queryByRole("link", { name: copy.shell.upload })).toBeNull();
+    expect(screen.getByRole("navigation", { name: t("shell:navLabel") })).toBeTruthy();
+    expect(screen.getByRole("link", { name: t("shell:library") })).toHaveProperty("pathname", "/");
+    expect(screen.queryByRole("link", { name: t("shell:upload") })).toBeNull();
     expect(screen.queryByRole("banner")).toBeNull();
     expect(screen.getByText(owner.name)).toBeTruthy();
     expect(screen.getByText(owner.email)).toBeTruthy();
-    expect(screen.getByRole("button", { name: copy.shell.profile.menu(`${owner.name}, ${owner.email}`) })).toBeTruthy();
-    expect(screen.getByRole("link", { name: copy.shell.profile.settings })).toHaveProperty("pathname", "/settings");
+    expect(screen.getByRole("button", { name: t("shell:profile.menu", { account: `${owner.name}, ${owner.email}` }) })).toBeTruthy();
+    expect(screen.getByRole("link", { name: t("shell:profile.settings") })).toHaveProperty("pathname", "/settings");
   });
 
   it("shows initials from the name, the email local part, or a generic icon", () => {
@@ -97,13 +97,13 @@ describe("PortalShell navigation and profile", () => {
     renderShell({ user: { name: null, email: owner.email } });
     expect(document.querySelector(".shell-profile-name")?.textContent).toBe(owner.email);
     expect(document.querySelector(".shell-profile-email")).toBeNull();
-    expect(screen.getByRole("button", { name: copy.shell.profile.menu(owner.email) })).toBeTruthy();
+    expect(screen.getByRole("button", { name: t("shell:profile.menu", { account: owner.email }) })).toBeTruthy();
   });
 
   it("falls back to a generic account label without user data", () => {
     renderShell({ user: null });
-    expect(document.querySelector(".shell-profile-name")?.textContent).toBe(copy.shell.profile.fallbackName);
-    expect(screen.getByRole("button", { name: copy.shell.profile.fallbackName })).toBeTruthy();
+    expect(document.querySelector(".shell-profile-name")?.textContent).toBe(t("shell:profile.fallbackName"));
+    expect(screen.getByRole("button", { name: t("shell:profile.fallbackName") })).toBeTruthy();
   });
 
   it("returns to the library without reloading and leaves modified clicks to the browser", () => {
@@ -111,7 +111,7 @@ describe("PortalShell navigation and profile", () => {
     window.addEventListener("sauri:navigate", listener);
     window.history.replaceState({}, "", "/upload");
     renderShell({ route: { name: "upload" } });
-    const link = screen.getByRole("link", { name: copy.shell.library });
+    const link = screen.getByRole("link", { name: t("shell:library") });
     expect(link.getAttribute("aria-current")).toBeNull();
 
     let componentPrevented: boolean | null = null;
@@ -134,20 +134,20 @@ describe("PortalShell navigation and profile", () => {
   it("marks the library as the current page only on the library route", () => {
     const { unmount } = renderShell();
     // On the library route (wide) the item is the list pane's toggle and stays the current item.
-    expect(screen.getByRole("button", { name: copy.shell.library }).getAttribute("aria-current")).toBe("page");
-    expect(screen.getByRole("link", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBeNull();
+    expect(screen.getByRole("button", { name: t("shell:library") }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: t("shell:profile.settings") }).getAttribute("aria-current")).toBeNull();
     unmount();
     renderShell({ route: { name: "settings" } });
-    expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBeNull();
+    expect(screen.getByRole("link", { name: t("shell:library") }).getAttribute("aria-current")).toBeNull();
     // On settings the gear becomes the toggle of the categories pane and stays the current item.
-    expect(screen.getByRole("button", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: t("shell:profile.settings") }).getAttribute("aria-current")).toBe("page");
   });
 
   it("opens settings from the gear without reloading", () => {
     const listener = vi.fn();
     window.addEventListener("sauri:navigate", listener);
     renderShell();
-    fireEvent.click(screen.getByRole("link", { name: copy.shell.profile.settings }));
+    fireEvent.click(screen.getByRole("link", { name: t("shell:profile.settings") }));
     expect(window.location.pathname).toBe("/settings");
     expect(listener).toHaveBeenCalledTimes(1);
     window.removeEventListener("sauri:navigate", listener);
@@ -157,9 +157,9 @@ describe("PortalShell navigation and profile", () => {
     const onLogout = vi.fn();
     renderShell({ onLogout });
     expect(screen.queryByRole("menuitem")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.profile.menu(`${owner.name}, ${owner.email}`) }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:profile.menu", { account: `${owner.name}, ${owner.email}` }) }));
     expect(screen.getAllByRole("menuitem")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("menuitem", { name: copy.shell.logout }));
+    fireEvent.click(screen.getByRole("menuitem", { name: t("shell:logout") }));
     expect(onLogout).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("menu")).toBeNull();
   });
@@ -173,7 +173,7 @@ describe("PortalShell navigation and profile", () => {
 describe("PortalShell collapse", () => {
   it("starts expanded on wide screens and toggles to the rail with aria-expanded", () => {
     renderShell();
-    const toggle = screen.getByRole("button", { name: copy.shell.sidebar.toggle });
+    const toggle = screen.getByRole("button", { name: t("shell:sidebar.toggle") });
     expect(root().dataset.mode).toBe("full");
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(toggle.getAttribute("aria-controls")).toBe(sidebar().id);
@@ -182,18 +182,18 @@ describe("PortalShell collapse", () => {
     expect(root().dataset.mode).toBe("rail");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     // Labels stay in the document (visually hidden in the rail) so every control keeps its name.
-    expect(screen.getByRole("button", { name: copy.shell.library })).toBeTruthy();
-    expect(screen.getByRole("link", { name: copy.shell.profile.settings })).toBeTruthy();
+    expect(screen.getByRole("button", { name: t("shell:library") })).toBeTruthy();
+    expect(screen.getByRole("link", { name: t("shell:profile.settings") })).toBeTruthy();
     fireEvent.click(toggle);
     expect(root().dataset.mode).toBe("full");
   });
 
   it("keeps the isotype in the sidebar, alone in the rail, with the brand name as its link name", () => {
     renderShell();
-    const brand = () => screen.getByRole("link", { name: copy.shell.brand });
+    const brand = () => screen.getByRole("link", { name: t("shell:brand") });
     expect(brand().querySelector('svg polygon[fill="#4a7c59"]')).toBeTruthy();
     expect(brand().querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.sidebar.toggle }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:sidebar.toggle") }));
     expect(root().dataset.mode).toBe("rail");
     expect(brand().querySelector("svg")).toBeTruthy();
     expect(brand().querySelector(".shell-brand-name")!.classList.contains("shell-collapsible")).toBe(true);
@@ -201,13 +201,13 @@ describe("PortalShell collapse", () => {
 
   it("remembers the choice per device", () => {
     const first = renderShell();
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.sidebar.toggle }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:sidebar.toggle") }));
     expect(localStorage.getItem(STORAGE_KEY)).toBe("1");
     first.unmount();
 
     renderShell();
     expect(root().dataset.mode).toBe("rail");
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.sidebar.toggle }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:sidebar.toggle") }));
     expect(localStorage.getItem(STORAGE_KEY)).toBe("0");
   });
 
@@ -227,7 +227,7 @@ describe("PortalShell collapse", () => {
     vi.stubGlobal("localStorage", { ...createLocalStorage(), getItem: blocked, setItem: blocked });
     renderShell();
     expect(root().dataset.mode).toBe("full");
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.sidebar.toggle }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:sidebar.toggle") }));
     expect(root().dataset.mode).toBe("rail");
   });
 });
@@ -235,8 +235,8 @@ describe("PortalShell collapse", () => {
 describe("PortalShell drawer", () => {
   beforeEach(() => stubViewport(375));
 
-  const opener = () => screen.getByRole("button", { name: copy.shell.sidebar.open });
-  const closer = () => screen.getByRole("button", { name: copy.shell.sidebar.close });
+  const opener = () => screen.getByRole("button", { name: t("shell:sidebar.open") });
+  const closer = () => screen.getByRole("button", { name: t("shell:sidebar.close") });
 
   it("shows a slim top bar with a closed drawer and no collapse toggle", () => {
     renderShell();
@@ -244,7 +244,7 @@ describe("PortalShell drawer", () => {
     expect(screen.getByRole("banner")).toBeTruthy();
     expect(opener().getAttribute("aria-expanded")).toBe("false");
     expect(sidebar().dataset.open).toBe("false");
-    expect(screen.queryByRole("button", { name: copy.shell.sidebar.toggle })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("shell:sidebar.toggle") })).toBeNull();
     expect(document.querySelector(".shell-backdrop")).toBeNull();
   });
 
@@ -276,7 +276,7 @@ describe("PortalShell drawer", () => {
   it("closes after navigating from the drawer", () => {
     renderShell();
     fireEvent.click(opener());
-    fireEvent.click(screen.getByRole("link", { name: copy.shell.profile.settings }));
+    fireEvent.click(screen.getByRole("link", { name: t("shell:profile.settings") }));
     expect(window.location.pathname).toBe("/settings");
     expect(sidebar().dataset.open).toBe("false");
   });
@@ -297,7 +297,7 @@ describe("PortalShell drawer", () => {
   it("leaves Escape to an open account menu first", () => {
     renderShell();
     fireEvent.click(opener());
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.profile.menu(`${owner.name}, ${owner.email}`) }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:profile.menu", { account: `${owner.name}, ${owner.email}` }) }));
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(screen.queryByRole("menu")).toBeNull();
     expect(sidebar().dataset.open).toBe("true");

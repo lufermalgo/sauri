@@ -1,8 +1,8 @@
 import { getDiarization, getSpeakerReview, getTranscript } from "./api";
-import { meeting as text } from "./copy/meeting";
 import { titleToFilename } from "./download-filename";
 import { presentTranscriptTurns } from "./transcript-presentation";
 import { transcriptToText } from "./transcript-export";
+import { t } from "./i18n";
 
 /** Starts a browser download of `content` as a UTF-8 text file. */
 export function saveTextFile(filename: string, content: string): void {
@@ -18,7 +18,7 @@ export function saveTextFile(filename: string, content: string): void {
 }
 
 export function transcriptFilename(meetingId: string, title: string | null | undefined): string {
-  return titleToFilename(title, "txt") ?? text.transcriptFilename(meetingId);
+  return titleToFilename(title, "txt") ?? t("meeting:transcriptFilename", { id: meetingId });
 }
 
 /** A recording without speaker data is exported with generic names; any other failure is an error. */

@@ -1,0 +1,6 @@
+{
+  "title": "Language",
+  "label": "Interface language",
+  "help": "Changes the language of Sauri's menus and messages. Your choice is remembered only in this browser. Transcripts and summaries keep the language they were generated in.",
+  "changed": "Language changed to {{language}}."
+}

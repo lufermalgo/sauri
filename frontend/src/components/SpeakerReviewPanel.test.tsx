@@ -2,13 +2,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { copy } from "../copy/es";
 import { avatarText, firstGrapheme, SpeakerReviewPanel, type SpeakerRowModel } from "./SpeakerReviewPanel";
+import { t } from "../i18n";
 
 afterEach(cleanup);
 
-const sr = copy.speakerReview;
-const [G1, G3] = [copy.transcript.numberedSpeaker("1"), copy.transcript.numberedSpeaker("3")];
+const [G1, G3] = [t("transcript:numberedSpeaker", { number: "1" }), t("transcript:numberedSpeaker", { number: "3" })];
 const interval = { startMs: 0, endMs: 9000, short: false };
 const rows: SpeakerRowModel[] = [
   { speakerId: "a", label: G1, generic: true, color: "var(--ds-speaker-1)", disposition: null, interval },
@@ -28,13 +27,13 @@ function panel(overrides: Partial<Parameters<typeof SpeakerReviewPanel>[0]> = {}
 }
 
 const article = (index: number) => screen.getAllByRole("article")[index];
-const pencil = (label: string) => screen.getByRole("button", { name: sr.editName(label) });
-const nameInput = (label: string) => screen.getByRole("textbox", { name: sr.nameFor(label) });
+const pencil = (label: string) => screen.getByRole("button", { name: t("speakerReview:editName", { label }) });
+const nameInput = (label: string) => screen.getByRole("textbox", { name: t("speakerReview:nameFor", { label }) });
 
 describe("avatar text", () => {
   it("is H1 for a generic label and the first letter of a name", () => {
     expect(avatarText(G1, true)).toBe("H1");
-    expect(avatarText(copy.transcript.numberedSpeaker("12"), true)).toBe("H12");
+    expect(avatarText(t("transcript:numberedSpeaker", { number: "12" }), true)).toBe("H12");
     expect(avatarText("ana", false)).toBe("A");
     expect(avatarText("  \u00e1lvaro", false)).toBe("\u00c1");
     expect(avatarText("\u00d1and\u00fa", false)).toBe("\u00d1");
@@ -57,24 +56,24 @@ describe("avatar text", () => {
 describe("SpeakerReviewPanel", () => {
   it("announces the pending and the complete state", () => {
     panel();
-    expect(screen.getByText(sr.pending)).toBeInTheDocument();
+    expect(screen.getByText(t("speakerReview:pending"))).toBeInTheDocument();
     cleanup();
     panel({ complete: true });
-    expect(screen.getByText(sr.complete)).toBeInTheDocument();
+    expect(screen.getByText(t("speakerReview:complete"))).toBeInTheDocument();
   });
 
   it("lists one row per speaker with its status, a play icon first and a pencil last", () => {
     panel();
-    expect(article(0)).toHaveTextContent(sr.pendingState);
-    expect(article(1)).toHaveTextContent(sr.namedState);
+    expect(article(0)).toHaveTextContent(t("speakerReview:pendingState"));
+    expect(article(1)).toHaveTextContent(t("speakerReview:namedState"));
     const buttons = within(article(0)).getAllByRole("button");
-    expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([sr.listenTo(G1), sr.editName(G1)]);
+    expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([t("speakerReview:listenTo", { label: G1 }), t("speakerReview:editName", { label: G1 })]);
     for (const button of buttons) {
       expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
       expect(button).toHaveTextContent("");
     }
-    expect(within(article(1)).getByRole("button", { name: sr.listenTo("Ana") })).toBeDisabled();
-    expect(screen.getByText(sr.noInterval)).toBeInTheDocument();
+    expect(within(article(1)).getByRole("button", { name: t("speakerReview:listenTo", { label: "Ana" }) })).toBeDisabled();
+    expect(screen.getByText(t("speakerReview:noInterval"))).toBeInTheDocument();
   });
 
   it("has no text buttons for saving, confirming, correcting or listening", () => {
@@ -87,16 +86,16 @@ describe("SpeakerReviewPanel", () => {
 
   it("toggles the play button to a pressed pause state while that speaker plays", () => {
     const props = panel({ playingId: "a" });
-    const play = screen.getByRole("button", { name: sr.listenTo(G1) });
+    const play = screen.getByRole("button", { name: t("speakerReview:listenTo", { label: G1 }) });
     expect(play).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: sr.listenTo(G3) })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: t("speakerReview:listenTo", { label: G3 }) })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(play);
     expect(props.onListen).toHaveBeenCalledWith(rows[0]);
   });
 
   it("shows the error inside the panel", () => {
-    panel({ error: sr.playbackFailed });
-    expect(screen.getByRole("alert")).toHaveTextContent(sr.playbackFailed);
+    panel({ error: t("speakerReview:playbackFailed") });
+    expect(screen.getByRole("alert")).toHaveTextContent(t("speakerReview:playbackFailed"));
   });
 
   describe("inline name editing", () => {
@@ -108,7 +107,7 @@ describe("SpeakerReviewPanel", () => {
       expect(input.value).toBe(G1);
       expect(input.selectionStart).toBe(0);
       expect(input.selectionEnd).toBe(G1.length);
-      expect(screen.queryByRole("button", { name: sr.editName(G1) })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: t("speakerReview:editName", { label: G1 }) })).not.toBeInTheDocument();
     });
 
     it("saves the trimmed name once on Enter, announces it and returns focus to the pencil", async () => {
@@ -120,7 +119,7 @@ describe("SpeakerReviewPanel", () => {
       expect(props.onRename).toHaveBeenCalledWith("a", "Luisa");
       await waitFor(() => expect(screen.queryByRole("textbox")).not.toBeInTheDocument());
       expect(pencil(G1)).toHaveFocus();
-      expect(screen.getByText(sr.saved("Luisa"))).toBeInTheDocument();
+      expect(screen.getByText(t("speakerReview:saved", { name: "Luisa" }))).toBeInTheDocument();
       expect(props.onRename).toHaveBeenCalledTimes(1);
     });
 
@@ -167,7 +166,7 @@ describe("SpeakerReviewPanel", () => {
       fireEvent.click(pencil(G1));
       fireEvent.change(nameInput(G1), { target: { value: "   " } });
       fireEvent.keyDown(nameInput(G1), { key: "Enter" });
-      expect(screen.getByText(sr.nameRequired, { selector: "p" })).toBeInTheDocument();
+      expect(screen.getByText(t("speakerReview:nameRequired"), { selector: "p" })).toBeInTheDocument();
       expect(nameInput(G1)).toHaveAttribute("aria-invalid", "true");
       fireEvent.blur(nameInput(G1));
       expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
@@ -201,19 +200,19 @@ describe("SpeakerReviewPanel", () => {
     });
 
     it("keeps the input open with the typed text, the error and the focus when the save fails", async () => {
-      const onRename = vi.fn(async () => sr.saveFailed as string | null);
+      const onRename = vi.fn(async () => t("speakerReview:saveFailed") as string | null);
       panel({ onRename });
       fireEvent.click(pencil(G1));
       fireEvent.change(nameInput(G1), { target: { value: "Luisa" } });
       fireEvent.keyDown(nameInput(G1), { key: "Enter" });
-      expect(await screen.findByText(sr.saveFailed, { selector: "p" })).toBeInTheDocument();
+      expect(await screen.findByText(t("speakerReview:saveFailed"), { selector: "p" })).toBeInTheDocument();
       const input = nameInput(G1) as HTMLInputElement;
       expect(input.value).toBe("Luisa");
       expect(input).toHaveFocus();
       expect(input).not.toHaveAttribute("readonly");
       expect(input).toHaveAttribute("aria-invalid", "true");
-      expect(input).toHaveAccessibleDescription(sr.saveFailed);
-      expect(screen.getAllByRole("status").some(region => region.textContent === sr.saveFailed)).toBe(true);
+      expect(input).toHaveAccessibleDescription(t("speakerReview:saveFailed"));
+      expect(screen.getAllByRole("status").some(region => region.textContent === t("speakerReview:saveFailed"))).toBe(true);
       // Retrying works.
       onRename.mockResolvedValueOnce(null);
       fireEvent.keyDown(input, { key: "Enter" });
@@ -225,15 +224,15 @@ describe("SpeakerReviewPanel", () => {
   describe("leaving speakers unnamed", () => {
     it("offers one text link while a speaker with the generic label is pending and runs it once", async () => {
       const props = panel();
-      fireEvent.click(screen.getByRole("button", { name: sr.leaveUnnamed }));
+      fireEvent.click(screen.getByRole("button", { name: t("speakerReview:leaveUnnamed") }));
       await waitFor(() => expect(props.onLeaveUnnamed).toHaveBeenCalledTimes(1));
-      expect(await screen.findByText(sr.leftUnnamed)).toBeInTheDocument();
+      expect(await screen.findByText(t("speakerReview:leftUnnamed"))).toBeInTheDocument();
     });
 
     it("disappears when no generic speaker is pending", () => {
       panel({ rows: [rows[1], { ...rows[0], disposition: "confirmed" }] });
-      expect(screen.queryByRole("button", { name: sr.leaveUnnamed })).not.toBeInTheDocument();
-      expect(article(1)).toHaveTextContent(sr.unnamedState);
+      expect(screen.queryByRole("button", { name: t("speakerReview:leaveUnnamed") })).not.toBeInTheDocument();
+      expect(article(1)).toHaveTextContent(t("speakerReview:unnamedState"));
     });
   });
 
@@ -242,16 +241,16 @@ describe("SpeakerReviewPanel", () => {
 
     it("shows a one-tap chip that keeps the suggestion, and the first letter in the avatar", () => {
       const props = panel({ rows: [suggested] });
-      expect(article(0)).toHaveTextContent(sr.suggestedState);
+      expect(article(0)).toHaveTextContent(t("speakerReview:suggestedState"));
       expect(within(article(0)).getByText("K")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: sr.acceptSuggestion("Known Speaker") }));
+      fireEvent.click(screen.getByRole("button", { name: t("speakerReview:acceptSuggestion", { name: "Known Speaker" }) }));
       expect(props.onAcceptSuggestion).toHaveBeenCalledWith("s");
     });
 
     it("has no chip once the name is accepted", () => {
       panel({ rows: [{ ...suggested, disposition: "confirmed" }] });
-      expect(screen.queryByRole("button", { name: sr.acceptSuggestion("Known Speaker") })).not.toBeInTheDocument();
-      expect(article(0)).toHaveTextContent(sr.namedState);
+      expect(screen.queryByRole("button", { name: t("speakerReview:acceptSuggestion", { name: "Known Speaker" }) })).not.toBeInTheDocument();
+      expect(article(0)).toHaveTextContent(t("speakerReview:namedState"));
     });
   });
 });

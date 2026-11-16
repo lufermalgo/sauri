@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     exclude: [...configDefaults.exclude, "tests/e2e/**"],
+    setupFiles: ["src/test/setup.ts"],
   },
   resolve: {
     alias: {

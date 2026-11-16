@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
-import { copy } from "./copy/es";
+import { t } from "./i18n";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -40,11 +40,11 @@ it("holds a direct meeting review behind portal login, then fetches only that me
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
-  fireEvent.change(screen.getByLabelText(copy.login.emailLabel), { target: { value: "owner@example.test" } });
-  fireEvent.change(screen.getByLabelText(copy.login.passwordLabel), { target: { value: "synthetic-password" } });
-  fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
+  fireEvent.change(screen.getByLabelText(t("login:emailLabel")), { target: { value: "owner@example.test" } });
+  fireEvent.change(screen.getByLabelText(t("login:passwordLabel")), { target: { value: "synthetic-password" } });
+  fireEvent.click(screen.getByRole("button", { name: t("login:submit") }));
   await waitFor(() => expect(screen.getAllByText("Synthetic private turn").length).toBeGreaterThan(0));
   expect(window.location.pathname).toBe("/meetings/meeting-614");
   expect(window.location.search).toBe("");
@@ -60,7 +60,7 @@ it("does not reveal a direct target denied by the server and preserves the targe
   const fetchMock = vi.fn(async (_input: RequestInfo | URL) => json({ detail: "Unauthorized" }, 401));
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  await waitFor(() => expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy());
   expect(screen.queryByText("Synthetic private turn")).toBeNull();
   expect(localStorage.getItem("sauri_token")).toBeNull();
   expect(window.location.pathname).toBe("/meetings/meeting-614");
@@ -87,15 +87,15 @@ it("opens a clean /meetings/:id route after login and returns to the library wit
   });
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
-  expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy();
-  fireEvent.change(screen.getByLabelText(copy.login.emailLabel), { target: { value: "owner@example.test" } });
-  fireEvent.change(screen.getByLabelText(copy.login.passwordLabel), { target: { value: "synthetic-password" } });
-  fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
+  expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy();
+  fireEvent.change(screen.getByLabelText(t("login:emailLabel")), { target: { value: "owner@example.test" } });
+  fireEvent.change(screen.getByLabelText(t("login:passwordLabel")), { target: { value: "synthetic-password" } });
+  fireEvent.click(screen.getByRole("button", { name: t("login:submit") }));
   await waitFor(() => expect(screen.getAllByText("Synthetic private turn").length).toBeGreaterThan(0));
   expect(window.location.pathname).toBe("/meetings/meeting-614");
 
   window.history.back();
   await waitFor(() => expect(screen.queryByText("Synthetic private turn")).toBeNull());
   expect(window.location.pathname).toBe("/");
-  expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("link", { name: t("shell:library") }).getAttribute("aria-current")).toBe("page");
 });

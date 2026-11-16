@@ -3,11 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { EngineProcess, LocalAdoption, LocalJob, LocalModel } from "@sauri/shared-types";
-import { copy } from "../copy/es";
 import { LocalModelCard } from "./settings/LocalModelCard";
 import type { ExternalChoice, LocalSelection } from "./settings/LocalModelCard";
+import { t } from "../i18n";
 
-const text = copy.engines.local;
 const POLL_MS = 10;
 
 /** An installed, hash-verified model in the models directory; tests override what differs. */
@@ -150,7 +149,7 @@ async function renderCard(models: LocalModel[], options: Options = {}, props: Pr
   backend = fakeBackend(models, options);
   vi.stubGlobal("fetch", backend.handler);
   const view = render(<LocalModelCard {...cardProps(props)} />);
-  await screen.findByRole("list", { name: text.modelsTitle });
+  await screen.findByRole("list", { name: t("engines:local.modelsTitle") });
   return view;
 }
 
@@ -159,7 +158,7 @@ const jobLooks = () => backend.calls.filter((call) => call.path.startsWith("/loc
 const catalogReads = () => backend.calls.filter((call) => call.path === "/local/models" && call.method === "GET").length;
 
 function openRowMenu(name: string) {
-  fireEvent.click(within(row(name)).getByRole("button", { name: text.moreLabel(name) }));
+  fireEvent.click(within(row(name)).getByRole("button", { name: t("engines:local.moreLabel", { name }) }));
 }
 
 beforeEach(() => {
@@ -181,18 +180,18 @@ afterEach(() => {
 describe("hardware and recommendation", () => {
   it("describes the computer in plain words", async () => {
     await renderCard([TURBO, SMALL]);
-    expect(screen.getByText(text.hardware(text.chip("arm64", "Darwin"), "24 GB", 10, "120 GB"))).toBeInTheDocument();
-    expect(screen.getByText(text.metalYes)).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.hardware", { chip: t("engines:local.chipAppleSilicon"), memory: "24 GB", count: 10, free: "120 GB" }))).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.metalYes"))).toBeInTheDocument();
   });
 
   it("marks the recommended model with its measured mark and gives the reason once", async () => {
     await renderCard([TURBO, SMALL]);
     const turbo = row("whisper-turbo");
-    expect(within(turbo).getByText(text.recommended)).toBeInTheDocument();
-    expect(within(turbo).getByText(text.marks.measured)).toBeInTheDocument();
-    expect(within(row("whisper-small")).getByText(text.marks.proposal)).toBeInTheDocument();
-    expect(within(row("whisper-small")).queryByText(text.recommended)).toBeNull();
-    expect(screen.getByText(text.reasons.fits("24 GB", 8))).toBeInTheDocument();
+    expect(within(turbo).getByText(t("engines:local.recommended"))).toBeInTheDocument();
+    expect(within(turbo).getByText(t("engines:local.marks.measured"))).toBeInTheDocument();
+    expect(within(row("whisper-small")).getByText(t("engines:local.marks.proposal"))).toBeInTheDocument();
+    expect(within(row("whisper-small")).queryByText(t("engines:local.recommended"))).toBeNull();
+    expect(screen.getByText(t("engines:local.reasons.fitsMinimum", { memory: "24 GB", minimum: 8 }))).toBeInTheDocument();
   });
 
   it("lists the cautions of a proposal", async () => {
@@ -203,24 +202,24 @@ describe("hardware and recommendation", () => {
         warnings: ["unmeasured_proposal", "lower_quality_expected"],
       },
     });
-    expect(screen.getByText(text.warnings.unmeasured_proposal)).toBeInTheDocument();
-    expect(screen.getByText(text.warnings.lower_quality_expected)).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.warnings.unmeasured_proposal"))).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.warnings.lower_quality_expected"))).toBeInTheDocument();
   });
 
   it("tells the engine is not installed, with the command and the tools it needs", async () => {
     await renderCard([TURBO], { engineState: "stopped" });
-    const missing = screen.getByRole("region", { name: text.engineMissing.title });
-    expect(within(missing).getByText(text.engineMissing.installCommand)).toBeInTheDocument();
-    expect(within(missing).getByText(text.engineMissing.tools(text.engineTools.transcription))).toBeInTheDocument();
+    const missing = screen.getByRole("region", { name: t("engines:local.engineMissing.title") });
+    expect(within(missing).getByText(t("engines:local.engineMissing.installCommand"))).toBeInTheDocument();
+    expect(within(missing).getByText(t("engines:local.engineMissing.tools", { list: t("engines:local.engineTools.transcription") }))).toBeInTheDocument();
   });
 
   it("says so when the service that manages models does not answer", async () => {
     backend = fakeBackend([TURBO], { hostDown: true });
     vi.stubGlobal("fetch", backend.handler);
     render(<LocalModelCard {...cardProps({})} />);
-    const missing = await screen.findByRole("region", { name: text.engineMissing.title });
-    expect(within(missing).getByText(text.engineMissing.hostBody)).toBeInTheDocument();
-    expect(within(missing).getByText(text.engineMissing.startCommand)).toBeInTheDocument();
+    const missing = await screen.findByRole("region", { name: t("engines:local.engineMissing.title") });
+    expect(within(missing).getByText(t("engines:local.engineMissing.hostBody"))).toBeInTheDocument();
+    expect(within(missing).getByText(t("engines:local.engineMissing.startCommand"))).toBeInTheDocument();
   });
 
   it("hands the catalog to the screen so installed models can be chosen", async () => {
@@ -234,28 +233,28 @@ describe("what each option is", () => {
   it("shows the active model as installed and active now, with its size and where it was checked", async () => {
     await renderCard([TURBO, SMALL]);
     const turbo = row("whisper-turbo");
-    expect(within(turbo).getByText(text.states.active)).toBeInTheDocument();
-    expect(within(turbo).getByText(text.states.installed)).toBeInTheDocument();
+    expect(within(turbo).getByText(t("engines:local.states.active"))).toBeInTheDocument();
+    expect(within(turbo).getByText(t("engines:local.states.installed"))).toBeInTheDocument();
     expect(within(turbo).getByText("574 MB")).toBeInTheDocument();
-    expect(within(turbo).getByText(new RegExp(text.verifiedBy.hash))).toBeInTheDocument();
-    expect(within(turbo).queryByRole("button", { name: text.useLabel("whisper-turbo") })).toBeNull();
-    expect(within(turbo).queryByRole("button", { name: text.installLabel("whisper-turbo") })).toBeNull();
+    expect(within(turbo).getByText(new RegExp(t("engines:local.verifiedBy.hash")))).toBeInTheDocument();
+    expect(within(turbo).queryByRole("button", { name: t("engines:local.useLabel", { name: "whisper-turbo" }) })).toBeNull();
+    expect(within(turbo).queryByRole("button", { name: t("engines:local.installLabel", { id: "whisper-turbo" }) })).toBeNull();
   });
 
   it("offers an installed model that is not active with «Usar este»", async () => {
     const onUse = vi.fn();
     await renderCard([TURBO, SMALL_INSTALLED], {}, { onUse });
     const small = row("whisper-small");
-    expect(within(small).getByText(text.states.installed)).toBeInTheDocument();
-    expect(within(small).queryByText(text.states.active)).toBeNull();
-    fireEvent.click(within(small).getByRole("button", { name: text.useLabel("whisper-small") }));
+    expect(within(small).getByText(t("engines:local.states.installed"))).toBeInTheDocument();
+    expect(within(small).queryByText(t("engines:local.states.active"))).toBeNull();
+    fireEvent.click(within(small).getByRole("button", { name: t("engines:local.useLabel", { name: "whisper-small" }) }));
     expect(onUse).toHaveBeenCalledWith("local:whisper-small");
   });
 
   it("chooses the catalog default through local:default", async () => {
     const onUse = vi.fn();
     await renderCard([{ ...TURBO, active: false, in_use: false, in_use_by: [] }, SMALL_INSTALLED], {}, { onUse });
-    fireEvent.click(within(row("whisper-turbo")).getByRole("button", { name: text.useLabel("whisper-turbo") }));
+    fireEvent.click(within(row("whisper-turbo")).getByRole("button", { name: t("engines:local.useLabel", { name: "whisper-turbo" }) }));
     expect(onUse).toHaveBeenCalledWith("local:default");
   });
 
@@ -263,27 +262,27 @@ describe("what each option is", () => {
     backend = fakeBackend([TURBO, SMALL_INSTALLED]);
     vi.stubGlobal("fetch", backend.handler);
     render(<LocalModelCard {...cardProps({})} choosing />);
-    await screen.findByRole("list", { name: text.modelsTitle });
-    expect(within(row("whisper-small")).getByRole("button", { name: text.useLabel("whisper-small") })).toBeDisabled();
+    await screen.findByRole("list", { name: t("engines:local.modelsTitle") });
+    expect(within(row("whisper-small")).getByRole("button", { name: t("engines:local.useLabel", { name: "whisper-small" }) })).toBeDisabled();
   });
 
   it("shows an installed model as available again to use when an external provider is the one active", async () => {
     await renderCard([TURBO], {}, { selection: { external: true, key: "gpt-a" }, external: { current: "Work OpenAI, gpt-a" } });
     const turbo = row("whisper-turbo");
-    expect(within(turbo).queryByText(text.states.active)).toBeNull();
-    expect(within(turbo).getByRole("button", { name: text.useLabel("whisper-turbo") })).toBeInTheDocument();
-    const group = screen.getByRole("region", { name: text.external.title });
+    expect(within(turbo).queryByText(t("engines:local.states.active"))).toBeNull();
+    expect(within(turbo).getByRole("button", { name: t("engines:local.useLabel", { name: "whisper-turbo" }) })).toBeInTheDocument();
+    const group = screen.getByRole("region", { name: t("engines:local.external.title") });
     expect(within(group).getByText("Work OpenAI, gpt-a")).toBeInTheDocument();
-    expect(within(group).getByText(text.states.active)).toBeInTheDocument();
+    expect(within(group).getByText(t("engines:local.states.active"))).toBeInTheDocument();
   });
 
   it("offers an available model with «Instalar» and the space it needs", async () => {
     await renderCard([TURBO, SMALL]);
     const small = row("whisper-small");
-    expect(within(small).getByText(text.states.available)).toBeInTheDocument();
+    expect(within(small).getByText(t("engines:local.states.available"))).toBeInTheDocument();
     expect(within(small).getByText("190 MB")).toBeInTheDocument();
-    expect(within(small).getByText(text.spaceNeeded("689 MB"))).toBeInTheDocument();
-    expect(within(small).getByRole("button", { name: text.installLabel("whisper-small") })).toBeEnabled();
+    expect(within(small).getByText(t("engines:local.spaceNeeded", { size: "689 MB" }))).toBeInTheDocument();
+    expect(within(small).getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) })).toBeEnabled();
   });
 
   it("disables «Instalar» with the reason when the model does not fit on the disk", async () => {
@@ -292,10 +291,10 @@ describe("what each option is", () => {
       install: { method: "download", managed_by: null, download_bytes: 190_085_487, disk_required_bytes: 230_000_000, fits_on_disk: false },
     });
     await renderCard([TURBO, tight]);
-    const button = within(row("whisper-small")).getByRole("button", { name: text.installLabel("whisper-small") });
+    const button = within(row("whisper-small")).getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) });
     expect(button).toBeDisabled();
-    expect(button).toHaveAccessibleDescription(text.notEnoughSpace("230 MB"));
-    expect(within(row("whisper-small")).getByText(text.notEnoughSpace("230 MB"))).toBeInTheDocument();
+    expect(button).toHaveAccessibleDescription(t("engines:local.notEnoughSpace", { size: "230 MB" }));
+    expect(within(row("whisper-small")).getByText(t("engines:local.notEnoughSpace", { size: "230 MB" }))).toBeInTheDocument();
   });
 
   it("shows a file that is there but not verified, with the reason in plain words and «Verificar»", async () => {
@@ -305,36 +304,36 @@ describe("what each option is", () => {
     });
     await renderCard([TURBO, odd]);
     const small = row("whisper-small");
-    expect(within(small).getByText(text.states.unverified)).toBeInTheDocument();
-    expect(within(small).getByText(text.unverifiedReason.size_mismatch)).toBeInTheDocument();
-    expect(within(small).getByRole("button", { name: text.verifyLabel("whisper-small") })).toBeEnabled();
-    expect(within(small).queryByRole("button", { name: text.useLabel("whisper-small") })).toBeNull();
+    expect(within(small).getByText(t("engines:local.states.unverified"))).toBeInTheDocument();
+    expect(within(small).getByText(t("engines:local.unverifiedReason.size_mismatch"))).toBeInTheDocument();
+    expect(within(small).getByRole("button", { name: t("engines:local.verifyLabel", { id: "whisper-small" }) })).toBeEnabled();
+    expect(within(small).queryByRole("button", { name: t("engines:local.useLabel", { name: "whisper-small" }) })).toBeNull();
   });
 
   it("says «Verificando…» while the file is being checked", async () => {
     const checking = model({ id: "whisper-small", state: "unverified", availability: "present_unverified", verifying: true, verified_by: undefined });
     await renderCard([TURBO, checking]);
     const small = row("whisper-small");
-    expect(within(small).getByText(text.states.verifying)).toBeInTheDocument();
-    expect(within(small).queryByRole("button", { name: text.verifyLabel("whisper-small") })).toBeNull();
+    expect(within(small).getByText(t("engines:local.states.verifying"))).toBeInTheDocument();
+    expect(within(small).queryByRole("button", { name: t("engines:local.verifyLabel", { id: "whisper-small" }) })).toBeNull();
   });
 
   it("marks a model installed by hand", async () => {
     await renderCard([{ ...TURBO, location: "legacy" }]);
-    expect(within(row("whisper-turbo")).getByText(text.manual)).toBeInTheDocument();
+    expect(within(row("whisper-turbo")).getByText(t("engines:local.manual"))).toBeInTheDocument();
   });
 
   it("keeps the voice detector as one supporting line, not as a choice", async () => {
     await renderCard([TURBO, VAD]);
-    expect(screen.getByText(text.auxiliaryLine("silero-vad", text.states.installed))).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.auxiliaryLine", { name: "silero-vad", state: t("engines:local.states.installed") }))).toBeInTheDocument();
     expect(screen.queryByRole("listitem", { name: "silero-vad" })).toBeNull();
-    expect(screen.queryByRole("button", { name: text.useLabel("silero-vad") })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("engines:local.useLabel", { name: "silero-vad" }) })).toBeNull();
   });
 
   it("offers to install the voice detector when it is missing", async () => {
     await renderCard([TURBO, available({ id: "silero-vad", kind: "auxiliary", size: 2_000_000 })]);
-    expect(screen.getByText(text.auxiliaryLine("silero-vad", text.states.available))).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: text.installLabel("silero-vad") })).toBeEnabled();
+    expect(screen.getByText(t("engines:local.auxiliaryLine", { name: "silero-vad", state: t("engines:local.states.available") }))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "silero-vad" }) })).toBeEnabled();
   });
 
   it("groups the options by process: only the models of this process are listed", async () => {
@@ -348,16 +347,16 @@ describe("external choice beside the local ones", () => {
   it("offers the external choice in the same card and hands it to the engine selector", async () => {
     const onChoose = vi.fn();
     await renderCard([TURBO], {}, { external: { onChoose } });
-    const group = screen.getByRole("region", { name: text.external.title });
-    expect(within(group).getByText(text.external.help)).toBeInTheDocument();
-    fireEvent.click(within(group).getByRole("button", { name: text.external.choose }));
+    const group = screen.getByRole("region", { name: t("engines:local.external.title") });
+    expect(within(group).getByText(t("engines:local.external.help"))).toBeInTheDocument();
+    fireEvent.click(within(group).getByRole("button", { name: t("engines:local.external.choose") }));
     expect(onChoose).toHaveBeenCalledOnce();
   });
 
   it("points to the provider setup when no provider can serve the process", async () => {
     const onSetup = vi.fn();
     await renderCard([TURBO], {}, { external: { hasProviders: false, onSetup } });
-    fireEvent.click(screen.getByRole("button", { name: text.external.setup }));
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.external.setup") }));
     expect(onSetup).toHaveBeenCalledOnce();
   });
 });
@@ -370,44 +369,44 @@ describe("install", () => {
       { bytes_done: 600 },
       { state: "done", bytes_done: 1000, result: "installed" },
     );
-    fireEvent.click(screen.getByRole("button", { name: text.installLabel("whisper-small") }));
-    const status = await screen.findByText(text.installing("whisper-small", 0));
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) }));
+    const status = await screen.findByText(t("engines:local.installing", { id: "whisper-small", percent: 0 }));
     expect(status).toHaveAttribute("role", "status");
-    expect(screen.getByRole("progressbar", { name: text.progressLabel("whisper-small") })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText(text.installing("whisper-small", 25))).toBeInTheDocument());
-    expect(await screen.findByText(text.outcome.installed("whisper-small"))).toBeInTheDocument();
-    await waitFor(() => expect(within(row("whisper-small")).getByText(text.states.installed)).toBeInTheDocument());
-    expect(within(row("whisper-small")).getByRole("button", { name: text.useLabel("whisper-small") })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: t("engines:local.progressLabel", { id: "whisper-small" }) })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(t("engines:local.installing", { id: "whisper-small", percent: 25 }))).toBeInTheDocument());
+    expect(await screen.findByText(t("engines:local.outcome.installed", { id: "whisper-small" }))).toBeInTheDocument();
+    await waitFor(() => expect(within(row("whisper-small")).getByText(t("engines:local.states.installed"))).toBeInTheDocument());
+    expect(within(row("whisper-small")).getByRole("button", { name: t("engines:local.useLabel", { name: "whisper-small" }) })).toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("keeps other installs closed while one job runs", async () => {
     await renderCard([TURBO, SMALL, available({ id: "whisper-base", size: 142_000_000 })]);
     backend.jobAnswers.push({ bytes_done: 100 });
-    fireEvent.click(screen.getByRole("button", { name: text.installLabel("whisper-small") }));
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) }));
     await screen.findByRole("progressbar");
-    expect(screen.getByRole("button", { name: text.installLabel("whisper-base") })).toBeDisabled();
-    expect(screen.getByText(text.busy)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-base" }) })).toBeDisabled();
+    expect(screen.getByText(t("engines:local.busy"))).toBeInTheDocument();
   });
 
   it("cancels the download", async () => {
     await renderCard([TURBO, SMALL]);
     backend.jobAnswers.push({ bytes_done: 100 });
-    fireEvent.click(screen.getByRole("button", { name: text.installLabel("whisper-small") }));
-    fireEvent.click(await screen.findByRole("button", { name: text.cancelLabel("whisper-small") }));
-    expect(await screen.findByText(text.outcome.cancelled)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) }));
+    fireEvent.click(await screen.findByRole("button", { name: t("engines:local.cancelLabel", { id: "whisper-small" }) }));
+    expect(await screen.findByText(t("engines:local.outcome.cancelled"))).toBeInTheDocument();
     expect(backend.calls.some((call) => call.method === "POST" && call.path.endsWith("/cancel"))).toBe(true);
     expect(screen.queryByRole("progressbar")).toBeNull();
-    expect(within(row("whisper-small")).getByText(text.states.available)).toBeInTheDocument();
+    expect(within(row("whisper-small")).getByText(t("engines:local.states.available"))).toBeInTheDocument();
   });
 
   it("explains an invalid hash and leaves the model available", async () => {
     await renderCard([TURBO, SMALL]);
     backend.jobAnswers.push({ state: "failed", error: "hash_mismatch" });
-    fireEvent.click(screen.getByRole("button", { name: text.installLabel("whisper-small") }));
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) }));
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(text.jobErrors.hash_mismatch);
-    expect(within(row("whisper-small")).getByText(text.states.available)).toBeInTheDocument();
+    expect(alert).toHaveTextContent(t("engines:local.jobErrors.hash_mismatch"));
+    expect(within(row("whisper-small")).getByText(t("engines:local.states.available"))).toBeInTheDocument();
   });
 
   it("states how much space is missing when the host refuses for lack of disk", async () => {
@@ -415,16 +414,16 @@ describe("install", () => {
     backend.refusals.set("POST /local/models/whisper-small/install", backend.json({
       detail: "insufficient_disk", needed_bytes: 688_849_434, free_bytes: 300_000_000,
     }, 507));
-    fireEvent.click(screen.getByRole("button", { name: text.installLabel("whisper-small") }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.insufficientDisk("689 MB", "300 MB"));
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("engines:local.insufficientDisk", { needed: "689 MB", free: "300 MB" }));
     expect(screen.queryByRole("progressbar")).toBeNull();
-    expect(screen.getByRole("button", { name: text.installLabel("whisper-small") })).toBeEnabled();
+    expect(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) })).toBeEnabled();
   });
 
   it("stops asking about the job when the card goes away", async () => {
     const view = await renderCard([TURBO, SMALL]);
     backend.jobAnswers.push({ bytes_done: 100 });
-    fireEvent.click(screen.getByRole("button", { name: text.installLabel("whisper-small") }));
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) }));
     await waitFor(() => expect(jobLooks()).toBeGreaterThanOrEqual(2));
     view.unmount();
     const looksAtUnmount = jobLooks();
@@ -434,10 +433,10 @@ describe("install", () => {
 
   it("gives up after repeated failed looks instead of asking forever", async () => {
     await renderCard([TURBO, SMALL]);
-    fireEvent.click(screen.getByRole("button", { name: text.installLabel("whisper-small") }));
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.installLabel", { id: "whisper-small" }) }));
     await screen.findByRole("progressbar");
     backend.refusals.set(`GET /local/jobs/${"a".repeat(32)}`, backend.json({ detail: "host_unavailable" }, 503));
-    expect(await screen.findByText(text.outcome.lost)).toBeInTheDocument();
+    expect(await screen.findByText(t("engines:local.outcome.lost"))).toBeInTheDocument();
     const looks = jobLooks();
     await new Promise((resolve) => setTimeout(resolve, POLL_MS * 6));
     expect(jobLooks()).toBe(looks);
@@ -451,7 +450,7 @@ describe("install", () => {
     backend.jobAnswers.push({ bytes_done: 500 });
     vi.stubGlobal("fetch", backend.handler);
     render(<LocalModelCard {...cardProps({})} />);
-    expect(await screen.findByRole("progressbar", { name: text.progressLabel("whisper-small") })).toBeInTheDocument();
+    expect(await screen.findByRole("progressbar", { name: t("engines:local.progressLabel", { id: "whisper-small" }) })).toBeInTheDocument();
   });
 });
 
@@ -460,25 +459,25 @@ describe("verify and remove", () => {
     await renderCard([TURBO, SMALL_INSTALLED]);
     backend.jobAnswers.push({ state: "done", result: "verified", bytes_done: 1000 });
     openRowMenu("whisper-small");
-    fireEvent.click(screen.getByRole("menuitem", { name: text.verify }));
-    expect(await screen.findByText(text.outcome.verified("whisper-small"))).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.verify") }));
+    expect(await screen.findByText(t("engines:local.outcome.verified", { id: "whisper-small" }))).toBeInTheDocument();
   });
 
   it("reports a damaged file after verifying", async () => {
     await renderCard([TURBO, SMALL_INSTALLED]);
     backend.jobAnswers.push({ state: "done", result: "corrupt", bytes_done: 1000 });
     openRowMenu("whisper-small");
-    fireEvent.click(screen.getByRole("menuitem", { name: text.verify }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.outcome.corrupt("whisper-small"));
+    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.verify") }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("engines:local.outcome.corrupt", { id: "whisper-small" }));
   });
 
   it("blocks removal while a process uses the model, and says which", async () => {
     await renderCard([TURBO]);
     openRowMenu("whisper-turbo");
-    const remove = screen.getByRole("menuitem", { name: text.remove });
+    const remove = screen.getByRole("menuitem", { name: t("engines:local.remove") });
     expect(remove).toHaveAttribute("aria-disabled", "true");
-    expect(remove).toHaveAttribute("title", text.removeBlocked("Transcripción")); // spanish-sample-data
-    expect(within(screen.getByRole("menu")).getByText(text.removeBlocked("Transcripción"))).toBeInTheDocument(); // spanish-sample-data
+    expect(remove).toHaveAttribute("title", t("engines:local.removeBlocked", { list: "Transcripción" })); // spanish-sample-data
+    expect(within(screen.getByRole("menu")).getByText(t("engines:local.removeBlocked", { list: "Transcripción" }))).toBeInTheDocument(); // spanish-sample-data
     fireEvent.click(remove);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -486,46 +485,46 @@ describe("verify and remove", () => {
   it("never removes a model installed by hand, and says Sauri does not delete it", async () => {
     await renderCard([TURBO, { ...SMALL_INSTALLED, location: "legacy" }]);
     openRowMenu("whisper-small");
-    const remove = screen.getByRole("menuitem", { name: text.remove });
+    const remove = screen.getByRole("menuitem", { name: t("engines:local.remove") });
     expect(remove).toHaveAttribute("aria-disabled", "true");
-    expect(remove).toHaveAttribute("title", text.manualNote);
-    expect(within(screen.getByRole("menu")).getByText(text.manualNote)).toBeInTheDocument();
-    expect(within(row("whisper-small")).getByText(text.manual)).toBeInTheDocument();
+    expect(remove).toHaveAttribute("title", t("engines:local.manualNote"));
+    expect(within(screen.getByRole("menu")).getByText(t("engines:local.manualNote"))).toBeInTheDocument();
+    expect(within(row("whisper-small")).getByText(t("engines:local.manual"))).toBeInTheDocument();
   });
 
   it("explains a refusal from the host when the model became in use meanwhile", async () => {
     await renderCard([TURBO, SMALL_INSTALLED]);
     backend.refusals.set("DELETE /local/models/whisper-small", backend.json({ detail: "model_in_use", processes: ["transcription"] }, 409));
     openRowMenu("whisper-small");
-    fireEvent.click(screen.getByRole("menuitem", { name: text.remove }));
-    fireEvent.click(await screen.findByRole("button", { name: text.removeConfirm }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.modelInUse("Transcripción")); // spanish-sample-data
+    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.remove") }));
+    fireEvent.click(await screen.findByRole("button", { name: t("engines:local.removeConfirm") }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("engines:local.modelInUse", { list: "Transcripción" })); // spanish-sample-data
   });
 
   it("explains a legacy refusal from the host", async () => {
     await renderCard([TURBO, SMALL_INSTALLED]);
     backend.refusals.set("DELETE /local/models/whisper-small", backend.json({ detail: "legacy_location" }, 409));
     openRowMenu("whisper-small");
-    fireEvent.click(screen.getByRole("menuitem", { name: text.remove }));
-    fireEvent.click(await screen.findByRole("button", { name: text.removeConfirm }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(text.manualNote);
+    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.remove") }));
+    fireEvent.click(await screen.findByRole("button", { name: t("engines:local.removeConfirm") }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("engines:local.manualNote"));
   });
 
   it("asks before removing, and removes only after the confirmation", async () => {
     await renderCard([TURBO, SMALL_INSTALLED]);
     openRowMenu("whisper-small");
-    fireEvent.click(screen.getByRole("menuitem", { name: text.remove }));
+    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.remove") }));
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(text.removeBody("whisper-small", "190 MB"))).toBeInTheDocument();
+    expect(within(dialog).getByText(t("engines:local.removeBody", { id: "whisper-small", size: "190 MB" }))).toBeInTheDocument();
     expect(backend.calls.some((call) => call.method === "DELETE")).toBe(false);
-    fireEvent.click(within(dialog).getByRole("button", { name: text.removeCancel }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("engines:local.removeCancel") }));
     expect(backend.calls.some((call) => call.method === "DELETE")).toBe(false);
 
     openRowMenu("whisper-small");
-    fireEvent.click(screen.getByRole("menuitem", { name: text.remove }));
-    fireEvent.click(await screen.findByRole("button", { name: text.removeConfirm }));
-    expect(await screen.findByText(text.outcome.removed("whisper-small"))).toBeInTheDocument();
-    await waitFor(() => expect(within(row("whisper-small")).getByText(text.states.available)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.remove") }));
+    fireEvent.click(await screen.findByRole("button", { name: t("engines:local.removeConfirm") }));
+    expect(await screen.findByText(t("engines:local.outcome.removed", { id: "whisper-small" }))).toBeInTheDocument();
+    await waitFor(() => expect(within(row("whisper-small")).getByText(t("engines:local.states.available"))).toBeInTheDocument());
   });
 });
 
@@ -533,17 +532,17 @@ describe("models that were already there", () => {
   it("says what it is doing while files are recognized, then shows them as installed", async () => {
     const checking = model({ id: "whisper-small", state: "unverified", availability: "present_unverified", verifying: true, verified_by: undefined });
     await renderCard([TURBO, checking]);
-    expect(screen.getByText(text.adoption.recognizing)).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.adoption.recognizing"))).toBeInTheDocument();
     Object.assign(backend.catalog[1], { verifying: false, state: "installed", availability: "installed", verified_by: "hash" });
-    await waitFor(() => expect(within(row("whisper-small")).getByText(text.states.installed)).toBeInTheDocument());
-    expect(screen.queryByText(text.adoption.recognizing)).toBeNull();
+    await waitFor(() => expect(within(row("whisper-small")).getByText(t("engines:local.states.installed"))).toBeInTheDocument());
+    expect(screen.queryByText(t("engines:local.adoption.recognizing"))).toBeNull();
   });
 
   it("stops looking at the catalog once nothing is being recognized", async () => {
     const checking = model({ id: "whisper-small", state: "unverified", availability: "present_unverified", verifying: true, verified_by: undefined });
     await renderCard([TURBO, checking]);
     Object.assign(backend.catalog[1], { verifying: false });
-    await waitFor(() => expect(screen.queryByText(text.adoption.recognizing)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(t("engines:local.adoption.recognizing"))).toBeNull());
     const reads = catalogReads();
     await new Promise((resolve) => setTimeout(resolve, POLL_MS * 6));
     expect(catalogReads()).toBe(reads);
@@ -552,22 +551,22 @@ describe("models that were already there", () => {
   it("explains calmly when a file could not be confirmed", async () => {
     const odd = model({ id: "whisper-small", state: "unverified", availability: "present_unverified", reason: "hash_mismatch", verified_by: undefined });
     await renderCard([TURBO, odd], { adoption: { job_id: "c".repeat(32), outcomes: { "whisper-small": "present_unverified", "whisper-turbo": "adopted" } } });
-    expect(screen.getByText(text.adoption.attention)).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.adoption.attention"))).toBeInTheDocument();
   });
 
   it("says nothing about it when every file was recognized", async () => {
     await renderCard([TURBO], { adoption: { job_id: "c".repeat(32), outcomes: { "whisper-turbo": "adopted" } } });
-    expect(screen.queryByText(text.adoption.attention)).toBeNull();
+    expect(screen.queryByText(t("engines:local.adoption.attention"))).toBeNull();
   });
 
   it("looks for installed models only from the card menu, and follows the run", async () => {
     await renderCard([TURBO, SMALL]);
-    expect(screen.queryByRole("button", { name: text.scan })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("engines:local.scan") })).toBeNull();
     backend.jobAnswers.push({ bytes_done: 0 }, { state: "done", result: "adopted" });
-    fireEvent.click(screen.getByRole("button", { name: text.cardMenu }));
-    fireEvent.click(screen.getByRole("menuitem", { name: text.scan }));
-    expect(await screen.findByText(text.adoption.recognizing)).toBeInTheDocument();
-    expect(await screen.findByText(text.adoption.done)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("engines:local.cardMenu") }));
+    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.scan") }));
+    expect(await screen.findByText(t("engines:local.adoption.recognizing"))).toBeInTheDocument();
+    expect(await screen.findByText(t("engines:local.adoption.done"))).toBeInTheDocument();
     expect(backend.calls.some((call) => call.method === "POST" && call.path === "/local/adopt")).toBe(true);
   });
 });
@@ -577,13 +576,13 @@ describe("managed engines", () => {
     backend = fakeBackend([SENKO]);
     vi.stubGlobal("fetch", backend.handler);
     render(<LocalModelCard {...cardProps({ process: "diarization" })} />);
-    await screen.findByRole("list", { name: text.modelsTitle });
-    const senko = screen.getByRole("listitem", { name: text.managedTitle.diarization });
-    expect(within(senko).getByText(text.states.installed)).toBeInTheDocument();
-    expect(within(senko).getByText(text.states.active)).toBeInTheDocument();
-    expect(within(senko).getByText(new RegExp(text.verifiedBy.presence))).toBeInTheDocument();
+    await screen.findByRole("list", { name: t("engines:local.modelsTitle") });
+    const senko = screen.getByRole("listitem", { name: t("engines:local.managedTitle.diarization") });
+    expect(within(senko).getByText(t("engines:local.states.installed"))).toBeInTheDocument();
+    expect(within(senko).getByText(t("engines:local.states.active"))).toBeInTheDocument();
+    expect(within(senko).getByText(new RegExp(t("engines:local.verifiedBy.presence")))).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Instalar/ })).toBeNull();
-    expect(within(senko).queryByRole("button", { name: text.moreLabel(text.managedTitle.diarization) })).toBeNull();
+    expect(within(senko).queryByRole("button", { name: t("engines:local.moreLabel", { name: t("engines:local.managedTitle.diarization") }) })).toBeNull();
   });
 
   it("shows the command that installs the engine when it is missing", async () => {
@@ -595,9 +594,9 @@ describe("managed engines", () => {
     backend = fakeBackend([missing]);
     vi.stubGlobal("fetch", backend.handler);
     render(<LocalModelCard {...cardProps({ process: "diarization" })} />);
-    await screen.findByRole("list", { name: text.modelsTitle });
-    expect(screen.getByText(text.managedHow("bash scripts/engines/install-diar-engine.sh"))).toBeInTheDocument();
-    expect(screen.getByText(text.states.available)).toBeInTheDocument();
+    await screen.findByRole("list", { name: t("engines:local.modelsTitle") });
+    expect(screen.getByText(t("engines:local.managedHow", { command: "bash scripts/engines/install-diar-engine.sh" }))).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.states.available"))).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Instalar/ })).toBeNull();
     expect(screen.queryByRole("progressbar")).toBeNull();
   });

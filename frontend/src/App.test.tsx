@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
-import { copy } from "./copy/es";
+import { t } from "./i18n";
 
 function createLocalStorage(): Storage {
   const values = new Map<string, string>();
@@ -41,7 +41,7 @@ describe("global authentication gate", () => {
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy());
     expect(storage.getItem("sauri_token")).toBeNull();
     expect(screen.queryByText("Error 401")).toBeNull();
   });
@@ -66,19 +66,19 @@ describe("global authentication gate", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: copy.library.title })).toBeNull();
+    expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: t("library:title") })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText(copy.login.emailLabel), {
+    fireEvent.change(screen.getByLabelText(t("login:emailLabel")), {
       target: { value: "owner@example.test" },
     });
-    fireEvent.change(screen.getByLabelText(copy.login.passwordLabel), {
+    fireEvent.change(screen.getByLabelText(t("login:passwordLabel")), {
       target: { value: "synthetic-password" },
     });
-    fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("login:submit") }));
 
-    await waitFor(() => expect(screen.getByText(copy.library.empty)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(t("library:empty"))).toBeTruthy());
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       expect.stringContaining("/api/v1/auth/login"),
       expect.stringContaining("/api/v1/meetings"),
@@ -94,8 +94,8 @@ describe("global authentication gate", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: copy.shell.notFound.title })).toBeTruthy();
-    fireEvent.click(screen.getByRole("link", { name: copy.shell.notFound.backToLibrary }));
+    expect(screen.getByRole("heading", { name: t("shell:notFound.title") })).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: t("shell:notFound.backToLibrary") }));
     expect(window.location.pathname).toBe("/");
   });
 
@@ -106,20 +106,20 @@ describe("global authentication gate", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
 
     render(<App />);
-    fireEvent.click(screen.getByRole("link", { name: copy.shell.profile.settings }));
+    fireEvent.click(screen.getByRole("link", { name: t("shell:profile.settings") }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/settings"));
-    expect(screen.getByRole("heading", { name: copy.settings.title })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: copy.settings.categories.account.label })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: t("settings:title") })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: t("settings:categories.account.label") })).toBeTruthy();
     // On settings the gear becomes the toggle of the categories pane and stays the current item.
-    expect(screen.getByRole("button", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("button", { name: t("shell:profile.settings") }).getAttribute("aria-current")).toBe("page");
 
     act(() => {
       window.history.pushState(null, "", "/settings/extra");
       window.dispatchEvent(new Event("sauri:navigate"));
     });
-    expect(screen.getByRole("heading", { name: copy.shell.notFound.title })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: copy.settings.title })).toBeNull();
+    expect(screen.getByRole("heading", { name: t("shell:notFound.title") })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: t("settings:title") })).toBeNull();
   });
 
   it("shows the name and email carried by the signed-in token", () => {
@@ -142,10 +142,10 @@ describe("global authentication gate", () => {
     vi.stubGlobal("localStorage", storage);
 
     render(<App />);
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.profile.fallbackName }));
-    fireEvent.click(screen.getByRole("menuitem", { name: copy.shell.logout }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:profile.fallbackName") }));
+    fireEvent.click(screen.getByRole("menuitem", { name: t("shell:logout") }));
 
-    await waitFor(() => expect(screen.getByRole("heading", { name: copy.login.title })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: t("login:title") })).toBeTruthy());
     expect(storage.getItem("sauri_token")).toBeNull();
     expect(window.location.pathname).toBe("/");
   });
@@ -157,13 +157,13 @@ describe("global authentication gate", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("[]", { status: 200 })));
 
     render(<App />);
-    fireEvent.click(screen.getAllByRole("button", { name: copy.shell.upload })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: t("shell:upload") })[0]);
     await waitFor(() => expect(window.location.pathname).toBe("/upload"));
-    expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBeNull();
+    expect(screen.getByRole("link", { name: t("shell:library") }).getAttribute("aria-current")).toBeNull();
 
     window.history.back();
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     await waitFor(() =>
-      expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBe("page"));
+      expect(screen.getByRole("link", { name: t("shell:library") }).getAttribute("aria-current")).toBe("page"));
   });
 });

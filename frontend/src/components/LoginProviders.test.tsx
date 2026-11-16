@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ENABLED_LOGIN_PROVIDERS, LoginProviders } from "./LoginProviders";
-import { copy } from "../copy/es";
+import { t } from "../i18n";
 
 afterEach(cleanup);
 
@@ -15,7 +15,7 @@ describe("login providers area", () => {
     const { container } = render(<LoginProviders providers={[]} />);
 
     expect(container.innerHTML).toBe("");
-    expect(screen.queryByText(copy.login.providersSeparator)).toBeNull();
+    expect(screen.queryByText(t("login:providersSeparator"))).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });
 
@@ -31,7 +31,7 @@ describe("login providers area", () => {
       />,
     );
 
-    expect(screen.getByText(copy.login.providersSeparator)).toBeTruthy();
+    expect(screen.getByText(t("login:providersSeparator"))).toBeTruthy();
     expect(screen.getAllByRole("button")).toHaveLength(2);
     expect(screen.getByTestId("glyph")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Continuar con dos" }));

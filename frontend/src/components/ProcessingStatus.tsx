@@ -1,13 +1,13 @@
 import type { MeetingState } from "../api";
-import { copy } from "../copy/es";
 import {
-  ACTIVE_STAGES, NO_SPEECH_CAUSE, detectProcessingStage, stageLabel, type ActiveStage, type DetectedStage,
+  ACTIVE_STAGES, NO_SPEECH_CAUSE, detectProcessingStage, processingFailureText, stageLabel, type ActiveStage, type DetectedStage,
   type SummarySignal,
 } from "../processing-estimate";
 import { useStageStart } from "../useStageStart";
 import { StageProgress } from "./StageProgress";
 import { ProgressBar } from "./ui";
 import "../styles/processing.css";
+import { useT } from "../i18n";
 
 interface ProcessingStatusProps {
   meeting: MeetingState | null;
@@ -42,9 +42,9 @@ function CheckIcon() {
 }
 
 function Stepper({ stage }: { stage: ActiveStage | "done" }) {
-  const text = copy.processing;
+  const { t } = useT();
   return (
-    <ol className="processing-steps" aria-label={text.stepsLabel}>
+    <ol className="processing-steps" aria-label={t("processing:stepsLabel")}>
       {STEP_KEYS.map((step, index) => {
         const state = stepState(step, stage);
         return (
@@ -53,8 +53,8 @@ function Stepper({ stage }: { stage: ActiveStage | "done" }) {
             <span className="processing-step-marker" aria-hidden="true">
               {state === "done" ? <CheckIcon /> : index + 1}
             </span>
-            <span className="processing-step-label">{text.steps[step]}</span>
-            <span className="processing-sr-only">{`, ${text.stepState[state]}`}</span>
+            <span className="processing-step-label">{t(`processing:steps.${step}`)}</span>
+            <span className="processing-sr-only">{`, ${t(`processing:stepState.${state}`)}`}</span>
           </li>
         );
       })}
@@ -66,37 +66,37 @@ export function ProcessingStatus({
   meeting, hasTranscript, diarizationNotFound, error, hasDiarization = false, summary = "none",
   audioSeconds = null, createdAt = null,
 }: ProcessingStatusProps) {
-  const text = copy.processing;
+  const { t } = useT();
   const detected: DetectedStage | null = meeting ? detectProcessingStage({
     processState: meeting.processState, hasTranscript, diarizationNotFound, hasDiarization, summary,
   }) : null;
   const stageStartedAt = useStageStart(detected);
 
-  if (error) return <p role="alert">{text.loadFailed}</p>;
-  if (!meeting || detected === null) return <p role="status">{text.loading}</p>;
+  if (error) return <p role="alert">{t("processing:loadFailed")}</p>;
+  if (!meeting || detected === null) return <p role="status">{t("processing:loading")}</p>;
   if (detected === "failed" && meeting.failureCause === NO_SPEECH_CAUSE) return (
     <div role="status" className="processing-current">
-      <p className="processing-headline">{text.noSpeechTitle}</p>
-      <p className="processing-explain">{text.noSpeechBody}</p>
+      <p className="processing-headline">{t("processing:noSpeechTitle")}</p>
+      <p className="processing-explain">{t("processing:noSpeechBody")}</p>
     </div>
   );
   if (detected === "failed") return (
-    <p role="status">{text.failed}: {text.failureCause(meeting.failureCause)}</p>
+    <p role="status">{t("processing:failed")}: {processingFailureText(meeting.failureCause)}</p>
   );
   if (detected === "live") {
-    const label = meeting.processState === "joining" ? text.joining : text.recording;
+    const label = meeting.processState === "joining" ? t("processing:joining") : t("processing:recording");
     return <>
       <ProgressBar label={label} />
       <p role="status">{label}</p>
     </>;
   }
-  if (detected === "unknown") return <p role="status">{text.unknown}</p>;
+  if (detected === "unknown") return <p role="status">{t("processing:unknown")}</p>;
   if (detected === "done") return (
     <div className="processing processing--done">
       <Stepper stage="done" />
       <div className="processing-current">
-        <p role="status" className="processing-headline">{text.completed}</p>
-        <p className="processing-explain">{text.doneBody}</p>
+        <p role="status" className="processing-headline">{t("processing:completed")}</p>
+        <p className="processing-explain">{t("processing:doneBody")}</p>
       </div>
     </div>
   );

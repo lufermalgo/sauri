@@ -4,8 +4,9 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render } from "@testing-library/react";
 import type { EngineProviderKind } from "@sauri/shared-types";
 import { PROVIDER_LOGO_PATHS } from "../assets/providers/logos";
-import { copy } from "../copy/es";
+import { es } from "../locales/es";
 import { ProviderLogo } from "./settings/ProviderLogo";
+import { t } from "../i18n";
 
 afterEach(cleanup);
 
@@ -25,12 +26,12 @@ describe("ProviderLogo", () => {
     expect(container.querySelector("svg")).toBeNull();
     expect(container.firstElementChild).toHaveClass("engines-logo--sm");
     expect(container).toHaveTextContent("O");
-    const compatible = render(<ProviderLogo kind="openai_compatible" name={copy.engines.kinds.openai_compatible.label} />);
+    const compatible = render(<ProviderLogo kind="openai_compatible" name={t("engines:kinds.openai_compatible.label")} />);
     expect(compatible.container).toHaveTextContent("SC");
   });
 
   it("only knows marks for kinds the API can link, and no mark carries a literal color", () => {
-    const kinds = Object.keys(copy.engines.kinds) as EngineProviderKind[];
+    const kinds = Object.keys(es.engines.kinds) as EngineProviderKind[];
     for (const key of Object.keys(PROVIDER_LOGO_PATHS)) expect(kinds).toContain(key);
     for (const path of Object.values(PROVIDER_LOGO_PATHS)) expect(path).toMatch(/^[MmLlHhVvCcSsQqTtAaZz0-9\s.,-]+$/);
   });

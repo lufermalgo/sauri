@@ -2,11 +2,11 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
-import { meeting as text } from "./copy/meeting";
 import type { PlaybackManifest, PlaybackSource } from "./api";
 import {
   NoMediaError, downloadMeetingMedia, mediaExtension, mediaFilename, pickMediaSource, saveSignedMedia,
 } from "./media-download";
+import { t } from "./i18n";
 
 const src = (url: string, mime: string | null): PlaybackSource => ({ source_id: url, url, mime_type: mime });
 const audio = src("http://store.test/a.m4a?sig=1", "audio/mp4");
@@ -62,8 +62,8 @@ describe("mediaExtension and mediaFilename", () => {
   it("names the file after the title and falls back to the id", () => {
     expect(mediaFilename("m1", "Weekly sync", video)).toBe("Weekly sync.webm");
     expect(mediaFilename("m1", "recording.webm", video)).toBe("recording.webm");
-    expect(mediaFilename("m1", "???", audio)).toBe(text.mediaFilename("m1", "m4a"));
-    expect(mediaFilename("m1", null, video)).toBe(text.mediaFilename("m1", "webm"));
+    expect(mediaFilename("m1", "???", audio)).toBe(t("meeting:mediaFilename", { id: "m1", extension: "m4a" }));
+    expect(mediaFilename("m1", null, video)).toBe(t("meeting:mediaFilename", { id: "m1", extension: "webm" }));
   });
 });
 

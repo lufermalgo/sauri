@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
-import { copy } from "../copy/es";
 import { Button } from "./ui";
+import { useT } from "../i18n";
 
 /**
  * One external sign-in option (e.g. "Continue with Google") shown below the password form.
- * `label` is user-facing Spanish text and must come from `frontend/src/copy/`.
+ * `label` is user-facing text and must come from `frontend/src/locales/`.
  */
 export interface LoginProvider {
   /** Stable key, e.g. "google". */
   id: string;
-  /** Visible button text, e.g. copy.login.continueWithGoogle. */
+  /** Visible button text, e.g. t("login:continueWithGoogle"). */
   label: string;
   /** Decorative brand glyph shown before the label. */
   icon?: ReactNode;
@@ -31,10 +31,11 @@ interface LoginProvidersProps {
 
 /** Separator plus one outlined button per provider; renders nothing when the list is empty. */
 export function LoginProviders({ providers, disabled = false }: LoginProvidersProps) {
+  const { t } = useT();
   if (providers.length === 0) return null;
   return (
     <div className="login-providers">
-      <p className="login-separator">{copy.login.providersSeparator}</p>
+      <p className="login-separator">{t("login:providersSeparator")}</p>
       {providers.map((provider) => (
         <Button
           key={provider.id}

@@ -4,7 +4,8 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { ProcessingStatus } from "./ProcessingStatus";
-import { copy } from "../copy/es";
+import { t } from "../i18n";
+import { explainTranscription, processingFailureText, remainingText } from "../processing-estimate";
 
 afterEach(() => {
   cleanup();
@@ -33,29 +34,29 @@ describe("ProcessingStatus — real states", () => {
   it.each(["queued", "transcribing"] as const)(
     "shows the real %s state and no percentage without a known duration", (processState) => {
       render(<ProcessingStatus {...base({ meeting: { meetingId: "m-1", processState } })} />);
-      expect(screen.getByRole("status")).toHaveTextContent(copy.processing[processState]);
+      expect(screen.getByRole("status")).toHaveTextContent(t(`processing:${processState}`));
       expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
       expect(document.body.textContent).not.toContain("%");
-      expect(screen.getByText(copy.processing.noEstimate)).toBeInTheDocument();
+      expect(screen.getByText(t("processing:noEstimate"))).toBeInTheDocument();
     },
   );
 
   it.each(["joining", "recording"] as const)("keeps live %s capture without an estimate", (processState) => {
     render(<ProcessingStatus {...base({ meeting: { meetingId: "m-1", processState }, audioSeconds: 600 })} />);
-    expect(screen.getByRole("status")).toHaveTextContent(copy.processing[processState]);
+    expect(screen.getByRole("status")).toHaveTextContent(t(`processing:${processState}`));
     expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
     expect(document.body.textContent).not.toContain("%");
   });
 
   it.each(["transcribing", "completed"])("shows identification after transcript availability in %s", (processState) => {
     render(<ProcessingStatus {...base({ meeting: { meetingId: "m-1", processState }, hasTranscript: true })} />);
-    expect(screen.getByRole("status")).toHaveTextContent(copy.processing.identifying);
+    expect(screen.getByRole("status")).toHaveTextContent(t("processing:identifying"));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("does not claim identification before a transcript exists", () => {
     render(<ProcessingStatus {...base()} />);
-    expect(screen.getByRole("status")).toHaveTextContent(copy.processing.transcribing);
+    expect(screen.getByRole("status")).toHaveTextContent(t("processing:transcribing"));
   });
 
   it.each(["could_not_join", "meeting_cancelled", "engine_failure", "engine_failed",
@@ -64,8 +65,8 @@ describe("ProcessingStatus — real states", () => {
       render(<ProcessingStatus {...base({
         meeting: { meetingId: "m-1", processState: "failed", failureCause }, hasTranscript: true,
       })} />);
-      expect(screen.getByRole("status")).toHaveTextContent(copy.processing.failed);
-      expect(screen.getByRole("status")).toHaveTextContent(copy.processing.failureCause(failureCause));
+      expect(screen.getByRole("status")).toHaveTextContent(t("processing:failed"));
+      expect(screen.getByRole("status")).toHaveTextContent(processingFailureText(failureCause));
       expect(screen.queryByRole("button")).not.toBeInTheDocument();
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     },
@@ -76,36 +77,36 @@ describe("ProcessingStatus — real states", () => {
       meeting: { meetingId: "m-1", processState: "failed", failureCause: "no_speech_detected" }, hasTranscript: false,
     })} />);
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent(copy.processing.noSpeechTitle);
-    expect(status).toHaveTextContent(copy.processing.noSpeechBody);
-    expect(status).not.toHaveTextContent(copy.processing.failureCause("engine_failed"));
+    expect(status).toHaveTextContent(t("processing:noSpeechTitle"));
+    expect(status).toHaveTextContent(t("processing:noSpeechBody"));
+    expect(status).not.toHaveTextContent(processingFailureText("engine_failed"));
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
   it("does not turn a state load failure into a processing state", () => {
     render(<ProcessingStatus {...base({ meeting: null, error: true })} />);
-    expect(screen.getByRole("alert")).toHaveTextContent(copy.processing.loadFailed);
+    expect(screen.getByRole("alert")).toHaveTextContent(t("processing:loadFailed"));
   });
 });
 
 describe("ProcessingStatus — stepper", () => {
   it.each([
-    [base(), copy.processing.steps.transcription, 1],
-    [base({ meeting: { meetingId: "m-1", processState: "queued" } }), copy.processing.steps.transcription, 1],
-    [base({ hasTranscript: true }), copy.processing.steps.speakers, 2],
+    [base(), t("processing:steps.transcription"), 1],
+    [base({ meeting: { meetingId: "m-1", processState: "queued" } }), t("processing:steps.transcription"), 1],
+    [base({ hasTranscript: true }), t("processing:steps.speakers"), 2],
     [base({ meeting: { meetingId: "m-1", processState: "completed" }, hasTranscript: true, diarizationNotFound: false,
-      hasDiarization: true, summary: "waiting" }), copy.processing.steps.summary, 3],
+      hasDiarization: true, summary: "waiting" }), t("processing:steps.summary"), 3],
     [base({ meeting: { meetingId: "m-1", processState: "completed" }, hasTranscript: true, diarizationNotFound: false,
-      hasDiarization: true, summary: "expected" }), copy.processing.steps.summary, 3],
+      hasDiarization: true, summary: "expected" }), t("processing:steps.summary"), 3],
   ] as const)("marks the current stage and the finished ones (%#)", (props, current, doneCount) => {
     render(<ProcessingStatus {...props} />);
-    const steps = screen.getByRole("list", { name: copy.processing.stepsLabel });
+    const steps = screen.getByRole("list", { name: t("processing:stepsLabel") });
     expect(steps.querySelectorAll("li")).toHaveLength(4);
     expect(currentStep()).toBe(current);
     expect(steps.querySelectorAll(".processing-step--done")).toHaveLength(doneCount);
-    expect(steps.querySelector(".processing-step--done")).toHaveTextContent(copy.processing.steps.upload);
-    expect(steps.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.stepState.current);
+    expect(steps.querySelector(".processing-step--done")).toHaveTextContent(t("processing:steps.upload"));
+    expect(steps.querySelector("[aria-current='step']")).toHaveTextContent(t("processing:stepState.current"));
   });
 
   it("shows a success state with every step done once speakers and summary are settled", () => {
@@ -113,8 +114,8 @@ describe("ProcessingStatus — stepper", () => {
       meeting: { meetingId: "m-1", processState: "completed" }, hasTranscript: true, diarizationNotFound: false,
       hasDiarization: true, summary: "settled", audioSeconds: 600,
     })} />);
-    expect(screen.getByRole("status")).toHaveTextContent(copy.processing.completed);
-    expect(screen.getByText(copy.processing.doneBody)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(t("processing:completed"));
+    expect(screen.getByText(t("processing:doneBody"))).toBeInTheDocument();
     expect(document.querySelectorAll(".processing-step--done")).toHaveLength(4);
     expect(document.querySelector("[aria-current='step']")).toBeNull();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
@@ -126,17 +127,17 @@ describe("ProcessingStatus — estimate", () => {
     vi.useFakeTimers({ now: NOW });
     // 54 min of audio: transcription ~324 s, speakers 15 s, summary ~389 s.
     render(<ProcessingStatus {...base({ audioSeconds: 54 * 60, createdAt: ago(120) })} />);
-    const bar = screen.getByRole("progressbar", { name: copy.processing.transcribing });
+    const bar = screen.getByRole("progressbar", { name: t("processing:transcribing") });
     expect(bar).toHaveAttribute("aria-valuenow", "16");
     expect(bar).toHaveAttribute("aria-valuemax", "100");
-    expect(screen.getByText(copy.processing.percent(16))).toBeInTheDocument();
-    expect(screen.getByText(copy.processing.elapsed("2:00"))).toBeInTheDocument();
-    expect(screen.getByText(copy.processing.remaining(10))).toBeInTheDocument();
-    expect(screen.getByText(copy.processing.explain.transcription(54, 5))).toBeInTheDocument();
-    expect(screen.getByText(copy.processing.leaveHint)).toBeInTheDocument();
+    expect(screen.getByText(t("processing:percent", { value: 16 }))).toBeInTheDocument();
+    expect(screen.getByText(t("processing:elapsed", { time: "2:00" }))).toBeInTheDocument();
+    expect(screen.getByText(remainingText(10))).toBeInTheDocument();
+    expect(screen.getByText(explainTranscription(54, 5))).toBeInTheDocument();
+    expect(screen.getByText(t("processing:leaveHint"))).toBeInTheDocument();
 
     act(() => { vi.advanceTimersByTime(5000); });
-    expect(screen.getByText(copy.processing.elapsed("2:05"))).toBeInTheDocument();
+    expect(screen.getByText(t("processing:elapsed", { time: "2:05" }))).toBeInTheDocument();
   });
 
   it.each(["waiting", "expected"] as const)(
@@ -146,13 +147,13 @@ describe("ProcessingStatus — estimate", () => {
         meeting: { meetingId: "m-1", processState: "completed" }, hasTranscript: true, diarizationNotFound: false,
         hasDiarization: true, summary, audioSeconds: 54 * 60, createdAt: ago(1500),
       })} />);
-      expect(currentStep()).toBe(copy.processing.steps.summary);
+      expect(currentStep()).toBe(t("processing:steps.summary"));
       expect(document.querySelectorAll(".processing-step--done")).toHaveLength(3);
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
       expect(screen.queryByRole("status")).not.toBeInTheDocument();
       expect(document.body.textContent).not.toContain("%");
-      expect(screen.queryByText(copy.processing.elapsed("25:00"))).not.toBeInTheDocument();
-      expect(screen.queryByText(copy.processing.leaveHint)).not.toBeInTheDocument();
+      expect(screen.queryByText(t("processing:elapsed", { time: "25:00" }))).not.toBeInTheDocument();
+      expect(screen.queryByText(t("processing:leaveHint"))).not.toBeInTheDocument();
       expect(document.querySelector("[aria-live='polite']")).toBeNull();
       expect(document.body.textContent).not.toMatch(/Faltan|Falta|Llevamos/);
       expect(vi.getTimerCount()).toBe(0);
@@ -162,13 +163,13 @@ describe("ProcessingStatus — estimate", () => {
   it("switches to overtime wording instead of a frozen percentage when the page opens late", () => {
     vi.useFakeTimers({ now: NOW });
     render(<ProcessingStatus {...base({ audioSeconds: 21 * 60, createdAt: ago(3 * 3600) })} />);
-    const bar = screen.getByRole("progressbar", { name: copy.processing.transcribing });
+    const bar = screen.getByRole("progressbar", { name: t("processing:transcribing") });
     expect(Number(bar.getAttribute("aria-valuenow"))).toBeLessThanOrEqual(95);
-    expect(bar).toHaveAttribute("aria-valuetext", copy.processing.overtime);
-    expect(document.querySelector(".processing-remaining")).toHaveTextContent(copy.processing.overtime);
-    expect(screen.getByText(copy.processing.explain.overtime)).toBeInTheDocument();
+    expect(bar).toHaveAttribute("aria-valuetext", t("processing:overtime"));
+    expect(document.querySelector(".processing-remaining")).toHaveTextContent(t("processing:overtime"));
+    expect(screen.getByText(t("processing:explain.overtime"))).toBeInTheDocument();
     expect(document.querySelector(".processing-percent")).toBeNull();
-    expect(screen.getByText(copy.processing.elapsed("3:00:00"))).toBeInTheDocument();
+    expect(screen.getByText(t("processing:elapsed", { time: "3:00:00" }))).toBeInTheDocument();
   });
 
   it("times a stage from the moment the page sees it begin", () => {
@@ -176,12 +177,12 @@ describe("ProcessingStatus — estimate", () => {
     // The upload was long ago, so an opened-mid-stage guess would already be overtime.
     const props = base({ audioSeconds: 54 * 60, createdAt: ago(2000) });
     const view = render(<ProcessingStatus {...props} />);
-    expect(document.querySelector(".processing-remaining")).toHaveTextContent(copy.processing.overtime);
+    expect(document.querySelector(".processing-remaining")).toHaveTextContent(t("processing:overtime"));
     view.rerender(<ProcessingStatus {...props} hasTranscript />);
-    expect(currentStep()).toBe(copy.processing.steps.speakers);
-    expect(document.querySelector(".processing-remaining")).not.toHaveTextContent(copy.processing.overtime);
+    expect(currentStep()).toBe(t("processing:steps.speakers"));
+    expect(document.querySelector(".processing-remaining")).not.toHaveTextContent(t("processing:overtime"));
     act(() => { vi.advanceTimersByTime(20_000); });
-    expect(document.querySelector(".processing-remaining")).toHaveTextContent(copy.processing.overtime);
+    expect(document.querySelector(".processing-remaining")).toHaveTextContent(t("processing:overtime"));
   });
 
   it("does not claim a slow stage when the page opens right after speakers started", () => {
@@ -192,12 +193,12 @@ describe("ProcessingStatus — estimate", () => {
       audioSeconds: 94 * 60, createdAt: ago(850), hasTranscript: true, diarizationNotFound: true,
     });
     render(<ProcessingStatus {...props} />);
-    expect(currentStep()).toBe(copy.processing.steps.speakers);
-    expect(screen.queryByText(copy.processing.overtime)).not.toBeInTheDocument();
-    expect(screen.queryByText(copy.processing.explain.overtime)).not.toBeInTheDocument();
+    expect(currentStep()).toBe(t("processing:steps.speakers"));
+    expect(screen.queryByText(t("processing:overtime"))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("processing:explain.overtime"))).not.toBeInTheDocument();
     // Only time this page watched the running stage can make it overtime.
     act(() => { vi.advanceTimersByTime(20_000); });
-    expect(document.querySelector(".processing-remaining")).toHaveTextContent(copy.processing.overtime);
+    expect(document.querySelector(".processing-remaining")).toHaveTextContent(t("processing:overtime"));
   });
 
   it("announces the estimate politely at most every fifteen seconds", () => {
@@ -207,7 +208,7 @@ describe("ProcessingStatus — estimate", () => {
     expect(live).not.toHaveAttribute("role");
     expect(screen.getAllByRole("status")).toHaveLength(1);
     const first = live.textContent;
-    expect(first).toContain(copy.processing.transcribing);
+    expect(first).toContain(t("processing:transcribing"));
     let changes = 0;
     let previous = first;
     for (let second = 0; second < 30; second++) {
