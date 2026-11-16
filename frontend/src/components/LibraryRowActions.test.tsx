@@ -576,6 +576,24 @@ describe("row delete", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/"));
   });
 
+  it("forgets the last explored recording when it is deleted, and keeps it when another one is", async () => {
+    const values = new Map([["sauri_last_meeting_id", "a"]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    });
+    await renderList([item("a", "Weekly sync"), item("b", "Other")], { selectedId: "a" });
+    vi.spyOn(api, "deleteMeeting").mockResolvedValue(undefined);
+    chooseFromMenu("Other", text.row.delete);
+    fireEvent.click(screen.getByRole("button", { name: text.row.delete, hidden: true }));
+    await waitFor(() => expect(screen.queryByText("Other")).toBeNull());
+    expect(values.get("sauri_last_meeting_id")).toBe("a");
+    chooseFromMenu("Weekly sync", text.row.delete);
+    fireEvent.click(screen.getByRole("button", { name: text.row.delete, hidden: true }));
+    await waitFor(() => expect(values.has("sauri_last_meeting_id")).toBe(false));
+  });
+
   it("shows an inline error and keeps the row when the API fails", async () => {
     await renderList([item("a", "Weekly sync")]);
     vi.spyOn(api, "deleteMeeting").mockRejectedValue(new Error("Error 500"));

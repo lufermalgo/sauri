@@ -34,6 +34,8 @@ interface TranscriptViewProps {
   meetingId: string;
   /** Shown as a back button in the header when the list is not beside this view (narrow screens). */
   onBack?: () => void;
+  /** Reports whether the server knows this recording: "found" once it answers, "missing" on a 404. */
+  onResolved?: (outcome: "found" | "missing") => void;
 }
 
 function formatTimestamp(ms: number): string {
@@ -58,7 +60,9 @@ export function TranscriptView(props: TranscriptViewProps) {
   return <MeetingTranscriptView key={props.meetingId} {...props} />;
 }
 
-function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
+function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptViewProps) {
+  const onResolvedRef = useRef(onResolved);
+  onResolvedRef.current = onResolved;
   const [meeting, setMeeting] = useState<MeetingState | null>(null);
   const [metadata, setMetadata] = useState<{ title: string | null; createdAt: string | null; durationSeconds: number | null }>(
     { title: null, createdAt: null, durationSeconds: null });
@@ -224,11 +228,13 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
         const [transcript] = await Promise.allSettled([getTranscript(meetingId)]);
         if (cancelled || terminal) return;
         if (state.status === "fulfilled") {
+          onResolvedRef.current?.("found");
           setMeeting(state.value);
           setStatusError(false);
           terminal = state.value.processState === "failed" ||
             (state.value.processState === "completed" && speakers.status === "fulfilled");
         } else {
+          if (state.reason instanceof Error && state.reason.message === "Error 404") onResolvedRef.current?.("missing");
           setStatusError(true);
         }
         if (transcript.status === "fulfilled") {

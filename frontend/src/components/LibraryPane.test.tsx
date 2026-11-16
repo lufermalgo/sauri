@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 /**
- * The library list pane can be hidden from the side panel while a recording is open; the choice is
- * remembered per device and never applies on `/` or in single-pane (narrow) mode.
+ * The library list pane can be hidden from the side panel, on `/` as well as with a recording open;
+ * the choice is remembered per device and never applies in single-pane (narrow) mode.
  */
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, act, within } from "@testing-library/react";
 import { MeetingOrigin, ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { PortalShell } from "./PortalShell";
@@ -182,15 +182,86 @@ describe("library pane toggle in the side panel", () => {
     expect(slot()).not.toHaveAttribute("data-hidden");
   });
 
-  it("is never hidden on the library route: the item is a link and the list is the content", async () => {
+  it("is the same toggle on the library home, with the list as its target", async () => {
+    renderApp({ name: "library" });
+    await screen.findByRole("region", { name: copy.library.title });
+    expect(screen.queryByRole("link", { name: copy.shell.library })).toBeNull();
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(toggle()).toHaveAttribute("aria-controls", "library-pane");
+    expect(toggle()).toHaveAttribute("aria-current", "page");
+    expect(slot()).not.toHaveAttribute("data-hidden");
+    // The pane is visible by default, so the detail only carries the quiet hint.
+    expect(screen.getByText(copy.library.selectHint)).toBeVisible();
+    expect(screen.queryByRole("button", { name: copy.shell.libraryPane.show })).toBeNull();
+  });
+
+  it("hides the list on the library home and offers the way back in the empty state", async () => {
+    renderApp({ name: "library" });
+    await screen.findByRole("region", { name: copy.library.title });
+    act(() => toggle().focus());
+    fireEvent.click(toggle());
+    expect(slot()).toHaveAttribute("data-hidden");
+    expect(slot()).toHaveAttribute("inert");
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(toggle()).toHaveFocus();
+    expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("1");
+    // The hidden list takes its h1 out of the tree; the empty state owns the only h1 and the button.
+    expect(screen.getByRole("heading", { level: 1, name: copy.library.chooseRecording })).toBeVisible();
+    expect(screen.queryByText(copy.library.selectHint)).toBeNull();
+    expect(screen.getByRole("button", { name: copy.shell.libraryPane.show })).toBeVisible();
+  });
+
+  it("brings the list back from the empty state's button and moves the keyboard into it", async () => {
+    localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
+    renderApp({ name: "library" });
+    expect(await screen.findByRole("heading", { level: 1, name: copy.library.chooseRecording })).toBeVisible();
+    // The stored choice is kept on the home: it is neither cleared nor forced visible.
+    expect(slot()).toHaveAttribute("data-hidden");
+    expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("1");
+
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.libraryPane.show }));
+    expect(slot()).not.toHaveAttribute("data-hidden");
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("0");
+    expect(screen.getByText(copy.library.selectHint)).toBeVisible();
+    expect(screen.queryByRole("heading", { name: copy.library.chooseRecording })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: copy.library.title })).toBeVisible();
+    const list = screen.getByRole("region", { name: copy.library.title });
+    await within(list).findByText("Weekly sync");
+    expect(list.contains(document.activeElement)).toBe(true);
+  });
+
+  it("keeps a hidden list hidden across the home and a recording", async () => {
+    localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
+    const view = renderApp({ name: "library" });
+    await screen.findByRole("heading", { level: 1, name: copy.library.chooseRecording });
+    view.unmount();
+    renderApp({ name: "meeting", meetingId: "b" });
+    await screen.findByRole("heading", { level: 1, name: "Client interview" });
+    expect(slot()).toHaveAttribute("data-hidden");
+    expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("1");
+  });
+
+  it("hides on the home when storage is blocked, for the visit", async () => {
+    const blocked = () => { throw new Error("blocked"); };
+    vi.stubGlobal("localStorage", { ...createLocalStorage(), getItem: blocked, setItem: blocked });
+    renderApp({ name: "library" });
+    await screen.findByRole("region", { name: copy.library.title });
+    fireEvent.click(toggle());
+    expect(await screen.findByRole("button", { name: copy.shell.libraryPane.show })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: copy.shell.libraryPane.show }));
+    expect(slot()).not.toHaveAttribute("data-hidden");
+  });
+
+  it("ignores the stored choice below 1100px: the home shows the list alone, with no empty state", async () => {
+    stubViewport(900);
     localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
     renderApp({ name: "library" });
     await screen.findByRole("region", { name: copy.library.title });
     expect(slot()).not.toHaveAttribute("data-hidden");
+    expect(screen.queryByRole("heading", { name: copy.library.chooseRecording })).toBeNull();
     expect(screen.getByRole("link", { name: copy.shell.library })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("button", { name: copy.shell.library })).toBeNull();
-    // Coming back to the list shows it again for the next recording too.
-    expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("0");
   });
 
   it("is a plain link below 1100px, where the workspace has one pane at a time", async () => {

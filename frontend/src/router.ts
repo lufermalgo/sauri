@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { copy } from "./copy/es";
 
 /** Portal routes. The path is the only source of truth; no tokens or content in the URL. */
@@ -125,7 +125,9 @@ function isLegacyMeetingUrl(route: Route): boolean {
 export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(readLocation);
 
-  useEffect(() => {
+  // A layout effect, so the listeners exist before the layout effects of the components above it:
+  // a `navigate` made there (the start redirect) reaches this hook before the first paint.
+  useLayoutEffect(() => {
     const sync = () => {
       const current = readLocation();
       if (isLegacyMeetingUrl(current) && current.name === "meeting") {
