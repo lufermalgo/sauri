@@ -10,25 +10,20 @@ afterEach(() => {
 });
 
 describe("PortalShell", () => {
-  it("navigates between library and upload without reloading", () => {
+  it("returns to the library from the upload route without reloading", () => {
     const listener = vi.fn();
     window.addEventListener("sauri:navigate", listener);
-    render(<PortalShell route={{ name: "library" }} onLogout={vi.fn()}>content</PortalShell>);
-
-    const upload = screen.getByRole("link", { name: copy.shell.upload });
-    expect(upload.getAttribute("href")).toBe("/upload");
-    fireEvent.click(upload);
-    expect(window.location.pathname).toBe("/upload");
+    render(<PortalShell route={{ name: "upload" }} onLogout={vi.fn()}>content</PortalShell>);
 
     fireEvent.click(screen.getByRole("link", { name: copy.shell.library }));
     expect(window.location.pathname).toBe("/");
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenCalledTimes(1);
     window.removeEventListener("sauri:navigate", listener);
   });
 
   it("leaves modified clicks to the browser", () => {
     render(<PortalShell route={{ name: "library" }} onLogout={vi.fn()}>content</PortalShell>);
-    const link = screen.getByRole("link", { name: copy.shell.upload });
+    const link = screen.getByRole("link", { name: copy.shell.library });
     // jsdom cannot navigate: record whether the component cancelled the browser default.
     let componentPrevented: boolean | null = null;
     const onWindowClick = (event: Event) => {
@@ -44,7 +39,7 @@ describe("PortalShell", () => {
 
   it("marks the active link and renders children inside main", () => {
     render(<PortalShell route={{ name: "upload" }} onLogout={vi.fn()}>hello body</PortalShell>);
-    expect(screen.getByRole("link", { name: copy.shell.upload }).getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByRole("link", { name: copy.shell.upload })).toBeNull();
     expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBeNull();
     expect(screen.getByRole("main").textContent).toBe("hello body");
   });
@@ -58,6 +53,6 @@ describe("PortalShell", () => {
     const bar = screen.getByRole("banner");
     expect(bar.querySelectorAll("button")).toHaveLength(1);
     const links = [...bar.querySelectorAll("a")].map((a) => a.getAttribute("href"));
-    expect(links).toEqual(["/", "/", "/upload"]);
+    expect(links).toEqual(["/", "/"]);
   });
 });
