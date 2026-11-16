@@ -12,6 +12,7 @@ import { answerEnginesApi } from "./engineApiStub";
 import { PortalShell } from "./PortalShell";
 import { SettingsView } from "./SettingsView";
 import { SIDEBAR_STORAGE_KEY } from "./useSidebar";
+import { t } from "../i18n";
 
 const owner = { name: "Ana Maria Perez", email: "ana@example.test" };
 const labels = copy.settings.categories;
@@ -337,7 +338,7 @@ describe("account", () => {
     expect(screen.getByText(owner.email)).toBeInTheDocument();
     expect(screen.getByText(copy.settings.account.note)).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.logout }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:logout") }));
     expect(onLogout).toHaveBeenCalledTimes(1);
   });
 
@@ -437,7 +438,7 @@ describe("appearance: side panel", () => {
     fireEvent.click(sidebarSwitch());
     expect(root.dataset.mode).toBe("rail");
 
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.sidebar.toggle }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:sidebar.toggle") }));
     expect(root.dataset.mode).toBe("full");
     expect(sidebarSwitch()).toHaveAttribute("aria-checked", "false");
   });
@@ -464,7 +465,7 @@ describe("settings inside the app shell", () => {
         </PortalShell>,
       );
     });
-    expect(screen.getByRole("button", { name: copy.shell.profile.settings })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: t("shell:profile.settings") })).toHaveAttribute("aria-current", "page");
     await waitFor(() => expect(screen.getByText(copy.settings.summaries.empty)).toBeInTheDocument());
   });
 });

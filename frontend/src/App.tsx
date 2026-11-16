@@ -4,13 +4,14 @@ import { LoginScreen } from "./components/LoginScreen";
 import { UploadView } from "./components/UploadView";
 import { PortalShell } from "./components/PortalShell";
 import { SettingsView } from "./components/SettingsView";
-import { copy } from "./copy/es";
 import { navigate, routePath, useRoute, type Route } from "./router";
 import { readLastMeetingId } from "./last-meeting";
 import { readSessionUser } from "./session-user";
 import "./styles/shell.css";
+import { useT } from "./i18n";
 
 export function App() {
+  const { t } = useT();
   // The route lives in the URL, so a protected deep link survives sign-in:
   // the login screen is rendered in place and the same route shows afterwards.
   const urlRoute = useRoute();
@@ -85,8 +86,8 @@ export function App() {
 
       {route.name === "notFound" && (
         <section className="shell-not-found" aria-labelledby="shell-not-found-title">
-          <h1 id="shell-not-found-title">{copy.shell.notFound.title}</h1>
-          <p>{copy.shell.notFound.description}</p>
+          <h1 id="shell-not-found-title">{t("shell:notFound.title")}</h1>
+          <p>{t("shell:notFound.description")}</p>
           <a
             href={routePath({ name: "library" })}
             onClick={(event) => {
@@ -95,7 +96,7 @@ export function App() {
               navigate({ name: "library" });
             }}
           >
-            {copy.shell.notFound.backToLibrary}
+            {t("shell:notFound.backToLibrary")}
           </a>
         </section>
       )}

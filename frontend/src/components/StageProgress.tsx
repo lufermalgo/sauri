@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { copy } from "../copy/es";
 import {
-  estimateProgress, expectedStageSeconds, formatElapsed, roundMinutes, secondsSince, type ActiveStage,
+  announceEstimate, estimateProgress, explainSummary, explainTranscription, expectedStageSeconds, formatElapsed, remainingText,
+  roundMinutes, secondsSince, type ActiveStage,
 } from "../processing-estimate";
 import { ProgressBar } from "./ui";
 import "../styles/processing.css";
+import { useT } from "../i18n";
 
 interface StageProgressProps {
   stage: ActiveStage;
@@ -54,7 +55,7 @@ function useNow(): number {
 export function StageProgress({
   stage, label, showHeadline = false, queued = false, audioSeconds, createdAt, stageStartedAt,
 }: StageProgressProps) {
-  const text = copy.processing;
+  const { t } = useT();
   const now = useNow();
   const [mountedAt] = useState(() => Date.now());
 
@@ -69,19 +70,19 @@ export function StageProgress({
   const estimate = estimateAt(now);
   const audioMinutes = typeof audioSeconds === "number" && audioSeconds > 0 ? roundMinutes(audioSeconds) : null;
   const stageMinutes = audioMinutes === null ? null : roundMinutes(expectedStageSeconds(audioSeconds as number)[stage]);
-  const explanation = estimate?.overtime ? text.explain.overtime
-    : queued ? text.explain.queued
-      : stage === "transcription" ? text.explain.transcription(audioMinutes, stageMinutes)
-        : stage === "speakers" ? text.explain.speakers : text.explain.summary(stageMinutes);
-  const remaining = estimate === null ? text.noEstimate
-    : estimate.overtime || estimate.remainingSeconds === null ? text.overtime
-      : estimate.remainingSeconds < 60 ? text.remainingUnderMinute : text.remaining(roundMinutes(estimate.remainingSeconds));
+  const explanation = estimate?.overtime ? t("processing:explain.overtime")
+    : queued ? t("processing:explain.queued")
+      : stage === "transcription" ? explainTranscription(audioMinutes, stageMinutes)
+        : stage === "speakers" ? t("processing:explain.speakers") : explainSummary(stageMinutes);
+  const remaining = estimate === null ? t("processing:noEstimate")
+    : estimate.overtime || estimate.remainingSeconds === null ? t("processing:overtime")
+      : estimate.remainingSeconds < 60 ? t("processing:remainingUnderMinute") : remainingText(roundMinutes(estimate.remainingSeconds));
   const showPercent = estimate !== null && !estimate.overtime;
 
   // The spoken estimate only changes every ANNOUNCE_EVERY_MS of wall clock.
   const announced = estimateAt(now - (now % ANNOUNCE_EVERY_MS));
-  const announcement = announced === null ? "" : announced.overtime ? text.overtime
-    : text.announce(label, announced.percent,
+  const announcement = announced === null ? "" : announced.overtime ? t("processing:overtime")
+    : announceEstimate(label, announced.percent,
       announced.remainingSeconds === null ? null : roundMinutes(announced.remainingSeconds));
 
   return (
@@ -94,16 +95,16 @@ export function StageProgress({
       ) : <p className="processing-explain">{explanation}</p>}
       <div className="processing-meter">
         <ProgressBar label={label} value={estimate === null ? undefined : estimate.percent}
-          valueText={showPercent ? text.percent(estimate.percent) : text.overtime} />
+          valueText={showPercent ? t("processing:percent", { value: estimate.percent }) : t("processing:overtime")} />
         <div className="processing-figures">
-          {showPercent && <span className="processing-percent">{text.percent(estimate.percent)}</span>}
-          <span className="processing-elapsed">{text.elapsed(formatElapsed(sinceUpload(now)))}</span>
+          {showPercent && <span className="processing-percent">{t("processing:percent", { value: estimate.percent })}</span>}
+          <span className="processing-elapsed">{t("processing:elapsed", { time: formatElapsed(sinceUpload(now)) })}</span>
           <span className={`processing-remaining${estimate?.overtime ? " processing-remaining--overtime" : ""}`}>
             {remaining}
           </span>
         </div>
       </div>
-      <p className="processing-hint">{text.leaveHint}</p>
+      <p className="processing-hint">{t("processing:leaveHint")}</p>
       <span className="processing-sr-only" aria-live="polite">{announcement}</span>
     </div>
   );

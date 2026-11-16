@@ -10,12 +10,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, cleanup, waitFor, fireEvent, act, within } from "@testing-library/react";
 import type { Transcript, SpeechTurn } from "@sauri/shared-types";
-import { copy } from "../copy/es";
 import { PlaybackController } from "./PlaybackController";
 import type { MeetingTranscript, TimedPassage } from "../api";
 
 import { TranscriptView } from "./TranscriptView";
 import * as api from "../api";
+import { t } from "../i18n";
+import { processingFailureText, remainingText } from "../processing-estimate";
 
 vi.mock("../api", () => ({
   getMeeting: vi.fn(),
@@ -89,7 +90,7 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" />);
 
-    await waitFor(() => screen.getByRole("heading", { name: copy.meeting.transcript }));
+    await waitFor(() => screen.getByRole("heading", { name: t("meeting:transcript") }));
 
     expect(await screen.findByRole("heading", { name: "Synthetic meeting" })).toBeVisible();
     expect(screen.getByText(new Date("2026-11-14T12:00:00Z").toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" }))).toBeVisible();
@@ -172,7 +173,7 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" />);
 
-    const seekButton = await screen.findByRole("button", { name: copy.transcript.playAt("00:00") });
+    const seekButton = await screen.findByRole("button", { name: t("transcript:playAt", { time: "00:00" }) });
     await waitFor(() => expect(seekButton).toBeEnabled());
     await screen.findByTestId("playback-audio");
     fireEvent.click(seekButton);
@@ -186,8 +187,8 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" />);
 
-    await waitFor(() => expect(processingCard()).toHaveTextContent(copy.processing.identifying));
-    expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
+    await waitFor(() => expect(processingCard()).toHaveTextContent(t("processing:identifying")));
+    expect(headerBadge()).toHaveTextContent(t("processing:identifying"));
   });
 
   it("renders a speaker label on every transcript row, including unresolved rows", async () => {
@@ -241,7 +242,7 @@ describe("TranscriptView — renders the transcript view", () => {
     await waitFor(() => expect(screen.getAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(1));
     const firstLabels = await screen.findAllByText("Synthetic Person A", { selector: '[data-testid="transcript-speaker-label"]' });
     const secondLabels = screen.getAllByText("Synthetic Person B", { selector: '[data-testid="transcript-speaker-label"]' });
-    const unresolvedLabels = screen.getAllByText(copy.transcript.legacyUnknownSpeaker, { selector: '[data-testid="transcript-speaker-label"]' });
+    const unresolvedLabels = screen.getAllByText(t("transcript:legacyUnknownSpeaker"), { selector: '[data-testid="transcript-speaker-label"]' });
     const labels = [...firstLabels, ...secondLabels, ...unresolvedLabels];
     expect(document.querySelector("details")).toBeNull();
     expect(labels).toHaveLength(3);
@@ -274,7 +275,7 @@ describe("TranscriptView — renders the transcript view", () => {
     render(<TranscriptView meetingId="r-1" />);
 
     const player = await screen.findByTestId("playback-audio");
-    const transcriptHeading = await screen.findByRole("heading", { name: copy.meeting.transcript });
+    const transcriptHeading = await screen.findByRole("heading", { name: t("meeting:transcript") });
     expect(
       player.compareDocumentPosition(transcriptHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -285,16 +286,16 @@ describe("TranscriptView — renders the transcript view", () => {
 
     render(<TranscriptView meetingId="r-1" />);
 
-    await waitFor(() => screen.getByText(copy.meeting.emptyTranscript));
+    await waitFor(() => screen.getByText(t("meeting:emptyTranscript")));
   });
 
   it("has no back link: the sidebar leads to the library", async () => {
     vi.spyOn(api, "getTranscript").mockResolvedValue(transcript([turn()]));
 
     render(<TranscriptView meetingId="r-1" />);
-    await waitFor(() => screen.getByRole("heading", { name: copy.meeting.transcript }));
+    await waitFor(() => screen.getByRole("heading", { name: t("meeting:transcript") }));
 
-    expect(screen.queryByRole("link", { name: copy.shell.notFound.backToLibrary })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: t("shell:notFound.backToLibrary") })).not.toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
@@ -306,7 +307,7 @@ describe("TranscriptView — renders the transcript view", () => {
     render(<TranscriptView meetingId="r-1" />);
 
     const alert = await waitFor(() => screen.getByRole("alert"));
-    expect(alert).toHaveTextContent(copy.meeting.transcriptLoadFailed);
+    expect(alert).toHaveTextContent(t("meeting:transcriptLoadFailed"));
   });
 });
 
@@ -323,25 +324,24 @@ function review(overrides: Partial<api.SpeakerReview> = {}): api.SpeakerReview {
   };
 }
 
-const sr = copy.speakerReview;
-const speakersName = new RegExp(`^${sr.heading}`);
+const speakersName = new RegExp(`^${t("speakerReview:heading")}`);
 
 /** The speakers icon in the player header (its name carries the pending count). */
 function speakersIcon() {
   return screen.findByRole("button", { name: speakersName });
 }
 
-const reviewLink = { name: new RegExp(`^(${copy.meeting.reviewSpeakers}|${copy.meeting.editSpeakers})$`) };
+const reviewLink = { name: new RegExp(`^(${t("meeting:reviewSpeakers")}|${t("meeting:editSpeakers")})$`) };
 
 /** Opens the speaker dialog from the header icon: icon, popover link, modal. */
 async function openReview() {
   fireEvent.click(await speakersIcon());
   fireEvent.click(await screen.findByRole("button", reviewLink));
-  return screen.findByRole("dialog", { name: sr.heading });
+  return screen.findByRole("dialog", { name: t("speakerReview:heading") });
 }
 
 function reviewConflict(): Error {
-  return Object.assign(new Error(sr.conflict), { reason: "conflict" });
+  return Object.assign(new Error(t("speakerReview:conflict")), { reason: "conflict" });
 }
 
 describe("TranscriptView — speaker review", () => {
@@ -359,16 +359,16 @@ describe("TranscriptView — speaker review", () => {
     loadReview().mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     const dialog = await openReview();
-    expect(await screen.findByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
-    expect(screen.getByText(sr.pending)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: t("transcript:numberedSpeaker", { number: "1" }) })).toBeDefined();
+    expect(screen.getByText(t("speakerReview:pending"))).toBeInTheDocument();
     const [generic, suggested] = within(dialog).getAllByRole("article");
     expect(within(generic).getByText("H1")).toBeInTheDocument();
-    expect(within(generic).getByText(sr.pendingState)).toBeInTheDocument();
+    expect(within(generic).getByText(t("speakerReview:pendingState"))).toBeInTheDocument();
     expect(within(suggested).getByText("K")).toBeInTheDocument();
-    expect(within(suggested).getByText(sr.suggestedState)).toBeInTheDocument();
-    for (const label of [copy.transcript.numberedSpeaker("1"), "Known Speaker"]) {
-      expect(screen.getByRole("button", { name: sr.listenTo(label) })).toBeDefined();
-      expect(screen.getByRole("button", { name: sr.editName(label) })).toBeEnabled();
+    expect(within(suggested).getByText(t("speakerReview:suggestedState"))).toBeInTheDocument();
+    for (const label of [t("transcript:numberedSpeaker", { number: "1" }), "Known Speaker"]) {
+      expect(screen.getByRole("button", { name: t("speakerReview:listenTo", { label }) })).toBeDefined();
+      expect(screen.getByRole("button", { name: t("speakerReview:editName", { label }) })).toBeEnabled();
     }
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     for (const name of ["Guardar", "Confirmar", "Corregir", "Escuchar"]) {
@@ -391,13 +391,13 @@ describe("TranscriptView — speaker review", () => {
     const play = vi.spyOn(PlaybackController.prototype, "playInterval").mockResolvedValue();
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    const button = await screen.findByRole("button", { name: sr.listenTo(copy.transcript.numberedSpeaker("1")) });
+    const button = await screen.findByRole("button", { name: t("speakerReview:listenTo", { label: t("transcript:numberedSpeaker", { number: "1" }) }) });
     await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     await waitFor(() => expect(play).toHaveBeenCalledWith(2000, 9000));
     // Speaker 2 only has one second of speech: still playable, with a warning.
-    expect(screen.getByRole("button", { name: sr.listenTo("Known Speaker") })).toBeEnabled();
-    expect(screen.getByText(sr.shortInterval)).toBeVisible();
+    expect(screen.getByRole("button", { name: t("speakerReview:listenTo", { label: "Known Speaker" }) })).toBeEnabled();
+    expect(screen.getByText(t("speakerReview:shortInterval"))).toBeVisible();
   });
 
   it("disables listening and explains why when the speaker has no usable stretch", async () => {
@@ -408,20 +408,20 @@ describe("TranscriptView — speaker review", () => {
     render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     await openReview();
-    expect(await screen.findByRole("button", { name: sr.listenTo(copy.transcript.numberedSpeaker("1")) })).toBeDisabled();
-    expect(screen.getByText(sr.noInterval)).toBeVisible();
+    expect(await screen.findByRole("button", { name: t("speakerReview:listenTo", { label: t("transcript:numberedSpeaker", { number: "1" }) }) })).toBeDisabled();
+    expect(screen.getByText(t("speakerReview:noInterval"))).toBeVisible();
   });
 
   /** Types a new name into the speaker's inline editor and commits it with Enter. */
   async function typeName(label: string, value: string) {
-    fireEvent.click(await screen.findByRole("button", { name: sr.editName(label) }));
-    const input = screen.getByRole("textbox", { name: sr.nameFor(label) });
+    fireEvent.click(await screen.findByRole("button", { name: t("speakerReview:editName", { label }) }));
+    const input = screen.getByRole("textbox", { name: t("speakerReview:nameFor", { label }) });
     fireEvent.change(input, { target: { value } });
     fireEvent.keyDown(input, { key: "Enter" });
   }
 
   it.each([
-    ["names a generic speaker as named", "speaker-1", copy.transcript.numberedSpeaker("1"), "named"],
+    ["names a generic speaker as named", "speaker-1", t("transcript:numberedSpeaker", { number: "1" }), "named"],
     ["renames a speaker that already had a name as corrected", "speaker-2", "Known Speaker", "corrected"],
   ] as const)("%s, with version and idempotency key", async (_title, speakerId, label, disposition) => {
     loadTranscript(); loadReview().mockResolvedValue(review());
@@ -440,13 +440,13 @@ describe("TranscriptView — speaker review", () => {
     const update = submit().mockResolvedValue(review({ items: [review().items[0], { ...review().items[1], disposition: "confirmed" }] }));
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    fireEvent.click(await screen.findByRole("button", { name: sr.acceptSuggestion("Known Speaker") }));
+    fireEvent.click(await screen.findByRole("button", { name: t("speakerReview:acceptSuggestion", { name: "Known Speaker" }) }));
     await waitFor(() => expect(update).toHaveBeenCalledWith("r-1", "revision-1", "speaker-2", {
       disposition: "confirmed", expectedVersion: 1, idempotencyKey: "key-1",
     }));
-    await waitFor(() => expect(screen.queryByRole("button", { name: sr.acceptSuggestion("Known Speaker") })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: t("speakerReview:acceptSuggestion", { name: "Known Speaker" }) })).not.toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "Known Speaker" })).toBeDefined();
-    expect(screen.getByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
+    expect(screen.getByRole("heading", { name: t("transcript:numberedSpeaker", { number: "1" }) })).toBeDefined();
   });
 
   it("leaves every pending generic speaker unnamed with the confirmed disposition and clears the pending dot", async () => {
@@ -467,18 +467,18 @@ describe("TranscriptView — speaker review", () => {
       ] });
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    expect(screen.getByRole("button", { name: copy.meeting.speakersButton(2) })).toHaveClass("ui-icon-button--alert");
-    fireEvent.click(await screen.findByRole("button", { name: sr.leaveUnnamed }));
+    expect(screen.getByRole("button", { name: t("meeting:speakersButtonPending", { count: 2 }) })).toHaveClass("ui-icon-button--alert");
+    fireEvent.click(await screen.findByRole("button", { name: t("speakerReview:leaveUnnamed") }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     expect(update.mock.calls.map(call => [call[2], call[3].disposition, call[3].label])).toEqual([
       ["speaker-1", "confirmed", undefined], ["speaker-2", "confirmed", undefined],
     ]);
-    await waitFor(() => expect(screen.getByRole("button", { name: copy.meeting.speakersButton(0) })).not.toHaveClass("ui-icon-button--alert"));
-    expect(screen.getByText(sr.complete)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: sr.leaveUnnamed })).not.toBeInTheDocument();
-    expect(screen.getAllByText(sr.unnamedState)).toHaveLength(2);
+    await waitFor(() => expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).not.toHaveClass("ui-icon-button--alert"));
+    expect(screen.getByText(t("speakerReview:complete"))).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("speakerReview:leaveUnnamed") })).not.toBeInTheDocument();
+    expect(screen.getAllByText(t("speakerReview:unnamedState"))).toHaveLength(2);
     // The generic labels stay as the names.
-    expect(screen.getByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
+    expect(screen.getByRole("heading", { name: t("transcript:numberedSpeaker", { number: "1" }) })).toBeDefined();
   });
 
   it("shows the chosen name on every turn of that speaker after saving", async () => {
@@ -498,13 +498,13 @@ describe("TranscriptView — speaker review", () => {
     }));
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    await typeName(copy.transcript.numberedSpeaker("1"), "Ana");
-    const panel = screen.getByRole("region", { name: copy.meeting.transcript });
+    await typeName(t("transcript:numberedSpeaker", { number: "1" }), "Ana");
+    const panel = screen.getByRole("region", { name: t("meeting:transcript") });
     await waitFor(() => expect(within(panel).getAllByText("Ana", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(2));
     expect(within(panel).getAllByText("Known Speaker", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Ana" })).toBeDefined();
     expect(within(screen.getByRole("heading", { name: "Ana" }).closest("article") as HTMLElement).getByText("A")).toBeInTheDocument();
-    expect(screen.getByText(sr.namedState)).toBeInTheDocument();
+    expect(screen.getByText(t("speakerReview:namedState"))).toBeInTheDocument();
   });
 
   it("reuses the idempotency key when the same name is retried after a failure", async () => {
@@ -512,10 +512,10 @@ describe("TranscriptView — speaker review", () => {
     const update = submit().mockRejectedValueOnce(new Error("Error 503")).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    await typeName(copy.transcript.numberedSpeaker("1"), "Ana");
+    await typeName(t("transcript:numberedSpeaker", { number: "1" }), "Ana");
     // The error shows next to the input, which stays open with the typed name.
-    expect(await screen.findByText(sr.saveFailed, { selector: "p" })).toBeInTheDocument();
-    const input = screen.getByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) });
+    expect(await screen.findByText(t("speakerReview:saveFailed"), { selector: "p" })).toBeInTheDocument();
+    const input = screen.getByRole("textbox", { name: t("speakerReview:nameFor", { label: t("transcript:numberedSpeaker", { number: "1" }) }) });
     expect(input).toHaveValue("Ana");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.keyDown(input, { key: "Enter" });
@@ -523,7 +523,7 @@ describe("TranscriptView — speaker review", () => {
     expect(update.mock.calls[0][3].idempotencyKey).toBe("key-1");
     expect(update.mock.calls[1][3].idempotencyKey).toBe("key-1");
 
-    fireEvent.click(screen.getByRole("button", { name: sr.acceptSuggestion("Known Speaker") }));
+    fireEvent.click(screen.getByRole("button", { name: t("speakerReview:acceptSuggestion", { name: "Known Speaker" }) }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(3));
     expect(update.mock.calls[2][3].idempotencyKey).toBe("key-2");
   });
@@ -533,9 +533,9 @@ describe("TranscriptView — speaker review", () => {
     const update = submit().mockRejectedValueOnce(reviewConflict()).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    await typeName(copy.transcript.numberedSpeaker("1"), "Ana");
-    expect((await screen.findByText(sr.conflict, { selector: "p" })).textContent).toBe(sr.conflict);
-    fireEvent.keyDown(screen.getByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) }), { key: "Enter" });
+    await typeName(t("transcript:numberedSpeaker", { number: "1" }), "Ana");
+    expect((await screen.findByText(t("speakerReview:conflict"), { selector: "p" })).textContent).toBe(t("speakerReview:conflict"));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: t("speakerReview:nameFor", { label: t("transcript:numberedSpeaker", { number: "1" }) }) }), { key: "Enter" });
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     expect(update.mock.calls[1][3].idempotencyKey).toBe("key-2");
   });
@@ -545,8 +545,8 @@ describe("TranscriptView — speaker review", () => {
     submit().mockRejectedValueOnce(new Error("Error 503"));
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    fireEvent.click(await screen.findByRole("button", { name: sr.acceptSuggestion("Known Speaker") }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(sr.saveFailed);
+    fireEvent.click(await screen.findByRole("button", { name: t("speakerReview:acceptSuggestion", { name: "Known Speaker" }) }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(t("speakerReview:saveFailed"));
   });
 
   it("saves two names edited back to back in order, so the last snapshot keeps both", async () => {
@@ -561,14 +561,14 @@ describe("TranscriptView — speaker review", () => {
       .mockResolvedValueOnce(both);
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    await typeName(copy.transcript.numberedSpeaker("1"), "Ana");
+    await typeName(t("transcript:numberedSpeaker", { number: "1" }), "Ana");
     await typeName("Known Speaker", "Bruno");
     expect(update).toHaveBeenCalledTimes(1);
     await act(async () => releaseFirst(first));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Bruno" })).toBeDefined());
     expect(screen.getByRole("heading", { name: "Ana" })).toBeDefined();
-    expect(screen.getByText(sr.complete)).toBeInTheDocument();
+    expect(screen.getByText(t("speakerReview:complete"))).toBeInTheDocument();
   });
 
   it("asks for the review again after remounting", async () => {
@@ -576,12 +576,12 @@ describe("TranscriptView — speaker review", () => {
     const load = loadReview().mockResolvedValue(review());
     const view = render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    expect(await screen.findByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
+    expect(await screen.findByRole("heading", { name: t("transcript:numberedSpeaker", { number: "1" }) })).toBeDefined();
     view.unmount();
     loadTranscript();
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    expect(await screen.findByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
+    expect(await screen.findByRole("heading", { name: t("transcript:numberedSpeaker", { number: "1" }) })).toBeDefined();
     expect(load).toHaveBeenCalledTimes(2);
   });
 
@@ -589,10 +589,10 @@ describe("TranscriptView — speaker review", () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    await screen.findByRole("button", { name: sr.editName(copy.transcript.numberedSpeaker("1")) });
-    const article = screen.getByRole("heading", { name: copy.transcript.numberedSpeaker("1") }).closest("article");
+    await screen.findByRole("button", { name: t("speakerReview:editName", { label: t("transcript:numberedSpeaker", { number: "1" }) }) });
+    const article = screen.getByRole("heading", { name: t("transcript:numberedSpeaker", { number: "1" }) }).closest("article");
     const buttons = within(article as HTMLElement).getAllByRole("button");
-    expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([sr.listenTo(copy.transcript.numberedSpeaker("1")), sr.editName(copy.transcript.numberedSpeaker("1"))]);
+    expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([t("speakerReview:listenTo", { label: t("transcript:numberedSpeaker", { number: "1" }) }), t("speakerReview:editName", { label: t("transcript:numberedSpeaker", { number: "1" }) })]);
     for (const button of buttons) expect(button.tagName).toBe("BUTTON");
   });
 });
@@ -628,14 +628,14 @@ describe("TranscriptView — attributed word turns", () => {
   it("shows backend speaker labels, null attribution, ambiguity and exact timestamp seeks", async () => {
     const seek = vi.spyOn(PlaybackController.prototype, "seekTo");
     render(<TranscriptView meetingId="r-1" />);
-    const panel = await screen.findByRole("region", { name: copy.meeting.transcript });
-    const button = await within(panel).findByRole("button", { name: copy.transcript.playAt("01:05") });
+    const panel = await screen.findByRole("region", { name: t("meeting:transcript") });
+    const button = await within(panel).findByRole("button", { name: t("transcript:playAt", { time: "01:05" }) });
     await screen.findByTestId("playback-audio");
     expect(within(panel).getAllByText("Speaker A")).toHaveLength(2);
-    expect(within(panel).getByText(copy.transcript.unknownSpeaker)).toBeVisible();
-    expect(within(panel).getAllByLabelText(copy.transcript.ambiguous)).toHaveLength(1);
-    expect(within(panel).getByRole("button", { name: copy.transcript.playAt("01:08") }))
-      .toHaveAccessibleDescription(new RegExp(copy.transcript.ambiguous));
+    expect(within(panel).getByText(t("transcript:unknownSpeaker"))).toBeVisible();
+    expect(within(panel).getAllByLabelText(t("transcript:ambiguous"))).toHaveLength(1);
+    expect(within(panel).getByRole("button", { name: t("transcript:playAt", { time: "01:08" }) }))
+      .toHaveAccessibleDescription(new RegExp(t("transcript:ambiguous")));
     expect(within(panel).getAllByRole("listitem")).toHaveLength(3);
     expect(screen.queryByText("Legacy segment must not be shown")).not.toBeInTheDocument();
     fireEvent.click(button);
@@ -646,7 +646,7 @@ describe("TranscriptView — attributed word turns", () => {
   it("highlights and follows the visible word turn using the actual media clock, including seeks and gaps", async () => {
     render(<TranscriptView meetingId="r-1" />);
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
-    const panel = screen.getByRole("region", { name: copy.meeting.transcript });
+    const panel = screen.getByRole("region", { name: t("meeting:transcript") });
     const rows = within(panel).getAllByRole("listitem");
     const scroll = vi.fn();
     Object.defineProperty(rows[1], "scrollIntoView", { value: scroll });
@@ -699,17 +699,17 @@ describe("TranscriptView — processing polling", () => {
 
   it("polls every five seconds from queued through transcription and identification to completion", async () => {
     await open();
-    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(copy.processing.queued)).toBeVisible();
+    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(t("processing:queued"))).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await advance(4999);
     expect(api.getMeeting).toHaveBeenCalledTimes(1);
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
     await advance(1);
     expect(api.getMeeting).toHaveBeenCalledTimes(2);
-    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(copy.processing.transcribing)).toBeVisible();
+    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(t("processing:transcribing"))).toBeVisible();
     vi.mocked(api.getTranscript).mockResolvedValue({ ...transcript([turn()]), presentation: "segments" });
     await advance();
-    expect(within(processingCard()).getByText(copy.processing.identifying)).toBeVisible();
+    expect(within(processingCard()).getByText(t("processing:identifying"))).toBeVisible();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
@@ -717,19 +717,19 @@ describe("TranscriptView — processing polling", () => {
     await advance();
     expect(screen.getByText("Synthetic attributed turn")).toBeVisible();
     // Speakers are done; the automatic summary request is expected next, so the header is not ready yet.
-    expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
-    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
+    expect(headerBadge()).toHaveTextContent(t("processing:summarizing"));
+    expect(screen.queryByText(t("meeting:ready"))).not.toBeInTheDocument();
     // The summary stage keeps only the stepper in the card: no headline, bar, figures or hint.
     const summaryCard = document.querySelector(".meeting-processing") as HTMLElement;
-    expect(summaryCard.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.steps.summary);
+    expect(summaryCard.querySelector("[aria-current='step']")).toHaveTextContent(t("processing:steps.summary"));
     expect(within(summaryCard).queryByRole("status")).not.toBeInTheDocument();
     expect(within(summaryCard).queryByRole("progressbar")).not.toBeInTheDocument();
     const calls = vi.mocked(api.getMeeting).mock.calls.length;
     await advance(10000);
     // No summary request appeared: the card briefly confirms completion, then goes away.
     expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status"))
-      .toHaveTextContent(copy.processing.completed);
-    expect(headerBadge()).toHaveTextContent(copy.meeting.ready);
+      .toHaveTextContent(t("processing:completed"));
+    expect(headerBadge()).toHaveTextContent(t("meeting:ready"));
     await advance(20000);
     expect(document.querySelector(".meeting-processing")).not.toBeInTheDocument();
     expect(api.getMeeting).toHaveBeenCalledTimes(calls);
@@ -778,8 +778,8 @@ describe("TranscriptView — processing polling", () => {
   it("stops on failure even without diarization and never invents a retry action", async () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" });
     await open();
-    expect(screen.getByText(new RegExp(copy.processing.failureCause("engine_failure")))).toBeVisible();
-    expect(screen.queryByRole("button", { name: copy.summary.retry })).not.toBeInTheDocument();
+    expect(screen.getByText(new RegExp(processingFailureText("engine_failure")))).toBeVisible();
+    expect(screen.queryByRole("button", { name: t("summary:retry") })).not.toBeInTheDocument();
     await advance(20000);
     expect(api.getMeeting).toHaveBeenCalledTimes(1);
     fireEvent(document, new Event("visibilitychange"));
@@ -789,10 +789,10 @@ describe("TranscriptView — processing polling", () => {
   it("explains a recording without speech, offers no retry and shows no transcript placeholder", async () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "no_speech_detected" });
     await open();
-    expect(screen.getByText(copy.processing.noSpeechTitle)).toBeVisible();
-    expect(screen.getByText(copy.processing.noSpeechBody)).toBeVisible();
-    expect(screen.queryByText(copy.processing.failureCause("engine_failure"))).not.toBeInTheDocument();
-    expect(screen.queryByText(copy.processing.transcriptPending)).not.toBeInTheDocument();
+    expect(screen.getByText(t("processing:noSpeechTitle"))).toBeVisible();
+    expect(screen.getByText(t("processing:noSpeechBody"))).toBeVisible();
+    expect(screen.queryByText(processingFailureText("engine_failure"))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("processing:transcriptPending"))).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reintentar/i })).not.toBeInTheDocument();
     await advance(20000);
     expect(api.getMeeting).toHaveBeenCalledTimes(1);
@@ -802,15 +802,15 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     await open();
-    expect(within(processingCard()).getByText(copy.processing.identifying)).toBeVisible();
-    expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
-    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
+    expect(within(processingCard()).getByText(t("processing:identifying"))).toBeVisible();
+    expect(headerBadge()).toHaveTextContent(t("processing:identifying"));
+    expect(screen.queryByText(t("meeting:ready"))).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await advance(4999);
     expect(api.getDiarization).toHaveBeenCalledTimes(1);
     await advance(1);
     expect(api.getDiarization).toHaveBeenCalledTimes(2);
-    expect(within(processingCard()).getByText(copy.processing.identifying)).toBeVisible();
+    expect(within(processingCard()).getByText(t("processing:identifying"))).toBeVisible();
 
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
     vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
@@ -820,7 +820,7 @@ describe("TranscriptView — processing polling", () => {
       vi.mocked(api.getDiarization).mock.invocationCallOrder.at(-1)!,
     );
     expect(screen.getByText("Synthetic attributed turn")).toBeVisible();
-    expect(screen.queryByText(copy.processing.identifying)).not.toBeInTheDocument();
+    expect(screen.queryByText(t("processing:identifying"))).not.toBeInTheDocument();
     await advance(20000);
     expect(api.getMeeting).toHaveBeenCalledTimes(3);
     expect(api.getDiarization).toHaveBeenCalledTimes(3);
@@ -836,26 +836,26 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getMeetingSummary).mockResolvedValue(null);
     await open();
     const card = () => document.querySelector(".meeting-processing") as HTMLElement | null;
-    expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.identifying);
+    expect(within(card()!).getByRole("status")).toHaveTextContent(t("processing:identifying"));
     // Transcription is completed, yet the header follows the stage still running.
-    expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
+    expect(headerBadge()).toHaveTextContent(t("processing:identifying"));
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [], assignments: [] });
     vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "pending" });
     await advance();
-    expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
-    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
-    expect(card()!.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.steps.summary);
+    expect(headerBadge()).toHaveTextContent(t("processing:summarizing"));
+    expect(screen.queryByText(t("meeting:ready"))).not.toBeInTheDocument();
+    expect(card()!.querySelector("[aria-current='step']")).toHaveTextContent(t("processing:steps.summary"));
     // The progress moved out of the card into the summary section.
     expect(within(card()!).queryByRole("progressbar")).not.toBeInTheDocument();
-    expect(within(card()!).queryByText(copy.processing.leaveHint)).not.toBeInTheDocument();
-    const summarySection = screen.getByRole("region", { name: copy.summary.tab });
-    expect(within(summarySection).getByRole("progressbar", { name: copy.processing.summarizing })).toBeInTheDocument();
-    expect(within(summarySection).getByText(copy.processing.leaveHint)).toBeVisible();
+    expect(within(card()!).queryByText(t("processing:leaveHint"))).not.toBeInTheDocument();
+    const summarySection = screen.getByRole("region", { name: t("summary:tab") });
+    expect(within(summarySection).getByRole("progressbar", { name: t("processing:summarizing") })).toBeInTheDocument();
+    expect(within(summarySection).getByText(t("processing:leaveHint"))).toBeVisible();
     // A running summary keeps the card past the short wait for the automatic request.
     vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "running" });
     await advance(15000);
-    expect(card()!.querySelector("[aria-current='step']")).toHaveTextContent(copy.processing.steps.summary);
-    expect(headerBadge()).toHaveTextContent(copy.processing.summarizing);
+    expect(card()!.querySelector("[aria-current='step']")).toHaveTextContent(t("processing:steps.summary"));
+    expect(headerBadge()).toHaveTextContent(t("processing:summarizing"));
     vi.mocked(api.getMeetingSummary).mockResolvedValue({
       summaryId: "s-1", meetingId: "r-1", templateId: "t", templateName: "General", templateVersion: 1,
       topic: "Synthetic topic", keyPoints: [], reviewState: "draft", generation: 1,
@@ -863,11 +863,11 @@ describe("TranscriptView — processing polling", () => {
     });
     vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "succeeded" });
     await advance();
-    expect(within(card()!).getByRole("status")).toHaveTextContent(copy.processing.completed);
-    expect(headerBadge()).toHaveTextContent(copy.meeting.ready);
+    expect(within(card()!).getByRole("status")).toHaveTextContent(t("processing:completed"));
+    expect(headerBadge()).toHaveTextContent(t("meeting:ready"));
     await advance(3000);
     expect(card()).toBeNull();
-    expect(headerBadge()).toHaveTextContent(copy.meeting.ready);
+    expect(headerBadge()).toHaveTextContent(t("meeting:ready"));
     // Final state: no poll of the meeting, speakers or summary request keeps running.
     const settledCalls = vi.mocked(api.getLatestSummaryRequest).mock.calls.length;
     await advance(30000);
@@ -880,11 +880,11 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     await open();
     await advance(15 * 60 * 1000 - 1);
-    expect(within(processingCard()).getByText(copy.processing.identifying)).toBeVisible();
+    expect(within(processingCard()).getByText(t("processing:identifying"))).toBeVisible();
     expect(api.getDiarization).toHaveBeenCalledTimes(180);
     await advance(1);
-    expect(screen.getByText(copy.processing.speakerWaitExpired)).toBeVisible();
-    expect(processingCard()).not.toHaveTextContent(copy.processing.identifying);
+    expect(screen.getByText(t("processing:speakerWaitExpired"))).toBeVisible();
+    expect(processingCard()).not.toHaveTextContent(t("processing:identifying"));
     expect(vi.getTimerCount()).toBe(0);
     await advance(20000);
     await act(async () => { fireEvent(document, new Event("visibilitychange")); });
@@ -908,7 +908,7 @@ describe("TranscriptView — processing polling", () => {
     hidden.mockReturnValue(true);
     fireEvent(document, new Event("visibilitychange"));
     await advance(15 * 60 * 1000 - 20000);
-    expect(screen.getByText(copy.processing.speakerWaitExpired)).toBeInTheDocument();
+    expect(screen.getByText(t("processing:speakerWaitExpired"))).toBeInTheDocument();
     hidden.mockReturnValue(false);
     await act(async () => { fireEvent(document, new Event("visibilitychange")); });
     expect(api.getMeeting).toHaveBeenCalledTimes(2);
@@ -925,7 +925,7 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getDiarization).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     await advance();
     await advance(15 * 60 * 1000 - 5000);
-    expect(screen.getByText(copy.processing.speakerWaitExpired)).toBeVisible();
+    expect(screen.getByText(t("processing:speakerWaitExpired"))).toBeVisible();
     vi.mocked(api.getTranscript).mockResolvedValue(attributedTranscript());
     await act(async () => { finish({ speakers: [], assignments: [] }); });
     expect(api.getTranscript).toHaveBeenCalledTimes(1);
@@ -945,7 +945,7 @@ describe("TranscriptView — processing polling", () => {
     await advance();
     expect(vi.getTimerCount()).toBe(0);
     await advance(15 * 60 * 1000);
-    expect(screen.queryByText(copy.processing.speakerWaitExpired)).not.toBeInTheDocument();
+    expect(screen.queryByText(t("processing:speakerWaitExpired"))).not.toBeInTheDocument();
     view.unmount();
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "completed" });
     const next = await open();
@@ -959,9 +959,9 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     vi.mocked(api.getDiarization).mockRejectedValue(new Error("Error 503"));
     await open();
-    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(copy.processing.transcribing)).toBeVisible();
-    expect(screen.getByText(copy.processing.diarizationFailed)).toBeVisible();
-    expect(screen.queryByText(copy.processing.identifying)).not.toBeInTheDocument();
+    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(t("processing:transcribing"))).toBeVisible();
+    expect(screen.getByText(t("processing:diarizationFailed"))).toBeVisible();
+    expect(screen.queryByText(t("processing:identifying"))).not.toBeInTheDocument();
   });
 
   it("does not overlap requests when a slow response outlasts the polling period", async () => {
@@ -983,13 +983,12 @@ describe("TranscriptView — processing polling", () => {
     vi.mocked(api.getMeeting).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     const view = await open();
     await act(async () => { view.rerender(<TranscriptView meetingId="new-meeting" />); });
-    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(copy.processing.queued)).toBeVisible();
+    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(t("processing:queued"))).toBeVisible();
     await act(async () => { finish({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" }); });
-    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(copy.processing.queued)).toBeVisible();
-    expect(screen.queryByText(new RegExp(copy.processing.failed))).not.toBeInTheDocument();
+    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByText(t("processing:queued"))).toBeVisible();
+    expect(screen.queryByText(new RegExp(t("processing:failed")))).not.toBeInTheDocument();
   });
 });
-
 
 describe("TranscriptView — Terra composition", () => {
   beforeEach(() => {
@@ -999,9 +998,9 @@ describe("TranscriptView — Terra composition", () => {
 
   it("keeps the transcript visible alongside exactly two side tabs without turn editing", async () => {
     render(<TranscriptView meetingId="r-1" />);
-    const panel = await screen.findByRole("region", { name: copy.meeting.transcript });
+    const panel = await screen.findByRole("region", { name: t("meeting:transcript") });
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map(tab => tab.textContent)).toEqual([copy.meeting.summaryTab, copy.meeting.chatTab]);
+    expect(tabs.map(tab => tab.textContent)).toEqual([t("meeting:summaryTab"), t("meeting:chatTab")]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
     expect(panel).toBeVisible();
     const rows = within(panel).getAllByRole("listitem");
@@ -1014,8 +1013,8 @@ describe("TranscriptView — Terra composition", () => {
     expect(within(panel).queryByRole("textbox")).not.toBeInTheDocument();
     expect(panel.querySelector("[contenteditable]" )).not.toBeInTheDocument();
     fireEvent.click(tabs[1]);
-    const chat = screen.getByRole("tabpanel", { name: copy.meeting.chatTab });
-    expect(chat).toHaveTextContent(copy.meeting.chatUnavailable);
+    const chat = screen.getByRole("tabpanel", { name: t("meeting:chatTab") });
+    expect(chat).toHaveTextContent(t("meeting:chatUnavailable"));
     expect(within(chat).queryByRole("textbox")).not.toBeInTheDocument();
     expect(within(chat).queryByRole("button")).not.toBeInTheDocument();
     expect(panel).toBeVisible();
@@ -1027,10 +1026,10 @@ describe("TranscriptView — Terra composition", () => {
   it("keeps transcript-following active even when the chat tab is selected", async () => {
     render(<TranscriptView meetingId="r-1" />);
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
-    const rows = within(screen.getByRole("region", { name: copy.meeting.transcript })).getAllByRole("listitem");
+    const rows = within(screen.getByRole("region", { name: t("meeting:transcript") })).getAllByRole("listitem");
     const scroll = vi.fn();
     Object.defineProperty(rows[1], "scrollIntoView", { value: scroll });
-    fireEvent.click(screen.getByRole("tab", { name: copy.meeting.chatTab }));
+    fireEvent.click(screen.getByRole("tab", { name: t("meeting:chatTab") }));
     audio.currentTime = 68.25;
     fireEvent.timeUpdate(audio);
     expect(rows[1]).toHaveAttribute("aria-current", "true");
@@ -1041,12 +1040,11 @@ describe("TranscriptView — Terra composition", () => {
   it("reports unavailable metadata without inventing a title or a date", async () => {
     vi.mocked(api.listMeetings).mockRejectedValueOnce(new Error("Synthetic failure"));
     render(<TranscriptView meetingId="r-1" />);
-    expect(await screen.findByText(copy.meeting.metadataFailed)).toBeVisible();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(copy.meeting.untitled);
+    expect(await screen.findByText(t("meeting:metadataFailed"))).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(t("meeting:untitled"));
     expect(document.querySelector("time")).not.toBeInTheDocument();
   });
 });
-
 
 describe("TranscriptView — visual QA refinements", () => {
   beforeEach(() => {
@@ -1059,16 +1057,16 @@ describe("TranscriptView — visual QA refinements", () => {
     const play = vi.spyOn(PlaybackController.prototype, "resume");
     render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
-    const panel = screen.getByRole("region", { name: copy.meeting.transcript });
+    const panel = screen.getByRole("region", { name: t("meeting:transcript") });
     const row = within(panel).getAllByRole("listitem")[0];
-    const action = within(row).getByRole("button", { name: copy.transcript.playAt("01:05") });
+    const action = within(row).getByRole("button", { name: t("transcript:playAt", { time: "01:05" }) });
     expect(action.tagName).toBe("BUTTON");
     expect(action).toHaveAccessibleDescription("Speaker A Synthetic attributed turn");
     expect(within(row).getAllByRole("button")).toHaveLength(1);
     expect(action.querySelector(".meeting-turn-meta .meeting-timestamp")).toHaveTextContent("01:05");
     expect(action.querySelector(".meeting-turn-meta .meeting-speaker")).toHaveTextContent("Speaker A");
     expect(action.querySelector(".meeting-turn-text")).toHaveTextContent("Synthetic attributed turn");
-    expect(action.textContent).not.toContain(copy.transcript.play);
+    expect(action.textContent).not.toContain(t("transcript:play"));
     action.focus();
     expect(action).toHaveFocus();
     fireEvent.click(within(action).getByText("Synthetic attributed turn"));
@@ -1089,7 +1087,7 @@ describe("TranscriptView — visual QA refinements", () => {
     vi.mocked(api.getTranscript).mockResolvedValue(untimed as unknown as MeetingTranscript);
     render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
-    const panel = screen.getByRole("region", { name: copy.meeting.transcript });
+    const panel = screen.getByRole("region", { name: t("meeting:transcript") });
     const row = within(panel).getAllByRole("listitem")[0];
     expect(within(row).getByRole("button")).toBeDisabled();
     expect(within(row).getByText("Synthetic attributed turn")).toBeVisible();
@@ -1109,9 +1107,9 @@ describe("TranscriptView — visual QA refinements", () => {
     await screen.findByTestId("playback-audio");
     const labels = screen.getAllByTestId("transcript-speaker-label");
     expect(labels).toHaveLength(1);
-    labels.forEach(label => expect(label).toHaveTextContent(copy.transcript.numberedSpeaker("4")));
+    labels.forEach(label => expect(label).toHaveTextContent(t("transcript:numberedSpeaker", { number: "4" })));
     expect(data.turns[0].speakerLabel).toBe("Speaker 4");
-    const row = within(screen.getByRole("region", { name: copy.meeting.transcript })).getByRole("listitem");
+    const row = within(screen.getByRole("region", { name: t("meeting:transcript") })).getByRole("listitem");
     expect(row.style.getPropertyValue("--meeting-speaker")).toBe("var(--ds-speaker-4)");
   });
 
@@ -1129,7 +1127,7 @@ describe("TranscriptView — visual QA refinements", () => {
     expect(await screen.findByRole("heading", { name: "Speaker 4" })).toBeVisible();
     const labels = screen.getAllByTestId("transcript-speaker-label");
     labels.forEach(label => expect(label).toHaveTextContent("Speaker 4"));
-    expect(screen.getByRole("button", { name: sr.editName("Speaker 4") })).toBeVisible();
+    expect(screen.getByRole("button", { name: t("speakerReview:editName", { label: "Speaker 4" }) })).toBeVisible();
   });
 
   it.each(["Speaker A", "Speaker4", "Speaker 4 Smith"])("preserves the backend name %s", async label => {
@@ -1143,7 +1141,7 @@ describe("TranscriptView — visual QA refinements", () => {
 
   it("moves completion to a success badge beside the date without a full-width status block", async () => {
     render(<TranscriptView meetingId="r-1" />);
-    const badge = await screen.findByText(copy.meeting.ready);
+    const badge = await screen.findByText(t("meeting:ready"));
     expect(badge).toHaveClass("ui-status-badge--success");
     expect(badge.parentElement?.querySelector("time")).toHaveAttribute("datetime", "2026-11-14T12:00:00Z");
     expect(document.querySelector(".meeting-processing")).not.toBeInTheDocument();
@@ -1152,18 +1150,18 @@ describe("TranscriptView — visual QA refinements", () => {
   it("preserves the actual processing text in a soft card until completed", async () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
     render(<TranscriptView meetingId="r-1" />);
-    await screen.findAllByText(copy.processing.transcribing);
-    expect(document.querySelector(".meeting-processing")).toHaveTextContent(copy.processing.transcribing);
-    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
+    await screen.findAllByText(t("processing:transcribing"));
+    expect(document.querySelector(".meeting-processing")).toHaveTextContent(t("processing:transcribing"));
+    expect(screen.queryByText(t("meeting:ready"))).not.toBeInTheDocument();
   });
 
   it("does not hide ongoing speaker identification when ASR is already completed", async () => {
     vi.mocked(api.getDiarization).mockRejectedValue(new Error("Error 404"));
     render(<TranscriptView meetingId="r-1" />);
-    await waitFor(() => expect(processingCard()).toHaveTextContent(copy.processing.identifying));
-    expect(headerBadge()).toHaveTextContent(copy.processing.identifying);
+    await waitFor(() => expect(processingCard()).toHaveTextContent(t("processing:identifying")));
+    expect(headerBadge()).toHaveTextContent(t("processing:identifying"));
     expect(headerBadge()).toHaveClass("ui-status-badge--progress");
-    expect(screen.queryByText(copy.meeting.ready)).not.toBeInTheDocument();
+    expect(screen.queryByText(t("meeting:ready"))).not.toBeInTheDocument();
   });
 });
 
@@ -1177,18 +1175,18 @@ describe("TranscriptView — redesigned meeting", () => {
     const pending = review({ items: [review().items[0]], labelsBySpeakerId: { "speaker-1": "Speaker 1" } });
     vi.mocked(api.getSpeakerReview).mockResolvedValue(pending);
     render(<TranscriptView meetingId="r-1" />);
-    const icon = await screen.findByRole("button", { name: copy.meeting.speakersButton(1) });
+    const icon = await screen.findByRole("button", { name: t("meeting:speakersButtonPending", { count: 1 }) });
     expect(icon).toHaveClass("ui-icon-button--alert");
     expect(icon).toHaveAttribute("aria-haspopup", "dialog");
     expect(icon).toHaveAttribute("aria-expanded", "false");
     expect(icon.closest(".meeting-header")).not.toBeNull();
     // The wide banner is gone: neither its text nor its link is on the page until the popover opens.
-    expect(screen.queryByText(copy.meeting.pendingSpeakers(1))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("meeting:pendingSpeakers", { count: 1 }))).not.toBeInTheDocument();
     expect(screen.queryByRole("button", reviewLink)).not.toBeInTheDocument();
     expect(document.querySelector(".meeting-pending-speakers")).toBeNull();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.queryByText(sr.pendingState)).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) })).not.toBeInTheDocument();
+    expect(screen.queryByText(t("speakerReview:pendingState"))).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: t("speakerReview:nameFor", { label: t("transcript:numberedSpeaker", { number: "1" }) }) })).not.toBeInTheDocument();
   });
 
   it("opens a popover with the pending message and the review link on click, not on hover", async () => {
@@ -1198,20 +1196,20 @@ describe("TranscriptView — redesigned meeting", () => {
     fireEvent.mouseEnter(icon);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(icon);
-    const popover = screen.getByRole("dialog", { name: copy.meeting.speakersPanel });
+    const popover = screen.getByRole("dialog", { name: t("meeting:speakersPanel") });
     expect(icon).toHaveAttribute("aria-expanded", "true");
-    expect(within(popover).getByText(copy.meeting.pendingSpeakers(2))).toBeVisible();
-    expect(within(popover).getByRole("button", { name: copy.meeting.reviewSpeakers })).toHaveFocus();
+    expect(within(popover).getByText(t("meeting:pendingSpeakers", { count: 2 }))).toBeVisible();
+    expect(within(popover).getByRole("button", { name: t("meeting:reviewSpeakers") })).toHaveFocus();
   });
 
   it("opens the speaker modal from the popover link and closes the popover", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     fireEvent.click(await speakersIcon());
-    fireEvent.click(screen.getByRole("button", { name: copy.meeting.reviewSpeakers }));
-    expect(await screen.findByRole("dialog", { name: sr.heading })).toHaveAttribute("aria-modal", "true");
-    expect(screen.queryByRole("dialog", { name: copy.meeting.speakersPanel })).not.toBeInTheDocument();
-    expect(screen.queryByText(copy.meeting.pendingSpeakers(2))).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:reviewSpeakers") }));
+    expect(await screen.findByRole("dialog", { name: t("speakerReview:heading") })).toHaveAttribute("aria-modal", "true");
+    expect(screen.queryByRole("dialog", { name: t("meeting:speakersPanel") })).not.toBeInTheDocument();
+    expect(screen.queryByText(t("meeting:pendingSpeakers", { count: 2 }))).not.toBeInTheDocument();
   });
 
   it.each([
@@ -1222,7 +1220,7 @@ describe("TranscriptView — redesigned meeting", () => {
     render(<TranscriptView meetingId="r-1" />);
     const icon = await speakersIcon();
     fireEvent.click(icon);
-    expect(screen.getByRole("dialog", { name: copy.meeting.speakersPanel })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: t("meeting:speakersPanel") })).toBeInTheDocument();
     close(icon);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(icon).toHaveAttribute("aria-expanded", "false");
@@ -1239,26 +1237,26 @@ describe("TranscriptView — redesigned meeting", () => {
     render(<TranscriptView meetingId="r-1" />);
     const dialog = await openReview();
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(within(dialog).getByText(sr.pendingState)).toBeVisible();
-    fireEvent.click(within(dialog).getByRole("button", { name: sr.editName(copy.transcript.numberedSpeaker("1")) }));
-    const input = within(dialog).getByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) });
+    expect(within(dialog).getByText(t("speakerReview:pendingState"))).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("speakerReview:editName", { label: t("transcript:numberedSpeaker", { number: "1" }) }) }));
+    const input = within(dialog).getByRole("textbox", { name: t("speakerReview:nameFor", { label: t("transcript:numberedSpeaker", { number: "1" }) }) });
     fireEvent.change(input, { target: { value: "Luc\u00eda" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(screen.getByRole("button", { name: copy.meeting.speakersButton(0) })).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: copy.meeting.speakersButton(0) })).not.toHaveClass("ui-icon-button--alert");
+    await waitFor(() => expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).not.toHaveClass("ui-icon-button--alert");
     // The dialog stays until the user closes it.
-    expect(screen.getByRole("dialog", { name: sr.heading })).toBeInTheDocument();
-    expect(within(dialog).getByText(sr.namedState)).toBeVisible();
+    expect(screen.getByRole("dialog", { name: t("speakerReview:heading") })).toBeInTheDocument();
+    expect(within(dialog).getByText(t("speakerReview:namedState"))).toBeVisible();
     expect(within(dialog).getByText("L")).toBeVisible();
-    expect(within(dialog).getByText(sr.complete)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: sr.close }));
+    expect(within(dialog).getByText(t("speakerReview:complete"))).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("speakerReview:close") }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // The icon stays so the review can be reopened, and it takes the focus back.
-    expect(screen.getByRole("button", { name: copy.meeting.speakersButton(0) })).toHaveFocus();
+    expect(screen.getByRole("button", { name: t("meeting:speakersButton") })).toHaveFocus();
   });
 
   it.each([
-    ["the close button", () => fireEvent.click(screen.getByRole("button", { name: sr.close }))],
+    ["the close button", () => fireEvent.click(screen.getByRole("button", { name: t("speakerReview:close") }))],
     ["Escape", () => fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" })],
     ["a click on the backdrop", () => {
       const backdrop = document.querySelector(".ui-modal-backdrop")!;
@@ -1269,11 +1267,11 @@ describe("TranscriptView — redesigned meeting", () => {
     render(<TranscriptView meetingId="r-1" />);
     const opener = await speakersIcon();
     await openReview();
-    expect(screen.getByRole("button", { name: sr.close })).toHaveFocus();
+    expect(screen.getByRole("button", { name: t("speakerReview:close") })).toHaveFocus();
     close();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(opener).toHaveFocus();
-    expect(opener).toHaveAccessibleName(copy.meeting.speakersButton(2));
+    expect(opener).toHaveAccessibleName(t("meeting:speakersButtonPending", { count: 2 }));
   });
 
   it("stops an excerpt that is playing when the dialog closes", async () => {
@@ -1290,21 +1288,21 @@ describe("TranscriptView — redesigned meeting", () => {
     render(<TranscriptView meetingId="r-1" />);
     await screen.findByTestId("playback-audio");
     await openReview();
-    const first = copy.transcript.numberedSpeaker("1");
-    const listen = screen.getByRole("button", { name: sr.listenTo(first) });
+    const first = t("transcript:numberedSpeaker", { number: "1" });
+    const listen = screen.getByRole("button", { name: t("speakerReview:listenTo", { label: first }) });
     await waitFor(() => expect(listen).toBeEnabled());
     fireEvent.click(listen);
     await waitFor(() => expect(play).toHaveBeenCalledWith(0, 9000));
     // While playing, the same button stops it.
     expect(listen).toHaveAttribute("aria-pressed", "true");
     // One excerpt at a time: starting another speaker moves the pressed state.
-    const other = screen.getByRole("button", { name: sr.listenTo("Known Speaker") });
+    const other = screen.getByRole("button", { name: t("speakerReview:listenTo", { label: "Known Speaker" }) });
     fireEvent.click(other);
     await waitFor(() => expect(play).toHaveBeenLastCalledWith(9000, 20000));
     expect(other).toHaveAttribute("aria-pressed", "true");
     expect(listen).toHaveAttribute("aria-pressed", "false");
     pause.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: sr.close }));
+    fireEvent.click(screen.getByRole("button", { name: t("speakerReview:close") }));
     expect(pause).toHaveBeenCalledTimes(1);
   });
 
@@ -1315,7 +1313,7 @@ describe("TranscriptView — redesigned meeting", () => {
     await screen.findByTestId("playback-audio");
     await openReview();
     pause.mockClear();
-    fireEvent.click(screen.getByRole("button", { name: sr.close }));
+    fireEvent.click(screen.getByRole("button", { name: t("speakerReview:close") }));
     expect(pause).not.toHaveBeenCalled();
   });
 
@@ -1325,15 +1323,15 @@ describe("TranscriptView — redesigned meeting", () => {
       { ...review().items[0], speakerId: "speaker-3", currentLabel: "Mario", disposition: "confirmed" },
     ] }));
     render(<TranscriptView meetingId="r-1" />);
-    await screen.findByRole("region", { name: copy.meeting.transcript });
-    const icon = await screen.findByRole("button", { name: copy.meeting.speakersButton(0) });
+    await screen.findByRole("region", { name: t("meeting:transcript") });
+    const icon = await screen.findByRole("button", { name: t("meeting:speakersButton") });
     expect(icon).not.toHaveClass("ui-icon-button--alert");
-    expect(screen.queryByText(sr.namedState)).not.toBeInTheDocument();
+    expect(screen.queryByText(t("speakerReview:namedState"))).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(icon);
-    const popover = screen.getByRole("dialog", { name: copy.meeting.speakersPanel });
-    expect(within(popover).getByText(copy.meeting.speakersAllNamed)).toBeVisible();
-    expect(within(popover).getByRole("button", { name: copy.meeting.editSpeakers })).toBeVisible();
+    const popover = screen.getByRole("dialog", { name: t("meeting:speakersPanel") });
+    expect(within(popover).getByText(t("meeting:speakersAllNamed"))).toBeVisible();
+    expect(within(popover).getByRole("button", { name: t("meeting:editSpeakers") })).toBeVisible();
   });
 
   it("says some speakers were left unnamed when the review is done with generic labels", async () => {
@@ -1343,28 +1341,28 @@ describe("TranscriptView — redesigned meeting", () => {
         { ...review().items[1], disposition: "named" },
       ] }));
     render(<TranscriptView meetingId="r-1" />);
-    const icon = await screen.findByRole("button", { name: copy.meeting.speakersButton(0) });
+    const icon = await screen.findByRole("button", { name: t("meeting:speakersButton") });
     expect(icon).not.toHaveClass("ui-icon-button--alert");
     fireEvent.click(icon);
-    expect(within(screen.getByRole("dialog", { name: copy.meeting.speakersPanel })).getByText(copy.meeting.speakersSomeUnnamed)).toBeVisible();
+    expect(within(screen.getByRole("dialog", { name: t("meeting:speakersPanel") })).getByText(t("meeting:speakersSomeUnnamed"))).toBeVisible();
   });
 
   it("renders no speakers icon without review data, without speakers or when there was no speech", async () => {
     vi.mocked(api.getSpeakerReview).mockRejectedValue(new Error("Error 404"));
     const { unmount } = render(<TranscriptView meetingId="r-1" />);
-    await screen.findByRole("region", { name: copy.meeting.transcript });
+    await screen.findByRole("region", { name: t("meeting:transcript") });
     expect(screen.queryByRole("button", { name: speakersName })).not.toBeInTheDocument();
     unmount();
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review({ items: [], labelsBySpeakerId: {} }));
     render(<TranscriptView meetingId="r-1" />);
-    await screen.findByRole("region", { name: copy.meeting.transcript });
+    await screen.findByRole("region", { name: t("meeting:transcript") });
     expect(screen.queryByRole("button", { name: speakersName })).not.toBeInTheDocument();
     cleanup();
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "no_speech_detected" });
     render(<TranscriptView meetingId="r-1" />);
-    expect(await screen.findByText(copy.processing.noSpeechTitle)).toBeVisible();
+    expect(await screen.findByText(t("processing:noSpeechTitle"))).toBeVisible();
     expect(screen.queryByRole("button", { name: speakersName })).not.toBeInTheDocument();
   });
 
@@ -1372,23 +1370,23 @@ describe("TranscriptView — redesigned meeting", () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    const first = copy.transcript.numberedSpeaker("1");
+    const first = t("transcript:numberedSpeaker", { number: "1" });
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: sr.editName(first) }));
+    fireEvent.click(await screen.findByRole("button", { name: t("speakerReview:editName", { label: first }) }));
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
-    expect(screen.getByRole("textbox", { name: sr.nameFor(first) })).toHaveValue(first);
-    expect(screen.getByRole("button", { name: sr.editName("Known Speaker") })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: t("speakerReview:nameFor", { label: first }) })).toHaveValue(first);
+    expect(screen.getByRole("button", { name: t("speakerReview:editName", { label: "Known Speaker" }) })).toBeEnabled();
     expect(screen.getByRole("heading", { name: "Known Speaker" })).toBeVisible();
   });
 
   it("disables transcript following without disabling active highlighting", async () => {
     render(<TranscriptView meetingId="r-1" />);
     const audio = await screen.findByTestId("playback-audio") as HTMLAudioElement;
-    const panel = screen.getByRole("region", { name: copy.meeting.transcript });
+    const panel = screen.getByRole("region", { name: t("meeting:transcript") });
     const rows = within(panel).getAllByRole("listitem");
     const rowScroll = vi.fn();
     Object.defineProperty(rows[1], "scrollIntoView", { value: rowScroll });
-    const follow = screen.getByRole("checkbox", { name: copy.meeting.followPlayback });
+    const follow = screen.getByRole("checkbox", { name: t("meeting:followPlayback") });
     expect(follow).toBeChecked();
     fireEvent.click(follow);
     audio.currentTime = 68.25;
@@ -1403,7 +1401,7 @@ describe("TranscriptView — redesigned meeting", () => {
     let finish!: (data: MeetingTranscript) => void;
     vi.mocked(api.getTranscript).mockReturnValue(new Promise(resolve => { finish = resolve; }));
     const { container } = render(<TranscriptView meetingId="r-1" />);
-    expect(screen.getByRole("status")).toHaveTextContent(copy.meeting.opening);
+    expect(screen.getByRole("status")).toHaveTextContent(t("meeting:opening"));
     expect(container.querySelector(".meeting-playback-card .meeting-loading-heading")).toBeInTheDocument();
     for (const selector of [".meeting-playback-card", ".meeting-transcript", ".meeting-side-column"]) {
       expect(container.querySelector(`${selector} .ui-skeleton`)).toBeInTheDocument();
@@ -1411,25 +1409,25 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(container.querySelector(".meeting-body")).toHaveAttribute("aria-hidden", "true");
     await waitFor(() => expect(api.getTranscript).toHaveBeenCalled());
     await act(async () => { finish(attributedTranscript()); });
-    expect(screen.queryByText(copy.meeting.opening)).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: copy.meeting.transcript })).toBeVisible();
+    expect(screen.queryByText(t("meeting:opening"))).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: t("meeting:transcript") })).toBeVisible();
   });
 
   it("keeps ghost turns and an estimated, labelled processing progress when no transcript exists yet", async () => {
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
     render(<TranscriptView meetingId="r-1" />);
-    const panel = await screen.findByRole("region", { name: copy.meeting.transcript });
-    expect(within(panel).getByText(copy.meeting.transcriptPlaceholder)).toBeVisible();
-    expect(within(panel).getByText(copy.processing.transcriptPending)).toBeVisible();
+    const panel = await screen.findByRole("region", { name: t("meeting:transcript") });
+    expect(within(panel).getByText(t("meeting:transcriptPlaceholder"))).toBeVisible();
+    expect(within(panel).getByText(t("processing:transcriptPending"))).toBeVisible();
     expect(panel.querySelector(".meeting-transcript-skeleton")).toHaveAttribute("aria-hidden", "true");
     expect(panel.querySelectorAll(".meeting-skeleton-turn")).toHaveLength(3);
     // The 180 s recording allows an honest estimate: determinate, capped and marked as estimated.
-    const bar = screen.getByRole("progressbar", { name: copy.processing.transcribing });
+    const bar = screen.getByRole("progressbar", { name: t("processing:transcribing") });
     expect(Number(bar.getAttribute("aria-valuenow"))).toBeLessThanOrEqual(95);
     expect(document.querySelector(".processing-remaining")?.textContent).toMatch(
-      new RegExp(`${copy.processing.remainingUnderMinute}|${copy.processing.remaining(1)}|${copy.processing.remaining(2)}|${copy.processing.overtime}`));
-    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status")).toHaveTextContent(copy.processing.transcribing);
+      new RegExp(`${t("processing:remainingUnderMinute")}|${remainingText(1)}|${remainingText(2)}|${t("processing:overtime")}`));
+    expect(within(document.querySelector(".meeting-processing") as HTMLElement).getByRole("status")).toHaveTextContent(t("processing:transcribing"));
   });
 
   it("lays the meeting out as a header strip over panes: player above transcript, notes beside them", async () => {
@@ -1447,15 +1445,15 @@ describe("TranscriptView — redesigned meeting", () => {
     expect(main.querySelector(".meeting-transcript > .meeting-transcript-body")).not.toBeNull();
     expect(body.querySelector(".meeting-side-column .meeting-sidebar [role=tablist]")).not.toBeNull();
     expect(document.querySelector(".meeting-notices")).toBeNull();
-    expect(screen.queryByText(copy.meeting.pendingSpeakers(2))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("meeting:pendingSpeakers", { count: 2 }))).not.toBeInTheDocument();
     expect(body.querySelector(".meeting-speaker-review")).toBeNull();
-    expect(screen.queryByRole("region", { name: sr.heading })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: t("speakerReview:heading") })).not.toBeInTheDocument();
   });
 
   it("keeps the follow-playback toggle in the transcript pane header, not in the scrolling body", async () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     render(<TranscriptView meetingId="r-1" />);
-    const follow = await screen.findByRole("checkbox", { name: copy.meeting.followPlayback });
+    const follow = await screen.findByRole("checkbox", { name: t("meeting:followPlayback") });
     expect(follow.closest(".meeting-transcript-heading")).not.toBeNull();
     expect(follow.closest(".meeting-transcript-body")).toBeNull();
   });
@@ -1479,8 +1477,8 @@ describe("TranscriptView — meeting header strip", () => {
     expect(title).toHaveTextContent("Synthetic meeting");
     expect(title).toHaveAttribute("title", "Synthetic meeting");
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(within(header).getByRole("button", { name: copy.meeting.download })).toBeVisible();
-    expect(within(header).getByRole("button", { name: copy.meeting.moreActions })).toBeVisible();
+    expect(within(header).getByRole("button", { name: t("meeting:download") })).toBeVisible();
+    expect(within(header).getByRole("button", { name: t("meeting:moreActions") })).toBeVisible();
     expect(header.querySelector("time")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /biblioteca/i })).not.toBeInTheDocument();
     // The strip leads the view, above the player, the processing strip and the panes.
@@ -1494,12 +1492,12 @@ describe("TranscriptView — meeting header strip", () => {
     vi.mocked(api.getDiarization).mockResolvedValue({ speakers: [{ id: "s1", label: "Speaker 1", sequence: 1 }], assignments: [] });
     const view = await openCard();
     const header = expectHeaderStrip(view);
-    expect(await within(header).findByText(copy.meeting.ready)).toBeVisible();
-    expect(within(header).getByText(copy.meeting.speakerCount(1))).toBeVisible();
+    expect(await within(header).findByText(t("meeting:ready"))).toBeVisible();
+    expect(within(header).getByText(t("meeting:speakerCount", { count: 1 }))).toBeVisible();
     expect(within(header).getByText("03:00")).toBeVisible();
-    const player = screen.getByRole("region", { name: copy.meeting.playback });
+    const player = screen.getByRole("region", { name: t("meeting:playback") });
     expect(player.querySelector("video")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { level: 2, name: copy.meeting.playback })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2, name: t("meeting:playback") })).not.toBeInTheDocument();
   });
 
   it("shows the header with an audio-only recording", async () => {
@@ -1507,7 +1505,7 @@ describe("TranscriptView — meeting header strip", () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     const view = await openCard();
     expectHeaderStrip(view);
-    const player = await screen.findByRole("region", { name: copy.meeting.playback });
+    const player = await screen.findByRole("region", { name: t("meeting:playback") });
     expect(player.querySelector("audio")).toBeInTheDocument();
     expect(player.querySelector("video")).not.toBeInTheDocument();
   });
@@ -1517,9 +1515,9 @@ describe("TranscriptView — meeting header strip", () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "transcribing" });
     const view = await openCard();
     const header = expectHeaderStrip(view);
-    expect(within(header).getByText(copy.processing.transcribing)).toBeVisible();
-    const player = await screen.findByRole("region", { name: copy.meeting.playback });
-    expect(within(player).getByText(copy.meeting.playbackUnavailable)).toBeVisible();
+    expect(within(header).getByText(t("processing:transcribing"))).toBeVisible();
+    const player = await screen.findByRole("region", { name: t("meeting:playback") });
+    expect(within(player).getByText(t("meeting:playbackUnavailable"))).toBeVisible();
     const processing = document.querySelector(".meeting-processing")!;
     expect(header.nextElementSibling).toBe(processing.parentElement);
     expect(processing.parentElement).toHaveClass("meeting-notices");
@@ -1531,8 +1529,8 @@ describe("TranscriptView — meeting header strip", () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     const view = await openCard();
     expectHeaderStrip(view);
-    const player = screen.getByRole("region", { name: copy.meeting.playback });
-    expect(await within(player).findByRole("alert")).toHaveTextContent(copy.meeting.playbackLoadFailed);
+    const player = screen.getByRole("region", { name: t("meeting:playback") });
+    expect(await within(player).findByRole("alert")).toHaveTextContent(t("meeting:playbackLoadFailed"));
   });
 
   it("shows the header when processing failed", async () => {
@@ -1540,7 +1538,7 @@ describe("TranscriptView — meeting header strip", () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "engine_failure" });
     const view = await openCard();
     expectHeaderStrip(view);
-    expect(screen.getByText(new RegExp(copy.processing.failureCause("engine_failure")))).toBeVisible();
+    expect(screen.getByText(new RegExp(processingFailureText("engine_failure")))).toBeVisible();
   });
 
   it("shows the header for a recording without speech", async () => {
@@ -1548,14 +1546,14 @@ describe("TranscriptView — meeting header strip", () => {
     vi.mocked(api.getMeeting).mockResolvedValue({ meetingId: "r-1", processState: "failed", failureCause: "no_speech_detected" });
     const view = await openCard();
     expectHeaderStrip(view);
-    expect(screen.getByText(copy.processing.noSpeechTitle)).toBeVisible();
+    expect(screen.getByText(t("processing:noSpeechTitle"))).toBeVisible();
   });
 
   it("shows the header when the status cannot be loaded", async () => {
     vi.mocked(api.getMeeting).mockRejectedValue(new Error("Error 500"));
     vi.mocked(api.getTranscript).mockRejectedValue(new Error("Error 404"));
     render(<TranscriptView meetingId="r-1" />);
-    expect(await screen.findByRole("button", { name: copy.meeting.moreActions })).toBeVisible();
+    expect(await screen.findByRole("button", { name: t("meeting:moreActions") })).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
@@ -1563,11 +1561,11 @@ describe("TranscriptView — meeting header strip", () => {
     vi.mocked(api.getTranscript).mockResolvedValue(transcript([turn()]));
     const view = await openCard();
     const header = view.querySelector(".meeting-header") as HTMLElement;
-    fireEvent.click(within(header).getByRole("button", { name: copy.meeting.moreActions }));
+    fireEvent.click(within(header).getByRole("button", { name: t("meeting:moreActions") }));
     expect(screen.getAllByRole("menuitem").map(item => item.textContent))
-      .toEqual([copy.meeting.rename, copy.meeting.deleteRecording]);
-    fireEvent.click(screen.getByRole("menuitem", { name: copy.meeting.rename }));
-    expect(within(header).getByRole("textbox", { name: copy.meeting.titleLabel })).toHaveValue("Synthetic meeting");
+      .toEqual([t("meeting:rename"), t("meeting:deleteRecording")]);
+    fireEvent.click(screen.getByRole("menuitem", { name: t("meeting:rename") }));
+    expect(within(header).getByRole("textbox", { name: t("meeting:titleLabel") })).toHaveValue("Synthetic meeting");
     expect(within(header).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 
@@ -1576,9 +1574,9 @@ describe("TranscriptView — meeting header strip", () => {
     const onBack = vi.fn();
     const { rerender } = render(<TranscriptView meetingId="r-1" />);
     await screen.findByRole("heading", { level: 1, name: "Synthetic meeting" });
-    expect(screen.queryByRole("button", { name: copy.meeting.backToList })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("meeting:backToList") })).not.toBeInTheDocument();
     rerender(<TranscriptView meetingId="r-1" onBack={onBack} />);
-    fireEvent.click(await screen.findByRole("button", { name: copy.meeting.backToList }));
+    fireEvent.click(await screen.findByRole("button", { name: t("meeting:backToList") }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

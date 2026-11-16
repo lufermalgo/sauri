@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SpeakerTimeline, type TimelineTurn } from "./SpeakerTimeline";
-import { meeting as text } from "../copy/meeting";
+import { t } from "../i18n";
 
 afterEach(cleanup);
 const turns: TimelineTurn[] = [
@@ -25,13 +25,13 @@ describe("SpeakerTimeline", () => {
     expect(segments[1]).toHaveStyle({ left: "30%", width: "60%", background: "var(--ds-speaker-2)" });
     expect(screen.getByText("Synthetic One")).toBeVisible();
     expect(screen.getByText("Synthetic Two")).toBeVisible();
-    expect(screen.getByText(text.keyPoints)).toBeVisible();
-    expect(screen.getByRole("slider", { name: text.timeline })).toHaveAttribute("aria-valuenow", "15000");
+    expect(screen.getByText(t("meeting:keyPoints"))).toBeVisible();
+    expect(screen.getByRole("slider", { name: t("meeting:timeline") })).toHaveAttribute("aria-valuenow", "15000");
   });
 
   it("seeks to a key point and to the clicked position, clamped to the duration", () => {
     const seek = setup();
-    fireEvent.click(screen.getByRole("button", { name: text.keyPointAt("00:20") }));
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:keyPointAt", { time: "00:20" }) }));
     expect(seek).toHaveBeenLastCalledWith(20000);
     const slider = screen.getByRole("slider");
     vi.spyOn(slider, "getBoundingClientRect").mockReturnValue({ left: 20, width: 200 } as DOMRect);
@@ -57,7 +57,7 @@ describe("SpeakerTimeline", () => {
     const seek = setup({ disabled: true });
     expect(screen.getByRole("slider")).toHaveAttribute("aria-disabled", "true");
     fireEvent.keyDown(screen.getByRole("slider"), { key: "ArrowRight" });
-    fireEvent.click(screen.getByRole("button", { name: text.keyPointAt("00:20") }));
+    fireEvent.click(screen.getByRole("button", { name: t("meeting:keyPointAt", { time: "00:20" }) }));
     expect(seek).not.toHaveBeenCalled();
   });
 

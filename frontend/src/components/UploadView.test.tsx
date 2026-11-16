@@ -5,7 +5,8 @@ import "@testing-library/jest-dom/vitest";
 import { UploadView } from "./UploadView";
 import { App } from "../App";
 import * as api from "../api";
-import { copy } from "../copy/es";
+import { t } from "../i18n";
+import { fileSizeText, transferredText } from "../upload-format";
 
 vi.mock("../api", async (importOriginal) => ({
   ...await importOriginal<typeof api>(),
@@ -34,7 +35,7 @@ afterEach(() => {
 
 function selectRecording(duration = 12.2, videoWidth = 0) {
   const file = new File(["synthetic recording"], "sample.webm", { type: "video/webm" });
-  fireEvent.change(screen.getByLabelText(copy.upload.fileLabel), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText(t("upload:fileLabel")), { target: { files: [file] } });
   const media = document.querySelector("video")!;
   Object.defineProperty(media, "duration", { configurable: true, value: duration });
   Object.defineProperty(media, "videoWidth", { configurable: true, value: videoWidth });
@@ -47,9 +48,9 @@ describe("UploadView", () => {
     const upload = vi.mocked(api.uploadWithProgress);
     upload.mockResolvedValue({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" });
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
-    expect(screen.queryByRole("button", { name: copy.upload.submit })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("upload:submit") })).not.toBeInTheDocument();
     const file = selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
 
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
     expect(upload).toHaveBeenCalledWith(file, expect.objectContaining({
@@ -66,7 +67,7 @@ describe("UploadView", () => {
     upload.mockResolvedValue({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" });
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     selectRecording(18, 1280);
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     await waitFor(() => expect(upload).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({
       duration_seconds: 18, video_presence: "muxed",
     }), expect.any(Function)));
@@ -75,8 +76,8 @@ describe("UploadView", () => {
   it.each([Infinity, NaN, 0])("blocks upload for invalid duration %s", (duration) => {
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     selectRecording(duration);
-    expect(screen.getByRole("alert")).toHaveTextContent(copy.upload.errors.invalidDuration);
-    expect(screen.getByRole("button", { name: copy.upload.submit })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(t("upload:errors.invalidDuration"));
+    expect(screen.getByRole("button", { name: t("upload:submit") })).toBeDisabled();
     expect(api.uploadWithProgress).not.toHaveBeenCalled();
   });
 
@@ -86,39 +87,39 @@ describe("UploadView", () => {
     vi.mocked(api.uploadWithProgress).mockImplementation(() => new Promise((resolve) => { confirm = resolve; }));
     render(<UploadView onUploaded={onUploaded} onBack={vi.fn()} />);
     selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     const report = vi.mocked(api.uploadWithProgress).mock.calls[0][2];
     expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
     act(() => report({ loaded: 250, total: 1000 }));
     expect(screen.getByRole("progressbar")).toHaveAttribute("value", "25");
-    expect(screen.getByText(copy.upload.transferred(250, 1000, 25))).toBeVisible();
-    expect(screen.getByText(copy.upload.transferHeading)).toBeVisible();
-    expect(screen.getByText(copy.upload.transferHelp)).toBeVisible();
-    expect(screen.getByLabelText(copy.upload.fileLabel)).toBeDisabled();
-    expect(screen.getByRole("button", { name: new RegExp(copy.upload.back) })).toBeDisabled();
+    expect(screen.getByText(transferredText(250, 1000, 25))).toBeVisible();
+    expect(screen.getByText(t("upload:transferHeading"))).toBeVisible();
+    expect(screen.getByText(t("upload:transferHelp"))).toBeVisible();
+    expect(screen.getByLabelText(t("upload:fileLabel"))).toBeDisabled();
+    expect(screen.getByRole("button", { name: new RegExp(t("upload:back")) })).toBeDisabled();
     act(() => report({ loaded: 1000, total: 1000 }));
-    expect(screen.getByText(copy.upload.awaitingConfirmation)).toBeVisible();
+    expect(screen.getByText(t("upload:awaitingConfirmation"))).toBeVisible();
     expect(onUploaded).not.toHaveBeenCalled();
     await act(async () => confirm({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" }));
     expect(onUploaded).toHaveBeenCalledWith("meeting-1");
   });
 
   it.each([
-    { kind: "network", message: copy.upload.errors.network },
-    { kind: "HTTP", message: copy.upload.errors.http(500) },
+    { kind: "network", message: t("upload:errors.network") },
+    { kind: "HTTP", message: t("upload:errors.http", { status: 500 }) },
   ])("retains the same file and identifiers after $kind failure", async ({ message }) => {
     const upload = vi.mocked(api.uploadWithProgress);
     upload.mockRejectedValueOnce(new Error(message)).mockResolvedValueOnce({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" });
     const onUploaded = vi.fn();
     render(<UploadView onUploaded={onUploaded} onBack={vi.fn()} />);
     const file = selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
     expect(onUploaded).not.toHaveBeenCalled();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(screen.getByText(file.name)).toBeVisible();
     const data = upload.mock.calls[0][1];
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.retry }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:retry") }));
     await waitFor(() => expect(onUploaded).toHaveBeenCalledWith("meeting-1"));
     expect(upload.mock.calls.map(([audio, metadata]) => [audio, metadata])).toEqual([[file, data], [file, data]]);
   });
@@ -139,7 +140,7 @@ describe("UploadView", () => {
     const onUploaded = vi.fn();
     const { unmount } = render(<UploadView onUploaded={onUploaded} onBack={vi.fn()} />);
     selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     unmount();
     await act(async () => confirm({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" }));
     expect(onUploaded).not.toHaveBeenCalled();
@@ -150,12 +151,12 @@ describe("UploadView", () => {
     const upload = vi.mocked(api.uploadWithProgress);
     upload.mockResolvedValue({ meeting_id: "server-meeting-id", recording_id: "recording-not-meeting", state: "transcribing" });
     render(<App />);
-    fireEvent.click(screen.getAllByRole("button", { name: copy.shell.upload })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: t("shell:upload") })[0]);
     selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     expect(upload.mock.calls[0][1].meeting_id).not.toBe("server-meeting-id");
     expect(await screen.findByRole("heading", { name: "Meeting server-meeting-id" })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: copy.upload.heading })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: t("upload:heading") })).not.toBeInTheDocument();
     expect(window.location.pathname).toBe("/meetings/server-meeting-id");
     window.history.replaceState({}, "", "/");
   });
@@ -166,20 +167,20 @@ describe("UploadView", () => {
     const onUploaded = vi.fn();
     render(<UploadView onUploaded={onUploaded} onBack={vi.fn()} />);
     selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     await waitFor(() => expect(onUploaded).toHaveBeenCalledWith("server-meeting-id"));
     expect(upload.mock.calls[0][1].meeting_id).not.toBe("server-meeting-id");
   });
 
   it("reuses the same meeting id and idempotency key on retry and sends the file name as title", async () => {
     const upload = vi.mocked(api.uploadWithProgress);
-    upload.mockRejectedValueOnce(new Error(copy.upload.errors.network))
+    upload.mockRejectedValueOnce(new Error(t("upload:errors.network")))
       .mockResolvedValueOnce({ meeting_id: "meeting-1", recording_id: "recording-1", state: "transcribing" });
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     const file = selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     await screen.findByRole("alert");
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.retry }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:retry") }));
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
     const [first, second] = upload.mock.calls.map(([, data]) => data);
     expect(second.meeting_id).toBe(first.meeting_id);
@@ -191,11 +192,11 @@ describe("UploadView", () => {
     vi.mocked(api.uploadWithProgress).mockImplementation(() => new Promise(() => {}));
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     const report = vi.mocked(api.uploadWithProgress).mock.calls[0][2];
     act(() => report({ loaded: 4096, total: null }));
-    expect(screen.getByText(copy.upload.bytesSent(4096))).toBeVisible();
-    expect(screen.getByText(copy.upload.transferHelp)).toBeVisible();
+    expect(screen.getByText(t("upload:bytesSent", { bytes: 4096 }))).toBeVisible();
+    expect(screen.getByText(t("upload:transferHelp"))).toBeVisible();
     expect(screen.queryByText(/%/, { selector: ".upload-progress-figures" })).not.toBeInTheDocument();
     expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
   });
@@ -204,31 +205,31 @@ describe("UploadView", () => {
     vi.mocked(api.uploadWithProgress).mockRejectedValue(new Error("Mensaje exacto del servidor"));
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Mensaje exacto del servidor");
-    expect(screen.getByRole("button", { name: copy.upload.retry })).toBeEnabled();
+    expect(screen.getByRole("button", { name: t("upload:retry") })).toBeEnabled();
   });
 
   it("shows file name and size in MB and lets the user remove the file", () => {
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     const file = new File([new Uint8Array(3 * 1048576)], "big.webm", { type: "video/webm" });
-    fireEvent.change(screen.getByLabelText(copy.upload.fileLabel), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(t("upload:fileLabel")), { target: { files: [file] } });
     expect(screen.getByText("big.webm")).toBeVisible();
-    expect(screen.getByText(copy.upload.sizeMb(file.size))).toBeVisible();
-    expect(copy.upload.sizeMb(file.size)).toMatch(/^3,0 MB$/);
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.remove }));
+    expect(screen.getByText(fileSizeText(file.size))).toBeVisible();
+    expect(fileSizeText(file.size)).toMatch(/^3,0 MB$/);
+    fireEvent.click(screen.getByRole("button", { name: t("upload:remove") }));
     expect(screen.queryByText("big.webm")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: copy.upload.submit })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("upload:submit") })).not.toBeInTheDocument();
   });
 
   it("formats transfer figures in MB with the percentage only when the total is known", async () => {
     vi.mocked(api.uploadWithProgress).mockImplementation(() => new Promise(() => {}));
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     const report = vi.mocked(api.uploadWithProgress).mock.calls[0][2];
     act(() => report({ loaded: 312 * 1048576, total: 473 * 1048576 }));
-    const figures = screen.getByText(copy.upload.transferred(312 * 1048576, 473 * 1048576, 65));
+    const figures = screen.getByText(transferredText(312 * 1048576, 473 * 1048576, 65));
     expect(figures).toBeVisible();
     expect(figures.textContent).toMatch(/^312 MB .* 473 MB .* 65 %$/);
     expect(screen.getByRole("progressbar")).toHaveAttribute("value", "65");
@@ -237,14 +238,14 @@ describe("UploadView", () => {
   it("shows the duration next to the size only once the metadata is known", () => {
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     const file = new File(["synthetic recording"], "sample.webm", { type: "video/webm" });
-    fireEvent.change(screen.getByLabelText(copy.upload.fileLabel), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(t("upload:fileLabel")), { target: { files: [file] } });
     expect(screen.queryByText(/\d\d:\d\d/)).not.toBeInTheDocument();
     const media = document.querySelector("video")!;
     Object.defineProperty(media, "duration", { configurable: true, value: 3260 });
     Object.defineProperty(media, "videoWidth", { configurable: true, value: 0 });
     fireEvent.loadedMetadata(media);
     expect(screen.getByText(/54:20/)).toBeVisible();
-    expect(screen.getByText(copy.upload.sizeMb(file.size))).toBeVisible();
+    expect(screen.getByText(fileSizeText(file.size))).toBeVisible();
   });
 
   it("selects a dropped file through the same path as the file input", () => {
@@ -259,7 +260,7 @@ describe("UploadView", () => {
     vi.mocked(api.uploadWithProgress).mockImplementation(() => new Promise(() => {}));
     render(<UploadView onUploaded={vi.fn()} onBack={vi.fn()} />);
     selectRecording();
-    fireEvent.click(screen.getByRole("button", { name: copy.upload.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("upload:submit") }));
     const other = new File(["other"], "other.webm", { type: "video/webm" });
     fireEvent.drop(screen.getByTestId("upload-dropzone"), { dataTransfer: { files: [other] } });
     expect(screen.queryByText("other.webm")).not.toBeInTheDocument();

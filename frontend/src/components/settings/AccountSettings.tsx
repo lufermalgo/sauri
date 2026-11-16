@@ -2,6 +2,7 @@ import { User } from "lucide-react";
 import { copy } from "../../copy/es";
 import { userInitials, type SessionUser } from "../../session-user";
 import { Avatar, Button, Card, Icon } from "../ui";
+import { useT } from "../../i18n";
 
 interface AccountSettingsProps {
   user: SessionUser | null;
@@ -17,6 +18,7 @@ function accountLines(user: SessionUser | null): { primary: string; secondary: s
 
 /** Read-only account details from the sign-in token, plus sign-out. */
 export function AccountSettings({ user, onLogout }: AccountSettingsProps) {
+  const { t } = useT();
   const { primary, secondary } = accountLines(user);
   return (
     <div className="settings-stack">
@@ -34,7 +36,7 @@ export function AccountSettings({ user, onLogout }: AccountSettingsProps) {
         <h3 id="settings-session-title" className="settings-card-title">{copy.settings.account.session}</h3>
         <p className="settings-help">{copy.settings.account.sessionHelp}</p>
         <div>
-          <Button variant="secondary" onClick={onLogout}>{copy.shell.logout}</Button>
+          <Button variant="secondary" onClick={onLogout}>{t("shell:logout")}</Button>
         </div>
       </Card>
     </div>

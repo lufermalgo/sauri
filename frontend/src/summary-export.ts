@@ -1,5 +1,5 @@
 import type { MeetingSummary, SummaryBlock, SummaryKeyPoint } from "@sauri/shared-types";
-import { copy } from "./copy/es";
+import { t } from "./i18n";
 
 export function isBlock(point: SummaryKeyPoint | SummaryBlock | string): point is SummaryBlock {
   return typeof point !== "string" && "title" in point;
@@ -8,7 +8,6 @@ export function isBlock(point: SummaryKeyPoint | SummaryBlock | string): point i
 // The exact plain text that "Copy" puts on the clipboard and every summary download saves. It never
 // carries minutes or timestamps: sources are only offered as links in the panel.
 export function summaryPlainText(summary: MeetingSummary): string {
-  const text = copy.summary;
   if (summary.schemaVersion !== 2) {
     return [summary.topic, ...summary.keyPoints.map((point) =>
       `- ${typeof point === "string" ? point : isBlock(point) ? point.title : point.text}`,
@@ -19,8 +18,8 @@ export function summaryPlainText(summary: MeetingSummary): string {
     ...block.items.flatMap((item) => [`- ${item.text}`, ...item.subItems.map((sub) => `  - ${sub}`)]),
   ].join("\n"));
   return [
-    `${text.mainTopic}\n${summary.topic}`,
-    `${text.detailedKeyPoints}\n${blocks.join("\n\n")}`,
-    ...(summary.conclusion ? [`${text.conclusion}\n${summary.conclusion}`] : []),
+    `${t("summary:mainTopic")}\n${summary.topic}`,
+    `${t("summary:detailedKeyPoints")}\n${blocks.join("\n\n")}`,
+    ...(summary.conclusion ? [`${t("summary:conclusion")}\n${summary.conclusion}`] : []),
   ].join("\n\n");
 }

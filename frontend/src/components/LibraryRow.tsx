@@ -3,25 +3,24 @@ import type { CSSProperties, KeyboardEvent, MouseEvent } from "react";
 import { AudioLines, Ellipsis, FileText, Pencil, ScrollText, Trash2, Video } from "lucide-react";
 import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
-import { copy } from "../copy/es";
 import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
 import { Icon, Menu, MenuItem, MenuSeparator, ProgressBar, StatusBadge, useTooltip } from "./ui";
-
-const text = copy.library;
+import { t, useT } from "../i18n";
+import { formatDate } from "../i18n/format";
 
 /** Hover or keyboard focus on a row waits this long before its summary tooltip appears. */
 const SUMMARY_TOOLTIP_DELAY_MS = 500;
 
 type BadgeTone = "neutral" | "progress" | "success" | "error";
 
-const STATE_LABELS: Record<ProcessState, string> = {
-  [ProcessState.Queued]: text.states.queued,
-  [ProcessState.Joining]: text.states.joining,
-  [ProcessState.Recording]: text.states.recording,
-  [ProcessState.Transcribing]: text.states.transcribing,
-  [ProcessState.Completed]: text.states.completed,
-  [ProcessState.Failed]: text.states.failed,
-};
+const STATE_LABEL_KEYS = {
+  [ProcessState.Queued]: "library:states.queued",
+  [ProcessState.Joining]: "library:states.joining",
+  [ProcessState.Recording]: "library:states.recording",
+  [ProcessState.Transcribing]: "library:states.transcribing",
+  [ProcessState.Completed]: "library:states.completed",
+  [ProcessState.Failed]: "library:states.failed",
+} as const;
 
 const STATE_TONES: Record<ProcessState, BadgeTone> = {
   [ProcessState.Queued]: "neutral",
@@ -39,18 +38,13 @@ const ROW_EDGES: Record<BadgeTone, string> = {
   neutral: "queued",
 };
 
-const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("es", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
 const THUMBNAIL_ICON_SIZE = 16;
 const MAX_TITLE_LENGTH = 512;
 
 function formatCreatedAt(createdAt: string | null): string {
-  if (!createdAt) return text.noDate;
+  if (!createdAt) return t("library:noDate");
   const date = new Date(createdAt);
-  return Number.isNaN(date.getTime()) ? text.noDate : CREATED_AT_FORMATTER.format(date);
+  return Number.isNaN(date.getTime()) ? t("library:noDate") : formatDate(date, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function pad(value: number): string {
@@ -80,6 +74,7 @@ export type RowDownloadKind = "transcript" | "summary" | "media";
 
 /** Compact estimate for rows in transcription; nothing when there is no honest estimate. */
 function RowProgress({ meeting }: { meeting: MeetingListItem }) {
+  const { t } = useT();
   if (meeting.processState !== ProcessState.Queued && meeting.processState !== ProcessState.Transcribing) return null;
   const elapsed = secondsSince(meeting.createdAt, Date.now());
   if (elapsed === null) return null;
@@ -87,12 +82,11 @@ function RowProgress({ meeting }: { meeting: MeetingListItem }) {
     stage: "transcription", audioSeconds: meeting.durationSeconds, elapsedSinceUploadSeconds: elapsed,
   });
   if (!estimate) return null;
-  const processing = copy.processing;
-  const stage = processing.steps.transcription;
-  const label = estimate.overtime ? processing.libraryOvertime(stage) : processing.libraryProgress(stage, estimate.percent);
+  const stage = t("processing:steps.transcription");
+  const label = estimate.overtime ? t("processing:libraryOvertime", { stage }) : t("processing:libraryProgress", { stage, percent: estimate.percent });
   return (
     <span className="processing-compact library-item-progress">
-      <ProgressBar label={processing.libraryProgressLabel} value={estimate.percent} valueText={label} />
+      <ProgressBar label={t("processing:libraryProgressLabel")} value={estimate.percent} valueText={label} />
       <span>{label}</span>
     </span>
   );
@@ -123,6 +117,7 @@ function RowRename({ meeting, onSubmit, onCancel }: {
   onSubmit: (title: string) => Promise<void>;
   onCancel: () => void;
 }) {
+  const { t } = useT();
   const initial = meeting.title;
   const [draft, setDraft] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -161,13 +156,13 @@ function RowRename({ meeting, onSubmit, onCancel }: {
   return (
     <form className="library-rename" aria-busy={busy || undefined}
       onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      <input ref={input} type="text" className="library-rename-input" aria-label={text.row.renameLabel}
+      <input ref={input} type="text" className="library-rename-input" aria-label={t("library:row.renameLabel")}
         value={draft} disabled={busy} maxLength={MAX_TITLE_LENGTH} autoComplete="off"
         aria-invalid={failed || !valid ? true : undefined} aria-describedby={failed ? errorId : undefined}
         onChange={(event) => { setDraft(event.target.value); setFailed(false); }}
         onKeyDown={onKeyDown}
         onBlur={() => { if (!busy && draft === initial) onCancel(); }} />
-      {failed && <p id={errorId} role="alert" className="library-rename-error">{text.row.renameFailed}</p>}
+      {failed && <p id={errorId} role="alert" className="library-rename-error">{t("library:row.renameFailed")}</p>}
     </form>
   );
 }
@@ -200,12 +195,13 @@ export function LibraryRow({
   meeting, open, checked, tabbable, renaming, error, notice, onOpen, onToggleChecked, onFocusRow,
   onStartRename, onRename, onCancelRename, onDownload, onDelete,
 }: LibraryRowProps) {
+  const { t } = useT();
   const tone = STATE_TONES[meeting.processState];
-  const title = meeting.title.trim() || text.untitled;
+  const title = meeting.title.trim() || t("library:untitled");
   const topic = meeting.summaryTopic?.trim() || undefined;
   // A failed row keeps its cause out of the row's lines but not out of reach: it leads the tooltip.
   const cause = meeting.processState !== ProcessState.Failed ? undefined
-    : meeting.failureCause === NO_SPEECH_CAUSE ? text.noSpeechCause : text.failedCause;
+    : meeting.failureCause === NO_SPEECH_CAUSE ? t("library:noSpeechCause") : t("library:failedCause");
   const tooltipText = [cause, topic].filter(Boolean).join(" ") || undefined;
   // The API may omit these fields for older recordings.
   const duration = typeof meeting.durationSeconds === "number" ? meeting.durationSeconds : null;
@@ -270,43 +266,43 @@ export function LibraryRow({
             <span className="library-item-main">
               <span className="library-item-head">
                 <span className="library-item-title">{title}</span>
-                <StatusBadge tone={tone}>{STATE_LABELS[meeting.processState]}</StatusBadge>
+                <StatusBadge tone={tone}>{t(STATE_LABEL_KEYS[meeting.processState])}</StatusBadge>
               </span>
               <span className="library-item-meta">
                 <span>{formatCreatedAt(meeting.createdAt)}</span>
                 {duration !== null && <span className="library-item-duration">{formatDuration(duration)}</span>}
-                {speakers !== null && <span>{text.speakers(speakers)}</span>}
+                {speakers !== null && <span>{t("library:speakers", { count: speakers })}</span>}
               </span>
               <RowProgress meeting={meeting} />
             </span>
           </button>
           <span className="library-row-check">
-            <input type="checkbox" aria-label={text.row.select(title)} checked={checked} tabIndex={tabIndex}
+            <input type="checkbox" aria-label={t("library:row.select", { title })} checked={checked} tabIndex={tabIndex}
               onFocus={() => onFocusRow(meeting.id)}
               onChange={(event) => onToggleChecked(meeting.id, (event.nativeEvent as globalThis.MouseEvent).shiftKey === true)} />
           </span>
           <div className="library-row-menu">
-            <Menu label={text.row.actions(title)} trigger={<Icon icon={Ellipsis} />} triggerTabIndex={tabIndex}
+            <Menu label={t("library:row.actions", { title })} trigger={<Icon icon={Ellipsis} />} triggerTabIndex={tabIndex}
               triggerClassName="ui-icon-button ui-icon-button--ghost">
               <MenuItem onSelect={() => onStartRename(meeting.id)}>
-                <Icon icon={Pencil} size={16} />{text.row.rename}
+                <Icon icon={Pencil} size={16} />{t("library:row.rename")}
               </MenuItem>
-              <MenuItem disabled={!ready} hint={ready ? undefined : text.row.downloadUnavailable}
+              <MenuItem disabled={!ready} hint={ready ? undefined : t("library:row.downloadUnavailable")}
                 onSelect={() => onDownload(meeting, "transcript")}>
-                <Icon icon={FileText} size={16} />{text.row.downloadTranscript}
+                <Icon icon={FileText} size={16} />{t("library:row.downloadTranscript")}
               </MenuItem>
-              <MenuItem disabled={!summaryReady} hint={summaryReady ? undefined : text.row.downloadSummaryUnavailable}
+              <MenuItem disabled={!summaryReady} hint={summaryReady ? undefined : t("library:row.downloadSummaryUnavailable")}
                 onSelect={() => onDownload(meeting, "summary")}>
-                <Icon icon={ScrollText} size={16} />{text.row.downloadSummary}
+                <Icon icon={ScrollText} size={16} />{t("library:row.downloadSummary")}
               </MenuItem>
-              <MenuItem disabled={!ready} hint={ready ? undefined : text.row.downloadMediaUnavailable}
+              <MenuItem disabled={!ready} hint={ready ? undefined : t("library:row.downloadMediaUnavailable")}
                 onSelect={() => onDownload(meeting, "media")}>
                 <Icon icon={audioOnly ? AudioLines : Video} size={16} />
-                {audioOnly ? text.row.downloadAudio : text.row.downloadVideo}
+                {audioOnly ? t("library:row.downloadAudio") : t("library:row.downloadVideo")}
               </MenuItem>
               <MenuSeparator />
               <MenuItem tone="danger" onSelect={() => onDelete(meeting)}>
-                <Icon icon={Trash2} size={16} />{text.row.delete}
+                <Icon icon={Trash2} size={16} />{t("library:row.delete")}
               </MenuItem>
             </Menu>
           </div>

@@ -21,6 +21,7 @@ import {
 } from "./useSecondaryPane";
 import { copy } from "../copy/es";
 import { SETTINGS_CATEGORIES, type Route } from "../router";
+import { t } from "../i18n";
 
 const owner = { name: "Ana Maria Perez", email: "ana@example.test" };
 
@@ -71,7 +72,7 @@ function renderShell(route: Route) {
 }
 
 const settingsRoute = (category: (typeof SETTINGS_CATEGORIES)[number] = "appearance"): Route => ({ name: "settings", category });
-const gear = () => screen.getByRole("button", { name: copy.shell.profile.settings });
+const gear = () => screen.getByRole("button", { name: t("shell:profile.settings") });
 const slot = () => document.getElementById(SETTINGS_PANE_ID)!;
 const tipOf = (control: HTMLElement) => document.getElementById(control.getAttribute("aria-describedby") ?? "") as HTMLElement;
 
@@ -134,7 +135,7 @@ describe("useSecondaryPane", () => {
 describe("settings categories pane toggle in the side panel", () => {
   it("makes the gear a button that carries the pane's state and keeps the settings name", () => {
     renderShell(settingsRoute());
-    expect(screen.queryByRole("link", { name: copy.shell.profile.settings })).toBeNull();
+    expect(screen.queryByRole("link", { name: t("shell:profile.settings") })).toBeNull();
     expect(gear()).toHaveAttribute("aria-expanded", "true");
     expect(gear().getAttribute("aria-controls")).toBe(SETTINGS_PANE_ID);
     expect(gear()).toHaveAttribute("aria-current", "page");
@@ -176,13 +177,13 @@ describe("settings categories pane toggle in the side panel", () => {
   it("describes the action with a tooltip: hide when shown, show when hidden", () => {
     renderShell(settingsRoute());
     vi.useFakeTimers();
-    expect(tipOf(gear())).toHaveTextContent(copy.shell.settingsPane.hide);
+    expect(tipOf(gear())).toHaveTextContent(t("shell:settingsPane.hide"));
     expect(tipOf(gear())).toHaveAttribute("role", "tooltip");
     fireEvent.mouseEnter(gear());
     act(() => { vi.advanceTimersByTime(400); });
     expect(tipOf(gear()).hidden).toBe(false);
     fireEvent.click(gear());
-    expect(tipOf(gear())).toHaveTextContent(copy.shell.settingsPane.show);
+    expect(tipOf(gear())).toHaveTextContent(t("shell:settingsPane.show"));
   });
 
   it("keeps the pane mounted while hidden, so the search text is still there", () => {
@@ -218,7 +219,7 @@ describe("settings categories pane toggle in the side panel", () => {
 
   it("shows the library item as a plain link while on settings", () => {
     renderShell(settingsRoute());
-    const link = screen.getByRole("link", { name: copy.shell.library });
+    const link = screen.getByRole("link", { name: t("shell:library") });
     expect(link).not.toHaveAttribute("aria-expanded");
     expect(link).not.toHaveAttribute("aria-controls");
   });
@@ -231,17 +232,17 @@ describe("settings categories pane toggle in the side panel", () => {
     expect(slot()).not.toHaveAttribute("data-hidden");
     expect(slot()).not.toHaveAttribute("inert");
     // The drawer holds the gear while it is closed; its item is a link with no toggle semantics.
-    const link = screen.getByRole("link", { name: copy.shell.profile.settings, hidden: true });
+    const link = screen.getByRole("link", { name: t("shell:profile.settings"), hidden: true });
     expect(link).not.toHaveAttribute("aria-expanded");
-    expect(screen.queryByRole("button", { name: copy.shell.profile.settings, hidden: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("shell:profile.settings"), hidden: true })).toBeNull();
   });
 
   it("shows the sidebar as a rail with the tooltip beside the gear", () => {
     localStorage.setItem("sauri_sidebar_collapsed", "1");
     renderShell(settingsRoute());
     expect(document.querySelector(".shell-root")).toHaveAttribute("data-mode", "rail");
-    expect(gear()).toHaveAccessibleName(copy.shell.profile.settings);
-    expect(tipOf(gear())).toHaveTextContent(copy.shell.settingsPane.hide);
+    expect(gear()).toHaveAccessibleName(t("shell:profile.settings"));
+    expect(tipOf(gear())).toHaveTextContent(t("shell:settingsPane.hide"));
   });
 });
 
@@ -249,15 +250,15 @@ describe("items without a secondary pane", () => {
   it("makes Biblioteca the list pane's toggle on the library route too, with its state in the tooltip", () => {
     localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
     renderShell({ name: "library" });
-    const button = screen.getByRole("button", { name: copy.shell.library });
+    const button = screen.getByRole("button", { name: t("shell:library") });
     expect(button).toHaveAttribute("aria-current", "page");
     expect(button).toHaveAttribute("aria-expanded", "false");
     expect(button).toHaveAttribute("aria-controls", "library-pane");
-    expect(screen.queryByRole("link", { name: copy.shell.library })).toBeNull();
-    expect(tipOf(button)).toHaveTextContent(copy.shell.libraryPane.show);
+    expect(screen.queryByRole("link", { name: t("shell:library") })).toBeNull();
+    expect(tipOf(button)).toHaveTextContent(t("shell:libraryPane.show"));
     fireEvent.click(button);
     expect(button).toHaveAttribute("aria-expanded", "true");
-    expect(tipOf(button)).toHaveTextContent(copy.shell.libraryPane.hide);
+    expect(tipOf(button)).toHaveTextContent(t("shell:libraryPane.hide"));
     expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("0");
   });
 
@@ -266,28 +267,28 @@ describe("items without a secondary pane", () => {
     localStorage.setItem("sauri_sidebar_collapsed", "0"); // below 1320px the sidebar starts as a rail
     localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
     renderShell({ name: "library" });
-    const link = screen.getByRole("link", { name: copy.shell.library });
+    const link = screen.getByRole("link", { name: t("shell:library") });
     expect(link).toHaveAttribute("aria-current", "page");
     expect(link).not.toHaveAttribute("aria-expanded");
     expect(link).not.toHaveAttribute("aria-controls");
-    expect(screen.queryByRole("button", { name: copy.shell.library })).toBeNull();
-    expect(tipOf(link)).toHaveTextContent(new RegExp(`^${copy.shell.library}$`));
+    expect(screen.queryByRole("button", { name: t("shell:library") })).toBeNull();
+    expect(tipOf(link)).toHaveTextContent(new RegExp(`^${t("shell:library")}$`));
     expect(tipOf(link).textContent).not.toMatch(/ocultar|mostrar/i);
   });
 
   it("keeps the gear a plain link outside settings, whatever the stored settings choice", () => {
     localStorage.setItem(SETTINGS_PANE_STORAGE_KEY, "1");
     renderShell({ name: "library" });
-    const link = screen.getByRole("link", { name: copy.shell.profile.settings });
+    const link = screen.getByRole("link", { name: t("shell:profile.settings") });
     expect(link).toHaveAttribute("href", "/settings");
     expect(link).not.toHaveAttribute("aria-expanded");
-    expect(screen.queryByRole("button", { name: copy.shell.profile.settings })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("shell:profile.settings") })).toBeNull();
   });
 
   it("keeps the gear a link with a recording open", () => {
     renderShell({ name: "meeting", meetingId: "b" });
-    expect(screen.getByRole("button", { name: copy.shell.library })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: copy.shell.profile.settings })).not.toHaveAttribute("aria-expanded");
+    expect(screen.getByRole("button", { name: t("shell:library") })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: t("shell:profile.settings") })).not.toHaveAttribute("aria-expanded");
   });
 });
 

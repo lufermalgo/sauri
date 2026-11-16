@@ -42,7 +42,7 @@ const SETTINGS_PREFIX = "/settings/";
 const NOT_FOUND_PATH = "/not-found";
 
 /** Slugs of removed categories: an old link still opens Settings (on the default category) instead of "not found". */
-const REMOVED_SETTINGS_SLUGS: readonly string[] = ["grabacion"]; // spanish-sample-data: a shipped URL slug
+const REMOVED_SETTINGS_SLUGS: readonly string[] = ["grabacion"]; // spanish-sample-data i18n-ignore: a shipped URL slug
 
 function settingsRoute(slug: string): Route {
   if (REMOVED_SETTINGS_SLUGS.includes(slug)) return { name: "settings" };

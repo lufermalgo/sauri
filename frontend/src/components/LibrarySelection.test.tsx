@@ -14,11 +14,8 @@ import { RecordingLibrary } from "./RecordingLibrary";
 import { rangeBetween } from "./useLibrarySelection";
 import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import * as api from "../api";
-import { copy } from "../copy/es";
-
-const text = copy.library;
-const selection = text.selection;
-const bulk = text.bulk;
+import { t } from "../i18n";
+import { bulkDeletedText, bulkDownloadedText } from "../library-bulk-text";
 
 beforeEach(() => {
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
@@ -54,7 +51,7 @@ async function renderList(items: MeetingListItem[], selectedId?: string) {
 }
 
 function box(title: string): HTMLInputElement {
-  return screen.getByRole("checkbox", { name: text.row.select(title) }) as HTMLInputElement;
+  return screen.getByRole("checkbox", { name: t("library:row.select", { title }) }) as HTMLInputElement;
 }
 
 function rowOpen(title: string): HTMLElement {
@@ -65,12 +62,12 @@ function rowOpen(title: string): HTMLElement {
 }
 
 function selectAllBox(): HTMLInputElement {
-  return screen.getByRole("checkbox", { name: selection.selectAll }) as HTMLInputElement;
+  return screen.getByRole("checkbox", { name: t("library:selection.selectAll") }) as HTMLInputElement;
 }
 
 function checkedTitles(): string[] {
   return screen.getAllByRole("checkbox")
-    .filter((input) => (input as HTMLInputElement).checked && input.getAttribute("aria-label") !== selection.selectAll)
+    .filter((input) => (input as HTMLInputElement).checked && input.getAttribute("aria-label") !== t("library:selection.selectAll"))
     .map((input) => (input.getAttribute("aria-label") ?? "").replace(/^Seleccionar «|»$/g, ""));
 }
 
@@ -100,13 +97,13 @@ describe("selecting rows", () => {
     fireEvent.click(box("Meeting 1"));
 
     expect(box("Meeting 1")).toBeChecked();
-    expect(screen.getByText(selection.count(1))).toBeInTheDocument();
-    expect(screen.queryByText(text.title)).toBeNull();
-    expect(screen.queryByRole("button", { name: text.upload })).toBeNull();
-    const toolbar = screen.getByRole("toolbar", { name: selection.toolbar });
-    expect(within(toolbar).getByRole("button", { name: selection.deleteAll })).toBeInTheDocument();
-    expect(within(toolbar).getByRole("button", { name: selection.downloadAll })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: selection.clear })).toBeInTheDocument();
+    expect(screen.getByText(t("library:selection.count", { count: 1 }))).toBeInTheDocument();
+    expect(screen.queryByText(t("library:title"))).toBeNull();
+    expect(screen.queryByRole("button", { name: t("library:upload") })).toBeNull();
+    const toolbar = screen.getByRole("toolbar", { name: t("library:selection.toolbar") });
+    expect(within(toolbar).getByRole("button", { name: t("library:selection.deleteAll") })).toBeInTheDocument();
+    expect(within(toolbar).getByRole("button", { name: t("library:selection.downloadAll") })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("library:selection.clear") })).toBeInTheDocument();
     // The open recording is untouched.
     expect(onSelectMeeting).not.toHaveBeenCalled();
     expect(rowOpen("Meeting 2")).toHaveAttribute("aria-current", "true");
@@ -132,23 +129,23 @@ describe("selecting rows", () => {
     expect(checkedTitles()).toEqual(["Meeting 1", "Meeting 2", "Meeting 3", "Meeting 4"]);
     expect(selectAllBox().checked).toBe(true);
     expect(selectAllBox().indeterminate).toBe(false);
-    expect(screen.getByText(selection.count(4))).toBeInTheDocument();
+    expect(screen.getByText(t("library:selection.count", { count: 4 }))).toBeInTheDocument();
 
     fireEvent.click(selectAllBox());
     expect(checkedTitles()).toEqual([]);
     // No selection: the normal header and toolbar are back.
-    expect(screen.getByRole("button", { name: text.upload })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("library:upload") })).toBeInTheDocument();
     expect(screen.getByRole("search")).toBeInTheDocument();
   });
 
   it("the header checkbox applies only to the rows a search leaves visible", async () => {
     await renderList([item("a", "Planning one"), item("b", "Planning two"), item("c", "Client call")]);
-    fireEvent.click(screen.getByRole("button", { name: text.search.text }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:search.text") }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "planning" } });
     // The select-all checkbox stays reachable while searching.
     fireEvent.click(selectAllBox());
     expect(checkedTitles()).toEqual(["Planning one", "Planning two"]);
-    expect(screen.getByText(selection.count(2))).toBeInTheDocument();
+    expect(screen.getByText(t("library:selection.count", { count: 2 }))).toBeInTheDocument();
   });
 
   it("Shift+click selects a range, in the order the rows are shown", async () => {
@@ -188,9 +185,9 @@ describe("selecting rows", () => {
     expect(checkedTitles()).toEqual([]);
 
     fireEvent.click(box("Meeting 1"));
-    fireEvent.click(screen.getByRole("button", { name: selection.clear }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.clear") }));
     expect(checkedTitles()).toEqual([]);
-    expect(screen.getByRole("button", { name: text.upload })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("library:upload") })).toBeInTheDocument();
   });
 
   it("keeps the selection across quiet refreshes and drops recordings that disappear", async () => {
@@ -207,13 +204,13 @@ describe("selecting rows", () => {
     // Meeting 2 was deleted elsewhere: the selection shrinks by itself.
     list.mockResolvedValue([item("m1", "Meeting 1"), item("m3", "Meeting 3 renamed")]);
     window.dispatchEvent(new Event(LIBRARY_CHANGED_EVENT));
-    await waitFor(() => expect(screen.getByText(selection.count(1))).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(t("library:selection.count", { count: 1 }))).toBeInTheDocument());
     expect(checkedTitles()).toEqual(["Meeting 1"]);
 
     // Everything selected disappeared: back to the normal header.
     list.mockResolvedValue([item("m3", "Meeting 3 renamed")]);
     window.dispatchEvent(new Event(LIBRARY_CHANGED_EVENT));
-    await waitFor(() => expect(screen.getByRole("button", { name: text.upload })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: t("library:upload") })).toBeInTheDocument());
   });
 });
 
@@ -238,7 +235,7 @@ describe("bulk delete", () => {
   async function startDelete(items: MeetingListItem[], titles: string[]) {
     const view = await renderList(items);
     for (const title of titles) fireEvent.click(box(title));
-    fireEvent.click(screen.getByRole("button", { name: selection.deleteAll }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.deleteAll") }));
     return view;
   }
 
@@ -246,9 +243,9 @@ describe("bulk delete", () => {
     const del = vi.spyOn(api, "deleteMeeting").mockResolvedValue(undefined);
     await startDelete(many(3), ["Meeting 1", "Meeting 2"]);
     const dialog = confirmDialog();
-    expect(dialog).toHaveTextContent(bulk.deleteConfirmTitle(2));
-    expect(dialog).toHaveTextContent(bulk.deleteConfirmBody);
-    fireEvent.click(within(dialog).getByRole("button", { name: bulk.cancel, hidden: true }));
+    expect(dialog).toHaveTextContent(t("library:bulk.deleteConfirmTitle", { count: 2 }));
+    expect(dialog).toHaveTextContent(t("library:bulk.deleteConfirmBody"));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("library:bulk.cancel"), hidden: true }));
     expect(del).not.toHaveBeenCalled();
     expect(checkedTitles()).toEqual(["Meeting 1", "Meeting 2"]);
   });
@@ -256,17 +253,17 @@ describe("bulk delete", () => {
   it("deletes one at a time with a progress message and removes the rows", async () => {
     const { gates } = gatedDeletes();
     await startDelete(many(4), ["Meeting 1", "Meeting 3", "Meeting 4"]);
-    fireEvent.click(within(confirmDialog()).getByRole("button", { name: bulk.deleteConfirm, hidden: true }));
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: t("library:bulk.deleteConfirm"), hidden: true }));
 
-    const dialog = await screen.findByRole("dialog", { name: bulk.runningDeleteTitle });
+    const dialog = await screen.findByRole("dialog", { name: t("library:bulk.runningDeleteTitle") });
     const status = within(dialog).getByRole("status");
-    expect(status).toHaveTextContent(bulk.deleting(1, 3));
+    expect(status).toHaveTextContent(t("library:bulk.deleting", { current: 1, total: 3 }));
     expect(within(dialog).getByRole("progressbar")).toBeInTheDocument();
     // Concurrency 1: only the first request is out.
     expect(gates.map((gate) => gate.id)).toEqual(["m1"]);
 
     await settle(gates[0], "ok");
-    await waitFor(() => expect(status).toHaveTextContent(bulk.deleting(2, 3)));
+    await waitFor(() => expect(status).toHaveTextContent(t("library:bulk.deleting", { current: 2, total: 3 })));
     expect(gates.map((gate) => gate.id)).toEqual(["m1", "m3"]);
     expect(screen.queryByText("Meeting 1", { selector: ".library-item-title" })).toBeNull();
 
@@ -274,17 +271,17 @@ describe("bulk delete", () => {
     await waitFor(() => expect(gates).toHaveLength(3));
     await settle(gates[2], "ok");
 
-    const done = await screen.findByRole("dialog", { name: bulk.doneDeleteTitle });
-    expect(within(done).getByRole("status")).toHaveTextContent(bulk.deleted(3, 0));
-    expect(within(done).queryByRole("button", { name: bulk.retry })).toBeNull();
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDeleteTitle") });
+    expect(within(done).getByRole("status")).toHaveTextContent(bulkDeletedText(3, 0));
+    expect(within(done).queryByRole("button", { name: t("library:bulk.retry") })).toBeNull();
     expect(renderedTitlesLeft()).toEqual(["Meeting 2"]);
   });
 
   it("keeps going after a failure, reports it, keeps the failed ones selected and retries them", async () => {
     const { gates, spy } = gatedDeletes();
     await startDelete(many(4), ["Meeting 1", "Meeting 2", "Meeting 3"]);
-    fireEvent.click(within(confirmDialog()).getByRole("button", { name: bulk.deleteConfirm, hidden: true }));
-    await screen.findByRole("dialog", { name: bulk.runningDeleteTitle });
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: t("library:bulk.deleteConfirm"), hidden: true }));
+    await screen.findByRole("dialog", { name: t("library:bulk.runningDeleteTitle") });
 
     await settle(gates[0], "ok");
     await waitFor(() => expect(gates).toHaveLength(2));
@@ -292,20 +289,20 @@ describe("bulk delete", () => {
     await waitFor(() => expect(gates).toHaveLength(3));
     await settle(gates[2], "ok");
 
-    const done = await screen.findByRole("dialog", { name: bulk.doneDeleteTitle });
-    expect(within(done).getByRole("status")).toHaveTextContent(bulk.deleted(2, 1));
-    expect(within(done).getByRole("status")).toHaveTextContent(`${bulk.deleted(2, 1)}`);
-    expect(done).toHaveTextContent(bulk.failedKept);
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDeleteTitle") });
+    expect(within(done).getByRole("status")).toHaveTextContent(bulkDeletedText(2, 1));
+    expect(within(done).getByRole("status")).toHaveTextContent(`${bulkDeletedText(2, 1)}`);
+    expect(done).toHaveTextContent(t("library:bulk.failedKept"));
     expect(renderedTitlesLeft()).toEqual(["Meeting 2", "Meeting 4"]);
     expect(checkedTitles()).toEqual(["Meeting 2"]);
 
-    fireEvent.click(within(done).getByRole("button", { name: bulk.retry }));
+    fireEvent.click(within(done).getByRole("button", { name: t("library:bulk.retry") }));
     await waitFor(() => expect(gates).toHaveLength(4));
     expect(gates[3].id).toBe("m2");
     expect(spy).toHaveBeenCalledTimes(4);
     await settle(gates[3], "ok");
-    const finished = await screen.findByRole("dialog", { name: bulk.doneDeleteTitle });
-    expect(within(finished).getByRole("status")).toHaveTextContent(bulk.deleted(1, 0));
+    const finished = await screen.findByRole("dialog", { name: t("library:bulk.doneDeleteTitle") });
+    expect(within(finished).getByRole("status")).toHaveTextContent(bulkDeletedText(1, 0));
     expect(renderedTitlesLeft()).toEqual(["Meeting 4"]);
     expect(checkedTitles()).toEqual([]);
   });
@@ -313,15 +310,15 @@ describe("bulk delete", () => {
   it("Detener leaves the remaining recordings alone", async () => {
     const { gates } = gatedDeletes();
     await startDelete(many(3), ["Meeting 1", "Meeting 2", "Meeting 3"]);
-    fireEvent.click(within(confirmDialog()).getByRole("button", { name: bulk.deleteConfirm, hidden: true }));
-    const dialog = await screen.findByRole("dialog", { name: bulk.runningDeleteTitle });
-    fireEvent.click(within(dialog).getByRole("button", { name: bulk.stop }));
-    expect(within(dialog).getByRole("status")).toHaveTextContent(bulk.stopping);
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: t("library:bulk.deleteConfirm"), hidden: true }));
+    const dialog = await screen.findByRole("dialog", { name: t("library:bulk.runningDeleteTitle") });
+    fireEvent.click(within(dialog).getByRole("button", { name: t("library:bulk.stop") }));
+    expect(within(dialog).getByRole("status")).toHaveTextContent(t("library:bulk.stopping"));
     await settle(gates[0], "ok");
 
-    const done = await screen.findByRole("dialog", { name: bulk.doneDeleteTitle });
-    expect(done).toHaveTextContent(bulk.deleted(1, 0));
-    expect(done).toHaveTextContent(bulk.notProcessed(2));
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDeleteTitle") });
+    expect(done).toHaveTextContent(bulkDeletedText(1, 0));
+    expect(done).toHaveTextContent(t("library:bulk.notProcessed", { count: 2 }));
     expect(gates).toHaveLength(1);
     expect(checkedTitles()).toEqual(["Meeting 2", "Meeting 3"]);
   });
@@ -329,10 +326,10 @@ describe("bulk delete", () => {
   it("after closing, the focus goes to the list header", async () => {
     vi.spyOn(api, "deleteMeeting").mockResolvedValue(undefined);
     await startDelete(many(2), ["Meeting 1", "Meeting 2"]);
-    fireEvent.click(within(confirmDialog()).getByRole("button", { name: bulk.deleteConfirm, hidden: true }));
-    const done = await screen.findByRole("dialog", { name: bulk.doneDeleteTitle });
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: t("library:bulk.deleteConfirm"), hidden: true }));
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDeleteTitle") });
     const close = done.querySelector(".library-bulk-actions button") as HTMLElement;
-    expect(close).toHaveTextContent(bulk.close);
+    expect(close).toHaveTextContent(t("library:bulk.close"));
     expect(close).toHaveFocus();
     fireEvent.click(close);
     await waitFor(() => expect(screen.queryByRole("dialog", { hidden: true })).toBeNull());
@@ -345,9 +342,9 @@ describe("bulk delete", () => {
     const view = await renderList(many(3), "m2");
     fireEvent.click(box("Meeting 1"));
     fireEvent.click(box("Meeting 2"));
-    fireEvent.click(screen.getByRole("button", { name: selection.deleteAll }));
-    fireEvent.click(within(confirmDialog()).getByRole("button", { name: bulk.deleteConfirm, hidden: true }));
-    await screen.findByRole("dialog", { name: bulk.doneDeleteTitle });
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.deleteAll") }));
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: t("library:bulk.deleteConfirm"), hidden: true }));
+    await screen.findByRole("dialog", { name: t("library:bulk.doneDeleteTitle") });
     expect(window.location.pathname).toBe("/");
     expect(view.onSelectMeeting).not.toHaveBeenCalled();
   });
@@ -385,11 +382,11 @@ describe("bulk download", () => {
     const { names } = setup();
     await renderList(many(3));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadAll }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadAll") }));
 
-    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
     expect(names).toEqual(["Meeting 1.txt", "Meeting 2.txt", "Meeting 3.txt"]);
-    expect(within(done).getByRole("status")).toHaveTextContent(bulk.downloaded(3, 0));
+    expect(within(done).getByRole("status")).toHaveTextContent(bulkDownloadedText(3, 0));
     // Downloading leaves the selection as it was.
     expect(checkedTitles()).toHaveLength(3);
   });
@@ -398,17 +395,17 @@ describe("bulk download", () => {
     const { names, get } = setup();
     await renderList(many(6));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadAll }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadAll") }));
 
     const confirm = confirmDialog();
-    expect(confirm).toHaveTextContent(bulk.downloadConfirmTitle(6));
+    expect(confirm).toHaveTextContent(t("library:bulk.downloadConfirmTitle", { count: 6 }));
     expect(get).not.toHaveBeenCalled();
-    fireEvent.click(within(confirm).getByRole("button", { name: bulk.cancel, hidden: true }));
+    fireEvent.click(within(confirm).getByRole("button", { name: t("library:bulk.cancel"), hidden: true }));
     expect(get).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadAll }));
-    fireEvent.click(within(confirmDialog()).getByRole("button", { name: bulk.downloadConfirm, hidden: true }));
-    await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadAll") }));
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: t("library:bulk.downloadConfirm"), hidden: true }));
+    await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
     expect(names).toHaveLength(6);
   });
 
@@ -416,20 +413,20 @@ describe("bulk download", () => {
     const { names } = setup();
     await renderList(many(3, (index) => (index === 2 ? { processState: ProcessState.Transcribing } : {})));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadAll }));
-    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadAll") }));
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
     expect(names).toEqual(["Meeting 1.txt", "Meeting 3.txt"]);
-    expect(done).toHaveTextContent(bulk.downloaded(2, 0));
-    expect(done).toHaveTextContent(bulk.skippedNotReady(1));
+    expect(done).toHaveTextContent(bulkDownloadedText(2, 0));
+    expect(done).toHaveTextContent(t("library:bulk.skippedNotReady", { count: 1 }));
   });
 
   it("explains when none of the selected recordings is ready", async () => {
     const { get } = setup();
     await renderList(many(2, () => ({ processState: ProcessState.Failed })));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadAll }));
-    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
-    expect(done).toHaveTextContent(bulk.noneReady);
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadAll") }));
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
+    expect(done).toHaveTextContent(t("library:bulk.noneReady"));
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -441,15 +438,15 @@ describe("bulk download", () => {
     });
     await renderList(many(3));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadAll }));
-    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
-    expect(done).toHaveTextContent(bulk.downloaded(2, 1));
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadAll") }));
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
+    expect(done).toHaveTextContent(bulkDownloadedText(2, 1));
     expect(names).toEqual(["Meeting 1.txt", "Meeting 3.txt"]);
 
     get.mockImplementation(async (id) => transcript(id));
-    fireEvent.click(within(done).getByRole("button", { name: bulk.retry }));
+    fireEvent.click(within(done).getByRole("button", { name: t("library:bulk.retry") }));
     await waitFor(() => expect(names).toEqual(["Meeting 1.txt", "Meeting 3.txt", "Meeting 2.txt"]));
-    await screen.findByText(bulk.downloaded(1, 0));
+    await screen.findByText(bulkDownloadedText(1, 0));
   });
 });
 
@@ -475,9 +472,9 @@ describe("bulk summary download", () => {
     setup();
     await renderList(many(2, withSummary));
     fireEvent.click(box("Meeting 1"));
-    const toolbar = screen.getByRole("toolbar", { name: selection.toolbar });
+    const toolbar = screen.getByRole("toolbar", { name: t("library:selection.toolbar") });
     const labels = within(toolbar).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent);
-    expect(labels).toEqual([selection.downloadAll, selection.downloadSummaries, selection.deleteAll]);
+    expect(labels).toEqual([t("library:selection.downloadAll"), t("library:selection.downloadSummaries"), t("library:selection.deleteAll")]);
     // No bulk video download: recordings are far too large to batch.
     expect(within(toolbar).queryByRole("button", { name: /video/i })).toBeNull();
   });
@@ -486,12 +483,12 @@ describe("bulk summary download", () => {
     const { names, get } = setup();
     await renderList(many(3, withSummary));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadSummaries") }));
 
-    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
     expect(names).toEqual(["Meeting 1 - resumen.txt", "Meeting 2 - resumen.txt", "Meeting 3 - resumen.txt"]);
     expect(get.mock.calls.map(([id]) => id)).toEqual(["m1", "m2", "m3"]);
-    expect(within(done).getByRole("status")).toHaveTextContent(bulk.downloadedSummaries(3, 0));
+    expect(within(done).getByRole("status")).toHaveTextContent(bulkDownloadedText(3, 0, true));
     expect(checkedTitles()).toHaveLength(3);
   });
 
@@ -499,17 +496,17 @@ describe("bulk summary download", () => {
     const { names, get } = setup();
     await renderList(many(6, withSummary));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadSummaries") }));
 
     const confirm = confirmDialog();
-    expect(confirm).toHaveTextContent(bulk.downloadSummariesConfirmTitle(6));
+    expect(confirm).toHaveTextContent(t("library:bulk.downloadSummariesConfirmTitle", { count: 6 }));
     expect(get).not.toHaveBeenCalled();
-    fireEvent.click(within(confirm).getByRole("button", { name: bulk.cancel, hidden: true }));
+    fireEvent.click(within(confirm).getByRole("button", { name: t("library:bulk.cancel"), hidden: true }));
     expect(get).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
-    fireEvent.click(within(confirmDialog()).getByRole("button", { name: bulk.downloadConfirm, hidden: true }));
-    await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadSummaries") }));
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: t("library:bulk.downloadConfirm"), hidden: true }));
+    await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
     expect(names).toHaveLength(6);
   });
 
@@ -521,20 +518,20 @@ describe("bulk summary download", () => {
       return withSummary();
     }));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
-    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadSummaries") }));
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
     expect(names).toEqual(["Meeting 1 - resumen.txt", "Meeting 4 - resumen.txt"]);
-    expect(done).toHaveTextContent(bulk.downloadedSummaries(2, 0));
-    expect(done).toHaveTextContent(bulk.skippedNoSummary(2));
+    expect(done).toHaveTextContent(bulkDownloadedText(2, 0, true));
+    expect(done).toHaveTextContent(t("library:bulk.skippedNoSummary", { count: 2 }));
   });
 
   it("explains when none of the selected recordings has a summary", async () => {
     const { get } = setup();
     await renderList(many(2));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
-    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
-    expect(done).toHaveTextContent(bulk.noneWithSummary);
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadSummaries") }));
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
+    expect(done).toHaveTextContent(t("library:bulk.noneWithSummary"));
     expect(get).not.toHaveBeenCalled();
   });
 
@@ -546,13 +543,13 @@ describe("bulk summary download", () => {
     });
     await renderList(many(3, withSummary));
     fireEvent.click(selectAllBox());
-    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
-    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
-    expect(done).toHaveTextContent(bulk.downloadedSummaries(2, 1));
+    fireEvent.click(screen.getByRole("button", { name: t("library:selection.downloadSummaries") }));
+    const done = await screen.findByRole("dialog", { name: t("library:bulk.doneDownloadTitle") });
+    expect(done).toHaveTextContent(bulkDownloadedText(2, 1, true));
 
     get.mockImplementation(async (id) => summary(id));
-    fireEvent.click(within(done).getByRole("button", { name: bulk.retry }));
+    fireEvent.click(within(done).getByRole("button", { name: t("library:bulk.retry") }));
     await waitFor(() => expect(names).toEqual(["Meeting 1 - resumen.txt", "Meeting 3 - resumen.txt", "Meeting 2 - resumen.txt"]));
-    await screen.findByText(bulk.downloadedSummaries(1, 0));
+    await screen.findByText(bulkDownloadedText(1, 0, true));
   });
 });

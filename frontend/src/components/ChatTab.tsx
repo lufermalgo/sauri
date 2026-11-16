@@ -1,5 +1,7 @@
-import { meeting } from "../copy/meeting";
+
+import { useT } from "../i18n";
 
 export function ChatTab() {
-  return <p className="meeting-chat-notice">{meeting.chatUnavailable}</p>;
+  const { t } = useT();
+  return <p className="meeting-chat-notice">{t("meeting:chatUnavailable")}</p>;
 }

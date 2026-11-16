@@ -15,8 +15,7 @@ import { RecordingLibrary } from "./RecordingLibrary";
 import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import * as api from "../api";
 import { copy } from "../copy/es";
-
-const text = copy.library;
+import { t } from "../i18n";
 
 afterEach(() => {
   cleanup();
@@ -52,12 +51,10 @@ async function listLoaded() {
   await screen.findByRole("search");
 }
 
-const search = text.search;
-
 /** The search field, expanding it first when it is still the collapsed icon. */
 function searchBox(): HTMLInputElement {
-  if (!screen.queryByRole("searchbox")) fireEvent.click(screen.getByRole("button", { name: search.text }));
-  return screen.getByRole("searchbox", { name: search.text }) as HTMLInputElement;
+  if (!screen.queryByRole("searchbox")) fireEvent.click(screen.getByRole("button", { name: t("library:search.text") }));
+  return screen.getByRole("searchbox", { name: t("library:search.text") }) as HTMLInputElement;
 }
 
 function typeSearch(value: string) {
@@ -69,9 +66,9 @@ function datesButton(): HTMLElement {
 }
 
 function setDates(from: string, to: string) {
-  if (!screen.queryByRole("dialog", { name: search.dates })) fireEvent.click(datesButton());
-  fireEvent.change(screen.getByLabelText(search.from), { target: { value: from } });
-  fireEvent.change(screen.getByLabelText(search.to), { target: { value: to } });
+  if (!screen.queryByRole("dialog", { name: t("library:search.dates") })) fireEvent.click(datesButton());
+  fireEvent.change(screen.getByLabelText(t("library:search.from")), { target: { value: from } });
+  fireEvent.change(screen.getByLabelText(t("library:search.to")), { target: { value: to } });
 }
 
 function sortButton(): HTMLElement {
@@ -109,7 +106,7 @@ describe("RecordingLibrary list", () => {
       meeting({ id: "c", title: "Third by name", createdAt: "2026-01-03T10:00:00Z" }),
     ]);
     renderLibrary();
-    await screen.findByRole("heading", { name: text.title });
+    await screen.findByRole("heading", { name: t("library:title") });
     await listLoaded();
 
     expect(renderedTitles()).toEqual(["Second by name", "First by name", "Third by name"]);
@@ -127,8 +124,8 @@ describe("RecordingLibrary list", () => {
     renderLibrary();
     await listLoaded();
 
-    for (const label of Object.values(text.states)) {
-      expect(screen.getByText(label)).toBeDefined();
+    for (const state of ["queued", "joining", "recording", "transcribing", "completed", "failed"] as const) {
+      expect(screen.getByText(t(`library:states.${state}`))).toBeDefined();
     }
     const expected = new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" })
       .format(new Date("2026-10-28T17:45:00Z"));
@@ -138,14 +135,14 @@ describe("RecordingLibrary list", () => {
   it("shows the untitled label when the title is empty", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([meeting({ title: "" })]);
     renderLibrary();
-    expect(await screen.findByText(text.untitled)).toBeDefined();
+    expect(await screen.findByText(t("library:untitled"))).toBeDefined();
   });
 
   it("the header upload button has a plus icon and is the primary action", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([meeting()]);
     renderLibrary();
     await listLoaded();
-    const button = screen.getByRole("button", { name: text.upload });
+    const button = screen.getByRole("button", { name: t("library:upload") });
     expect(button.className).toContain("ui-button--primary");
     expect(button.querySelector("svg")).not.toBeNull();
   });
@@ -155,9 +152,9 @@ describe("RecordingLibrary list", () => {
       meeting({ title: null as unknown as string }),
     ]);
     renderLibrary();
-    expect(await screen.findByText(text.untitled)).toBeDefined();
+    expect(await screen.findByText(t("library:untitled"))).toBeDefined();
     typeSearch("x");
-    expect(screen.getByText(text.noMatch)).toBeDefined();
+    expect(screen.getByText(t("library:noMatch"))).toBeDefined();
   });
 
   it("selecting a card calls onSelectMeeting with that meeting", async () => {
@@ -173,9 +170,9 @@ describe("RecordingLibrary list", () => {
   it("shows the empty state with an upload button that navigates to /upload", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([]);
     renderLibrary();
-    await screen.findByText(text.empty);
+    await screen.findByText(t("library:empty"));
 
-    const buttons = screen.getAllByRole("button", { name: text.upload });
+    const buttons = screen.getAllByRole("button", { name: t("library:upload") });
     fireEvent.click(buttons[buttons.length - 1]);
     expect(window.location.pathname).toBe("/upload");
     expect(screen.queryByRole("search")).toBeNull();
@@ -186,14 +183,14 @@ describe("RecordingLibrary list", () => {
     renderLibrary();
     await listLoaded();
 
-    fireEvent.click(screen.getByRole("button", { name: text.upload }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:upload") }));
     expect(window.location.pathname).toBe("/upload");
   });
 
   it("shows a loading status and an aria-hidden skeleton while the list is requested", async () => {
     vi.spyOn(api, "listMeetings").mockReturnValue(new Promise(() => {}));
     const { container } = render(<RecordingLibrary refreshKey={0} onSelectMeeting={vi.fn()} />);
-    expect(await screen.findByText(text.loading)).toHaveAttribute("role", "status");
+    expect(await screen.findByText(t("library:loading"))).toHaveAttribute("role", "status");
 
     const skeleton = container.querySelector(".library-skeleton");
     expect(skeleton?.getAttribute("aria-hidden")).toBe("true");
@@ -208,7 +205,7 @@ describe("RecordingLibrary list", () => {
 
     await listLoaded();
     expect(container.querySelector(".library-skeleton")).toBeNull();
-    expect(screen.queryByText(text.loading)).toBeNull();
+    expect(screen.queryByText(t("library:loading"))).toBeNull();
   });
 
   it("shows an alert with Reintentar and asks for the list again", async () => {
@@ -218,10 +215,10 @@ describe("RecordingLibrary list", () => {
     renderLibrary();
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toBe(text.error);
+    expect(alert.textContent).toBe(t("library:error"));
     expect(listMeetings).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: text.retry }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:retry") }));
     expect(await screen.findByText("After retry")).toBeDefined();
     expect(listMeetings).toHaveBeenCalledTimes(2);
   });
@@ -259,10 +256,10 @@ describe("RecordingLibrary date groups", () => {
     await listLoaded();
 
     const headings = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
-    expect(headings).toEqual([text.groups.today, text.groups.thisWeek, text.groups.earlier]);
-    expect(groupTitles(text.groups.today)).toEqual(["Today one"]);
-    expect(groupTitles(text.groups.thisWeek)).toEqual(["Week one", "Six days ago"]);
-    expect(groupTitles(text.groups.earlier)).toEqual(["Old one", "Seven days ago"]);
+    expect(headings).toEqual([t("library:groups.today"), t("library:groups.thisWeek"), t("library:groups.earlier")]);
+    expect(groupTitles(t("library:groups.today"))).toEqual(["Today one"]);
+    expect(groupTitles(t("library:groups.thisWeek"))).toEqual(["Week one", "Six days ago"]);
+    expect(groupTitles(t("library:groups.earlier"))).toEqual(["Old one", "Seven days ago"]);
   });
 
   it("does not show empty groups", async () => {
@@ -270,7 +267,7 @@ describe("RecordingLibrary date groups", () => {
     renderLibrary();
     await listLoaded();
     expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent))
-      .toEqual([text.groups.today]);
+      .toEqual([t("library:groups.today")]);
   });
 
   it("puts recordings without a valid date under ANTERIORES", async () => {
@@ -280,7 +277,7 @@ describe("RecordingLibrary date groups", () => {
     ]);
     renderLibrary();
     await listLoaded();
-    expect(groupTitles(text.groups.earlier)).toEqual(["No date", "Bad date"]);
+    expect(groupTitles(t("library:groups.earlier"))).toEqual(["No date", "Bad date"]);
   });
 
   it("shows a flat list without group headings while a search is active", async () => {
@@ -290,10 +287,10 @@ describe("RecordingLibrary date groups", () => {
 
     typeSearch("o");
     expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
-    expect(screen.getByRole("list", { name: text.listLabel })).toBeDefined();
+    expect(screen.getByRole("list", { name: t("library:listLabel") })).toBeDefined();
     expect(renderedTitles()).toHaveLength(5);
 
-    fireEvent.click(screen.getByRole("button", { name: search.clearFilters }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:search.clearFilters") }));
     expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(3);
   });
 
@@ -302,7 +299,7 @@ describe("RecordingLibrary date groups", () => {
     renderLibrary();
     await listLoaded();
 
-    chooseSort(search.sortOldest);
+    chooseSort(t("library:search.sortOldest"));
     expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
   });
 });
@@ -323,7 +320,7 @@ describe("RecordingLibrary row content", () => {
       speakerCount: 3,
     })]);
     expect(screen.getByText("54:20").className).toContain("library-item-duration");
-    expect(screen.getByText(text.speakers(3))).toBeDefined();
+    expect(screen.getByText(t("library:speakers", { count: 3 }))).toBeDefined();
     // The summary is not a second line of the row any more: it only exists as the row's tooltip.
     expect(container.querySelector(".library-item-topic")).toBeNull();
     expect(container.querySelector(".library-item")?.textContent).not.toContain("Quarterly results");
@@ -337,16 +334,16 @@ describe("RecordingLibrary row content", () => {
 
   it("uses the singular for one speaker", async () => {
     await openWith([meeting({ speakerCount: 1 })]);
-    expect(screen.getByText(text.speakers(1))).toBeDefined();
-    expect(text.speakers(1)).not.toBe(text.speakers(2));
-    expect(text.speakers(2)).toContain("2");
+    expect(screen.getByText(t("library:speakers", { count: 1 }))).toBeDefined();
+    expect(t("library:speakers", { count: 1 })).not.toBe(t("library:speakers", { count: 2 }));
+    expect(t("library:speakers", { count: 2 })).toContain("2");
   });
 
   it("omits duration, speakers and topic when they are null", async () => {
     const { container } = await openWith([meeting({ processState: ProcessState.Completed })]);
     expect(container.querySelector(".library-item-duration")).toBeNull();
     expect(container.querySelector(".library-item-topic")).toBeNull();
-    expect(container.textContent).not.toContain(text.speakers(2).slice(2));
+    expect(container.textContent).not.toContain(t("library:speakers", { count: 2 }).slice(2));
   });
 
   it("has no extra line for in-progress, failed or no-speech recordings", async () => {
@@ -358,18 +355,18 @@ describe("RecordingLibrary row content", () => {
     for (const item of container.querySelectorAll(".library-item")) {
       expect(item.querySelector(".library-item-topic")).toBeNull();
     }
-    expect(screen.queryByRole("button", { name: text.retry })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("library:retry") })).toBeNull();
     // The cause of a failure is not lost: it is the row's tooltip (the chip itself says "Con error").
     const tooltips = Array.from(container.querySelectorAll(".library-row-tip")).map((tip) => tip.textContent);
-    expect(tooltips).toEqual([text.failedCause, text.noSpeechCause]);
-    expect(screen.getAllByText(text.states.failed)).toHaveLength(2);
+    expect(tooltips).toEqual([t("library:failedCause"), t("library:noSpeechCause")]);
+    expect(screen.getAllByText(t("library:states.failed"))).toHaveLength(2);
   });
 
   it("puts the failure cause before the summary in the tooltip of a failed row", async () => {
     const { container } = await openWith([
       meeting({ processState: ProcessState.Failed, summaryTopic: "Partial notes" }),
     ]);
-    expect(container.querySelector(".library-row-tip")?.textContent).toBe(`${text.failedCause} Partial notes`);
+    expect(container.querySelector(".library-row-tip")?.textContent).toBe(`${t("library:failedCause")} Partial notes`);
     const row = container.querySelector(".library-item") as HTMLElement;
     expect(row.getAttribute("aria-describedby")).toBe(container.querySelector(".library-row-tip")?.id);
   });
@@ -407,11 +404,11 @@ describe("RecordingLibrary as the list pane", () => {
 
   it("is a labelled pane whose header strip holds the title and the compact upload button", async () => {
     const { container } = await openPane();
-    const pane = screen.getByRole("region", { name: text.title });
+    const pane = screen.getByRole("region", { name: t("library:title") });
     expect(pane).toHaveClass("ui-pane");
     const header = container.querySelector(".ui-pane-header") as HTMLElement;
-    expect(within(header).getByRole("heading", { level: 1, name: text.title })).toHaveClass("ui-pane-title");
-    expect(within(header).getByRole("button", { name: text.upload })).toHaveClass("ui-button--primary", "ui-button--sm");
+    expect(within(header).getByRole("heading", { level: 1, name: t("library:title") })).toHaveClass("ui-pane-title");
+    expect(within(header).getByRole("button", { name: t("library:upload") })).toHaveClass("ui-button--primary", "ui-button--sm");
     // The icon toolbar sits right under the header strip and the rows scroll in the pane body.
     expect(header.nextElementSibling).toBe(screen.getByRole("search"));
     expect(container.querySelector(".ui-pane-body .library-item")).not.toBeNull();
@@ -431,7 +428,7 @@ describe("RecordingLibrary as the list pane", () => {
   it("turns the list title into a plain label while a recording is open (one h1 per screen)", async () => {
     await openPane("a");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: text.title })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: t("library:title") })).toBeInTheDocument();
   });
 
   it("refreshes quietly when a recording is renamed or deleted elsewhere", async () => {
@@ -461,15 +458,15 @@ describe("RecordingLibrary search", () => {
 
   it("typing filters by title (case insensitive) and the clear-filters icon restores", async () => {
     await openSearch();
-    expect(screen.queryByRole("button", { name: search.clearFilters })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("library:search.clearFilters") })).toBeNull();
 
     typeSearch("PLANNING");
     expect(renderedTitles()).toEqual(["Planning meeting"]);
 
-    fireEvent.click(screen.getByRole("button", { name: search.clearFilters }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:search.clearFilters") }));
     await waitFor(() => expect(renderedTitles()).toHaveLength(3));
     expect(screen.queryByRole("searchbox")).toBeNull();
-    expect(screen.queryByRole("button", { name: search.clearFilters })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("library:search.clearFilters") })).toBeNull();
   });
 
   it("date range narrows the list", async () => {
@@ -481,25 +478,25 @@ describe("RecordingLibrary search", () => {
   it("changing the order reorders the list", async () => {
     await openSearch();
 
-    chooseSort(search.sortOldest);
+    chooseSort(t("library:search.sortOldest"));
     expect(renderedTitles()).toEqual(["Client interview", "Planning meeting", "Closing notes"]);
 
-    chooseSort(search.sortTitle);
+    chooseSort(t("library:search.sortTitle"));
     expect(renderedTitles()).toEqual(["Client interview", "Closing notes", "Planning meeting"]);
   });
 
   it("shows the no-match message when nothing matches", async () => {
     await openSearch();
     typeSearch("zzzz");
-    expect(screen.getByText(text.noMatch)).toBeDefined();
-    expect(screen.queryByRole("list", { name: text.listLabel })).toBeNull();
+    expect(screen.getByText(t("library:noMatch"))).toBeDefined();
+    expect(screen.queryByRole("list", { name: t("library:listLabel") })).toBeNull();
   });
 
   it("keeps the no-match message and the way out when only the date range excludes everything", async () => {
     await openSearch();
     setDates("2030-01-01", "2030-01-31");
-    expect(screen.getByText(text.noMatch)).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: search.clearFilters }));
+    expect(screen.getByText(t("library:noMatch"))).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: t("library:search.clearFilters") }));
     expect(renderedTitles()).toHaveLength(3);
   });
 });
@@ -523,20 +520,20 @@ describe("RecordingLibrary toolbar", () => {
 
   it("starts as three icon buttons with an accessible name and a matching tooltip", async () => {
     await openToolbar();
-    const toolbar = screen.getByRole("search", { name: search.regionLabel });
+    const toolbar = screen.getByRole("search", { name: t("library:search.regionLabel") });
     const buttons = within(toolbar).getAllByRole("button");
     expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
-      search.text, search.dates, search.sortCurrent(search.sortNewest),
+      t("library:search.text"), t("library:search.dates"), t("library:search.sortCurrent", { choice: t("library:search.sortNewest") }),
     ]);
     for (const button of buttons) expect(describedText(button)).toBe(button.getAttribute("aria-label"));
     expect(toolbar.querySelector("input:not([type=checkbox])")).toBeNull();
-    expect(screen.queryByLabelText(search.from)).toBeNull();
+    expect(screen.queryByLabelText(t("library:search.from"))).toBeNull();
   });
 
   it("expands the search field with focus, keeps it while it has text and closes it with Escape", async () => {
     await openToolbar();
-    fireEvent.click(screen.getByRole("button", { name: search.text }));
-    const input = screen.getByRole("searchbox", { name: search.text });
+    fireEvent.click(screen.getByRole("button", { name: t("library:search.text") }));
+    const input = screen.getByRole("searchbox", { name: t("library:search.text") });
     expect(document.activeElement).toBe(input);
 
     fireEvent.change(input, { target: { value: "plan" } });
@@ -547,16 +544,16 @@ describe("RecordingLibrary toolbar", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByRole("searchbox")).toBeNull();
     expect(renderedTitles()).toHaveLength(2);
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.text }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: t("library:search.text") }));
   });
 
   it("the close button clears the term and collapses the field", async () => {
     await openToolbar();
     typeSearch("plan");
-    fireEvent.click(screen.getByRole("button", { name: search.closeSearch }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:search.closeSearch") }));
     expect(screen.queryByRole("searchbox")).toBeNull();
     expect(renderedTitles()).toHaveLength(2);
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.text }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: t("library:search.text") }));
   });
 
   it("an empty search field folds back into its icon when focus leaves it", async () => {
@@ -564,7 +561,7 @@ describe("RecordingLibrary toolbar", () => {
     const input = searchBox();
     fireEvent.blur(input, { relatedTarget: document.body });
     expect(screen.queryByRole("searchbox")).toBeNull();
-    expect(screen.getByRole("button", { name: search.text })).toBeDefined();
+    expect(screen.getByRole("button", { name: t("library:search.text") })).toBeDefined();
   });
 
   it("keeps focus in the field while typing", async () => {
@@ -583,13 +580,13 @@ describe("RecordingLibrary toolbar", () => {
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(trigger);
 
-    const dialog = screen.getByRole("dialog", { name: search.dates });
+    const dialog = screen.getByRole("dialog", { name: t("library:search.dates") });
     expect(dialog.getAttribute("aria-modal")).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(document.activeElement).toBe(screen.getByLabelText(search.from));
-    expect((screen.getByLabelText(search.to) as HTMLInputElement).type).toBe("date");
+    expect(document.activeElement).toBe(screen.getByLabelText(t("library:search.from")));
+    expect((screen.getByLabelText(t("library:search.to")) as HTMLInputElement).type).toBe("date");
 
-    fireEvent.change(screen.getByLabelText(search.from), { target: { value: "2026-10-01" } });
+    fireEvent.change(screen.getByLabelText(t("library:search.from")), { target: { value: "2026-10-01" } });
     expect(renderedTitles()).toEqual(["Planning meeting"]);
   });
 
@@ -597,7 +594,7 @@ describe("RecordingLibrary toolbar", () => {
     await openToolbar();
     expect(datesButton().className).not.toContain("ui-icon-button--active");
     setDates("2026-11-01", "2026-11-15");
-    const label = search.datesActive("01/11/2026", "15/11/2026");
+    const label = t("library:search.datesRange", { from: "01/11/2026", to: "15/11/2026" });
     expect(label).toBe("Fechas: 01/11/2026 – 15/11/2026");
     const trigger = screen.getByRole("button", { name: label });
     expect(trigger.className).toContain("ui-icon-button--active");
@@ -607,7 +604,7 @@ describe("RecordingLibrary toolbar", () => {
   it("names a one-sided range", async () => {
     await openToolbar();
     fireEvent.click(datesButton());
-    fireEvent.change(screen.getByLabelText(search.from), { target: { value: "2026-10-01" } });
+    fireEvent.change(screen.getByLabelText(t("library:search.from")), { target: { value: "2026-10-01" } });
     expect(screen.getByRole("button", { name: "Fechas: desde 01/10/2026" })).toBeDefined();
   });
 
@@ -615,9 +612,9 @@ describe("RecordingLibrary toolbar", () => {
     await openToolbar();
     typeSearch("e");
     setDates("2026-10-01", "2026-10-31");
-    fireEvent.click(screen.getByRole("button", { name: search.clear }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:search.clear") }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.dates }));
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: t("library:search.dates") }));
     expect(screen.getByRole("searchbox")).toBeDefined();
     expect(renderedTitles()).toHaveLength(2);
   });
@@ -627,8 +624,8 @@ describe("RecordingLibrary toolbar", () => {
     const trigger = datesButton();
     trigger.focus();
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    expect(screen.getByRole("dialog", { name: search.dates })).toBeDefined();
-    fireEvent.keyDown(screen.getByLabelText(search.from), { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: t("library:search.dates") })).toBeDefined();
+    fireEvent.keyDown(screen.getByLabelText(t("library:search.from")), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
@@ -647,19 +644,19 @@ describe("RecordingLibrary toolbar", () => {
     fireEvent.click(trigger);
     const radios = screen.getAllByRole("menuitemradio");
     expect(radios.map((radio) => [radio.textContent, radio.getAttribute("aria-checked")])).toEqual([
-      [search.sortNewest, "true"], [search.sortOldest, "false"], [search.sortTitle, "false"],
+      [t("library:search.sortNewest"), "true"], [t("library:search.sortOldest"), "false"], [t("library:search.sortTitle"), "false"],
     ]);
     expect(radios[0].querySelector("svg")).not.toBeNull();
     expect(radios[1].querySelector("svg")).toBeNull();
 
     fireEvent.click(radios[2]);
     expect(screen.queryByRole("menu")).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.sortCurrent(search.sortTitle) }));
-    expect(screen.getByRole("button", { name: search.sortCurrent(search.sortTitle) }).className)
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: t("library:search.sortCurrent", { choice: t("library:search.sortTitle") }) }));
+    expect(screen.getByRole("button", { name: t("library:search.sortCurrent", { choice: t("library:search.sortTitle") }) }).className)
       .toContain("ui-icon-button--active");
     expect(renderedTitles()).toEqual(["Client interview", "Planning meeting"]);
     fireEvent.click(sortButton());
-    expect(screen.getByRole("menuitemradio", { name: search.sortTitle }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("menuitemradio", { name: t("library:search.sortTitle") }).getAttribute("aria-checked")).toBe("true");
   });
 
   it("closes the sort menu with Escape and returns focus to the icon", async () => {
@@ -676,24 +673,24 @@ describe("RecordingLibrary toolbar", () => {
 
   it("clear filters resets the search and dates but keeps the sort", async () => {
     await openToolbar();
-    chooseSort(search.sortTitle);
+    chooseSort(t("library:search.sortTitle"));
     typeSearch("e");
     setDates("2026-10-01", "2026-10-31");
     expect(renderedTitles()).toEqual(["Planning meeting"]);
 
-    fireEvent.click(screen.getByRole("button", { name: search.clearFilters }));
+    fireEvent.click(screen.getByRole("button", { name: t("library:search.clearFilters") }));
     expect(screen.queryByRole("searchbox")).toBeNull();
-    expect(screen.queryByRole("button", { name: search.clearFilters })).toBeNull();
-    expect(screen.getByRole("button", { name: search.dates })).toBeDefined();
+    expect(screen.queryByRole("button", { name: t("library:search.clearFilters") })).toBeNull();
+    expect(screen.getByRole("button", { name: t("library:search.dates") })).toBeDefined();
     expect(renderedTitles()).toEqual(["Client interview", "Planning meeting"]);
-    expect(screen.getByRole("button", { name: search.sortCurrent(search.sortTitle) })).toBeDefined();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.text }));
+    expect(screen.getByRole("button", { name: t("library:search.sortCurrent", { choice: t("library:search.sortTitle") }) })).toBeDefined();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: t("library:search.text") }));
   });
 
   it("does not render the toolbar while loading, on error or with no recordings", async () => {
     vi.spyOn(api, "listMeetings").mockResolvedValue([]);
     renderLibrary();
-    await screen.findByText(text.empty);
+    await screen.findByText(t("library:empty"));
     expect(screen.queryByRole("search")).toBeNull();
   });
 });
@@ -718,8 +715,8 @@ describe("RecordingLibrary processing progress", () => {
       createdAt: new Date(now - 60_000).toISOString(),
     })]);
     const progress = view.container.querySelector(".library-item-progress") as HTMLElement;
-    expect(progress.textContent).toBe(copy.processing.libraryProgress(copy.processing.steps.transcription, 22));
-    const bar = within(progress).getByRole("progressbar", { name: copy.processing.libraryProgressLabel });
+    expect(progress.textContent).toBe(t("processing:libraryProgress", { stage: t("processing:steps.transcription"), percent: 22 }));
+    const bar = within(progress).getByRole("progressbar", { name: t("processing:libraryProgressLabel") });
     expect(bar.getAttribute("aria-valuenow")).toBe("22");
   });
 
@@ -728,7 +725,7 @@ describe("RecordingLibrary processing progress", () => {
       processState: ProcessState.Queued, durationSeconds: 600, createdAt: new Date(Date.now() - 3_600_000).toISOString(),
     })]);
     expect(view.container.querySelector(".library-item-progress")?.textContent)
-      .toBe(copy.processing.libraryOvertime(copy.processing.steps.transcription));
+      .toBe(t("processing:libraryOvertime", { stage: t("processing:steps.transcription") }));
   });
 
   it("shows no estimate without a duration or for finished recordings", async () => {
@@ -748,8 +745,8 @@ describe("RecordingLibrary processing progress", () => {
     list.mockResolvedValue([meeting({ processState: ProcessState.Completed, durationSeconds: 600 })]);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(list).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(screen.getByText(text.states.completed)).toBeDefined());
-    expect(screen.queryByText(text.loading)).toBeNull();
+    await waitFor(() => expect(screen.getByText(t("library:states.completed"))).toBeDefined());
+    expect(screen.queryByText(t("library:loading"))).toBeNull();
     await vi.advanceTimersByTimeAsync(30_000);
     expect(list).toHaveBeenCalledTimes(2);
   });

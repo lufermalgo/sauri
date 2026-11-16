@@ -1,6 +1,6 @@
 import type { MeetingDiarization, MeetingTranscript, SpeakerReview } from "./api";
-import { copy } from "./copy/es";
 import { groupTranscriptTurns, type PresentationTurn } from "./transcript-turns";
+import { t } from "./i18n";
 
 export const UNRESOLVED_SPEAKER_COLOR = "var(--ds-speaker-unresolved)";
 
@@ -14,7 +14,7 @@ export function displaySpeakerLabel(label: string, speakerId: string | undefined
   const disposition = review?.items.find(item => item.speakerId === speakerId)?.disposition;
   const number = /^Speaker (\d+)$/.exec(label)?.[1];
   return number && disposition !== "named" && disposition !== "corrected"
-    ? copy.transcript.numberedSpeaker(number) : label;
+    ? t("transcript:numberedSpeaker", { number }) : label;
 }
 
 export type PresentedTurn = PresentationTurn & { color: string; hasAmbiguous: boolean };
@@ -37,7 +37,7 @@ export function presentTranscriptTurns(
     speakerId: turn.speakerId ?? undefined,
     speakerLabel: displaySpeakerLabel(
       (turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined) ||
-        turn.speakerLabel || copy.transcript.unknownSpeaker, turn.speakerId ?? undefined, review),
+        turn.speakerLabel || t("transcript:unknownSpeaker"), turn.speakerId ?? undefined, review),
     hasAmbiguous: turn.hasAmbiguous ?? false,
     color: speakerColor(diarization, turn.speakerId ?? undefined),
   }));
@@ -49,7 +49,7 @@ export function presentTranscriptTurns(
     const reviewedLabel = turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined;
     return {
       ...turn,
-      speakerLabel: displaySpeakerLabel(reviewedLabel || speaker?.label || copy.transcript.legacyUnknownSpeaker, turn.speakerId, review),
+      speakerLabel: displaySpeakerLabel(reviewedLabel || speaker?.label || t("transcript:legacyUnknownSpeaker"), turn.speakerId, review),
       color: speakerColor(diarization, turn.speakerId),
       hasAmbiguous: false,
     };

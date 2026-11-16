@@ -1,4 +1,4 @@
-import { copy } from "./copy/es";
+
 import type {
   Meeting,
   MeetingListApiResponse,
@@ -27,6 +27,7 @@ import type {
   LocalJob,
   LocalModelList,
 } from "@sauri/shared-types";
+import { t } from "./i18n";
 
 export interface PlaybackSource {
   source_id: string;
@@ -177,7 +178,7 @@ export async function uploadWithProgress(
   onProgress: (progress: UploadProgress) => void
 ): Promise<RecordingUploadResult> {
   const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) throw new Error(copy.upload.errors.unauthenticated);
+  if (!token) throw new Error(t("upload:errors.unauthenticated"));
 
   const formData = new FormData();
   formData.append("audio", audio);
@@ -195,7 +196,7 @@ export async function uploadWithProgress(
         window.dispatchEvent(new Event("sauri:unauthorized"));
       }
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(copy.upload.errors.http(xhr.status)));
+        reject(new Error(t("upload:errors.http", { status: xhr.status })));
         return;
       }
       try {
@@ -208,12 +209,12 @@ export async function uploadWithProgress(
         ) throw new Error("Invalid upload response");
         resolve({ meeting_id: result.meeting_id, recording_id: result.recording_id, state: result.state });
       } catch {
-        reject(new Error(copy.upload.errors.invalidResponse));
+        reject(new Error(t("upload:errors.invalidResponse")));
       }
     };
-    xhr.onerror = () => reject(new Error(copy.upload.errors.network));
-    xhr.ontimeout = () => reject(new Error(copy.upload.errors.timeout));
-    xhr.onabort = () => reject(new Error(copy.upload.errors.aborted));
+    xhr.onerror = () => reject(new Error(t("upload:errors.network")));
+    xhr.ontimeout = () => reject(new Error(t("upload:errors.timeout")));
+    xhr.onabort = () => reject(new Error(t("upload:errors.aborted")));
     xhr.open("POST", `${BASE_URL}/api/v1/ingestion/upload`);
     xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.send(formData);
@@ -527,7 +528,7 @@ export class SpeakerReviewRequestError extends Error {
   readonly reason: SpeakerReviewFailure;
 
   constructor(reason: SpeakerReviewFailure) {
-    super(reason === "conflict" ? copy.speakerReview.conflict : copy.speakerReview.notFound);
+    super(reason === "conflict" ? t("speakerReview:conflict") : t("speakerReview:notFound"));
     this.name = "SpeakerReviewRequestError";
     this.reason = reason;
   }

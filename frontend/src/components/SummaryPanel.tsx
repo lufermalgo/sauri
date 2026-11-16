@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import type { MeetingSummary, SummaryRequestStatus, SummarySource } from "@sauri/shared-types";
 import type { SummarySignal } from "../processing-estimate";
 import { getLatestSummaryRequest, getMeetingSummary, requestMeetingSummary } from "../api";
-import { copy } from "../copy/es";
+import { summaryFailureText } from "../summary-failure";
 import { isBlock, summaryPlainText } from "../summary-export";
 import { saveSummary } from "../summary-download";
 import { StageProgress } from "./StageProgress";
 import { Button, Skeleton, SkeletonLines, StatusBadge } from "./ui";
 import "../styles/summary.css";
+import { useT } from "../i18n";
 
 interface SummaryPanelProps {
   meetingId: string;
@@ -29,15 +30,15 @@ interface SummaryPanelProps {
 const SKELETON_POINT_WIDTHS = ["72%", "58%", "66%"];
 
 function GeneratingSkeleton({ progress }: { progress: NonNullable<SummaryPanelProps["progress"]> }) {
-  const text = copy.summary;
+  const { t } = useT();
   return (
     <>
       <div className="summary-generating">
         <div className="summary-generating-head">
-          <StatusBadge tone="progress">{text.generatingBadge}</StatusBadge>
-          <span role="status" className="summary-generating-status">{text.generating}</span>
+          <StatusBadge tone="progress">{t("summary:generatingBadge")}</StatusBadge>
+          <span role="status" className="summary-generating-status">{t("summary:generating")}</span>
         </div>
-        <StageProgress stage="summary" label={copy.processing.summarizing} {...progress} />
+        <StageProgress stage="summary" label={t("processing:summarizing")} {...progress} />
         <div className="summary-skeleton-block" aria-hidden="true">
           <Skeleton width={60} height={12} />
           <Skeleton height={16} />
@@ -56,7 +57,7 @@ function GeneratingSkeleton({ progress }: { progress: NonNullable<SummaryPanelPr
           ))}
         </ul>
       </div>
-      <p className="summary-help">{text.generatingHelp}</p>
+      <p className="summary-help">{t("summary:generatingHelp")}</p>
     </>
   );
 }
@@ -67,16 +68,16 @@ function timestamp(ms: number): string {
 }
 
 function SourceChips({ sources, onSeek }: { sources: SummarySource[]; onSeek: (startMs: number) => void }) {
-  const text = copy.summary;
+  const { t } = useT();
   if (sources.length === 0) return null;
   return (
-    <ul aria-label={text.sources} className="summary-sources">
+    <ul aria-label={t("summary:sources")} className="summary-sources">
       {sources.map((source) => (
         <li key={source.passageId}>
           <a
             href="#meeting-playback"
             className="summary-source"
-            aria-label={text.sourceAt(timestamp(source.startMs))}
+            aria-label={t("summary:sourceAt", { time: timestamp(source.startMs) })}
             onClick={(event) => { event.preventDefault(); onSeek(source.startMs); }}
           >{timestamp(source.startMs)}</a>
         </li>
@@ -86,12 +87,12 @@ function SourceChips({ sources, onSeek }: { sources: SummarySource[]; onSeek: (s
 }
 
 function StructuredSummary({ summary, onSeek }: { summary: MeetingSummary; onSeek: (startMs: number) => void }) {
-  const text = copy.summary;
+  const { t } = useT();
   return (
     <>
-      <h3 className="summary-label">{text.mainTopic}</h3>
+      <h3 className="summary-label">{t("summary:mainTopic")}</h3>
       <p className="summary-paragraph">{summary.topic}</p>
-      <h3 className="summary-label">{text.detailedKeyPoints}</h3>
+      <h3 className="summary-label">{t("summary:detailedKeyPoints")}</h3>
       <ol className="summary-blocks">
         {summary.keyPoints.filter(isBlock).map((block, index) => (
           <li key={index} className="summary-block">
@@ -114,7 +115,7 @@ function StructuredSummary({ summary, onSeek }: { summary: MeetingSummary; onSee
       </ol>
       {summary.conclusion && (
         <>
-          <h3 className="summary-label">{text.conclusion}</h3>
+          <h3 className="summary-label">{t("summary:conclusion")}</h3>
           <p className="summary-paragraph">{summary.conclusion}</p>
         </>
       )}
@@ -131,6 +132,7 @@ function MeetingSummaryPanel({
   meetingId, title, onSeek, transcriptReady = true, onSummaryChange, expectAutoRequest = false, onSignalChange,
   progress = { audioSeconds: null, createdAt: null, stageStartedAt: null },
 }: SummaryPanelProps) {
+  const { t } = useT();
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
   useEffect(() => { onSummaryChange?.(summary); }, [summary, onSummaryChange]);
   const [request, setRequest] = useState<SummaryRequestStatus | null>(null);
@@ -142,7 +144,6 @@ function MeetingSummaryPanel({
   const [requestError, setRequestError] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState("");
   const mounted = useRef(false);
-  const text = copy.summary;
   const expectRef = useRef(expectAutoRequest);
   expectRef.current = expectAutoRequest;
 
@@ -227,9 +228,9 @@ function MeetingSummaryPanel({
     if (!summary) return;
     try {
       await navigator.clipboard.writeText(summaryPlainText(summary));
-      if (mounted.current) setCopyFeedback(text.copied);
+      if (mounted.current) setCopyFeedback(t("summary:copied"));
     } catch {
-      if (mounted.current) setCopyFeedback(text.copyFailed);
+      if (mounted.current) setCopyFeedback(t("summary:copyFailed"));
     }
   }
 
@@ -247,46 +248,46 @@ function MeetingSummaryPanel({
 
   if (loading) return (
     <div className="summary-panel">
-      <p role="status" className="summary-state">{text.loading}</p>
+      <p role="status" className="summary-state">{t("summary:loading")}</p>
     </div>
   );
   if (loadError || resultUnavailable) return (
     <div className="summary-panel">
       <div className="summary-notice summary-notice--error">
-        <p role="alert">{loadError ? text.loadFailed : text.resultUnavailable}</p>
+        <p role="alert">{loadError ? t("summary:loadFailed") : t("summary:resultUnavailable")}</p>
         <Button variant="secondary" size="sm" onClick={() => {
           setAcceptedRequest(null);
           setReload((value) => value + 1);
-        }}>{text.retry}</Button>
+        }}>{t("summary:retry")}</Button>
       </div>
     </div>
   );
 
   return (
-    <section aria-label={text.tab} className="summary-panel">
-      {requestError && <p role="alert" className="summary-notice summary-notice--error">{text.requestFailed}</p>}
-      {submitting ? <p role="status" className="summary-state">{text.submitting}</p> : waiting ? (
+    <section aria-label={t("summary:tab")} className="summary-panel">
+      {requestError && <p role="alert" className="summary-notice summary-notice--error">{t("summary:requestFailed")}</p>}
+      {submitting ? <p role="status" className="summary-state">{t("summary:submitting")}</p> : waiting ? (
         <GeneratingSkeleton progress={progress} />
       ) : currentRequest?.status === "failed" ? (
         <div className="summary-notice summary-notice--error">
-          <p role="alert">{text.failed} {text.failureCause(currentRequest.failureCause)}</p>
-          {transcriptReady && <Button variant="secondary" size="sm" onClick={() => void generate()}>{text.retry}</Button>}
+          <p role="alert">{t("summary:failed")} {summaryFailureText(currentRequest.failureCause)}</p>
+          {transcriptReady && <Button variant="secondary" size="sm" onClick={() => void generate()}>{t("summary:retry")}</Button>}
         </div>
       ) : summary ? (
         <>
           <div className="summary-toolbar">
-            <StatusBadge tone="neutral">{text.draft}</StatusBadge>
-            <div className="summary-actions" role="group" aria-label={text.actions}>
-              <Button variant="secondary" size="sm" onClick={() => void copySummary()}>{text.copy}</Button>
-              <Button variant="secondary" size="sm" onClick={downloadSummary}>{text.download}</Button>
+            <StatusBadge tone="neutral">{t("summary:draft")}</StatusBadge>
+            <div className="summary-actions" role="group" aria-label={t("summary:actions")}>
+              <Button variant="secondary" size="sm" onClick={() => void copySummary()}>{t("summary:copy")}</Button>
+              <Button variant="secondary" size="sm" onClick={downloadSummary}>{t("summary:download")}</Button>
             </div>
           </div>
           {copyFeedback && <p role="status" className="summary-feedback">{copyFeedback}</p>}
           {summary.schemaVersion === 2 ? <StructuredSummary summary={summary} onSeek={onSeek} /> : (
             <>
-              <h3 className="summary-label">{text.topic}</h3>
+              <h3 className="summary-label">{t("summary:topic")}</h3>
               <p className="summary-topic">{summary.topic}</p>
-              <h3 className="summary-label">{text.keyPoints}</h3>
+              <h3 className="summary-label">{t("summary:keyPoints")}</h3>
               <ul className="summary-points">
                 {summary.keyPoints.map((point, index) => (
                   <li key={index} className="summary-point">
@@ -300,12 +301,12 @@ function MeetingSummaryPanel({
         </>
       ) : transcriptReady ? (
         <div className="summary-empty">
-          <p>{text.empty}</p>
-          <Button variant="primary" size="sm" onClick={() => void generate()}>{text.generate}</Button>
+          <p>{t("summary:empty")}</p>
+          <Button variant="primary" size="sm" onClick={() => void generate()}>{t("summary:generate")}</Button>
         </div>
       ) : (
         <div className="summary-waiting">
-          <p className="summary-waiting-note"><strong>{text.waitingTitle}</strong> {text.waitingBody}</p>
+          <p className="summary-waiting-note"><strong>{t("summary:waitingTitle")}</strong> {t("summary:waitingBody")}</p>
           <SkeletonLines lines={5} lastWidth="84%" />
         </div>
       )}
