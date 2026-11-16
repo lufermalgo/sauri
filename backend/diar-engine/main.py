@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="sauri Diar Engine",
+    title="Sauri Diar Engine",
     description="Local speaker diarization service powered by pyannote.audio",
     version="1.0.0",
     lifespan=lifespan,

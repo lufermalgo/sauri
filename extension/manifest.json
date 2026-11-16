@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "sauri",
-  "version": "0.8.0",
+  "name": "Sauri",
+  "version": "0.8.1",
   "description": "Graba el audio y el video de cualquier pestaña del navegador y Sauri lo transcribe y lo resume.",
   "permissions": [
     "tabCapture",

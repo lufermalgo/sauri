@@ -79,3 +79,18 @@ describe("manifest.json — brand icons", () => {
     expect(png.readUInt32BE(20)).toBe(Number(size));
   });
 });
+
+describe("manifest.json — brand name", () => {
+  it("writes the product name as «Sauri» in the name and the toolbar title (never lowercase)", () => {
+    expect(manifest.name).toBe("Sauri");
+    expect(manifest.action.default_title).toMatch(/^Sauri\b/);
+    expect(manifest.action.default_title).not.toMatch(/\bsauri\b/);
+  });
+
+  it("uses «Sauri» in the title of every extension page", () => {
+    for (const page of ["panel", "options", "detail"]) {
+      const html = fs.readFileSync(path.resolve(__dirname, page, "index.html"), "utf-8");
+      expect(html).toMatch(/<title>Sauri\b/);
+    }
+  });
+});

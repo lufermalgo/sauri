@@ -21,7 +21,7 @@ export const permissionCopy = {
     "Vuelve a esta página y pulsa el botón.",
   ],
   settingsPrefix: "Si no ves el icono, abre",
-  settingsSuffix: "y busca «sauri» en la lista.",
+  settingsSuffix: "y busca «Sauri» en la lista.",
   retry: "Intentar de nuevo",
   systemHelp: "Si macOS bloquea Chrome, aparece también el mensaje «Permiso denegado por el sistema»: se resuelve en Ajustes del Sistema → Privacidad → Micrófono.",
   deviceError: "No se pudo acceder al micrófono. Comprueba que esté conectado e intenta de nuevo.",

@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="sauri ASR Engine",
+    title="Sauri ASR Engine",
     description="Local speech-to-text service powered by faster-whisper",
     version="1.0.0",
     lifespan=lifespan,
