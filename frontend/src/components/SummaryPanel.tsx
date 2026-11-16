@@ -256,9 +256,6 @@ function MeetingSummaryPanel({
         </div>
       ) : summary ? (
         <>
-          <div className="summary-toolbar">
-            <StatusBadge tone="neutral">{t("summary:draft")}</StatusBadge>
-          </div>
           {summary.schemaVersion === 2 ? <StructuredSummary summary={summary} onSeek={onSeek} /> : (
             <>
               <h3 className="summary-label">{t("summary:topic")}</h3>
