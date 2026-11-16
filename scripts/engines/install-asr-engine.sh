@@ -17,7 +17,10 @@ from pathlib import Path
 
 root, mode, venv = sys.argv[1:]
 sys.path.insert(0, str(Path(root) / "backend/asr-engine"))
-from asr_assets import binary_record, load_manifest, verify_model, verify_provenance
+from asr_assets import (
+    binary_record, load_manifest, vad_binary_record, vad_cli_path, vad_model_path, verify_model, verify_provenance,
+)
+from asr_config import vad_enabled
 
 provenance = Path(venv).parent / "asr-provenance" / "provenance.json"
 try:
@@ -27,38 +30,50 @@ try:
     model = Path(os.environ.get("ASR_MODEL_PATH", f"~/.local/share/sauri/models/{filename}")).expanduser()
     cli = Path(os.environ.get("WHISPER_CLI", "/opt/homebrew/bin/whisper-cli")).expanduser()
     record = binary_record(cli, manifest)
+    assets = [(model, manifest, url, "SAURI_ASR_MODEL_SOURCE")]
+    if vad_enabled():
+        vad = manifest["vad"]
+        record.update(vad_binary_record(vad_cli_path(), vad))
+        assets.append((vad_model_path(), vad, vad["model_url"], "SAURI_ASR_VAD_MODEL_SOURCE"))
     if provenance.exists():
-        verify_provenance(record, provenance)
-    if model.exists():
-        verify_model(model, manifest)  # Never repair or overwrite a corrupt installed model.
-    elif mode == "--check":
-        raise ValueError("ASR model unavailable")
-    else:
-        model.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix=".asr-model-", dir=model.parent)
+        verify_provenance(record, provenance, allow_upgrade=mode != "--check")
+    # Reject any corrupt installed asset before downloading or writing anything.
+    for target, metadata, _, _ in assets:
+        if target.exists():
+            verify_model(target, metadata)
+        elif mode == "--check":
+            raise ValueError("ASR or VAD model unavailable")
+    for target, metadata, asset_url, source_variable in assets:
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".asr-model-", dir=target.parent)
         os.close(fd)
         try:
-            source = os.environ.get("SAURI_ASR_MODEL_SOURCE")
+            source = os.environ.get(source_variable)
             if source:
                 shutil.copyfile(Path(source).expanduser(), temporary)
             else:
-                with urllib.request.urlopen(url, timeout=300) as response, open(temporary, "wb") as output:
+                with urllib.request.urlopen(asset_url, timeout=300) as response, open(temporary, "wb") as output:
                     shutil.copyfileobj(response, output)
-            verify_model(Path(temporary), manifest)
-            os.replace(temporary, model)
+            verify_model(Path(temporary), metadata)
+            os.replace(temporary, target)
         finally:
             Path(temporary).unlink(missing_ok=True)
     if mode == "--check":
         verify_provenance(record, provenance)
     else:
         provenance.parent.mkdir(parents=True, exist_ok=True)
+        if provenance.exists() and not vad_enabled():
+            # Disabling VAD must not erase an already verified installation record.
+            record = {**json.loads(provenance.read_text()), **record}
         temporary = provenance.with_suffix(".tmp")
         temporary.write_text(json.dumps(record, indent=2) + "\n")
         temporary.replace(provenance)
 except (OSError, ValueError, KeyError, TypeError) as exc:
     print(f"ASR verification failed: {exc}", file=sys.stderr)
     sys.exit(1)
-print("ASR model size, SHA-256 and whisper-cli checks passed")
+print("ASR and enabled VAD asset checks passed")
 PY
 [[ "${1:-}" != --check ]] || exit 0
 if [[ ! -x "$PYTHON" ]]; then

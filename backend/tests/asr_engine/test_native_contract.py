@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import importlib.util
 import json
+import logging
 import sys
 import threading
 import time
@@ -47,6 +48,9 @@ def capability(audio_ref: str, secret: bytes, expires_at: int) -> str:
 
 @pytest.fixture
 def configured(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setenv("SAURI_ASR_VAD", "off")
+    monkeypatch.setenv("SAURI_ASR_SUPPRESS_NST", "off")
+    monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(tmp_path / "absent-vocabulary"))
     token_path = tmp_path / "engine_token"
     token_path.write_text("synthetic-token")
     key_path = tmp_path / "capability_key"
@@ -469,6 +473,8 @@ async def test_startup_rejects_invalid_default_language(monkeypatch, language):
 async def test_startup_verifies_assets_once(monkeypatch, tmp_path, tamper):
     from asr_assets import binary_record, load_manifest, provenance_path
 
+    monkeypatch.setenv("SAURI_ASR_VAD", "off")
+
     model, binary = tmp_path / "model.bin", tmp_path / "whisper-cli"
     model.write_bytes(b"synthetic model")
     binary.write_bytes(b"synthetic binary")
@@ -585,3 +591,123 @@ def test_streaming_download_timeout_closes_body_and_removes_partial_file(monkeyp
         native._download_audio("recordings/synthetic.wav", time.monotonic() + 1)
     assert body.closed and len(reads) == 2
     assert list(tmp_path.iterdir()) == []
+
+
+def test_missing_vocabulary(tmp_path):
+    assert native.vocabulary_prompt(tmp_path / "missing") is None
+
+
+@pytest.mark.parametrize("content", ["", " \n\t\n", "\x00\n"])
+def test_empty_vocabulary(tmp_path, content):
+    path = tmp_path / "vocabulary.txt"
+    path.write_text(content)
+    assert native.vocabulary_prompt(path) is None
+
+
+def test_prompt_keeps_whole_terms_in_order_and_deduplicates(tmp_path):
+    path = tmp_path / "vocabulary.txt"
+    path.write_text("Zorvex\n\n  Veltra  Labs \nZorvex\n" + "x" * 300 + "\nNuvexa\n")
+    assert native.vocabulary_prompt(path) == "Hola. Estos son los nombres propios: Zorvex, Veltra Labs, Nuvexa."
+
+
+def test_prompt_budget_counts_utf8_and_keeps_complete_entries(tmp_path):
+    path = tmp_path / "vocabulary.txt"
+    terms = [f"\u754c\u754c{index}" for index in range(100)]
+    path.write_text("\n".join(terms))
+    prompt = native.vocabulary_prompt(path)
+    assert prompt is not None
+    assert len(prompt.encode("utf-8")) <= 224
+    included = prompt.split(": ", 1)[1][:-1].split(", ")
+    assert included == terms[:len(included)]
+    assert len((prompt[:-1] + ", " + terms[len(included)] + ".").encode("utf-8")) > 224
+
+
+@pytest.mark.parametrize("custom_path", [False, True])
+def test_run_whisper_reads_default_or_override_vocabulary(monkeypatch, tmp_path, custom_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("SAURI_ASR_VOCABULARY_FILE", raising=False)
+    path = tmp_path / ".config/sauri/vocabulary.txt"
+    if custom_path:
+        path = tmp_path / "custom.txt"
+        monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("Zorvex\nVeltra\n")
+    output = tmp_path / "output"
+    def run(command, **kwargs):
+        assert command[command.index("--prompt") + 1] == native.vocabulary_prompt(path)
+        assert "--carry-initial-prompt" in command
+        assert "-ojf" in command and "-fa" in command
+        assert kwargs == {"check": True, "capture_output": True, "timeout": 12}
+        output.with_suffix(".json").write_text(json.dumps({"transcription": []}))
+    monkeypatch.setattr(native.subprocess, "run", run)
+    assert native._run_whisper(tmp_path / "audio.wav", output, "es", 12) == {"transcription": []}
+
+
+@pytest.mark.parametrize("content", [None, "", " \n"])
+def test_no_prompt_flags_without_terms(monkeypatch, tmp_path, content):
+    path = tmp_path / "vocabulary.txt"
+    monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(path))
+    if content is not None:
+        path.write_text(content)
+    output = tmp_path / "output"
+    def run(command, **kwargs):
+        assert "--prompt" not in command and "--carry-initial-prompt" not in command
+        output.with_suffix(".json").write_text(json.dumps({"transcription": []}))
+    monkeypatch.setattr(native.subprocess, "run", run)
+    native._run_whisper(tmp_path / "audio.wav", output, "es", 12)
+
+
+def test_diagnostic_tail_is_bounded_and_private():
+    safe = "ggml_metal_buffer_init: error: failed to allocate buffer, size =     7.33 MiB"
+    stderr = "\n".join([safe] * 20 + [
+        "[00:00:00.000 --> 00:00:01.000] private utterance",
+        "error: failed to read audio file '/Users/private/audio.wav'",
+        "whisper_full: prompt = private glossary",
+        "error: arbitrary private content",
+        "error: failed to initialize whisper context private suffix",
+        "\x1b[31mprivate terminal escape\x1b[0m",
+        safe,
+    ])
+    result = native.diagnostic_tail(stderr.encode() + b"\n\xff")
+    assert len(result) <= 600
+    assert safe in result
+    assert "error: failed to read audio file [redacted]" in result
+    for secret in ["private", "/Users", "utterance", "glossary", "\x1b", "\ufffd"]:
+        assert secret not in result
+    assert native.diagnostic_tail(None) == "[no stderr]"
+    assert native.diagnostic_tail("") == "[no stderr]"
+    long_tail = native.diagnostic_tail("error: failed to initialize whisper context\n" + (safe + "\n") * 10)
+    assert len(long_tail) == 600
+    assert "initialize whisper context" not in long_tail
+
+
+@pytest.mark.asyncio
+async def test_failing_cli_logs_safe_tail_and_preserves_http_contract(
+    monkeypatch, tmp_path, configured, caplog,
+):
+    monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(tmp_path / "absent"))
+    # Run a real subprocess, replacing only the CLI executable with a synthetic failure.
+    executable = tmp_path / "whisper-fail"
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import sys\n"
+        "print('private transcript on stdout')\n"
+        "print('private transcript on stderr', file=sys.stderr)\n"
+        "print(\"error: failed to read audio file '/Users/private/recording.wav'\", file=sys.stderr)\n"
+        "print('ggml_metal_buffer_init: error: failed to allocate buffer, size =     7.33 MiB', file=sys.stderr)\n"
+        "sys.exit(17)\n"
+    )
+    executable.chmod(0o700)
+    monkeypatch.setattr(native, "WHISPER_CLI", str(executable))
+    before = set(tmp_path.iterdir())
+    with caplog.at_level(logging.ERROR, logger=native.logger.name):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+            response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav"},
+                                         headers=configured)
+    assert response.status_code == 500
+    assert response.json() == {"detail": "engine_failed"}
+    assert "exit_code=17" in caplog.text
+    assert "failed to allocate buffer" in caplog.text
+    assert "private" not in caplog.text and "/Users/" not in caplog.text
+    assert "private" not in response.text
+    assert set(tmp_path.iterdir()) == before
