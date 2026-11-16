@@ -258,6 +258,16 @@ Dos intentos iniciales fallaron en el observador QA, por nombres de atributos de
 
 **Límite de continuidad:** tras una interrupción, el navegador de pruebas rechazó la pestaña t3 con `belongs to another browser profile`. No se eludió cambiando de perfil. Recarga/reapertura y logout no quedaron repetidos sobre este resultado integrado; el recorrido anterior del candidato #840 sigue siendo evidencia separada. Se cerró limpiamente el QA en lugar de dejarlo desplegado. La inferencia real y la apertura/reproducción integrada ya no están pendientes por ausencia de modelos. Continúan separados la captura Chrome real, evaluación de calidad, cierre de los criterios todavía no repetidos y aceptación de Fer. Esta evidencia no cierra otras specs ni autoriza desplegar el entorno personal.
 
+## Miniaturas de la biblioteca (#1025)
+
+Cada fila de la biblioteca muestra un cuadro del video: el del minuto 10 de la grabación o, si dura menos, el del punto medio (el último cuadro suele ser una pantalla de «dejaste de compartir»). Las grabaciones solo de audio, o de las que no se pudo sacar un cuadro, muestran una imagen genérica.
+
+- **Cómo se genera:** el worker ejecuta un barrido cada 30 s (`THUMBNAIL_SWEEP_INTERVAL_SECONDS`) que procesa **una grabación a la vez**, la más reciente primero. `ffprobe` mide la duración real (no se confía en `duration_seconds`, que vale 0 en grabaciones antiguas) y `ffmpeg` extrae un solo cuadro de 320 px de ancho, leyendo el medio con un enlace firmado de corta vida desde el almacenamiento (no se descarga el archivo entero ni se escribe en disco). Un fallo de miniatura nunca afecta a la transcripción: queda registrado como `unavailable` y la fila usa la imagen genérica.
+- **Dónde queda:** `recordings/<reunión>/<grabación>/thumbnail.jpg` en el mismo almacenamiento; la base de datos guarda la referencia y el estado (`session_recordings.thumbnail_ref`/`thumbnail_state`: `ready`, `audio_only`, `unavailable`, vacío = pendiente). Se borra junto con la grabación (al eliminar la reunión y en la retención).
+- **Acceso:** solo el dueño autenticado. `GET /api/v1/meetings/` devuelve `thumbnail_url`, un enlace firmado de 1 hora, solo para las reuniones del propio usuario. Ningún endpoint nuevo es público.
+- **Imagen Docker:** la imagen del backend incluye `ffmpeg` y `ffprobe` estáticos (`mwader/static-ffmpeg`, fijados por digest). Para desplegar: `make build` (reconstruye, migra con Alembic y reinicia).
+- **Grabaciones existentes (backfill):** al desplegar, el barrido las procesa solas, una por una, sin intervención. Para forzarlo o repetirlo a pedido, dentro del worker: `docker compose -p sauri exec -T worker python -m app.thumbnails` (opcional `--limit N` para parar tras N grabaciones y `--retry-unavailable` para reintentar las marcadas `unavailable`, por ejemplo tras actualizar `ffmpeg`). Es idempotente: no toca lo que ya tiene miniatura. Imprime solo conteos (`ready`, `audio_only`, `unavailable`, `error`); un `error` es una falla de infraestructura que deja la grabación pendiente para el siguiente intento.
+
 ## Recuperación y espacio de disco
 
 - Fallo de bucket/migración/API: el arranque termina no cero; investigar la etapa, sin borrar datos para conseguir un verde.

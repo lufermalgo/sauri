@@ -22,7 +22,7 @@ afterEach(cleanup);
 
 function open(title: string | null = "Synthetic meeting") {
   return render(<MeetingHeader title={title} createdAt="2026-11-14T12:00:00Z" meetingId="m1"
-    onBack={vi.fn()} manifest={null} turns={[]} />);
+    manifest={null} turns={[]} />);
 }
 
 function openDelete() {
@@ -48,6 +48,12 @@ describe("MeetingHeader", () => {
     expect(document.querySelector("time")).toHaveTextContent("14");
   });
 
+  it("has no back link and exactly one h1", () => {
+    open();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
   it("renames with a trimmed title and displays the title returned by the API", async () => {
     vi.mocked(renameMeeting).mockResolvedValue({ meetingId: "m1", title: "Canonical title" });
     open(); edit(" New title ");
@@ -64,7 +70,7 @@ describe("MeetingHeader", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { clicked = this; });
     const turns = [{ timestampMs: 1000, speakerLabel: "Synthetic speaker", text: "Synthetic text" }];
     render(<MeetingHeader title="Old title" createdAt="2026-11-14T12:00:00Z" meetingId="m1"
-      onBack={vi.fn()} manifest={null} turns={turns} />);
+      manifest={null} turns={turns} />);
     edit("New title");
     fireEvent.click(screen.getByRole("button", { name: text.save }));
     await screen.findByRole("heading", { name: "Canonical title" });
@@ -220,7 +226,7 @@ describe("header tooltips", () => {
 });
 
 it.each([[65, "01:05"], [3605, "1:00:05"], [0, "00:00"]])("formats real duration %s and speaker count", (duration, label) => {
-  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" onBack={vi.fn()}
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1"
     stage="done" speakerCount={2} turns={[]} manifest={{ meeting_id: "m1", duration_seconds: Number(duration),
       video_presence: "absent", audio_source: { source_id: "a", url: "/audio", mime_type: "audio/wav" },
       muxed_video_source: null, video_sources: [] }} />);
@@ -236,7 +242,7 @@ it("omits duration and speaker count without their source data", () => {
 });
 
 it.each([['transcribing', 'transcription', 'progress'], ['failed', 'failed', 'error']])("shows the %s badge with its real tone", (processState, stage, tone) => {
-  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" onBack={vi.fn()}
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1"
     stage={stage as DetectedStage} processState={processState} turns={[]} manifest={null} />);
   expect(document.querySelector(".ui-status-badge")).toHaveClass(`ui-status-badge--${tone}`);
 });
@@ -247,7 +253,7 @@ it.each([
   ["summary", "completed", processing.summarizing, "progress"],
   ["done", "completed", text.ready, "success"],
 ] as const)("shows the %s stage as %s without calling it ready early", (stage, processState, label, tone) => {
-  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" onBack={vi.fn()}
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1"
     stage={stage} processState={processState} turns={[]} manifest={null} />);
   const badge = document.querySelector(".ui-status-badge");
   expect(badge).toHaveTextContent(label);

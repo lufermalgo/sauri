@@ -26,6 +26,7 @@ interface MeetingPlaybackViewProps {
   onRefreshManifest?: (currentTimeMs: number) => Promise<PlaybackManifest>;
   onSeekToReady?: (seekTo: ((timeMs: number, play?: boolean) => void) | undefined) => void;
   onPlayIntervalReady?: (playInterval: ((startMs: number, endMs: number) => Promise<void>) | undefined) => void;
+  onPauseReady?: (pause: (() => void) | undefined) => void;
 }
 
 const INITIAL_STATE: PlaybackState = {
@@ -63,6 +64,7 @@ export function MeetingPlaybackView({
   onRefreshManifest,
   onSeekToReady,
   onPlayIntervalReady,
+  onPauseReady,
 }: MeetingPlaybackViewProps) {
   const [state, setState] = useState<PlaybackState>(INITIAL_STATE);
   const [mediaReady, setMediaReady] = useState(false);
@@ -141,6 +143,7 @@ export function MeetingPlaybackView({
       if (play) void controller.resume();
     });
     onPlayIntervalReady?.((startMs, endMs) => controller.playInterval(startMs, endMs));
+    onPauseReady?.(() => controller.pause());
     if (savedTimeMs.current > 0) controller.seekTo(savedTimeMs.current);
     setState(controller.getState());
     setMediaReady(false);
@@ -169,9 +172,10 @@ export function MeetingPlaybackView({
         controllerRef.current = null;
         onSeekToReady?.(undefined);
         onPlayIntervalReady?.(undefined);
+        onPauseReady?.(undefined);
       }
     };
-  }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, onSeekToReady, onPlayIntervalReady, passages, playableVideoSources]);
+  }, [currentManifest, isMuxed, isSeparateWithVideo, needsAudio, onSeekToReady, onPlayIntervalReady, onPauseReady, passages, playableVideoSources]);
 
   useEffect(() => {
     if (state.activePassageId === previousActivePassage.current) return;
@@ -224,8 +228,7 @@ export function MeetingPlaybackView({
     : null;
 
   return (
-    <section className="meeting-player" aria-label={text.playback}>
-      <h2>{text.playback}</h2>
+    <div className="meeting-player">
       {loading && <p role="status">{text.playbackMetadataLoading}</p>}
       {activeError && <p role="alert">{activeError}</p>}
       {!hasPlayableMedia && <p role="status">{text.playbackUnavailable}</p>}
@@ -400,6 +403,6 @@ export function MeetingPlaybackView({
           </ol>
         </details>
       )}
-    </section>
+    </div>
   );
 }

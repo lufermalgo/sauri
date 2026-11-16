@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import select
 
 from app.infra.models import Diarization, Speaker, SpeakerAssignment, SpeechTurn, Transcript
@@ -10,12 +11,23 @@ from tests.summaries.test_summary_api import ApiFixture
 from tests.summaries.test_summary_api import summary_api as summary_api
 
 
-async def test_latest_complete_revision_and_unknown_speaker(summary_api: ApiFixture) -> None:
+@pytest.mark.parametrize(
+    ("language", "numbered", "unknown"),
+    [
+        ("es-CO", "Hablante 2", "Hablante ?"),  # spanish-sample-data
+        ("es", "Hablante 2", "Hablante ?"),  # spanish-sample-data
+        ("en", "Speaker 2", "Speaker ?"),
+    ],
+)
+async def test_latest_complete_revision_and_unknown_speaker(
+    summary_api: ApiFixture, language: str, numbered: str, unknown: str
+) -> None:
     _, factory, _, _, meeting, _, _ = summary_api
     now = datetime.now(UTC)
     async with factory() as session, session.begin():
         transcript = await session.scalar(select(Transcript).where(Transcript.meeting_id == meeting))
         assert transcript is not None
+        transcript.language = language
         session.add_all(
             [
                 SpeechTurn(
@@ -62,5 +74,5 @@ async def test_latest_complete_revision_and_unknown_speaker(summary_api: ApiFixt
         await session.flush()
         passages = await transcript_passages(session, transcript.id)
         assert [t.text for p in passages for t in p.turns] == ["First synthetic", "Unknown synthetic"]
-        assert passages[0].turns[0].speaker == "Speaker 2"
-        assert passages[1].turns[0].speaker == "Speaker ?"
+        assert passages[0].turns[0].speaker == numbered
+        assert passages[1].turns[0].speaker == unknown

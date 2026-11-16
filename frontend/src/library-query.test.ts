@@ -14,6 +14,8 @@ function item(id: string, title: string, createdAt: string | null): MeetingListI
     durationSeconds: null,
     speakerCount: null,
     summaryTopic: null,
+    thumbnailUrl: null,
+    mediaKind: null,
   };
 }
 

@@ -542,6 +542,8 @@ describe("meeting list API adapter", () => {
       duration_seconds: 1860,
       speaker_count: 3,
       summary_topic: "Synthetic topic",
+      thumbnail_url: "https://storage.invalid/thumbnail.jpg?sig=x",
+      media_kind: "video",
     }]);
 
     await expect(api.listMeetings()).resolves.toEqual([{
@@ -555,6 +557,8 @@ describe("meeting list API adapter", () => {
       durationSeconds: 1860,
       speakerCount: 3,
       summaryTopic: "Synthetic topic",
+      thumbnailUrl: "https://storage.invalid/thumbnail.jpg?sig=x",
+      mediaKind: "video",
     }]);
   });
 
@@ -576,6 +580,8 @@ describe("meeting list API adapter", () => {
       expect(item.durationSeconds).toBeNull();
       expect(item.speakerCount).toBeNull();
       expect(item.summaryTopic).toBeNull();
+      expect(item.thumbnailUrl).toBeNull();
+      expect(item.mediaKind).toBeNull();
     }
   });
 });

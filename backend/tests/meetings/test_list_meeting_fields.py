@@ -1,4 +1,4 @@
-"""Additive contract: duration_seconds, speaker_count and summary_topic in GET /api/v1/meetings/."""
+"""Additive contract: list extras (duration, speakers, topic, thumbnail) in GET /api/v1/meetings/."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from app.infra.models import Diarization, Meeting, MeetingSummary, SessionRecord
 
 OWNER_ID = "list-fields-owner"
 OTHER_ID = "list-fields-other"
-NEW_FIELDS = ("duration_seconds", "speaker_count", "summary_topic")
+NEW_FIELDS = ("duration_seconds", "speaker_count", "summary_topic", "thumbnail_url", "media_kind")
 
 
 def _auth_header(user_id: str = OWNER_ID) -> dict[str, str]:
@@ -140,7 +140,7 @@ async def test_listing_returns_recording_diarization_and_summary_values(
     assert item["speaker_count"] == 4
     assert item["summary_topic"] == "Synthetic topic 2"
     # Existing fields keep their position; the new ones are appended.
-    assert list(item)[-3:] == list(NEW_FIELDS)
+    assert list(item)[-len(NEW_FIELDS):] == list(NEW_FIELDS)
     assert list(item)[:7] == [
         "meeting_id", "meet_link", "origin", "process_state",
         "failure_cause", "created_at", "title",
