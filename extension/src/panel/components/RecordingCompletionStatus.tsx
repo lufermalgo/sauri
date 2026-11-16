@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { ArrowLeft, Check, Download, RotateCcw, TriangleAlert, Upload } from "lucide-react";
+import { Icon } from "../../core/design/Icon";
 import { COMPLETION_STORE, getCompletion, getChunksBySession, openDB, type RecordingCompletion } from "../../recording-db";
 
 import { panelCopy as copy } from "../copy";
@@ -124,9 +126,9 @@ export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sess
   const title = unavailable ? copy.statusUnavailable : record!.captureError ? copy.captureError : outcomes[record!.status];
   return <section className="panel-completion panel-stack">
     <div className="panel-stack panel-card" role={failed ? "alert" : "status"}>
-      <h1>{title}</h1>
+      <h1 className="panel-status-title"><Icon icon={failed ? TriangleAlert : uploading ? Upload : Check} size={24} className={`panel-status-icon panel-status-${failed ? "error" : uploading ? "progress" : "success"}`} />{title}</h1>
       {uploading && <><strong>{copy.uploading}</strong><div className="panel-upload-track" role="progressbar" aria-label={copy.uploading}><span /></div><p>{copy.uploadHelp}</p></>}
-      {uploadFailed && <><p>{copy.uploadFailureHelp}</p><button disabled={actionPending} className="panel-primary" onClick={() => { void retry(); }}>{copy.retry}</button><button disabled={actionPending} onClick={() => { void download(); }}>{copy.download}</button></>}
+      {uploadFailed && <><p>{copy.uploadFailureHelp}</p><button disabled={actionPending} className="panel-primary panel-with-icon" onClick={() => { void retry(); }}><Icon icon={RotateCcw} size={16} />{copy.retry}</button><button disabled={actionPending} className="panel-with-icon" onClick={() => { void download(); }}><Icon icon={Download} size={16} />{copy.download}</button></>}
       {record && ["upload_succeeded", "processing"].includes(record.status) && !record.captureError && <p>{copy.processing}</p>}
       {unavailable && <p>{copy.persistenceError}</p>}
       {record?.captureError && <p>{copy.captureErrorHelp}</p>}
@@ -134,6 +136,6 @@ export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sess
       {record && <small>{copy.meeting} {record.meetingId}</small>}
     </div>
     {actionError && <p role="alert">{actionError}</p>}
-    {record && !uploading && <button onClick={() => setDismissedSession(record.sessionId)}>{copy.back}</button>}
+    {record && !uploading && <button className="panel-with-icon" onClick={() => setDismissedSession(record.sessionId)}><Icon icon={ArrowLeft} size={16} />{copy.back}</button>}
   </section>;
 }

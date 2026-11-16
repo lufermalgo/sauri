@@ -11,13 +11,16 @@
 .panel-header { padding: 14px 16px; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .panel-brand { display: flex; align-items: center; gap: 8px; font: 600 20px var(--font-heading); }
 .panel-brand svg { color: var(--color-primary); }
+.panel-app svg, .permission-page svg { flex: 0 0 auto; }
+.panel-app .panel-with-icon, .permission-page .panel-with-icon { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.panel-dot { display: inline-block; flex: 0 0 auto; width: 9px; height: 9px; border-radius: 99px; background: currentColor; }
 .panel-app .panel-icon-button { width: 44px; padding: 10px; background: var(--color-surface); color: var(--color-text-muted); display: grid; place-items: center; }
 .panel-main { padding: 18px 16px 16px; }
 .panel-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .panel-row { display: flex; align-items: center; gap: 12px; }
 .panel-card { padding: 14px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: 0 4px 20px rgba(46,50,48,.06); }
 .panel-segmented { display: flex; gap: 6px; padding: 4px; border-radius: 12px; background: var(--color-track); }
-.panel-app .panel-segmented button { flex: 1; min-width: 0; padding: 8px 4px; border: 0; border-radius: 9px; background: transparent; color: var(--color-text-muted); font-size: 14px; }
+.panel-app .panel-segmented button { flex: 1; min-width: 0; padding: 8px 4px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 9px; background: transparent; color: var(--color-text-muted); font-size: 14px; }
 .panel-app .panel-segmented button[aria-checked="true"] { background: var(--color-surface); color: var(--color-text); box-shadow: 0 1px 3px rgba(46,50,48,.15); }
 .panel-app .panel-switch { flex: 0 0 46px; width: 46px; min-height: 28px; height: 28px; padding: 3px; border: 0; border-radius: 99px; background: var(--color-input-border); display: flex; }
 .panel-switch span { width: 22px; height: 22px; border-radius: 99px; background: var(--color-surface); }
@@ -51,7 +54,8 @@
 .panel-actions > button { flex: 1; min-height: 52px; }
 .panel-actions > .panel-primary { flex: 1.4; }
 .panel-sources { list-style: none; margin: 0; padding: 14px 16px; background: var(--color-input); border-radius: 16px; display: flex; flex-direction: column; gap: 10px; }
-.panel-sources li::before { content: '✓'; color: var(--color-success-text); background: var(--color-success-bg); border-radius: 99px; padding: 0 4px; margin-right: 10px; }
+.panel-sources li { display: flex; align-items: center; gap: 10px; }
+.panel-check { color: var(--color-success-text); background: var(--color-success-bg); border-radius: 99px; padding: 3px; box-sizing: content-box; }
 .panel-app .panel-danger-link { border: 0; background: transparent; color: var(--color-error); text-decoration: underline; margin-top: 24px; }
 .panel-auth { padding: 32px 20px; }
 .panel-auth form label { gap: 6px; font-size: 13px; font-weight: 700; }
@@ -59,10 +63,14 @@
 .panel-app [role="alert"] { color: var(--color-error-text); }
 .panel-mic-dialog { color: var(--color-text); border: 0; border-radius: 20px; padding: 24px; width: calc(100% - 40px); max-width: 420px; background: var(--color-surface); box-shadow: 0 16px 48px rgba(46,50,48,.28); }
 .panel-mic-dialog::backdrop { background: rgba(46,50,48,.38); }
-.panel-warning-icon { border-radius: 99px; background: var(--color-progress-bg); color: var(--color-progress-text); width: 48px; height: 48px; display: grid; place-items: center; font-size: 24px; }
+.panel-warning-icon { border-radius: 99px; background: var(--color-progress-bg); color: var(--color-progress-text); width: 48px; height: 48px; display: grid; place-items: center; }
 .panel-upload-track { height: 10px; border-radius: 99px; overflow: hidden; background: var(--color-success-bg); }
 .panel-upload-track span { display: block; width: 35%; height: 100%; background: var(--color-primary); animation: panel-upload 1.4s ease-in-out infinite alternate; }
 .panel-completion { overflow-wrap: anywhere; }
+.panel-status-title { display: flex; align-items: center; gap: 10px; }
+.panel-status-error { color: var(--color-error-text); }
+.panel-status-progress { color: var(--color-progress-text); }
+.panel-status-success { color: var(--color-success-text); }
 .panel-completion small { color: var(--color-text-muted); }
 @keyframes panel-pulse { 50% { opacity: .35; } }
 @keyframes panel-upload { to { transform: translateX(185%); } }
