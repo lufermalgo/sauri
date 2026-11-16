@@ -8,7 +8,7 @@ function mockChromeStorage(initial: Record<string, unknown> = {}) {
   const listeners: Array<(changes: unknown, area: string) => void> = [];
   (globalThis as unknown as { chrome: unknown }).chrome = {
     storage: {
-      sync: {
+      session: {
         get: vi.fn(async (key: string) => ({ [key]: store[key] })),
         set: vi.fn(async (obj: Record<string, unknown>) => {
           Object.assign(store, obj);
@@ -25,7 +25,7 @@ function mockChromeStorage(initial: Record<string, unknown> = {}) {
 
 describe("API client — authorization header and storage (Req. 13.1, 13.3, 14.1)", () => {
   beforeEach(() => {
-    mockChromeStorage({ authToken: "token-abc" });
+    mockChromeStorage({ sauriSessionToken: "token-abc" });
     global.fetch = vi.fn(async () =>
       new Response(JSON.stringify([]), { status: 200 })
     ) as unknown as typeof fetch;
@@ -45,18 +45,18 @@ describe("API client — authorization header and storage (Req. 13.1, 13.3, 14.1
 
 describe("API client — 401 handling (Req. 13.4)", () => {
   it("discards the stored session when the backend responds 401", async () => {
-    const store = mockChromeStorage({ authToken: "expired-token" });
+    const store = mockChromeStorage({ sauriSessionToken: "expired-token" });
     global.fetch = vi.fn(async () => new Response("", { status: 401 })) as unknown as typeof fetch;
 
     const { listMeetings } = await import("./client");
     await expect(listMeetings("http://localhost:8000")).rejects.toThrow();
-    expect(store.authToken).toBeUndefined();
+    expect(store.sauriSessionToken).toBeUndefined();
   });
 });
 
 describe("API client — timeout and retry (Req. 14.4, 14.5, 4.9, 6.6)", () => {
   beforeEach(() => {
-    mockChromeStorage({ authToken: "token-abc" });
+    mockChromeStorage({ sauriSessionToken: "token-abc" });
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
@@ -95,7 +95,7 @@ describe("API client — timeout and retry (Req. 14.4, 14.5, 4.9, 6.6)", () => {
 
 describe("API client — 404 distinguished from a real failure (Req. 7.6, 8.8, 10.5)", () => {
   beforeEach(() => {
-    mockChromeStorage({ authToken: "token-abc" });
+    mockChromeStorage({ sauriSessionToken: "token-abc" });
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
@@ -108,7 +108,7 @@ describe("API client — 404 distinguished from a real failure (Req. 7.6, 8.8, 1
 
 describe("API client — renameMeeting / deleteMeeting (My Notes → manage)", () => {
   beforeEach(() => {
-    mockChromeStorage({ authToken: "token-abc" });
+    mockChromeStorage({ sauriSessionToken: "token-abc" });
   });
   afterEach(() => { vi.restoreAllMocks(); });
 
@@ -158,7 +158,7 @@ describe("API client — renameMeeting / deleteMeeting (My Notes → manage)", (
 
 describe("API client — encrypted transport (Req. 13.5)", () => {
   beforeEach(() => {
-    mockChromeStorage({ authToken: "token-abc" });
+    mockChromeStorage({ sauriSessionToken: "token-abc" });
   });
 
   it("rejects a non-localhost http:// backendUrl", async () => {
@@ -176,5 +176,49 @@ describe("API client — encrypted transport (Req. 13.5)", () => {
     global.fetch = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })) as unknown as typeof fetch;
     const { listMeetings } = await import("./client");
     await expect(listMeetings("https://api.sauri.example.com")).resolves.toEqual([]);
+  });
+});
+
+describe("API client — validateTransport policy", () => {
+  it.each([
+    "https://api.sauri.example.com",
+    "https://localhost:8443",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+  ])("allows %s", async (url) => {
+    const { validateTransport } = await import("./client");
+    expect(() => validateTransport(url)).not.toThrow();
+  });
+
+  it.each([
+    "http://api.sauri.example.com",
+    "http://localhost.evil.example",
+    "http://127.0.0.1.evil.example",
+    "http://evil.example/localhost",
+    "http://192.168.1.10:8000",
+    "http://[::1]:8000",
+    "ftp://localhost",
+    "ws://localhost:8000",
+  ])("rejects %s", async (url) => {
+    const { validateTransport, InsecureTransportError } = await import("./client");
+    expect(() => validateTransport(url)).toThrow(InsecureTransportError);
+  });
+
+  it("never sends the token (or credentials) over an insecure backend URL", async () => {
+    mockChromeStorage({ sauriSessionToken: "token-abc" });
+    global.fetch = vi.fn(async () => new Response("[]", { status: 200 })) as unknown as typeof fetch;
+    const { listMeetings, login, deleteMeeting } = await import("./client");
+    await expect(listMeetings("http://api.sauri.example.com")).rejects.toThrow();
+    await expect(deleteMeeting("m1", "http://api.sauri.example.com")).rejects.toThrow();
+    await expect(login("a@b.c", "secret", "http://api.sauri.example.com")).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("stores the token returned by login in session storage only", async () => {
+    const store = mockChromeStorage();
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({ access_token: "new-token", expires_in: 3600 }), { status: 200 })) as unknown as typeof fetch;
+    const { login } = await import("./client");
+    await login("a@b.c", "secret", "http://localhost:8000");
+    expect(store.sauriSessionToken).toBe("new-token");
   });
 });

@@ -149,7 +149,7 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
         getContexts: vi.fn(async () => []), getURL: (path: string) => path, sendMessage: vi.fn(),
       },
       sidePanel: { setPanelBehavior: vi.fn(async () => undefined) },
-      storage: { session: { get: vi.fn(async () => ({})) }, sync: { get: vi.fn(async () => ({})) } },
+      storage: { session: { get: vi.fn(async () => ({ sauriSessionToken: "synthetic-token" })) } },
       tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() } },
     });
     await import("./background");

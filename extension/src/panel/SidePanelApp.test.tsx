@@ -22,12 +22,7 @@ function mockChrome(sessionActive: boolean) {
     storage: {
       local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds: 3, showControlBar: true, skipMicWarning: false } })), set: vi.fn(async () => {}) },
       session: {
-        get: vi.fn(async () => ({ sauriState: { status: "idle" } })),
-      },
-      sync: {
-        get: vi.fn(async () => (sessionActive ? { authToken: "token-x" } : {})),
-        set: vi.fn(async () => {}),
-        remove: vi.fn(async () => {}),
+        get: vi.fn(async () => ({ sauriState: { status: "idle" }, ...(sessionActive ? { sauriSessionToken: "token-x" } : {}) })),
       },
       onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
     },
@@ -58,6 +53,52 @@ describe("SidePanelApp", () => {
     render(<SidePanelApp />);
     await waitFor(() => expect(screen.getByRole("button", { name: copy.login })).toBeInTheDocument());
     expect(screen.queryByText(copy.recordings)).not.toBeInTheDocument();
+  });
+
+  it("without a token and nothing waiting shows the plain sign-in, not the expired-session prompt", async () => {
+    mockChrome(false);
+    render(<SidePanelApp />);
+    expect(await screen.findByRole("heading", { name: copy.loginHeading })).toBeInTheDocument();
+    expect(screen.queryByText(copy.sessionExpired)).not.toBeInTheDocument();
+  });
+
+  it("reuses the expired-session prompt when queued uploads are waiting for a token", async () => {
+    mockChrome(false);
+    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "idle" }, sauriSignInRequired: true }));
+    render(<SidePanelApp />);
+    expect(await screen.findByRole("heading", { name: copy.loginHeading })).toBeInTheDocument();
+    expect(screen.getByText(copy.sessionExpired)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(copy.sessionAlert);
+  });
+
+  it("switches to sign-in when the token disappears while the panel is open (e.g. an upload got a 401)", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    mockChrome(true);
+    render(<SidePanelApp />);
+    await screen.findByText(copy.recordings);
+    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "idle" }, sauriSignInRequired: true }));
+    await act(async () => vi.mocked(chrome.storage.onChanged.addListener).mock.calls.forEach(([listener]) =>
+      listener({ sauriSessionToken: { oldValue: "gone" }, sauriSignInRequired: { newValue: true } }, "session")));
+    expect(await screen.findByRole("heading", { name: copy.loginHeading })).toBeInTheDocument();
+    expect(screen.getByText(copy.sessionExpired)).toBeInTheDocument();
+  });
+
+  it("tells the service worker to resume queued uploads right after a successful sign-in", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    mockChrome(false);
+    const store: Record<string, unknown> = {};
+    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "idle" }, ...store }));
+    (chrome.storage.session as unknown as { set: unknown }).set = vi.fn(async (value: Record<string, unknown>) => { Object.assign(store, value); });
+    (chrome.storage.session as unknown as { remove: unknown }).remove = vi.fn(async () => undefined);
+    global.fetch = vi.fn(async (url: string) => String(url).endsWith("/auth/login")
+      ? new Response(JSON.stringify({ access_token: "fresh", expires_in: 3600 }), { status: 200 })
+      : new Response("[]", { status: 200 })) as unknown as typeof fetch;
+    render(<SidePanelApp />);
+    fireEvent.change(await screen.findByLabelText(copy.email), { target: { value: "a@example.com" } });
+    fireEvent.change(screen.getByLabelText(copy.password), { target: { value: "synthetic" } });
+    fireEvent.click(screen.getByRole("button", { name: copy.login }));
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "session-restored" }));
+    expect(store.sauriSessionToken).toBe("fresh");
   });
 
   it("renders Header + Controls + List with an active session (Req. 1.4)", async () => {
@@ -135,9 +176,8 @@ describe("native sharing picker feedback", () => {
     render(<SidePanelApp />);
     fireEvent.click(await screen.findByRole("button", { name: copy.newRecording }));
     await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledOnce());
-    const listener = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[1][0];
     await act(async () => {
-      listener({ sauriState: { newValue: { status: "recording", sessionId: "selected" } } }, "session");
+      vi.mocked(chrome.storage.onChanged.addListener).mock.calls.forEach(([listener]) => listener({ sauriState: { newValue: { status: "recording", sessionId: "selected" } } }, "session"));
       finish({ ok: true, sessionId: "selected" });
     });
     expect(await screen.findByRole("button", { name: copy.stop })).toBeEnabled();
@@ -147,12 +187,11 @@ describe("native sharing picker feedback", () => {
   });
 
   it("recovers an open picker when the panel is reopened", async () => {
-    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "pending" }, sauriCaptureRequest: { state: { sessionId: "selection" } } }));
+    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "pending" }, sauriCaptureRequest: { state: { sessionId: "selection" } }, sauriSessionToken: "token-x" }));
     render(<SidePanelApp />);
     expect(await screen.findByText(copy.choosing)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: copy.newRecording })).toBeDisabled();
-    const listener = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[1][0];
-    await act(async () => listener({ sauriCaptureRequest: { oldValue: {} } }, "session"));
+    await act(async () => vi.mocked(chrome.storage.onChanged.addListener).mock.calls.forEach(([listener]) => listener({ sauriCaptureRequest: { oldValue: {} } }, "session")));
     expect(screen.getByRole("button", { name: copy.newRecording })).toBeEnabled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -339,6 +378,22 @@ describe("T1.9: durable same-recording completion feedback", () => {
     return view;
   }
 
+  /** Holds back only the projection read; the session token read must still resolve. */
+  function delayProjectionRead() {
+    const get = vi.mocked(chrome.storage.session.get) as unknown as ReturnType<typeof vi.fn>;
+    const original = get.getMockImplementation()!;
+    let release!: (value: { sauriState: typeof projection }) => void;
+    let delayed = false;
+    get.mockImplementation((keys: unknown) => {
+      if (Array.isArray(keys) && !delayed) {
+        delayed = true;
+        return new Promise(resolve => { release = resolve; });
+      }
+      return original(keys);
+    });
+    return (value: { sauriState: typeof projection }) => release(value);
+  }
+
   function outcome(expected: RegExp, sessionId = "session-618-current") {
     // One accessible outcome, not a collection of stale successes/errors.
     const regions = [...screen.queryAllByRole("status"), ...screen.queryAllByRole("alert")];
@@ -360,8 +415,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
     vi.stubGlobal("chrome", {
       storage: {
       local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds: 3, showControlBar: true, skipMicWarning: false } })), set: vi.fn(async () => {}) },
-        session: { get: vi.fn(async () => ({ sauriState: projection })) },
-        sync: { get: vi.fn(async () => ({ authToken: "synthetic-618" })) },
+        session: { get: vi.fn(async () => ({ sauriState: projection, sauriSessionToken: "synthetic-618" })) },
         onChanged: {
           addListener: vi.fn((listener) => listeners.push(listener)),
           removeListener: vi.fn((listener) => { listeners = listeners.filter((item) => item !== listener); }),
@@ -376,7 +430,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
   it("does not recover an unrelated success before the initial selected-session read resolves", async () => {
     await createCompletion(record("review_opened"));
     let resolveProjection!: (value: { sauriState: typeof projection }) => void;
-    vi.mocked(chrome.storage.session.get).mockImplementationOnce(() => new Promise(resolve => { resolveProjection = resolve; }));
+    resolveProjection = delayProjectionRead();
     await mount();
     expect(screen.queryByText(new RegExp(copy.reviewOpened))).not.toBeInTheDocument();
     await act(async () => resolveProjection({ sauriState: { status: "idle", sessionId: "missing-selected" } }));
@@ -387,7 +441,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
     await createCompletion(record("review_opened"));
     await createCompletion(record("upload_failed", { sessionId: "session-new", meetingId: "meeting-new", recordingId: "recording-new" }));
     let resolveProjection!: (value: { sauriState: typeof projection }) => void;
-    vi.mocked(chrome.storage.session.get).mockImplementationOnce(() => new Promise(resolve => { resolveProjection = resolve; }));
+    resolveProjection = delayProjectionRead();
     await mount();
     await act(async () => {
       listeners.forEach(listener => listener({ sauriState: { newValue: { status: "idle", sessionId: "session-new" } } }, "session"));

@@ -66,8 +66,7 @@ async function runUpload(fetchImplementation: typeof fetch) {
     },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
-      session: { get: vi.fn(async () => ({ sauriState: { status: "idle" } })), set: vi.fn(async () => undefined) },
-      sync: { get: vi.fn(async () => ({})) },
+      session: { get: vi.fn(async () => ({ sauriState: { status: "idle" }, sauriSessionToken: "synthetic-token" })), set: vi.fn(async () => undefined) },
     },
     tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 614 })), sendMessage: vi.fn(async () => undefined) },
   });

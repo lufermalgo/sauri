@@ -34,11 +34,5 @@
   "options_page": "src/options/index.html",
   "action": {
     "default_title": "Sauri — Abrir panel"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["src/detail/index.html"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  }
 }
