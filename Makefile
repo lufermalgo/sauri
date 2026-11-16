@@ -30,6 +30,7 @@ engines-install:
 	SAURI_ASR_VENV="$(SAURI_NATIVE_VENV)" NATIVE_PYTHON311="$(NATIVE_PYTHON311)" bash scripts/engines/install-asr-engine.sh
 	NATIVE_PYTHON311="$(NATIVE_PYTHON311)" bash scripts/engines/install-diar-engine.sh
 	bash scripts/engines/install-llm-engine.sh
+	bash scripts/engines/install-host-engine.sh
 
 ## Iniciar/detener/consultar los servidores nativos; cada uno usa su PID exacto.
 engines-up:
