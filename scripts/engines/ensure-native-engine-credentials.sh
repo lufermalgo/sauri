@@ -14,6 +14,9 @@ os.chmod(config_dir, 0o700)
 
 credentials = {
     "engine_token": secrets.token_urlsafe(32),
+    # Authorizes the host service's management routes (secrets, status). Independent of engine_token and
+    # mounted only in the API container: the engines and the worker never receive it.
+    "management_token": secrets.token_urlsafe(32),
     "recording_capability_key": secrets.token_hex(32),
     "queue_signing_key": secrets.token_hex(32),
     # Login password for the single administrator account (43 URL-safe characters).

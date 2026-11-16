@@ -24,6 +24,7 @@ Estado: dirección confirmada por Fer el 12-11-2026 (conversación del 12-11-202
 | Transcripción | MLX Whisper `large-v3-turbo` (se reemplaza por whisper.cpp `large-v3-turbo` Q5_0 en la unidad U2 de `core-speech-pipeline`) | Host Mac, puerto 8001 | `POST /transcribe`; `backend/asr-engine/native_main.py` |
 | Diarización | Senko (CoreML), contrato v2 | Host Mac, puerto 8002 | `POST /diarize`; `backend/diar-engine/native_main.py` |
 | Resumen | `llm-engine` + `llama-server` (llama.cpp) con Qwen3.5-9B, o un proveedor compatible con OpenAI configurado explícitamente | Host Mac, puerto 8003 (llama-server interno en 8004) | `POST /v1/chat/completions`; `backend/llm-engine/native_main.py` |
+| Administración del anfitrión (`host-engine`) | Python, FastAPI | Host Mac, puerto 8005 (solo `127.0.0.1`) | Guarda las claves de proveedores externos en el llavero de macOS (archivo 0600 en `~/.config/sauri/secrets/` como alternativa) y reporta el estado de los motores: `PUT`/`DELETE /v1/secrets/{ref}`, `GET /v1/engines/status`, `GET /health`. Autentica cada llamada con `management_token`; ninguna ruta devuelve una clave; `backend/host-engine/native_main.py`. Spec `model-engines`, unidad U1 (#1074): código listo para revisión, sin desplegar ni conectado aún a la API (U2) |
 
 ## Entorno local con Docker Desktop
 
@@ -37,7 +38,7 @@ En el Mac, los servicios de Sauri corren en **Docker Desktop** como el proyecto 
 | `postgres` (PostgreSQL 16) | `127.0.0.1:5432` | volumen `sauri_pgdata` |
 | `minio` (RustFS, compatible S3; conserva el nombre MinIO) | `127.0.0.1:9000` (API) y `127.0.0.1:9001` (consola) | volumen `sauri_minio-data` |
 | `rabbitmq` (RabbitMQ 3 con consola de administración) | `127.0.0.1:5672` y `127.0.0.1:15672` | volumen `sauri_rabbitmq-data` |
-| Motores nativos (fuera de Docker) | `127.0.0.1` `8001` ASR, `8002` diarización, `8003` resumen | modelos en `~/.local/share/sauri/`, credenciales en `~/.config/sauri/` |
+| Motores nativos (fuera de Docker) | `127.0.0.1` `8001` ASR, `8002` diarización, `8003` resumen, `8005` administración (`host-engine`) | modelos en `~/.local/share/sauri/`, credenciales en `~/.config/sauri/` |
 
 Comandos: `make up` (levanta el proyecto `sauri`), `make logs`, `make down`; `make engines-install`, `make engines-up`, `make engines-status`, `make engines-down` para los motores nativos. Instalación paso a paso en `docs/operations/installation-notes.md`.
 
@@ -60,9 +61,13 @@ graph LR
   W --> T[ASR nativo :8001]
   W --> H[Senko nativo :8002]
   W --> L[llm-engine nativo :8003]
+  A -.->|management_token; llamada de la API pendiente (U2)| HE[host-engine nativo :8005]
+  HE --> K[(Llavero de macOS o archivo 0600)]
 ```
 
 La configuración de API/worker apunta a `host.docker.internal:8001`, `:8002` y `:8003`. Los motores implementan HTTP y controles de credenciales/capacidad por grabación. Su arranque, accesibilidad desde Docker y uso efectivo de GPU deben comprobarse juntos; tener una URL o un modelo configurado no demuestra inferencia. Credenciales fuera del repositorio en `~/.config/sauri`, montadas de solo lectura al worker; modelos compartidos en caché, nunca copiados al repositorio.
+
+**Claves de proveedores y regla «el worker no recibe claves».** Las claves de proveedores externos viven solo en el host (llavero o archivo 0600) y las administra `host-engine` (:8005). El token de administración (`management_token`) es una credencial distinta del `engine_token`: se monta de solo lectura **únicamente** en el contenedor `api` (`/run/secrets/management_token`, variable `MANAGEMENT_TOKEN_FILE`; junto con `HOST_ENGINE_URL=http://host.docker.internal:8005`) y nunca en `worker`, ni lo leen las pasarelas de datos. El `engine_token` del worker no autoriza ninguna ruta de `host-engine`. La API aún no usa este servicio (unidad U2 de `model-engines`).
 
 ## Validación de entrada, límites y errores de la API (#1070)
 
@@ -96,8 +101,9 @@ La configuración de API/worker apunta a `host.docker.internal:8001`, `:8002` y 
 
 ## Seguridad local
 
-- **Puertos solo locales.** Todo puerto publicado (portal 5173, API 8000, PostgreSQL 5432, RustFS 9000/9001, RabbitMQ 5672/15672) escucha únicamente en `127.0.0.1`; otras máquinas de la red no los alcanzan. Los motores nativos (8001 ASR, 8002 diarización, 8003 pasarela LLM, 8004 llama-server) también.
-- **Sin credenciales fijas.** `scripts/engines/ensure-native-engine-credentials.sh` (invocado por `make build`/`make up` mediante `scripts/platform/compose-bringup.sh`) genera una vez valores al azar en archivos privados (0600, carpeta 0700) bajo `~/.config/sauri/`: `engine_token`, `recording_capability_key`, `queue_signing_key`, `admin_password`, `database_password`, `queue_password`, `object_store_access_key`, `object_store_secret_key` y `jwt_secret`. Nunca se versionan ni se imprimen.
+- **Puertos solo locales.** Todo puerto publicado (portal 5173, API 8000, PostgreSQL 5432, RustFS 9000/9001, RabbitMQ 5672/15672) escucha únicamente en `127.0.0.1`; otras máquinas de la red no los alcanzan. Los motores nativos (8001 ASR, 8002 diarización, 8003 pasarela LLM, 8004 llama-server, 8005 `host-engine`) también.
+- **Sin credenciales fijas.** `scripts/engines/ensure-native-engine-credentials.sh` (invocado por `make build`/`make up` mediante `scripts/platform/compose-bringup.sh`) genera una vez valores al azar en archivos privados (0600, carpeta 0700) bajo `~/.config/sauri/`: `engine_token`, `management_token`, `recording_capability_key`, `queue_signing_key`, `admin_password`, `database_password`, `queue_password`, `object_store_access_key`, `object_store_secret_key` y `jwt_secret`. Nunca se versionan ni se imprimen.
+- **Almacén de secretos del anfitrión.** `host-engine` escribe las claves de proveedores con `/usr/bin/security -i` (el comando entra por entrada estándar: la clave no aparece en `argv` ni en `ps`) bajo el servicio `sauri` del llavero; si el llavero no responde, usa archivos 0600 en `~/.config/sauri/secrets/` (carpeta 0700). Cada clave queda vinculada al origen para el que se guardó. Las respuestas solo llevan los últimos 4 caracteres cuando la clave tiene al menos 12; los cuerpos de `PUT` no se registran (el servicio arranca sin registro de accesos). Los errores llevan códigos, nunca valores.
 - **Patrón `*_FILE`.** Los contenedores reciben esos archivos de solo lectura en `/run/secrets/<nombre>` y los leen con `DATABASE_PASSWORD_FILE`, `QUEUE_BROKER_PASSWORD_FILE`, `OBJECT_STORE_ACCESS_KEY_FILE`, `OBJECT_STORE_SECRET_KEY_FILE` y `JWT_SECRET_FILE` (PostgreSQL: `POSTGRES_PASSWORD_FILE`; RustFS: `RUSTFS_ACCESS_KEY_FILE`/`RUSTFS_SECRET_KEY_FILE`). Las URL de conexión no llevan contraseña. Los motores ASR y diarización leen las llaves del almacén desde `~/.config/sauri/`.
 - Migración de instalaciones existentes, rotación de valores y reinicio de motores: ver `docs/operations/local-deployment.md`.
 

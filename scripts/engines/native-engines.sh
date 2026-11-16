@@ -6,11 +6,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATE_DIR="${SAURI_NATIVE_ENGINE_STATE_DIR:-${HOME}/.local/state/sauri/native-engines}"
 ASR_PYTHON="${SAURI_ASR_ENGINE_PYTHON:-${SAURI_NATIVE_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/asr-venv/bin/python}}"
 DIAR_PYTHON="${SAURI_DIAR_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/diar-venv/bin/python}"
+HOST_PYTHON="${SAURI_HOST_ENGINE_PYTHON:-${HOME}/.local/share/sauri/native-engines/host-venv/bin/python}"
 ENGINE_TOKEN_FILE="${HOME}/.config/sauri/engine_token"
+# Separate credential: only the API container and the host service hold it; engines and the worker never do.
+MANAGEMENT_TOKEN_FILE="${HOME}/.config/sauri/management_token"
 RECORDING_CAPABILITY_KEY_FILE="${HOME}/.config/sauri/recording_capability_key"
 
 usage() {
-  echo "Usage: $0 {start|stop|status} {asr|diar|llm|all}" >&2
+  echo "Usage: $0 {start|stop|status} {asr|diar|llm|host|all}" >&2
   exit 2
 }
 
@@ -18,18 +21,24 @@ usage() {
 ACTION="$1"
 TARGET="$2"
 case "$ACTION" in start|stop|status) ;; *) usage ;; esac
-case "$TARGET" in asr|diar|llm|all) ;; *) usage ;; esac
+case "$TARGET" in asr|diar|llm|host|all) ;; *) usage ;; esac
 
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 
 engine_config() {
+  ENGINE_EXTRA_FLAGS=""
   case "$1" in
     asr) ENGINE_PYTHON="$ASR_PYTHON"; ENGINE_LABEL="ASR"; ENGINE_PORT=8001; ENGINE_APP_DIR="$ROOT_DIR/backend/asr-engine" ;;
     diar) ENGINE_PYTHON="$DIAR_PYTHON"; ENGINE_LABEL="diarization"; ENGINE_PORT=8002; ENGINE_APP_DIR="$ROOT_DIR/backend/diar-engine" ;;
     llm)
       ENGINE_LABEL="LLM"; ENGINE_PORT=8003; ENGINE_APP_DIR="$ROOT_DIR/backend/llm-engine"
       ENGINE_PYTHON="${SAURI_NATIVE_LLM_PYTHON:-${SAURI_LLM_INSTALL_DIR:-$HOME/.local/share/sauri/native-engines/llm}/venv/bin/python}"
+      ;;
+    host)
+      ENGINE_PYTHON="$HOST_PYTHON"; ENGINE_LABEL="host"; ENGINE_PORT=8005; ENGINE_APP_DIR="$ROOT_DIR/backend/host-engine"
+      # Request lines of secret writes stay out of the server log.
+      ENGINE_EXTRA_FLAGS="--no-access-log"
       ;;
     *) echo "Unknown engine: $1" >&2; exit 2 ;;
   esac
@@ -63,15 +72,22 @@ start_engine() {
     rm -f "$PID_FILE"
   fi
 
-  [[ -s "$ENGINE_TOKEN_FILE" ]] || {
+  # The host service authenticates with its own management token and needs none of the data-plane credentials.
+  if [[ "$1" == host ]]; then
+    [[ -s "$MANAGEMENT_TOKEN_FILE" ]] || {
+      echo "Management token missing: $MANAGEMENT_TOKEN_FILE (run make engines-install)" >&2
+      return 1
+    }
+  fi
+  [[ "$1" == host || -s "$ENGINE_TOKEN_FILE" ]] || {
     echo "Native engine token missing: $ENGINE_TOKEN_FILE (run make engines-install)" >&2
     return 1
   }
-  [[ -s "$RECORDING_CAPABILITY_KEY_FILE" ]] || {
+  [[ "$1" == host || -s "$RECORDING_CAPABILITY_KEY_FILE" ]] || {
     echo "Recording capability key missing: $RECORDING_CAPABILITY_KEY_FILE (run make engines-install)" >&2
     return 1
   }
-  if [[ "$1" != "llm" ]]; then
+  if [[ "$1" != "llm" && "$1" != host ]]; then
     local key_file
     for key_file in "$HOME/.config/sauri/object_store_access_key" "$HOME/.config/sauri/object_store_secret_key"; do
       [[ -s "$key_file" ]] || {
@@ -88,7 +104,7 @@ start_engine() {
   PYTHONPATH="$ROOT_DIR/backend/engine-common${PYTHONPATH:+:$PYTHONPATH}" \
     SAURI_RECORDING_CAPABILITY_KEY_FILE="$RECORDING_CAPABILITY_KEY_FILE" \
     nohup "$ENGINE_PYTHON" -m uvicorn native_main:app \
-    --app-dir "$ENGINE_APP_DIR" --host 127.0.0.1 --port "$ENGINE_PORT" \
+    --app-dir "$ENGINE_APP_DIR" --host 127.0.0.1 --port "$ENGINE_PORT" $ENGINE_EXTRA_FLAGS \
     >>"$LOG_FILE" 2>&1 </dev/null &
   local server_pid=$!
   printf '%s\n' "$server_pid" >"$PID_FILE"
@@ -162,7 +178,7 @@ status_engine() {
   return 1
 }
 
-engines=(asr diar llm)
+engines=(asr diar llm host)
 if [[ "$TARGET" != all ]]; then engines=("$TARGET"); fi
 result=0
 for engine in "${engines[@]}"; do

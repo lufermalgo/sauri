@@ -78,8 +78,12 @@ services:
       - ENABLE_API_DOCS=${ENABLE_API_DOCS:-false}
       - RETENTION_DAYS=${RETENTION_DAYS:-90}
       - SAURI_ADMIN_PASSWORD_FILE=/run/secrets/sauri_admin_password
+      # Host administration service (secrets, status). Its token is mounted here and never in the worker.
+      - HOST_ENGINE_URL=${HOST_ENGINE_URL:-http://host.docker.internal:8005}
+      - MANAGEMENT_TOKEN_FILE=/run/secrets/management_token
     volumes:
       - "${HOME:?HOME must be set}/.config/sauri/admin_password:/run/secrets/sauri_admin_password:ro"
+      - "${HOME}/.config/sauri/management_token:/run/secrets/management_token:ro"
       - "${HOME}/.config/sauri/database_password:/run/secrets/database_password:ro"
       - "${HOME}/.config/sauri/queue_password:/run/secrets/queue_password:ro"
       - "${HOME}/.config/sauri/object_store_access_key:/run/secrets/object_store_access_key:ro"
