@@ -83,3 +83,9 @@ def test_shutdown_kills_every_helper_still_running(tmp_path: Path):
     thread.join(10)
     assert not thread.is_alive()
     assert wait_dead(int(pid_file.read_text()))
+
+
+def test_the_helper_gets_the_environment_it_is_given():
+    env = {"SAURI_TEST_ENV": "given", "PATH": os.environ["PATH"]}
+    done = process_group.run(["sh", "-c", "echo $SAURI_TEST_ENV"], timeout=10, text=True, env=env)
+    assert done.stdout == "given\n"

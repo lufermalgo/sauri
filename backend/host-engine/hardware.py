@@ -40,6 +40,16 @@ def disk_free_bytes(path: Path) -> int:
     return shutil.disk_usage(probe).free
 
 
+def macos_major() -> int:
+    """Major version of macOS (``platform.mac_ver``); 0 elsewhere or when it cannot be read."""
+    if platform.system() != "Darwin":
+        return 0
+    try:
+        return int(platform.mac_ver()[0].split(".")[0])
+    except (ValueError, IndexError):
+        return 0
+
+
 def detect_hardware(models_dir: Path) -> HardwareProfile:
     arch, system = platform.machine(), platform.system()
     return HardwareProfile(
@@ -50,4 +60,5 @@ def detect_hardware(models_dir: Path) -> HardwareProfile:
         metal=system == "Darwin" and arch == "arm64",
         disk_free_bytes=disk_free_bytes(models_dir),
         system=system,
+        macos_major=macos_major(),
     )

@@ -41,5 +41,19 @@
       "binary_sha256": "f6b922e2a4c2c8428c5a8c25a07d9953d35457d2b7567dfbc82e05c2ab94613f",
       "binary_source": "Homebrew whisper.cpp 1.9.2, macOS arm64; /opt/homebrew/Cellar/whisper.cpp/1.9.2/bin/whisper-vad-speech-segments"
     }
+  },
+  "parakeet": {
+    "source_repo": "https://github.com/FluidInference/FluidAudio.git",
+    "source_commit": "16780f04d2ece24f67d0fc00efccd0296491c1a8",
+    "license": "Apache-2.0",
+    "minimum_macos": 14,
+    "known_binary_sha256": [
+      "8d880a629970f52352bc227dd0e8b8f923f20d563719a567451f7aea88eefcab"
+    ],
+    "known_binary_note": "Release build of the pinned commit made on 2026-11-16 (Swift 6.4.2, macOS 27.2). A build made on another machine differs byte for byte; install-parakeet-engine.sh records the SHA-256 of the binary it builds in provenance.json, and the gateway compares the file with that record.",
+    "model_repo": "FluidInference/parakeet-ultra-coreml",
+    "model_revision": "95eaa59a39d4394f047a4dc5cce480388a60d1b6",
+    "model_dir": "parakeet-tdt-0.6b-v3-ultra-coreml",
+    "model_encoder_sha256": "315ba01f33cadbf601d43ac7f5c86208b7aa75fdaa34705c9869d5abe3521c9b"
   }
 }

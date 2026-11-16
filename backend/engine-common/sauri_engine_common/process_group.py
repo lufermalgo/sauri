@@ -13,7 +13,7 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from typing import Any
 
@@ -42,11 +42,17 @@ def kill_all() -> None:
 
 
 def run(
-    command: Sequence[str], *, timeout: float, check: bool = True, capture_output: bool = True, text: bool = False,
+    command: Sequence[str],
+    *,
+    timeout: float,
+    check: bool = True,
+    capture_output: bool = True,
+    text: bool = False,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[Any]:
-    """Like ``subprocess.run(command, check=..., capture_output=..., timeout=..., text=...)``, plus cancellation."""
+    """Like ``subprocess.run`` (same arguments, plus ``env``) but the child is killed on cancellation or timeout."""
     pipe = subprocess.PIPE if capture_output else None
-    process = subprocess.Popen(command, stdout=pipe, stderr=pipe, text=text, start_new_session=True)
+    process = subprocess.Popen(command, stdout=pipe, stderr=pipe, text=text, start_new_session=True, env=env)
     with _lock:
         _live[process.pid] = process
     deadline = time.monotonic() + timeout

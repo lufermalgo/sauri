@@ -620,7 +620,7 @@ def test_the_listing_carries_state_recommendation_and_the_managed_engine(
 
 def test_the_hardware_route_reports_the_machine(client: TestClient) -> None:
     body = client.get("/v1/hardware", headers=AUTH).json()
-    assert set(body) == {"arch", "system", "memory_gib", "cores", "metal", "disk_free_bytes"}
+    assert set(body) == {"arch", "system", "memory_gib", "cores", "metal", "macos_major", "disk_free_bytes"}
     assert body["cores"] >= 1 and body["disk_free_bytes"] > 0 and isinstance(body["metal"], bool)
 
 

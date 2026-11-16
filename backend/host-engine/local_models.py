@@ -19,6 +19,12 @@ from here. Each present catalog file is size-checked and hashed once, in a worke
 written (``location`` says ``legacy`` when the file stays where it is). Nothing is moved, copied, renamed,
 deleted or downloaded. A file that differs from the catalog is never claimed: it is recorded as
 ``present_unverified`` (with the reason) so the next run does not hash it again until it changes.
+A model made of several files (a CoreML bundle, ``files`` in the catalog) is a directory under the models
+directory: it is downloaded file by file into ``<dir>.part/`` (every file hash-verified, completed files
+kept across retries) and moved to its final name only when all of them match; its manifest records the
+bundle digest and the size and ``mtime_ns`` of each file. ``seed_bundle`` copies a verified bundle from a
+directory the operator names (never a request field), which is how a Mac that already has the files gets
+them without downloading.
 A managed engine (Senko) has no file: it is "installed" when its virtual environment holds the package
 (presence only, never hashed; ``scripts/engines/install-diar-engine.sh --check`` does the hash check).
 
@@ -37,6 +43,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import stat
 import uuid
 from collections import OrderedDict
@@ -60,6 +67,7 @@ from sauri_engine_common.local_model_use import (
     manifest_location,
     read_manifest,
 )
+from sauri_engine_common.model_bundle import manifest_vouches, snapshot
 from sauri_engine_common.recommend import (
     Catalog,
     CatalogError,
@@ -114,8 +122,8 @@ class DownloadPolicy:
     def sends_token(self, url: str) -> bool:
         return self.allows(url) and (urlsplit(url).hostname or "").lower() in self.token_hosts
 
-    def url_for(self, model: CatalogModel) -> str:
-        return f"{self.base_url}/{model.repo}/resolve/{model.revision}/{model.file}"
+    def url_for(self, model: CatalogModel, path: str | None = None) -> str:
+        return f"{self.base_url}/{model.repo}/resolve/{model.revision}/{path or model.file}"
 
 
 class LocalModelError(Exception):
@@ -175,13 +183,15 @@ class _Found:
     path: Path
     location: str
     info: os.stat_result
+    snap: dict[str, dict[str, int]] | None = None  # bundles only: size and mtime_ns of each file
 
 
 class _Sink:
     """The open ``.part`` file with its incremental hash and byte count."""
 
-    def __init__(self, out: Any, sha: Any, done: int) -> None:
+    def __init__(self, out: Any, sha: Any, done: int, base: int = 0) -> None:
         self.out, self.sha, self.done = out, sha, done
+        self.base = base  # bytes of the bundle's earlier files, so job progress covers the whole model
 
     def restart(self) -> None:
         self.out.seek(0)
@@ -202,9 +212,15 @@ def _unlink(path: Path) -> None:
 
 
 def default_managed_dirs() -> dict[str, Path]:
-    """Virtual environment of each managed engine, keyed by catalog ``engine``."""
+    """Install location of each managed engine, keyed by catalog ``engine``.
+
+    Senko is a virtual environment; FluidAudio is a folder with ``bin/fluidaudiocli`` and ``provenance.json``.
+    """
     root = Path.home() / ".local" / "share" / "sauri" / "native-engines"
-    return {"senko": Path(os.getenv("SAURI_DIAR_VENV", root / "diar-venv"))}
+    return {
+        "senko": Path(os.getenv("SAURI_DIAR_VENV", root / "diar-venv")),
+        "fluidaudio": Path(os.getenv("SAURI_PARAKEET_HOME", root / "parakeet")),
+    }
 
 
 def _regular(path: Path) -> os.stat_result | None:
@@ -214,6 +230,15 @@ def _regular(path: Path) -> os.stat_result | None:
     except OSError:
         return None
     return info if stat.S_ISREG(info.st_mode) else None
+
+
+def _directory(path: Path) -> os.stat_result | None:
+    """``lstat`` of a real directory (never a symlink), or None."""
+    try:
+        info = path.lstat()
+    except OSError:
+        return None
+    return info if stat.S_ISDIR(info.st_mode) else None
 
 
 class LocalModelService:
@@ -280,6 +305,11 @@ class LocalModelService:
     def _locate_file(self, model: CatalogModel) -> _Found | None:
         """The catalog file where it is: the models directory first, then the legacy location."""
         final = self._paths(model)[0]
+        if model.bundle:
+            directory = _directory(final)
+            if directory is None:
+                return None
+            return _Found(final, LOCATION_MODELS_DIR, directory, snapshot(final, model.files))
         info = _regular(final)
         if info is not None:
             return _Found(final, LOCATION_MODELS_DIR, info)
@@ -294,10 +324,32 @@ class LocalModelService:
 
         Presence only: nothing is hashed or imported (the installer's ``--check`` does the integrity check).
         """
-        venv = self.managed_dirs.get(model.engine)
-        if venv is None or not (venv / "bin" / "python").is_file():
+        home = self.managed_dirs.get(model.engine)
+        if home is None:
             return False
-        return any(venv.glob(f"lib/python*/site-packages/{model.engine}*"))
+        if model.engine == "fluidaudio":
+            return self._fluidaudio_detected(home, model)
+        if not (home / "bin" / "python").is_file():
+            return False
+        return any(home.glob(f"lib/python*/site-packages/{model.engine}*"))
+
+    @staticmethod
+    def _fluidaudio_detected(home: Path, model: CatalogModel) -> bool:
+        """The CLI is present and its provenance names the pinned source commit (presence only, no hashing)."""
+        binary = home / "bin" / "fluidaudiocli"
+        if not binary.is_file() or not os.access(binary, os.X_OK):
+            return False
+        record = read_manifest(home / "provenance.json")
+        if record is None:
+            return False
+        return record.get("source_commit") == model.revision and bool(record.get("binary_sha256"))
+
+    def needs_ready(self, model: CatalogModel) -> bool:
+        """The managed engine this model cannot run without is installed (true for models that need none)."""
+        if model.needs is None:
+            return True
+        dependency = self.catalog.get(model.needs)
+        return dependency is not None and self.managed_detected(dependency)
 
     def _state(self, model: CatalogModel) -> dict[str, Any]:
         """Cheap state from stat and manifest only; the hash is recomputed by ``verify`` and ``adopt``.
@@ -318,6 +370,8 @@ class LocalModelService:
         record = read_manifest(self._paths(model)[2])
         if record is not None and manifest_location(record) != found.location:
             record = None  # written for another location: says nothing about this file
+        if model.bundle:
+            return self._bundle_state(model, found, record)
         info = found.info
         state, reason, installed_at = "unverified", None, None
         if record is not None:
@@ -336,6 +390,26 @@ class LocalModelService:
         return {
             "state": state,
             "installed_size": info.st_size,
+            "installed_at": installed_at,
+            "location": found.location,
+            "reason": reason,
+        }
+
+    @staticmethod
+    def _bundle_state(model: CatalogModel, found: _Found, record: dict[str, Any] | None) -> dict[str, Any]:
+        """State of a bundle from stat and manifest only; a missing or resized file is ``unverified``."""
+        state, reason, installed_at = "unverified", None, None
+        if record is not None:
+            installed_at = record.get("installed_at")
+            if record.get("status") == "corrupt" and record.get("sha256") == model.sha256:
+                state = "corrupt"
+            elif found.snap is not None and manifest_vouches(record, found.snap, model.sha256 or ""):
+                state = "installed"
+            elif record.get("status") == "present_unverified" and record.get("reason") in UNVERIFIED_REASONS:
+                reason = record.get("reason") if found.snap is None or record.get("files") == found.snap else None
+        return {
+            "state": state,
+            "installed_size": sum(item["size"] for item in found.snap.values()) if found.snap else None,
             "installed_at": installed_at,
             "location": found.location,
             "reason": reason,
@@ -372,7 +446,7 @@ class LocalModelService:
             return [model.process]
         chosen = self._read_selection().get(model.process)
         if chosen is None:
-            return [model.process] if model.default else []
+            return [model.process] if model.default or model.preferred else []
         return [model.process] if chosen == model.id else []
 
     # --- views ------------------------------------------------------------------------------------
@@ -388,6 +462,7 @@ class LocalModelService:
             "memory_gib": profile.memory_gib,
             "cores": profile.cores,
             "metal": profile.metal,
+            "macos_major": profile.macos_major,
             "disk_free_bytes": profile.disk_free_bytes,
         }
 
@@ -403,10 +478,11 @@ class LocalModelService:
         return "available"
 
     def _active_models(self, availability: dict[str, str]) -> dict[str, str | None]:
-        """The model serving each process: the chosen one, else the catalog default, only when installed.
+        """The model serving each process: the chosen one, else the preferred or default one, only when ready.
 
-        Mirrors the gateways: no choice means ``local:default`` (the catalog default); a choice means
-        ``local:<id>``, which fails unless that model is installed, so no other model is shown as active.
+        Mirrors the gateways: no choice means ``local:default``, which is the ``preferred`` model when it is
+        installed and the engine it needs is present, and the catalog default otherwise; a choice means
+        ``local:<id>``, which fails unless that model is ready, so no other model is shown as active.
         An unreadable marker is treated as no choice, as ``local:default`` never reads it.
         """
         try:
@@ -417,10 +493,15 @@ class LocalModelService:
         for process in dict.fromkeys(model.process for model in self.catalog.models):
             candidates = [m for m in self.catalog.models if m.process == process and m.kind != "auxiliary"]
             chosen = selection.get(process)
-            picked = next((m for m in candidates if m.default), None) if chosen is None else next(
-                (m for m in candidates if m.id == chosen), None
-            )
-            active[process] = picked.id if picked is not None and availability[picked.id] == "installed" else None
+            def ready(model: CatalogModel) -> bool:
+                return availability[model.id] == "installed" and self.needs_ready(model)
+
+            if chosen is None:
+                preferred = next((m for m in candidates if m.preferred and ready(m)), None)
+                picked = preferred or next((m for m in candidates if m.default), None)
+            else:
+                picked = next((m for m in candidates if m.id == chosen), None)
+            active[process] = picked.id if picked is not None and ready(picked) else None
         return active
 
     def _install_hint(self, model: CatalogModel, free_bytes: int) -> dict[str, Any]:
@@ -453,8 +534,14 @@ class LocalModelService:
                 "size": model.size,
                 "min_ram_gib": model.min_ram_gib,
                 "requires": list(model.requires),
+                "min_macos": model.min_macos,
                 "status": model.status,
                 "default": model.default,
+                "preferred": model.preferred,
+                "needs": model.needs,
+                "needs_ready": self.needs_ready(model),
+                "license": model.license,
+                "attribution": model.attribution,
                 "managed_by": model.managed_by,
                 "recommended": model.id in recommended,
                 "in_use_by": in_use_by,
@@ -512,12 +599,15 @@ class LocalModelService:
         assert model.size is not None
         self._require_idle()
         current = self._state(model)
-        if current["state"] == "installed" or (current["state"] == "unverified" and current["reason"] is None):
+        incomplete = model.bundle and current["state"] == "unverified" and current["installed_size"] is None
+        if not incomplete and (
+            current["state"] == "installed" or (current["state"] == "unverified" and current["reason"] is None)
+        ):
             raise LocalModelError(409, "already_installed")
         final, part, _manifest = self._paths(model)
         try:
             self.models_dir.mkdir(parents=True, exist_ok=True)
-            part_info = _regular(part)
+            part_info = None if model.bundle else _regular(part)
             needed = -(-model.size * DISK_HEADROOM_PERCENT // 100) - (part_info.st_size if part_info else 0)
             free = disk_free_bytes(self.models_dir)
         except OSError:
@@ -526,7 +616,8 @@ class LocalModelService:
             raise LocalModelError(507, "insufficient_disk", needed_bytes=needed, free_bytes=free)
         job = Job(id=uuid.uuid4().hex, model_id=model.id, type="install", bytes_total=model.size)
         logger.info("local_model_install_started model=%s", model.id)
-        return self._start(job, self._run(job, self._install(job, model), part))
+        body = self._install_bundle(job, model) if model.bundle else self._install(job, model)
+        return self._start(job, self._run(job, body, part))
 
     def verify(self, model_id: str) -> Job:
         model = self._downloadable(model_id)
@@ -535,8 +626,10 @@ class LocalModelService:
         found = self._locate_file(model)
         if found is None:
             raise LocalModelError(404, "not_installed")
-        job = Job(id=uuid.uuid4().hex, model_id=model.id, type="verify", bytes_total=found.info.st_size)
-        return self._start(job, self._run(job, self._verify(job, model), None))
+        total = model.size if model.bundle else found.info.st_size
+        job = Job(id=uuid.uuid4().hex, model_id=model.id, type="verify", bytes_total=total)
+        body = self._verify_bundle(job, model) if model.bundle else self._verify(job, model)
+        return self._start(job, self._run(job, body, None))
 
     async def cancel(self, job_id: str) -> Job:
         job = self.get_job(job_id)
@@ -548,7 +641,7 @@ class LocalModelService:
             # Cancelled before the job body started: nothing ran its cleanup.
             job.state, self._active = "cancelled", None
             if job.type == "install":
-                _unlink(self._paths(self._model(job.model_id))[1])
+                self._discard_part(self._paths(self._model(job.model_id))[1])
         return job
 
     def remove(self, model_id: str) -> None:
@@ -565,8 +658,13 @@ class LocalModelService:
         processes = self.in_use_processes(model)
         if processes:
             raise LocalModelError(409, "model_in_use", processes=processes)
-        for path in (manifest, final, part):
-            _unlink(path)
+        if model.bundle:
+            for directory in (final, part):
+                shutil.rmtree(directory, ignore_errors=True)
+            _unlink(manifest)
+        else:
+            for path in (manifest, final, part):
+                _unlink(path)
         logger.info("local_model_removed model=%s", model.id)
 
     # --- job bodies -------------------------------------------------------------------------------
@@ -577,22 +675,29 @@ class LocalModelService:
             job.state = "done"
         except asyncio.CancelledError:
             job.state = "cancelled"
-            if part is not None:
-                _unlink(part)
+            self._discard_part(part)
             raise
         except JobError as failure:
             job.state, job.error = "failed", failure.code
-            if part is not None:
-                _unlink(part)
+            self._discard_part(part)
         except (OSError, httpx.HTTPError) as exc:
             # Only the class name is logged: exception text can carry a URL or a path.
             logger.warning("local_model_job_error type=%s", type(exc).__name__)
             job.state, job.error = "failed", "io_error" if isinstance(exc, OSError) else "download_failed"
-            if part is not None:
-                _unlink(part)
+            self._discard_part(part)
         finally:
             self._active = None
             logger.info("local_model_job_finished model=%s type=%s state=%s", job.model_id, job.type, job.state)
+
+    @staticmethod
+    def _discard_part(part: Path | None) -> None:
+        """A failed or cancelled install leaves no ``.part`` file or staging directory behind."""
+        if part is None:
+            return
+        if _directory(part) is not None:
+            shutil.rmtree(part, ignore_errors=True)
+        else:
+            _unlink(part)
 
     def _token(self) -> str | None:
         try:
@@ -607,53 +712,118 @@ class LocalModelService:
                 sha.update(chunk)
                 job.bytes_done += len(chunk)
 
-    async def _install(self, job: Job, model: CatalogModel) -> None:
-        assert model.size is not None and model.sha256 is not None
-        final, part, manifest = self._paths(model)
+    @staticmethod
+    def _client() -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=False, trust_env=False)
+
+    async def _download_file(
+        self,
+        client: httpx.AsyncClient,
+        job: Job,
+        model: CatalogModel,
+        relative: str | None,
+        size: int,
+        sha256: str,
+        part: Path,
+        base: int = 0,
+    ) -> None:
+        """Download one catalog file into ``part`` (resumable) and check its SHA-256; ``part`` stays for the caller.
+
+        ``relative`` is the path inside the repository (None for a single-file model). ``base`` is the number of
+        bytes of the bundle's earlier files, so the job's progress covers the whole model.
+        """
         sha = hashlib.sha256()
         info = _regular(part)
         if os.path.lexists(part) and info is None:
             raise JobError("unsafe_path")
-        if info is not None and info.st_size > model.size:
+        if info is not None and info.st_size > size:
             _unlink(part)
             info = None
+        job.bytes_done = base
         if info is not None:
             await self._hash_into(part, sha, job)  # resume: re-hash what is already on disk
         fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "ab") as out:
-            sink = _Sink(out, sha, job.bytes_done)
+            sink = _Sink(out, sha, job.bytes_done - base, base)
             token = self._token()
             attempts = 0
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(60.0, connect=10.0), follow_redirects=False, trust_env=False
-            ) as client:
-                while sink.done < model.size:
-                    before = sink.done
-                    try:
-                        await self._fetch(client, model, sink, job, token)
-                    except httpx.TransportError as exc:
-                        logger.warning("local_model_connection_lost type=%s", type(exc).__name__)
-                    if sink.done < model.size:
-                        # A cut that made progress does not count against the retry budget.
-                        attempts = 0 if sink.done > before else attempts + 1
-                        if attempts >= MAX_ATTEMPTS:
-                            raise JobError("connection_lost")
-                        await asyncio.sleep(RETRY_DELAY_S)
+            url = self.policy.url_for(model, relative)
+            while sink.done < size:
+                before = sink.done
+                try:
+                    await self._fetch(client, url, size, sink, job, token)
+                except httpx.TransportError as exc:
+                    logger.warning("local_model_connection_lost type=%s", type(exc).__name__)
+                if sink.done < size:
+                    # A cut that made progress does not count against the retry budget.
+                    attempts = 0 if sink.done > before else attempts + 1
+                    if attempts >= MAX_ATTEMPTS:
+                        raise JobError("connection_lost")
+                    await asyncio.sleep(RETRY_DELAY_S)
             out.flush()
             os.fsync(out.fileno())
-        if not hmac.compare_digest(sink.sha.hexdigest(), model.sha256):
+        if not hmac.compare_digest(sink.sha.hexdigest(), sha256):
             raise JobError("hash_mismatch")
+
+    async def _install(self, job: Job, model: CatalogModel) -> None:
+        assert model.size is not None and model.sha256 is not None
+        final, part, manifest = self._paths(model)
+        async with self._client() as client:
+            await self._download_file(client, job, model, None, model.size, model.sha256, part)
         os.replace(part, final)
         self._write_manifest(model, final.stat(), manifest, "installed")
         job.result = "installed"
 
+    async def _install_bundle(self, job: Job, model: CatalogModel) -> None:
+        """Download every file of a bundle into ``<dir>.part/`` and move it into place when all of them match."""
+        final, part, manifest = self._paths(model)
+        if os.path.lexists(part) and _directory(part) is None:
+            raise JobError("unsafe_path")
+        base = 0
+        async with self._client() as client:
+            for item in model.files:
+                target = part / item.path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                done = _regular(target)
+                if done is not None and done.st_size == item.size:
+                    job.bytes_done = base
+                    sink = hashlib.sha256()
+                    await self._hash_into(target, sink, job)
+                    if hmac.compare_digest(sink.hexdigest(), item.sha256):
+                        base += item.size  # a file of an earlier attempt that is complete and verified
+                        continue
+                    _unlink(target)
+                await self._download_file(
+                    client, job, model, item.path, item.size, item.sha256,
+                    target.with_name(target.name + ".part"), base,
+                )
+                os.replace(target.with_name(target.name + ".part"), target)
+                base += item.size
+        self._replace_directory(part, final)
+        found = snapshot(final, model.files)
+        if found is None:
+            raise JobError("size_mismatch")
+        self._write_manifest(model, final.stat(), manifest, "installed", files=found)
+        job.result = "installed"
+
+    @staticmethod
+    def _replace_directory(staging: Path, final: Path) -> None:
+        """Move a complete staging directory to its final name; an older (incomplete or corrupt) one goes first."""
+        if os.path.lexists(final):
+            old = final.with_name(final.name + ".old")
+            shutil.rmtree(old, ignore_errors=True)
+            os.replace(final, old)
+            os.replace(staging, final)
+            shutil.rmtree(old, ignore_errors=True)
+        else:
+            os.replace(staging, final)
+
     async def _fetch(
-        self, client: httpx.AsyncClient, model: CatalogModel, sink: _Sink, job: Job, token: str | None
+        self, client: httpx.AsyncClient, url: str, size: int, sink: _Sink, job: Job, token: str | None
     ) -> None:
         headers = {"Accept-Encoding": "identity"}
         if sink.done:
             headers["Range"] = f"bytes={sink.done}-"
-        url = self.policy.url_for(model)
         if not self.policy.allows(url):
             raise JobError("url_not_allowed")
         for _hop in range(MAX_REDIRECTS + 1):
@@ -667,24 +837,23 @@ class LocalModelService:
                     if not url or not self.policy.allows(url):
                         raise JobError("redirect_not_allowed")
                     continue
-                await self._consume(response, model, sink, job)
+                await self._consume(response, size, sink, job)
                 return
         raise JobError("too_many_redirects")
 
-    async def _consume(self, response: httpx.Response, model: CatalogModel, sink: _Sink, job: Job) -> None:
-        assert model.size is not None
+    async def _consume(self, response: httpx.Response, size: int, sink: _Sink, job: Job) -> None:
         status = response.status_code
         if status == 206:
             match = _CONTENT_RANGE.fullmatch(response.headers.get("content-range", ""))
-            if match is None or int(match[1]) != sink.done or int(match[3]) != model.size:
+            if match is None or int(match[1]) != sink.done or int(match[3]) != size:
                 raise JobError("bad_range")
         elif status == 200:
             length = response.headers.get("content-length")
-            if length is not None and (not length.isdigit() or int(length) != model.size):
+            if length is not None and (not length.isdigit() or int(length) != size):
                 raise JobError("size_mismatch")
             if sink.done:
                 sink.restart()  # the server ignored Range: start over
-                job.bytes_done = 0
+                job.bytes_done = sink.base
         elif status in (401, 403):
             raise JobError("download_unauthorized")
         elif status == 404:
@@ -692,12 +861,12 @@ class LocalModelService:
         else:
             raise JobError("download_http_error")
         async for chunk in response.aiter_raw():
-            if sink.done + len(chunk) > model.size:
+            if sink.done + len(chunk) > size:
                 raise JobError("size_exceeded")
             sink.out.write(chunk)
             sink.sha.update(chunk)
             sink.done += len(chunk)
-            job.bytes_done = sink.done
+            job.bytes_done = sink.base + sink.done
 
     async def _verify(self, job: Job, model: CatalogModel) -> None:
         assert model.sha256 is not None
@@ -714,6 +883,30 @@ class LocalModelService:
         self._write_manifest(model, info, manifest, "installed" if matches else "corrupt", found.location)
         job.result = "verified" if matches else "corrupt"
 
+    async def _verify_bundle(self, job: Job, model: CatalogModel) -> None:
+        manifest = self._paths(model)[2]
+        found = self._locate_file(model)
+        if found is None:
+            raise JobError("not_installed")
+        matches = found.snap is not None
+        for item in model.files if matches else ():
+            sha = hashlib.sha256()
+            try:
+                await self._hash_into(found.path / item.path, sha, job)
+            except OSError:
+                matches = False
+                break
+            if not hmac.compare_digest(sha.hexdigest(), item.sha256):
+                matches = False
+                break
+        after = snapshot(found.path, model.files)
+        if matches and after != found.snap:
+            raise JobError("changed")
+        files = after if matches and after is not None else {}
+        status = "installed" if matches else "corrupt"
+        self._write_manifest(model, found.info, manifest, status, found.location, files=files)
+        job.result = "verified" if matches else "corrupt"
+
     def _write_manifest(
         self,
         model: CatalogModel,
@@ -722,6 +915,7 @@ class LocalModelService:
         status: str,
         location: str = LOCATION_MODELS_DIR,
         reason: str | None = None,
+        files: dict[str, dict[str, int]] | None = None,
     ) -> None:
         record: dict[str, Any] = {
             "id": model.id,
@@ -736,6 +930,8 @@ class LocalModelService:
         }
         if reason is not None:
             record["reason"] = reason
+        if files is not None:
+            record["files"] = files
         manifest.parent.mkdir(parents=True, exist_ok=True)
         temporary = manifest.with_name(manifest.name + ".tmp")
         temporary.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
@@ -757,11 +953,17 @@ class LocalModelService:
             id=uuid.uuid4().hex,
             model_id=ADOPT_JOB_MODEL,
             type="adopt",
-            bytes_total=sum(found.info.st_size for model, found in candidates if found.info.st_size == model.size),
+            bytes_total=sum(self._adoption_bytes(model, found) for model, found in candidates),
             pending={model.id for model, _found in candidates},
         )
         logger.info("local_model_adoption_started candidates=%d", len(candidates))
         return self._start(job, self._run(job, self._adopt(job, candidates), None))
+
+    @staticmethod
+    def _adoption_bytes(model: CatalogModel, found: _Found) -> int:
+        if model.bundle:
+            return model.size or 0 if found.snap is not None else 0
+        return found.info.st_size if found.info.st_size == model.size else 0
 
     def _adoption_candidates(self) -> list[tuple[CatalogModel, _Found]]:
         candidates = []
@@ -780,6 +982,10 @@ class LocalModelService:
 
     def _already_judged(self, record: dict[str, Any], found: _Found) -> bool:
         """This very file (same size and ``mtime_ns``) was already hashed and found different."""
+        if found.snap is not None and "files" in record:  # a bundle: every file has the same size and mtime_ns
+            return record.get("files") == found.snap and (
+                record.get("status") == "corrupt" or record.get("status") == "present_unverified"
+            )
         same = record.get("size") == found.info.st_size and record.get("mtime_ns") == found.info.st_mtime_ns
         return same and (record.get("status") == "corrupt" or self._judged_different(record, found.info))
 
@@ -799,6 +1005,8 @@ class LocalModelService:
     async def _adopt_one(self, job: Job, model: CatalogModel, found: _Found) -> str:
         """Outcome of one file: ``adopted``, ``present_unverified``, ``changed``, ``unreadable``, ``write_failed``."""
         assert model.size is not None and model.sha256 is not None
+        if model.bundle:
+            return await self._adopt_bundle(job, model, found)
         before = found.info
         if before.st_size != model.size:
             return self._record_judgement(model, found, "present_unverified", "size_mismatch")
@@ -815,14 +1023,79 @@ class LocalModelService:
             return self._record_judgement(model, found, "installed", None)
         return self._record_judgement(model, found, "present_unverified", "hash_mismatch")
 
+    async def _adopt_bundle(self, job: Job, model: CatalogModel, found: _Found) -> str:
+        if found.snap is None:
+            return self._record_judgement(model, found, "present_unverified", "size_mismatch")
+        for item in model.files:
+            sha = hashlib.sha256()
+            try:
+                await self._hash_into(found.path / item.path, sha, job)
+            except OSError as exc:
+                logger.warning("local_model_adoption_error type=%s", type(exc).__name__)
+                return "unreadable"
+            if not hmac.compare_digest(sha.hexdigest(), item.sha256):
+                return self._record_judgement(model, found, "present_unverified", "hash_mismatch")
+        if snapshot(found.path, model.files) != found.snap:
+            return "changed"  # modified while it was being read: judge nothing, try again next run
+        return self._record_judgement(model, found, "installed", None)
+
     def _record_judgement(self, model: CatalogModel, found: _Found, status: str, reason: str | None) -> str:
         """Write the manifest for a judged file (never the file itself) and name the outcome."""
         try:
-            self._write_manifest(model, found.info, self._paths(model)[2], status, found.location, reason)
+            files = found.snap if model.bundle else None
+            self._write_manifest(model, found.info, self._paths(model)[2], status, found.location, reason, files)
         except OSError as exc:
             logger.warning("local_model_adoption_error type=%s", type(exc).__name__)
             return "write_failed"
         return "adopted" if status == "installed" else "present_unverified"
+
+
+def seed_bundle(service: LocalModelService, model_id: str, source: Path) -> str:
+    """Copy a bundle that is already on this Mac into the models directory, verifying every byte; blocking.
+
+    For the operator (``seed_model.py``), never for a request: ``source`` is a path the operator typed. Every
+    source file must match the catalog size and SHA-256 (hashed while it is copied, and the copy is what is
+    stored), the directory appears under its final name only when all of them match, and the source is left
+    untouched. Returns ``installed`` or raises ``LocalModelError`` with a stable code.
+    """
+    model = service._model(model_id)
+    if not model.bundle or model.file is None or model.sha256 is None:
+        raise LocalModelError(409, "not_a_bundle")
+    if service._active is not None:
+        raise LocalModelError(409, "job_active", job_id=service._active.id)
+    final, part, manifest = service._paths(model)
+    if snapshot(final, model.files) is not None:
+        record = read_manifest(manifest)
+        found = snapshot(final, model.files)
+        if found is not None and manifest_vouches(record, found, model.sha256):
+            return "installed"
+    shutil.rmtree(part, ignore_errors=True)
+    try:
+        for item in model.files:
+            origin = source / item.path
+            info = _regular(origin)
+            if info is None or info.st_size != item.size:
+                raise LocalModelError(404, "source_file_missing_or_resized")
+            target = part / item.path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            sha = hashlib.sha256()
+            with origin.open("rb") as reader, target.open("xb") as writer:
+                while chunk := reader.read(HASH_CHUNK_BYTES):
+                    sha.update(chunk)
+                    writer.write(chunk)
+                writer.flush()
+                os.fsync(writer.fileno())
+            if not hmac.compare_digest(sha.hexdigest(), item.sha256):
+                raise LocalModelError(422, "source_hash_mismatch")
+        service._replace_directory(part, final)
+    except BaseException:
+        shutil.rmtree(part, ignore_errors=True)
+        raise
+    found = snapshot(final, model.files)
+    if found is None:
+        raise LocalModelError(500, "seed_incomplete")
+    service._write_manifest(model, final.stat(), manifest, "installed", files=found)
+    return "installed"
 
 
 # --- routes -----------------------------------------------------------------------------------------

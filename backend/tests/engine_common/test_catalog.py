@@ -63,6 +63,26 @@ def test_the_catalog_matches_engine_hashes_for_every_default_model() -> None:
     assert defaults == {*expected, "senko-coreml"}
 
 
+def test_parakeet_is_the_preferred_bundle_and_whisper_stays_the_default_fallback() -> None:
+    catalog = load_catalog()
+    parakeet = catalog.get("parakeet-tdt-0.6b-v3-ultra-coreml")
+    whisper = catalog.get("whisper-large-v3-turbo-q5_0")
+    cli = catalog.get("fluidaudio-cli")
+    assert parakeet is not None and whisper is not None and cli is not None
+    pins = HASHES["parakeet"]
+    assert parakeet.preferred and not parakeet.default and whisper.default and not whisper.preferred
+    assert parakeet.bundle and len(parakeet.files) == 20 and parakeet.size == sum(f.size for f in parakeet.files)
+    assert (parakeet.repo, parakeet.revision) == (pins["model_repo"], pins["model_revision"])
+    encoder = next(f for f in parakeet.files if f.path == "Encoder.mlmodelc/weights/weight.bin")
+    assert encoder.sha256 == pins["model_encoder_sha256"]
+    assert parakeet.file == pins["model_dir"] and parakeet.needs == "fluidaudio-cli"
+    assert parakeet.min_macos == pins["minimum_macos"]
+    assert parakeet.license == "CC-BY-4.0" and parakeet.attribution and "NVIDIA" in parakeet.attribution
+    assert (cli.kind, cli.revision) == ("managed_engine", pins["source_commit"])
+    assert cli.managed_by == "scripts/engines/install-parakeet-engine.sh"
+    assert cli.license == "Apache-2.0" and not cli.downloadable
+
+
 def test_the_unmeasured_4b_stays_a_proposal() -> None:
     four = load_catalog().get("qwen3.5-4b-q4_k_m")
     assert four is not None and four.status == "proposal" and not four.default
