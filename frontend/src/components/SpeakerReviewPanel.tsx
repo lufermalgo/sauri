@@ -237,16 +237,17 @@ function SpeakerRow({ row, busy, playing, speaking, playbackReady, playbackLoadi
             onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={() => void commit("blur")} />
           {saving && <span className="meeting-review-spinner"><Icon icon={LoaderCircle} size={16} /></span>}
         </div>
-        : <h3 ref={nameRef} className="meeting-review-name" {...nameTip.triggerProps}>
-          {person}{tail && <span className="meeting-review-org">{tail}</span>}
-        </h3>}
+        // The badge of a speaker that still needs a name sits right after the name on the same line; for the rest the state stays available to screen readers.
+        : <div className="meeting-review-line">
+          <h3 ref={nameRef} className="meeting-review-name" {...nameTip.triggerProps}>
+            {person}{tail && <span className="meeting-review-org">{tail}</span>}
+          </h3>
+          {pending
+            ? <StatusBadge tone="progress" dot className="meeting-review-status">{status}</StatusBadge>
+            : <span className="meeting-sr-only">{status}</span>}
+        </div>}
       {!editing && nameTip.tooltip}
-      {editing && rowError
-        ? <p id={errorId} className="meeting-review-field-error">{rowError}</p>
-        // Only a speaker that still needs a name shows its state; for the rest it stays available to screen readers.
-        : editing ? null
-          : pending ? <StatusBadge tone="progress" dot className="meeting-review-status">{status}</StatusBadge>
-          : <span className="meeting-sr-only">{status}</span>}
+      {editing && rowError && <p id={errorId} className="meeting-review-field-error">{rowError}</p>}
     </div>
     <div className="meeting-review-actions">
       <span className="meeting-review-play">
