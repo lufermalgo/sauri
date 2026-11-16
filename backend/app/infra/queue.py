@@ -14,6 +14,14 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 
+class DeferDelivery(Exception):  # noqa: N818 - a control signal, not an error
+    """Raised by a handler that cannot run this delivery yet, but must not lose it.
+
+    The queue parks the message for a fixed pause and delivers it again, without
+    counting it as a failed attempt (a live lease held by another worker is the case).
+    """
+
+
 class JobQueue(ABC):
     """Abstract job queue interface with at-least-once delivery."""
 
@@ -35,6 +43,20 @@ class JobQueue(ABC):
         exception, it nacks without requeue (dead-lettering if configured).
         """
         ...
+
+    async def stop_consuming(self) -> None:  # noqa: B027 - optional hook; brokers without consumers need nothing
+        """Stop taking new deliveries; handlers already running keep going."""
+
+    async def wait_idle(self, timeout_s: float) -> bool:
+        """Wait until no handler is running; False when ``timeout_s`` elapsed first."""
+        return True
+
+    async def cancel_in_flight(self) -> None:  # noqa: B027 - optional hook
+        """Cancel the running handlers and give their deliveries back to the broker."""
+
+    async def pending_count(self, topic: str) -> int | None:
+        """Messages waiting (not yet delivered) in ``topic``; None when unknown."""
+        return None
 
     @abstractmethod
     async def connect(self) -> None:

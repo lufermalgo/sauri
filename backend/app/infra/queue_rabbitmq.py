@@ -9,6 +9,7 @@ exhausted (nack without requeue).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -16,6 +17,7 @@ import logging
 import math
 import os
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from typing import Any
 
 import aio_pika
@@ -23,7 +25,7 @@ from aio_pika import DeliveryMode, Message
 from aio_pika.abc import AbstractChannel, AbstractRobustConnection
 from pamqp.commands import Basic
 
-from app.infra.queue import JobQueue
+from app.infra.queue import DeferDelivery, JobQueue
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,10 @@ _TOPIC_DEFAULT_RETRIES: dict[str, int] = {"summarize": 1}
 _RETRY_DELAY_ENV: dict[str, tuple[str, float]] = {"summarize": ("SUMMARIZE_RETRY_DELAY_SECONDS", 30.0)}
 _RETRY_DELAY_MAX_S = 3600.0
 _RETRY_QUEUE_SUFFIX = ".retry"
+# A deferred delivery (its meeting is held by a live lease) waits a fixed pause in its own parking
+# queue; one fixed pause keeps the queue first-in first-out, which per-message TTLs need.
+_DEFER_QUEUE_SUFFIX = ".defer"
+_DEFER_DELAY_DEFAULT_S = 30.0
 
 
 def _read_max_retries(topic: str = "transcribe") -> int:
@@ -104,6 +110,22 @@ def _read_retry_delay(topic: str) -> float:
     return value
 
 
+def _read_defer_delay() -> float:
+    """Seconds a deferred delivery waits before it is offered again (QUEUE_DEFER_SECONDS)."""
+    raw = os.environ.get("QUEUE_DEFER_SECONDS", "").strip()
+    try:
+        value = float(raw) if raw else _DEFER_DELAY_DEFAULT_S
+    except ValueError:
+        value = math.nan
+    if not math.isfinite(value) or value <= 0 or value > _RETRY_DELAY_MAX_S:
+        logger.warning(
+            "QUEUE_DEFER_SECONDS='%s' must be between 0 and %d. Using default %g.",
+            raw, _RETRY_DELAY_MAX_S, _DEFER_DELAY_DEFAULT_S,
+        )
+        return _DEFER_DELAY_DEFAULT_S
+    return value
+
+
 _HEADER_RETRIES = "x-sauri-retries"
 _HEADER_SIGNATURE = "x-sauri-signature"
 _SIGNING_KEY_ENV = "QUEUE_MESSAGE_SIGNING_KEY"
@@ -156,6 +178,35 @@ def _read_dlx_exchange() -> str | None:
     return raw.strip() if raw.strip() else None
 
 
+async def _park(
+    channel: AbstractChannel, topic: str, message: aio_pika.abc.AbstractIncomingMessage, *,
+    headers: dict[str, Any], delay: float, suffix: str,
+) -> None:
+    """Republish a copy of ``message`` into ``topic``, after ``delay`` seconds when it is positive.
+
+    The wait happens in a consumer-less queue; when the per-message TTL expires the broker
+    dead-letters the copy back into the topic queue. The wait blocks no consumer and survives
+    worker restarts. Raises when the broker does not confirm, so the caller keeps the original.
+    """
+    routing_key = topic
+    if delay > 0:
+        routing_key = f"{topic}{suffix}"
+        await channel.declare_queue(routing_key, durable=True, arguments={
+            "x-dead-letter-exchange": "",
+            "x-dead-letter-routing-key": topic,
+        })
+    copy = Message(
+        body=message.body,
+        delivery_mode=DeliveryMode.PERSISTENT,
+        content_type=message.content_type,
+        headers=headers,
+        expiration=delay if delay > 0 else None,
+    )
+    confirmation = await channel.default_exchange.publish(copy, routing_key=routing_key, mandatory=True)
+    if not isinstance(confirmation, Basic.Ack):
+        raise RuntimeError("Broker did not confirm republication")
+
+
 class RabbitMQJobQueue(JobQueue):
     """RabbitMQ (aio-pika) implementation of JobQueue."""
 
@@ -164,12 +215,43 @@ class RabbitMQJobQueue(JobQueue):
         self._connection: AbstractRobustConnection | None = None
         self._channel: AbstractChannel | None = None
         self._dlx_exchange: str | None = _read_dlx_exchange()
+        self._consumers: list[tuple[aio_pika.abc.AbstractQueue, str]] = []
+        self._in_flight: set[asyncio.Task[Any]] = set()
 
     async def connect(self) -> None:
         """Creates a robust connection and a channel with the RabbitMQ broker."""
         self._connection = await aio_pika.connect_robust(self._broker_url)
         self._channel = await self._connection.channel(publisher_confirms=True, on_return_raises=True)
         logger.info("RabbitMQ connection established")
+
+    async def stop_consuming(self) -> None:
+        """Cancel every consumer: the broker stops delivering; deliveries in progress finish."""
+        for queue, consumer_tag in self._consumers:
+            with suppress(Exception):
+                await queue.cancel(consumer_tag)
+        self._consumers.clear()
+
+    async def wait_idle(self, timeout_s: float) -> bool:
+        if self._in_flight:
+            await asyncio.wait(set(self._in_flight), timeout=timeout_s)
+        return not self._in_flight
+
+    async def cancel_in_flight(self) -> None:
+        tasks = list(self._in_flight)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def pending_count(self, topic: str) -> int | None:
+        """Ready messages in ``topic``, read on a throwaway channel (a missing queue closes its channel)."""
+        if self._connection is None:
+            return None
+        try:
+            async with self._connection.channel() as probe:
+                declared = await probe.declare_queue(topic, passive=True)
+                return declared.declaration_result.message_count
+        except Exception:
+            return None
 
     async def disconnect(self) -> None:
         """Closes the channel and connection with RabbitMQ."""
@@ -230,6 +312,7 @@ class RabbitMQJobQueue(JobQueue):
 
         max_retries = _read_max_retries(topic)
         retry_delay = _read_retry_delay(topic)
+        defer_delay = _read_defer_delay()
 
         queue_arguments: dict[str, Any] = {}
         if self._dlx_exchange:
@@ -239,7 +322,7 @@ class RabbitMQJobQueue(JobQueue):
             topic, durable=True, arguments=queue_arguments or None
         )
 
-        async def _on_message(message: aio_pika.abc.AbstractIncomingMessage) -> None:
+        async def _deliver(message: aio_pika.abc.AbstractIncomingMessage) -> None:
             if not _has_valid_signature(topic, message.body, message.headers):
                 logger.error("Unauthenticated message rejected on '%s'.", topic)
                 await message.nack(requeue=False)
@@ -249,6 +332,24 @@ class RabbitMQJobQueue(JobQueue):
                 await handler(payload)
                 await message.ack()
                 logger.debug("Message processed and acked on '%s'.", topic)
+            except DeferDelivery:
+                # Not lost, not failed: the handler could not run it yet. The same signed headers
+                # stay valid because the retry count does not change.
+                try:
+                    await _park(
+                        channel, topic, message, headers=dict(message.headers or {}),
+                        delay=defer_delay, suffix=_DEFER_QUEUE_SUFFIX,
+                    )
+                except Exception:
+                    if not message.channel.is_closed:
+                        await message.nack(requeue=True)
+                    return
+                await message.ack()
+            except asyncio.CancelledError:
+                # Shutdown stopped waiting for this handler: hand the delivery back at once.
+                with suppress(Exception):
+                    await message.nack(requeue=True)
+                raise
             except Exception:
                 if channel.is_closed:
                     # The broker requeues unacked deliveries when their channel closes.
@@ -268,29 +369,11 @@ class RabbitMQJobQueue(JobQueue):
                     retry_headers[_HEADER_SIGNATURE] = _message_signature(
                         topic, message.body, retries + 1
                     )
-                    retry_message = Message(
-                        body=message.body,
-                        delivery_mode=DeliveryMode.PERSISTENT,
-                        content_type=message.content_type,
-                        headers=retry_headers,
-                        expiration=retry_delay if retry_delay > 0 else None,
-                    )
                     try:
-                        routing_key = topic
-                        if retry_delay > 0:
-                            # Parked in a consumer-less queue; when the per-message TTL expires
-                            # the broker dead-letters it back into the topic queue. The wait
-                            # blocks no consumer and survives worker restarts.
-                            routing_key = f"{topic}{_RETRY_QUEUE_SUFFIX}"
-                            await channel.declare_queue(routing_key, durable=True, arguments={
-                                "x-dead-letter-exchange": "",
-                                "x-dead-letter-routing-key": topic,
-                            })
-                        confirmation = await channel.default_exchange.publish(
-                            retry_message, routing_key=routing_key, mandatory=True,
+                        await _park(
+                            channel, topic, message, headers=retry_headers, delay=retry_delay,
+                            suffix=_RETRY_QUEUE_SUFFIX,
                         )
-                        if not isinstance(confirmation, Basic.Ack):
-                            raise RuntimeError("Broker did not confirm retry publication")
                     except Exception:
                         # If already closed, RabbitMQ itself requeues this unacked delivery.
                         if not message.channel.is_closed:
@@ -336,5 +419,16 @@ class RabbitMQJobQueue(JobQueue):
                         )
                     await message.nack(requeue=False)
 
-        await queue.consume(_on_message)
+        async def _on_message(message: aio_pika.abc.AbstractIncomingMessage) -> None:
+            task = asyncio.current_task()
+            if task is not None:
+                self._in_flight.add(task)
+            try:
+                await _deliver(message)
+            finally:
+                if task is not None:
+                    self._in_flight.discard(task)
+
+        consumer_tag = await queue.consume(_on_message)
+        self._consumers.append((queue, consumer_tag))
         logger.info("Subscribed to queue '%s'. Max retries: %d. Retry delay: %gs.", topic, max_retries, retry_delay)
