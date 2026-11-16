@@ -41,6 +41,10 @@ function edit(value: string) {
   fireEvent.change(screen.getByRole("textbox", { name: t("meeting:titleLabel") }), { target: { value } });
 }
 
+function save() {
+  fireEvent.keyDown(screen.getByRole("textbox", { name: t("meeting:titleLabel") }), { key: "Enter" });
+}
+
 describe("MeetingHeader", () => {
   it("renders the fallback title and a localized real date", () => {
     open(null);
@@ -57,8 +61,7 @@ describe("MeetingHeader", () => {
 
   it("renames with a trimmed title and displays the title returned by the API", async () => {
     vi.mocked(renameMeeting).mockResolvedValue({ meetingId: "m1", title: "Canonical title" });
-    open(); edit(" New title ");
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:save") }));
+    open(); edit(" New title "); save();
     expect(await screen.findByRole("heading", { name: "Canonical title" })).toBeVisible();
     expect(renameMeeting).toHaveBeenCalledWith("m1", "New title");
   });
@@ -66,8 +69,7 @@ describe("MeetingHeader", () => {
   it("shows a newer title that arrives from outside (renamed in the library list) over the one saved here", async () => {
     vi.mocked(renameMeeting).mockResolvedValue({ meetingId: "m1", title: "Saved here" });
     const view = open();
-    edit("Saved here");
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:save") }));
+    edit("Saved here"); save();
     expect(await screen.findByRole("heading", { level: 1, name: "Saved here" })).toBeInTheDocument();
 
     view.rerender(<MeetingHeader title="Renamed in the list" createdAt="2026-11-14T12:00:00Z" meetingId="m1"
@@ -84,8 +86,7 @@ describe("MeetingHeader", () => {
     const turns = [{ timestampMs: 1000, speakerLabel: "Synthetic speaker", text: "Synthetic text" }];
     render(<MeetingHeader title="Old title" createdAt="2026-11-14T12:00:00Z" meetingId="m1"
       manifest={null} turns={turns} />);
-    edit("New title");
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:save") }));
+    edit("New title"); save();
     await screen.findByRole("heading", { name: "Canonical title" });
     fireEvent.click(screen.getByRole("button", { name: t("meeting:download") }));
     fireEvent.click(screen.getByRole("menuitem", { name: t("meeting:downloadTranscript") }));
@@ -94,34 +95,28 @@ describe("MeetingHeader", () => {
     vi.unstubAllGlobals();
   });
 
-  it.each(["", "  ", "x".repeat(513)])("rejects invalid titles (%s)", value => {
-    open(); edit(value);
-    fireEvent.submit(screen.getByRole("textbox").closest("form")!);
-    expect(renameMeeting).not.toHaveBeenCalled();
-    expect(screen.getByRole("textbox")).toBeInTheDocument();
-  });
-
-  it("accepts exactly 512 characters", () => {
-    open(); edit("x".repeat(512));
-    expect(screen.getByRole("button", { name: t("meeting:save") })).toBeEnabled();
-  });
-
-  it("cancels editing without calling the API", () => {
-    open(); edit("Unused title");
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:cancel") }));
+  it.each(["", "  "])("reverts a blank title (%j) without a request and says why", value => {
+    open(); edit(value); save();
     expect(renameMeeting).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
+    expect(screen.getByText(t("meeting:titleRequired"))).toHaveAttribute("role", "status");
   });
 
-  it("keeps the draft and offers a retry after rename failure", async () => {
-    vi.mocked(renameMeeting).mockRejectedValueOnce(new Error("Error 503"))
-      .mockResolvedValueOnce({ meetingId: "m1", title: "Retried title" });
-    open(); edit("Retried title");
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:save") }));
+  it("limits the field to 512 characters", () => {
+    open(); startRename();
+    expect(screen.getByRole("textbox", { name: t("meeting:titleLabel") })).toHaveAttribute("maxlength", "512");
+  });
+
+  it("reverts to the old title and announces the failure when the request fails", async () => {
+    vi.mocked(renameMeeting).mockRejectedValueOnce(new Error("Error 503"));
+    open(); edit("Retried title"); save();
     expect(await screen.findByRole("alert")).toHaveTextContent(t("meeting:renameFailed"));
-    expect(screen.getByRole("textbox")).toHaveValue("Retried title");
-    fireEvent.click(screen.getByRole("button", { name: t("meeting:save") }));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    vi.mocked(renameMeeting).mockResolvedValueOnce({ meetingId: "m1", title: "Retried title" });
+    edit("Retried title"); save();
     expect(await screen.findByRole("heading", { name: "Retried title" })).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("requires confirmation, focuses cancel and never deletes on cancellation", () => {
@@ -158,10 +153,11 @@ describe("MeetingHeader", () => {
   });
 });
 
-describe("pencil next to the title", () => {
+describe("inline title edit", () => {
   const pencil = () => screen.getByRole("button", { name: t("meeting:renameTitle") });
-  const field = () => screen.getByRole("textbox", { name: t("meeting:titleLabel") });
+  const field = () => screen.getByRole("textbox", { name: t("meeting:titleLabel") }) as HTMLInputElement;
   const type = (value: string) => fireEvent.change(field(), { target: { value } });
+  const press = (key: string) => fireEvent.keyDown(field(), { key });
 
   it("sits right after the title with an accessible name and a decorative icon", () => {
     open();
@@ -172,15 +168,41 @@ describe("pencil next to the title", () => {
     expect(pencil()).toHaveAccessibleDescription(t("meeting:renameTitle"));
   });
 
-  it("turns the title into a focused, selected field filled with the current title", () => {
+  it("edits in place from the pencil: same heading, focused and fully selected field, no label, no buttons", () => {
     open();
+    const before = screen.getAllByRole("button").length;
     fireEvent.click(pencil());
-    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading).toContainElement(field());
     expect(field()).toHaveFocus();
     expect(field()).toHaveValue("Synthetic meeting");
     expect(field()).toHaveAttribute("maxlength", "512");
-    expect((field() as HTMLInputElement).selectionStart).toBe(0);
-    expect((field() as HTMLInputElement).selectionEnd).toBe("Synthetic meeting".length);
+    expect(field().selectionStart).toBe(0);
+    expect(field().selectionEnd).toBe("Synthetic meeting".length);
+    expect(document.querySelector("label")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Guardar|Save|Cancelar/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button").length).toBeLessThanOrEqual(before);
+    // Inert and hidden from assistive technology while the field is open (its space stays, so nothing moves).
+    expect(screen.getByRole("button", { name: t("meeting:renameTitle"), hidden: true })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: t("meeting:renameTitle") })).not.toBeInTheDocument();
+  });
+
+  it("also edits when the title itself is double-clicked", () => {
+    open();
+    fireEvent.doubleClick(screen.getByRole("heading", { level: 1 }));
+    expect(field()).toHaveFocus();
+    expect(field()).toHaveValue("Synthetic meeting");
+  });
+
+  it("starts empty for an untitled meeting, with the placeholder standing in for the title", () => {
+    open(null);
+    fireEvent.click(pencil());
+    expect(field()).toHaveValue("");
+    expect(field()).toHaveAttribute("placeholder", t("meeting:untitled"));
+    press("Enter");
+    expect(renameMeeting).not.toHaveBeenCalled();
+    expect(screen.queryByText(t("meeting:titleRequired"))).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(t("meeting:untitled"));
   });
 
   it("saves with Enter, updates the header at once, tells the library and returns focus to the pencil", async () => {
@@ -190,99 +212,112 @@ describe("pencil next to the title", () => {
     open();
     fireEvent.click(pencil());
     type("  New name ");
-    fireEvent.submit(field().closest("form")!);
+    press("Enter");
     expect(await screen.findByRole("heading", { level: 1, name: "New name" })).toBeVisible();
     expect(renameMeeting).toHaveBeenCalledWith("m1", "New name");
     expect(changed).toHaveBeenCalledTimes(1);
     expect(screen.getByText(t("meeting:renamed"))).toHaveAttribute("role", "status");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await waitFor(() => expect(pencil()).toHaveFocus());
     window.removeEventListener("sauri:library-changed", changed);
   });
 
-  it("shows a pending state while saving and blocks a second request", async () => {
+  it("saves on blur and leaves the focus where the person moved it", async () => {
+    vi.mocked(renameMeeting).mockResolvedValue({ meetingId: "m1", title: "Blurred name" });
+    open();
+    fireEvent.click(pencil());
+    type("Blurred name");
+    fireEvent.blur(field());
+    expect(await screen.findByRole("heading", { level: 1, name: "Blurred name" })).toBeVisible();
+    expect(renameMeeting).toHaveBeenCalledTimes(1);
+    expect(pencil()).not.toHaveFocus();
+  });
+
+  it("shows a quiet pending state while saving and blocks a second request", async () => {
     let finish!: (value: { meetingId: string; title: string }) => void;
     vi.mocked(renameMeeting).mockReturnValue(new Promise(resolve => { finish = resolve; }));
     open();
     fireEvent.click(pencil());
     type("Slow name");
-    fireEvent.submit(field().closest("form")!);
-    fireEvent.submit(field().closest("form")!);
-    expect(await screen.findByText(t("meeting:saving"))).toBeInTheDocument();
-    expect(field()).toBeDisabled();
+    press("Enter");
+    press("Enter");
+    fireEvent.blur(field());
+    expect(field()).toHaveAttribute("readonly");
+    expect(field()).toHaveAttribute("aria-busy", "true");
+    expect(field()).toHaveValue("Slow name");
+    expect(screen.getByText(t("meeting:saving"))).toHaveClass("meeting-sr-only");
     expect(renameMeeting).toHaveBeenCalledTimes(1);
     await act(async () => finish({ meetingId: "m1", title: "Slow name" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Slow name" })).toBeVisible();
   });
 
-  it("cancels with Escape without calling the API", async () => {
+  it("reverts with Escape without calling the API and returns focus to the pencil", async () => {
     open();
     fireEvent.click(pencil());
     type("Discarded");
-    fireEvent.keyDown(field(), { key: "Escape" });
+    press("Escape");
     expect(renameMeeting).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     await waitFor(() => expect(pencil()).toHaveFocus());
-  });
-
-  it("closes on blur when nothing changed and keeps a changed draft open", () => {
-    open();
-    fireEvent.click(pencil());
-    fireEvent.blur(field());
-    expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
-    fireEvent.click(pencil());
-    type("Half typed");
-    fireEvent.blur(field());
-    expect(field()).toHaveValue("Half typed");
+    // The blur that follows the field leaving must not save the discarded draft.
     expect(renameMeeting).not.toHaveBeenCalled();
   });
 
-  it("does not close when focus moves to Save or Cancel", () => {
+  it("closes without a request when the title is unchanged or only differs by spaces", () => {
     open();
     fireEvent.click(pencil());
-    fireEvent.blur(field(), { relatedTarget: screen.getByRole("button", { name: t("meeting:save") }) });
-    expect(field()).toBeInTheDocument();
-  });
-
-  it("closes without a request when the title is unchanged", () => {
-    open();
-    fireEvent.click(pencil());
-    fireEvent.submit(field().closest("form")!);
+    fireEvent.blur(field());
     expect(renameMeeting).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
+    fireEvent.click(pencil());
+    type(" Synthetic meeting  ");
+    press("Enter");
+    expect(renameMeeting).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
-  it("explains a blank title and keeps the field open", () => {
+  it("reverts a blank draft on blur with a short status hint instead of an error block", () => {
     open();
     fireEvent.click(pencil());
     type("   ");
-    expect(screen.getByRole("alert")).toHaveTextContent(t("meeting:titleRequired"));
-    expect(field()).toHaveAttribute("aria-invalid", "true");
-    fireEvent.submit(field().closest("form")!);
+    fireEvent.blur(field());
+    expect(renameMeeting).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
+    expect(screen.getByText(t("meeting:titleRequired"))).toHaveAttribute("role", "status");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("fades the hint away after a few seconds", () => {
+    vi.useFakeTimers();
+    open();
+    fireEvent.click(pencil());
+    type("");
+    press("Enter");
+    expect(screen.getByText(t("meeting:titleRequired"))).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(5000); });
+    expect(screen.queryByText(t("meeting:titleRequired"))).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("ignores Enter while an input method is composing", () => {
+    open();
+    fireEvent.click(pencil());
+    type("Composed");
+    fireEvent.keyDown(field(), { key: "Enter", isComposing: true });
     expect(renameMeeting).not.toHaveBeenCalled();
     expect(field()).toBeInTheDocument();
   });
 
-  it("flags a blank title on Enter even when the field was never edited (untitled recording)", () => {
-    open(null);
-    fireEvent.click(pencil());
-    expect(field()).toHaveValue("");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    fireEvent.submit(field().closest("form")!);
-    expect(screen.getByRole("alert")).toHaveTextContent(t("meeting:titleRequired"));
-  });
-
-  it("keeps the typed title and announces the failure, then saves on retry", async () => {
-    vi.mocked(renameMeeting).mockRejectedValueOnce(new Error("Error 503"))
-      .mockResolvedValueOnce({ meetingId: "m1", title: "Second try" });
+  it("announces a failure through an alert and returns to the old title", async () => {
+    vi.mocked(renameMeeting).mockRejectedValue(new Error("Error 503"));
     open();
     fireEvent.click(pencil());
     type("Second try");
-    fireEvent.submit(field().closest("form")!);
+    press("Enter");
     expect(await screen.findByRole("alert")).toHaveTextContent(t("meeting:renameFailed"));
-    expect(field()).toHaveValue("Second try");
-    fireEvent.submit(field().closest("form")!);
-    expect(await screen.findByRole("heading", { level: 1, name: "Second try" })).toBeVisible();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Synthetic meeting");
+    await waitFor(() => expect(pencil()).toHaveFocus());
   });
 
   it("is a focusable native button, so Enter and Space activate it", () => {

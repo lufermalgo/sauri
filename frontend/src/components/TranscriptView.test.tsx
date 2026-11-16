@@ -1566,7 +1566,7 @@ describe("TranscriptView — meeting header strip", () => {
       .toEqual([t("meeting:rename"), t("meeting:deleteRecording")]);
     fireEvent.click(screen.getByRole("menuitem", { name: t("meeting:rename") }));
     expect(within(header).getByRole("textbox", { name: t("meeting:titleLabel") })).toHaveValue("Synthetic meeting");
-    expect(within(header).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+    expect(within(header).getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
   it("offers a back button only when the list is not beside the meeting", async () => {
