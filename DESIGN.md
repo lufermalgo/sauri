@@ -15,9 +15,9 @@
 
 Herramienta de trabajo, no página de marketing. Jerarquía por superficie, tamaño y peso; no por titulares enormes ni efectos.
 
-- Modo claro: marfil cálido (`bg`) con tarjetas blancas. Modo oscuro: carbón verdoso cálido derivado de los mismos tonos Terra; nunca negro puro ni una inversión automática del claro.
+- Modo claro: marfil cálido (`bg`) con paneles blancos. Modo oscuro: carbón verdoso cálido derivado de los mismos tonos Terra; nunca negro puro ni una inversión automática del claro.
 - El verde Terra es la única acción principal. El color expresivo se concentra en estados, insignias e identidad de hablantes; no se extiende a títulos, bordes ni fondos.
-- Bordes de 1px en tarjetas, listas y campos. Sombras solo en controles elevados, menús y diálogos. Las tarjetas se separan con borde, no con sombra.
+- Aspecto de aplicación de escritorio, no de página web: regiones planas (paneles) separadas por bordes de 1px, cada una con su cabecera y su scroll; sin tarjetas flotantes en las regiones principales (ver 5b y 6). Sombras solo en controles elevados, menús y diálogos.
 - **No hacer:** gradientes, desenfoques de fondo (glassmorphism), sombras grandes por tarjeta, animaciones que muevan el contenido al pasar el cursor, varios botones primarios en un mismo grupo de acciones, mezclar familias de iconos.
 
 ## 2. Arquitectura de tokens
@@ -26,7 +26,7 @@ Herramienta de trabajo, no página de marketing. Jerarquía por superficie, tama
 |---|---|---|
 | Semántico | `--ds-fg`, `--ds-accent`, `--ds-danger-text` | Contrato estable: nombra la función, no el color |
 | Escala | `--ds-space-3`, `--ds-radius-md`, `--ds-text-sm` | Valores compartidos de espaciado, geometría y tipografía |
-| Layout | `--ds-target`, `--ds-z-sticky`, `--ds-z-menu` | Medidas y capas estructurales. El portal no tiene ancho máximo de contenido: llena la ventana (ver 6) |
+| Densidad y layout | `--ds-control-h-md`, `--ds-header-h`, `--ds-list-w`, `--ds-z-sticky` | Alturas de controles, geometría de paneles y capas (ver 5b). El portal no tiene ancho máximo de contenido: llena la ventana (ver 6) |
 
 - **Un solo punto de entrada por aplicación:** `frontend/src/design/tokens.css` (importado desde `frontend/src/index.css`) y `extension/src/core/design/tokens.css` (importado desde `base.css`). El bloque de color es idéntico en ambos; las pruebas lo comparan con la tabla 3.1, de modo que no pueden divergir. Los dos archivos se mantienen por separado porque el portal y la extensión se compilan por separado.
 - **Regla:** los componentes consumen `var(--ds-…)`. Prohibidos hexadecimales, `rgb()`/`hsl()` y nombres de fuentes en componentes. Excepción documentada: el color de la insignia del icono de la extensión (`chrome.action.setBadgeBackgroundColor`, API sin CSS) usa el valor claro de `recording`.
@@ -161,24 +161,24 @@ Medición adicional (prueba): `on-scrim` sobre `scrim-strong` compuesto sobre bl
 --ds-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 ```
 
-Mediciones (Chrome en macOS, 14px): con `font-variant-numeric: tabular-nums`, `00:00:00`, `11:11:11` y `88:88:88` miden lo mismo en `system-ui` (60.02px) y en la mono del sistema (67.43px), igual que JetBrains Mono (67.20px): los cronómetros no «bailan» sin fuente web. Peso descargado que se elimina: 84.8 KB en la primera carga del portal (5 archivos woff2 usados; 696 KB entre todos los subconjuntos publicados) y 604 KB de `.ttf` empaquetados en la extensión, más el parpadeo de cambio de fuente (`font-display: swap`). No se justifica una fuente de encabezados: la jerarquía se logra con tamaño y peso 600.
+Mediciones (Chrome en macOS, 14px; `text-md` es hoy también la base del portal): con `font-variant-numeric: tabular-nums`, `00:00:00`, `11:11:11` y `88:88:88` miden lo mismo en `system-ui` (60.02px) y en la mono del sistema (67.43px), igual que JetBrains Mono (67.20px): los cronómetros no «bailan» sin fuente web. Peso descargado que se elimina: 84.8 KB en la primera carga del portal (5 archivos woff2 usados; 696 KB entre todos los subconjuntos publicados) y 604 KB de `.ttf` empaquetados en la extensión, más el parpadeo de cambio de fuente (`font-display: swap`). No se justifica una fuente de encabezados: la jerarquía se logra con tamaño y peso 600.
 
 | Token | Tamaño | Uso |
 |---|---:|---|
-| `text-xs` | 12 | Metadatos, insignias, ayuda |
-| `text-sm` | 13 | Etiquetas, texto secundario, tiempos |
-| `text-md` | 14 | Base de la extensión; botones y filas densas |
-| `text-base` | 16 | Base del portal; lectura de transcripción |
-| `text-lg` | 18 | Títulos de tarjeta |
-| `text-xl` | 20 | Títulos de sección |
-| `text-2xl` | 24 | Título de pantalla en móvil |
-| `text-3xl` | 30 | Título de pantalla en escritorio |
+| `text-2xs` | 11 | Insignias, marcas de tiempo, etiquetas de sección (mayúsculas) |
+| `text-xs` | 12 | Metadatos, ayuda, hablante en la transcripción, tiempos en mono |
+| `text-sm` | 13 | Texto secundario, filas de navegación, botones pequeños, resumen |
+| `text-md` | 14 | Base de la interfaz del portal y de la extensión: campos, botones, transcripción |
+| `text-base` | 14 | Alias de `text-md`: tamaño del cuerpo (`body`) |
+| `text-lg` | 15 | Título de panel |
+| `text-xl` | 16 | Título de pantalla o de reunión (máximo 18 en una pantalla de app) |
+| `text-2xl` | 20 | Solo la pantalla de acceso |
 
 - Pesos: 400 cuerpo, 500 etiquetas, 600 botones, títulos y selección. No se usa 700/800 (en fuentes del sistema se ve pesado).
-- Interlineado: `--ds-leading` 1.5; transcripción `--ds-leading-relaxed` 1.7.
+- Interlineado: `--ds-leading` 1.45; transcripción `--ds-leading-relaxed` 1.55.
 - Cronómetros, marcas de tiempo y contadores: `font-variant-numeric: tabular-nums`. Mono solo para identificadores, rutas y cifras técnicas.
 - Elipsis en títulos de una línea; nunca en errores. `overflow-wrap: anywhere` en cadenas largas.
-- Etiquetas en minúscula inicial (sentence case); el único texto en mayúsculas es la etiqueta de sección del resumen.
+- Etiquetas en minúscula inicial (sentence case); el único texto en mayúsculas son las etiquetas de sección de 11px (resumen, grupos de la biblioteca y de ajustes).
 
 ## 5. Espaciado, geometría y elevación
 
@@ -186,30 +186,62 @@ Mediciones (Chrome en macOS, 14px): con `font-variant-numeric: tabular-nums`, `0
 |---|---:|---|
 | `space-1` | 4 | Separación mínima interna |
 | `space-2` | 8 | Elementos relacionados |
-| `space-3` | 12 | Filas y grupos |
-| `space-4` | 16 | Inset de tarjeta compacta |
-| `space-6` | 24 | Secciones y tarjetas |
-| `space-8` | 32 | Márgenes de página |
+| `space-3` | 12 | Padding de panel y de cabecera; filas y grupos |
+| `space-4` | 16 | Padding de contenido de una pantalla de una columna |
+| `space-6` | 24 | Solo la pantalla de acceso y estados vacíos amplios |
+| `space-8` | 32 | Solo márgenes de diálogos y de la pantalla de acceso |
 
-- Radios: `xs` 4 (barras), `sm` 8 (campos, filas), `md` 12 (botones, menús), `lg` 16 (tarjetas), `xl` 20 (diálogos, zonas grandes), `pill` (insignias, interruptores, avatares).
-- Bordes de 1px; el borde de acento de estado en tarjetas de lista mide 5–6px a la izquierda y siempre acompaña a un texto de estado.
+- Radios: `xs` 4 (barras, marcadores), `thumb` 6 (miniaturas, filas de lista), `sm` 8 (controles: botones, campos, iconos, filas de menú), `card` 10 (tarjetas de contenido secundario: ajustes, subida), `md` 12 (menús, popovers, diálogos), `lg` 16 y `xl` 20 (sin uso en pantallas de app), `pill` (insignias, interruptores, avatares). Los paneles tienen radio 0.
+- Bordes de 1px; el borde de estado de una fila de lista mide 3px a la izquierda y siempre acompaña a una insignia con el texto del estado.
 - Sombras: `shadow-sm` (controles elevados, selector segmentado) y `shadow-md` (menús y diálogos). No hay más niveles.
-- Objetivo táctil: `--ds-target` 44px para botones, campos, pestañas y filas de menú. Controles densos en línea (interruptor de 28px, botones del reproductor) miden al menos 24px y suben a 44px con puntero táctil (`@media (pointer: coarse)`).
+- Objetivo de puntero: las alturas de control de 5b (28–36px) cumplen WCAG 2.2 AA (24×24 mínimo). Solo con puntero táctil (`@media (pointer: coarse)`) los tokens de altura suben a 44px; los controles densos en línea (interruptor, botones del reproductor) suben su área activa a 44px con relleno o pseudoelemento.
 - Capas: `z-sticky` 10 (panel lateral), `z-menu` 20. El overlay de Meet usa el máximo z-index porque convive con una página ajena.
+
+## 5b. Densidad de escritorio
+
+**Decisión del dueño:** el portal debe parecer una aplicación de escritorio, no una página: textos pequeños, poco aire entre elementos, regiones que llenan la ventana y se separan con una línea. Referencia de proporciones: la aplicación hermana APX (cuerpo 14px, controles de 28–34px, filas de 56–60px, regiones planas con scroll propio). Estas escalas mandan sobre cualquier valor mayor de otras secciones.
+
+| Elemento | Valor | Token |
+|---|---:|---|
+| Texto de interfaz (cuerpo) | 14px, interlineado 1.45 | `text-base` / `text-md`, `leading` |
+| Texto secundario | 13px | `text-sm` |
+| Metadatos | 12px | `text-xs` |
+| Micro (insignias, marcas de tiempo) | 11px | `text-2xs` |
+| Título de panel | 15px / 600 | `text-lg` |
+| Título de pantalla o de reunión | 16px / 600 (máximo 18) | `text-xl` |
+| Etiqueta de sección | 11px / 600, mayúsculas, espaciado .04em, `fg-muted` | `text-2xs` |
+| Tiempos y cifras | 12px (11px en la transcripción), mono, `tabular-nums` | `font-mono` |
+| Botón sm / md / lg | 28 / 32 / 36 | `control-h-sm/md/lg` |
+| Botón de icono sm / md | 30 / 32 | `icon-button-sm/md` |
+| Campo, pestaña | 32 | `control-h-md` |
+| Selector segmentado | 28 | `control-h-sm` |
+| Fila de navegación | 32 (icono 16, texto 13/500) | `nav-row-h` |
+| Fila de menú | 28 (texto 13) | `control-h-sm` |
+| Cabecera de panel | 48 | `header-h` |
+| Panel lateral expandido / carril | 220 / 60 | `sidebar-w`, `rail-w` |
+| Lista (biblioteca) | 340 | `list-w` |
+| Panel de notas de la reunión | 380 (400 desde 1100px de panel de detalle) | `side-w` |
+| Padding de panel | 12–16 | `space-3`, `space-4` |
+| Separación entre elementos | 2–12 | |
+
+- **Regla:** ningún texto de pantalla de app supera 16px (18px como máximo en un título); 20px solo en la pantalla de acceso.
+- **Regla:** 44px solo bajo `@media (pointer: coarse)`: los tokens de altura de control, de botón de icono y de fila de navegación pasan a 44px y todo componente que los lea se agranda solo. Las pruebas de `tokens.test.ts` fijan esta escala.
+- **Regla:** las regiones principales son paneles planos (`surface` o `bg`), de radio 0, separados por `1px solid border`; cada uno con cabecera de 48px (`ui-pane-header`) y cuerpo con scroll propio (`ui-pane-body`). No hay tarjetas flotantes ni huecos de 24px entre secciones. Las tarjetas (`ui-card`, padding 16, radio 10) solo contienen contenido secundario dentro de una pantalla de una columna (ajustes, subida).
+- Componentes: `ui-pane`, `ui-pane-header`, `ui-pane-title`, `ui-pane-body` y `ui-section-label` viven en `ui/ui.css`; la reunión y la biblioteca usan las clases de `styles/`.
 
 ## 6. Layout por superficie
 
 **Portal: marco de aplicación de escritorio.** El portal es una app, no una página de aterrizaje: el contenido llena todo el ancho entre el panel lateral y el borde de la ventana. No hay contenedor central con ancho máximo (`--ds-layout-max` se eliminó) ni bandas vacías a los lados.
-- *Marco y scroll:* la raíz del portal queda fija a la ventana (`position: fixed; inset: 0`, sin `100vh`, para que su tamaño no dependa de unidades de viewport ni del alto del documento). Dentro: panel lateral (`flex: none`) y **una sola región de contenido** (`flex: 1`, `min-width: 0`, `min-height: 0`, `overflow-y: auto`, `position: relative`) que es el único scroll vertical del portal. El documento nunca se desplaza; no hay dos barras. El panel lateral solo desplaza su lista de enlaces (nunca la cuenta) y solo si no cabe; en carril no recorta los tooltips. Cabeceras fijas, si las hay, viven dentro de la región y son `sticky`, nunca `fixed` fuera del marco.
-- *Márgenes de la app (gutters):* `--shell-gutter` en todos los lados de la página: 24px en escritorio (≥1024px), 16px en tableta (640–1023px), 12px en móvil (<640px). Es el único margen horizontal; ningún contenedor lo suma otra vez ni centra la página.
-- *Qué puede tener ancho máximo:* solo el contenido interior de un formulario o de un texto largo, alineado a la izquierda y nunca centrando la página (turnos de la transcripción: 80ch). Las pantallas de app (biblioteca, reunión, subir, ajustes) ocupan el ancho completo. Excepción: la pantalla de acceso, que no está en el marco, centra una tarjeta de 480px.
-- *Panel lateral:* 236px expandido; carril de 60px (solo iconos, con tooltip al pasar el cursor o enfocar) y botón `PanelLeft` para alternar. La elección se recuerda por dispositivo en `localStorage` (si el almacenamiento está bloqueado, solo dura la visita); bajo 1320px arranca contraído. Bajo 640px es un cajón fuera de pantalla que se abre desde una barra superior delgada: foco dentro al abrir y de vuelta al cerrar, Escape y velo lo cierran, `aria-expanded` en el botón. Contenido: «Biblioteca» (fila seleccionada con `accent-soft`) y, abajo, la tarjeta de perfil (avatar con iniciales, nombre con elipsis, correo en `fg-subtle`) con un menú de «Cerrar sesión» y el engranaje hacia `/settings`.
-- *Configuración (`/settings`):* pantalla de ancho completo con navegación de categorías a la izquierda (columna de 13.5rem: icono Lucide + nombre; la activa con `accent-soft`) y la categoría elegida a la derecha, con formularios y tarjetas de hasta 44rem alineados a la izquierda. Categorías y direcciones: «Cuenta» `/settings/cuenta`, «Apariencia» `/settings/apariencia`, «Resúmenes» `/settings/resumenes`, «Grabación» `/settings/grabacion`; `/settings` muestra «Cuenta» (en móvil, la lista) y una dirección desconocida es «no encontrado». Bajo 640px son dos pasos: la lista de categorías (filas-tarjeta con descripción y chevron) y la categoría con un botón de regreso; el foco pasa al título de la categoría. Solo hay controles de opciones que el portal puede cambiar de verdad; lo que se configura en otro sitio (la extensión) se explica con texto, sin controles inertes. Selector de tema: grupo de opciones nativas (`radio`) con aspecto segmentado. Interruptor (`role="switch"`, 48×28px, sube a 44px de área táctil con puntero táctil) para «Iniciar con el panel plegado», que comparte la preferencia del panel lateral.
-- *Biblioteca:* título con una barra de herramientas de iconos fantasma a la derecha (buscar, fechas, ordenar y, si hay filtros, limpiar filtros; ver Menús y Popover en 7), grupos por fecha y filas-tarjeta que llenan el ancho disponible en una columna. Cada fila lleva borde izquierdo de estado, miniatura, título, tema, metadatos, insignia y chevron. La miniatura es un recuadro fijo de 96×54 (16:9, radio `sm`, borde `border`, fondo `fill`) con `object-fit: cover`, carga diferida y `alt` vacío (el título está al lado); sin imagen disponible, o si falla al cargar, muestra un icono Lucide (`Video`, o `AudioLines` si es solo audio) en `fg-subtle`.
-- *Subir:* página de ancho completo; la zona de arrastre llena el ancho (alto mínimo `clamp(260px, 40vh, 440px)`, contenido centrado dentro de ella), borde discontinuo 2px, un único botón primario. Las tarjetas de archivo, progreso y error también llenan el ancho.
-- *Reunión:* sin enlace de regreso (el panel lateral lleva a la biblioteca). La tarjeta del reproductor abre con la cabecera de la reunión (título como único `h1`, insignia de estado, fecha, duración, hablantes y los iconos de acción a la derecha; en móvil las acciones pasan a su propia fila) y está siempre presente; la tarjeta de progreso va justo debajo. Una columna bajo 1100px; desde 1100px, rejilla de dos columnas `minmax(0, 1fr)` + `clamp(380px, 28vw, 460px)`: reproductor y transcripción a la izquierda (crecen con la ventana) y panel de notas, resumen y chat a la derecha con un ancho de trabajo estable (380px mínimo para que las pestañas y botones no se rompan; 460px máximo para que no se vuelva una columna de texto desmesurada). Un solo scroll para ambas columnas. La transcripción son turnos de lectura (16px, interlineado 1.7) con avatar, hablante en su color y marca de tiempo.
+- *Marco y scroll:* la raíz del portal queda fija a la ventana (`position: fixed; inset: 0`, sin `100vh`, para que su tamaño no dependa de unidades de viewport ni del alto del documento). Dentro: panel lateral (`flex: none`) y **una región de contenido** (`flex: 1`, `min-width: 0`, `min-height: 0`, `overflow: hidden`, `position: relative`) que no se desplaza: cada vista la llena y reparte su altura en paneles, cada uno con su propio scroll vertical. El documento nunca se desplaza. Las vistas de una columna (subir, ajustes) usan `.app-view`: cabecera de 48px y cuerpo (`.app-view-body`) con scroll propio. El panel lateral solo desplaza su lista de enlaces (nunca la cuenta) y solo si no cabe; en carril no recorta los tooltips.
+- *Sin márgenes de página:* no hay gutters globales; el padding lo define cada panel (12–16px, ver 5b). Ningún contenedor centra la página.
+- *Qué puede tener ancho máximo:* solo el contenido interior de un formulario o de un texto largo, alineado a la izquierda y nunca centrando la página (turnos de la transcripción: 80ch; contenido de subir y de cada categoría de ajustes: 720px). Excepción: la pantalla de acceso, que no está en el marco, centra una tarjeta de 400px.
+- *Panel lateral:* 220px expandido; carril de 60px (solo iconos, con tooltip al pasar el cursor o enfocar) y botón `PanelLeft` para alternar. Filas de 32px con icono de 16px y texto de 13px/500; marca de 15px/600. La elección se recuerda por dispositivo en `localStorage` (si el almacenamiento está bloqueado, solo dura la visita); bajo 1320px arranca contraído. Bajo 640px es un cajón fuera de pantalla que se abre desde una barra superior delgada: foco dentro al abrir y de vuelta al cerrar, Escape y velo lo cierran, `aria-expanded` en el botón. Contenido: «Biblioteca» (fila seleccionada con `accent-soft`) y, abajo, la fila de perfil plana (avatar de 28px con iniciales, nombre con elipsis, correo en `fg-subtle`) con un menú de «Cerrar sesión» y el engranaje hacia `/settings`.
+- *Configuración (`/settings`):* cabecera de 48px con el título («Configuración», 15px/600); debajo, navegación de categorías a la izquierda (panel de 208px con borde derecho: icono Lucide de 16px + nombre, filas de 32px; la activa con `accent-soft`) y la categoría elegida a la derecha, con scroll propio y contenido de hasta 720px alineado a la izquierda (texto de 14px). Categorías y direcciones: «Cuenta» `/settings/cuenta`, «Apariencia» `/settings/apariencia`, «Resúmenes» `/settings/resumenes`, «Grabación» `/settings/grabacion`; `/settings` muestra «Cuenta» (en móvil, la lista) y una dirección desconocida es «no encontrado». Bajo 640px son dos pasos: la lista de categorías (filas-tarjeta de 36px con descripción y chevron) y la categoría con un botón de regreso; el foco pasa al título de la categoría. Solo hay controles de opciones que el portal puede cambiar de verdad; lo que se configura en otro sitio (la extensión) se explica con texto, sin controles inertes. Selector de tema: grupo de opciones nativas (`radio`) con aspecto segmentado de 28px. Interruptor (`role="switch"`, 36×22px, sube a 44px de área táctil con puntero táctil) para «Iniciar con el panel plegado», que comparte la preferencia del panel lateral.
+- *Biblioteca = lista y detalle (master–detail, como la bandeja de APX):* las rutas `/` y `/meetings/:id` comparten un espacio de trabajo (`LibraryWorkspace`). Desde 1100px de ventana muestra **dos paneles**: la lista (340px, fondo `bg`, borde derecho) y el detalle (resto, fondo `surface`); `/` muestra en el detalle una pista discreta y centrada («Elige una grabación…») y `/meetings/:id` abre la reunión sin salir de la lista, con su fila marcada (`aria-current="true"`, fondo `fill-strong`). Bajo 1100px es de un paso: `/` muestra solo la lista a todo el ancho y `/meetings/:id` solo el detalle con un botón de regreso (flecha, nombre «Volver a las grabaciones») en su cabecera. La cabecera de la lista (48px) lleva el título (15px/600; `h1` solo cuando no hay reunión abierta, para que la pantalla tenga un único `h1`) y el botón primario compacto «Subir grabación» (28px); debajo, una barra de iconos de 40px (buscar, fechas, ordenar y, con filtros, limpiar; ver Menús y Popover en 7). Grupos por fecha (etiqueta de sección de 11px) y filas compactas de 56–68px: miniatura de 64×36 (16:9, radio 6, borde `border`, fondo `fill`, `object-fit: cover`, carga diferida y `alt` vacío; sin imagen, o si falla, icono Lucide de 16px: `Video` o `AudioLines` si es solo audio), título de 14px/500 en una línea con elipsis, insignia de estado de 11px a su derecha, tema en 12px (una línea con elipsis, solo si existe) y metadatos de 12px (fecha · duración en mono · hablantes). Borde izquierdo de estado de 3px; hover tonal (`fill-hover`); seleccionada `fill-strong` con título en 600. Enter abre la fila.
+- *Subir:* cabecera de 48px (botón «← Volver» pequeño y título); debajo, la introducción de 13px y una zona de arrastre del tamaño de su contenido (no gigante; borde discontinuo 2px, radio 10, un único botón primario de 32px), de hasta 720px y alineada a la izquierda. Las tarjetas de archivo, progreso y error tienen el mismo ancho.
+- *Reunión (detalle):* tira de cabecera (56px mínimo): título como único `h1` (16px/600, una línea con elipsis y el título completo en `title`), debajo los metadatos de 12px (insignia de estado, fecha, duración, hablantes) y a la derecha los iconos de acción de 30px (hablantes con punto de aviso, descargar, «…»); en panel estrecho las acciones pasan a su propia fila. Si hay trabajo en curso, una tira de proceso compacta bajo la cabecera (pasos numerados de 20px en una línea, titular de 14px, explicación de 13px, barra de 8px y cifras de 12px). El cuerpo son **paneles**, no una página larga: cuando el panel de detalle mide 760px o más (consulta de contenedor, no de ventana) hay dos paneles separados por 1px, el izquierdo flexible con el **reproductor arriba** (video con `max-height: 42vh`, controles de 28px, línea de oradores de 24px de alto con leyenda de 12px) y debajo la **transcripción con scroll propio** (cabecera de 40px con «Transcripción» y el interruptor «Seguir la reproducción»), y el derecho fijo de 380px (400 desde 1100px de detalle) con las pestañas «Notas y resumen» y «Chat» (32px, subrayado) y su propio scroll. Bajo 760px de detalle se apila (reproductor, pestañas, transcripción) y se desplaza como una sola página dentro de la región. Turnos de la transcripción: texto de 14px con interlineado 1.55, hablante de 12px/600 en su color, tiempo de 11px en mono, relleno 6px 10px, hover tonal, turno activo con `highlight` y borde izquierdo del hablante; avatar de 24px. Resumen: cuerpo de 13px, etiquetas de sección de 11px, viñetas con separación de 6px, bloque de progreso compacto.
 
-**Panel lateral de la extensión.** Una columna de ancho variable (320–480px). Cabecera con marca e iconos de 44px, cuerpo con tarjetas de 16px de padding, acciones a todo el ancho (la principal con peso 1.4). Cronómetro de 40–56px con cifras tabulares.
+**Panel lateral de la extensión.** Una columna de ancho variable (320–480px). Cabecera con marca e iconos de 44px, cuerpo con tarjetas de 16px de padding, acciones a todo el ancho (la principal con peso 1.4). Cronómetro de 40–56px con cifras tabulares. (La densidad de escritorio de 5b es del portal; la extensión conserva sus medidas táctiles.)
 
 **Página de permisos (opciones).** Columna de máximo 740px centrada, tarjeta con insignia de estado, pasos numerados y un solo botón de acción.
 
@@ -219,25 +251,25 @@ Mediciones (Chrome en macOS, 14px): con `font-variant-numeric: tabular-nums`, `0
 
 Los componentes del portal están en `frontend/src/components/ui/` y los de la extensión en `panel.css`; comparten medidas y estados.
 
-- **Botones.** Altura mínima 44, padding 8/16, radio `md`, peso 600. Primario (`accent`/`accent-fg`, hover `accent-hover`), secundario (`fill-hover`, texto `accent-text`, borde `border`), fantasma (transparente), peligro (`danger`/`danger-fg`, hover `danger-hover`). Un primario por grupo; deshabilitado con opacidad 0.5. Sin sombra en hover: el hover es tonal.
-- **Campos.** Altura mínima 44, borde `border-strong`, radio `sm`, fondo `surface`. Etiqueta visible siempre; el marcador de posición no la sustituye. Error: borde `danger-text`, texto de error asociado con `aria-describedby` y `aria-invalid="true"`.
-- **Tarjetas.** `surface`, borde `border`, radio `lg`, padding 24 (16 en móvil), sin sombra. Si es clicable, el hover cambia el fondo a `bg` y el borde a `accent`; nada se desplaza.
-- **Listas.** Filas-tarjeta separadas 12px; seleccionada y hover son estados distintos; texto largo con `overflow-wrap`.
-- **Pestañas.** Subrayado de 2px en `accent`, texto `accent-text` en la activa, `aria-selected`; altura 44.
-- **Insignias.** Pastilla con texto siempre presente: éxito (`accent-soft`/`accent-soft-fg`), progreso (`warning-soft`/`warning-soft-fg`), error (`danger-soft`/`danger-soft-fg`), neutral (`fill`/`fg-muted`).
-- **Diálogos.** `<dialog>` nativo: borde, radio `lg`, `shadow-md`, velo `scrim`, título, acción secundaria antes de la principal, foco inicial dentro, cierre con Escape y retorno del foco al disparador. Para contenido con formulario o listas largas, `Dialog` (`ui/Dialog.tsx`): panel centrado `surface-raised` en un portal (anchos `sm` 28rem y `md` 34rem), cabecera fija con título y botón `X`, cuerpo con desplazamiento propio, resto de la página inerte y sin desplazamiento, foco atrapado, cierre con Escape, botón de cerrar o clic en el velo, y retorno del foco al disparador.
-- **Menús.** Panel `surface`, borde, `shadow-md`, filas de 44px, hover `fill-hover`, elemento destructivo en `danger-text`, navegación por teclado. Una elección única usa `role="menuitemradio"` con `aria-checked` y una marca `Check` en la opción activa (`MenuItem checked`).
+- **Botones.** Altura sm 28 / md 32 (por defecto) / lg 36 (`size` en `Button`; 44 con puntero táctil), padding horizontal 12 (16 en lg), texto 14 (13 en sm), radio `sm`, peso 500. Primario (`accent`/`accent-fg`, hover `accent-hover`), secundario (`fill-hover`, texto `accent-text`, borde `border`), fantasma (transparente), peligro (`danger`/`danger-fg`, hover `danger-hover`). Un primario por grupo; deshabilitado con opacidad 0.5. Sin sombra en hover: el hover es tonal.
+- **Campos.** Altura mínima 32 (44 con puntero táctil), texto 14, borde `border-strong`, radio `sm`, fondo `surface`. Etiqueta de 13px/500 en `fg-muted`, visible siempre; el marcador de posición no la sustituye. Error: borde `danger-text`, texto de error asociado con `aria-describedby` y `aria-invalid="true"`.
+- **Tarjetas.** Solo para contenido secundario dentro de una pantalla de una columna (ajustes, subida; las regiones principales son paneles, ver 5b). `surface`, borde `border`, radio `card` (10), padding 16, sin sombra. Si es clicable, el hover cambia el fondo a `bg` y el borde a `accent`; nada se desplaza.
+- **Listas.** Filas planas de 56–68px separadas 2px dentro de un panel; seleccionada (`fill-strong`, `aria-current`) y hover (`fill-hover`) son estados distintos; el título lleva elipsis de una línea y el texto largo de contenido, `overflow-wrap`.
+- **Pestañas.** Estilo subrayado: altura 32, texto 14/500, indicador de 2px en `accent`, texto `accent-text` y peso 600 en la activa, borde inferior de 1px en la lista, `aria-selected`; sin relleno.
+- **Insignias.** Pastilla de 20px con texto de 11px/600 siempre presente: éxito (`accent-soft`/`accent-soft-fg`), progreso (`warning-soft`/`warning-soft-fg`), error (`danger-soft`/`danger-soft-fg`), neutral (`fill`/`fg-muted`).
+- **Diálogos.** `<dialog>` nativo: padding 16, borde, radio `md`, `shadow-md`, velo `scrim`, título, acción secundaria antes de la principal, foco inicial dentro, cierre con Escape y retorno del foco al disparador. Para contenido con formulario o listas largas, `Dialog` (`ui/Dialog.tsx`): panel centrado `surface-raised` en un portal (anchos `sm` 28rem y `md` 34rem), cabecera fija (título de 16px y botón `X` de 30px) con relleno de 8/16, cuerpo de relleno 12/16 con desplazamiento propio, resto de la página inerte y sin desplazamiento, foco atrapado, cierre con Escape, botón de cerrar o clic en el velo, y retorno del foco al disparador.
+- **Menús.** Panel `surface`, borde, `shadow-md`, filas de 28px con texto de 13px (44px con puntero táctil), hover `fill-hover`, elemento destructivo en `danger-text`, navegación por teclado. Una elección única usa `role="menuitemradio"` con `aria-checked` y una marca `Check` en la opción activa (`MenuItem checked`).
 - **Popover.** `Popover` (`ui/Popover.tsx`): panel no modal `role="dialog"` para formularios pequeños (p. ej. rango de fechas). Enter, Espacio o Flecha abajo lo abren y el foco pasa a su primer control; Escape lo cierra y devuelve el foco al disparador; un clic fuera o salir con Tab lo cierra sin quitar el foco. El panel se desplaza para quedar dentro del viewport.
-- **Icono con punto de aviso.** `ui-icon-button--alert` (botón fantasma de 44px) pinta un punto `danger` de 8px arriba a la derecha con anillo de 2px del color de la superficie; el punto es decorativo y el estado va en el nombre accesible y el tooltip («Hablantes: 3 sin nombre»). Sin pendientes no hay punto. Lo usa la cabecera de la reunión para los hablantes: icono `UsersRound` a la izquierda de Descargar, con un `Popover` que muestra el mensaje y abre la revisión de hablantes.
-- **Barra de iconos de filtros.** Botones `ui-icon-button--ghost` de 44px con nombre accesible y tooltip que incluyen el estado actual. Un control con valor distinto del predeterminado usa `ui-icon-button--active` (relleno `accent-soft` y punto de acento: forma, no solo color). La búsqueda se despliega en línea, conserva el foco, se cierra con Escape o con su botón `X` (borrando el término) y, si tiene texto, permanece abierta; bajo 640px la barra ocupa su propia fila y el campo la llena mientras los demás iconos se ocultan.
+- **Icono con punto de aviso.** `ui-icon-button--alert` (botón fantasma de 30px) pinta un punto `danger` de 6px arriba a la derecha con anillo de 2px del color de la superficie; el punto es decorativo y el estado va en el nombre accesible y el tooltip («Hablantes: 3 sin nombre»). Sin pendientes no hay punto. Lo usa la cabecera de la reunión para los hablantes: icono `UsersRound` a la izquierda de Descargar, con un `Popover` que muestra el mensaje y abre la revisión de hablantes.
+- **Barra de iconos de filtros.** Botones `ui-icon-button--ghost` de 30px con nombre accesible y tooltip que incluyen el estado actual. Un control con valor distinto del predeterminado usa `ui-icon-button--active` (relleno `accent-soft` y punto de acento: forma, no solo color). La búsqueda se despliega en línea, conserva el foco, se cierra con Escape o con su botón `X` (borrando el término) y, si tiene texto, permanece abierta; mientras la búsqueda está abierta el campo llena la barra (28px de alto) y los demás iconos se ocultan.
 - **Tooltips.** Solo texto breve, complemento (no reemplazo) del nombre accesible; sin botones dentro. Los iconos del carril del panel lateral usan CSS a partir de la etiqueta oculta. En el portal, `useTooltip` (`ui/Tooltip.tsx`, hoy en el disparador de `Menu` con `tooltip`) usa `role="tooltip"` enlazado con `aria-describedby`, aparece tras 400ms con el puntero o el foco de teclado y se cierra con Escape.
 - **Avisos (toasts).** (Regla para cuando se creen.) Esquina inferior, `surface-raised`, borde y `shadow-md`; se anuncian con `role="status"` (error: `role="alert"`).
-- **Progreso y pasos.** Barra de 12px, pista `fill-strong`, relleno `accent`. Sin estimación, la barra indeterminada pulsa en `accent-muted` (sin degradados). El paso actual se marca con número, contorno de acento y texto en negrita, no solo color.
+- **Progreso y pasos.** Barra de 8px, pista `fill-strong`, relleno `accent`. Sin estimación, la barra indeterminada pulsa en `accent-muted` (sin degradados). El paso actual se marca con número, contorno de acento y texto en negrita, no solo color.
 
 ## 8. Iconos
 
 - Familia **Lucide**, lineal, heredan `currentColor`. Los componentes React usan `core/design/Icon.tsx` y el overlay `overlay/icons.ts`; ambos toman tamaño (18) y trazo (1.75) de `core/design/iconDefaults.ts`, un único punto de cambio. No se cambia la librería ni el trazo sin necesidad documentada.
-- Escala: `icon-xs` 12, `icon-sm` 14, `icon-md` 16, `icon-lg` 18. Botón de icono: 44×44 con icono 16–18. En el portal, `.ui-icon-button` (primario `--primary` para la acción principal del grupo, `--quiet` para las secundarias).
+- Escala: `icon-xs` 12, `icon-sm` 14, `icon-md` 16, `icon-lg` 18. Botón de icono: 30×30 (32 en `--md`; 44 con puntero táctil) con icono de 16px. En el portal, `.ui-icon-button` (primario `--primary` para la acción principal del grupo, `--quiet` para las secundarias).
 - Decorativo: `aria-hidden="true"`; acción solo con icono: nombre accesible (`aria-label`).
 - El color de un icono lo da el texto que lo rodea (`fg-muted`, `accent-text`, `danger-text`).
 
@@ -260,7 +292,7 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 
 1. Contraste: texto ≥4.5:1, texto grande y elementos de interfaz ≥3:1, en ambos modos (tabla 3.2, validada por prueba).
 2. Foco visible en todo control interactivo, en ambos modos y superficies.
-3. Objetivos táctiles de 44px (excepciones de la sección 5, siempre ≥24px).
+3. Objetivos de puntero: ≥24×24 con ratón (las alturas de 5b, de 28 a 36px) y 44px con puntero táctil (`pointer: coarse`).
 4. El estado nunca se transmite solo con color (borde de estado + texto; paso con número; error con mensaje).
 5. Formularios: etiqueta asociada, `aria-invalid` y `aria-describedby` hacia el error o la ayuda.
 6. Diálogos: título, foco inicial, atrapar el foco, Escape y retorno del foco (el `<dialog>` nativo lo resuelve).
@@ -283,6 +315,8 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 - [ ] Tabla 3.1 y 3.2 coinciden con el CSS de portal y extensión.
 - [ ] Portal y extensión legibles en claro y oscuro; `data-theme` fuerza cada modo.
 - [ ] Sin degradados, desenfoques ni sombras en tarjetas.
+- [ ] Densidad de escritorio (5b): cuerpo 14px, ningún texto de pantalla sobre 16px, controles de 28–36px, regiones planas con borde de 1px y scroll propio.
+- [ ] Biblioteca: lista de 340px + detalle desde 1100px; un paso bajo 1100px con botón de regreso.
 - [ ] Foco visible y navegación por teclado completa (pestañas, menú, diálogo).
 - [ ] Anchos de 320, 480, 768, 1024 y 1440 sin desplazamiento horizontal global; zoom 200%.
 - [ ] `prefers-reduced-motion` desactiva pulsos y esqueletos.

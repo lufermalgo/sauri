@@ -1,0 +1,32 @@
+/*
+ * Master-detail workspace (library + open recording). Flat panes separated by 1px borders; each pane
+ * has its own header strip and scroll. The detail pane is a size container: its inner layout reacts
+ * to the room it really has (DESIGN.md 6), not only to the window width.
+ */
+.workspace {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-detail {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--ds-surface);
+  container: meeting / inline-size;
+}
+
+.workspace-empty {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  margin: 0;
+  padding: var(--ds-space-4);
+  color: var(--ds-fg-subtle);
+  font-size: var(--ds-text-sm);
+  text-align: center;
+}

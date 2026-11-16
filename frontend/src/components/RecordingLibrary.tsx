@@ -5,6 +5,7 @@ import type { MeetingListItem } from "@sauri/shared-types";
 import { listMeetings } from "../api";
 import { copy } from "../copy/es";
 import { applyLibraryQuery, type LibraryQuery } from "../library-query";
+import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import { navigate } from "../router";
 import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
 import { Button, Icon, ProgressBar, Skeleton, StatusBadge } from "./ui";
@@ -146,21 +147,13 @@ function RowProgress({ meeting }: { meeting: MeetingListItem }) {
 
 function PlusIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
     </svg>
   );
 }
 
-function ChevronIcon() {
-  return (
-    <svg className="library-item-chevron" width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M6.5 3.5L12 9l-5.5 5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-const THUMBNAIL_ICON_SIZE = 24;
+const THUMBNAIL_ICON_SIZE = 16;
 
 /**
  * Preview frame of the recording. The image is decorative (the title sits next to it), and the
@@ -190,7 +183,11 @@ function keepThumbnailUrls(previous: MeetingListItem[], next: MeetingListItem[])
   });
 }
 
-function LibraryRow({ meeting, onSelect }: { meeting: MeetingListItem; onSelect: () => void }) {
+function LibraryRow({ meeting, selected, onSelect }: {
+  meeting: MeetingListItem;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const tone = STATE_TONES[meeting.processState];
   const topic = topicLine(meeting);
   // The API may omit these fields for older recordings.
@@ -202,12 +199,16 @@ function LibraryRow({ meeting, onSelect }: { meeting: MeetingListItem; onSelect:
     <li>
       <button
         type="button"
-        className={`ui-card library-item library-item--${ROW_EDGES[tone]}`}
+        className={`library-item library-item--${ROW_EDGES[tone]}`}
+        aria-current={selected ? "true" : undefined}
         onClick={onSelect}
       >
         <RowThumbnail meeting={meeting} />
         <span className="library-item-main">
-          <span className="library-item-title">{meeting.title.trim() || text.untitled}</span>
+          <span className="library-item-head">
+            <span className="library-item-title">{meeting.title.trim() || text.untitled}</span>
+            <StatusBadge tone={tone}>{STATE_LABELS[meeting.processState]}</StatusBadge>
+          </span>
           {topic && <span className="library-item-topic">{topic}</span>}
           <span className="library-item-meta">
             <span>{formatCreatedAt(meeting.createdAt)}</span>
@@ -216,8 +217,6 @@ function LibraryRow({ meeting, onSelect }: { meeting: MeetingListItem; onSelect:
           </span>
           <RowProgress meeting={meeting} />
         </span>
-        <StatusBadge tone={tone}>{STATE_LABELS[meeting.processState]}</StatusBadge>
-        <ChevronIcon />
       </button>
     </li>
   );
@@ -230,11 +229,9 @@ function LibrarySkeleton() {
         <li key={row.title} className="library-skeleton-row">
           <Skeleton className="library-skeleton-thumb" />
           <span className="library-skeleton-main">
-            <Skeleton height={20} width={row.title} />
-            <Skeleton height={14} width={row.topic} />
-            <Skeleton height={12} width={220} />
+            <Skeleton height={14} width={row.title} />
+            <Skeleton height={12} width={row.topic} />
           </span>
-          <Skeleton height={28} width={84} radius="full" />
         </li>
       ))}
     </ul>
@@ -244,9 +241,12 @@ function LibrarySkeleton() {
 interface RecordingLibraryProps {
   refreshKey: number;
   onSelectMeeting: (meeting: MeetingListItem) => void;
+  /** The recording open in the detail pane, marked in the list. */
+  selectedId?: string;
 }
 
-export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibraryProps) {
+/** The list pane: header strip, icon toolbar and compact rows (DESIGN.md 6, master-detail). */
+export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId }: RecordingLibraryProps) {
   const [meetings, setMeetings] = useState<MeetingListItem[]>([]);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -274,12 +274,10 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibra
   }, [refreshKey, attempt]);
 
   const inProgress = meetings.some((meeting) => IN_PROGRESS_STATES.has(meeting.processState));
+  // Quiet refresh: no loading state, and a failed refresh keeps the current list.
   useEffect(() => {
-    if (!inProgress) return;
     let cancelled = false;
-    // Quiet refresh: no loading state, and a failed refresh keeps the current list.
-    const timer = setInterval(() => {
-      if (document.hidden) return;
+    const refresh = () => {
       listMeetings()
         .then((data) => {
           if (!cancelled) {
@@ -288,23 +286,37 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibra
           }
         })
         .catch(() => undefined);
-    }, LIBRARY_REFRESH_MS);
-    return () => { cancelled = true; clearInterval(timer); };
+    };
+    // The open recording can be renamed or deleted from the detail pane beside this list.
+    window.addEventListener(LIBRARY_CHANGED_EVENT, refresh);
+    const timer = inProgress
+      ? setInterval(() => { if (!document.hidden) refresh(); }, LIBRARY_REFRESH_MS)
+      : undefined;
+    return () => {
+      cancelled = true;
+      window.removeEventListener(LIBRARY_CHANGED_EVENT, refresh);
+      clearInterval(timer);
+    };
   }, [inProgress]);
 
   const goToUpload = () => navigate({ name: "upload" });
 
   // The search tools belong to a list that exists: not while loading, on error or with no recordings.
   const showToolbar = !loading && !failed && meetings.length > 0;
+  // With a recording open beside the list the page title belongs to that recording, so the list
+  // title is a plain label: one h1 per screen.
+  const Title = selectedId === undefined ? "h1" : "p";
   const header = (
-    <div className="library-header">
-      <h1 className="library-title">{text.title}</h1>
+    <>
+      <div className="ui-pane-header">
+        <Title className="ui-pane-title" id="library-title">{text.title}</Title>
+        <Button variant="primary" size="sm" onClick={goToUpload}>
+          <PlusIcon />
+          {text.upload}
+        </Button>
+      </div>
       {showToolbar && <LibraryToolbar query={query} onChange={setQuery} />}
-      <Button variant="primary" className="library-upload" onClick={goToUpload}>
-        <PlusIcon />
-        {text.upload}
-      </Button>
-    </div>
+    </>
   );
 
   let body: React.ReactNode;
@@ -337,7 +349,8 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibra
     const active = isQueryActive(query);
     const visible = active ? applyLibraryQuery(meetings, query) : meetings;
     const renderRow = (meeting: MeetingListItem) => (
-      <LibraryRow key={meeting.id} meeting={meeting} onSelect={() => onSelectMeeting(meeting)} />
+      <LibraryRow key={meeting.id} meeting={meeting} selected={meeting.id === selectedId}
+        onSelect={() => onSelectMeeting(meeting)} />
     );
 
     let list: React.ReactNode;
@@ -358,9 +371,9 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibra
   }
 
   return (
-    <section className="library">
+    <section className="ui-pane library" aria-labelledby="library-title">
       {header}
-      {body}
+      <div className="ui-pane-body library-body">{body}</div>
     </section>
   );
 }

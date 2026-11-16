@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { RecordingLibrary } from "./components/RecordingLibrary";
-import { TranscriptView } from "./components/TranscriptView";
+import { LibraryWorkspace } from "./components/LibraryWorkspace";
 import { LoginScreen } from "./components/LoginScreen";
 import { UploadView } from "./components/UploadView";
 import { PortalShell } from "./components/PortalShell";
@@ -45,11 +44,8 @@ export function App() {
 
   return (
     <PortalShell route={route} user={user} onLogout={handleLogout}>
-      {route.name === "library" && (
-        <RecordingLibrary
-          refreshKey={0}
-          onSelectMeeting={(meeting) => navigate({ name: "meeting", meetingId: meeting.id })}
-        />
+      {(route.name === "library" || route.name === "meeting") && (
+        <LibraryWorkspace meetingId={route.name === "meeting" ? route.meetingId : undefined} />
       )}
 
       {route.name === "upload" && (
@@ -60,10 +56,6 @@ export function App() {
       )}
 
       {route.name === "settings" && <SettingsView route={route} user={user} onLogout={handleLogout} />}
-
-      {route.name === "meeting" && (
-        <TranscriptView meetingId={route.meetingId} />
-      )}
 
       {route.name === "notFound" && (
         <section className="shell-not-found" aria-labelledby="shell-not-found-title">

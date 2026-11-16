@@ -3,11 +3,12 @@
  * its size never depends on viewport units or on the document's height and the document itself
  * never scrolls. Inside it: the side panel (flex: none) and ONE content region (flex: 1) that owns
  * the vertical scroll. Pages fill that region; they never center themselves in a max-width column.
- * Modes (data-mode on .shell-root): full (236px), rail (60px, icons only), drawer (under 640px, off-canvas).
+ * Modes (data-mode on .shell-root): full (220px), rail (60px, icons only), drawer (under 640px, off-canvas).
+ * Each view fills the content region and owns its own panes and scroll (DESIGN.md 6).
  */
 .shell-root {
-  --shell-sidebar-width: 236px;
-  --shell-rail-width: 60px;
+  --shell-sidebar-width: var(--ds-sidebar-w);
+  --shell-rail-width: var(--ds-rail-w);
   position: fixed;
   inset: 0;
   display: flex;
@@ -24,11 +25,11 @@
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  gap: var(--ds-space-4);
+  gap: var(--ds-space-2);
   box-sizing: border-box;
   min-height: 0;
   width: var(--shell-sidebar-width);
-  padding: var(--ds-space-3);
+  padding: 10px var(--ds-space-2) var(--ds-space-2);
   background: var(--ds-sidebar);
   border-right: 1px solid var(--ds-border);
 }
@@ -43,7 +44,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--ds-space-2);
-  min-height: var(--ds-target);
+  min-height: var(--ds-icon-button-md);
+  padding-inline: 4px 0;
 }
 
 .shell-root[data-mode="rail"] .shell-sidebar-head {
@@ -66,14 +68,14 @@
 
 .shell-brand-mark {
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
 }
 
 .shell-brand-name {
   font-family: var(--ds-font-sans);
   font-weight: var(--ds-weight-semibold);
-  font-size: var(--ds-text-xl);
+  font-size: var(--ds-text-lg);
   color: var(--ds-fg);
 }
 
@@ -96,9 +98,9 @@
 .shell-icon-button,
 .shell-gear {
   flex: 0 0 auto;
-  width: var(--ds-target);
-  height: var(--ds-target);
-  border-radius: var(--ds-radius-md);
+  width: var(--ds-icon-button-md);
+  height: var(--ds-icon-button-md);
+  border-radius: var(--ds-radius-sm);
 }
 
 .shell-icon-button:hover,
@@ -117,7 +119,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--ds-space-1);
+  gap: 2px;
   min-height: 0;
   /* The only part of the side panel that scrolls, and only when its links overflow. The padding
      leaves room for the focus ring, which this box would otherwise clip. */
@@ -135,13 +137,14 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--ds-space-3);
-  min-height: var(--ds-target);
+  gap: 10px;
+  min-height: var(--ds-nav-row-h);
   box-sizing: border-box;
-  padding: var(--ds-space-2) var(--ds-space-3);
-  border-radius: var(--ds-radius-md);
+  padding: 0 10px;
+  border-radius: var(--ds-radius-sm);
   color: var(--ds-fg-muted);
-  font-weight: var(--ds-weight-semibold);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
   text-decoration: none;
   white-space: nowrap;
   transition: background-color var(--ds-duration) var(--ds-ease), color var(--ds-duration) var(--ds-ease);
@@ -159,6 +162,7 @@
 .shell-link[aria-current="page"] {
   background: var(--ds-accent-soft);
   color: var(--ds-accent-soft-fg);
+  font-weight: var(--ds-weight-semibold);
 }
 
 .shell-root[data-mode="rail"] .shell-link {
@@ -166,15 +170,13 @@
   padding-inline: 0;
 }
 
-/* Profile card: avatar, name, email and the settings gear */
+/* Profile row: avatar, name, email and the settings gear, flat on the side panel */
 .shell-profile {
   display: flex;
   align-items: center;
-  gap: var(--ds-space-1);
-  padding: var(--ds-space-1);
-  background: var(--ds-surface);
-  border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-lg);
+  gap: 2px;
+  padding-top: var(--ds-space-2);
+  border-top: 1px solid var(--ds-border);
 }
 
 .shell-root[data-mode="rail"] .shell-profile {
@@ -201,15 +203,16 @@
   justify-content: flex-start;
   gap: var(--ds-space-3);
   width: 100%;
-  min-height: var(--ds-target);
-  padding: var(--ds-space-1) var(--ds-space-2);
-  border-radius: var(--ds-radius-md);
+  min-height: 36px;
+  padding: 2px 6px;
+  border-radius: var(--ds-radius-sm);
   text-align: left;
 }
 
 .shell-root[data-mode="rail"] .shell-profile-trigger {
   justify-content: center;
-  width: var(--ds-target);
+  width: var(--ds-icon-button-md);
+  min-height: var(--ds-icon-button-md);
   padding: 0;
 }
 
@@ -235,7 +238,7 @@
 
 .shell-profile-email {
   color: var(--ds-fg-subtle);
-  font-size: var(--ds-text-xs);
+  font-size: var(--ds-text-2xs);
 }
 
 /*
@@ -266,7 +269,7 @@
   width: auto;
   max-width: 20rem;
   height: auto;
-  padding: var(--ds-space-1) var(--ds-space-3);
+  padding: 3px 10px;
   overflow: visible;
   clip-path: none;
   transform: translateY(-50%);
@@ -275,35 +278,51 @@
   border-radius: var(--ds-radius-sm);
   box-shadow: var(--ds-shadow-sm);
   color: var(--ds-fg);
-  font-size: var(--ds-text-sm);
+  font-size: var(--ds-text-xs);
   font-weight: var(--ds-weight-medium);
   pointer-events: none;
 }
 
 /*
- * Content region: the single scroll container of the portal. It is the containing block of
- * absolutely positioned descendants (position: relative), so nothing inside can extend the
- * document. Pages fill its full width; the gutter is the only horizontal inset.
+ * Content region: it fills the window beside the side panel and never scrolls itself. It is the
+ * containing block of absolutely positioned descendants (position: relative). Each view fills it
+ * and scrolls its own panes: master-detail screens use two or three panes, single-column screens
+ * (upload, settings) wrap their content in .app-view, which scrolls.
  */
 .shell-content {
   position: relative;
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
 }
 
 .shell-main {
-  --shell-gutter: var(--ds-space-6);
-  box-sizing: border-box;
-  padding: var(--shell-gutter);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
-@media (max-width: 1023px) {
-  .shell-main {
-    --shell-gutter: var(--ds-space-4);
-  }
+/* A single-column screen: pane header strip on top and a body that scrolls on its own. */
+.app-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--ds-surface);
+}
+
+.app-view-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--ds-space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* Drawer (under 640px): slim top bar + off-canvas panel */
@@ -312,7 +331,7 @@
   flex: 0 0 auto;
   align-items: center;
   gap: var(--ds-space-2);
-  padding: var(--ds-space-1) var(--ds-space-4);
+  padding: var(--ds-space-1) var(--ds-space-3);
   background: var(--ds-sidebar);
   border-bottom: 1px solid var(--ds-border);
 }
@@ -342,15 +361,17 @@
 
 .shell-not-found {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--ds-space-3);
-  padding: var(--ds-space-8) 0;
+  gap: var(--ds-space-2);
+  padding: var(--ds-space-6) var(--ds-space-4);
+  overflow-y: auto;
 }
 
 .shell-not-found h1 {
   margin: 0;
-  font-size: var(--ds-text-3xl);
+  font-size: var(--ds-text-xl);
 }
 
 .shell-not-found p {
@@ -370,23 +391,6 @@
   min-height: 100vh;
   padding: var(--ds-space-6);
   box-sizing: border-box;
-}
-
-/* Screen title (settings) */
-.shell-page-title {
-  margin: 0;
-  font-size: var(--ds-text-3xl);
-  line-height: 1.2;
-}
-
-@media (max-width: 639px) {
-  .shell-page-title {
-    font-size: var(--ds-text-2xl);
-  }
-
-  .shell-main {
-    --shell-gutter: var(--ds-space-3);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
