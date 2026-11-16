@@ -6,11 +6,12 @@ import type {
   LocalJob,
   LocalModel,
   LocalModelList,
-  LocalModelState,
   LocalRecommendation,
 } from "@sauri/shared-types";
+import { LOCAL_DEFAULT_MODEL } from "@sauri/shared-types";
 import {
   EnginesApiError,
+  adoptLocalModels,
   cancelLocalJob,
   getEngineStatus,
   getLocalHardware,
@@ -21,8 +22,8 @@ import {
   verifyLocalModel,
 } from "../../api";
 import { copy } from "../../copy/es";
-import { Button, Card, ConfirmDialog, Icon, ProgressBar, Skeleton, StatusBadge } from "../ui";
-import { formatBytes, formatMemory, processList } from "./engineLabels";
+import { Button, Card, ConfirmDialog, Icon, Menu, MenuItem, ProgressBar, Skeleton, StatusBadge } from "../ui";
+import { availabilityOf, formatBytes, formatMemory, processList } from "./engineLabels";
 import "../../styles/engines.css";
 
 const text = copy.engines.local;
@@ -31,19 +32,27 @@ const text = copy.engines.local;
 export const JOB_POLL_INTERVAL_MS = 1000;
 /** Consecutive failed looks after which the card stops asking and tells the person. */
 const MAX_POLL_FAILURES = 5;
+/** Looks at the catalog while files are still being recognized; after that the card stops asking. */
+const MAX_VERIFY_LOOKS = 300;
 /** Same factor as the host's disk check (`DISK_HEADROOM_PERCENT`): the file plus 20 % of room. */
 const DISK_HEADROOM = 1.2;
 
 /** Which native engine runs each process (ports and ids of `host-engine`'s status). */
 const ENGINE_OF: Record<EngineProcess, string> = { transcription: "asr", diarization: "diar", summary: "llm" };
 
-const STATE_TONE: Record<LocalModelState, "neutral" | "progress" | "success" | "error"> = {
-  not_installed: "neutral",
-  installing: "progress",
+/** Adoption outcomes that leave a file on disk that is not confirmed as the catalog's. */
+const ATTENTION_OUTCOMES = new Set(["present_unverified", "changed", "unreadable"]);
+
+type RowState = "active" | "installed" | "available" | "unverified" | "verifying" | "installing" | "corrupt";
+
+const STATE_TONE: Record<RowState, "neutral" | "progress" | "success" | "error"> = {
+  active: "success",
   installed: "success",
+  available: "neutral",
   unverified: "progress",
+  verifying: "progress",
+  installing: "progress",
   corrupt: "error",
-  managed: "neutral",
 };
 
 type Load =
@@ -98,18 +107,56 @@ function reasonText(recommendation: LocalRecommendation, hardware: LocalHardware
   }
 }
 
+/** What the process saved: a provider (`external`) or a local model, and the key it was saved under. */
+export interface LocalSelection {
+  external: boolean;
+  /** `local:default`, `local:<id>` or the provider's model; changes whenever the choice is saved. */
+  key: string;
+}
+
+/** The «Servicios externos» row group: the external choice beside the local ones. The privacy notice and
+ * the provider list live in the engine selector, which `onChoose` opens. */
+export interface ExternalChoice {
+  /** «Provider, model» while an external provider serves the process; null while it runs here. */
+  current: string | null;
+  /** True when an active provider with a key can serve this process. */
+  hasProviders: boolean;
+  onChoose: () => void;
+  onSetup: () => void;
+}
+
 interface LocalModelCardProps {
   process: EngineProcess;
+  selection: LocalSelection;
   /** Called with the catalog every time it is read, so the engine selector can offer installed models. */
   onModelsChange?: (models: LocalModel[]) => void;
+  /** Sets this local model as the one the process uses (saved at once, no privacy notice). */
+  onUse: (choiceKey: string) => void;
+  /** True while the screen is saving a choice. */
+  choosing?: boolean;
+  external: ExternalChoice;
   /** Wait between looks at a running job; tests shorten it. */
   pollIntervalMs?: number;
 }
 
-/** The computer in plain words, the model recommended for this process and the local models of this
- * process with install (with progress and cancel), verify and remove. A running job is followed by
- * short, bounded looks that stop when the card goes away. */
-export function LocalModelCard({ process, onModelsChange, pollIntervalMs = JOB_POLL_INTERVAL_MS }: LocalModelCardProps) {
+/** The choice key `onUse` hands back: the catalog's default model is `local:default`, any other `local:<id>`. */
+export function choiceKeyOf(model: LocalModel): string {
+  return model.default ? LOCAL_DEFAULT_MODEL : `local:${model.id}`;
+}
+
+/** "En este equipo" for one process: the computer in plain words and, for each local option, whether it is
+ * installed, active now or can still be installed, with install (progress and cancel), verify and remove.
+ * Models installed by hand are shown like any other. A running job is followed by short, bounded looks that
+ * stop when the card goes away. */
+export function LocalModelCard({
+  process,
+  selection,
+  onModelsChange,
+  onUse,
+  choosing = false,
+  external,
+  pollIntervalMs = JOB_POLL_INTERVAL_MS,
+}: LocalModelCardProps) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [job, setJob] = useState<LocalJob | null>(null);
   const [cancelling, setCancelling] = useState(false);
@@ -166,6 +213,16 @@ export function LocalModelCard({ process, onModelsChange, pollIntervalMs = JOB_P
     }
   }, [adopt]);
 
+  // The saved choice changed (here or in the selector): which model is active now changes with it.
+  const selectionKey = `${selection.external}|${selection.key}`;
+  const firstSelection = useRef(selectionKey);
+  useEffect(() => {
+    if (selectionKey !== firstSelection.current) {
+      firstSelection.current = selectionKey;
+      void reloadModels();
+    }
+  }, [selectionKey, reloadModels]);
+
   const finishJob = useCallback(
     (finished: LocalJob) => {
       setJob(null);
@@ -175,6 +232,8 @@ export function LocalModelCard({ process, onModelsChange, pollIntervalMs = JOB_P
       else if (finished.state === "failed") {
         const cause = (finished.error && text.jobErrors[finished.error]) || text.errors.generic;
         setOutcome({ kind: "error", text: text.outcome.failed(cause) });
+      } else if (finished.type === "adopt") {
+        setOutcome({ kind: "success", text: finished.result === "adopted" ? text.adoption.done : text.adoption.nothing });
       } else if (finished.type === "install") setOutcome({ kind: "success", text: text.outcome.installed(id) });
       else if (finished.result === "corrupt") setOutcome({ kind: "error", text: text.outcome.corrupt(id) });
       else setOutcome({ kind: "success", text: text.outcome.verified(id) });
@@ -219,6 +278,19 @@ export function LocalModelCard({ process, onModelsChange, pollIntervalMs = JOB_P
     };
   }, [runningJobId, pollIntervalMs]);
 
+  // Files found at startup are checked in the background: look at the catalog until none is left.
+  const recognizing = load.status === "ready" && load.list.models.some((model) => model.verifying === true);
+  useEffect(() => {
+    if (!recognizing || runningJobId) return;
+    let looks = 0;
+    const timer = setInterval(() => {
+      looks += 1;
+      if (looks > MAX_VERIFY_LOOKS) clearInterval(timer);
+      else void reloadModels();
+    }, pollIntervalMs);
+    return () => clearInterval(timer);
+  }, [recognizing, runningJobId, pollIntervalMs, reloadModels]);
+
   async function start(model: LocalModel, action: "install" | "verify") {
     setOutcome(null);
     setBusyModel(model.id);
@@ -229,6 +301,16 @@ export function LocalModelCard({ process, onModelsChange, pollIntervalMs = JOB_P
       if (errorCode(error) === "job_active") fetchAll();
     } finally {
       setBusyModel(null);
+    }
+  }
+
+  async function scan() {
+    setOutcome(null);
+    try {
+      setJob(await adoptLocalModels());
+    } catch (error) {
+      setOutcome({ kind: "error", text: describeLocalError(error) });
+      if (errorCode(error) === "job_active") fetchAll();
     }
   }
 
@@ -259,10 +341,25 @@ export function LocalModelCard({ process, onModelsChange, pollIntervalMs = JOB_P
     }
   }
 
+  const jobRunning = job?.state === "running";
+  const adoptionAttention =
+    load.status === "ready" &&
+    load.list.models.some(
+      (model) => model.process === process && ATTENTION_OUTCOMES.has(load.list.adoption?.outcomes[model.id] ?? ""),
+    );
+
   return (
     <Card className="engines-local" aria-labelledby={`engines-local-${process}`}>
-      <h3 id={`engines-local-${process}`} className="engines-card-title">{text.title}</h3>
-      <p className="settings-help">{text.help}</p>
+      <div className="engines-local-head">
+        <h3 id={`engines-local-${process}`} className="engines-card-title">{text.title}</h3>
+        {load.status === "ready" && (
+          <Menu label={text.cardMenu} className="engines-local-menu">
+            <MenuItem onSelect={() => void scan()} disabled={jobRunning} hint={jobRunning ? text.busy : undefined}>
+              {text.scan}
+            </MenuItem>
+          </Menu>
+        )}
+      </div>
 
       {load.status === "loading" && (
         <div role="status" className="settings-loading">
@@ -281,20 +378,27 @@ export function LocalModelCard({ process, onModelsChange, pollIntervalMs = JOB_P
 
       {load.status === "ready" && (
         <>
-          <HardwareSummary hardware={load.hardware} />
+          <HardwareSummary hardware={load.hardware} recommendation={load.list.recommendations[process]} />
           {load.engineRunning === false && <EngineMissing process={process} />}
-          <Recommendation recommendation={load.list.recommendations[process]} hardware={load.hardware} />
+          <div role="status" className="engines-local-recognizing">
+            {recognizing || job?.type === "adopt" ? text.adoption.recognizing : null}
+          </div>
+          {adoptionAttention && <p className="settings-help">{text.adoption.attention}</p>}
           <ModelList
             process={process}
             models={load.list.models.filter((model) => model.process === process)}
             job={job}
             cancelling={cancelling}
             busyModel={busyModel}
+            choosing={choosing}
+            externalActive={selection.external}
+            onUse={(model) => onUse(choiceKeyOf(model))}
             onInstall={(model) => start(model, "install")}
             onVerify={(model) => start(model, "verify")}
             onRemove={setPendingRemoval}
             onCancel={cancel}
           />
+          <ExternalGroup external={external} />
         </>
       )}
 
@@ -315,10 +419,10 @@ export function LocalModelCard({ process, onModelsChange, pollIntervalMs = JOB_P
   );
 }
 
-function HardwareSummary({ hardware }: { hardware: LocalHardware }) {
+function HardwareSummary({ hardware, recommendation }: { hardware: LocalHardware; recommendation: LocalRecommendation | undefined }) {
+  const warnings = recommendation?.warnings ?? [];
   return (
     <section className="engines-local-section" aria-label={text.hardwareTitle}>
-      <h4 className="settings-group-title">{text.hardwareTitle}</h4>
       <p>
         {text.hardware(
           text.chip(hardware.arch, hardware.system),
@@ -328,35 +432,18 @@ function HardwareSummary({ hardware }: { hardware: LocalHardware }) {
         )}
       </p>
       <p className="settings-help">{hardware.metal ? text.metalYes : text.metalNo}</p>
-    </section>
-  );
-}
-
-function Recommendation({ recommendation, hardware }: { recommendation: LocalRecommendation | undefined; hardware: LocalHardware }) {
-  return (
-    <section className="engines-local-section" aria-label={text.recommendationTitle}>
-      <h4 className="settings-group-title">{text.recommendationTitle}</h4>
-      {!recommendation && <p className="settings-help">{text.noRecommendation}</p>}
       {recommendation && (
-        <>
-          <p className="engines-local-recommended">
-            {recommendation.model_id ? <strong>{recommendation.model_id}</strong> : <span>{text.noRecommendation}</span>}
-            {recommendation.status && (
-              <StatusBadge tone={recommendation.status === "measured" ? "success" : "progress"}>
-                {text.marks[recommendation.status]}
-              </StatusBadge>
-            )}
-          </p>
-          {recommendation.status && <p className="settings-help">{text.markHelp[recommendation.status]}</p>}
-          <p>{reasonText(recommendation, hardware)}</p>
-          {recommendation.warnings.length > 0 && (
-            <ul className="engines-local-warnings">
-              {recommendation.warnings.map((warning) => (
-                <li key={warning}>{text.warnings[warning as keyof typeof text.warnings] ?? warning}</li>
-              ))}
-            </ul>
-          )}
-        </>
+        <p className="settings-help">
+          {recommendation.model_id ? "" : `${text.noRecommendation} `}
+          {reasonText(recommendation, hardware)}
+        </p>
+      )}
+      {warnings.length > 0 && (
+        <ul className="engines-local-warnings">
+          {warnings.map((warning) => (
+            <li key={warning}>{text.warnings[warning as keyof typeof text.warnings] ?? warning}</li>
+          ))}
+        </ul>
       )}
     </section>
   );
@@ -387,85 +474,194 @@ interface ModelListProps {
   job: LocalJob | null;
   cancelling: boolean;
   busyModel: string | null;
+  choosing: boolean;
+  externalActive: boolean;
+  onUse: (model: LocalModel) => void;
   onInstall: (model: LocalModel) => void;
   onVerify: (model: LocalModel) => void;
   onRemove: (model: LocalModel) => void;
   onCancel: () => void;
 }
 
-function ModelList({ process, models, job, cancelling, busyModel, onInstall, onVerify, onRemove, onCancel }: ModelListProps) {
-  const jobRunning = job?.state === "running";
+/** The options of the process (models and managed engines), then the supporting files in one line each. */
+function ModelList(props: ModelListProps) {
+  const { process, models, job } = props;
+  const options = models.filter((model) => model.kind !== "auxiliary");
+  const supporting = models.filter((model) => model.kind === "auxiliary");
+  const jobRunning = job?.state === "running" && job.type !== "adopt";
   return (
     <section className="engines-local-section" aria-label={text.modelsTitle}>
-      <h4 className="settings-group-title">{text.modelsTitle}</h4>
-      {models.length === 0 && <p className="settings-help">{text.noModels}</p>}
+      {options.length === 0 && <p className="settings-help">{text.noModels}</p>}
       {jobRunning && <p className="settings-help">{text.busy}</p>}
-      <ul className="engines-local-models">
-        {models.map((model) => {
-          const running = jobRunning && job.model_id === model.id ? job : null;
-          const state: LocalModelState = running?.type === "install" ? "installing" : model.state;
-          const blocked = jobRunning || busyModel !== null;
-          const inUse = model.in_use_by.length > 0;
-          const titleId = `engines-model-${process}-${model.id}`;
-          return (
-            <li key={model.id} className="engines-local-model" aria-labelledby={titleId}>
-              <div className="engines-card-head">
-                <span id={titleId} className="engines-local-model-name">{model.id}</span>
-                <StatusBadge tone={STATE_TONE[state]}>{text.states[state]}</StatusBadge>
-                <StatusBadge tone={model.status === "measured" ? "success" : "progress"}>{text.marks[model.status]}</StatusBadge>
-                {model.kind === "auxiliary" && <StatusBadge tone="neutral">{text.auxiliary}</StatusBadge>}
-                {model.recommended && <StatusBadge tone="success">{text.recommended}</StatusBadge>}
-              </div>
-              <p className="settings-help">
-                {text.engineMeta(model.engine)}
-                {model.size !== null && ` · ${text.size(formatBytes(model.size))}`}
-                {model.installed_size !== null && ` · ${text.installedSize(formatBytes(model.installed_size))}`}
-              </p>
-              {inUse && <p className="settings-help">{text.inUse(processList(model.in_use_by))}</p>}
-
-              {running && <JobProgress job={running} cancelling={cancelling} onCancel={onCancel} />}
-
-              {!running && model.state === "managed" && (
-                <p className="settings-help">{text.managedHow(model.managed_by ? `bash ${model.managed_by}` : copy.engines.local.engineMissing.installCommand)}</p>
-              )}
-              {!running && model.state !== "managed" && (
-                <div className="engines-local-actions">
-                  {model.state === "not_installed" && (
-                    <>
-                      <Button variant="primary" size="sm" aria-label={text.installLabel(model.id)} disabled={blocked} onClick={() => onInstall(model)}>
-                        {text.install}
-                      </Button>
-                      {model.size !== null && (
-                        <span className="settings-help">{text.spaceNeeded(formatBytes(Math.ceil(model.size * DISK_HEADROOM)))}</span>
-                      )}
-                    </>
-                  )}
-                  {(model.state === "installed" || model.state === "unverified" || model.state === "corrupt") && (
-                    <>
-                      <Button variant="secondary" size="sm" aria-label={text.verifyLabel(model.id)} disabled={blocked} onClick={() => onVerify(model)}>
-                        {text.verify}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        aria-label={text.removeLabel(model.id)}
-                        aria-describedby={inUse ? `${titleId}-blocked` : undefined}
-                        disabled={blocked || inUse}
-                        onClick={() => onRemove(model)}
-                      >
-                        {text.remove}
-                      </Button>
-                    </>
-                  )}
-                </div>
-              )}
-              {inUse && model.state !== "not_installed" && model.state !== "managed" && (
-                <p id={`${titleId}-blocked`} className="settings-help">{text.removeBlocked(processList(model.in_use_by))}</p>
-              )}
-            </li>
-          );
-        })}
+      <ul className="engines-local-models" aria-label={text.modelsTitle}>
+        {options.map((model) => <ModelRow key={model.id} {...props} model={model} />)}
       </ul>
+      {supporting.map((model) => <SupportLine key={model.id} {...props} model={model} idPrefix={`engines-model-${process}`} />)}
+    </section>
+  );
+}
+
+type RowProps = ModelListProps & { model: LocalModel };
+
+function stateOf(model: LocalModel, running: LocalJob | null, externalActive: boolean): RowState {
+  if (running?.type === "install") return "installing";
+  if (running?.type === "verify" || model.verifying === true) return "verifying";
+  const availability = availabilityOf(model);
+  if (availability === "available") return "available";
+  if (availability === "present_unverified") return model.state === "corrupt" ? "corrupt" : "unverified";
+  const active = model.active ?? model.in_use_by.includes(model.process);
+  return active && !externalActive ? "active" : "installed";
+}
+
+function unverifiedText(model: LocalModel): string {
+  const reason = model.reason ?? (model.state === "corrupt" ? "hash_mismatch" : null);
+  return text.unverifiedReason[reason ?? "generic"] ?? text.unverifiedReason.generic;
+}
+
+/** The reason removal is not offered, or null when it is. */
+function removalBlock(model: LocalModel): string | null {
+  if (model.location === "legacy") return text.manualNote;
+  const inUse = model.in_use ?? model.in_use_by.length > 0;
+  if (!inUse) return null;
+  return model.in_use_by.length > 0 ? text.removeBlocked(processList(model.in_use_by)) : text.removeBlockedGeneric;
+}
+
+function ModelRow(props: RowProps) {
+  const { process, model, job, cancelling, busyModel, choosing, externalActive, onUse, onInstall, onVerify, onRemove, onCancel } = props;
+  const jobRunning = job?.state === "running";
+  const running = jobRunning && job.model_id === model.id ? job : null;
+  const state = stateOf(model, running, externalActive);
+  const blocked = jobRunning || busyModel !== null;
+  const managed = model.kind === "managed_engine" || model.state === "managed" || model.install?.method === "managed_command";
+  const name = (model.kind === "managed_engine" && text.managedTitle[process]) || model.id;
+  const titleId = `engines-model-${process}-${model.id}`;
+  const size = model.size ?? model.installed_size;
+  const installed = availabilityOf(model) === "installed";
+  const command = model.install?.managed_by ?? model.managed_by;
+  const needed = model.install?.disk_required_bytes ?? (model.size !== null ? Math.ceil(model.size * DISK_HEADROOM) : null);
+  const noRoom = model.install?.fits_on_disk === false;
+  const removal = removalBlock(model);
+  const inUse = model.in_use ?? model.in_use_by.length > 0;
+
+  return (
+    <li
+      className={`engines-local-row${state === "active" ? " engines-local-row--active" : ""}`}
+      aria-labelledby={titleId}
+    >
+      <div className="engines-local-row-main">
+        <div className="engines-local-row-head">
+          <span id={titleId} className="engines-local-model-name">{name}</span>
+          {size !== null && <span className="engines-local-size">{formatBytes(size)}</span>}
+        </div>
+        <div className="engines-local-badges">
+          {state === "active" && <StatusBadge tone="success">{text.states.installed}</StatusBadge>}
+          <StatusBadge tone={STATE_TONE[state]} dot={state === "active"}>{text.states[state]}</StatusBadge>
+          {model.location === "legacy" && <StatusBadge tone="neutral">{text.manual}</StatusBadge>}
+          {model.recommended && <StatusBadge tone="success">{text.recommended}</StatusBadge>}
+          {model.kind !== "managed_engine" && (
+            <StatusBadge tone={model.status === "measured" ? "success" : "progress"}>{text.marks[model.status]}</StatusBadge>
+          )}
+        </div>
+        <p className="settings-help">
+          {managed && installed ? text.managedInstalled : text.description(model.engine, model.min_ram_gib)}
+          {installed && model.verified_by && ` ${text.verifiedBy[model.verified_by]}`}
+        </p>
+        {(state === "unverified" || state === "corrupt") && <p className="settings-help">{unverifiedText(model)}</p>}
+        {inUse && model.in_use_by.length > 0 && state !== "available" && (
+          <p className="settings-help">{text.inUse(processList(model.in_use_by))}</p>
+        )}
+        {managed && !installed && !running && command && <p className="settings-help">{text.managedHow(`bash ${command}`)}</p>}
+        {noRoom && !running && needed !== null && (
+          <p id={`${titleId}-room`} className="settings-help">{text.notEnoughSpace(formatBytes(needed))}</p>
+        )}
+      </div>
+
+      {!running && (
+        <div className="engines-local-row-actions">
+          {state === "installed" && (
+            <Button variant="secondary" size="sm" aria-label={text.useLabel(name)} disabled={choosing || blocked} onClick={() => onUse(model)}>
+              {text.use}
+            </Button>
+          )}
+          {state === "available" && !managed && (
+            <>
+              {needed !== null && !noRoom && <span className="settings-help">{text.spaceNeeded(formatBytes(needed))}</span>}
+              <Button
+                variant="primary"
+                size="sm"
+                aria-label={text.installLabel(name)}
+                aria-describedby={noRoom ? `${titleId}-room` : undefined}
+                disabled={blocked || noRoom}
+                onClick={() => onInstall(model)}
+              >
+                {text.install}
+              </Button>
+            </>
+          )}
+          {(state === "unverified" || state === "corrupt") && (
+            <Button variant="secondary" size="sm" aria-label={text.verifyLabel(name)} disabled={blocked} onClick={() => onVerify(model)}>
+              {text.verify}
+            </Button>
+          )}
+          {!managed && availabilityOf(model) !== "available" && state !== "verifying" && (
+            <Menu label={text.moreLabel(name)}>
+              <MenuItem onSelect={() => onVerify(model)} disabled={blocked}>{text.verify}</MenuItem>
+              <MenuItem tone="danger" onSelect={() => onRemove(model)} disabled={blocked || removal !== null} hint={removal ?? undefined}>
+                {text.remove}
+              </MenuItem>
+              {removal && <p role="presentation" className="engines-local-menu-note">{removal}</p>}
+            </Menu>
+          )}
+        </div>
+      )}
+
+      {running && <JobProgress job={running} cancelling={cancelling} onCancel={onCancel} />}
+    </li>
+  );
+}
+
+/** A file that supports the process (voice detection): one line, not a choice. Offers to install it when missing. */
+function SupportLine({ model, job, busyModel, cancelling, onInstall, onCancel, idPrefix }: RowProps & { idPrefix: string }) {
+  const jobRunning = job?.state === "running";
+  const running = jobRunning && job.model_id === model.id ? job : null;
+  const availability = availabilityOf(model);
+  const name = model.id;
+  const state = running ? text.states.installing : availability === "installed" ? text.states.installed : availability === "available" ? text.states.available : text.states.unverified;
+  const canInstall = availability === "available" && !running;
+  return (
+    <div className="engines-local-support" id={`${idPrefix}-${model.id}`}>
+      <p className="settings-help">{text.auxiliaryLine(name, state)}</p>
+      {canInstall && (
+        <Button variant="secondary" size="sm" aria-label={text.installLabel(name)} disabled={jobRunning || busyModel !== null} onClick={() => onInstall(model)}>
+          {text.install}
+        </Button>
+      )}
+      {running && <JobProgress job={running} cancelling={cancelling} onCancel={onCancel} />}
+    </div>
+  );
+}
+
+function ExternalGroup({ external }: { external: ExternalChoice }) {
+  const titleId = "engines-external-title";
+  return (
+    <section className="engines-local-section engines-local-external" aria-labelledby={titleId}>
+      <h4 id={titleId} className="settings-group-title">{text.external.title}</h4>
+      <div className={`engines-local-row${external.current ? " engines-local-row--active" : ""}`}>
+        <div className="engines-local-row-main">
+          {external.current && (
+            <div className="engines-local-badges">
+              <span className="engines-local-model-name">{external.current}</span>
+              <StatusBadge tone="success" dot>{text.states.active}</StatusBadge>
+            </div>
+          )}
+          <p className="settings-help">{text.external.help}</p>
+        </div>
+        <div className="engines-local-row-actions">
+          <Button variant="secondary" size="sm" onClick={external.hasProviders ? external.onChoose : external.onSetup}>
+            {external.hasProviders ? text.external.choose : text.external.setup}
+          </Button>
+        </div>
+      </div>
     </section>
   );
 }

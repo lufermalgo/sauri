@@ -234,6 +234,9 @@ export type LocalModelAvailability = "installed" | "available" | "present_unveri
 /** Where the file lives: the models directory, the engine's legacy location (never moved) or a managed engine's environment. */
 export type LocalModelLocation = "models_dir" | "legacy" | "managed";
 
+/** Why a present file was not adopted as installed. */
+export type LocalModelReason = "size_mismatch" | "hash_mismatch";
+
 /** What installing a model that is not installed still needs. */
 export interface LocalModelInstallNeeds {
   method: "download" | "managed_command";
@@ -272,8 +275,8 @@ export interface LocalModel {
   in_use?: boolean;
   /** Where the file is; null when nothing is present. A `legacy` file is never removed by Sauri. */
   location?: LocalModelLocation | null;
-  /** Why a present file was not adopted (`size_mismatch` or `hash_mismatch`); null otherwise. */
-  reason?: string | null;
+  /** Why a present file was not adopted; null otherwise. */
+  reason?: LocalModelReason | null;
   /** True while an adoption run is still going to check this file. */
   verifying?: boolean;
   /** `hash` for catalog files; `presence` for a managed engine (found, never hashed). */
@@ -310,12 +313,14 @@ export interface LocalModelList {
   adoption?: LocalAdoption | null;
 }
 
+export type LocalJobType = "install" | "verify" | "adopt";
+
 export type LocalJobState = "running" | "done" | "failed" | "cancelled";
 
 export interface LocalJob {
   id: string;
   model_id: string;
-  type: "install" | "verify" | "adopt";
+  type: LocalJobType;
   state: LocalJobState;
   bytes_done: number;
   bytes_total: number;

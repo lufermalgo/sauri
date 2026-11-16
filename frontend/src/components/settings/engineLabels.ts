@@ -1,4 +1,4 @@
-import type { EngineProcess, EngineProviderKind } from "@sauri/shared-types";
+import type { EngineProcess, EngineProviderKind, LocalModel, LocalModelAvailability } from "@sauri/shared-types";
 import { copy } from "../../copy/es";
 
 /** Comma separated display names of the processes, in the order the API gave them. */
@@ -35,4 +35,12 @@ export function formatFetchedAt(iso: string, now: Date = new Date()): string {
 /** Kinds that run as a program on this computer: no key is asked for and the usual address is filled in. */
 export function isLocalApp(kind: EngineProviderKind): boolean {
   return kind === "ollama" || kind === "lmstudio";
+}
+
+/** What this computer has of a model. Older answers carry only `state`, which maps onto the same three values. */
+export function availabilityOf(model: LocalModel): LocalModelAvailability {
+  if (model.availability) return model.availability;
+  if (model.state === "installed" || model.state === "managed") return "installed";
+  if (model.state === "unverified" || model.state === "corrupt") return "present_unverified";
+  return "available";
 }

@@ -15,7 +15,7 @@ export function answerEnginesApi(pathname: string): Response | null {
   if (pathname.endsWith("/local/hardware")) {
     return json({ arch: "arm64", system: "Darwin", memory_gib: 16, cores: 8, metal: true, disk_free_bytes: 100e9 });
   }
-  if (pathname.endsWith("/local/models")) return json({ catalog_version: 1, models: [], recommendations: {}, active_job: null });
+  if (pathname.endsWith("/local/models")) return json({ catalog_version: 1, models: [], recommendations: {}, active_job: null, active: {}, adoption: null });
   if (pathname.endsWith("/status")) {
     return json({ engines: ["asr", "diar", "llm"].map((id) => ({ id, port: 8000, state: "running" })), secret_store: null });
   }
