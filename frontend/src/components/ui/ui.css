@@ -488,6 +488,11 @@
   background: var(--ds-fill-strong);
 }
 
+.ui-icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .ui-icon-button--primary {
   color: var(--ds-accent-fg);
   background: var(--ds-accent);

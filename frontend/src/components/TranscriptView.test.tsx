@@ -345,20 +345,25 @@ describe("TranscriptView — speaker review", () => {
     vi.mocked(api.newIdempotencyKey).mockImplementation(() => `key-${++counter}`);
   });
 
-  it("shows the pending review with every action, and the complete state", async () => {
+  it("shows each pending speaker with a play icon, an initials avatar and a pencil, and no text action buttons", async () => {
     loadTranscript();
     loadReview().mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
-    await openReview();
+    const dialog = await openReview();
     expect(await screen.findByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
     expect(screen.getByText(sr.pending)).toBeInTheDocument();
+    const [generic, suggested] = within(dialog).getAllByRole("article");
+    expect(within(generic).getByText("H1")).toBeInTheDocument();
+    expect(within(generic).getByText(sr.pendingState)).toBeInTheDocument();
+    expect(within(suggested).getByText("K")).toBeInTheDocument();
+    expect(within(suggested).getByText(sr.suggestedState)).toBeInTheDocument();
     for (const label of [copy.transcript.numberedSpeaker("1"), "Known Speaker"]) {
-      fireEvent.click(screen.getByRole("button", { name: sr.selectSpeaker(label) }));
       expect(screen.getByRole("button", { name: sr.listenTo(label) })).toBeDefined();
-      expect(screen.getByRole("button", { name: sr.saveNameFor(label) })).toBeDisabled();
-      expect(screen.getByRole("button", { name: sr.confirmFor(label) })).toBeEnabled();
-      expect(screen.getByRole("button", { name: sr.correctFor(label) })).toBeDisabled();
-      expect(screen.getByRole("textbox", { name: sr.nameFor(label) })).toBeDefined();
+      expect(screen.getByRole("button", { name: sr.editName(label) })).toBeEnabled();
+    }
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    for (const name of ["Guardar", "Confirmar", "Corregir", "Escuchar"]) {
+      expect(within(dialog).queryByRole("button", { name: new RegExp(`^${name}$`) })).not.toBeInTheDocument();
     }
   });
 
@@ -398,29 +403,73 @@ describe("TranscriptView — speaker review", () => {
     expect(screen.getByText(sr.noInterval)).toBeVisible();
   });
 
+  /** Types a new name into the speaker's inline editor and commits it with Enter. */
+  async function typeName(label: string, value: string) {
+    fireEvent.click(await screen.findByRole("button", { name: sr.editName(label) }));
+    const input = screen.getByRole("textbox", { name: sr.nameFor(label) });
+    fireEvent.change(input, { target: { value } });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
+
   it.each([
-    ["confirm", "confirmed", undefined],
-    ["save name", "named", "Ana"],
-    ["correct", "corrected", "Ana"],
-  ] as const)("submits %s for one speaker only, with version and idempotency key", async (_action, disposition, label) => {
+    ["names a generic speaker as named", "speaker-1", copy.transcript.numberedSpeaker("1"), "named"],
+    ["renames a speaker that already had a name as corrected", "speaker-2", "Known Speaker", "corrected"],
+  ] as const)("%s, with version and idempotency key", async (_title, speakerId, label, disposition) => {
     loadTranscript(); loadReview().mockResolvedValue(review());
-    const update = submit().mockResolvedValue(review({ items: [
-      { ...review().items[0], disposition },
-      review().items[1],
-    ] }));
+    const update = submit().mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    if (label) {
-      fireEvent.change(screen.getByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) }), { target: { value: ` ${label} ` } });
-    }
-    const buttonName = disposition === "confirmed" ? sr.confirmFor(copy.transcript.numberedSpeaker("1"))
-      : disposition === "named" ? sr.saveNameFor(copy.transcript.numberedSpeaker("1")) : sr.correctFor(copy.transcript.numberedSpeaker("1"));
-    fireEvent.click(screen.getByRole("button", { name: buttonName }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith("r-1", "revision-1", "speaker-1", {
-      disposition, expectedVersion: 1, idempotencyKey: "key-1", ...(label ? { label } : {}),
+    await typeName(label, "  Ana  ");
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    expect(update).toHaveBeenCalledWith("r-1", "revision-1", speakerId, {
+      disposition, expectedVersion: 1, idempotencyKey: "key-1", label: "Ana",
+    });
+  });
+
+  it("keeps a suggested name as final with one tap, using the confirmed disposition", async () => {
+    loadTranscript(); loadReview().mockResolvedValue(review());
+    const update = submit().mockResolvedValue(review({ items: [review().items[0], { ...review().items[1], disposition: "confirmed" }] }));
+    render(<TranscriptView meetingId="r-1" />);
+    await openReview();
+    fireEvent.click(await screen.findByRole("button", { name: sr.acceptSuggestion("Known Speaker") }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("r-1", "revision-1", "speaker-2", {
+      disposition: "confirmed", expectedVersion: 1, idempotencyKey: "key-1",
     }));
-    expect(await screen.findByText(sr.confirmedState)).toBeDefined();
+    await waitFor(() => expect(screen.queryByRole("button", { name: sr.acceptSuggestion("Known Speaker") })).not.toBeInTheDocument());
     expect(screen.getByRole("heading", { name: "Known Speaker" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
+  });
+
+  it("leaves every pending generic speaker unnamed with the confirmed disposition and hides the banner", async () => {
+    loadTranscript();
+    const base = review({
+      labelsBySpeakerId: { "speaker-1": "Speaker 1", "speaker-2": "Speaker 2" },
+      items: [
+        { ...review().items[0] },
+        { ...review().items[1], currentLabel: "Speaker 2" },
+        { ...review().items[0], speakerId: "speaker-3", currentLabel: "Speaker 3", disposition: "named" },
+      ],
+    });
+    loadReview().mockResolvedValue(base);
+    const update = submit()
+      .mockResolvedValueOnce({ ...base, items: [{ ...base.items[0], disposition: "confirmed", expectedVersion: 2 }, base.items[1], base.items[2]] })
+      .mockResolvedValueOnce({ ...base, status: "complete", items: [
+        { ...base.items[0], disposition: "confirmed", expectedVersion: 2 }, { ...base.items[1], disposition: "confirmed", expectedVersion: 2 }, base.items[2],
+      ] });
+    render(<TranscriptView meetingId="r-1" />);
+    await openReview();
+    expect(screen.getByText(copy.meeting.pendingSpeakers(2))).toBeVisible();
+    fireEvent.click(await screen.findByRole("button", { name: sr.leaveUnnamed }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(update.mock.calls.map(call => [call[2], call[3].disposition, call[3].label])).toEqual([
+      ["speaker-1", "confirmed", undefined], ["speaker-2", "confirmed", undefined],
+    ]);
+    await waitFor(() => expect(screen.queryByText(copy.meeting.pendingSpeakers(2))).not.toBeInTheDocument());
+    expect(screen.getByText(sr.complete)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: sr.leaveUnnamed })).not.toBeInTheDocument();
+    expect(screen.getAllByText(sr.unnamedState)).toHaveLength(2);
+    // The generic labels stay as the names.
+    expect(screen.getByRole("heading", { name: copy.transcript.numberedSpeaker("1") })).toBeDefined();
   });
 
   it("shows the chosen name on every turn of that speaker after saving", async () => {
@@ -440,44 +489,77 @@ describe("TranscriptView — speaker review", () => {
     }));
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    fireEvent.change(await screen.findByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) }), { target: { value: "Ana" } });
-    fireEvent.click(screen.getByRole("button", { name: sr.saveNameFor(copy.transcript.numberedSpeaker("1")) }));
+    await typeName(copy.transcript.numberedSpeaker("1"), "Ana");
     const panel = screen.getByRole("region", { name: copy.meeting.transcript });
     await waitFor(() => expect(within(panel).getAllByText("Ana", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(2));
     expect(within(panel).getAllByText("Known Speaker", { selector: '[data-testid="transcript-speaker-label"]' })).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Ana" })).toBeDefined();
+    expect(within(screen.getByRole("heading", { name: "Ana" }).closest("article") as HTMLElement).getByText("A")).toBeInTheDocument();
+    expect(screen.getByText(sr.namedState)).toBeInTheDocument();
   });
 
-  it("reuses the idempotency key when the same action is retried after a failure", async () => {
+  it("reuses the idempotency key when the same name is retried after a failure", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     const update = submit().mockRejectedValueOnce(new Error("Error 503")).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    const confirm = await screen.findByRole("button", { name: sr.confirmFor(copy.transcript.numberedSpeaker("1")) });
-    fireEvent.click(confirm);
-    expect(await screen.findByRole("alert")).toHaveTextContent(copy.speakerReview.saveFailed);
-    fireEvent.click(confirm);
+    await typeName(copy.transcript.numberedSpeaker("1"), "Ana");
+    // The error shows next to the input, which stays open with the typed name.
+    expect(await screen.findByText(sr.saveFailed, { selector: "p" })).toBeInTheDocument();
+    const input = screen.getByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) });
+    expect(input).toHaveValue("Ana");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     expect(update.mock.calls[0][3].idempotencyKey).toBe("key-1");
     expect(update.mock.calls[1][3].idempotencyKey).toBe("key-1");
 
-    fireEvent.click(screen.getByRole("button", { name: sr.selectSpeaker("Known Speaker") }));
-    fireEvent.click(screen.getByRole("button", { name: sr.confirmFor("Known Speaker") }));
+    fireEvent.click(screen.getByRole("button", { name: sr.acceptSuggestion("Known Speaker") }));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(3));
     expect(update.mock.calls[2][3].idempotencyKey).toBe("key-2");
   });
 
-  it("explains a stale review and uses a new key for the next action", async () => {
+  it("explains a stale review next to the input and uses a new key for the next action", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     const update = submit().mockRejectedValueOnce(reviewConflict()).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    const confirm = await screen.findByRole("button", { name: sr.confirmFor(copy.transcript.numberedSpeaker("1")) });
-    fireEvent.click(confirm);
-    expect((await screen.findByRole("alert")).textContent).toBe(sr.conflict);
-    fireEvent.click(confirm);
+    await typeName(copy.transcript.numberedSpeaker("1"), "Ana");
+    expect((await screen.findByText(sr.conflict, { selector: "p" })).textContent).toBe(sr.conflict);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) }), { key: "Enter" });
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
     expect(update.mock.calls[1][3].idempotencyKey).toBe("key-2");
+  });
+
+  it("reports a failed one-tap action in the dialog alert", async () => {
+    loadTranscript(); loadReview().mockResolvedValue(review());
+    submit().mockRejectedValueOnce(new Error("Error 503"));
+    render(<TranscriptView meetingId="r-1" />);
+    await openReview();
+    fireEvent.click(await screen.findByRole("button", { name: sr.acceptSuggestion("Known Speaker") }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(sr.saveFailed);
+  });
+
+  it("saves two names edited back to back in order, so the last snapshot keeps both", async () => {
+    loadTranscript(); loadReview().mockResolvedValue(review());
+    const first = review({ items: [{ ...review().items[0], disposition: "named", expectedVersion: 2 }, review().items[1]],
+      labelsBySpeakerId: { "speaker-1": "Ana", "speaker-2": "Known Speaker" } });
+    const both = review({ status: "complete", items: [first.items[0], { ...review().items[1], disposition: "corrected", expectedVersion: 2 }],
+      labelsBySpeakerId: { "speaker-1": "Ana", "speaker-2": "Bruno" } });
+    let releaseFirst: (value: api.SpeakerReview) => void = () => {};
+    const update = submit()
+      .mockImplementationOnce(() => new Promise<api.SpeakerReview>(resolve => { releaseFirst = resolve; }))
+      .mockResolvedValueOnce(both);
+    render(<TranscriptView meetingId="r-1" />);
+    await openReview();
+    await typeName(copy.transcript.numberedSpeaker("1"), "Ana");
+    await typeName("Known Speaker", "Bruno");
+    expect(update).toHaveBeenCalledTimes(1);
+    await act(async () => releaseFirst(first));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Bruno" })).toBeDefined());
+    expect(screen.getByRole("heading", { name: "Ana" })).toBeDefined();
+    expect(screen.getByText(sr.complete)).toBeInTheDocument();
   });
 
   it("asks for the review again after remounting", async () => {
@@ -494,14 +576,14 @@ describe("TranscriptView — speaker review", () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
-  it("exposes review actions as keyboard-operable native buttons", async () => {
+  it("exposes review actions as keyboard-operable native buttons in play, pencil order", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
-    await screen.findByRole("button", { name: sr.confirmFor(copy.transcript.numberedSpeaker("1")) });
+    await screen.findByRole("button", { name: sr.editName(copy.transcript.numberedSpeaker("1")) });
     const article = screen.getByRole("heading", { name: copy.transcript.numberedSpeaker("1") }).closest("article");
     const buttons = within(article as HTMLElement).getAllByRole("button");
-    expect(buttons).toHaveLength(5);
+    expect(buttons.map(button => button.getAttribute("aria-label"))).toEqual([sr.listenTo(copy.transcript.numberedSpeaker("1")), sr.editName(copy.transcript.numberedSpeaker("1"))]);
     for (const button of buttons) expect(button.tagName).toBe("BUTTON");
   });
 });
@@ -1038,7 +1120,7 @@ describe("TranscriptView — visual QA refinements", () => {
     expect(await screen.findByRole("heading", { name: "Speaker 4" })).toBeVisible();
     const labels = screen.getAllByTestId("transcript-speaker-label");
     labels.forEach(label => expect(label).toHaveTextContent("Speaker 4"));
-    expect(screen.getByRole("textbox", { name: sr.nameFor("Speaker 4") })).toBeVisible();
+    expect(screen.getByRole("button", { name: sr.editName("Speaker 4") })).toBeVisible();
   });
 
   it.each(["Speaker A", "Speaker4", "Speaker 4 Smith"])("preserves the backend name %s", async label => {
@@ -1097,18 +1179,23 @@ describe("TranscriptView — redesigned meeting", () => {
     const pending = review({ items: [review().items[0]], labelsBySpeakerId: { "speaker-1": "Speaker 1" } });
     vi.mocked(api.getSpeakerReview).mockResolvedValue(pending);
     vi.mocked(api.submitSpeakerDisposition).mockResolvedValue({
-      ...pending, status: "complete", items: [{ ...pending.items[0], disposition: "confirmed", expectedVersion: 2 }],
+      ...pending, status: "complete", labelsBySpeakerId: { "speaker-1": "Luc\u00eda" },
+      items: [{ ...pending.items[0], disposition: "named", expectedVersion: 2 }],
     });
     render(<TranscriptView meetingId="r-1" />);
     const dialog = await openReview();
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(within(dialog).getByText(sr.pendingState)).toBeVisible();
-    fireEvent.click(within(dialog).getByRole("button", { name: sr.confirmFor(copy.transcript.numberedSpeaker("1")) }));
+    fireEvent.click(within(dialog).getByRole("button", { name: sr.editName(copy.transcript.numberedSpeaker("1")) }));
+    const input = within(dialog).getByRole("textbox", { name: sr.nameFor(copy.transcript.numberedSpeaker("1")) });
+    fireEvent.change(input, { target: { value: "Luc\u00eda" } });
+    fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(screen.queryByText(copy.meeting.pendingSpeakers(1))).not.toBeInTheDocument());
     expect(screen.queryByRole("button", { name: copy.meeting.reviewSpeakers })).not.toBeInTheDocument();
     // The dialog stays until the user closes it.
     expect(screen.getByRole("dialog", { name: sr.heading })).toBeInTheDocument();
-    expect(within(dialog).getByText(sr.confirmedState)).toBeVisible();
+    expect(within(dialog).getByText(sr.namedState)).toBeVisible();
+    expect(within(dialog).getByText("L")).toBeVisible();
     expect(within(dialog).getByText(sr.complete)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: sr.close }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -1140,7 +1227,10 @@ describe("TranscriptView — redesigned meeting", () => {
   it("stops an excerpt that is playing when the dialog closes", async () => {
     vi.mocked(api.getTranscript).mockResolvedValue({
       ...transcript([]), presentation: "words",
-      turns: [{ ...turn({ id: "w1", sequence: 1, startMs: 0, endMs: 9000 }), speakerId: "speaker-1", speakerLabel: "Speaker 1", wordCount: 2, hasAmbiguous: false }],
+      turns: [
+        { ...turn({ id: "w1", sequence: 1, startMs: 0, endMs: 9000 }), speakerId: "speaker-1", speakerLabel: "Speaker 1", wordCount: 2, hasAmbiguous: false },
+        { ...turn({ id: "w2", sequence: 2, startMs: 9000, endMs: 20000 }), speakerId: "speaker-2", speakerLabel: "Known Speaker", wordCount: 2, hasAmbiguous: false },
+      ],
     });
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     const play = vi.spyOn(PlaybackController.prototype, "playInterval").mockResolvedValue();
@@ -1154,7 +1244,13 @@ describe("TranscriptView — redesigned meeting", () => {
     fireEvent.click(listen);
     await waitFor(() => expect(play).toHaveBeenCalledWith(0, 9000));
     // While playing, the same button stops it.
-    expect(screen.getByRole("button", { name: sr.stopFor(first) })).toHaveTextContent(sr.stop);
+    expect(listen).toHaveAttribute("aria-pressed", "true");
+    // One excerpt at a time: starting another speaker moves the pressed state.
+    const other = screen.getByRole("button", { name: sr.listenTo("Known Speaker") });
+    fireEvent.click(other);
+    await waitFor(() => expect(play).toHaveBeenLastCalledWith(9000, 20000));
+    expect(other).toHaveAttribute("aria-pressed", "true");
+    expect(listen).toHaveAttribute("aria-pressed", "false");
     pause.mockClear();
     fireEvent.click(screen.getByRole("button", { name: sr.close }));
     expect(pause).toHaveBeenCalledTimes(1);
@@ -1179,25 +1275,21 @@ describe("TranscriptView — redesigned meeting", () => {
     render(<TranscriptView meetingId="r-1" />);
     await screen.findByRole("region", { name: copy.meeting.transcript });
     expect(screen.queryByRole("button", { name: copy.meeting.reviewSpeakers })).not.toBeInTheDocument();
-    expect(screen.queryByText(sr.confirmedState)).not.toBeInTheDocument();
+    expect(screen.queryByText(sr.namedState)).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("shows only the selected speaker editor and keeps drafts when switching speakers", async () => {
+  it("opens the editor only in the row whose pencil was used and leaves the other rows untouched", async () => {
     vi.mocked(api.getSpeakerReview).mockResolvedValue(review());
     render(<TranscriptView meetingId="r-1" />);
     await openReview();
     const first = copy.transcript.numberedSpeaker("1");
-    const input = await screen.findByRole("textbox", { name: sr.nameFor(first) });
-    fireEvent.change(input, { target: { value: "Synthetic draft" } });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: sr.editName(first) }));
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
-    const second = screen.getByRole("button", { name: sr.selectSpeaker("Known Speaker") });
-    fireEvent.click(second);
-    expect(second).toHaveAttribute("aria-expanded", "true");
-    expect(screen.queryByRole("textbox", { name: sr.nameFor(first) })).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: sr.nameFor("Known Speaker") })).toHaveValue("");
-    fireEvent.click(screen.getByRole("button", { name: sr.selectSpeaker(first) }));
-    expect(screen.getByRole("textbox", { name: sr.nameFor(first) })).toHaveValue("Synthetic draft");
+    expect(screen.getByRole("textbox", { name: sr.nameFor(first) })).toHaveValue(first);
+    expect(screen.getByRole("button", { name: sr.editName("Known Speaker") })).toBeEnabled();
+    expect(screen.getByRole("heading", { name: "Known Speaker" })).toBeVisible();
   });
 
   it("disables transcript following without disabling active highlighting", async () => {
