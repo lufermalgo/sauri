@@ -4,7 +4,6 @@ import { Library, PanelLeft } from "lucide-react";
 import { navigate, routePath, type Route } from "../router";
 import type { SessionUser } from "../session-user";
 import { readLastMeetingId } from "../last-meeting";
-import { copy } from "../copy/es";
 import { ProfileCard } from "./ProfileCard";
 import { useSidebar } from "./useSidebar";
 import { useMediaQuery } from "./useMediaQuery";
@@ -19,6 +18,7 @@ import {
 } from "./useSecondaryPane";
 import { BrandMark, Icon, useTooltip } from "./ui";
 import "../styles/shell.css";
+import { useT } from "../i18n";
 
 interface PortalShellProps {
   route: Route;
@@ -37,6 +37,7 @@ function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
 const BRAND_MARK_SIZE = 24;
 
 export function PortalShell({ route, user = null, onLogout, children }: PortalShellProps) {
+  const { t } = useT();
   const { mode, drawerOpen, toggleCollapsed, openDrawer, closeDrawer } = useSidebar();
   const sidebarId = useId();
   const sidebarRef = useRef<HTMLElement>(null);
@@ -57,8 +58,8 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
   // A plain link says its name (the rail already pops its label out beside the icon).
   const libraryTip = useTooltip(
     libraryPane
-      ? (libraryPane.hidden ? copy.shell.libraryPane.show : copy.shell.libraryPane.hide)
-      : mode === "rail" ? undefined : copy.shell.library,
+      ? (libraryPane.hidden ? t("shell:libraryPane.show") : t("shell:libraryPane.hide"))
+      : mode === "rail" ? undefined : t("shell:library"),
   );
 
   // Focus moves into the drawer when it opens and back to its opener when it closes.
@@ -120,7 +121,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
             ref={openerRef}
             type="button"
             className="shell-icon-button"
-            aria-label={copy.shell.sidebar.open}
+            aria-label={t("shell:sidebar.open")}
             aria-expanded={drawerOpen}
             aria-controls={sidebarId}
             onClick={openDrawer}
@@ -129,7 +130,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
           </button>
           <span className="shell-brand">
             <BrandMark className="shell-brand-mark" size={BRAND_MARK_SIZE} />
-            <span className="shell-brand-name">{copy.shell.brand}</span>
+            <span className="shell-brand-name">{t("shell:brand")}</span>
           </span>
         </header>
       )}
@@ -138,20 +139,20 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
         ref={sidebarRef}
         id={sidebarId}
         className="shell-sidebar"
-        aria-label={copy.shell.sidebar.region}
+        aria-label={t("shell:sidebar.region")}
         data-open={drawer ? drawerOpen : undefined}
       >
         <div className="shell-sidebar-head">
-          <a className="shell-brand" href={routePath(LIBRARY_ROUTE)} aria-label={copy.shell.brand} onClick={(event) => go(event, LIBRARY_ROUTE)}>
+          <a className="shell-brand" href={routePath(LIBRARY_ROUTE)} aria-label={t("shell:brand")} onClick={(event) => go(event, LIBRARY_ROUTE)}>
             <BrandMark className="shell-brand-mark" size={BRAND_MARK_SIZE} />
-            <span className="shell-brand-name shell-collapsible">{copy.shell.brand}</span>
+            <span className="shell-brand-name shell-collapsible">{t("shell:brand")}</span>
           </a>
           {drawer ? (
             <button
               ref={closerRef}
               type="button"
               className="shell-icon-button"
-              aria-label={copy.shell.sidebar.close}
+              aria-label={t("shell:sidebar.close")}
               aria-expanded={drawerOpen}
               aria-controls={sidebarId}
               onClick={closeDrawer}
@@ -162,23 +163,23 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
             <button
               type="button"
               className="shell-icon-button"
-              aria-label={copy.shell.sidebar.toggle}
+              aria-label={t("shell:sidebar.toggle")}
               aria-expanded={mode === "full"}
               aria-controls={sidebarId}
               onClick={toggleCollapsed}
             >
               <Icon icon={PanelLeft} />
-              <span className="shell-tip-only" aria-hidden="true">{copy.shell.sidebar.toggle}</span>
+              <span className="shell-tip-only" aria-hidden="true">{t("shell:sidebar.toggle")}</span>
             </button>
           )}
         </div>
-        <nav className="shell-nav" aria-label={copy.shell.navLabel}>
+        <nav className="shell-nav" aria-label={t("shell:navLabel")}>
           {libraryPane ? (
             <span className="shell-link-wrap">
               <button
                 type="button"
                 className="shell-link shell-link--pane"
-                aria-label={copy.shell.library}
+                aria-label={t("shell:library")}
                 aria-current={onLibraryRoute ? "page" : undefined}
                 aria-expanded={!libraryPane.hidden}
                 aria-controls={libraryPane.id}
@@ -186,7 +187,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
                 onClick={() => { libraryTip.hide(); libraryPane.toggle(); }}
               >
                 <Icon icon={Library} />
-                <span className="shell-link-label" aria-hidden="true">{copy.shell.library}</span>
+                <span className="shell-link-label" aria-hidden="true">{t("shell:library")}</span>
               </button>
               {libraryTip.tooltip}
             </span>
@@ -200,7 +201,7 @@ export function PortalShell({ route, user = null, onLogout, children }: PortalSh
                 onClick={(event) => { libraryTip.hide(); go(event, libraryTarget); }}
               >
                 <Icon icon={Library} />
-                <span className="shell-collapsible">{copy.shell.library}</span>
+                <span className="shell-collapsible">{t("shell:library")}</span>
               </a>
               {libraryTip.tooltip}
             </span>

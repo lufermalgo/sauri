@@ -19,7 +19,6 @@ import {
   listEngineProviders,
   putEngineProcess,
 } from "../../api";
-import { copy } from "../../copy/es";
 import { navigate } from "../../router";
 import { Button, Card, Icon, Skeleton, StatusBadge } from "../ui";
 import { availabilityOf, formatBytes, processList } from "./engineLabels";
@@ -29,8 +28,7 @@ import type { ModelPickerHandle, PickerGroup, PickerOption } from "./ModelPicker
 import { PrivacyNoticeDialog } from "./PrivacyNoticeDialog";
 import { describeEngineError } from "./ProviderDialog";
 import "../../styles/engines.css";
-
-const text = copy.engines.process;
+import { t, useT } from "../../i18n";
 
 const LOCAL_PREFIX = "local:";
 /** The two processes that send the whole recording to a provider, so one provider on both sends it twice. */
@@ -65,7 +63,7 @@ function servesProcess(kinds: EngineKindInfo[], kind: EngineProvider["kind"], pr
 }
 
 function localName(model: string): string {
-  return model === LOCAL_DEFAULT_MODEL ? text.localName : text.localModelName(model.slice(LOCAL_PREFIX.length));
+  return model === LOCAL_DEFAULT_MODEL ? t("engines:process.localName") : t("engines:process.localModelName", { id: model.slice(LOCAL_PREFIX.length) });
 }
 
 interface ProcessSettingsProps {
@@ -77,6 +75,7 @@ interface ProcessSettingsProps {
  * external provider is saved only after the person accepts the privacy notice; a model of the provider
  * already in use is saved at once, and going back to a local model too. */
 export function ProcessSettings({ process }: ProcessSettingsProps) {
+  const { t } = useT();
   const ids = useId();
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
@@ -128,7 +127,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
   if (load.status === "loading") {
     return (
       <div role="status" className="settings-loading">
-        <p className="settings-help">{text.loading}</p>
+        <p className="settings-help">{t("engines:process.loading")}</p>
         <Skeleton width="100%" height="4.5rem" radius="md" />
       </div>
     );
@@ -136,8 +135,8 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
   if (load.status === "error") {
     return (
       <div className="settings-load-error">
-        <p role="alert" className="ui-field-error">{text.loadError}</p>
-        <Button variant="secondary" onClick={fetchAll}>{text.retry}</Button>
+        <p role="alert" className="ui-field-error">{t("engines:process.loadError")}</p>
+        <Button variant="secondary" onClick={fetchAll}>{t("engines:process.retry")}</Button>
       </div>
     );
   }
@@ -155,8 +154,8 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
       return {
         id: provider.id,
         note: serves.length > 0
-          ? text.notServedBy(provider.label, copy.engines.processes[process], processList(serves))
-          : text.notServedAtAll(provider.label),
+          ? t("engines:process.notServedBy", { provider: provider.label, process: t(`engines:processes.${process}`), only: processList(serves) })
+          : t("engines:process.notServedAtAll", { provider: provider.label }),
       };
     });
   const installed = localModels.filter(
@@ -190,9 +189,9 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
     setMessage(null);
     try {
       applyState(await putChoice(null, value, saved.local_fallback));
-      setMessage(text.savedLocal);
+      setMessage(t("engines:process.savedLocal"));
     } catch (failure) {
-      setError(`${text.saveFailed} ${describeEngineError(failure)}`);
+      setError(`${t("engines:process.saveFailed")} ${describeEngineError(failure)}`);
     } finally {
       setBusy(false);
     }
@@ -204,10 +203,10 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
       const data = await getEnginePrivacyNotice(process, providerId);
       setPending({
         providerId, model, fallback, data, accepting: false,
-        error: outdated ? copy.engines.saveErrors.notice_outdated : null,
+        error: outdated ? t("engines:saveErrors.notice_outdated") : null,
       });
     } catch (failure) {
-      setError(`${text.saveFailed} ${describeEngineError(failure)}`);
+      setError(`${t("engines:process.saveFailed")} ${describeEngineError(failure)}`);
     }
   }
 
@@ -216,14 +215,14 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
       const next = await putChoice(providerId, model, fallback, noticeVersion);
       applyState(next);
       setPending(null);
-      setMessage(text.saved(text.externalName(next.provider_label ?? providerId, next.model)));
+      setMessage(t("engines:process.saved", { name: t("engines:process.externalName", { provider: next.provider_label ?? providerId, model: next.model }) }));
     } catch (failure) {
       const code = failure instanceof EnginesApiError ? failure.code : null;
       if (code === "notice_required" || code === "notice_outdated") {
         // The consent is missing or the notice changed: the person reads the current one first.
         await showNotice(providerId, model, fallback, code === "notice_outdated");
       } else if (noticeVersion === undefined) {
-        setError(`${text.saveFailed} ${describeEngineError(failure)}`);
+        setError(`${t("engines:process.saveFailed")} ${describeEngineError(failure)}`);
       } else {
         setPending((current) => current && { ...current, accepting: false, error: describeEngineError(failure) });
       }
@@ -255,9 +254,9 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
     setMessage(null);
     try {
       applyState(await putChoice(saved.provider_id, saved.model, !saved.local_fallback));
-      setMessage(text.fallbackSaved);
+      setMessage(t("engines:process.fallbackSaved"));
     } catch (failure) {
-      setError(`${text.saveFailed} ${describeEngineError(failure)}`);
+      setError(`${t("engines:process.saveFailed")} ${describeEngineError(failure)}`);
     } finally {
       setBusy(false);
     }
@@ -279,19 +278,19 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
     }
     const failed = entry?.status === "failed" || (list !== undefined && entry?.status !== "loading" && (list.manual_entry || list.models.length === 0));
     let note: string | undefined;
-    if (entry?.status === "failed") note = text.modelsFailed;
-    else if (list?.error_class) note = `${text.modelsFailed} ${copy.engines.causes[list.error_class]}`;
-    else if (entry?.status === "ready" && list && list.models.length === 0) note = text.modelsEmpty;
+    if (entry?.status === "failed") note = t("engines:process.modelsFailed");
+    else if (list?.error_class) note = `${t("engines:process.modelsFailed")} ${t(`engines:causes.${list.error_class}`)}`;
+    else if (entry?.status === "ready" && list && list.models.length === 0) note = t("engines:process.modelsEmpty");
     return {
       id: provider.id,
       label: provider.label,
-      logo: { kind: provider.kind, name: copy.engines.kinds[provider.kind].label },
+      logo: { kind: provider.kind, name: t(`engines:kinds.${provider.kind}.label`) },
       options,
       state: entry?.status ?? "loading",
       note,
       onRefresh: () => loadCatalog(provider.id, true),
       refreshing: refreshing[provider.id] === true || entry?.status === "loading",
-      refreshLabel: text.modelsRefreshLabel(provider.label),
+      refreshLabel: t("engines:process.modelsRefreshLabel", { provider: provider.label }),
       manual: failed ? { onSubmit: (model) => void chooseExternal(provider.id, model) } : undefined,
     };
   }
@@ -299,33 +298,33 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
   const localOptions: PickerOption[] = [
     {
       key: LOCAL_DEFAULT_MODEL,
-      label: text.localRecommended,
+      label: t("engines:process.localRecommended"),
       detail: defaultModel?.size ? formatBytes(defaultModel.size) : undefined,
       inUse: !savedExternal && saved.model === LOCAL_DEFAULT_MODEL,
-      tag: defaultModel?.active && saved.model !== LOCAL_DEFAULT_MODEL ? text.activeTag : undefined,
+      tag: defaultModel?.active && saved.model !== LOCAL_DEFAULT_MODEL ? t("engines:process.activeTag") : undefined,
     },
     ...installed.map((model) => {
       const key = `${LOCAL_PREFIX}${model.id}`;
       const inUse = !savedExternal && saved.model === key;
-      return { key, label: model.id, detail: formatBytes(model.size ?? 0), inUse, tag: model.active && !inUse ? text.activeTag : undefined };
+      return { key, label: model.id, detail: formatBytes(model.size ?? 0), inUse, tag: model.active && !inUse ? t("engines:process.activeTag") : undefined };
     }),
   ];
   if (!savedExternal && !localOptions.some((option) => option.key === saved.model)) {
     localOptions.push({ key: saved.model, label: saved.model.slice(LOCAL_PREFIX.length), inUse: true });
   }
-  const groups: PickerGroup[] = [{ id: "local", label: text.localGroup, options: localOptions }, ...eligible.map(groupFor)];
+  const groups: PickerGroup[] = [{ id: "local", label: t("engines:process.localGroup"), options: localOptions }, ...eligible.map(groupFor)];
 
-  const savedName = savedExternal ? text.externalName(saved.provider_label ?? "", saved.model) : localName(saved.model);
+  const savedName = savedExternal ? t("engines:process.externalName", { provider: saved.provider_label ?? "", model: saved.model }) : localName(saved.model);
   const savedKind = load.providers.find((provider) => provider.id === saved.provider_id)?.kind ?? saved.provider_kind;
   const current = savedExternal
     ? {
         title: saved.provider_label ?? "",
         detail: saved.model,
-        logo: savedKind ? { kind: savedKind, name: copy.engines.kinds[savedKind].label } : undefined,
+        logo: savedKind ? { kind: savedKind, name: t(`engines:kinds.${savedKind}.label`) } : undefined,
       }
     : saved.model === LOCAL_DEFAULT_MODEL
-      ? { title: text.localRecommended }
-      : { title: text.badgeLocal, detail: saved.model.slice(LOCAL_PREFIX.length) };
+      ? { title: t("engines:process.localRecommended") }
+      : { title: t("engines:process.badgeLocal"), detail: saved.model.slice(LOCAL_PREFIX.length) };
 
   /** Warnings that apply to sending this process to `providerId`, as the person is about to decide or has decided. */
   function warningsFor(providerId: string | null, providerName: string): string[] {
@@ -333,8 +332,8 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
     const notes: string[] = [];
     const other = AUDIO_PAIR[process];
     const otherProviderId = other ? load.status === "ready" ? load.processes.find((entry) => entry.capability === other)?.provider_id ?? null : null : null;
-    if (other && providerId === otherProviderId) notes.push(text.doubleSend(providerName, text.otherProcess[other]));
-    if (process === "diarization") notes.push(text.speakersUnvalidated);
+    if (other && providerId === otherProviderId) notes.push(t("engines:process.doubleSend", { provider: providerName, other: t(`engines:process.otherProcess.${other}`) }));
+    if (process === "diarization") notes.push(t("engines:process.speakersUnvalidated"));
     return notes;
   }
   const savedWarnings = warningsFor(saved.provider_id, saved.provider_label ?? "");
@@ -343,24 +342,24 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
 
   return (
     <div className="settings-stack engines-process">
-      <p className="settings-help">{text.help[process]}</p>
+      <p className="settings-help">{t(`engines:process.help.${process}`)}</p>
 
-      <Card className="engines-current" aria-label={text.currentTitle}>
+      <Card className="engines-current" aria-label={t("engines:process.currentTitle")}>
         <p className="engines-current-line">
-          <strong>{text.current(savedName)}</strong>
+          <strong>{t("engines:process.current", { name: savedName })}</strong>
           <StatusBadge tone={savedExternal ? "progress" : "success"}>
-            {savedExternal ? text.badgeExternal : text.badgeLocal}
+            {savedExternal ? t("engines:process.badgeExternal") : t("engines:process.badgeLocal")}
           </StatusBadge>
         </p>
         <p className="settings-help">
-          {savedExternal ? text.leaves(saved.provider_label ?? "", text.sends[process]) : text.staysHere}
+          {savedExternal ? t("engines:process.leaves", { provider: saved.provider_label ?? "", what: t(`engines:process.sends.${process}`) }) : t("engines:process.staysHere")}
         </p>
       </Card>
 
       <div className="engines-selector">
         <ModelPicker
           ref={pickerRef}
-          label={text.engineLabel}
+          label={t("engines:process.engineLabel")}
           describedBy={pickerHelpId}
           current={current}
           groups={groups}
@@ -382,13 +381,13 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
                 void chooseLocal(LOCAL_DEFAULT_MODEL);
               }}
             >
-              {text.backToLocal}
+              {t("engines:process.backToLocal")}
             </Button>
           )}
         />
-        <span id={pickerHelpId} className="settings-help">{text.engineHelp}</span>
+        <span id={pickerHelpId} className="settings-help">{t("engines:process.engineHelp")}</span>
 
-        {eligible.length === 0 && <p className="settings-help">{text.noProviders}</p>}
+        {eligible.length === 0 && <p className="settings-help">{t("engines:process.noProviders")}</p>}
         {notServed.map((entry) => (
           <p key={entry.id} className="settings-help">{entry.note}</p>
         ))}
@@ -396,7 +395,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
         {savedExternal && (
           <>
             <div className="settings-switch-row">
-              <span id={`${ids}-fallback`} className="settings-switch-label">{text.fallback}</span>
+              <span id={`${ids}-fallback`} className="settings-switch-label">{t("engines:process.fallback")}</span>
               <button
                 type="button"
                 role="switch"
@@ -410,7 +409,7 @@ export function ProcessSettings({ process }: ProcessSettingsProps) {
                 <span className="settings-switch-thumb" aria-hidden="true" />
               </button>
             </div>
-            <span id={`${ids}-fallback-help`} className="settings-help">{text.fallbackHelp}</span>
+            <span id={`${ids}-fallback-help`} className="settings-help">{t("engines:process.fallbackHelp")}</span>
           </>
         )}
 

@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
-import { copy } from "./copy/es";
 import { navigate } from "./router";
+import { t } from "./i18n";
 
 const KEY = "sauri_last_meeting_id";
 
@@ -93,7 +93,7 @@ describe("remembering the recording", () => {
     stubApi(["a"]);
     window.history.replaceState(null, "", "/meetings/ghost");
     render(<App />);
-    await screen.findByRole("region", { name: copy.library.title });
+    await screen.findByRole("region", { name: t("library:title") });
     await waitFor(() => expect(localStorage.getItem(KEY)).toBeNull());
   });
 
@@ -118,7 +118,7 @@ describe("reopening at start", () => {
     render(<App />);
     // Synchronously after the first render: already on the recording, never on the empty library.
     expect(window.location.pathname).toBe("/meetings/b");
-    expect(screen.queryByText(copy.library.selectHint)).toBeNull();
+    expect(screen.queryByText(t("library:selectHint"))).toBeNull();
     expect(replace).toHaveBeenCalledWith(null, "", "/meetings/b");
     expect(push).not.toHaveBeenCalled();
     expect(window.history.length).toBe(entries);
@@ -132,7 +132,7 @@ describe("reopening at start", () => {
     await heading("b");
     act(() => navigate({ name: "library" }));
     expect(window.location.pathname).toBe("/");
-    expect(await screen.findByText(copy.library.selectHint)).toBeVisible();
+    expect(await screen.findByText(t("library:selectHint"))).toBeVisible();
     // The browser's Back and Forward through / do not redirect either.
     window.history.back();
     await waitFor(() => expect(window.location.pathname).not.toBe("/meetings/b"));
@@ -153,7 +153,7 @@ describe("reopening at start", () => {
   it("starts at the library when nothing was explored yet", async () => {
     stubApi(["a"]);
     render(<App />);
-    expect(await screen.findByText(copy.library.selectHint)).toBeVisible();
+    expect(await screen.findByText(t("library:selectHint"))).toBeVisible();
     expect(window.location.pathname).toBe("/");
   });
 
@@ -162,7 +162,7 @@ describe("reopening at start", () => {
     localStorage.setItem(KEY, "b");
     window.history.replaceState(null, "", path);
     render(<App />);
-    await screen.findByRole("navigation", { name: copy.shell.navLabel });
+    await screen.findByRole("navigation", { name: t("shell:navLabel") });
     expect(window.location.pathname).toBe(path);
     act(() => navigate({ name: "library" }));
     expect(window.location.pathname).toBe("/");
@@ -173,10 +173,10 @@ describe("reopening at start", () => {
     stubApi(["a"]);
     vi.stubGlobal("localStorage", createLocalStorage({ [KEY]: "a" }));
     render(<App />);
-    expect(screen.getByRole("heading", { name: copy.login.title })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(copy.login.emailLabel), { target: { value: "owner@example.test" } });
-    fireEvent.change(screen.getByLabelText(copy.login.passwordLabel), { target: { value: "synthetic-password" } });
-    fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
+    expect(screen.getByRole("heading", { name: t("login:title") })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(t("login:emailLabel")), { target: { value: "owner@example.test" } });
+    fireEvent.change(screen.getByLabelText(t("login:passwordLabel")), { target: { value: "synthetic-password" } });
+    fireEvent.click(screen.getByRole("button", { name: t("login:submit") }));
     await heading("a");
     expect(window.location.pathname).toBe("/meetings/a");
   });
@@ -187,7 +187,7 @@ describe("reopening at start", () => {
     const storage = createLocalStorage();
     vi.stubGlobal("localStorage", { ...storage, getItem: (key: string) => (key === "sauri_token" ? "synthetic-token" : blocked()), setItem: blocked, removeItem: blocked });
     render(<App />);
-    expect(await screen.findByText(copy.library.selectHint)).toBeVisible();
+    expect(await screen.findByText(t("library:selectHint"))).toBeVisible();
     expect(window.location.pathname).toBe("/");
     act(() => navigate({ name: "meeting", meetingId: "a" }));
     await heading("a");
@@ -201,8 +201,8 @@ describe("a recording that is gone", () => {
     render(<App />);
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(localStorage.getItem(KEY)).toBeNull();
-    expect(await screen.findByText(copy.library.selectHint)).toBeVisible();
-    expect(screen.getByRole("heading", { level: 1, name: copy.library.title })).toBeVisible();
+    expect(await screen.findByText(t("library:selectHint"))).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: t("library:title") })).toBeVisible();
   });
 
   it("clears the key and shows the library when the list no longer has it", async () => {
@@ -211,7 +211,7 @@ describe("a recording that is gone", () => {
     render(<App />);
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     await waitFor(() => expect(localStorage.getItem(KEY)).toBeNull());
-    expect(await screen.findByText(copy.library.selectHint)).toBeVisible();
+    expect(await screen.findByText(t("library:selectHint"))).toBeVisible();
   });
 
   it("does not redirect away from a deep link to a missing recording, but forgets it", async () => {
@@ -231,7 +231,7 @@ describe("Biblioteca from another section", () => {
     localStorage.setItem(KEY, "a");
     window.history.replaceState(null, "", "/settings/apariencia");
     render(<App />);
-    const link = await screen.findByRole("link", { name: copy.shell.library });
+    const link = await screen.findByRole("link", { name: t("shell:library") });
     expect(link).toHaveAttribute("href", "/meetings/a");
     fireEvent.click(link);
     expect(window.location.pathname).toBe("/meetings/a");
@@ -241,7 +241,7 @@ describe("Biblioteca from another section", () => {
   it("goes to the library when nothing was explored", async () => {
     window.history.replaceState(null, "", "/settings/apariencia");
     render(<App />);
-    const link = await screen.findByRole("link", { name: copy.shell.library });
+    const link = await screen.findByRole("link", { name: t("shell:library") });
     expect(link).toHaveAttribute("href", "/");
     fireEvent.click(link);
     expect(window.location.pathname).toBe("/");

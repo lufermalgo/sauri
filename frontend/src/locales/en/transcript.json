@@ -1,0 +1,8 @@
+{
+  "unknownSpeaker": "Speaker ?",
+  "legacyUnknownSpeaker": "Speaker N",
+  "ambiguous": "Uncertain speaker attribution",
+  "numberedSpeaker": "Speaker {{number}}",
+  "playAt": "Play from this turn ({{time}})",
+  "play": "Play turn"
+}

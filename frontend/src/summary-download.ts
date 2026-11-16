@@ -1,13 +1,13 @@
 import type { MeetingSummary } from "@sauri/shared-types";
 import { getMeetingSummary } from "./api";
-import { meeting as text } from "./copy/meeting";
 import { titleToFilename } from "./download-filename";
 import { summaryPlainText } from "./summary-export";
 import { saveTextFile } from "./transcript-download";
+import { t } from "./i18n";
 
 /** `<title> - resumen.txt`: distinct from the transcript's `<title>.txt` so both can sit in one folder. */
 export function summaryFilename(meetingId: string, title: string | null | undefined): string {
-  return titleToFilename(title, "txt", text.summaryFilenameSuffix) ?? text.summaryFilename(meetingId);
+  return titleToFilename(title, "txt", t("meeting:summaryFilenameSuffix")) ?? t("meeting:summaryFilename", { id: meetingId });
 }
 
 export class NoSummaryError extends Error {

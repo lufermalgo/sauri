@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App } from "./App";
 import * as api from "./api";
-import { copy } from "./copy/es";
+import { t } from "./i18n";
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
@@ -36,8 +36,8 @@ function openPortal() {
 }
 
 function enterCredentials() {
-  fireEvent.change(screen.getByLabelText(copy.login.emailLabel), { target: { value: credentials.email } });
-  fireEvent.change(screen.getByLabelText(copy.login.passwordLabel), { target: { value: credentials.password } });
+  fireEvent.change(screen.getByLabelText(t("login:emailLabel")), { target: { value: credentials.email } });
+  fireEvent.change(screen.getByLabelText(t("login:passwordLabel")), { target: { value: credentials.password } });
 }
 
 function deferred<T>() {
@@ -65,9 +65,9 @@ describe("login and local session gate", () => {
   it("shows login before mounting the authenticated app when no token exists", () => {
     render(<App />);
 
-    expect(screen.getByLabelText(copy.login.emailLabel)).toBeTruthy();
-    expect(screen.getByLabelText(copy.login.passwordLabel)).toBeTruthy();
-    expect(screen.getByRole("button", { name: copy.login.submit })).toBeTruthy();
+    expect(screen.getByLabelText(t("login:emailLabel"))).toBeTruthy();
+    expect(screen.getByLabelText(t("login:passwordLabel"))).toBeTruthy();
+    expect(screen.getByRole("button", { name: t("login:submit") })).toBeTruthy();
   });
 
   it("keeps the portal hidden while login is pending and prevents duplicate submission", async () => {
@@ -75,7 +75,7 @@ describe("login and local session gate", () => {
     vi.mocked(api.login).mockReturnValue(pendingLogin.promise);
     render(<App />);
     enterCredentials();
-    const submit = screen.getByRole("button", { name: copy.login.submit });
+    const submit = screen.getByRole("button", { name: t("login:submit") });
 
     fireEvent.click(submit);
     expect(api.login).toHaveBeenCalledTimes(1);
@@ -98,17 +98,17 @@ describe("login and local session gate", () => {
     });
     render(<App />);
     enterCredentials();
-    fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("login:submit") }));
 
     await screen.findByText("Meeting list");
     expect(localStorage.getItem("sauri_token")).toBe("synthetic-access-token");
     expect(localStorage.length).toBe(1);
     expect(localStorage.getItem("synthetic-password")).toBeNull();
-    expect(screen.queryByLabelText(copy.login.passwordLabel)).toBeNull();
+    expect(screen.queryByLabelText(t("login:passwordLabel"))).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.profile.fallbackName }));
-    fireEvent.click(screen.getByRole("menuitem", { name: copy.shell.logout }));
-    expect(screen.getByLabelText(copy.login.passwordLabel)).toHaveProperty("value", "");
+    fireEvent.click(screen.getByRole("button", { name: t("shell:profile.fallbackName") }));
+    fireEvent.click(screen.getByRole("menuitem", { name: t("shell:logout") }));
+    expect(screen.getByLabelText(t("login:passwordLabel"))).toHaveProperty("value", "");
   });
 
   it.each([
@@ -118,11 +118,11 @@ describe("login and local session gate", () => {
     vi.mocked(api.login).mockImplementation(response);
     render(<App />);
     enterCredentials();
-    fireEvent.click(screen.getByRole("button", { name: copy.login.submit }));
+    fireEvent.click(screen.getByRole("button", { name: t("login:submit") }));
 
     expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.getByLabelText(copy.login.emailLabel)).toBeTruthy();
-    expect(screen.getByLabelText(copy.login.passwordLabel)).toHaveProperty("value", credentials.password);
+    expect(screen.getByLabelText(t("login:emailLabel"))).toBeTruthy();
+    expect(screen.getByLabelText(t("login:passwordLabel"))).toHaveProperty("value", credentials.password);
     expect(localStorage.getItem("sauri_token")).toBeNull();
     expect(localStorage.getItem("synthetic-password")).toBeNull();
   });
@@ -133,8 +133,8 @@ describe("login and local session gate", () => {
     openPortal();
 
     expect(screen.getByText("Meeting list")).toBeTruthy();
-    expect(screen.getByRole("button", { name: copy.shell.profile.fallbackName })).toBeTruthy();
-    expect(screen.queryByLabelText(copy.login.passwordLabel)).toBeNull();
+    expect(screen.getByRole("button", { name: t("shell:profile.fallbackName") })).toBeTruthy();
+    expect(screen.queryByLabelText(t("login:passwordLabel"))).toBeNull();
   });
 
   it("logs out locally by removing only sauri_token without making a server request", async () => {
@@ -144,10 +144,10 @@ describe("login and local session gate", () => {
     vi.stubGlobal("fetch", fetchMock);
     openPortal();
 
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.profile.fallbackName }));
-    fireEvent.click(screen.getByRole("menuitem", { name: copy.shell.logout }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:profile.fallbackName") }));
+    fireEvent.click(screen.getByRole("menuitem", { name: t("shell:logout") }));
 
-    await waitFor(() => expect(screen.getByLabelText(copy.login.emailLabel)).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText(t("login:emailLabel"))).toBeTruthy());
     expect(localStorage.getItem("sauri_token")).toBeNull();
     expect(localStorage.getItem("unrelated_preference")).toBe("keep-me");
     expect(fetchMock).not.toHaveBeenCalled();

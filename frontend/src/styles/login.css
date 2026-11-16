@@ -152,3 +152,10 @@
     font-size: var(--ds-text-xl);
   }
 }
+
+/* Language choice under the form: usable before signing in. */
+.login-language {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--ds-space-6);
+}

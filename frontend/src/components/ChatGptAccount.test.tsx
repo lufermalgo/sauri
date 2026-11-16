@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { EngineAccount, EngineKindInfo, EngineModelList, EngineProcess, EngineProvider } from "@sauri/shared-types";
-import { copy } from "../copy/es";
+import { t } from "../i18n";
+import { processList } from "./settings/engineLabels";
 import { EnginesSettings } from "./settings/EnginesSettings";
 
-const text = copy.engines;
-const account = text.account;
+const PLAN = "ChatGPT (plan)";
+const NAME = { name: PLAN };
 
 const PLAN_KIND: EngineKindInfo = {
   kind: "chatgpt_plan",
@@ -106,7 +107,7 @@ async function renderReady(initial: EngineProvider[], accountState: EngineAccoun
   backend = fakeBackend(initial, { account: accountState, polls, models: PLAN_MODELS });
   vi.stubGlobal("fetch", backend.handler);
   render(<EnginesSettings />);
-  await waitFor(() => expect(screen.getByRole("button", { name: text.add })).toBeEnabled());
+  await waitFor(() => expect(screen.getByRole("button", { name: t("engines:add") })).toBeEnabled());
 }
 
 const card = (name: string) => screen.getByRole("heading", { level: 4, name }).closest("section")!;
@@ -131,29 +132,29 @@ afterEach(() => {
 describe("ChatGPT (plan) card", () => {
   it("offers the connect button, says what it serves and that it needs no key", async () => {
     await renderReady([], DISCONNECTED);
-    const tile = within(card(text.kinds.chatgpt_plan.label));
-    expect(tile.getByText(account.unconfigured, { exact: false })).toBeInTheDocument();
-    expect(tile.getByRole("button", { name: account.connectLabel(text.kinds.chatgpt_plan.label) })).toHaveTextContent(account.connect);
-    expect(tile.queryByText(text.card.key)).toBeNull();
+    const tile = within(card(PLAN));
+    expect(tile.getByText(t("engines:account.unconfigured"), { exact: false })).toBeInTheDocument();
+    expect(tile.getByRole("button", { name: t("engines:account.connectLabel", NAME) })).toHaveTextContent(t("engines:account.connect"));
+    expect(tile.queryByText(t("engines:card.key"))).toBeNull();
   });
 
   it("shows the connected account, what it serves, its models and the disconnect button", async () => {
     await renderReady([planProvider()], CONNECTED);
     const tile = within(card("ChatGPT (plan)"));
-    expect(await tile.findByText(account.connectedAs("owner@example.com"))).toBeInTheDocument();
-    expect(tile.getByText(text.card.serves(text.processes.summary))).toBeInTheDocument();
-    expect(await tile.findByText(text.card.modelsCount(1))).toBeInTheDocument();
-    expect(tile.getByRole("button", { name: account.disconnectLabel("ChatGPT (plan)") })).toBeInTheDocument();
-    expect(tile.getByText(account.unofficial)).toBeInTheDocument();
+    expect(await tile.findByText(t("engines:account.connectedAs", { who: "owner@example.com" }))).toBeInTheDocument();
+    expect(tile.getByText(t("engines:card.serves", { list: processList(["summary"]) }))).toBeInTheDocument();
+    expect(await tile.findByText(t("engines:card.modelsCount", { count: 1 }))).toBeInTheDocument();
+    expect(tile.getByRole("button", { name: t("engines:account.disconnectLabel", NAME) })).toBeInTheDocument();
+    expect(tile.getByText(t("engines:account.unofficial"))).toBeInTheDocument();
     expect(document.body.innerHTML).not.toMatch(/access_token|refresh_token/);
   });
 
   it("while signed out it still says what it serves and offers to connect", async () => {
     await renderReady([planProvider()], { ...DISCONNECTED, error: "session_expired" });
     const tile = within(card("ChatGPT (plan)"));
-    expect(await tile.findByText(account.errors.session_expired)).toBeInTheDocument();
-    expect(tile.getByText(text.card.serves(text.processes.summary))).toBeInTheDocument();
-    expect(tile.getByRole("button", { name: account.connectLabel("ChatGPT (plan)") })).toBeEnabled();
+    expect(await tile.findByText(t("engines:account.errors.session_expired"))).toBeInTheDocument();
+    expect(tile.getByText(t("engines:card.serves", { list: processList(["summary"]) }))).toBeInTheDocument();
+    expect(tile.getByRole("button", { name: t("engines:account.connectLabel", NAME) })).toBeEnabled();
   });
 });
 
@@ -161,10 +162,10 @@ describe("signing in", () => {
   it("creates the provider, shows the code and a button that opens the page in a new tab, polls until connected", async () => {
     await renderReady([], DISCONNECTED, [PENDING, CONNECTED]);
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.click(within(card(text.kinds.chatgpt_plan.label)).getByRole("button", { name: account.connectLabel(text.kinds.chatgpt_plan.label) }));
+    fireEvent.click(within(card(PLAN)).getByRole("button", { name: t("engines:account.connectLabel", NAME) }));
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByText("ABCD-1234")).toBeInTheDocument();
-    const open = within(dialog).getByRole("link", { name: account.dialog.openPage });
+    const open = within(dialog).getByRole("link", { name: t("engines:account.dialog.openPage") });
     expect(open).toHaveAttribute("href", "https://auth.openai.com/codex/device");
     expect(open).toHaveAttribute("target", "_blank");
     expect(open).toHaveAttribute("rel", expect.stringContaining("noopener"));
@@ -179,31 +180,31 @@ describe("signing in", () => {
     await act(() => vi.advanceTimersByTimeAsync(5000));
     await waitFor(() => expect(polls()).toBe(1));
     await act(() => vi.advanceTimersByTimeAsync(5000));
-    expect(await within(dialog).findByText(account.dialog.connected("owner@example.com"))).toBeInTheDocument();
+    expect(await within(dialog).findByText(t("engines:account.dialog.connected", { who: "owner@example.com" }))).toBeInTheDocument();
     await act(() => vi.advanceTimersByTimeAsync(20000));
     expect(polls()).toBe(2); // polling stopped once connected
-    fireEvent.click(within(dialog).getByRole("button", { name: account.dialog.done }));
-    expect(await within(card("ChatGPT (plan)")).findByText(account.connectedAs("owner@example.com"))).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: t("engines:account.dialog.done") }));
+    expect(await within(card("ChatGPT (plan)")).findByText(t("engines:account.connectedAs", { who: "owner@example.com" }))).toBeInTheDocument();
   });
 
   it("says why when the code runs out and offers another one", async () => {
     await renderReady([planProvider()], DISCONNECTED, [{ ...DISCONNECTED, error: "code_expired" }]);
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.click(within(card("ChatGPT (plan)")).getByRole("button", { name: account.connectLabel("ChatGPT (plan)") }));
+    fireEvent.click(within(card("ChatGPT (plan)")).getByRole("button", { name: t("engines:account.connectLabel", NAME) }));
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("ABCD-1234");
     await act(() => vi.advanceTimersByTimeAsync(5000));
-    expect(await within(dialog).findByText(account.errors.code_expired)).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: account.dialog.retry })).toBeInTheDocument();
+    expect(await within(dialog).findByText(t("engines:account.errors.code_expired"))).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: t("engines:account.dialog.retry") })).toBeInTheDocument();
   });
 
   it("stops asking when the dialog is closed", async () => {
     await renderReady([planProvider()], DISCONNECTED, [PENDING]);
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fireEvent.click(within(card("ChatGPT (plan)")).getByRole("button", { name: account.connectLabel("ChatGPT (plan)") }));
+    fireEvent.click(within(card("ChatGPT (plan)")).getByRole("button", { name: t("engines:account.connectLabel", NAME) }));
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("ABCD-1234");
-    fireEvent.click(within(dialog).getByRole("button", { name: account.dialog.cancel }));
+    fireEvent.click(within(dialog).getByRole("button", { name: t("engines:account.dialog.cancel") }));
     await act(() => vi.advanceTimersByTimeAsync(30000));
     expect(backend.calls.filter((call) => call.path.endsWith("/account/poll"))).toHaveLength(0);
   });
@@ -213,13 +214,13 @@ describe("disconnecting", () => {
   it("asks first, then forgets the account and says which processes went back to local", async () => {
     await renderReady([planProvider({ used_by: ["summary"] })], CONNECTED);
     const tile = within(card("ChatGPT (plan)"));
-    fireEvent.click(await tile.findByRole("button", { name: account.disconnectLabel("ChatGPT (plan)") }));
+    fireEvent.click(await tile.findByRole("button", { name: t("engines:account.disconnectLabel", NAME) }));
     const confirm = within(await screen.findByRole("dialog"));
-    expect(confirm.getByText(account.disconnectDialog.reverts(text.processes.summary))).toBeInTheDocument();
-    fireEvent.click(confirm.getByRole("button", { name: account.disconnectDialog.confirm }));
+    expect(confirm.getByText(t("engines:account.disconnectDialog.reverts", { list: processList(["summary"]) }))).toBeInTheDocument();
+    fireEvent.click(confirm.getByRole("button", { name: t("engines:account.disconnectDialog.confirm") }));
     expect(
-      await screen.findByText(account.disconnectedReverted("ChatGPT (plan)", text.processes.summary)),
+      await screen.findByText(t("engines:account.disconnectedReverted", { name: PLAN, list: processList(["summary"]) })),
     ).toBeInTheDocument();
-    expect(await tile.findByText(account.notConnected)).toBeInTheDocument();
+    expect(await tile.findByText(t("engines:account.notConnected"))).toBeInTheDocument();
   });
 });

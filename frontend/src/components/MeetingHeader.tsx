@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { deleteMeeting, renameMeeting } from "../api";
 import { notifyLibraryChanged } from "../library-events";
-import { meeting as text } from "../copy/meeting";
 import { navigate } from "../router";
 import { stageLabel, type DetectedStage } from "../processing-estimate";
 import { ArrowLeft, Ellipsis, Pencil, Trash2, UsersRound } from "lucide-react";
 import { Button, ConfirmDialog, Icon, Popover, StatusBadge, TextField, Menu, MenuItem } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
+import { useT } from "../i18n";
+import { formatDate } from "../i18n/format";
 
 interface MeetingHeaderProps extends MeetingDownloadsProps {
   title: string | null;
@@ -31,6 +32,7 @@ export interface SpeakerReviewEntry {
 }
 
 export function MeetingHeader({ title, createdAt, stage, processState, speakerCount, speakerReview, onBack, ...downloads }: MeetingHeaderProps) {
+  const { t } = useT();
   const duration = downloads.manifest?.duration_seconds;
   const totalSeconds = duration === undefined ? null : Math.max(0, Math.floor(duration));
   const durationLabel = totalSeconds === null ? null : totalSeconds >= 3600
@@ -45,7 +47,7 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
   const [error, setError] = useState<string | null>(null);
   // A newer title from outside (renamed in the library list) replaces the one saved here.
   useEffect(() => setRenamedTitle(null), [title]);
-  const currentTitle = renamedTitle ?? title ?? text.untitled;
+  const currentTitle = renamedTitle ?? title ?? t("meeting:untitled");
   const validTitle = draft.trim().length > 0 && draft.trim().length <= 512;
 
   async function save() {
@@ -59,7 +61,7 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
       setEditing(false);
       notifyLibraryChanged();
     } catch {
-      setError(text.renameFailed);
+      setError(t("meeting:renameFailed"));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -76,7 +78,7 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
       navigate({ name: "library" });
       notifyLibraryChanged();
     } catch {
-      setError(text.deleteFailed);
+      setError(t("meeting:deleteFailed"));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -87,14 +89,14 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
   return <header className="meeting-header" aria-busy={busy || undefined}>
     <div className="meeting-heading-row">
       {onBack && <button type="button" className="ui-icon-button ui-icon-button--ghost meeting-back"
-        aria-label={text.backToList} onClick={onBack}><Icon icon={ArrowLeft} /></button>}
+        aria-label={t("meeting:backToList")} onClick={onBack}><Icon icon={ArrowLeft} /></button>}
       <div className="meeting-heading">
         {editing ? <form className="meeting-rename" onSubmit={event => { event.preventDefault(); void save(); }}>
-          <TextField label={text.titleLabel} value={draft} autoFocus disabled={busy}
+          <TextField label={t("meeting:titleLabel")} value={draft} autoFocus disabled={busy}
             onChange={event => setDraft(event.target.value)} />
           <div className="meeting-actions">
-            <Button variant="primary" size="sm" type="submit" disabled={!validTitle || busy}>{text.save}</Button>
-            <Button variant="ghost" size="sm" disabled={busy} onClick={() => { setEditing(false); setError(null); }}>{text.cancel}</Button>
+            <Button variant="primary" size="sm" type="submit" disabled={!validTitle || busy}>{t("meeting:save")}</Button>
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => { setEditing(false); setError(null); }}>{t("meeting:cancel")}</Button>
           </div>
         </form> : <h1 title={currentTitle}>{currentTitle}</h1>}
         <div className="meeting-details">
@@ -102,40 +104,41 @@ export function MeetingHeader({ title, createdAt, stage, processState, speakerCo
           {stageLabel(stage, processState)}
         </StatusBadge>}
         {createdAt && <time className="meeting-date" dateTime={createdAt}>
-          {new Date(createdAt).toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" })}
+          {formatDate(new Date(createdAt), { day: "numeric", month: "long", year: "numeric" })}
         </time>}
         {durationLabel !== null && <span className="meeting-duration">{durationLabel}</span>}
-        {speakerCount !== undefined && <span>{text.speakerCount(speakerCount)}</span>}
+        {speakerCount !== undefined && <span>{t("meeting:speakerCount", { count: speakerCount })}</span>}
         </div>
       </div>
       <div className="meeting-actions">
-        {speakerReview && <Popover className="meeting-speakers" label={text.speakersButton(speakerReview.pendingCount)}
-          panelLabel={text.speakersPanel} triggerClassName={`ui-icon-button ui-icon-button--ghost${
+        {speakerReview && <Popover className="meeting-speakers" label={speakerReview.pendingCount > 0
+          ? t("meeting:speakersButtonPending", { count: speakerReview.pendingCount }) : t("meeting:speakersButton")}
+          panelLabel={t("meeting:speakersPanel")} triggerClassName={`ui-icon-button ui-icon-button--ghost${
             speakerReview.pendingCount > 0 ? " ui-icon-button--alert" : ""}`}
           trigger={<Icon icon={UsersRound} />}>
           {close => <>
             <p className="meeting-speakers-message">{speakerReview.pendingCount > 0
-              ? text.pendingSpeakers(speakerReview.pendingCount)
-              : speakerReview.hasUnnamed ? text.speakersSomeUnnamed : text.speakersAllNamed}</p>
+              ? t("meeting:pendingSpeakers", { count: speakerReview.pendingCount })
+              : speakerReview.hasUnnamed ? t("meeting:speakersSomeUnnamed") : t("meeting:speakersAllNamed")}</p>
             <Button variant="secondary" size="sm" onClick={() => { close(); speakerReview.onReview(); }}>
-              {speakerReview.pendingCount > 0 ? text.reviewSpeakers : text.editSpeakers}</Button>
+              {speakerReview.pendingCount > 0 ? t("meeting:reviewSpeakers") : t("meeting:editSpeakers")}</Button>
           </>}
         </Popover>}
         <MeetingDownloads {...downloads} title={renamedTitle ?? title} />
-        <Menu label={text.moreActions} tooltip trigger={<Icon icon={Ellipsis} />}
+        <Menu label={t("meeting:moreActions")} tooltip trigger={<Icon icon={Ellipsis} />}
           triggerClassName="ui-icon-button ui-icon-button--quiet">
           {!editing && <MenuItem disabled={busy} onSelect={() => {
             setDraft(renamedTitle ?? title ?? ""); setEditing(true); setError(null);
-          }}><Icon icon={Pencil} />{text.rename}</MenuItem>}
+          }}><Icon icon={Pencil} />{t("meeting:rename")}</MenuItem>}
           <MenuItem tone="danger" disabled={busy || editing}
-            onSelect={() => { setConfirming(true); setError(null); }}><Icon icon={Trash2} />{text.deleteRecording}</MenuItem>
+            onSelect={() => { setConfirming(true); setError(null); }}><Icon icon={Trash2} />{t("meeting:deleteRecording")}</MenuItem>
         </Menu>
       </div>
     </div>
-    {busy && <p role="status">{confirming ? text.deleting : text.saving}</p>}
+    {busy && <p role="status">{confirming ? t("meeting:deleting") : t("meeting:saving")}</p>}
     {error && <p role="alert" className="meeting-error">{error}</p>}
-    {confirming && <ConfirmDialog title={text.deleteTitle} body={text.deleteBody}
-      confirmLabel={text.delete} cancelLabel={text.cancel} onConfirm={() => { void remove(); }}
+    {confirming && <ConfirmDialog title={t("meeting:deleteTitle")} body={t("meeting:deleteBody")}
+      confirmLabel={t("meeting:delete")} cancelLabel={t("meeting:cancel")} onConfirm={() => { void remove(); }}
       onCancel={() => { if (!pending.current) setConfirming(false); }} />}
   </header>;
 }

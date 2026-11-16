@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
-import { meeting as text } from "./copy/meeting";
 import { EmptyTranscriptError, downloadMeetingTranscript, saveTextFile, transcriptFilename } from "./transcript-download";
+import { t } from "./i18n";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -40,8 +40,8 @@ describe("saveTextFile", () => {
 describe("transcriptFilename", () => {
   it("uses the title, falling back to a name from the id", () => {
     expect(transcriptFilename("m1", "Weekly: sync?")).toBe("Weekly sync.txt");
-    expect(transcriptFilename("m1", "  ")).toBe(text.transcriptFilename("m1"));
-    expect(transcriptFilename("m1", null)).toBe(text.transcriptFilename("m1"));
+    expect(transcriptFilename("m1", "  ")).toBe(t("meeting:transcriptFilename", { id: "m1" }));
+    expect(transcriptFilename("m1", null)).toBe(t("meeting:transcriptFilename", { id: "m1" }));
   });
 });
 

@@ -10,7 +10,7 @@ import { MeetingOrigin, ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { LibraryWorkspace, WORKSPACE_WIDE_QUERY } from "./LibraryWorkspace";
 import * as api from "../api";
-import { copy } from "../copy/es";
+import { t } from "../i18n";
 
 vi.mock("../api", () => ({
   getMeeting: vi.fn(),
@@ -65,18 +65,18 @@ describe("LibraryWorkspace on a wide screen", () => {
   it("renders the list pane and the detail pane together when a meeting is open", async () => {
     mockViewport(true);
     render(<LibraryWorkspace meetingId="b" />);
-    const list = await screen.findByRole("region", { name: copy.library.title });
+    const list = await screen.findByRole("region", { name: t("library:title") });
     expect(await screen.findByRole("heading", { level: 1, name: "Client interview" })).toBeVisible();
     expect(list.closest(".workspace")).toHaveAttribute("data-layout", "split");
     expect(document.querySelector(".workspace-detail .meeting-view")).not.toBeNull();
     // The list pane stays beside the detail, so the detail has no back button.
-    expect(screen.queryByRole("button", { name: copy.meeting.backToList })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t("meeting:backToList") })).not.toBeInTheDocument();
   });
 
   it("marks the open recording in the list and keeps one h1 for the screen", async () => {
     mockViewport(true);
     render(<LibraryWorkspace meetingId="b" />);
-    const list = await screen.findByRole("region", { name: copy.library.title });
+    const list = await screen.findByRole("region", { name: t("library:title") });
     const rows = (await within(list).findAllByRole("button", { name: /Weekly sync|Client interview/ }))
       .filter((row) => row.classList.contains("library-item"));
     const selected = rows.filter((row) => row.getAttribute("aria-current") === "true");
@@ -90,7 +90,7 @@ describe("LibraryWorkspace on a wide screen", () => {
   it("opens a recording from the list without leaving the workspace", async () => {
     mockViewport(true);
     render(<LibraryWorkspace />);
-    const list = await screen.findByRole("region", { name: copy.library.title });
+    const list = await screen.findByRole("region", { name: t("library:title") });
     const row = (await within(list).findAllByRole("button", { name: /Weekly sync/ }))
       .find((button) => button.classList.contains("library-item"));
     fireEvent.click(row as HTMLElement);
@@ -100,21 +100,21 @@ describe("LibraryWorkspace on a wide screen", () => {
   it("shows a quiet hint in the detail pane when nothing is selected", async () => {
     mockViewport(true);
     render(<LibraryWorkspace />);
-    await screen.findByRole("region", { name: copy.library.title });
-    expect(screen.getByText(copy.library.selectHint)).toBeVisible();
+    await screen.findByRole("region", { name: t("library:title") });
+    expect(screen.getByText(t("library:selectHint"))).toBeVisible();
     expect(document.querySelector(".meeting-view")).toBeNull();
     // With nothing open the list owns the only h1.
-    expect(screen.getByRole("heading", { level: 1, name: copy.library.title })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: t("library:title") })).toBeVisible();
   });
 
   it("gives each pane its own header strip", async () => {
     mockViewport(true);
     render(<LibraryWorkspace meetingId="b" />);
-    const list = await screen.findByRole("region", { name: copy.library.title });
+    const list = await screen.findByRole("region", { name: t("library:title") });
     await screen.findByRole("heading", { level: 1, name: "Client interview" });
-    expect(list.querySelector(":scope > .ui-pane-header .ui-pane-title")).toHaveTextContent(copy.library.title);
+    expect(list.querySelector(":scope > .ui-pane-header .ui-pane-title")).toHaveTextContent(t("library:title"));
     expect(within(list.querySelector(":scope > .ui-pane-header") as HTMLElement)
-      .getByRole("button", { name: copy.library.upload })).toBeVisible();
+      .getByRole("button", { name: t("library:upload") })).toBeVisible();
     expect(document.querySelector(".workspace-detail > .meeting-view > .meeting-header")).not.toBeNull();
   });
 });
@@ -124,24 +124,24 @@ describe("LibraryWorkspace on a narrow screen", () => {
     mockViewport(false);
     render(<LibraryWorkspace meetingId="b" />);
     expect(await screen.findByRole("heading", { level: 1, name: "Client interview" })).toBeVisible();
-    expect(screen.queryByRole("region", { name: copy.library.title })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: t("library:title") })).not.toBeInTheDocument();
     expect(document.querySelector(".workspace")).toHaveAttribute("data-layout", "single");
-    expect(screen.getByRole("button", { name: copy.meeting.backToList })).toBeVisible();
+    expect(screen.getByRole("button", { name: t("meeting:backToList") })).toBeVisible();
   });
 
   it("goes back to the list route from the back button", async () => {
     mockViewport(false);
     window.history.replaceState(null, "", "/meetings/b");
     render(<LibraryWorkspace meetingId="b" />);
-    fireEvent.click(await screen.findByRole("button", { name: copy.meeting.backToList }));
+    fireEvent.click(await screen.findByRole("button", { name: t("meeting:backToList") }));
     expect(window.location.pathname).toBe("/");
   });
 
   it("shows only the list, full width and without the hint, when nothing is open", async () => {
     mockViewport(false);
     render(<LibraryWorkspace />);
-    await screen.findByRole("region", { name: copy.library.title });
-    expect(screen.queryByText(copy.library.selectHint)).not.toBeInTheDocument();
+    await screen.findByRole("region", { name: t("library:title") });
+    expect(screen.queryByText(t("library:selectHint"))).not.toBeInTheDocument();
     expect(document.querySelector(".workspace-detail")).toBeNull();
   });
 });

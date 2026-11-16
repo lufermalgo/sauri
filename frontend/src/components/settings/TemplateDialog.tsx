@@ -2,8 +2,8 @@ import { useId, useState } from "react";
 import type { FormEvent } from "react";
 import { createTemplate, updateTemplate } from "../../api";
 import type { SummaryTemplate, TemplateCategory, TemplateInput } from "../../api";
-import { copy } from "../../copy/es";
 import { Button, Dialog, TextField } from "../ui";
+import { t, useT } from "../../i18n";
 
 /** Same limit as the API schema (`TemplateCreate.name`). */
 const NAME_MAX_LENGTH = 128;
@@ -21,16 +21,16 @@ type FieldErrors = { name?: string; instructions?: string };
 function validate(name: string, instructions: string): FieldErrors {
   const errors: FieldErrors = {};
   const trimmed = name.trim();
-  if (!trimmed) errors.name = copy.settings.templateDialog.nameRequired;
-  else if (trimmed.length > NAME_MAX_LENGTH) errors.name = copy.settings.templateDialog.nameTooLong;
-  if (!instructions.trim()) errors.instructions = copy.settings.templateDialog.instructionsRequired;
+  if (!trimmed) errors.name = t("settings:templateDialog.nameRequired");
+  else if (trimmed.length > NAME_MAX_LENGTH) errors.name = t("settings:templateDialog.nameTooLong");
+  if (!instructions.trim()) errors.instructions = t("settings:templateDialog.instructionsRequired");
   return errors;
 }
 
 /** Creates or edits a template. Only the fields that changed are sent, so an untouched
  * instructions text never advances the template version. */
 export function TemplateDialog({ template, categories, onClose, onSaved }: TemplateDialogProps) {
-  const text = copy.settings.templateDialog;
+  const { t } = useT();
   const ids = useId();
   const [name, setName] = useState(template?.name ?? "");
   const [categoryId, setCategoryId] = useState(template?.categoryId ?? "");
@@ -75,34 +75,34 @@ export function TemplateDialog({ template, categories, onClose, onSaved }: Templ
 
   return (
     <Dialog
-      title={template ? text.editTitle : text.createTitle}
-      closeLabel={text.close}
+      title={template ? t("settings:templateDialog.editTitle") : t("settings:templateDialog.createTitle")}
+      closeLabel={t("settings:templateDialog.close")}
       onClose={saving ? () => undefined : onClose}
     >
       <form className="settings-form" onSubmit={submit} noValidate>
         <TextField
-          label={text.name}
+          label={t("settings:templateDialog.name")}
           value={name}
           error={errors.name}
           onChange={(event) => setName(event.target.value)}
           autoComplete="off"
         />
         <div className="ui-text-field">
-          <label htmlFor={categoryField}>{text.category}</label>
+          <label htmlFor={categoryField}>{t("settings:templateDialog.category")}</label>
           <select
             id={categoryField}
             className="ui-input"
             value={categoryId}
             onChange={(event) => setCategoryId(event.target.value)}
           >
-            <option value="">{copy.settings.summaries.uncategorized}</option>
+            <option value="">{t("settings:summaries.uncategorized")}</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>{category.name}</option>
             ))}
           </select>
         </div>
         <div className="ui-text-field">
-          <label htmlFor={instructionsId}>{text.instructions}</label>
+          <label htmlFor={instructionsId}>{t("settings:templateDialog.instructions")}</label>
           <textarea
             id={instructionsId}
             className="ui-input settings-textarea"
@@ -112,16 +112,16 @@ export function TemplateDialog({ template, categories, onClose, onSaved }: Templ
             aria-describedby={errors.instructions ? `${instructionsHelpId} ${instructionsErrorId}` : instructionsHelpId}
             onChange={(event) => setInstructions(event.target.value)}
           />
-          <span id={instructionsHelpId} className="settings-help">{text.instructionsHelp}</span>
+          <span id={instructionsHelpId} className="settings-help">{t("settings:templateDialog.instructionsHelp")}</span>
           {errors.instructions && (
             <span id={instructionsErrorId} className="ui-field-error" role="alert">{errors.instructions}</span>
           )}
         </div>
-        {failed && <p className="ui-field-error" role="alert">{text.error}</p>}
+        {failed && <p className="ui-field-error" role="alert">{t("settings:templateDialog.error")}</p>}
         <div className="ui-dialog-actions">
-          <Button variant="secondary" onClick={onClose} disabled={saving}>{text.cancel}</Button>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>{t("settings:templateDialog.cancel")}</Button>
           <Button variant="primary" type="submit" disabled={saving}>
-            {saving ? text.saving : template ? text.save : text.create}
+            {saving ? t("settings:templateDialog.saving") : template ? t("settings:templateDialog.save") : t("settings:templateDialog.create")}
           </Button>
         </div>
       </form>

@@ -1,0 +1,12 @@
+{
+  "title": "Welcome to Sauri",
+  "subtitle": "Log in to review your meetings",
+  "emailLabel": "Email",
+  "passwordLabel": "Password",
+  "showPassword": "Show password",
+  "hidePassword": "Hide password",
+  "submit": "Log in",
+  "submitting": "Logging in…",
+  "error": "Couldn't log in. Check your details and try again.",
+  "providersSeparator": "or"
+}

@@ -13,7 +13,6 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { copy } from "../copy/es";
 import {
   DEFAULT_SETTINGS_CATEGORY,
   SETTINGS_CATEGORIES,
@@ -33,6 +32,7 @@ import { Button, Icon } from "./ui";
 import { useMediaQuery } from "./useMediaQuery";
 import { SETTINGS_PANE_ID, SETTINGS_PANE_STORAGE_KEY, hiddenPaneAttributes, useSecondaryPane } from "./useSecondaryPane";
 import "../styles/settings.css";
+import { useT } from "../i18n";
 
 type SettingsRoute = Extract<Route, { name: "settings" }>;
 
@@ -63,6 +63,7 @@ function isPlainLeftClick(event: MouseEvent<HTMLAnchorElement>): boolean {
  * the right. Under 640px the screen is two steps: the list, then one category with a back button.
  */
 export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
+  const { t } = useT();
   const compact = useMediaQuery(COMPACT_QUERY);
   // The sidebar's gear hides the category pane to give the category the full width; it stays
   // mounted, so the search text is still there. Under 640px the list is a step of its own.
@@ -110,18 +111,17 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
   }
 
   const showList = !compact || category === null;
-  const label = category ? copy.settings.categories[category].label : "";
-  const text = copy.settings.search;
+  const label = category ? t(`settings:categories.${category}.label`) : "";
 
   return (
     <section className="app-view settings" aria-labelledby="settings-title">
       <header className="ui-pane-header">
-        <h1 id="settings-title" className="ui-pane-title">{copy.settings.title}</h1>
+        <h1 id="settings-title" className="ui-pane-title">{t("settings:title")}</h1>
       </header>
       <div className="settings-layout">
         {showList && (
           <div id={SETTINGS_PANE_ID} className="settings-nav-slot" {...hiddenPaneAttributes(hidden)}>
-          <nav ref={navRef} className="settings-nav" aria-label={copy.settings.navLabel} onKeyDown={onNavKeyDown}>
+          <nav ref={navRef} className="settings-nav" aria-label={t("settings:navLabel")} onKeyDown={onNavKeyDown}>
             <div className="settings-search">
               <Icon icon={Search} size={16} className="settings-search-icon" />
               <input
@@ -130,8 +130,8 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
                 type="search"
                 className="settings-search-input"
                 value={query}
-                placeholder={text.placeholder}
-                aria-label={text.label}
+                placeholder={t("settings:search.placeholder")}
+                aria-label={t("settings:search.label")}
                 autoComplete="off"
                 spellCheck={false}
                 onChange={(event) => setQuery(event.target.value)}
@@ -141,7 +141,7 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
                 <button
                   type="button"
                   className="settings-search-clear"
-                  aria-label={text.clear}
+                  aria-label={t("settings:search.clear")}
                   onClick={() => {
                     setQuery("");
                     searchRef.current?.focus();
@@ -155,17 +155,16 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
               role="status"
               className={searching && resultCount === 0 ? "settings-nav-empty" : "settings-visually-hidden"}
             >
-              {searching ? (resultCount === 0 ? text.noResultsFor(query.trim()) : text.resultCount(resultCount)) : ""}
+              {searching ? (resultCount === 0 ? t("settings:search.noResultsFor", { query: query.trim() }) : t("settings:search.resultCount", { count: resultCount })) : ""}
             </p>
             {groups.map((group) => {
               const titleId = `${searchId}-group-${group.id}`;
               return (
                 <div key={group.id} className="settings-nav-group" role="group" aria-labelledby={titleId}>
-                  <span id={titleId} className="settings-nav-group-title">{copy.settings.groups[group.id]}</span>
+                  <span id={titleId} className="settings-nav-group-title">{t(`settings:groups.${group.id}`)}</span>
                   <ul className="settings-nav-list">
                     {group.categories.map((name) => {
                       const target: SettingsRoute = { name: "settings", category: name };
-                      const entry = copy.settings.categories[name];
                       return (
                         <li key={name}>
                           <a
@@ -176,8 +175,8 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
                           >
                             <Icon icon={ICONS[name]} />
                             <span className="settings-nav-text">
-                              <span className="settings-nav-label">{entry.label}</span>
-                              {compact && <span className="settings-nav-description">{entry.description}</span>}
+                              <span className="settings-nav-label">{t(`settings:categories.${name}.label`)}</span>
+                              {compact && <span className="settings-nav-description">{t(`settings:categories.${name}.description`)}</span>}
                             </span>
                             {compact && <Icon icon={ChevronRight} />}
                           </a>
@@ -199,11 +198,11 @@ export function SettingsView({ route, user, onLogout }: SettingsViewProps) {
                 variant="ghost"
                 size="sm"
                 className="settings-back"
-                aria-label={copy.settings.backLabel}
+                aria-label={t("settings:backLabel")}
                 onClick={() => navigate(SETTINGS_ROOT)}
               >
                 <Icon icon={ChevronLeft} />
-                {copy.settings.back}
+                {t("settings:back")}
               </Button>
             )}
             <h2 ref={detailHeading} tabIndex={-1} className="settings-detail-title">{label}</h2>

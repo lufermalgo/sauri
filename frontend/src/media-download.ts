@@ -1,6 +1,6 @@
 import { getPlaybackManifest, type PlaybackManifest, type PlaybackSource } from "./api";
-import { meeting as text } from "./copy/meeting";
 import { titleToFilename } from "./download-filename";
+import { t } from "./i18n";
 
 /** Where the file ended up: written to disk, or handed to the browser in another tab. */
 export type MediaDownloadOutcome = "saved" | "opened" | "cancelled";
@@ -51,7 +51,12 @@ export function mediaExtension(source: PlaybackSource): string {
 /** `<title>.<ext>`, or an id-based name when the title leaves nothing usable. */
 export function mediaFilename(meetingId: string, title: string | null | undefined, source: PlaybackSource): string {
   const extension = mediaExtension(source);
-  return titleToFilename(title, extension) ?? text.mediaFilename(meetingId, extension);
+  return titleToFilename(title, extension) ?? t("meeting:mediaFilename", { id: meetingId, extension });
+}
+
+/** Status line while a media file downloads; the percent is missing when the size is unknown. */
+export function mediaProgressText(percent: number | null): string {
+  return percent === null ? t("meeting:mediaProgress") : t("meeting:mediaProgressPercent", { percent });
 }
 
 interface WritableFileHandle {

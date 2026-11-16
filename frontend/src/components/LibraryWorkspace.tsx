@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { navigate } from "../router";
-import { copy } from "../copy/es";
 import { forgetLastMeeting, rememberLastMeeting } from "../last-meeting";
 import { RecordingLibrary } from "./RecordingLibrary";
 import { TranscriptView } from "./TranscriptView";
@@ -9,6 +8,7 @@ import { hiddenPaneAttributes, LIBRARY_PANE_ID } from "./useSecondaryPane";
 import { useMediaQuery } from "./useMediaQuery";
 import { Button } from "./ui";
 import "../styles/workspace.css";
+import { useT } from "../i18n";
 
 export { WORKSPACE_WIDE_QUERY };
 
@@ -27,6 +27,7 @@ interface LibraryWorkspaceProps {
  * when it comes back. Opening a recording remembers it, so the portal can reopen it at the next start.
  */
 export function LibraryWorkspace({ meetingId, restored = false }: LibraryWorkspaceProps) {
+  const { t } = useT();
   const wide = useMediaQuery(WORKSPACE_WIDE_QUERY);
   const showList = wide || meetingId === undefined;
   const showDetail = wide || meetingId !== undefined;
@@ -75,16 +76,16 @@ export function LibraryWorkspace({ meetingId, restored = false }: LibraryWorkspa
             />
           ) : hidden ? (
             <div className="workspace-empty workspace-empty--action">
-              <h1 className="workspace-empty-title">{copy.library.chooseRecording}</h1>
+              <h1 className="workspace-empty-title">{t("library:chooseRecording")}</h1>
               <Button
                 variant="primary"
                 onClick={() => { focusListOnShow.current = true; setHidden(false); }}
               >
-                {copy.shell.libraryPane.show}
+                {t("shell:libraryPane.show")}
               </Button>
             </div>
           ) : (
-            <p className="workspace-empty">{copy.library.selectHint}</p>
+            <p className="workspace-empty">{t("library:selectHint")}</p>
           )}
         </div>
       )}

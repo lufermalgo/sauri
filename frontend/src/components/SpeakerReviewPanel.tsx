@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { LoaderCircle, Pause, Pencil, Play } from "lucide-react";
 import type { SpeakerDisposition } from "../api";
-import { copy } from "../copy/es";
 import type { ListeningInterval } from "../speaker-review-interval";
 import { Avatar, Icon, useTooltip } from "./ui";
+import { t, useT } from "../i18n";
+import { toUpperLocale } from "../i18n/format";
 
 export interface SpeakerRowModel {
   speakerId: string;
@@ -35,8 +36,6 @@ interface SpeakerReviewPanelProps {
   onLeaveUnnamed: () => Promise<void>;
 }
 
-const text = copy.speakerReview;
-
 const segmenter = typeof Intl !== "undefined" && "Segmenter" in Intl
   ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
 
@@ -44,7 +43,7 @@ const segmenter = typeof Intl !== "undefined" && "Segmenter" in Intl
 export function firstGrapheme(name: string): string {
   const trimmed = name.trim();
   const first = segmenter ? segmenter.segment(trimmed)[Symbol.iterator]().next().value?.segment : Array.from(trimmed)[0];
-  return (first ?? "").toLocaleUpperCase("es");
+  return toUpperLocale(first ?? "");
 }
 
 /** Avatar text: initial plus number (such as "H1") for a generic numbered label, the first letter of the name otherwise. */
@@ -60,6 +59,7 @@ export function SpeakerReviewPanel({
   rows, complete, busyIds, playingId, playbackReady, playbackLoading, error,
   onListen, onRename, onAcceptSuggestion, onLeaveUnnamed,
 }: SpeakerReviewPanelProps) {
+  const { t } = useT();
   const [announcement, setAnnouncement] = useState<{ id: number; message: string } | null>(null);
   const [leaving, setLeaving] = useState(false);
   const announce = (message: string) => setAnnouncement(current => ({ id: (current?.id ?? 0) + 1, message }));
@@ -69,14 +69,14 @@ export function SpeakerReviewPanel({
     setLeaving(true);
     try {
       await onLeaveUnnamed();
-      announce(text.leftUnnamed);
+      announce(t("speakerReview:leftUnnamed"));
     } finally {
       setLeaving(false);
     }
   }
 
   return <div className="meeting-speaker-review">
-    <p role="status" className="meeting-sr-only">{complete ? text.complete : text.pending}</p>
+    <p role="status" className="meeting-sr-only">{complete ? t("speakerReview:complete") : t("speakerReview:pending")}</p>
     <div role="status" className="meeting-sr-only">
       {announcement && <span key={announcement.id}>{announcement.message}</span>}
     </div>
@@ -87,7 +87,7 @@ export function SpeakerReviewPanel({
       onListen={onListen} onRename={onRename} onAcceptSuggestion={onAcceptSuggestion} onAnnounce={announce} />)}
     {pendingGeneric && <div className="meeting-review-footer">
       <button type="button" className="meeting-review-leave" disabled={leaving || busyIds.length > 0}
-        aria-busy={leaving || undefined} onClick={() => void leaveUnnamed()}>{text.leaveUnnamed}</button>
+        aria-busy={leaving || undefined} onClick={() => void leaveUnnamed()}>{t("speakerReview:leaveUnnamed")}</button>
     </div>}
   </div>;
 }
@@ -100,11 +100,12 @@ interface SpeakerRowProps extends Pick<SpeakerReviewPanelProps, "playbackReady" 
 }
 
 function statusText(row: SpeakerRowModel): string {
-  if (row.generic) return row.disposition === null ? text.pendingState : text.unnamedState;
-  return row.disposition === null ? text.suggestedState : text.namedState;
+  if (row.generic) return row.disposition === null ? t("speakerReview:pendingState") : t("speakerReview:unnamedState");
+  return row.disposition === null ? t("speakerReview:suggestedState") : t("speakerReview:namedState");
 }
 
 function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onListen, onRename, onAcceptSuggestion, onAnnounce }: SpeakerRowProps) {
+  const { t } = useT();
   const { speakerId, label, interval } = row;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -118,9 +119,9 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
   const refocusPencil = useRef(false);
   const errorId = `speaker-name-error-${speakerId}`;
 
-  const playName = text.listenTo(label);
-  const playTip = useTooltip(playing ? text.stopFor(label) : playName);
-  const editName = text.editName(label);
+  const playName = t("speakerReview:listenTo", { label });
+  const playTip = useTooltip(playing ? t("speakerReview:stopFor", { label }) : playName);
+  const editName = t("speakerReview:editName", { label });
   const editTip = useTooltip(editName);
 
   useEffect(() => {
@@ -154,8 +155,8 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
     if (!name) {
       // An empty name cannot be saved (the backend requires one and cannot revert to the generic label).
       if (via === "enter") {
-        setRowError(text.nameRequired);
-        onAnnounce(text.nameRequired);
+        setRowError(t("speakerReview:nameRequired"));
+        onAnnounce(t("speakerReview:nameRequired"));
       } else endEdit(false);
       return;
     }
@@ -171,7 +172,7 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
       onAnnounce(message);
       return;
     }
-    onAnnounce(text.saved(name));
+    onAnnounce(t("speakerReview:saved", { name }));
     endEdit(via === "enter");
   }
 
@@ -204,7 +205,7 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
         {editing
           ? <div className="meeting-review-edit">
             <input ref={inputRef} className="ui-input meeting-review-input" type="text" value={draft}
-              maxLength={64} aria-label={text.nameFor(label)} readOnly={saving} aria-busy={saving || undefined}
+              maxLength={64} aria-label={t("speakerReview:nameFor", { label })} readOnly={saving} aria-busy={saving || undefined}
               aria-invalid={rowError ? true : undefined} aria-describedby={rowError ? errorId : undefined}
               onChange={event => setDraft(event.target.value)} onKeyDown={onKeyDown} onBlur={() => void commit("blur")} />
             {saving && <span className="meeting-review-spinner"><Icon icon={LoaderCircle} size={16} /></span>}
@@ -224,10 +225,10 @@ function SpeakerRow({ row, busy, playing, playbackReady, playbackLoading, onList
     </div>
     {suggested && !editing && <div className="meeting-review-suggest">
       <button type="button" className="meeting-review-chip" disabled={busy}
-        onClick={() => onAcceptSuggestion(speakerId)}>{text.acceptSuggestion(label)}</button>
+        onClick={() => onAcceptSuggestion(speakerId)}>{t("speakerReview:acceptSuggestion", { name: label })}</button>
     </div>}
-    {!interval && <p>{text.noInterval}</p>}
-    {interval?.short && <p>{text.shortInterval}</p>}
-    {interval && !playbackReady && !playbackLoading && <p>{text.playbackUnavailable}</p>}
+    {!interval && <p>{t("speakerReview:noInterval")}</p>}
+    {interval?.short && <p>{t("speakerReview:shortInterval")}</p>}
+    {interval && !playbackReady && !playbackLoading && <p>{t("speakerReview:playbackUnavailable")}</p>}
   </article>;
 }

@@ -1,4 +1,4 @@
-import { copy } from "../../copy/es";
+import { t } from "../../i18n";
 import { SETTINGS_GROUPS, type SettingsCategory, type SettingsGroupId } from "../../router";
 
 /** Lowercase without accents, so an unaccented query finds an accented label. */
@@ -7,8 +7,11 @@ export function normalizeSearchText(value: string): string {
 }
 
 function matches(category: SettingsCategory, tokens: string[]): boolean {
-  const entry = copy.settings.categories[category];
-  const haystack = normalizeSearchText(`${entry.label} ${entry.description} ${entry.keywords}`);
+  const haystack = normalizeSearchText([
+    t(`settings:categories.${category}.label`),
+    t(`settings:categories.${category}.description`),
+    t(`settings:categories.${category}.keywords`),
+  ].join(" "));
   return tokens.every((token) => haystack.includes(token));
 }
 

@@ -1,0 +1,31 @@
+{
+  "brand": "Sauri",
+  "navLabel": "Main navigation",
+  "library": "Library",
+  "libraryPane": {
+    "hide": "Hide library",
+    "show": "Show library"
+  },
+  "settingsPane": {
+    "hide": "Hide categories",
+    "show": "Show categories"
+  },
+  "upload": "Upload recording",
+  "logout": "Log out",
+  "sidebar": {
+    "region": "Side panel",
+    "toggle": "Side panel",
+    "open": "Open side panel",
+    "close": "Close side panel"
+  },
+  "profile": {
+    "fallbackName": "Account",
+    "menu": "{{account}}'s account",
+    "settings": "Settings"
+  },
+  "notFound": {
+    "title": "We couldn't find that page",
+    "description": "The address doesn't exist or is no longer available.",
+    "backToLibrary": "Back to the library"
+  }
+}

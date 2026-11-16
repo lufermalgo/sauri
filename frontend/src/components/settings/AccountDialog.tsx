@@ -2,11 +2,9 @@ import { useEffect, useState } from "react";
 import { CircleAlert, CircleCheck, ExternalLink } from "lucide-react";
 import type { EngineAccount, EngineProvider } from "@sauri/shared-types";
 import { pollEngineAccount, startEngineAccount } from "../../api";
-import { copy } from "../../copy/es";
+import { useT } from "../../i18n";
 import { Button, Dialog, Icon } from "../ui";
 import { describeEngineError } from "./ProviderDialog";
-
-const text = copy.engines.account.dialog;
 
 type Step =
   | { step: "starting" }
@@ -27,6 +25,7 @@ interface AccountDialogProps {
  * tab, and asks the API once per interval until the account is connected, the code runs out or it is refused.
  * Closing the dialog stops asking; nothing is saved until OpenAI confirms. */
 export function AccountDialog({ provider, onConnected, onClose }: AccountDialogProps) {
+  const { t } = useT();
   const [step, setStep] = useState<Step>({ step: "starting" });
   const [attempt, setAttempt] = useState(0);
 
@@ -48,7 +47,7 @@ export function AccountDialog({ provider, onConnected, onClose }: AccountDialogP
           if (account.state !== "pending" || !account.pending) {
             setStep({
               step: "failed",
-              message: account.error ? copy.engines.account.errors[account.error] : text.startFailed,
+              message: account.error ? t(`engines:account.errors.${account.error}`) : t("engines:account.dialog.startFailed"),
             });
             return;
           }
@@ -58,7 +57,7 @@ export function AccountDialog({ provider, onConnected, onClose }: AccountDialogP
           account = await pollEngineAccount(provider.id);
         }
       } catch (error) {
-        if (alive) setStep({ step: "failed", message: `${text.startFailed} ${describeEngineError(error)}` });
+        if (alive) setStep({ step: "failed", message: `${t("engines:account.dialog.startFailed")} ${describeEngineError(error)}` });
       }
     }
 
@@ -72,12 +71,12 @@ export function AccountDialog({ provider, onConnected, onClose }: AccountDialogP
   }, [provider.id, attempt]);
 
   return (
-    <Dialog title={text.title} closeLabel={text.close} onClose={onClose}>
+    <Dialog title={t("engines:account.dialog.title")} closeLabel={t("engines:account.dialog.close")} onClose={onClose}>
       <div className="settings-form engines-form engines-account">
-        {step.step === "starting" && <p role="status" className="settings-help">{text.starting}</p>}
+        {step.step === "starting" && <p role="status" className="settings-help">{t("engines:account.dialog.starting")}</p>}
         {step.step === "waiting" && step.account.pending && (
           <>
-            <p className="settings-help">{text.stepOpen}</p>
+            <p className="settings-help">{t("engines:account.dialog.stepOpen")}</p>
             <a
               className="ui-button ui-button--primary ui-button--md engines-account-open"
               href={step.account.pending.verification_url}
@@ -85,22 +84,22 @@ export function AccountDialog({ provider, onConnected, onClose }: AccountDialogP
               rel="noopener noreferrer"
             >
               <Icon icon={ExternalLink} />
-              {text.openPage}
+              {t("engines:account.dialog.openPage")}
             </a>
-            <p className="settings-help">{text.stepCode}</p>
+            <p className="settings-help">{t("engines:account.dialog.stepCode")}</p>
             <p className="engines-account-code" aria-label={step.account.pending.user_code}>
               {step.account.pending.user_code}
             </p>
-            <p className="settings-help">{text.expires(clock.format(new Date(step.account.pending.expires_at)))}</p>
+            <p className="settings-help">{t("engines:account.dialog.expires", { time: clock.format(new Date(step.account.pending.expires_at)) })}</p>
             <p role="status" className="settings-help">
-              {step.account.pending.slow_down ? text.slowDown : text.waiting}
+              {step.account.pending.slow_down ? t("engines:account.dialog.slowDown") : t("engines:account.dialog.waiting")}
             </p>
           </>
         )}
         {step.step === "done" && (
           <p role="status" className="engines-outcome engines-outcome--ok">
             <Icon icon={CircleCheck} />
-            {text.connected(step.who)}
+            {t("engines:account.dialog.connected", { who: step.who })}
           </p>
         )}
         {step.step === "failed" && (
@@ -111,10 +110,10 @@ export function AccountDialog({ provider, onConnected, onClose }: AccountDialogP
         )}
         <div className="ui-dialog-actions">
           {step.step === "failed" && (
-            <Button variant="secondary" onClick={() => setAttempt((count) => count + 1)}>{text.retry}</Button>
+            <Button variant="secondary" onClick={() => setAttempt((count) => count + 1)}>{t("engines:account.dialog.retry")}</Button>
           )}
           <Button variant={step.step === "done" ? "primary" : "secondary"} onClick={onClose}>
-            {step.step === "done" ? text.done : text.cancel}
+            {step.step === "done" ? t("engines:account.dialog.done") : t("engines:account.dialog.cancel")}
           </Button>
         </div>
       </div>

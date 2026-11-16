@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { uploadWithProgress } from "../api";
 import type { RecordingUploadData, UploadProgress } from "../api";
-import { copy } from "../copy/es";
+import { durationText, fileSizeText, transferredText } from "../upload-format";
 import { Button, Card, ProgressBar } from "./ui";
 import "../styles/upload.css";
+import { useT } from "../i18n";
 
 interface SelectedRecording {
   file: File;
@@ -47,6 +48,7 @@ function FileIcon({ video }: { video: boolean }) {
 }
 
 export function UploadView({ onUploaded, onBack }: UploadViewProps) {
+  const { t } = useT();
   const [recording, setRecording] = useState<SelectedRecording | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -101,7 +103,7 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
       // The server confirms which meeting was created; trust it over the local id.
       if (mounted.current) onUploaded(result.meeting_id);
     } catch (cause) {
-      if (mounted.current) setError(cause instanceof Error ? cause.message : copy.upload.errors.failed);
+      if (mounted.current) setError(cause instanceof Error ? cause.message : t("upload:errors.failed"));
     } finally {
       if (mounted.current) setUploading(false);
     }
@@ -114,12 +116,12 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
     <section className="app-view upload-view" aria-labelledby="upload-heading">
       <header className="ui-pane-header">
         <Button variant="ghost" size="sm" className="upload-back" onClick={onBack} disabled={uploading}>
-          {`← ${copy.upload.back}`}
+          {`← ${t("upload:back")}`}
         </Button>
-        <h1 id="upload-heading" className="ui-pane-title">{copy.upload.heading}</h1>
+        <h1 id="upload-heading" className="ui-pane-title">{t("upload:heading")}</h1>
       </header>
       <div className="app-view-body upload-body">
-      <p className="upload-intro">{copy.upload.intro}</p>
+      <p className="upload-intro">{t("upload:intro")}</p>
 
       <Card
         className={`upload-dropzone${dragging ? " upload-dropzone--active" : ""}`}
@@ -129,10 +131,10 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
         data-testid="upload-dropzone"
       >
         <span className="upload-dropzone-icon"><UploadIcon /></span>
-        <p className="upload-dropzone-title">{copy.upload.dropTitle}</p>
-        <p className="upload-dropzone-hint">{copy.upload.dropHint}</p>
+        <p className="upload-dropzone-title">{t("upload:dropTitle")}</p>
+        <p className="upload-dropzone-hint">{t("upload:dropHint")}</p>
         <label className="ui-button ui-button--primary ui-button--md upload-pick">
-          {copy.upload.fileLabel}
+          {t("upload:fileLabel")}
           <input
             className="upload-file-input"
             type="file"
@@ -144,17 +146,17 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
       </Card>
 
       {recording && (
-        <Card className="upload-selected" aria-label={copy.upload.selectedFileHeading}>
+        <Card className="upload-selected" aria-label={t("upload:selectedFileHeading")}>
           <span className="upload-file-icon" aria-hidden="true">
             <FileIcon video={recording.file.type.startsWith("video/") || recording.data?.video_presence === "muxed"} />
           </span>
           <div className="upload-file">
             <p className="upload-file-name">{recording.file.name}</p>
             <p className="upload-file-size">
-              <span>{copy.upload.sizeMb(recording.file.size)}</span>
-              {recording.data && <span>{` · ${copy.upload.duration(recording.data.duration_seconds)}`}</span>}
+              <span>{fileSizeText(recording.file.size)}</span>
+              {recording.data && <span>{` · ${durationText(recording.data.duration_seconds)}`}</span>}
             </p>
-            {!recording.data && !error && <p role="status" className="upload-note">{copy.upload.readingMetadata}</p>}
+            {!recording.data && !error && <p role="status" className="upload-note">{t("upload:readingMetadata")}</p>}
           </div>
           <video
             key={recording.objectUrl}
@@ -164,7 +166,7 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
             onLoadedMetadata={(event) => {
               const media = event.currentTarget;
               if (!Number.isFinite(media.duration) || media.duration <= 0) {
-                setError(copy.upload.errors.invalidDuration);
+                setError(t("upload:errors.invalidDuration"));
                 return;
               }
               setRecording({ ...recording, data: {
@@ -177,15 +179,15 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
               } });
               setError(null);
             }}
-            onError={() => setError(copy.upload.errors.unreadableRecording)}
+            onError={() => setError(t("upload:errors.unreadableRecording"))}
           />
           <div className="upload-actions">
             <Button variant="ghost" size="sm" onClick={() => selectFile(undefined)} disabled={uploading}>
-              {copy.upload.remove}
+              {t("upload:remove")}
             </Button>
             {!canRetry && (
               <Button variant="primary" size="sm" onClick={submitUpload} disabled={!recording.data || uploading}>
-                {uploading ? copy.upload.uploading : copy.upload.submit}
+                {uploading ? t("upload:uploading") : t("upload:submit")}
               </Button>
             )}
           </div>
@@ -193,18 +195,18 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
       )}
 
       {progress && uploading && (
-        <Card className="upload-progress" aria-label={copy.upload.progressSectionLabel}>
+        <Card className="upload-progress" aria-label={t("upload:progressSectionLabel")}>
           <div className="upload-progress-head">
-            <span className="upload-progress-title">{copy.upload.transferHeading}</span>
+            <span className="upload-progress-title">{t("upload:transferHeading")}</span>
             <span role="status" className="upload-progress-figures">
               {progress.total && percent !== undefined
-                ? copy.upload.transferred(progress.loaded, progress.total, percent)
-                : copy.upload.bytesSent(progress.loaded)}
+                ? transferredText(progress.loaded, progress.total, percent)
+                : t("upload:bytesSent", { bytes: progress.loaded })}
             </span>
           </div>
-          <ProgressBar label={copy.upload.progressLabel} max={100} value={percent} />
+          <ProgressBar label={t("upload:progressLabel")} max={100} value={percent} />
           <p className="upload-note">
-            {percent === 100 ? copy.upload.awaitingConfirmation : copy.upload.transferHelp}
+            {percent === 100 ? t("upload:awaitingConfirmation") : t("upload:transferHelp")}
           </p>
         </Card>
       )}
@@ -212,9 +214,9 @@ export function UploadView({ onUploaded, onBack }: UploadViewProps) {
       {error && (
         <Card className="upload-error" role="alert">
           <p className="upload-error-text">
-            <strong>{copy.upload.errorHeading}</strong>{" "}{error}
+            <strong>{t("upload:errorHeading")}</strong>{" "}{error}
           </p>
-          {canRetry && <Button variant="secondary" size="sm" className="upload-retry" onClick={submitUpload}>{copy.upload.retry}</Button>}
+          {canRetry && <Button variant="secondary" size="sm" className="upload-retry" onClick={submitUpload}>{t("upload:retry")}</Button>}
         </Card>
       )}
       </div>

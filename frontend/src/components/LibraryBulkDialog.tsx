@@ -1,9 +1,8 @@
 import { useEffect, useRef } from "react";
-import { copy } from "../copy/es";
 import type { BulkRun } from "./useLibraryBulk";
 import { Button, Dialog, ProgressBar } from "./ui";
-
-const text = copy.library.bulk;
+import { t, useT } from "../i18n";
+import { bulkDeletedText, bulkDownloadedText } from "../library-bulk-text";
 
 interface LibraryBulkDialogProps {
   run: BulkRun;
@@ -15,11 +14,11 @@ interface LibraryBulkDialogProps {
 }
 
 function resultSentence(run: BulkRun): string {
-  if (run.ids.length === 0) return run.kind === "downloadSummary" ? text.noneWithSummary : text.noneReady;
+  if (run.ids.length === 0) return run.kind === "downloadSummary" ? t("library:bulk.noneWithSummary") : t("library:bulk.noneReady");
   const done = run.succeeded.length;
   const failed = run.failed.length;
-  if (run.kind === "delete") return text.deleted(done, failed);
-  return run.kind === "downloadSummary" ? text.downloadedSummaries(done, failed) : text.downloaded(done, failed);
+  if (run.kind === "delete") return bulkDeletedText(done, failed);
+  return bulkDownloadedText(done, failed, run.kind === "downloadSummary");
 }
 
 /**
@@ -27,6 +26,7 @@ function resultSentence(run: BulkRun): string {
  * (the remaining recordings are left alone); the live region announces progress and the result.
  */
 export function LibraryBulkDialog({ run, onStop, onRetry, onClose, returnFocus }: LibraryBulkDialogProps) {
+  const { t } = useT();
   const running = run.phase === "running";
   const closeButton = useRef<HTMLButtonElement>(null);
   const total = run.ids.length;
@@ -37,39 +37,39 @@ export function LibraryBulkDialog({ run, onStop, onRetry, onClose, returnFocus }
     if (!running) closeButton.current?.focus();
   }, [running]);
 
-  const runningDownloadTitle = run.kind === "downloadSummary" ? text.runningDownloadSummariesTitle : text.runningDownloadTitle;
+  const runningDownloadTitle = run.kind === "downloadSummary" ? t("library:bulk.runningDownloadSummariesTitle") : t("library:bulk.runningDownloadTitle");
   const title = running
-    ? (run.kind === "delete" ? text.runningDeleteTitle : runningDownloadTitle)
-    : (run.kind === "delete" ? text.doneDeleteTitle : text.doneDownloadTitle);
-  const progress = run.kind === "delete" ? text.deleting(run.current, total) : text.downloading(run.current, total);
+    ? (run.kind === "delete" ? t("library:bulk.runningDeleteTitle") : runningDownloadTitle)
+    : (run.kind === "delete" ? t("library:bulk.doneDeleteTitle") : t("library:bulk.doneDownloadTitle"));
+  const progress = run.kind === "delete" ? t("library:bulk.deleting", { current: run.current, total }) : t("library:bulk.downloading", { current: run.current, total });
   const notes = running ? [] : [
     run.skipped > 0
-      ? (run.kind === "downloadSummary" ? text.skippedNoSummary(run.skipped) : text.skippedNotReady(run.skipped))
+      ? (run.kind === "downloadSummary" ? t("library:bulk.skippedNoSummary", { count: run.skipped }) : t("library:bulk.skippedNotReady", { count: run.skipped }))
       : null,
-    run.notProcessed.length > 0 ? text.notProcessed(run.notProcessed.length) : null,
-    run.failed.length > 0 && run.kind === "delete" ? text.failedKept : null,
+    run.notProcessed.length > 0 ? t("library:bulk.notProcessed", { count: run.notProcessed.length }) : null,
+    run.failed.length > 0 && run.kind === "delete" ? t("library:bulk.failedKept") : null,
   ].filter((note): note is string => note !== null);
 
   return (
-    <Dialog title={title} size="sm" closeLabel={text.close} returnFocus={returnFocus}
+    <Dialog title={title} size="sm" closeLabel={t("library:bulk.close")} returnFocus={returnFocus}
       onClose={running ? onStop : onClose}>
       <div className="library-bulk-dialog">
         <p role="status" className="library-bulk-status">
-          {running ? (run.stopping ? text.stopping : progress) : resultSentence(run)}
+          {running ? (run.stopping ? t("library:bulk.stopping") : progress) : resultSentence(run)}
         </p>
         {running && (
-          <ProgressBar label={text.progressLabel} value={total === 0 ? 0 : Math.round((processed / total) * 100)}
+          <ProgressBar label={t("library:bulk.progressLabel")} value={total === 0 ? 0 : Math.round((processed / total) * 100)}
             valueText={progress} />
         )}
         {notes.map((note) => <p key={note} className="library-bulk-note">{note}</p>)}
         <div className="library-bulk-actions">
           {running ? (
-            <Button variant="secondary" size="sm" disabled={run.stopping} onClick={onStop}>{text.stop}</Button>
+            <Button variant="secondary" size="sm" disabled={run.stopping} onClick={onStop}>{t("library:bulk.stop")}</Button>
           ) : (
             <>
-              {run.failed.length > 0 && <Button variant="secondary" size="sm" onClick={onRetry}>{text.retry}</Button>}
+              {run.failed.length > 0 && <Button variant="secondary" size="sm" onClick={onRetry}>{t("library:bulk.retry")}</Button>}
               <button ref={closeButton} type="button" className="ui-button ui-button--primary ui-button--sm"
-                onClick={onClose}>{text.close}</button>
+                onClick={onClose}>{t("library:bulk.close")}</button>
             </>
           )}
         </div>

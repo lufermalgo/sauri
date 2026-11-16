@@ -13,8 +13,8 @@ import { PortalShell } from "./PortalShell";
 import { LibraryWorkspace } from "./LibraryWorkspace";
 import { LIBRARY_PANE_STORAGE_KEY } from "./useLibraryPane";
 import * as api from "../api";
-import { copy } from "../copy/es";
 import type { Route } from "../router";
+import { t } from "../i18n";
 
 vi.mock("../api", () => ({
   getMeeting: vi.fn(),
@@ -77,7 +77,7 @@ function renderApp(route: Route = { name: "meeting", meetingId: "b" }) {
 }
 
 const slot = () => document.querySelector<HTMLElement>(".workspace-list")!;
-const toggle = () => screen.getByRole("button", { name: copy.shell.library });
+const toggle = () => screen.getByRole("button", { name: t("shell:library") });
 
 beforeEach(() => {
   listeners.clear();
@@ -104,8 +104,8 @@ afterEach(() => {
 describe("library pane toggle in the side panel", () => {
   it("is a button with the pane's state while a recording is open on a wide screen", async () => {
     renderApp();
-    await screen.findByRole("region", { name: copy.library.title });
-    expect(screen.queryByRole("link", { name: copy.shell.library })).toBeNull();
+    await screen.findByRole("region", { name: t("library:title") });
+    expect(screen.queryByRole("link", { name: t("shell:library") })).toBeNull();
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(toggle().getAttribute("aria-controls")).toBe("library-pane");
     expect(document.getElementById("library-pane")).not.toBeNull();
@@ -114,7 +114,7 @@ describe("library pane toggle in the side panel", () => {
 
   it("hides the list pane and shows it again, keeping focus on the button and remembering the choice", async () => {
     renderApp();
-    await screen.findByRole("region", { name: copy.library.title });
+    await screen.findByRole("region", { name: t("library:title") });
     const button = toggle();
     act(() => button.focus());
 
@@ -122,7 +122,7 @@ describe("library pane toggle in the side panel", () => {
     expect(slot()).toHaveAttribute("data-hidden");
     expect(slot()).toHaveAttribute("aria-hidden", "true");
     expect(slot()).toHaveAttribute("inert");
-    expect(screen.queryByRole("region", { name: copy.library.title })).toBeNull();
+    expect(screen.queryByRole("region", { name: t("library:title") })).toBeNull();
     expect(button).toHaveAttribute("aria-expanded", "false");
     expect(button).toHaveFocus();
     expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("1");
@@ -132,7 +132,7 @@ describe("library pane toggle in the side panel", () => {
     fireEvent.click(button);
     expect(slot()).not.toHaveAttribute("data-hidden");
     expect(slot()).not.toHaveAttribute("inert");
-    expect(screen.getByRole("region", { name: copy.library.title })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: t("library:title") })).toBeInTheDocument();
     expect(button).toHaveAttribute("aria-expanded", "true");
     expect(button).toHaveFocus();
     expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("0");
@@ -140,17 +140,17 @@ describe("library pane toggle in the side panel", () => {
 
   it("describes the action with a tooltip: hide when shown, show when hidden", async () => {
     renderApp();
-    await screen.findByRole("region", { name: copy.library.title });
+    await screen.findByRole("region", { name: t("library:title") });
     vi.useFakeTimers();
     const tipOf = () => document.getElementById(toggle().getAttribute("aria-describedby") ?? "") as HTMLElement;
-    expect(tipOf()).toHaveTextContent(copy.shell.libraryPane.hide);
+    expect(tipOf()).toHaveTextContent(t("shell:libraryPane.hide"));
     expect(tipOf()).toHaveAttribute("role", "tooltip");
     fireEvent.mouseEnter(toggle());
     act(() => { vi.advanceTimersByTime(400); });
     expect(tipOf().hidden).toBe(false);
 
     fireEvent.click(toggle());
-    expect(tipOf()).toHaveTextContent(copy.shell.libraryPane.show);
+    expect(tipOf()).toHaveTextContent(t("shell:libraryPane.show"));
   });
 
   it("remembers a hidden list on the next visit", async () => {
@@ -163,19 +163,19 @@ describe("library pane toggle in the side panel", () => {
 
   it("keeps the list mounted while hidden, so its search and selection are still there", async () => {
     renderApp();
-    const list = await screen.findByRole("region", { name: copy.library.title });
-    fireEvent.click(screen.getByRole("checkbox", { name: copy.library.row.select("Weekly sync") }));
+    const list = await screen.findByRole("region", { name: t("library:title") });
+    fireEvent.click(screen.getByRole("checkbox", { name: t("library:row.select", { title: "Weekly sync" }) }));
     fireEvent.click(toggle());
     expect(list.isConnected).toBe(true);
     fireEvent.click(toggle());
-    expect(screen.getByRole("checkbox", { name: copy.library.row.select("Weekly sync") })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: t("library:row.select", { title: "Weekly sync" }) })).toBeChecked();
   });
 
   it("works for the visit when storage is blocked", async () => {
     const blocked = () => { throw new Error("blocked"); };
     vi.stubGlobal("localStorage", { ...createLocalStorage(), getItem: blocked, setItem: blocked });
     renderApp();
-    await screen.findByRole("region", { name: copy.library.title });
+    await screen.findByRole("region", { name: t("library:title") });
     fireEvent.click(toggle());
     expect(slot()).toHaveAttribute("data-hidden");
     fireEvent.click(toggle());
@@ -184,20 +184,20 @@ describe("library pane toggle in the side panel", () => {
 
   it("is the same toggle on the library home, with the list as its target", async () => {
     renderApp({ name: "library" });
-    await screen.findByRole("region", { name: copy.library.title });
-    expect(screen.queryByRole("link", { name: copy.shell.library })).toBeNull();
+    await screen.findByRole("region", { name: t("library:title") });
+    expect(screen.queryByRole("link", { name: t("shell:library") })).toBeNull();
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(toggle()).toHaveAttribute("aria-controls", "library-pane");
     expect(toggle()).toHaveAttribute("aria-current", "page");
     expect(slot()).not.toHaveAttribute("data-hidden");
     // The pane is visible by default, so the detail only carries the quiet hint.
-    expect(screen.getByText(copy.library.selectHint)).toBeVisible();
-    expect(screen.queryByRole("button", { name: copy.shell.libraryPane.show })).toBeNull();
+    expect(screen.getByText(t("library:selectHint"))).toBeVisible();
+    expect(screen.queryByRole("button", { name: t("shell:libraryPane.show") })).toBeNull();
   });
 
   it("hides the list on the library home and offers the way back in the empty state", async () => {
     renderApp({ name: "library" });
-    await screen.findByRole("region", { name: copy.library.title });
+    await screen.findByRole("region", { name: t("library:title") });
     act(() => toggle().focus());
     fireEvent.click(toggle());
     expect(slot()).toHaveAttribute("data-hidden");
@@ -206,27 +206,27 @@ describe("library pane toggle in the side panel", () => {
     expect(toggle()).toHaveFocus();
     expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("1");
     // The hidden list takes its h1 out of the tree; the empty state owns the only h1 and the button.
-    expect(screen.getByRole("heading", { level: 1, name: copy.library.chooseRecording })).toBeVisible();
-    expect(screen.queryByText(copy.library.selectHint)).toBeNull();
-    expect(screen.getByRole("button", { name: copy.shell.libraryPane.show })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: t("library:chooseRecording") })).toBeVisible();
+    expect(screen.queryByText(t("library:selectHint"))).toBeNull();
+    expect(screen.getByRole("button", { name: t("shell:libraryPane.show") })).toBeVisible();
   });
 
   it("brings the list back from the empty state's button and moves the keyboard into it", async () => {
     localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
     renderApp({ name: "library" });
-    expect(await screen.findByRole("heading", { level: 1, name: copy.library.chooseRecording })).toBeVisible();
+    expect(await screen.findByRole("heading", { level: 1, name: t("library:chooseRecording") })).toBeVisible();
     // The stored choice is kept on the home: it is neither cleared nor forced visible.
     expect(slot()).toHaveAttribute("data-hidden");
     expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("1");
 
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.libraryPane.show }));
+    fireEvent.click(screen.getByRole("button", { name: t("shell:libraryPane.show") }));
     expect(slot()).not.toHaveAttribute("data-hidden");
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(localStorage.getItem(LIBRARY_PANE_STORAGE_KEY)).toBe("0");
-    expect(screen.getByText(copy.library.selectHint)).toBeVisible();
-    expect(screen.queryByRole("heading", { name: copy.library.chooseRecording })).toBeNull();
-    expect(screen.getByRole("heading", { level: 1, name: copy.library.title })).toBeVisible();
-    const list = screen.getByRole("region", { name: copy.library.title });
+    expect(screen.getByText(t("library:selectHint"))).toBeVisible();
+    expect(screen.queryByRole("heading", { name: t("library:chooseRecording") })).toBeNull();
+    expect(screen.getByRole("heading", { level: 1, name: t("library:title") })).toBeVisible();
+    const list = screen.getByRole("region", { name: t("library:title") });
     await within(list).findByText("Weekly sync");
     expect(list.contains(document.activeElement)).toBe(true);
   });
@@ -234,7 +234,7 @@ describe("library pane toggle in the side panel", () => {
   it("keeps a hidden list hidden across the home and a recording", async () => {
     localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
     const view = renderApp({ name: "library" });
-    await screen.findByRole("heading", { level: 1, name: copy.library.chooseRecording });
+    await screen.findByRole("heading", { level: 1, name: t("library:chooseRecording") });
     view.unmount();
     renderApp({ name: "meeting", meetingId: "b" });
     await screen.findByRole("heading", { level: 1, name: "Client interview" });
@@ -246,10 +246,10 @@ describe("library pane toggle in the side panel", () => {
     const blocked = () => { throw new Error("blocked"); };
     vi.stubGlobal("localStorage", { ...createLocalStorage(), getItem: blocked, setItem: blocked });
     renderApp({ name: "library" });
-    await screen.findByRole("region", { name: copy.library.title });
+    await screen.findByRole("region", { name: t("library:title") });
     fireEvent.click(toggle());
-    expect(await screen.findByRole("button", { name: copy.shell.libraryPane.show })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: copy.shell.libraryPane.show }));
+    expect(await screen.findByRole("button", { name: t("shell:libraryPane.show") })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: t("shell:libraryPane.show") }));
     expect(slot()).not.toHaveAttribute("data-hidden");
   });
 
@@ -257,11 +257,11 @@ describe("library pane toggle in the side panel", () => {
     stubViewport(900);
     localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
     renderApp({ name: "library" });
-    await screen.findByRole("region", { name: copy.library.title });
+    await screen.findByRole("region", { name: t("library:title") });
     expect(slot()).not.toHaveAttribute("data-hidden");
-    expect(screen.queryByRole("heading", { name: copy.library.chooseRecording })).toBeNull();
-    expect(screen.getByRole("link", { name: copy.shell.library })).toHaveAttribute("aria-current", "page");
-    expect(screen.queryByRole("button", { name: copy.shell.library })).toBeNull();
+    expect(screen.queryByRole("heading", { name: t("library:chooseRecording") })).toBeNull();
+    expect(screen.getByRole("link", { name: t("shell:library") })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("button", { name: t("shell:library") })).toBeNull();
   });
 
   it("is a plain link below 1100px, where the workspace has one pane at a time", async () => {
@@ -269,17 +269,17 @@ describe("library pane toggle in the side panel", () => {
     localStorage.setItem(LIBRARY_PANE_STORAGE_KEY, "1");
     renderApp();
     await screen.findByRole("heading", { level: 1, name: "Client interview" });
-    expect(screen.getByRole("link", { name: copy.shell.library })).toHaveAttribute("href", "/");
-    expect(screen.queryByRole("button", { name: copy.shell.library })).toBeNull();
-    expect(screen.queryByRole("region", { name: copy.library.title })).toBeNull();
+    expect(screen.getByRole("link", { name: t("shell:library") })).toHaveAttribute("href", "/");
+    expect(screen.queryByRole("button", { name: t("shell:library") })).toBeNull();
+    expect(screen.queryByRole("region", { name: t("library:title") })).toBeNull();
     expect(document.querySelector(".workspace-list")).toBeNull();
   });
 
   it("keeps its name Biblioteca in the rail, where only the icon shows", async () => {
     localStorage.setItem("sauri_sidebar_collapsed", "1");
     renderApp();
-    await screen.findByRole("region", { name: copy.library.title });
+    await screen.findByRole("region", { name: t("library:title") });
     expect(document.querySelector(".shell-root")).toHaveAttribute("data-mode", "rail");
-    expect(toggle()).toHaveAccessibleName(copy.shell.library);
+    expect(toggle()).toHaveAccessibleName(t("shell:library"));
   });
 });

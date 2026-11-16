@@ -1,6 +1,4 @@
 import { useLayoutEffect, useState } from "react";
-import { copy } from "./copy/es";
-
 /** Portal routes. The path is the only source of truth; no tokens or content in the URL. */
 export type Route =
   | { name: "library" }
@@ -9,7 +7,7 @@ export type Route =
   | { name: "meeting"; meetingId: string }
   | { name: "notFound" };
 
-/** Settings categories; the URL slugs are product copy (see `copy.settings.categories`). */
+/** Settings categories. Their URL slugs (below) are the same in every language. */
 export const SETTINGS_CATEGORIES = [
   "account",
   "appearance",
@@ -20,7 +18,17 @@ export const SETTINGS_CATEGORIES = [
 ] as const;
 export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 
-/** Navigation groups, in display order; the group labels are product copy (`copy.settings.groups`). */
+/** ASCII URL of each category (`/settings/<slug>`): shipped links, so they are never translated. */
+export const SETTINGS_SLUGS: Record<SettingsCategory, string> = {
+  account: "cuenta",
+  appearance: "apariencia",
+  engines: "motores",
+  transcription: "transcripcion", // spanish-sample-data i18n-ignore
+  speakers: "hablantes", // spanish-sample-data i18n-ignore
+  summaries: "resumenes",
+};
+
+/** Navigation groups, in display order; the group labels live in the `settings` translation namespace. */
 export const SETTINGS_GROUPS = [
   { id: "general", categories: ["account", "appearance"] },
   { id: "models", categories: ["engines", "transcription", "speakers", "summaries"] },
@@ -42,11 +50,11 @@ const SETTINGS_PREFIX = "/settings/";
 const NOT_FOUND_PATH = "/not-found";
 
 /** Slugs of removed categories: an old link still opens Settings (on the default category) instead of "not found". */
-const REMOVED_SETTINGS_SLUGS: readonly string[] = ["grabacion"]; // spanish-sample-data: a shipped URL slug
+const REMOVED_SETTINGS_SLUGS: readonly string[] = ["grabacion"]; // spanish-sample-data i18n-ignore: a shipped URL slug
 
 function settingsRoute(slug: string): Route {
   if (REMOVED_SETTINGS_SLUGS.includes(slug)) return { name: "settings" };
-  const category = SETTINGS_CATEGORIES.find((name) => copy.settings.categories[name].slug === slug);
+  const category = SETTINGS_CATEGORIES.find((name) => SETTINGS_SLUGS[name] === slug);
   return category ? { name: "settings", category } : { name: "notFound" };
 }
 
@@ -88,7 +96,7 @@ export function routePath(route: Route): string {
       return "/upload";
     case "settings":
       return route.category
-        ? `${SETTINGS_PREFIX}${copy.settings.categories[route.category].slug}`
+        ? `${SETTINGS_PREFIX}${SETTINGS_SLUGS[route.category]}`
         : SETTINGS_PATH;
     case "meeting":
       return `${MEETING_PREFIX}${encodeURIComponent(route.meetingId)}`;

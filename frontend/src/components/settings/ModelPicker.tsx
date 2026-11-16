@@ -2,11 +2,9 @@ import { forwardRef, useEffect, useId, useImperativeHandle, useLayoutEffect, use
 import type { FocusEvent, KeyboardEvent, ReactNode } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import type { EngineProviderKind } from "@sauri/shared-types";
-import { copy } from "../../copy/es";
 import { Button, Icon } from "../ui";
 import { ProviderLogo } from "./ProviderLogo";
-
-const text = copy.engines.process;
+import { useT } from "../../i18n";
 
 const VIEWPORT_MARGIN_PX = 12;
 const OPTION = '[role="option"]';
@@ -73,6 +71,7 @@ export const ModelPicker = forwardRef<ModelPickerHandle, ModelPickerProps>(funct
   { label, describedBy, current, groups, disabled, onSelect, onOpenChange, footer },
   handle,
 ) {
+  const { t } = useT();
   const ids = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -217,7 +216,7 @@ export const ModelPicker = forwardRef<ModelPickerHandle, ModelPickerProps>(funct
           ref={panelRef}
           id={panelId}
           role="dialog"
-          aria-label={text.pickerPanel}
+          aria-label={t("engines:process.pickerPanel")}
           className="engines-picker-panel"
           onKeyDown={onPanelKeyDown}
         >
@@ -226,15 +225,15 @@ export const ModelPicker = forwardRef<ModelPickerHandle, ModelPickerProps>(funct
             <input
               ref={searchRef}
               type="search"
-              aria-label={text.pickerSearch}
-              placeholder={text.pickerSearch}
+              aria-label={t("engines:process.pickerSearch")}
+              placeholder={t("engines:process.pickerSearch")}
               value={query}
               autoComplete="off"
               spellCheck={false}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          <div className="engines-picker-list" role="listbox" aria-label={text.pickerList}>
+          <div className="engines-picker-list" role="listbox" aria-label={t("engines:process.pickerList")}>
             {shown.map(({ group, options: groupOptions }) => (
               <div key={group.id} role="group" aria-labelledby={`${ids}-${group.id}`} className="engines-picker-group">
                 <div className="engines-picker-group-head">
@@ -248,12 +247,12 @@ export const ModelPicker = forwardRef<ModelPickerHandle, ModelPickerProps>(funct
                       disabled={group.refreshing}
                       onClick={group.onRefresh}
                     >
-                      {group.refreshing ? text.modelsRefreshing : text.modelsRefresh}
+                      {group.refreshing ? t("engines:process.modelsRefreshing") : t("engines:process.modelsRefresh")}
                     </Button>
                   )}
                 </div>
                 {group.state === "loading" && groupOptions.length === 0 && (
-                  <p role="status" className="engines-picker-note">{text.modelsLoading}</p>
+                  <p role="status" className="engines-picker-note">{t("engines:process.modelsLoading")}</p>
                 )}
                 {group.note && <p className="engines-picker-note">{group.note}</p>}
                 {groupOptions.map((option) => (
@@ -271,12 +270,12 @@ export const ModelPicker = forwardRef<ModelPickerHandle, ModelPickerProps>(funct
                   >
                     <span className="engines-picker-option-name">{option.label}</span>
                     {option.detail && <span className="engines-picker-option-detail">{option.detail}</span>}
-                    {option.suggested && <span className="engines-picker-mark">{text.suggested}</span>}
+                    {option.suggested && <span className="engines-picker-mark">{t("engines:process.suggested")}</span>}
                     {option.tag && <span className="engines-picker-mark">{option.tag}</span>}
                     {option.inUse && (
                       <span className="engines-picker-mark engines-picker-mark--use">
                         <Icon icon={Check} size={12} />
-                        {text.inUse}
+                        {t("engines:process.inUse")}
                       </span>
                     )}
                   </button>
@@ -284,7 +283,7 @@ export const ModelPicker = forwardRef<ModelPickerHandle, ModelPickerProps>(funct
                 {group.manual && !needle && <ManualModel onSubmit={(model) => { show(false, true); group.manual!.onSubmit(model); }} />}
               </div>
             ))}
-            {optionCount === 0 && needle && <p role="status" className="engines-picker-note">{text.noMatches}</p>}
+            {optionCount === 0 && needle && <p role="status" className="engines-picker-note">{t("engines:process.noMatches")}</p>}
           </div>
           {footer && <div className="engines-picker-footer">{typeof footer === "function" ? footer(() => show(false, true)) : footer}</div>}
         </div>
@@ -295,12 +294,13 @@ export const ModelPicker = forwardRef<ModelPickerHandle, ModelPickerProps>(funct
 
 /** Text field for a provider that gave no list: the person types the model name exactly as the provider shows it. */
 function ManualModel({ onSubmit }: { onSubmit: (model: string) => void }) {
+  const { t } = useT();
   const id = useId();
   const [value, setValue] = useState("");
   const submit = () => value.trim() && onSubmit(value.trim());
   return (
     <div className="engines-picker-manual">
-      <label htmlFor={id}>{text.manualModel}</label>
+      <label htmlFor={id}>{t("engines:process.manualModel")}</label>
       <div className="engines-picker-manual-row">
         <input
           id={id}
@@ -317,9 +317,9 @@ function ManualModel({ onSubmit }: { onSubmit: (model: string) => void }) {
             }
           }}
         />
-        <Button variant="secondary" size="sm" disabled={!value.trim()} onClick={submit}>{text.manualModelUse}</Button>
+        <Button variant="secondary" size="sm" disabled={!value.trim()} onClick={submit}>{t("engines:process.manualModelUse")}</Button>
       </div>
-      <span id={`${id}-help`} className="settings-help">{text.manualModelHelp}</span>
+      <span id={`${id}-help`} className="settings-help">{t("engines:process.manualModelHelp")}</span>
     </div>
   );
 }

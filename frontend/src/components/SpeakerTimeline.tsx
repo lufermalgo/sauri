@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { meeting as text } from "../copy/meeting";
+import { useT } from "../i18n";
 
 export interface TimelineTurn {
   id: string;
@@ -25,6 +25,7 @@ function timestamp(ms: number) {
 }
 
 export function SpeakerTimeline({ turns, durationMs, currentTimeMs, keyPointTimes = [], disabled = false, onSeek }: SpeakerTimelineProps) {
+  const { t } = useT();
   const duration = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
   const unavailable = disabled || duration === 0;
   const clamp = (time: number) => Math.max(0, Math.min(duration, time));
@@ -39,8 +40,8 @@ export function SpeakerTimeline({ turns, durationMs, currentTimeMs, keyPointTime
   return <div className="meeting-timeline">
     <div className="meeting-timeline-track">
       <div className="meeting-timeline-slider" role="slider" tabIndex={unavailable ? -1 : 0}
-        aria-label={text.timeline} aria-valuemin={0} aria-valuemax={duration} aria-valuenow={position}
-        aria-valuetext={text.timelinePosition(timestamp(position))} aria-disabled={unavailable}
+        aria-label={t("meeting:timeline")} aria-valuemin={0} aria-valuemax={duration} aria-valuenow={position}
+        aria-valuetext={t("meeting:timelinePosition", { time: timestamp(position) })} aria-disabled={unavailable}
         onClick={event => {
           if (unavailable) return;
           const bounds = event.currentTarget.getBoundingClientRect();
@@ -71,7 +72,7 @@ export function SpeakerTimeline({ turns, durationMs, currentTimeMs, keyPointTime
           style={{ left: `clamp(1px, ${percentage(position)}%, calc(100% - 2px))` }} />
       </div>
       {markers.map(time => <button type="button" className="meeting-key-point" key={time}
-        aria-label={text.keyPointAt(timestamp(time))} title={text.keyPointAt(timestamp(time))}
+        aria-label={t("meeting:keyPointAt", { time: timestamp(time) })} title={t("meeting:keyPointAt", { time: timestamp(time) })}
         disabled={unavailable} onClick={() => onSeek(time)}
         style={{ "--marker-position": `${percentage(time)}%` } as CSSProperties} />)}
     </div>
@@ -80,7 +81,7 @@ export function SpeakerTimeline({ turns, durationMs, currentTimeMs, keyPointTime
         <span aria-hidden="true" className="meeting-legend-dot" style={{ background: speaker.color }} />
         {speaker.speakerLabel}
       </span>)}
-      {markers.length > 0 && <span><span aria-hidden="true" className="meeting-legend-marker" />{text.keyPoints}</span>}
+      {markers.length > 0 && <span><span aria-hidden="true" className="meeting-legend-marker" />{t("meeting:keyPoints")}</span>}
     </div>
   </div>;
 }

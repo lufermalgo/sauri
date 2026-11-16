@@ -32,6 +32,9 @@ EXCLUDED_PATH_PARTS = (
     # product language (and later selected per user) without weakening the
     # identifier check anywhere else.
     "/frontend/src/copy/",
+    # Portal translations (Spanish is the source language) and the i18n module that tests and checks them.
+    "/frontend/src/locales/",
+    "/frontend/src/i18n/",
     # Extension UI copy follows the same localization boundary as the portal.
     "/extension/src/panel/copy/",
     "/extension/src/options/copy/",

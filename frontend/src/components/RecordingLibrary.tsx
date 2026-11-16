@@ -3,13 +3,11 @@ import type { KeyboardEvent } from "react";
 import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { deleteMeeting, listMeetings, renameMeeting } from "../api";
-import { copy } from "../copy/es";
-import { meeting as meetingText } from "../copy/meeting";
 import { applyLibraryQuery, type LibraryQuery } from "../library-query";
 import { LIBRARY_CHANGED_EVENT, notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
 import { forgetLastMeeting } from "../last-meeting";
-import { downloadMeetingMedia } from "../media-download";
+import { downloadMeetingMedia, mediaProgressText } from "../media-download";
 import { downloadMeetingSummary } from "../summary-download";
 import { downloadMeetingTranscript } from "../transcript-download";
 import { Button, ConfirmDialog, Skeleton } from "./ui";
@@ -21,8 +19,7 @@ import { useLibraryBulk, type BulkKind } from "./useLibraryBulk";
 import { useLibrarySelection } from "./useLibrarySelection";
 import "../styles/library.css";
 import "../styles/processing.css";
-
-const text = copy.library;
+import { useT } from "../i18n";
 
 // Rows still being worked on; while any is visible the list refreshes quietly.
 const IN_PROGRESS_STATES: ReadonlySet<ProcessState> = new Set([
@@ -120,6 +117,7 @@ type BulkConfirm = { kind: BulkKind; ids: string[]; skipped: number };
 
 /** The list pane: header strip, icon toolbar and compact rows (DESIGN.md 6, master-detail). */
 export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onListLoaded }: RecordingLibraryProps) {
+  const { t } = useT();
   const onListLoadedRef = useRef(onListLoaded);
   onListLoadedRef.current = onListLoaded;
   const [meetings, setMeetings] = useState<MeetingListItem[]>([]);
@@ -268,14 +266,14 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
   const downloadMedia = async (meeting: MeetingListItem) => {
     if (mediaDownloads.current.has(meeting.id)) return;
     mediaDownloads.current.add(meeting.id);
-    setRowNotice(meeting.id, meetingText.mediaProgress(null));
+    setRowNotice(meeting.id, mediaProgressText(null));
     try {
       const outcome = await downloadMeetingMedia(meeting.id, meeting.title,
-        (percent) => setRowNotice(meeting.id, meetingText.mediaProgress(percent)));
-      setRowNotice(meeting.id, outcome === "opened" ? meetingText.mediaOpened : null);
+        (percent) => setRowNotice(meeting.id, mediaProgressText(percent)));
+      setRowNotice(meeting.id, outcome === "opened" ? t("meeting:mediaOpened") : null);
     } catch {
       setRowNotice(meeting.id, null);
-      setRowError(meeting.id, text.row.downloadMediaFailed);
+      setRowError(meeting.id, t("library:row.downloadMediaFailed"));
     } finally {
       mediaDownloads.current.delete(meeting.id);
     }
@@ -289,7 +287,7 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
       if (kind === "summary") await downloadMeetingSummary(meeting.id, meeting.title);
       else await downloadMeetingTranscript(meeting.id, meeting.title);
     } catch {
-      setRowError(meeting.id, kind === "summary" ? text.row.downloadSummaryFailed : text.row.downloadFailed);
+      setRowError(meeting.id, kind === "summary" ? t("library:row.downloadSummaryFailed") : t("library:row.downloadFailed"));
     }
   };
 
@@ -301,9 +299,9 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     const index = order.indexOf(meeting.id);
     try {
       await removeMeeting(meeting.id, order[index + 1] ?? order[index - 1] ?? "");
-      setAnnouncement(text.row.deleted(meeting.title.trim() || text.untitled));
+      setAnnouncement(t("library:row.deleted", { title: meeting.title.trim() || t("library:untitled") }));
     } catch {
-      setRowError(meeting.id, text.row.deleteFailed);
+      setRowError(meeting.id, t("library:row.deleteFailed"));
     }
   };
 
@@ -366,10 +364,10 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
   ) : (
     <>
       <div ref={headerRef} tabIndex={-1} className="ui-pane-header">
-        <Title className="ui-pane-title" id="library-title">{text.title}</Title>
+        <Title className="ui-pane-title" id="library-title">{t("library:title")}</Title>
         <Button variant="primary" size="sm" onClick={goToUpload}>
           <PlusIcon />
-          {text.upload}
+          {t("library:upload")}
         </Button>
       </div>
       {showToolbar && (
@@ -383,24 +381,24 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
   if (loading) {
     body = (
       <>
-        <p role="status" className="library-message">{text.loading}</p>
+        <p role="status" className="library-message">{t("library:loading")}</p>
         <LibrarySkeleton />
       </>
     );
   } else if (failed) {
     body = (
       <div className="library-state">
-        <p role="alert" className="library-message">{text.error}</p>
+        <p role="alert" className="library-message">{t("library:error")}</p>
         <Button variant="secondary" onClick={() => setAttempt((value) => value + 1)}>
-          {text.retry}
+          {t("library:retry")}
         </Button>
       </div>
     );
   } else if (meetings.length === 0) {
     body = (
       <div className="library-state">
-        <p className="library-message">{text.empty}</p>
-        <Button variant="primary" onClick={goToUpload}>{text.upload}</Button>
+        <p className="library-message">{t("library:empty")}</p>
+        <Button variant="primary" onClick={goToUpload}>{t("library:upload")}</Button>
       </div>
     );
   } else {
@@ -417,13 +415,13 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     );
 
     if (visible.length === 0) {
-      body = <p role="status" className="library-message">{text.noMatch}</p>;
+      body = <p role="status" className="library-message">{t("library:noMatch")}</p>;
     } else if (groups === null) {
-      body = <ul className="library-list" aria-label={text.listLabel}>{visible.map(renderRow)}</ul>;
+      body = <ul className="library-list" aria-label={t("library:listLabel")}>{visible.map(renderRow)}</ul>;
     } else {
       body = groups.map((group) => (
         <section key={group.key} className="library-group" aria-labelledby={`library-group-${group.key}`}>
-          <h2 id={`library-group-${group.key}`} className="library-group-title">{text.groups[group.key]}</h2>
+          <h2 id={`library-group-${group.key}`} className="library-group-title">{t(`library:groups.${group.key}`)}</h2>
           <ul className="library-list">{group.items.map(renderRow)}</ul>
         </section>
       ));
@@ -439,19 +437,19 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
       <div ref={bodyRef} className="ui-pane-body library-body" onKeyDown={onListKeyDown}>{body}</div>
       <p role="status" className="library-sr-only">{announcement}</p>
       {pendingDelete && (
-        <ConfirmDialog title={text.row.deleteTitle} body={text.row.deleteBody} confirmLabel={text.row.delete}
-          cancelLabel={text.row.cancel} onConfirm={() => { void confirmRowDelete(); }}
+        <ConfirmDialog title={t("library:row.deleteTitle")} body={t("library:row.deleteBody")} confirmLabel={t("library:row.delete")}
+          cancelLabel={t("library:row.cancel")} onConfirm={() => { void confirmRowDelete(); }}
           onCancel={() => setPendingDelete(null)} />
       )}
       {bulkConfirm && (
         <ConfirmDialog
-          title={deleteBulk ? text.bulk.deleteConfirmTitle(bulkConfirm.ids.length)
-            : summariesBulk ? text.bulk.downloadSummariesConfirmTitle(bulkConfirm.ids.length)
-              : text.bulk.downloadConfirmTitle(bulkConfirm.ids.length)}
-          body={deleteBulk ? text.bulk.deleteConfirmBody
-            : summariesBulk ? text.bulk.downloadSummariesConfirmBody : text.bulk.downloadConfirmBody}
-          confirmLabel={deleteBulk ? text.bulk.deleteConfirm : text.bulk.downloadConfirm}
-          cancelLabel={text.bulk.cancel} onConfirm={runConfirmedBulk} onCancel={() => setBulkConfirm(null)} />
+          title={deleteBulk ? t("library:bulk.deleteConfirmTitle", { count: bulkConfirm.ids.length })
+            : summariesBulk ? t("library:bulk.downloadSummariesConfirmTitle", { count: bulkConfirm.ids.length })
+              : t("library:bulk.downloadConfirmTitle", { count: bulkConfirm.ids.length })}
+          body={deleteBulk ? t("library:bulk.deleteConfirmBody")
+            : summariesBulk ? t("library:bulk.downloadSummariesConfirmBody") : t("library:bulk.downloadConfirmBody")}
+          confirmLabel={deleteBulk ? t("library:bulk.deleteConfirm") : t("library:bulk.downloadConfirm")}
+          cancelLabel={t("library:bulk.cancel")} onConfirm={runConfirmedBulk} onCancel={() => setBulkConfirm(null)} />
       )}
       {bulk.run && (
         <LibraryBulkDialog run={bulk.run} onStop={bulk.stop} onRetry={bulk.retry} onClose={bulk.close}
