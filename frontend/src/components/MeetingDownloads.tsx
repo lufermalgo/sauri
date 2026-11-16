@@ -65,7 +65,7 @@ export function MeetingDownloads({ meetingId, title, manifest, turns, hasSummary
 
   return <div className="meeting-downloads">
     <Menu label={t("meeting:download")} tooltip trigger={<Icon icon={Download} />}
-      triggerClassName="ui-icon-button ui-icon-button--primary">
+      triggerClassName="ui-icon-button ui-icon-button--ghost">
       <MenuItem disabled={!choice} onSelect={() => void downloadMedia()}>{mediaLabel}</MenuItem>
       <MenuItem disabled={!turns.length} onSelect={downloadTranscript}>{t("meeting:downloadTranscript")}</MenuItem>
       <MenuItem disabled={!hasSummary} hint={hasSummary ? undefined : t("meeting:summaryUnavailable")}

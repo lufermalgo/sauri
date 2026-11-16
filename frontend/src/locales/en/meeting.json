@@ -1,7 +1,6 @@
 {
   "backToList": "Back to recordings",
   "download": "Download",
-  "moreActions": "More actions",
   "deleteRecording": "Delete recording",
   "ready": "Ready",
   "speakerCount_one": "{{count}} speaker",
@@ -27,7 +26,6 @@
   "renameTitle": "Rename",
   "titleRequired": "The name can't be empty. We kept the previous one.",
   "renamed": "Name updated.",
-  "rename": "Rename",
   "titleLabel": "Meeting title",
   "cancel": "Cancel",
   "delete": "Delete",

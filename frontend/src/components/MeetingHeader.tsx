@@ -3,8 +3,8 @@ import { deleteMeeting, renameMeeting } from "../api";
 import { notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
 import { stageLabel, type DetectedStage } from "../processing-estimate";
-import { ArrowLeft, Ellipsis, Pencil, Trash2, UsersRound } from "lucide-react";
-import { ConfirmDialog, Icon, StatusBadge, Menu, MenuItem, useTooltip } from "./ui";
+import { ArrowLeft, Pencil, Trash2, UsersRound } from "lucide-react";
+import { ConfirmDialog, Icon, StatusBadge, useTooltip } from "./ui";
 import { MeetingDownloads, type MeetingDownloadsProps } from "./MeetingDownloads";
 import "../styles/meeting.css";
 import { t, useT } from "../i18n";
@@ -81,6 +81,7 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
   const speakersLabel = speakerReview && speakerReview.pendingCount > 0
     ? t("meeting:speakersButtonPending", { count: speakerReview.pendingCount }) : t("meeting:speakersButton");
   const speakersTip = useTooltip(speakerReview ? speakersLabel : "");
+  const deleteTip = useTooltip(t("meeting:deleteRecording"));
   // A newer title from outside (renamed in the library list) replaces the one saved here.
   useEffect(() => setRenamedTitle(null), [title]);
   useEffect(() => {
@@ -224,12 +225,14 @@ export function MeetingHeader({ title, createdAt, recordedAt, stage, processStat
           {speakersTip.tooltip}
         </span>}
         <MeetingDownloads {...downloads} title={renamedTitle ?? title} />
-        <Menu label={t("meeting:moreActions")} tooltip trigger={<Icon icon={Ellipsis} />}
-          triggerClassName="ui-icon-button ui-icon-button--quiet">
-          {!editing && <MenuItem disabled={busy} onSelect={startEditing}><Icon icon={Pencil} />{t("meeting:rename")}</MenuItem>}
-          <MenuItem tone="danger" disabled={busy || editing}
-            onSelect={() => { setConfirming(true); setError(null); }}><Icon icon={Trash2} />{t("meeting:deleteRecording")}</MenuItem>
-        </Menu>
+        <span className="meeting-delete">
+          <button type="button" className="ui-icon-button ui-icon-button--ghost ui-icon-button--danger"
+            aria-label={t("meeting:deleteRecording")} disabled={busy || editing} {...deleteTip.triggerProps}
+            onClick={() => { deleteTip.hide(); setConfirming(true); setError(null); }}>
+            <Icon icon={Trash2} />
+          </button>
+          {deleteTip.tooltip}
+        </span>
       </div>
     </div>
     <p role="status" className="meeting-sr-only">{notice}</p>
