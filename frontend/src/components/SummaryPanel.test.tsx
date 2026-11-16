@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { SummaryPanel } from "./SummaryPanel";
 import { TranscriptView } from "./TranscriptView";
 import { copy } from "../copy/es";
@@ -101,7 +101,7 @@ describe("SummaryPanel", () => {
     expect(await screen.findByText(text.copied)).toBeVisible();
   });
 
-  it("downloads exactly the copied plain text as resumen-<id>.txt and revokes the object URL", async () => {
+  it("downloads exactly the copied plain text as <title> - resumen.txt and revokes the object URL", async () => {
     artifact = summary;
     const expected = "Synthetic planning\n- First synthetic point\n- Second synthetic point";
     const blobs: Blob[] = [];
@@ -114,10 +114,10 @@ describe("SummaryPanel", () => {
     });
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
-    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    render(<SummaryPanel meetingId="meeting-1" title="Weekly sync" onSeek={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: text.download }));
-    expect(downloads).toEqual(["resumen-meeting-1.txt|blob:synthetic"]);
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:synthetic");
+    expect(downloads).toEqual(["Weekly sync - resumen.txt|blob:synthetic"]);
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith("blob:synthetic"));
     expect(document.querySelector("a[download]")).toBeNull();
     expect(blobs).toHaveLength(1);
     expect(blobs[0].type).toContain("text/plain");
@@ -130,6 +130,19 @@ describe("SummaryPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: text.copy }));
     await screen.findByText(text.copied);
     expect(writeText).toHaveBeenCalledWith(content);
+  });
+
+  it.each([null, undefined, "???"])("falls back to resumen-<id>.txt when the title %j leaves no usable name", async (title) => {
+    artifact = summary;
+    Object.assign(URL, { createObjectURL: vi.fn(() => "blob:synthetic"), revokeObjectURL: vi.fn() });
+    const names: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+    render(<SummaryPanel meetingId="meeting-1" title={title} onSeek={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: text.download }));
+    expect(names).toEqual([copy.meeting.summaryFilename("meeting-1")]);
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalled());
   });
 
   it("shows the generating skeleton card with an accessible status while the summary is pending", async () => {
@@ -466,9 +479,13 @@ describe("structured (v2) summary", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const blobs: Blob[] = [];
-    Object.assign(URL, { createObjectURL: vi.fn((blob: Blob) => { blobs.push(blob); return "blob:synthetic"; }), revokeObjectURL: vi.fn() });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
-    render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} />);
+    const revokeObjectURL = vi.fn();
+    Object.assign(URL, { createObjectURL: vi.fn((blob: Blob) => { blobs.push(blob); return "blob:synthetic"; }), revokeObjectURL });
+    const names: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+    render(<SummaryPanel meetingId="meeting-1" title="Weekly sync" onSeek={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: text.copy }));
     expect(writeText).toHaveBeenCalledWith(structuredPlainText);
     expect(structuredPlainText).not.toMatch(/\d{1,2}:\d{2}/);
@@ -479,6 +496,8 @@ describe("structured (v2) summary", () => {
       reader.readAsText(blobs[0]);
     });
     expect(content).toBe(structuredPlainText);
+    expect(names).toEqual(["Weekly sync - resumen.txt"]);
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalled());
   });
 
   it("still renders and exports a stored v1 summary exactly as before", async () => {
@@ -544,4 +563,63 @@ describe("meeting summary tab integration", () => {
     expect(audio.currentTime).toBe(65.432);
     view.unmount();
   }, 15000);
+});
+
+describe("meeting header summary download", () => {
+  // The panel has its own "Descargar" button: the header's trigger is found inside the header.
+  const headerOf = (title: HTMLElement) => title.closest("header") as HTMLElement;
+
+  function routeMeetingRequests() {
+    const summaryFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/meetings/meeting-1")) return response({ meeting_id: "meeting-1", process_state: "completed" });
+      if (url.endsWith("/meetings")) return response([{ meeting_id: "meeting-1", title: "Synthetic meeting", created_at: "2026-11-14T12:00:00Z" }]);
+      if (url.endsWith("/transcript")) return response({
+        transcript_id: "transcript-1", meeting_id: "meeting-1", language: "es", provider: "local",
+        supports_turns: true, created_at: "2026-11-14T12:00:00Z",
+        segments: [{ id: "turn-1", sequence: 1, text: "Synthetic turn", start_ms: 65000, end_ms: 75000 }],
+      });
+      if (url.endsWith("/diarization")) return response({ speakers: [], assignments: [] });
+      if (url.endsWith("/playback")) return response({
+        meeting_id: "meeting-1", duration_seconds: 180, video_presence: "absent",
+        audio_source: { source_id: "audio-1", url: "http://localhost/synthetic.wav", mime_type: "audio/wav" },
+        muxed_video_source: null, video_sources: [],
+      });
+      if (url.endsWith("/speaker-review")) return response(null, 404);
+      return summaryFetch(url, init);
+    });
+  }
+
+  it("enables the summary download once the panel has loaded a summary and names the file after the meeting", async () => {
+    artifact = summary;
+    routeMeetingRequests();
+    const names: string[] = [];
+    Object.assign(URL, { createObjectURL: vi.fn(() => "blob:synthetic"), revokeObjectURL: vi.fn() });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+    render(<TranscriptView meetingId="meeting-1" />);
+    await screen.findByText(summary.topic);
+    fireEvent.click(within(headerOf(await screen.findByRole("heading", { level: 1 }))).getByRole("button", { name: copy.meeting.download }));
+    const item = screen.getByRole("menuitem", { name: copy.meeting.downloadSummary });
+    await waitFor(() => expect(item).not.toHaveAttribute("aria-disabled"));
+    fireEvent.click(item);
+    await waitFor(() => expect(names).toEqual(["Synthetic meeting - resumen.txt"]));
+    // The panel's own button saves the same file.
+    fireEvent.click(within(screen.getByRole("group", { name: text.actions })).getByRole("button", { name: text.download }));
+    expect(names).toEqual(["Synthetic meeting - resumen.txt", "Synthetic meeting - resumen.txt"]);
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps it disabled, with the hint, while there is no summary", async () => {
+    artifact = null;
+    latest = pending;
+    routeMeetingRequests();
+    render(<TranscriptView meetingId="meeting-1" />);
+    await screen.findByText(text.generating);
+    fireEvent.click(within(headerOf(await screen.findByRole("heading", { level: 1 }))).getByRole("button", { name: copy.meeting.download }));
+    const item = screen.getByRole("menuitem", { name: copy.meeting.downloadSummary });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(item).toHaveAttribute("title", copy.meeting.summaryUnavailable);
+  });
 });

@@ -4,15 +4,18 @@ import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { deleteMeeting, listMeetings, renameMeeting } from "../api";
 import { copy } from "../copy/es";
+import { meeting as meetingText } from "../copy/meeting";
 import { applyLibraryQuery, type LibraryQuery } from "../library-query";
 import { LIBRARY_CHANGED_EVENT, notifyLibraryChanged } from "../library-events";
 import { navigate } from "../router";
 import { forgetLastMeeting } from "../last-meeting";
+import { downloadMeetingMedia } from "../media-download";
+import { downloadMeetingSummary } from "../summary-download";
 import { downloadMeetingTranscript } from "../transcript-download";
 import { Button, ConfirmDialog, Skeleton } from "./ui";
 import { LibraryBulkBar } from "./LibraryBulkBar";
 import { LibraryBulkDialog } from "./LibraryBulkDialog";
-import { LibraryRow, isReady } from "./LibraryRow";
+import { LibraryRow, hasSummary, isReady, type RowDownloadKind } from "./LibraryRow";
 import { LibraryToolbar } from "./LibraryToolbar";
 import { useLibraryBulk, type BulkKind } from "./useLibraryBulk";
 import { useLibrarySelection } from "./useLibrarySelection";
@@ -110,7 +113,7 @@ interface RecordingLibraryProps {
   onListLoaded?: (ids: string[]) => void;
 }
 
-/** More transcripts than this are downloaded only after the user confirms: browsers may block bursts. */
+/** More transcripts or summaries than this are downloaded only after the user confirms: browsers may block bursts. */
 const DOWNLOAD_CONFIRM_ABOVE = 5;
 
 type BulkConfirm = { kind: BulkKind; ids: string[]; skipped: number };
@@ -126,6 +129,7 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
   const [query, setQuery] = useState<LibraryQuery>(EMPTY_QUERY);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [rowNotices, setRowNotices] = useState<Record<string, string>>({});
   const [pendingDelete, setPendingDelete] = useState<MeetingListItem | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState<BulkConfirm | null>(null);
   const [announcement, setAnnouncement] = useState("");
@@ -214,7 +218,8 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
       await removeMeeting(id);
     } else {
       const meeting = meetingsRef.current.find((candidate) => candidate.id === id);
-      await downloadMeetingTranscript(id, meeting?.title);
+      if (kind === "downloadSummary") await downloadMeetingSummary(id, meeting?.title);
+      else await downloadMeetingTranscript(id, meeting?.title);
     }
   });
 
@@ -252,12 +257,39 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     notifyLibraryChanged();
   };
 
-  const downloadRow = async (meeting: MeetingListItem) => {
-    setRowError(meeting.id, null);
+  const setRowNotice = (id: string, message: string | null) => setRowNotices((current) => {
+    const { [id]: _removed, ...rest } = current;
+    return message === null ? rest : { ...rest, [id]: message };
+  });
+
+  // Recordings whose video is being saved: a second click must not open a second file picker.
+  const mediaDownloads = useRef(new Set<string>());
+
+  const downloadMedia = async (meeting: MeetingListItem) => {
+    if (mediaDownloads.current.has(meeting.id)) return;
+    mediaDownloads.current.add(meeting.id);
+    setRowNotice(meeting.id, meetingText.mediaProgress(null));
     try {
-      await downloadMeetingTranscript(meeting.id, meeting.title);
+      const outcome = await downloadMeetingMedia(meeting.id, meeting.title,
+        (percent) => setRowNotice(meeting.id, meetingText.mediaProgress(percent)));
+      setRowNotice(meeting.id, outcome === "opened" ? meetingText.mediaOpened : null);
     } catch {
-      setRowError(meeting.id, text.row.downloadFailed);
+      setRowNotice(meeting.id, null);
+      setRowError(meeting.id, text.row.downloadMediaFailed);
+    } finally {
+      mediaDownloads.current.delete(meeting.id);
+    }
+  };
+
+  const downloadRow = async (meeting: MeetingListItem, kind: RowDownloadKind) => {
+    setRowError(meeting.id, null);
+    setRowNotice(meeting.id, null);
+    if (kind === "media") { await downloadMedia(meeting); return; }
+    try {
+      if (kind === "summary") await downloadMeetingSummary(meeting.id, meeting.title);
+      else await downloadMeetingTranscript(meeting.id, meeting.title);
+    } catch {
+      setRowError(meeting.id, kind === "summary" ? text.row.downloadSummaryFailed : text.row.downloadFailed);
     }
   };
 
@@ -281,15 +313,16 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     ...[...selection.selected].filter((id) => !order.includes(id)),
   ];
 
-  const startBulkDownload = () => {
+  const startBulkDownload = (kind: "download" | "downloadSummary") => {
+    const applies = kind === "downloadSummary" ? hasSummary : isReady;
     const ready = selectedIds().filter((id) => {
       const meeting = meetings.find((candidate) => candidate.id === id);
-      return meeting !== undefined && isReady(meeting);
+      return meeting !== undefined && applies(meeting);
     });
     const skipped = selectedCount - ready.length;
-    if (ready.length === 0) bulk.showEmpty("download", skipped);
-    else if (ready.length > DOWNLOAD_CONFIRM_ABOVE) setBulkConfirm({ kind: "download", ids: ready, skipped });
-    else void bulk.start("download", ready, skipped);
+    if (ready.length === 0) bulk.showEmpty(kind, skipped);
+    else if (ready.length > DOWNLOAD_CONFIRM_ABOVE) setBulkConfirm({ kind, ids: ready, skipped });
+    else void bulk.start(kind, ready, skipped);
   };
 
   const runConfirmedBulk = () => {
@@ -328,7 +361,8 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
   const header = selecting ? (
     <LibraryBulkBar count={selectedCount} allState={selection.allState} headerRef={headerRef}
       onToggleAll={selection.toggleAllVisible} onClear={selection.clear}
-      onDownload={startBulkDownload} onDelete={() => setBulkConfirm({ kind: "delete", ids: selectedIds(), skipped: 0 })} />
+      onDownload={() => startBulkDownload("download")}
+      onDownloadSummaries={() => startBulkDownload("downloadSummary")} onDelete={() => setBulkConfirm({ kind: "delete", ids: selectedIds(), skipped: 0 })} />
   ) : (
     <>
       <div ref={headerRef} tabIndex={-1} className="ui-pane-header">
@@ -375,11 +409,11 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     const renderRow = (meeting: MeetingListItem) => (
       <LibraryRow key={meeting.id} meeting={meeting} open={meeting.id === selectedId}
         checked={selection.selected.has(meeting.id)} tabbable={meeting.id === tabbableId}
-        renaming={meeting.id === renamingId} error={rowErrors[meeting.id] ?? null}
+        renaming={meeting.id === renamingId} error={rowErrors[meeting.id] ?? null} notice={rowNotices[meeting.id] ?? null}
         onOpen={openRow} onToggleChecked={toggleChecked} onFocusRow={setActiveId}
         onStartRename={(id) => { setRowError(id, null); setRenamingId(id); }}
         onRename={renameRow} onCancelRename={() => setRenamingId(null)}
-        onDownload={(target) => { void downloadRow(target); }} onDelete={setPendingDelete} />
+        onDownload={(target, kind) => { void downloadRow(target, kind); }} onDelete={setPendingDelete} />
     );
 
     if (visible.length === 0) {
@@ -397,6 +431,7 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
   }
 
   const deleteBulk = bulkConfirm?.kind === "delete";
+  const summariesBulk = bulkConfirm?.kind === "downloadSummary";
   return (
     <section className="ui-pane library" id="library-pane" aria-labelledby="library-title"
       data-selecting={selecting || undefined} onKeyDown={onSectionKeyDown}>
@@ -410,8 +445,11 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
       )}
       {bulkConfirm && (
         <ConfirmDialog
-          title={deleteBulk ? text.bulk.deleteConfirmTitle(bulkConfirm.ids.length) : text.bulk.downloadConfirmTitle(bulkConfirm.ids.length)}
-          body={deleteBulk ? text.bulk.deleteConfirmBody : text.bulk.downloadConfirmBody}
+          title={deleteBulk ? text.bulk.deleteConfirmTitle(bulkConfirm.ids.length)
+            : summariesBulk ? text.bulk.downloadSummariesConfirmTitle(bulkConfirm.ids.length)
+              : text.bulk.downloadConfirmTitle(bulkConfirm.ids.length)}
+          body={deleteBulk ? text.bulk.deleteConfirmBody
+            : summariesBulk ? text.bulk.downloadSummariesConfirmBody : text.bulk.downloadConfirmBody}
           confirmLabel={deleteBulk ? text.bulk.deleteConfirm : text.bulk.downloadConfirm}
           cancelLabel={text.bulk.cancel} onConfirm={runConfirmedBulk} onCancel={() => setBulkConfirm(null)} />
       )}

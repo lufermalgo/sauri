@@ -67,3 +67,24 @@ describe("titleToFilename", () => {
     expect(titleToFilename(".webm", "txt")).toBeNull();
   });
 });
+
+describe("titleToFilename suffix", () => {
+  it("adds the suffix before the extension and keeps the plain name unchanged without one", () => {
+    expect(titleToFilename("Weekly sync", "txt", " - resumen")).toBe("Weekly sync - resumen.txt");
+    expect(titleToFilename("Weekly sync", "txt")).toBe("Weekly sync.txt");
+  });
+
+  it("cleans the title first: the media extension goes, the suffix stays", () => {
+    expect(titleToFilename("recording.webm", "txt", " - resumen")).toBe("recording - resumen.txt");
+  });
+
+  it("keeps the suffix when a long title is cut", () => {
+    const name = titleToFilename("a".repeat(300), "txt", " - resumen");
+    expect(name).toBe(`${"a".repeat(120)} - resumen.txt`);
+  });
+
+  it("still guards reserved names and unusable titles", () => {
+    expect(titleToFilename("nul", "txt", " - resumen")).toBe("_nul - resumen.txt");
+    expect(titleToFilename("???", "txt", " - resumen")).toBeNull();
+  });
+});

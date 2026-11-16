@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type BulkKind = "delete" | "download";
+export type BulkKind = "delete" | "download" | "downloadSummary";
 
 export interface BulkRun {
   kind: BulkKind;
@@ -13,7 +13,7 @@ export interface BulkRun {
   failed: string[];
   /** Left unprocessed because the user stopped the run. */
   notProcessed: string[];
-  /** Selected recordings that do not apply to the action (e.g. no transcript yet). */
+  /** Selected recordings that do not apply to the action (e.g. no transcript or summary yet). */
   skipped: number;
   stopping: boolean;
 }

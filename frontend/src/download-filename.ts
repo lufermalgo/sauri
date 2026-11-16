@@ -9,10 +9,11 @@ function trimEdges(value: string): string {
 }
 
 /**
- * Builds a safe download file name "<title>.<extension>" from a meeting title.
+ * Builds a safe download file name "<title><suffix>.<extension>" from a meeting title. The optional
+ * suffix (e.g. " - summary") is appended after the title is cleaned and truncated, so it always survives.
  * Returns null when nothing usable is left, so the caller can use its own fallback.
  */
-export function titleToFilename(title: string | null | undefined, extension: string): string | null {
+export function titleToFilename(title: string | null | undefined, extension: string, suffix = ""): string | null {
   if (!title) return null;
   const spaced = title.normalize("NFC").replace(INVALID_CHARS, " ").replace(/\s+/g, " ").trim();
   // Uploaded recordings are titled with their original file name: drop its media extension.
@@ -22,5 +23,5 @@ export function titleToFilename(title: string | null | undefined, extension: str
   if (!base) return null;
   // Windows reserves these names even when an extension follows them.
   if (RESERVED_WINDOWS_NAME.test(base.split(".")[0].trim())) base = `_${base}`;
-  return `${base}.${extension}`;
+  return `${base}${suffix}.${extension}`;
 }

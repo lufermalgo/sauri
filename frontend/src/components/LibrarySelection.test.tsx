@@ -452,3 +452,107 @@ describe("bulk download", () => {
     await screen.findByText(bulk.downloaded(1, 0));
   });
 });
+
+describe("bulk summary download", () => {
+  const summary = (id: string) => ({
+    summaryId: `s-${id}`, meetingId: id, templateId: "t", templateName: "General", templateVersion: 1,
+    topic: `Topic ${id}`, schemaVersion: 1 as const, keyPoints: [`Point ${id}`], conclusion: null,
+    reviewState: "draft" as const, generation: 1, createdAt: "2026-11-14T12:00:00Z", updatedAt: "2026-11-14T12:00:00Z",
+  });
+  const withSummary = () => ({ summaryTopic: "Topic" });
+
+  function setup() {
+    const names: string[] = [];
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:x"), revokeObjectURL: vi.fn() }));
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download);
+    });
+    const get = vi.spyOn(api, "getMeetingSummary").mockImplementation(async (id) => summary(id));
+    return { names, get };
+  }
+
+  it("is offered in the action bar next to the transcripts", async () => {
+    setup();
+    await renderList(many(2, withSummary));
+    fireEvent.click(box("Meeting 1"));
+    const toolbar = screen.getByRole("toolbar", { name: selection.toolbar });
+    const labels = within(toolbar).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent);
+    expect(labels).toEqual([selection.downloadAll, selection.downloadSummaries, selection.deleteAll]);
+    // No bulk video download: recordings are far too large to batch.
+    expect(within(toolbar).queryByRole("button", { name: /video/i })).toBeNull();
+  });
+
+  it("downloads each summary as <title> - resumen.txt, one after another, without asking up to five", async () => {
+    const { names, get } = setup();
+    await renderList(many(3, withSummary));
+    fireEvent.click(selectAllBox());
+    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
+
+    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    expect(names).toEqual(["Meeting 1 - resumen.txt", "Meeting 2 - resumen.txt", "Meeting 3 - resumen.txt"]);
+    expect(get.mock.calls.map(([id]) => id)).toEqual(["m1", "m2", "m3"]);
+    expect(within(done).getByRole("status")).toHaveTextContent(bulk.downloadedSummaries(3, 0));
+    expect(checkedTitles()).toHaveLength(3);
+  });
+
+  it("asks for confirmation above five summaries", async () => {
+    const { names, get } = setup();
+    await renderList(many(6, withSummary));
+    fireEvent.click(selectAllBox());
+    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
+
+    const confirm = confirmDialog();
+    expect(confirm).toHaveTextContent(bulk.downloadSummariesConfirmTitle(6));
+    expect(get).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: bulk.cancel, hidden: true }));
+    expect(get).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: bulk.downloadConfirm, hidden: true }));
+    await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    expect(names).toHaveLength(6);
+  });
+
+  it("counts only the ready ones with a summary and says how many were skipped", async () => {
+    const { names } = setup();
+    await renderList(many(4, (index) => {
+      if (index === 2) return {};
+      if (index === 3) return { ...withSummary(), processState: ProcessState.Transcribing };
+      return withSummary();
+    }));
+    fireEvent.click(selectAllBox());
+    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
+    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    expect(names).toEqual(["Meeting 1 - resumen.txt", "Meeting 4 - resumen.txt"]);
+    expect(done).toHaveTextContent(bulk.downloadedSummaries(2, 0));
+    expect(done).toHaveTextContent(bulk.skippedNoSummary(2));
+  });
+
+  it("explains when none of the selected recordings has a summary", async () => {
+    const { get } = setup();
+    await renderList(many(2));
+    fireEvent.click(selectAllBox());
+    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
+    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    expect(done).toHaveTextContent(bulk.noneWithSummary);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("counts a summary that cannot be fetched as failed and retries only that one", async () => {
+    const { names, get } = setup();
+    get.mockImplementation(async (id) => {
+      if (id === "m2") return null;
+      return summary(id);
+    });
+    await renderList(many(3, withSummary));
+    fireEvent.click(selectAllBox());
+    fireEvent.click(screen.getByRole("button", { name: selection.downloadSummaries }));
+    const done = await screen.findByRole("dialog", { name: bulk.doneDownloadTitle });
+    expect(done).toHaveTextContent(bulk.downloadedSummaries(2, 1));
+
+    get.mockImplementation(async (id) => summary(id));
+    fireEvent.click(within(done).getByRole("button", { name: bulk.retry }));
+    await waitFor(() => expect(names).toEqual(["Meeting 1 - resumen.txt", "Meeting 3 - resumen.txt", "Meeting 2 - resumen.txt"]));
+    await screen.findByText(bulk.downloadedSummaries(1, 0));
+  });
+});
