@@ -24,6 +24,7 @@ from asr_assets import vad_cli_path, vad_model_path, verify_assets
 from asr_config import (
     chunk_ms,
     default_language,
+    default_prompt_enabled,
     language_code,
     remaining,
     server_budget,
@@ -32,7 +33,7 @@ from asr_config import (
     vad_threshold,
 )
 from asr_diagnostics import diagnostic_tail
-from asr_prompt import vocabulary_prompt
+from asr_prompt import DEFAULT_PROMPT, DEFAULT_PROMPT_LANGUAGE, vocabulary_prompt
 from asr_vad import align_chunks, cut_wav, group_chunks, parse_vad
 from botocore.config import Config
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -81,6 +82,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     default_language()
     server_budget()
     suppress_nst()
+    default_prompt_enabled()
     if vad_enabled():
         vad_threshold()
         chunk_ms()
@@ -228,10 +230,25 @@ def _download_audio(audio_ref: str, deadline: float) -> str:
     return audio_path
 
 
-def _run_whisper(wav_path: Path, output: Path, language: str, timeout_s: float) -> dict[str, Any]:
-    prompt = vocabulary_prompt(Path(os.environ.get(
+def _initial_prompt(language: str) -> tuple[str | None, bool]:
+    """Return the whisper initial prompt and whether it is the built-in default.
+
+    The private vocabulary prompt wins (its prefix already primes punctuation).
+    The Spanish default applies only to Spanish audio: for `auto` or any other
+    language no default is passed, so it cannot bias the decoding language.
+    """
+    vocabulary = vocabulary_prompt(Path(os.environ.get(
         "SAURI_ASR_VOCABULARY_FILE", "~/.config/sauri/vocabulary.txt",
     )).expanduser())
+    if vocabulary:
+        return vocabulary, False
+    if default_prompt_enabled() and language_code(language) == DEFAULT_PROMPT_LANGUAGE:
+        return DEFAULT_PROMPT, True
+    return None, False
+
+
+def _run_whisper(wav_path: Path, output: Path, language: str, timeout_s: float) -> dict[str, Any]:
+    prompt, _ = _initial_prompt(language)
     command = [WHISPER_CLI, "-m", str(ASR_MODEL_PATH), "-f", str(wav_path),
          "-l", language_code(language), "-t", str(ASR_THREADS),
          "-bs", "5", "-bo", "5", "-fa"]
@@ -364,6 +381,8 @@ def _transcribe_audio(request: TranscribeRequest, deadline: float) -> Transcribe
                     "audio_ms": report.audio_ms,
                     "vad": vad,
                     "inverted_words": result.inverted_words,
+                    # Boolean only, never the prompt text. For `auto` it reflects the detected language.
+                    "default_prompt": _initial_prompt(language)[1],
                     "stage_ms": {"download": download_ms, "normalize": round(report.seconds * 1000),
                                  "inference": inference_ms},
                 },

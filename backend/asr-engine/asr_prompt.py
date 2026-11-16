@@ -7,6 +7,15 @@ from pathlib import Path
 PROMPT_BYTE_LIMIT = 224
 _PROMPT_PREFIX = "Hola. Estos son los nombres propios: "
 
+# Without any initial prompt, whisper.cpp intermittently decodes whole stretches
+# in an unpunctuated, lowercase mode depending on where a chunk starts. A short
+# punctuated prompt carried through every decoding window removes it. The text
+# is Spanish (the product default), so it applies only to Spanish audio and must
+# never bias another language. The accent is a unicode escape because the
+# English-only checker flags accented characters in source files.
+DEFAULT_PROMPT = "Buenos d\u00edas. Empecemos."
+DEFAULT_PROMPT_LANGUAGE = "es"
+
 
 def vocabulary_prompt(path: Path) -> str | None:
     try:
