@@ -77,3 +77,43 @@ describe("shared meeting types", () => {
     expect(MeetingOrigin.Manual).toBe("manual");
   });
 });
+
+describe("engines API contract", () => {
+  const enginesContractConsumer = `
+import type {
+    EngineKeyState, EngineProbeResult, EngineProcessChoice, EngineProvider, EngineProviderCreate,
+  } from "./index";
+  import { LOCAL_DEFAULT_MODEL } from "./index";
+  type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends
+    (<T>() => T extends B ? 1 : 2) ? true : false;
+  type Assert<T extends true> = T;
+  // A provider as returned by the API never has a field that could hold the key value.
+  type NoKeyValue = Assert<Equal<Extract<keyof EngineProvider, "key" | "api_key" | "secret" | "secret_ref">, never>>;
+  type NoKeyValueInState = Assert<Equal<Extract<keyof EngineKeyState, "key" | "api_key" | "secret">, never>>;
+  type ProbeShape = Assert<Equal<keyof EngineProbeResult, "ok" | "latency_ms" | "error_class" | "json_schema_ok">>;
+  const choice: EngineProcessChoice = { provider_id: null, model: LOCAL_DEFAULT_MODEL, local_fallback: true };
+  const create: EngineProviderCreate = { kind: "openai", label: "Work account" };
+  // @ts-expect-error unknown kinds are rejected
+  const bad: EngineProviderCreate = { kind: "nothing", label: "x" };
+  void choice; void create; void bad;
+  export type { NoKeyValue, NoKeyValueInState, ProbeShape };
+  `;
+
+  it("compiles against the exported types and never exposes a key value", () => {
+    const options: ts.CompilerOptions = {
+      target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler, strict: true, noEmit: true, skipLibCheck: true,
+      lib: ["lib.es2022.d.ts"],
+    };
+    const host = ts.createCompilerHost(options);
+    const virtualName = `${process.cwd()}/src/engines-contract-consumer.ts`;
+    const original = host.getSourceFile.bind(host);
+    host.getSourceFile = (name, languageVersion, ...rest) =>
+      name === virtualName ? ts.createSourceFile(name, enginesContractConsumer, languageVersion) : original(name, languageVersion, ...rest);
+    const originalExists = host.fileExists.bind(host);
+    host.fileExists = (name) => name === virtualName || originalExists(name);
+    const program = ts.createProgram([virtualName], options, host);
+    const messages = ts.getPreEmitDiagnostics(program).map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"));
+    expect(messages).toEqual([]);
+  });
+});

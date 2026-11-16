@@ -22,7 +22,7 @@ PARENT = "024_regeneration_operations"
 
 def test_revision_is_the_single_head_and_follows_regeneration_operations() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == [REVISION]
+    assert script.get_heads() == ["026_engine_providers"]  # The engines revision follows.
     assert script.get_revision(REVISION).down_revision == PARENT
     assert len(REVISION) <= 32  # alembic_version.version_num is VARCHAR(32)
 
@@ -49,7 +49,7 @@ async def test_upgrade_and_downgrade_on_real_postgres(monkeypatch: pytest.Monkey
             "VALUES ('u', 'u@example.test', 'S', 'pbkdf2_sha256$1$aa$bb', true, now())"
         )
 
-        await asyncio.to_thread(command.upgrade, config, "head")
+        await asyncio.to_thread(command.upgrade, config, REVISION)
         assert await connection.fetchval("SELECT version_num FROM alembic_version") == REVISION
         assert await connection.fetchval("SELECT token_version FROM users WHERE id = 'u'") == 0  # existing rows
         insert = (
@@ -69,7 +69,7 @@ async def test_upgrade_and_downgrade_on_real_postgres(monkeypatch: pytest.Monkey
         assert "token_version" not in {row["column_name"] for row in columns}
         assert await connection.fetchval("SELECT count(*) FROM users") == 1  # nothing else touched
 
-        await asyncio.to_thread(command.upgrade, config, "head")
+        await asyncio.to_thread(command.upgrade, config, REVISION)
         assert await connection.fetchval("SELECT token_version FROM users WHERE id = 'u'") == 0
     finally:
         if connection is not None:
