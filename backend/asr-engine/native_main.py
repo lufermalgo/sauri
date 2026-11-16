@@ -43,6 +43,8 @@ from pydantic import BaseModel, Field, field_validator
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
 from sauri_engine_common.credentials import object_store_credentials
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
+from sauri_engine_common.local_model_use import LocalModelError, LocalSelection, select_local_model
+from sauri_engine_common.route import ROUTE_HEADER
 from whisper_words import NoSpeechError, NoWordTimestampsError, WordsResult, words_from_ggml_json
 
 logger = logging.getLogger("asr-engine-native")
@@ -247,9 +249,11 @@ def _initial_prompt(language: str) -> tuple[str | None, bool]:
     return None, False
 
 
-def _run_whisper(wav_path: Path, output: Path, language: str, timeout_s: float) -> dict[str, Any]:
+def _run_whisper(
+    wav_path: Path, output: Path, language: str, timeout_s: float, model_path: Path | None = None,
+) -> dict[str, Any]:
     prompt, _ = _initial_prompt(language)
-    command = [WHISPER_CLI, "-m", str(ASR_MODEL_PATH), "-f", str(wav_path),
+    command = [WHISPER_CLI, "-m", str(model_path or ASR_MODEL_PATH), "-f", str(wav_path),
          "-l", language_code(language), "-t", str(ASR_THREADS),
          "-bs", "5", "-bo", "5", "-fa"]
     if suppress_nst():
@@ -277,11 +281,13 @@ def _detected_language(doc: dict[str, Any]) -> str:
 
 
 def _transcribe_wav(
-    wav_path: Path, audio_ms: int, language: str, deadline: float,
+    wav_path: Path, audio_ms: int, language: str, deadline: float, model_path: Path | None = None,
 ) -> tuple[WordsResult, str, dict[str, object], int]:
+    # Without a chosen model the call is exactly the built-in one (no extra argument).
+    model: dict[str, Any] = {} if model_path is None else {"model_path": model_path}
     if not vad_enabled():
         started = time.monotonic()
-        doc = _run_whisper(wav_path, wav_path.parent / "out", language, remaining(deadline))
+        doc = _run_whisper(wav_path, wav_path.parent / "out", language, remaining(deadline), **model)
         inference_ms = round((time.monotonic() - started) * 1000)
         remaining(deadline)
         return words_from_ggml_json(doc, audio_ms), _detected_language(doc), {
@@ -313,7 +319,7 @@ def _transcribe_wav(
             cut_wav(wav_path, chunk_path, interval, deadline)
             chunk_language = detected if language == "auto" and detected else language
             started = time.monotonic()
-            doc = _run_whisper(chunk_path, Path(temporary) / "out", chunk_language, remaining(deadline))
+            doc = _run_whisper(chunk_path, Path(temporary) / "out", chunk_language, remaining(deadline), **model)
             inference_seconds += time.monotonic() - started
             remaining(deadline)
             result = words_from_ggml_json(doc, interval[1] - interval[0])
@@ -339,30 +345,43 @@ async def transcribe(
     request: TranscribeRequest,
     _authorized: None = Depends(_require_engine_token),
     recording_capability: str | None = Header(default=None, alias="X-Sauri-Recording-Capability"),
+    route: str | None = Header(default=None, alias=ROUTE_HEADER),
 ) -> TranscribeResponse:
     _validate_audio_ref(request.audio_ref)
     _require_recording_capability(request.audio_ref, recording_capability)
+    try:
+        selection = await run_in_threadpool(
+            select_local_model, route, process="transcription", legacy_default=ASR_MODEL_PATH
+        )
+    except LocalModelError as error:
+        raise HTTPException(status_code=error.status, detail=error.code) from None
     if s3_client is None:
         raise HTTPException(status_code=503, detail="Engine not initialized")
     budget = server_budget()
     deadline = time.monotonic() + budget
     try:
-        return await asyncio.wait_for(run_in_threadpool(_transcribe_serialized, request, deadline), timeout=budget)
+        return await asyncio.wait_for(
+            run_in_threadpool(_transcribe_serialized, request, deadline, selection), timeout=budget
+        )
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail="engine_failed") from exc
 
 
-def _transcribe_serialized(request: TranscribeRequest, deadline: float) -> TranscribeResponse:
+def _transcribe_serialized(
+    request: TranscribeRequest, deadline: float, selection: LocalSelection | None = None,
+) -> TranscribeResponse:
     if not _job_lock.acquire(timeout=remaining(deadline)):
         raise TimeoutError("engine_failed")
     try:
         remaining(deadline)
-        return _transcribe_audio(request, deadline)
+        return _transcribe_audio(request, deadline, selection)
     finally:
         _job_lock.release()
 
 
-def _transcribe_audio(request: TranscribeRequest, deadline: float) -> TranscribeResponse:
+def _transcribe_audio(
+    request: TranscribeRequest, deadline: float, selection: LocalSelection | None = None,
+) -> TranscribeResponse:
     audio_path: str | None = None
     try:
         with KeepAwake(), tempfile.TemporaryDirectory(prefix="sauri-asr-") as temporary:
@@ -371,12 +390,16 @@ def _transcribe_audio(request: TranscribeRequest, deadline: float) -> Transcribe
             download_ms = round((time.monotonic() - started) * 1000)
             wav_path = Path(temporary) / "audio.wav"
             report = normalize_to_wav(Path(audio_path), wav_path, timeout_s=min(300, remaining(deadline)))
-            result, language, vad, inference_ms = _transcribe_wav(wav_path, report.audio_ms, request.language, deadline)
+            model: dict[str, Any] = {} if selection is None else {"model_path": selection.path}
+            result, language, vad, inference_ms = _transcribe_wav(
+                wav_path, report.audio_ms, request.language, deadline, **model)
             return TranscribeResponse(
                 segments=[Segment(text=s.text.strip(), start_ms=s.start_ms, end_ms=s.end_ms) for s in result.segments],
                 words=[Word(**asdict(word)) for segment in result.segments for word in segment.words],
                 language=language,
-                engine=EngineInfo(name="whisper.cpp", model=MODEL_ID, device=MODEL_DEVICE),
+                engine=EngineInfo(
+                    name="whisper.cpp", model=MODEL_ID if selection is None else selection.model_id,
+                    device=MODEL_DEVICE),
                 diagnostics={
                     "audio_ms": report.audio_ms,
                     "vad": vad,
