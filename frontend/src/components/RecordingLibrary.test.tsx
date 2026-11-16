@@ -50,6 +50,37 @@ async function listLoaded() {
   await screen.findByRole("search");
 }
 
+const search = text.search;
+
+/** The search field, expanding it first when it is still the collapsed icon. */
+function searchBox(): HTMLInputElement {
+  if (!screen.queryByRole("searchbox")) fireEvent.click(screen.getByRole("button", { name: search.text }));
+  return screen.getByRole("searchbox", { name: search.text }) as HTMLInputElement;
+}
+
+function typeSearch(value: string) {
+  fireEvent.change(searchBox(), { target: { value } });
+}
+
+function datesButton(): HTMLElement {
+  return screen.getByRole("button", { name: /^Fechas/ });
+}
+
+function setDates(from: string, to: string) {
+  if (!screen.queryByRole("dialog", { name: search.dates })) fireEvent.click(datesButton());
+  fireEvent.change(screen.getByLabelText(search.from), { target: { value: from } });
+  fireEvent.change(screen.getByLabelText(search.to), { target: { value: to } });
+}
+
+function sortButton(): HTMLElement {
+  return screen.getByRole("button", { name: /^Ordenar/ });
+}
+
+function chooseSort(label: string) {
+  fireEvent.click(sortButton());
+  fireEvent.click(screen.getByRole("menuitemradio", { name: label }));
+}
+
 function renderedTitles(): string[] {
   return screen.getAllByRole("button")
     .map((button) => button.querySelector(".library-item-title")?.textContent)
@@ -116,7 +147,7 @@ describe("RecordingLibrary list", () => {
     ]);
     renderLibrary();
     expect(await screen.findByText(text.untitled)).toBeDefined();
-    fireEvent.change(screen.getByLabelText(text.search.text), { target: { value: "x" } });
+    typeSearch("x");
     expect(screen.getByText(text.noMatch)).toBeDefined();
   });
 
@@ -246,12 +277,12 @@ describe("RecordingLibrary date groups", () => {
     renderLibrary();
     await listLoaded();
 
-    fireEvent.change(screen.getByLabelText(text.search.text), { target: { value: "o" } });
+    typeSearch("o");
     expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
     expect(screen.getByRole("list", { name: text.listLabel })).toBeDefined();
     expect(renderedTitles()).toHaveLength(5);
 
-    fireEvent.click(screen.getByRole("button", { name: text.search.clear }));
+    fireEvent.click(screen.getByRole("button", { name: search.clearFilters }));
     expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(3);
   });
 
@@ -260,7 +291,7 @@ describe("RecordingLibrary date groups", () => {
     renderLibrary();
     await listLoaded();
 
-    fireEvent.change(screen.getByLabelText(text.search.sort), { target: { value: "oldest" } });
+    chooseSort(search.sortOldest);
     expect(screen.queryAllByRole("heading", { level: 2 })).toHaveLength(0);
   });
 });
@@ -361,42 +392,242 @@ describe("RecordingLibrary search", () => {
     await listLoaded();
   }
 
-  it("typing filters by title (case insensitive) and Limpiar restores", async () => {
+  it("typing filters by title (case insensitive) and the clear-filters icon restores", async () => {
     await openSearch();
-    expect(screen.queryByRole("button", { name: text.search.clear })).toBeNull();
+    expect(screen.queryByRole("button", { name: search.clearFilters })).toBeNull();
 
-    fireEvent.change(screen.getByLabelText(text.search.text), { target: { value: "PLANNING" } });
+    typeSearch("PLANNING");
     expect(renderedTitles()).toEqual(["Planning meeting"]);
 
-    fireEvent.click(screen.getByRole("button", { name: text.search.clear }));
+    fireEvent.click(screen.getByRole("button", { name: search.clearFilters }));
     await waitFor(() => expect(renderedTitles()).toHaveLength(3));
-    expect((screen.getByLabelText(text.search.text) as HTMLInputElement).value).toBe("");
-    expect(screen.queryByRole("button", { name: text.search.clear })).toBeNull();
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: search.clearFilters })).toBeNull();
   });
 
   it("date range narrows the list", async () => {
     await openSearch();
-    fireEvent.change(screen.getByLabelText(text.search.from), { target: { value: "2026-10-01" } });
-    fireEvent.change(screen.getByLabelText(text.search.to), { target: { value: "2026-10-31" } });
+    setDates("2026-10-01", "2026-10-31");
     expect(renderedTitles()).toEqual(["Planning meeting"]);
   });
 
   it("changing the order reorders the list", async () => {
     await openSearch();
-    const sort = screen.getByLabelText(text.search.sort);
 
-    fireEvent.change(sort, { target: { value: "oldest" } });
+    chooseSort(search.sortOldest);
     expect(renderedTitles()).toEqual(["Client interview", "Planning meeting", "Closing notes"]);
 
-    fireEvent.change(sort, { target: { value: "title" } });
+    chooseSort(search.sortTitle);
     expect(renderedTitles()).toEqual(["Client interview", "Closing notes", "Planning meeting"]);
   });
 
   it("shows the no-match message when nothing matches", async () => {
     await openSearch();
-    fireEvent.change(screen.getByLabelText(text.search.text), { target: { value: "zzzz" } });
+    typeSearch("zzzz");
     expect(screen.getByText(text.noMatch)).toBeDefined();
     expect(screen.queryByRole("list", { name: text.listLabel })).toBeNull();
+  });
+
+  it("keeps the no-match message and the way out when only the date range excludes everything", async () => {
+    await openSearch();
+    setDates("2030-01-01", "2030-01-31");
+    expect(screen.getByText(text.noMatch)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: search.clearFilters }));
+    expect(renderedTitles()).toHaveLength(3);
+  });
+});
+
+describe("RecordingLibrary toolbar", () => {
+  const items = [
+    meeting({ id: "1", title: "Planning meeting", createdAt: "2026-10-28T17:45:00Z" }),
+    meeting({ id: "2", title: "Client interview", createdAt: "2026-09-10T15:00:00Z" }),
+  ];
+
+  async function openToolbar() {
+    vi.spyOn(api, "listMeetings").mockResolvedValue(items);
+    renderLibrary();
+    await listLoaded();
+  }
+
+  function describedText(element: HTMLElement): string | null {
+    const id = element.getAttribute("aria-describedby");
+    return id ? document.getElementById(id)?.textContent ?? null : null;
+  }
+
+  it("starts as three icon buttons with an accessible name and a matching tooltip", async () => {
+    await openToolbar();
+    const toolbar = screen.getByRole("search", { name: search.regionLabel });
+    const buttons = within(toolbar).getAllByRole("button");
+    expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual([
+      search.text, search.dates, search.sortCurrent(search.sortNewest),
+    ]);
+    for (const button of buttons) expect(describedText(button)).toBe(button.getAttribute("aria-label"));
+    expect(toolbar.querySelector("input")).toBeNull();
+    expect(screen.queryByLabelText(search.from)).toBeNull();
+  });
+
+  it("expands the search field with focus, keeps it while it has text and closes it with Escape", async () => {
+    await openToolbar();
+    fireEvent.click(screen.getByRole("button", { name: search.text }));
+    const input = screen.getByRole("searchbox", { name: search.text });
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.change(input, { target: { value: "plan" } });
+    fireEvent.blur(input);
+    expect(screen.getByRole("searchbox")).toBe(input);
+    expect(renderedTitles()).toEqual(["Planning meeting"]);
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(renderedTitles()).toHaveLength(2);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.text }));
+  });
+
+  it("the close button clears the term and collapses the field", async () => {
+    await openToolbar();
+    typeSearch("plan");
+    fireEvent.click(screen.getByRole("button", { name: search.closeSearch }));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(renderedTitles()).toHaveLength(2);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.text }));
+  });
+
+  it("an empty search field folds back into its icon when focus leaves it", async () => {
+    await openToolbar();
+    const input = searchBox();
+    fireEvent.blur(input, { relatedTarget: document.body });
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.getByRole("button", { name: search.text })).toBeDefined();
+  });
+
+  it("keeps focus in the field while typing", async () => {
+    await openToolbar();
+    const input = searchBox();
+    fireEvent.change(input, { target: { value: "p" } });
+    fireEvent.change(input, { target: { value: "pl" } });
+    expect(document.activeElement).toBe(screen.getByRole("searchbox"));
+    expect(screen.getByRole("searchbox")).toBe(input);
+  });
+
+  it("the date popover is a non-modal dialog with two labeled dates and applies on change", async () => {
+    await openToolbar();
+    const trigger = datesButton();
+    expect(trigger.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: search.dates });
+    expect(dialog.getAttribute("aria-modal")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByLabelText(search.from));
+    expect((screen.getByLabelText(search.to) as HTMLInputElement).type).toBe("date");
+
+    fireEvent.change(screen.getByLabelText(search.from), { target: { value: "2026-10-01" } });
+    expect(renderedTitles()).toEqual(["Planning meeting"]);
+  });
+
+  it("shows the active range in the name and tooltip of the date icon and marks it active", async () => {
+    await openToolbar();
+    expect(datesButton().className).not.toContain("ui-icon-button--active");
+    setDates("2026-11-01", "2026-11-15");
+    const label = search.datesActive("01/11/2026", "15/11/2026");
+    expect(label).toBe("Fechas: 01/11/2026 – 15/11/2026");
+    const trigger = screen.getByRole("button", { name: label });
+    expect(trigger.className).toContain("ui-icon-button--active");
+    expect(describedText(trigger)).toBe(label);
+  });
+
+  it("names a one-sided range", async () => {
+    await openToolbar();
+    fireEvent.click(datesButton());
+    fireEvent.change(screen.getByLabelText(search.from), { target: { value: "2026-10-01" } });
+    expect(screen.getByRole("button", { name: "Fechas: desde 01/10/2026" })).toBeDefined();
+  });
+
+  it("the date popover's own Limpiar clears only the dates and returns focus to the icon", async () => {
+    await openToolbar();
+    typeSearch("e");
+    setDates("2026-10-01", "2026-10-31");
+    fireEvent.click(screen.getByRole("button", { name: search.clear }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.dates }));
+    expect(screen.getByRole("searchbox")).toBeDefined();
+    expect(renderedTitles()).toHaveLength(2);
+  });
+
+  it("opens the date popover with ArrowDown and closes it with Escape returning focus to the icon", async () => {
+    await openToolbar();
+    const trigger = datesButton();
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(screen.getByRole("dialog", { name: search.dates })).toBeDefined();
+    fireEvent.keyDown(screen.getByLabelText(search.from), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("closes the date popover on a click outside without moving focus", async () => {
+    await openToolbar();
+    fireEvent.click(datesButton());
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("the sort menu has radio items, checks the current one and applies a choice", async () => {
+    await openToolbar();
+    const trigger = sortButton();
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+    fireEvent.click(trigger);
+    const radios = screen.getAllByRole("menuitemradio");
+    expect(radios.map((radio) => [radio.textContent, radio.getAttribute("aria-checked")])).toEqual([
+      [search.sortNewest, "true"], [search.sortOldest, "false"], [search.sortTitle, "false"],
+    ]);
+    expect(radios[0].querySelector("svg")).not.toBeNull();
+    expect(radios[1].querySelector("svg")).toBeNull();
+
+    fireEvent.click(radios[2]);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.sortCurrent(search.sortTitle) }));
+    expect(screen.getByRole("button", { name: search.sortCurrent(search.sortTitle) }).className)
+      .toContain("ui-icon-button--active");
+    expect(renderedTitles()).toEqual(["Client interview", "Planning meeting"]);
+    fireEvent.click(sortButton());
+    expect(screen.getByRole("menuitemradio", { name: search.sortTitle }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("closes the sort menu with Escape and returns focus to the icon", async () => {
+    await openToolbar();
+    const trigger = sortButton();
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const first = screen.getAllByRole("menuitemradio")[0];
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("clear filters resets the search and dates but keeps the sort", async () => {
+    await openToolbar();
+    chooseSort(search.sortTitle);
+    typeSearch("e");
+    setDates("2026-10-01", "2026-10-31");
+    expect(renderedTitles()).toEqual(["Planning meeting"]);
+
+    fireEvent.click(screen.getByRole("button", { name: search.clearFilters }));
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: search.clearFilters })).toBeNull();
+    expect(screen.getByRole("button", { name: search.dates })).toBeDefined();
+    expect(renderedTitles()).toEqual(["Client interview", "Planning meeting"]);
+    expect(screen.getByRole("button", { name: search.sortCurrent(search.sortTitle) })).toBeDefined();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: search.text }));
+  });
+
+  it("does not render the toolbar while loading, on error or with no recordings", async () => {
+    vi.spyOn(api, "listMeetings").mockResolvedValue([]);
+    renderLibrary();
+    await screen.findByText(text.empty);
+    expect(screen.queryByRole("search")).toBeNull();
   });
 });
 

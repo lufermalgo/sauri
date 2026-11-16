@@ -4,10 +4,11 @@ import { ProcessState } from "@sauri/shared-types";
 import type { MeetingListItem } from "@sauri/shared-types";
 import { listMeetings } from "../api";
 import { copy } from "../copy/es";
-import { applyLibraryQuery, type LibraryQuery, type LibrarySort } from "../library-query";
+import { applyLibraryQuery, type LibraryQuery } from "../library-query";
 import { navigate } from "../router";
 import { NO_SPEECH_CAUSE, estimateProgress, secondsSince } from "../processing-estimate";
-import { Button, Icon, ProgressBar, Skeleton, StatusBadge, TextField } from "./ui";
+import { Button, Icon, ProgressBar, Skeleton, StatusBadge } from "./ui";
+import { LibraryToolbar } from "./LibraryToolbar";
 import "../styles/library.css";
 import "../styles/processing.css";
 
@@ -45,12 +46,6 @@ const IN_PROGRESS_STATES: ReadonlySet<ProcessState> = new Set([
 const LIBRARY_REFRESH_MS = 10_000;
 
 const EMPTY_QUERY: LibraryQuery = { text: "", from: null, to: null, sort: "newest" };
-
-const SORT_OPTIONS: Array<{ value: LibrarySort; label: string }> = [
-  { value: "newest", label: text.search.sortNewest },
-  { value: "oldest", label: text.search.sortOldest },
-  { value: "title", label: text.search.sortTitle },
-];
 
 function isQueryActive(query: LibraryQuery): boolean {
   return query.text.trim() !== "" || query.from !== null || query.to !== null || query.sort !== "newest";
@@ -153,15 +148,6 @@ function PlusIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg className="library-search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="7" cy="7" r="4.8" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M10.6 10.6L14 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }
@@ -308,9 +294,12 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibra
 
   const goToUpload = () => navigate({ name: "upload" });
 
+  // The search tools belong to a list that exists: not while loading, on error or with no recordings.
+  const showToolbar = !loading && !failed && meetings.length > 0;
   const header = (
     <div className="library-header">
       <h1 className="library-title">{text.title}</h1>
+      {showToolbar && <LibraryToolbar query={query} onChange={setQuery} />}
       <Button variant="primary" className="library-upload" onClick={goToUpload}>
         <PlusIcon />
         {text.upload}
@@ -365,63 +354,7 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting }: RecordingLibra
       ));
     }
 
-    body = (
-      <>
-        <form
-          className="ui-card library-search"
-          role="search"
-          aria-label={text.search.regionLabel}
-          onSubmit={(event) => event.preventDefault()}
-        >
-          <label className="library-field library-search-text">
-            <span className="library-field-label">{text.search.text}</span>
-            <span className="library-search-box">
-              <SearchIcon />
-              <input
-                type="search"
-                className="library-search-input"
-                value={query.text}
-                onChange={(event) => setQuery({ ...query, text: event.target.value })}
-              />
-            </span>
-          </label>
-          <div className="library-search-date">
-            <TextField
-              type="date"
-              label={text.search.from}
-              value={query.from ?? ""}
-              onChange={(event) => setQuery({ ...query, from: event.target.value || null })}
-            />
-          </div>
-          <div className="library-search-date">
-            <TextField
-              type="date"
-              label={text.search.to}
-              value={query.to ?? ""}
-              onChange={(event) => setQuery({ ...query, to: event.target.value || null })}
-            />
-          </div>
-          <label className="library-field library-search-sort">
-            <span className="library-field-label">{text.search.sort}</span>
-            <select
-              className="ui-input"
-              value={query.sort}
-              onChange={(event) => setQuery({ ...query, sort: event.target.value as LibrarySort })}
-            >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          {active && (
-            <Button variant="ghost" className="library-clear" onClick={() => setQuery(EMPTY_QUERY)}>
-              {text.search.clear}
-            </Button>
-          )}
-        </form>
-        {list}
-      </>
-    );
+    body = list;
   }
 
   return (

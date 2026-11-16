@@ -27,7 +27,8 @@ export function Menu({ label, triggerLabel, triggerVariant = "icon", trigger, tr
   const pendingFocus = useRef<"first" | "last" | null>(null);
   const panelId = useId();
 
-  const items = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? []);
+  const items = () => Array.from(panelRef.current?.querySelectorAll<HTMLElement>(
+    '[role="menuitem"]:not([aria-disabled="true"]), [role="menuitemradio"]:not([aria-disabled="true"])') ?? []);
 
   const close = useCallback((restoreFocus: boolean) => {
     setOpen(false);
@@ -133,14 +134,17 @@ export type MenuItemProps = {
   onSelect: () => void;
   tone?: "default" | "danger";
   disabled?: boolean;
+  /** Makes the item a radio-like choice (`menuitemradio`) that reports whether it is the selected one. */
+  checked?: boolean;
   children: ReactNode;
 };
 
-export function MenuItem({ onSelect, tone = "default", disabled = false, children }: MenuItemProps) {
+export function MenuItem({ onSelect, tone = "default", disabled = false, checked, children }: MenuItemProps) {
   const menu = useContext(MenuContext);
   return (
-    <button type="button" role="menuitem" tabIndex={-1} className={`ui-menu-item ui-menu-item--${tone}`}
-      aria-disabled={disabled || undefined}
+    <button type="button" role={checked === undefined ? "menuitem" : "menuitemradio"} tabIndex={-1}
+      className={`ui-menu-item ui-menu-item--${tone}`}
+      aria-checked={checked} aria-disabled={disabled || undefined}
       onClick={() => {
         if (disabled) return;
         onSelect();

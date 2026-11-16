@@ -22,72 +22,49 @@
   font-size: var(--ds-text-base);
 }
 
-/* Search card */
-.library-search {
+/* Toolbar: search, date range and sort as icon controls, on the title row. */
+.library-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--ds-space-4);
-  padding: var(--ds-space-4) var(--ds-space-6);
-}
-
-.library-search-text {
-  flex: 3 1 16rem;
-}
-
-.library-search-date {
-  flex: 1 1 9.5rem;
-}
-
-.library-search-sort {
-  flex: 1 1 10.5rem;
-}
-
-.library-field,
-.library-search .ui-text-field {
-  display: grid;
-  gap: var(--ds-space-2);
-  font-size: var(--ds-text-base);
-}
-
-.library-field-label,
-.library-search .ui-text-field label {
-  color: var(--ds-fg-muted);
-  font-size: var(--ds-text-sm);
-  font-weight:var(--ds-weight-semibold);
-}
-
-.library-search .ui-input {
-  min-height: 2.75rem;
-  background: var(--ds-sidebar);
-  border-radius: var(--ds-radius-md);
-  font: inherit;
-}
-
-.library-search-box {
-  display: flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: var(--ds-space-2);
-  padding: 0 var(--ds-space-3);
-  background: var(--ds-sidebar);
+  margin-left: auto;
+  --library-searchbox-width: 18rem;
+}
+
+.library-tool {
+  position: relative;
+  display: inline-block;
+}
+
+.library-searchbox {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-1);
+  box-sizing: border-box;
+  width: var(--library-searchbox-width);
+  max-width: 100%;
+  min-height: var(--ds-target);
+  padding-left: var(--ds-space-3);
+  background: var(--ds-surface);
   border: 1px solid var(--ds-border-strong);
   border-radius: var(--ds-radius-md);
   color: var(--ds-fg-muted);
 }
 
-.library-search-box:focus-within {
-  outline: 2px solid var(--ds-accent);
+.library-searchbox:focus-within {
+  outline: 2px solid var(--ds-focus);
   outline-offset: 2px;
 }
 
-.library-search-icon {
+.library-searchbox-icon {
   flex: 0 0 auto;
 }
 
-.library-search-input {
+.library-searchbox-input {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 2.5rem;
+  min-height: calc(var(--ds-target) - 2px);
   padding: 0;
   background: transparent;
   border: 0;
@@ -96,8 +73,37 @@
   outline: none;
 }
 
-.library-clear {
+.library-searchbox-input::-webkit-search-cancel-button {
+  display: none; /* The toolbar has its own close button. */
+}
+
+.library-searchbox .ui-icon-button {
   flex: 0 0 auto;
+  border-radius: var(--ds-radius-sm);
+}
+
+.library-check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: var(--ds-text-lg);
+  color: var(--ds-accent-text);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .library-searchbox {
+    animation: library-searchbox-in var(--ds-duration) var(--ds-ease);
+  }
+}
+
+@keyframes library-searchbox-in {
+  from {
+    width: var(--ds-target);
+    opacity: 0.4;
+  }
+  to {
+    width: var(--library-searchbox-width);
+    opacity: 1;
+  }
 }
 
 /* Date groups and rows */
@@ -268,6 +274,23 @@
 @media (max-width: 40rem) {
   .library-title {
     font-size: var(--ds-text-2xl);
+  }
+
+  /* The toolbar gets its own full row so the field can span it; the other icons make room. */
+  .library-toolbar {
+    --library-searchbox-width: 100%;
+    flex: 1 0 100%;
+    order: 3;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  .library-toolbar[data-searching] > :not(.library-searchbox) {
+    display: none;
+  }
+
+  .library-toolbar[data-searching] .library-searchbox {
+    flex: 1 1 auto;
   }
 
   .library-item {
