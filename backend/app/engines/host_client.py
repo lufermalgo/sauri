@@ -24,6 +24,7 @@ SECRET_TIMEOUT_S: Final = 10.0
 PROBE_TIMEOUT_S: Final = 30.0
 MODELS_TIMEOUT_S: Final = 45.0
 STATUS_TIMEOUT_S: Final = 10.0
+LOCAL_TIMEOUT_S: Final = 15.0
 # Same alphabet the host store accepts, but every segment starts with a letter or digit so a reference
 # can never climb out of /v1/secrets/ with ".." or "." segments.
 SECRET_REF: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*")
@@ -93,19 +94,24 @@ class HostClient:
             raise HostUnavailableError
         return token
 
-    async def _request(
+    async def _send(
         self, method: str, path: str, *, timeout: float, json: dict[str, Any] | None = None
-    ) -> dict[str, Any] | None:
+    ) -> httpx.Response:
         url = self._url() + path
         headers = {"Authorization": f"Bearer {self._token()}"}
         try:
             async with httpx.AsyncClient(
                 transport=self._transport, timeout=timeout, follow_redirects=False, trust_env=False
             ) as client:
-                response = await client.request(method, url, headers=headers, json=json)
+                return await client.request(method, url, headers=headers, json=json)
         except httpx.HTTPError as exc:
             logger.warning("host_engine_unreachable error=%s", type(exc).__name__)
             raise HostUnavailableError from None
+
+    async def _request(
+        self, method: str, path: str, *, timeout: float, json: dict[str, Any] | None = None
+    ) -> dict[str, Any] | None:
+        response = await self._send(method, path, timeout=timeout, json=json)
         if response.status_code == 401 or (
             response.status_code == 503 and _error_code(response) != "secret_unavailable"
         ):
@@ -147,6 +153,31 @@ class HostClient:
 
     async def models(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/v1/providers/models", timeout=MODELS_TIMEOUT_S, json=payload) or {}
+
+    async def local(self, method: str, path: str) -> tuple[int, dict[str, Any] | None]:
+        """One bodyless call to the local-model routes; returns the host's status and JSON body.
+
+        Unlike the other calls, a host refusal (404, 409, 507...) is returned, not raised: the user needs
+        its code and figures (needed space, the processes using a model). Only "cannot talk to or
+        authenticate against the host" raises ``HostUnavailableError``. The caller passes a path built
+        from its own fixed templates, so the target is never chosen by a request field.
+        """
+        response = await self._send(method, path, timeout=LOCAL_TIMEOUT_S)
+        code = _error_code(response) if response.status_code >= 400 else None
+        if response.status_code == 401 or (response.status_code == 503 and code == "management_auth_unavailable"):
+            logger.warning("host_engine_unavailable status=%s", response.status_code)
+            raise HostUnavailableError
+        if response.status_code == 204 or not response.content:
+            return response.status_code, None
+        if len(response.content) > MAX_RESPONSE_BYTES:
+            raise HostUnavailableError
+        try:
+            body = response.json()
+        except ValueError:
+            raise HostUnavailableError from None
+        if not isinstance(body, dict):
+            raise HostUnavailableError
+        return response.status_code, body
 
     async def engines_status(self) -> dict[str, Any]:
         return await self._request("GET", "/v1/engines/status", timeout=STATUS_TIMEOUT_S) or {}

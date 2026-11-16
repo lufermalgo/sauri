@@ -41,6 +41,7 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from hardware import detect_hardware, disk_free_bytes
+from sauri_engine_common.local_model_use import MANIFEST_SUFFIX, default_models_dir
 from sauri_engine_common.recommend import (
     Catalog,
     CatalogError,
@@ -58,7 +59,6 @@ MAX_REDIRECTS: Final = 5
 MAX_ATTEMPTS: Final = 4
 RETRY_DELAY_S: Final = 1.0
 MAX_FINISHED_JOBS: Final = 20
-MANIFEST_SUFFIX: Final = ".manifest.json"
 SELECTION_FILE: Final = "selection.json"
 JOB_ID_PATTERN: Final = re.compile(r"[0-9a-f]{32}")
 _TOKEN_PATTERN: Final = re.compile(r"[A-Za-z0-9_-]{8,256}")
@@ -150,10 +150,6 @@ class _Sink:
         self.out.seek(0)
         self.out.truncate(0)
         self.sha, self.done = hashlib.sha256(), 0
-
-
-def default_models_dir() -> Path:
-    return Path(os.getenv("SAURI_MODELS_DIR", Path.home() / ".local" / "share" / "sauri" / "models"))
 
 
 def default_token_path() -> Path:
