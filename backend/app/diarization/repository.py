@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from app.engines.routing import Provenance
 from app.infra.models import (
     Diarization,
     Meeting,
@@ -17,6 +18,17 @@ from app.infra.models import (
     WordSpeakerAssignment,
 )
 from app.infra.queue import JobQueue
+
+
+def _apply_provenance(attempt: Diarization, provenance: Provenance) -> None:
+    """Record which engine really produced the speakers (names only; never content or keys).
+
+    Private to this package until the shared helper for every process exists (U3.3); then replace it.
+    """
+    attempt.engine_name = provenance.engine_name[:64] if provenance.engine_name else None
+    attempt.engine_model = provenance.engine_model[:256] if provenance.engine_model else None
+    attempt.engine_external = provenance.external
+    attempt.engine_fallback_reason = provenance.fallback_reason
 
 
 class DiarizationRepository:
@@ -146,6 +158,7 @@ class DiarizationRepository:
         self, session: AsyncSession, meeting_id: str, processing_revision: int,
         provider: str, speakers: list[Speaker], assignments: list[SpeakerAssignment],
         word_assignments: list[WordSpeakerAssignment] | None = None,
+        provenance: Provenance | None = None,
     ) -> Diarization:
         """Commit the generation, its new speaker keys, assignments and review together.
 
@@ -162,6 +175,8 @@ class DiarizationRepository:
         if attempt is None:
             raise ValueError("revision is not claimed")
         attempt.provider = provider
+        if provenance is not None:
+            _apply_provenance(attempt, provenance)
         attempt.speaker_count = len(speakers)
         for speaker in speakers:
             speaker.diarization_id = attempt.id

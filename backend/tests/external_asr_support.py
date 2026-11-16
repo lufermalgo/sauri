@@ -118,6 +118,7 @@ class FakeAssemblyAI:
     processing_polls: int = 0  # polls answered "processing" before completing
     hang: bool = False  # never complete (cancellation tests)
     include_text: bool = True
+    speakers_for: Callable[[int], list[str | None]] | None = None  # speaker label per word (diarization runs)
     text: str | None = None  # overrides the text joined from the words
     padding_bytes: int = 0  # extra JSON the completed answer carries (response cap tests)
     seen: list[Seen] = field(default_factory=list)
@@ -156,6 +157,7 @@ class FakeAssemblyAI:
                 return JSONResponse({"id": identifier, "status": "processing"})
             index = int(identifier.split("-")[1])
             words = self.words_for(index)
+            speakers = self.speakers_for(index) if self.speakers_for else []
             document: dict[str, Any] = {
                 "id": identifier,
                 "status": "completed",
@@ -165,7 +167,9 @@ class FakeAssemblyAI:
                 "language_code": self.language,
                 "audio_duration": 3600,
                 "words": [
-                    {"text": text, "start": start, "end": end, "confidence": 0.9} for text, start, end in words
+                    {"text": text, "start": start, "end": end, "confidence": 0.9,
+                     **({"speaker": speakers[i]} if speakers else {})}
+                    for i, (text, start, end) in enumerate(words)
                 ],
             }
             if self.padding_bytes:

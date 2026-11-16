@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -16,14 +17,20 @@ from pathlib import Path
 from typing import Any, Literal
 
 import boto3
+import diar_external
 from botocore.config import Config
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sauri_engine_common.audio import NormalizeError, normalize_to_wav
 from sauri_engine_common.credentials import object_store_credentials
+from sauri_engine_common.external.asr_common import AdapterCancelled
+from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
+from sauri_engine_common.route import ROUTE_HEADER, Route, RouteError
+from sauri_engine_common.secrets import SecretStore
 
 logger = logging.getLogger("diar-engine-native")
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +55,8 @@ _bearer_dependency = Depends(_bearer_scheme)
 
 diarization_pipeline: Any = None
 s3_client: Any = None
+# Host secret store for provider keys; None means the default store (Keychain, else private files).
+secret_store: SecretStore | None = None
 _job_lock = threading.Lock()
 
 
@@ -195,14 +204,120 @@ def _run_diarization(audio_path: str) -> tuple[list[Segment], int]:
 @app.post("/diarize", response_model=DiarizeResponse)
 async def diarize(
     request: DiarizeRequest,
+    http_request: Request,
     _authorized: None = Depends(_require_engine_token),
     recording_capability: str | None = Header(default=None, alias="X-Sauri-Recording-Capability"),
-) -> DiarizeResponse:
+    route: str | None = Header(default=None, alias=ROUTE_HEADER),
+) -> DiarizeResponse | JSONResponse:
     _validate_audio_ref(request.audio_ref)
     _require_recording_capability(request.audio_ref, recording_capability)
+    try:
+        provider_route = diar_external.external_route(route)
+    except RouteError as error:
+        raise HTTPException(status_code=422, detail=error.reason or "route_malformed") from None
+    if provider_route is not None:
+        return await _diarize_external(request, http_request, provider_route)
     if diarization_pipeline is None:
         raise HTTPException(status_code=503, detail="Diarization pipeline not loaded")
     return await run_in_threadpool(_diarize_serialized, request.audio_ref)
+
+
+def _provider_failure(error: ProviderError) -> JSONResponse:
+    """The classified failure as ``{"error": {code, retryable, retry_after_s}}`` (no content, no key)."""
+    return JSONResponse(status_code=diar_external.error_status(error), content=error.to_payload())
+
+
+async def _diarize_external(
+    request: DiarizeRequest, http_request: Request, route: Route
+) -> DiarizeResponse | JSONResponse:
+    """Run an external route; the answer has the same v2 body as a local run (``device`` is ``remote``)."""
+    if s3_client is None:
+        raise HTTPException(status_code=503, detail="Engine not initialized")
+    cancel = asyncio.Event()
+    watcher = asyncio.create_task(diar_external.watch_disconnect(http_request.is_disconnected, cancel))
+    try:
+        return await _run_external(request, route, cancel)
+    except AdapterCancelled:
+        # The worker closed the connection: nobody reads this answer.
+        return JSONResponse(status_code=499, content={"error": {"code": "cancelled"}})
+    except ProviderError as error:
+        logger.warning("External diarization failed (class=%s)", error.code)
+        return _provider_failure(error)
+    except NormalizeError as exc:
+        raise HTTPException(status_code=422, detail="normalize_failed") from exc
+    except KeepAwakeError as exc:
+        raise HTTPException(status_code=503, detail="keep_awake_failed") from exc
+    except TimeoutError:
+        return _provider_failure(ProviderError("provider_timeout", reason="deadline"))
+    except HTTPException:
+        raise
+    except Exception as exc:  # the type name only: messages may carry paths or provider text
+        logger.error("External diarization failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=500, detail="engine_failed") from exc
+    finally:
+        watcher.cancel()
+        await asyncio.gather(watcher, return_exceptions=True)
+
+
+async def _run_external(request: DiarizeRequest, route: Route, cancel: asyncio.Event) -> DiarizeResponse:
+    # Validation and the key come first: a refused route has not downloaded or sent anything.
+    secret = await run_in_threadpool(diar_external.load_secret, route, secret_store)
+    from sauri_engine_common.external.safe_http import SafeHttp  # httpx stays optional for local-only runs
+
+    budget = min(diar_external.EXTERNAL_BUDGET_S, route.timeouts.total_s)
+    deadline = time.monotonic() + budget
+
+    def left() -> float:
+        return max(deadline - time.monotonic(), 1.0)
+
+    audio_path: str | None = None
+    try:
+        with KeepAwake(), tempfile.TemporaryDirectory(prefix="sauri-diar-") as temporary:
+            started = time.monotonic()
+            audio_path = await run_in_threadpool(_download_audio, request.audio_ref)
+            download_ms = round((time.monotonic() - started) * 1000)
+            if cancel.is_set():
+                raise AdapterCancelled
+            wav_path = Path(temporary) / "audio.wav"
+            report = await run_in_threadpool(
+                lambda: normalize_to_wav(Path(audio_path or ""), wav_path, timeout_s=min(300, left()))
+            )
+            outcome = await diar_external.diarize_external(
+                http=SafeHttp(max_response_bytes=diar_external.MAX_PROVIDER_RESPONSE_BYTES),
+                route=route,
+                secret=secret,
+                wav=wav_path,
+                cancel=cancel,
+                deadline_s=left(),
+                allow_local=diar_external.allow_local_providers(),
+            )
+            # The local contract has no zero-length segment: drop and count them, as Senko's wrapper does.
+            kept = [s for s in outcome.result.segments if s.end_ms > s.start_ms]
+            segments = [Segment(speaker=s.raw_label, start_ms=s.start_ms, end_ms=s.end_ms) for s in kept]
+            diagnostics = outcome.result.diagnostics
+            return DiarizeResponse(
+                segments=segments,
+                speaker_count=len({s.speaker for s in segments}),
+                engine=EngineInfo(name=route.kind, model=route.model, device="remote"),
+                diagnostics={
+                    "audio_ms": report.audio_ms,
+                    "dropped_segments": len(outcome.result.segments) - len(kept),
+                    "external": {
+                        "parts": outcome.parts, "dropped_ms": outcome.dropped_ms,
+                        "bitrate_bps": outcome.bitrate_bps,
+                        "remote_deleted": diagnostics.get("remote_deleted"),
+                        "label_policy": diagnostics.get("label_policy"),
+                        "speaker_count_per_part": diagnostics.get("speaker_count_per_part"),
+                        "timing_repaired": diagnostics.get("timing_repaired"),
+                    },
+                    "stage_ms": {"download": download_ms, "normalize": round(report.seconds * 1000),
+                                 "prepare": outcome.prepare_ms, "provider": outcome.provider_ms},
+                },
+            )
+    finally:
+        if audio_path is not None:
+            with suppress(OSError):
+                os.unlink(audio_path)
 
 
 def _diarize_serialized(audio_ref: str) -> DiarizeResponse:

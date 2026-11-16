@@ -3,13 +3,18 @@
 Worker slot integration is exercised without this stub by test_pipeline_workers.
 """
 
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.infra.engine_slot import engine_slot
+
+# The route contract the worker shares with the gateways (the API image has it next to the app).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engine-common"))
 
 
 @pytest.fixture(autouse=True)

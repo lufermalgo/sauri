@@ -23,6 +23,7 @@ from app.diarization.diarization_engine import (
     EngineInfo,
     SpeakerSegment,
 )
+from app.engines.routing import ROUTE_HEADER, ProviderError, encode_route
 from app.infra.recording_capability import create_recording_capability
 
 
@@ -37,6 +38,16 @@ def _engine_auth_headers(audio_ref: str) -> dict[str, str]:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     headers["X-Sauri-Recording-Capability"] = create_recording_capability(audio_ref)
     return headers
+
+
+def _provider_error(response: httpx.Response) -> ProviderError | None:
+    """The classified failure a gateway reports for an external route (``{"error": {"code", ...}}``)."""
+    try:
+        error = response.json()["error"]
+        code, retry_after = error["code"], error.get("retry_after_s")
+        return ProviderError(code, retry_after_s=retry_after if type(retry_after) is int else None)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
 
 
 class LocalProvider(DiarizationEngine):
@@ -83,13 +94,19 @@ class LocalProvider(DiarizationEngine):
         """
         payload = {"audio_ref": audio_ref, "contract_version": 2}
 
+        headers = _engine_auth_headers(audio_ref)
+        if options.route is not None:
+            headers[ROUTE_HEADER] = encode_route(options.route)
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self._url}/diarize",
                 json=payload,
-                headers=_engine_auth_headers(audio_ref),
+                headers=headers,
                 timeout=float(os.environ.get("DIARIZATION_TIMEOUT_SECONDS", "3600")),
             )
+            if response.is_error and (failure := _provider_error(response)) is not None:
+                raise failure
             response.raise_for_status()
 
         data = response.json()
@@ -124,4 +141,5 @@ class LocalProvider(DiarizationEngine):
             engine=engine,
             contract_version=2,
             speaker_count=len({seg["speaker"] for seg in data["segments"]}),
+            diagnostics=data["diagnostics"] if isinstance(data.get("diagnostics"), dict) else {},
         )
