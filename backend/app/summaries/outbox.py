@@ -20,12 +20,14 @@ async def dispatch_pending(factory: async_sessionmaker[AsyncSession], queue: Job
 
     A crash after broker confirmation but before DB commit republishes the same
     event_id. Consumer idempotency (T12) is required for this at-least-once seam.
+    A request that already settled is never published again.
     """
     delivered = 0
     while True:
         async with factory() as session, session.begin():
             query = (select(SummaryRequestOutbox)
-                     .where(SummaryRequestOutbox.delivered_at.is_(None), SummaryRequestOutbox.status != "failed")
+                     .where(SummaryRequestOutbox.delivered_at.is_(None),
+                           SummaryRequestOutbox.status.in_(("pending", "running")))
                      .order_by(SummaryRequestOutbox.event_id).limit(1))
             if session.bind is not None and session.bind.dialect.name == "postgresql":
                 query = query.with_for_update(skip_locked=True)

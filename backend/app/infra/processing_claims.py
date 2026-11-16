@@ -12,10 +12,16 @@ from app.infra.models import (
     Meeting,
     MeetingProcessingClaim,
     MeetingRecoveryOperation,
+    RegenerationOperation,
     SessionRecording,
 )
 
 ProcessingKind = Literal["transcription", "diarization"]
+
+_RECOVERY_ACTIVE = {"accepted", "dispatch_pending", "processing"}
+REGENERATION_ACTIVE = ("accepted", "running")
+# The regeneration stage whose operation may drive each kind of worker.
+_STAGE_FOR_KIND: dict[str, str] = {"transcription": "transcription", "diarization": "speakers"}
 
 
 def _is_expired(value: datetime | None) -> bool:
@@ -24,6 +30,31 @@ def _is_expired(value: datetime | None) -> bool:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value <= datetime.now(UTC)
+
+
+async def operation_authorizes(
+    session: AsyncSession, *, operation_id: str, meeting_id: str, generation: int, kind: ProcessingKind
+) -> bool:
+    """True when ``operation_id`` is a live recovery or regeneration operation for this job.
+
+    A regeneration operation only drives the worker of its own stage, so a speakers
+    operation can never authorize a transcription job and vice versa.
+    """
+    recovery = await session.get(MeetingRecoveryOperation, operation_id)
+    if recovery is not None:
+        return (
+            recovery.meeting_id == meeting_id
+            and recovery.processing_generation == generation
+            and recovery.status in _RECOVERY_ACTIVE
+        )
+    regeneration = await session.get(RegenerationOperation, operation_id)
+    return (
+        regeneration is not None
+        and regeneration.meeting_id == meeting_id
+        and regeneration.processing_generation == generation
+        and regeneration.stage == _STAGE_FOR_KIND[kind]
+        and regeneration.status in REGENERATION_ACTIVE
+    )
 
 
 async def create_processing_generation(
@@ -82,26 +113,19 @@ async def claim_worker_generation(
     """Consume a generation once, or consume its matching authorized recovery job.
 
     A missing control row is legacy, untracked processing and remains available to
-    ordinary workers. Recovery deliveries always require both a persisted operation
-    and its exact durable claim, even when the claim row is missing.
+    ordinary workers. Recovery and regeneration deliveries always require both a
+    persisted operation and its exact durable claim, even when the claim row is missing.
     """
-    operation: MeetingRecoveryOperation | None = None
-    if operation_id is not None:
-        if (
-            not isinstance(operation_id, str)
-            or not operation_id
-            or not isinstance(generation, int)
-            or isinstance(generation, bool)
-        ):
-            return False
-        operation = await session.get(MeetingRecoveryOperation, operation_id)
-        if (
-            operation is None
-            or operation.meeting_id != meeting_id
-            or operation.processing_generation != generation
-            or operation.status not in {"accepted", "dispatch_pending", "processing"}
-        ):
-            return False
+    if operation_id is not None and (
+        not isinstance(operation_id, str)
+        or not operation_id
+        or not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or not await operation_authorizes(
+            session, operation_id=operation_id, meeting_id=meeting_id, generation=generation, kind=kind
+        )
+    ):
+        return False
 
     claim = await session.scalar(
         select(MeetingProcessingClaim)
@@ -119,11 +143,7 @@ async def claim_worker_generation(
         return False
 
     if operation_id is not None:
-        if (
-            operation is None
-            or claim.claim_kind != "recovery"
-            or claim.claim_id != operation_id
-        ):
+        if claim.claim_kind != "recovery" or claim.claim_id != operation_id:
             return False
         claim.claim_kind = kind
         await session.flush()
@@ -170,23 +190,16 @@ async def verify_worker_generation(
     operation_id: object = None,
 ) -> bool:
     """Verify the exact consumed identity again before committing worker effects."""
-    operation: MeetingRecoveryOperation | None = None
-    if operation_id is not None:
-        if (
-            not isinstance(operation_id, str)
-            or not operation_id
-            or not isinstance(generation, int)
-            or isinstance(generation, bool)
-        ):
-            return False
-        operation = await session.get(MeetingRecoveryOperation, operation_id)
-        if (
-            operation is None
-            or operation.meeting_id != meeting_id
-            or operation.processing_generation != generation
-            or operation.status not in {"accepted", "dispatch_pending", "processing"}
-        ):
-            return False
+    if operation_id is not None and (
+        not isinstance(operation_id, str)
+        or not operation_id
+        or not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or not await operation_authorizes(
+            session, operation_id=operation_id, meeting_id=meeting_id, generation=generation, kind=kind
+        )
+    ):
+        return False
 
     claim = await session.scalar(
         select(MeetingProcessingClaim)
@@ -204,5 +217,4 @@ async def verify_worker_generation(
         and claim.claim_id == expected_id
         and claim.claim_kind == kind
         and not _is_expired(claim.claim_expires_at)
-        and (operation_id is None or operation is not None)
     )

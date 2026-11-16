@@ -18,6 +18,7 @@ from app.infra.engine_slot import (
 )
 from app.infra.models import Meeting, MeetingSummary, ProcessedSummaryEvent, SummaryRequestOutbox, Transcript
 from app.infra.queue import JobQueue
+from app.regeneration.service import settle_summary_operations
 from app.summaries.engine import ContextExceededError, SummaryProviderError
 from app.summaries.factory import create_summarization_engine
 from app.summaries.passages import SummaryInvalidError, encode_key_points
@@ -65,6 +66,8 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
             if terminal:
                 request.status = "failed"
                 request.finished_at = datetime.now(UTC)
+                await session.flush()
+                await settle_summary_operations(session, request.event_id)
 
     async def consume(message: dict[str, Any]) -> None:
         meeting_id = message.get("meeting_id")
@@ -83,6 +86,7 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
                 raise ValueError("Summary event does not match the accepted request")
             processed = await session.get(ProcessedSummaryEvent, event_id)
             if processed is not None or request.status in ("succeeded", "failed"):
+                logger.info("Summary delivery dropped; reason=stage_complete")
                 return
             meeting = await session.get(Meeting, request.meeting_id)
             transcript = await session.get(Transcript, request.transcript_id)
@@ -146,6 +150,8 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
             request.status = "succeeded"
             request.failure_cause = None
             request.finished_at = now
+            await session.flush()
+            await settle_summary_operations(session, event_id)
 
     async def terminal(message: dict[str, Any]) -> None:
         event_id = _event_id(message)
@@ -162,6 +168,8 @@ async def start_worker(queue: JobQueue, factory: async_sessionmaker[AsyncSession
                 request.status = "failed"
                 request.failure_cause = "llm_unavailable"
                 request.finished_at = datetime.now(UTC)
+                await session.flush()
+                await settle_summary_operations(session, event_id)
 
     await queue.subscribe("summarize", consume)
     await queue.subscribe("summarize.failed", terminal)

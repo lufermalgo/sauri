@@ -25,6 +25,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.diarization.assignment import assign_turns
+from app.diarization.carry_over import carry_over_review
 from app.diarization.diarization_engine import DiarizationOptions
 from app.diarization.factory import create_diarization_engine
 from app.diarization.labeling import label_speakers
@@ -49,6 +50,7 @@ from app.infra.processing_claims import (
     verify_worker_generation,
 )
 from app.infra.queue import JobQueue
+from app.regeneration import service as regeneration
 from app.summaries.service import accept_request, record_failed_request
 from app.transcription.repository import TranscriptRepository
 
@@ -67,6 +69,25 @@ async def _request_summary(
         logger.error("Automatic summary request failed for meeting_id=%s revision=%s", meeting_id, revision)
         async with session_factory() as session, session.begin():
             await record_failed_request(session, meeting_id, owner_id, revision)
+
+
+async def _settle_revision(
+    session: AsyncSession, meeting_id: str, operation_id: object, revision: int, regenerating: bool,
+) -> None:
+    """Carry decided speaker names to the new review and settle the explicit operation, if any.
+
+    Runs in the transaction that completes the revision, so the names, the review
+    and the operation outcome are committed together or not at all.
+    """
+    report = await carry_over_review(session, meeting_id, revision)
+    if not regenerating:
+        return
+    live = await regeneration.locked_active_operation(session, operation_id, "speakers")
+    if live is None:
+        return
+    await regeneration.succeed_operation(session, live, details=report)
+    # A cascade ends with the summary request; without one, nothing else runs.
+    await regeneration.follow_up(session, live)
 
 
 async def _process_diarization(
@@ -102,6 +123,8 @@ async def _process_diarization(
 
     # Bind the job to the persisted meeting owner and its exact recording.
     async with session_factory() as session:
+        # Only an explicit, live regeneration operation may compute a finished stage again.
+        regenerating = await regeneration.is_live_operation(session, operation_id, "speakers")
         meeting = await session.get(Meeting, meeting_id)
         recording = (
             await session.execute(
@@ -145,6 +168,8 @@ async def _process_diarization(
                 kind="diarization", operation_id=operation_id,
             )
     if can_request_summary and completed is not None:
+        # Never recomputes the speakers; the summary request is a deterministic, once-only repair.
+        logger.info("Diarization delivery dropped; reason=stage_complete")
         await _request_summary(session_factory, meeting_id, owner_id, completed.processing_revision)
         return
 
@@ -156,6 +181,12 @@ async def _process_diarization(
             ):
                 logger.info("Diarization delivery acknowledged without claim; reason=fenced")
                 return
+            live = (
+                await regeneration.locked_active_operation(session, operation_id, "speakers")
+                if regenerating else None
+            )
+            if live is not None:
+                await regeneration.mark_running(session, live)
 
     # --- Load Transcript + turns (Req. 1.6) ---
     transcript_repo = TranscriptRepository(session_factory)
@@ -289,6 +320,7 @@ async def _process_diarization(
                 session, meeting_id, revision, engine.capabilities().provider_name,
                 orm_speakers, orm_assignments, orm_word_assignments,
             )
+            await _settle_revision(session, meeting_id, operation_id, revision, regenerating)
     except EngineSlotTimeout:
         async with session_factory() as session, session.begin():
             if not has_processing_fence or await verify_worker_generation(
@@ -309,8 +341,18 @@ async def _process_diarization(
     except Exception:
         async with session_factory() as session, session.begin():
             await repo.fail_revision(session, meeting_id, revision)
+            live = (
+                await regeneration.locked_active_operation(session, operation_id, "speakers")
+                if regenerating else None
+            )
+            if live is not None:
+                await regeneration.fail_operation(session, live, "engine_failure")
         raise
 
+    if regenerating:
+        # The summary is never requested automatically for a regenerated stage.
+        logger.info("Diarization regenerated for meeting_id=%s revision=%s", meeting_id, revision)
+        return
     await _request_summary(session_factory, meeting_id, owner_id, revision)
 
     logger.info(

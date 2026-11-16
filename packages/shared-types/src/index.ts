@@ -172,6 +172,45 @@ export interface SummaryRequestStatus {
   startedAt?: string | null;
 }
 
+/** Pipeline stages a user can explicitly regenerate (POST /api/v1/meetings/{id}/regenerate). */
+export type RegenerationStage = "transcription" | "speakers" | "summary";
+
+/** Body of POST /api/v1/meetings/{id}/regenerate; `cascade` is off unless asked for. */
+export interface RegenerationRequest {
+  stage: RegenerationStage;
+  /** Summary template; applies to a summary run or to a cascade that ends in one. */
+  template_id?: string;
+  cascade?: boolean;
+}
+
+/** Wire form of one regeneration operation (202 on request, then GET .../regenerate/{id|latest}). */
+export interface RegenerationOperationResponse {
+  operation_id: string;
+  meeting_id: string;
+  stage: RegenerationStage;
+  status: "accepted" | "running" | "succeeded" | "failed";
+  cascade: boolean;
+  requested_at: string;
+  started_at?: string;
+  finished_at?: string;
+  failure_cause?: string;
+  /** Stages this operation computes again. */
+  replaces: RegenerationStage[];
+  /** Existing later outputs left visible but out of date; the UI may suggest regenerating them. */
+  stale: RegenerationStage[];
+  parent_operation_id?: string;
+  next_operation_id?: string;
+  summary_request_id?: string;
+  /** Content-free outcome, e.g. how many speaker names were carried over. */
+  details?: Record<string, unknown>;
+}
+
+/** Optional additions to GET /api/v1/meetings/{id}; each is omitted when empty. */
+export interface MeetingRegenerationHints {
+  stale_stages?: RegenerationStage[];
+  active_operation?: Pick<RegenerationOperationResponse, "operation_id" | "stage" | "status" | "requested_at" | "started_at">;
+}
+
 /** User-owned summary template; instructions are opaque and preserved unchanged. */
 export interface SummaryTemplate {
   id: string;

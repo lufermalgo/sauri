@@ -64,6 +64,24 @@ graph LR
 
 La configuración de API/worker apunta a `host.docker.internal:8001`, `:8002` y `:8003`. Los motores implementan HTTP y controles de credenciales/capacidad por grabación. Su arranque, accesibilidad desde Docker y uso efectivo de GPU deben comprobarse juntos; tener una URL o un modelo configurado no demuestra inferencia. Credenciales fuera del repositorio en `~/.config/sauri`, montadas de solo lectura al worker; modelos compartidos en caché, nunca copiados al repositorio.
 
+## Procesamiento sin repeticiones y regeneración explícita (#1053)
+
+**Regla.** Una etapa cuya salida ya existe (transcripción de la grabación, revisión de hablantes, resumen) nunca se vuelve a calcular por un disparador automático: ni al refrescar o reabrir la página, ni al reiniciar API o worker, ni por reentregas o reconexiones de la cola, ni al guardar un nombre de hablante, cambiar la plantilla por defecto, reenviar la subida o por la retención. Solo una petición explícita del usuario crea trabajo nuevo.
+
+**Cómo se garantiza.**
+- Cada mensaje de la cola lleva una generación de procesamiento y se consume una sola vez (`meeting_processing_claims`). Los workers descartan, con una línea `reason=stage_complete`/`fenced`, cualquier mensaje de una etapa ya completa, salvo que traiga una operación de regeneración vigente (reclamo `recovery` con `operation_id`).
+- El resumen automático solo existe como primer resumen de una transcripción (id determinista); cuando ya hay cualquier solicitud o resumen, el camino automático no crea otro. El outbox solo reenvía solicitudes `pending`/`running`.
+- Una operación de regeneración abre una generación nueva: los mensajes de generaciones anteriores quedan descartados.
+
+**API** (dueño de la reunión; cabecera opcional `Idempotency-Key`):
+- `POST /api/v1/meetings/{id}/regenerate` con `{"stage": "transcription" | "speakers" | "summary", "template_id"?, "cascade"?}` responde 202 con `operation_id`, `stage`, `status`, `requested_at`, `replaces` (etapas que se recalculan) y `stale` (salidas posteriores que quedan visibles pero desactualizadas). `cascade` (por defecto `false`) encadena las etapas siguientes, una a la vez. Etapa desconocida: 422. Otra operación o procesamiento en curso: 409 `operation_active`/`processing_active` (con la operación activa). Grabación no disponible: 409 `media_unavailable`.
+- `GET /api/v1/meetings/{id}/regenerate/latest` y `GET .../regenerate/{operation_id}` consultan el estado (`accepted`, `running`, `succeeded`, `failed`, con `failure_cause`).
+- `GET /api/v1/meetings/{id}` agrega, solo cuando aplica, `stale_stages` y `active_operation`. `GET .../speaker-review?revision_id=N` lee una revisión anterior.
+
+**Reglas por etapa.** *Resumen:* misma aceptación que `/summary-requests`; el resumen anterior sigue visible hasta que el nuevo termina bien. *Hablantes:* nueva revisión sobre la misma transcripción; un nombre se arrastra a la nueva revisión solo si ambos hablantes son la mejor coincidencia mutua y comparten al menos 70 % del tiempo de voz de cada uno; si no, la revisión nueva queda pendiente de revisión y la anterior sigue accesible. No se regenera el resumen. *Transcripción:* se reemplaza el contenido de la misma transcripción; la detección de hablantes previa se re-atribuye por tiempo y queda marcada como desactualizada junto con el resumen; la reunión pasa a `transcribing` mientras corre y vuelve a `completed` al terminar, también si falla (se conservan las salidas previas y se guarda `failure_cause`).
+
+**Auditoría.** Tabla `regeneration_operations` (etapa, solicitante, `requested_at`, `started_at`, `finished_at`, estado, causa de fallo, detalle sin contenido). Una reunión admite una sola operación activa (índice único parcial). Un barrido del worker marca como fallidas (`stale_operation`) las ejecuciones que superan `SUMMARY_STALE_AFTER_SECONDS` (75 min por defecto).
+
 ## Seguridad local
 
 - **Puertos solo locales.** Todo puerto publicado (portal 5173, API 8000, PostgreSQL 5432, RustFS 9000/9001, RabbitMQ 5672/15672) escucha únicamente en `127.0.0.1`; otras máquinas de la red no los alcanzan. Los motores nativos (8001 ASR, 8002 diarización, 8003 pasarela LLM, 8004 llama-server) también.

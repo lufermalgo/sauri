@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -672,7 +672,8 @@ async def test_settled_request_allows_a_new_generation(summary_api: ApiFixture, 
 
 
 @pytest.mark.asyncio
-async def test_auto_request_path_is_independent_of_the_active_manual_request(summary_api: ApiFixture) -> None:
+async def test_auto_request_never_adds_a_summary_once_one_was_requested(summary_api: ApiFixture) -> None:
+    """#1053: the automatic path only creates the first summary; later ones are explicit."""
     from app.summaries.service import accept_request
 
     client, factory, owner, _, meeting, own, _ = summary_api
@@ -685,10 +686,10 @@ async def test_auto_request_path_is_independent_of_the_active_manual_request(sum
         async with factory() as session, session.begin():
             return await accept_request(session, meeting, owner, own, processing_revision=revision)
 
-    first_auto, repeated_auto = await auto(1), await auto(1)
-    assert first_auto.generation == 2 and first_auto.event_id != manual.json()["event_id"]
-    assert repeated_auto.event_id == first_auto.event_id  # deterministic identity is unchanged
-    assert (await auto(2)).generation == 3  # a newer processing revision is always accepted
+    for revision in (1, 1, 2):  # a redelivery and a newer revision both converge on the existing request
+        assert (await auto(revision)).event_id == manual.json()["event_id"]
+    async with factory() as session:
+        assert await session.scalar(select(func.count()).select_from(SummaryRequestOutbox)) == 1
 
 
 @pytest.mark.asyncio
