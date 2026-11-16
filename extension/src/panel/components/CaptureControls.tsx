@@ -1,10 +1,12 @@
 import React from "react";
-import { AppWindow, AudioLines, Check, Mic, Monitor, Pause, Play, Plus, SlidersHorizontal, Square } from "lucide-react";
+import { AppWindow, AudioLines, Check, Mic, Monitor, Pause, Play, Plus, Square } from "lucide-react";
 import { Icon } from "../../core/design/Icon";
 import { formatTimestamp } from "../../core/time";
-import type { CaptureState } from "../../core/types";
+import type { CaptureState, RecordingSettings } from "../../core/types";
 import { panelCopy as copy } from "../copy";
+import { DEFAULT_RECORDING_SETTINGS } from "../recordingSettings";
 import { MenuButton, type MenuOption } from "./MenuButton";
+import { SettingsMenu } from "./SettingsMenu";
 
 export type CaptureSourceChoice = "screen_audio" | "audio_only" | "current-tab";
 const SOURCE_ICONS = { screen_audio: Monitor, audio_only: AudioLines, "current-tab": AppWindow } as const;
@@ -21,7 +23,10 @@ export interface CaptureControlsProps {
   source?: CaptureSourceChoice;
   onChangeSource?: (source: CaptureSourceChoice) => void;
   onToggleCapture: () => void;
-  onOpenSettings?: () => void;
+  settings?: RecordingSettings;
+  onChangeSettings?: (change: Partial<RecordingSettings>) => void;
+  settingsDisabled?: boolean;
+  settingsError?: string | null;
   currentTabAvailable?: boolean;
   onPause?: () => void;
   onCancel?: () => void;
@@ -39,10 +44,13 @@ export interface CaptureControlsProps {
 
 export function CaptureControls({ captureState, microphones, selectedMicrophone, onSelectMicrophone,
   microphoneEnabled = true, onToggleMicrophone, source = "screen_audio", onChangeSource,
-  onToggleCapture, onOpenSettings, currentTabAvailable, onPause, onCancel,
+  onToggleCapture, settings = DEFAULT_RECORDING_SETTINGS, onChangeSettings, settingsDisabled, settingsError, currentTabAvailable, onPause, onCancel,
   paused, tabTitle, overlayUnavailable, recordedMicrophone, recordedVideo, commandPending, elapsedTimeMs, startError, selecting, microphoneError,
 }: CaptureControlsProps) {
+  const settingsMenu = (recording: boolean) => <SettingsMenu settings={settings} onChange={change => onChangeSettings?.(change)} disabled={settingsDisabled} recording={recording} error={settingsError} />;
+
   if (captureState === "recording" || captureState === "stopping") return <section className="panel-stack panel-recording">
+    <div className="panel-controls panel-recording-tools">{settingsMenu(true)}</div>
     <div className="panel-card panel-clock" aria-label={copy.timer}>
       <span className="panel-stopwatch">{elapsedTimeMs === undefined ? "--:--" : formatTimestamp(elapsedTimeMs)}</span>
       {tabTitle && <span>{copy.tab} {tabTitle}</span>}
@@ -89,7 +97,7 @@ export function CaptureControls({ captureState, microphones, selectedMicrophone,
           <Icon icon={Mic} size={16} />
         </MenuButton>
       </div>
-      <button type="button" className="panel-control-group panel-settings-button" aria-label={copy.settings} title={copy.settings} onClick={onOpenSettings}><Icon icon={SlidersHorizontal} size={16} /></button>
+      {settingsMenu(false)}
     </div>
     {microphoneError && <p role="alert">{microphoneError}</p>}
     <button type="button" className="panel-primary panel-new-recording panel-with-icon" disabled={selecting || tabBlocked} onClick={onToggleCapture}><Icon icon={Plus} size={18} />{copy.newRecording}</button>

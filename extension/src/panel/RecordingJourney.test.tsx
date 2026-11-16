@@ -89,7 +89,7 @@ describe("Terra recording journey", () => {
     fireEvent.click(record);
     fireEvent.click(await screen.findByLabelText(copy.skipWarning));
     fireEvent.click(screen.getByRole("button", { name: copy.withoutMic }));
-    await waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledWith({ recordingSettings: { countdownSeconds: 10, showControlBar: false, skipMicWarning: true } }));
+    await waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledWith({ recordingSettings: { countdownSeconds: 10, resolution: "720p", showControlBar: false, skipMicWarning: true } }));
     await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledOnce());
   });
   it("enables the microphone from the warning but never bypasses permission", async () => {
@@ -129,21 +129,58 @@ describe("Terra recording journey", () => {
     await act(async () => resolve());
     await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "start-capture", micDeviceId: null })));
   });
-  it("reads and writes recordingSettings from the gear without opening the permission page", async () => {
-    settings = { countdownSeconds: 5, showControlBar: false, skipMicWarning: true };
+  it("reads and writes recordingSettings from the settings menu without opening the permission page", async () => {
+    settings = { countdownSeconds: 5, resolution: "1080p", showControlBar: false, skipMicWarning: true };
     render(<SidePanelApp />);
     await ready();
     fireEvent.click(screen.getByRole("button", { name: copy.settings }));
     expect(await screen.findByLabelText(copy.countdown)).toHaveValue("5");
-    expect(screen.getByLabelText(copy.controlBar)).not.toBeChecked();
+    expect(screen.getByLabelText(copy.resolution)).toHaveValue("1080p");
+    expect(screen.getByRole("switch", { name: copy.controlBar })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: copy.micWarning })).toHaveAttribute("aria-checked", "false");
     fireEvent.change(screen.getByLabelText(copy.countdown), { target: { value: "10" } });
     await waitFor(() => expect(chrome.storage.local.set).toHaveBeenCalledWith({ recordingSettings: { ...settings, countdownSeconds: 10 } }));
-    await waitFor(() => expect(screen.getByLabelText(copy.controlBar)).toBeEnabled());
-    fireEvent.click(screen.getByLabelText(copy.controlBar));
-    await waitFor(() => expect(settings).toEqual({ countdownSeconds: 10, showControlBar: true, skipMicWarning: true }));
+    fireEvent.click(screen.getByRole("switch", { name: copy.controlBar }));
+    await waitFor(() => expect(settings).toEqual({ countdownSeconds: 10, resolution: "1080p", showControlBar: true, skipMicWarning: true }));
     expect(chrome.runtime.openOptionsPage).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: copy.back }));
-    expect(await ready()).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: copy.settings })).toBeInTheDocument();
+  });
+  it.each([0, 3, 5, 10])("persists a %s s countdown", async seconds => {
+    settings.countdownSeconds = seconds === 3 ? 5 : 3;
+    render(<SidePanelApp />);
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+    fireEvent.change(await screen.findByLabelText(copy.countdown), { target: { value: String(seconds) } });
+    await waitFor(() => expect(settings.countdownSeconds).toBe(seconds));
+    expect(screen.getByLabelText(copy.countdown)).toHaveValue(String(seconds));
+  });
+  it.each([["480p", { width: 854, height: 480 }], ["720p", { width: 1280, height: 720 }], ["1080p", { width: 1920, height: 1080 }]] as const)("persists %s and sends its dimensions with start-capture", async (resolution, dimensions) => {
+    settings.resolution = resolution === "720p" ? "1080p" : "720p";
+    render(<SidePanelApp />);
+    const record = await ready();
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+    fireEvent.change(await screen.findByLabelText(copy.resolution), { target: { value: resolution } });
+    await waitFor(() => expect(settings.resolution).toBe(resolution));
+    fireEvent.click(record);
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "start-capture", resolution: dimensions })));
+  });
+  it("maps the microphone-warning switch inversely to skipMicWarning and keeps the dialog working", async () => {
+    render(<SidePanelApp />);
+    const record = await ready();
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+    const warning = await screen.findByRole("switch", { name: copy.micWarning });
+    expect(warning).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(warning);
+    await waitFor(() => expect(settings.skipMicWarning).toBe(true));
+    expect(screen.getByRole("switch", { name: copy.micWarning })).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(screen.getByRole("switch", { name: copy.microphone }));
+    fireEvent.click(record);
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "start-capture", micDeviceId: null })));
+    expect(screen.queryByRole("dialog", { name: copy.micOffHeading })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: copy.settings })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+    fireEvent.click(await screen.findByRole("switch", { name: copy.micWarning }));
+    await waitFor(() => expect(settings.skipMicWarning).toBe(false));
   });
   it("reports persistence failure without pretending settings were saved", async () => {
     vi.mocked(chrome.storage.local.set).mockRejectedValue(new Error("synthetic"));
@@ -153,6 +190,34 @@ describe("Terra recording journey", () => {
     fireEvent.change(screen.getByLabelText(copy.countdown), { target: { value: "10" } });
     expect(await screen.findByRole("alert")).toHaveTextContent(copy.settingsError);
     expect(screen.getByLabelText(copy.countdown)).toHaveValue("3");
+  });
+  it("applies two quick changes in order without losing the first", async () => {
+    render(<SidePanelApp />);
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+    fireEvent.change(await screen.findByLabelText(copy.countdown), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText(copy.resolution), { target: { value: "480p" } });
+    await waitFor(() => expect(settings).toMatchObject({ countdownSeconds: 10, resolution: "480p" }));
+  });
+  it("locks countdown and resolution while recording but still applies the control bar live", async () => {
+    render(<SidePanelApp />);
+    await ready();
+    await act(async () => project({ status: "recording", sessionId: "s-live" }));
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+    expect(await screen.findByLabelText(copy.countdown)).toBeDisabled();
+    expect(screen.getByLabelText(copy.resolution)).toBeDisabled();
+    expect(screen.getByText(copy.settingsLocked)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: copy.controlBar }));
+    await waitFor(() => expect(settings.showControlBar).toBe(false));
+    await waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: "recording-settings-changed" }));
+  });
+  it("does not ping the service worker when the control bar changes while idle", async () => {
+    render(<SidePanelApp />);
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: copy.settings }));
+    fireEvent.click(await screen.findByRole("switch", { name: copy.controlBar }));
+    await waitFor(() => expect(settings.showControlBar).toBe(false));
+    expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({ type: "recording-settings-changed" });
   });
   it("does not invent elapsed time when reopening an active recording", async () => {
     vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "recording", sessionId: "already-active" }, ...sessionStore }));
@@ -196,6 +261,6 @@ describe("Terra recording journey", () => {
   });
   it("validates invalid and partial settings independently", () => {
     expect(parseRecordingSettings(null)).toEqual(DEFAULT_RECORDING_SETTINGS);
-    expect(parseRecordingSettings({ countdownSeconds: 9, showControlBar: false, skipMicWarning: "yes" })).toEqual({ countdownSeconds: 3, showControlBar: false, skipMicWarning: false });
+    expect(parseRecordingSettings({ countdownSeconds: 9, resolution: "4k", showControlBar: false, skipMicWarning: "yes" })).toEqual({ countdownSeconds: 3, resolution: "720p", showControlBar: false, skipMicWarning: false });
   });
 });

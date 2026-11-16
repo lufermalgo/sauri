@@ -79,11 +79,13 @@ describe("CaptureControls", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "USB" }));
     expect(onSelectMicrophone).toHaveBeenCalledWith(mics[1]);
   });
-  it("opens settings and starts from the primary button", () => {
-    const onOpenSettings = vi.fn(), onToggleCapture = vi.fn();
-    render(<CaptureControls {...defaults} onOpenSettings={onOpenSettings} onToggleCapture={onToggleCapture} />);
+  it("opens the settings menu in place and starts from the primary button", () => {
+    const onChangeSettings = vi.fn(), onToggleCapture = vi.fn();
+    render(<CaptureControls {...defaults} onChangeSettings={onChangeSettings} onToggleCapture={onToggleCapture} />);
     fireEvent.click(screen.getByRole("button", { name: copy.settings }));
-    expect(onOpenSettings).toHaveBeenCalledOnce();
+    expect(screen.getByRole("dialog", { name: copy.settings })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(copy.resolution), { target: { value: "1080p" } });
+    expect(onChangeSettings).toHaveBeenCalledWith({ resolution: "1080p" });
     fireEvent.click(screen.getByRole("button", { name: copy.newRecording }));
     expect(onToggleCapture).toHaveBeenCalledOnce();
   });

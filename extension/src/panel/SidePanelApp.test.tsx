@@ -113,17 +113,16 @@ describe("SidePanelApp", () => {
     expect(screen.queryByText("Sauri")).not.toBeInTheDocument();
   });
 
-  it("opens the recording settings from the toolbar button only", async () => {
+  it("opens the recording settings menu from the toolbar button only, without leaving the panel", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     mockChrome(true);
     render(<SidePanelApp />);
     const settings = await screen.findByRole("button", { name: copy.settings });
     expect(screen.getAllByRole("button", { name: copy.settings })).toHaveLength(1);
     fireEvent.click(settings);
-    expect(screen.getByRole("heading", { name: copy.settingsTitle })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: copy.settings })).toBeInTheDocument();
     expect(screen.getByLabelText(copy.countdown)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: copy.back }));
-    expect(await screen.findByRole("button", { name: copy.newRecording })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: copy.newRecording })).toBeInTheDocument();
   });
 });
 
