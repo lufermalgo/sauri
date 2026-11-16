@@ -13,11 +13,15 @@ import type { MeetingDiarization, MeetingState, MeetingTranscript, PlaybackManif
 import { MeetingPlaybackView } from "./MeetingPlaybackView";
 import type { MeetingSummary } from "@sauri/shared-types";
 import { selectListeningInterval } from "../speaker-review-interval";
-import { createPlaybackIntervals, groupTranscriptTurns } from "../transcript-turns";
+import { createPlaybackIntervals } from "../transcript-turns";
+import {
+  UNRESOLVED_SPEAKER_COLOR, displaySpeakerLabel, presentTranscriptTurns, speakerColor,
+} from "../transcript-presentation";
 import { ProcessingStatus } from "./ProcessingStatus";
 import { SummaryPanel } from "./SummaryPanel";
 import { useStageStart } from "../useStageStart";
 import { MeetingHeader } from "./MeetingHeader";
+import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import { ChatTab } from "./ChatTab";
 import { Avatar, Dialog, Tabs, Skeleton, SkeletonLines } from "./ui";
 import { SpeakerReviewPanel, type SpeakerRowModel } from "./SpeakerReviewPanel";
@@ -39,7 +43,6 @@ function formatTimestamp(ms: number): string {
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
-const UNRESOLVED_SPEAKER_COLOR = "var(--ds-speaker-unresolved)";
 // Wall-clock speaker wait limit, including hidden time; repeated polls do not reset it.
 const SPEAKER_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 // After speakers finish, the backend requests the summary on its own; wait this long to see that request.
@@ -49,19 +52,6 @@ const SUCCESS_VISIBLE_MS = 3000;
 
 function isReviewFailure(err: unknown, reason: "conflict" | "not_found"): boolean {
   return err instanceof Error && (err as { reason?: unknown }).reason === reason;
-}
-
-function speakerColor(diarization: MeetingDiarization | null, speakerId: string | undefined): string {
-  const sequence = diarization?.speakers.find((speaker) => speaker.id === speakerId)?.sequence;
-  if (sequence === undefined) return UNRESOLVED_SPEAKER_COLOR;
-  return `var(--ds-speaker-${(Math.max(1, sequence) - 1) % 6 + 1})`;
-}
-
-function displaySpeakerLabel(label: string, speakerId: string | undefined, review: SpeakerReview | null): string {
-  const disposition = review?.items.find(item => item.speakerId === speakerId)?.disposition;
-  const number = /^Speaker (\d+)$/.exec(label)?.[1];
-  return number && disposition !== "named" && disposition !== "corrected"
-    ? copy.transcript.numberedSpeaker(number) : label;
 }
 
 export function TranscriptView(props: TranscriptViewProps) {
@@ -88,6 +78,23 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
       else setMetadataError(true);
     }).catch(() => { if (!cancelled) setMetadataError(true); });
     return () => { cancelled = true; };
+  }, [meetingId, authorizedMeetingId]);
+
+  // The list pane beside this view can rename the recording: pick up the new title quietly.
+  useEffect(() => {
+    if (!authorizedMeetingId) return;
+    let cancelled = false;
+    const refresh = () => {
+      listMeetings().then(items => {
+        const item = items.find(candidate => candidate.id === meetingId);
+        if (!cancelled && item) setMetadata(current => ({ ...current, title: item.title ?? null }));
+      }).catch(() => undefined);
+    };
+    window.addEventListener(LIBRARY_CHANGED_EVENT, refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(LIBRARY_CHANGED_EVENT, refresh);
+    };
   }, [meetingId, authorizedMeetingId]);
 
   const [statusError, setStatusError] = useState(false);
@@ -380,35 +387,10 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
     setReviewOpen(false);
   }
 
-  const presentationTurns = useMemo(() => {
-    if (!data) return [];
-    if (data.presentation === "words") return data.turns.map((turn) => ({
-      id: turn.id,
-      sourceIds: [turn.id],
-      text: turn.text,
-      timestampMs: turn.startMs,
-      sequence: turn.sequence,
-      speakerId: turn.speakerId ?? undefined,
-      speakerLabel: displaySpeakerLabel(
-        (turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined) ||
-          turn.speakerLabel || copy.transcript.unknownSpeaker, turn.speakerId ?? undefined, review),
-      hasAmbiguous: turn.hasAmbiguous ?? false,
-      color: speakerColor(diarization, turn.speakerId ?? undefined),
-    }));
-    return groupTranscriptTurns(
-      data.turns,
-      new Map(diarization?.assignments.map(({ turn_id, speaker_id }) => [turn_id, speaker_id]) ?? []),
-    ).map((turn) => {
-      const speaker = diarization?.speakers.find((candidate) => candidate.id === turn.speakerId);
-      const reviewedLabel = turn.speakerId ? review?.labelsBySpeakerId[turn.speakerId]?.trim() : undefined;
-      return {
-        ...turn,
-        speakerLabel: displaySpeakerLabel(reviewedLabel || speaker?.label || copy.transcript.legacyUnknownSpeaker, turn.speakerId, review),
-        color: speakerColor(diarization, turn.speakerId),
-        hasAmbiguous: false,
-      };
-    });
-  }, [data, diarization, review]);
+  const presentationTurns = useMemo(
+    () => (data ? presentTranscriptTurns(data, diarization, review) : []),
+    [data, diarization, review],
+  );
 
   const playbackIntervals = useMemo(() => createPlaybackIntervals(data?.turns ?? [], presentationTurns),
     [data, presentationTurns]);

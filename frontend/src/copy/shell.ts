@@ -2,6 +2,10 @@ export const shell = {
   brand: "Sauri",
   navLabel: "Navegación principal",
   library: "Biblioteca",
+  libraryPane: {
+    hide: "Ocultar biblioteca",
+    show: "Mostrar biblioteca",
+  },
   upload: "Subir grabación",
   logout: "Cerrar sesión",
   sidebar: {

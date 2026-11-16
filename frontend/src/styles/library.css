@@ -3,17 +3,16 @@
  * rows of about 56-66px: thumbnail 64x36, one-line title, muted meta line and a status chip.
  */
 .library {
-  flex: 0 0 var(--ds-list-w);
+  flex: 1 1 auto;
   box-sizing: border-box;
-  width: var(--ds-list-w);
+  min-width: var(--ds-list-w);
   background: var(--ds-bg);
   border-right: 1px solid var(--ds-border);
 }
 
 /* Without a recording open (or on narrow screens) the list fills the window. */
 .workspace[data-layout="single"] .library {
-  flex: 1;
-  width: auto;
+  min-width: 0;
   border-right: 0;
 }
 
@@ -33,6 +32,15 @@
   min-height: 40px;
   padding: 0 var(--ds-space-3);
   border-bottom: 1px solid var(--ds-border);
+}
+
+/* Header checkbox: first in the toolbar, pushing the icon controls to the right. */
+.library-selectall--toolbar {
+  margin: 0 auto 0 var(--ds-space-1);
+}
+
+.library-selectall {
+  accent-color: var(--ds-accent);
 }
 
 .library-tool {
@@ -87,7 +95,7 @@
   height: calc(var(--ds-control-h-sm) - 2px);
 }
 
-.library-toolbar[data-searching] > :not(.library-searchbox) {
+.library-toolbar[data-searching] > :not(.library-searchbox, .library-selectall) {
   display: none;
 }
 
@@ -143,6 +151,15 @@
   list-style: none;
 }
 
+.library-row {
+  position: relative;
+  border-radius: var(--ds-radius-thumb);
+}
+
+.library-row[data-checked] {
+  background: var(--ds-accent-soft);
+}
+
 .library-item {
   display: flex;
   align-items: center;
@@ -150,7 +167,8 @@
   width: 100%;
   box-sizing: border-box;
   min-height: 56px;
-  padding: 6px var(--ds-space-2) 6px 6px;
+  /* Right padding keeps the title and chip clear of the actions button. */
+  padding: 6px calc(var(--ds-icon-button-sm) + 2px) 6px 6px;
   color: var(--ds-fg);
   background: transparent;
   border: 0;
@@ -159,6 +177,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+  user-select: none; /* Shift+click selects a range: no text highlight. */
   transition: border-color var(--ds-duration) var(--ds-ease), background-color var(--ds-duration) var(--ds-ease);
 }
 
@@ -185,6 +204,11 @@
 
 .library-item[aria-current="true"] {
   background: var(--ds-fill-strong);
+}
+
+/* Checked rows keep the soft accent fill (the checkbox says why); hover and open still read on top. */
+.library-row[data-checked] .library-item:not([aria-current="true"], :hover) {
+  background: var(--ds-accent-soft);
 }
 
 .library-item[aria-current="true"] .library-item-title {
@@ -236,15 +260,6 @@
   font-size: var(--ds-text-md);
   font-weight: var(--ds-weight-medium);
   line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.library-item-topic {
-  overflow: hidden;
-  color: var(--ds-fg-muted);
-  font-size: var(--ds-text-xs);
-  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -323,5 +338,190 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Selection checkbox: over the left of the thumbnail, shown on hover, focus, when selecting and always on touch. */
+.library-row-check {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  display: grid;
+  place-items: center;
+  padding: 3px;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-xs);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--ds-duration) var(--ds-ease);
+}
+
+.library-row-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--ds-accent);
+  cursor: pointer;
+}
+
+/* Actions button: reserved column at the right of the row, shown with the same triggers. */
+.library-row-menu {
+  position: absolute;
+  top: 50%;
+  right: 1px;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--ds-duration) var(--ds-ease);
+}
+
+.library-row:is(:hover, :focus-within, [data-checked]) :is(.library-row-check, .library-row-menu),
+.library-row[data-open] .library-row-menu,
+.library[data-selecting] .library-row-check {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .library-row-check,
+  .library-row-menu {
+    opacity: 1;
+  }
+
+  .library-row-check {
+    padding: 8px;
+  }
+
+  .library-row-check input {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* An open actions menu must paint over the rows below it (the button's transform is its own layer). */
+.library-row:has(.ui-menu-panel) {
+  z-index: 3;
+}
+
+.library-row-tip {
+  pointer-events: none;
+}
+
+.library-row-error,
+.library-rename-error {
+  margin: 0;
+  padding: 2px var(--ds-space-2) var(--ds-space-1);
+  color: var(--ds-danger-text);
+  font-size: var(--ds-text-xs);
+  line-height: 1.3;
+}
+
+/* Inline rename: the field takes the row's place. */
+.library-rename {
+  display: grid;
+  gap: 2px;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: var(--ds-space-2) var(--ds-space-2) var(--ds-space-1) var(--ds-space-2);
+  border-left: 3px solid var(--ds-accent);
+  border-radius: var(--ds-radius-thumb);
+  background: var(--ds-fill-strong);
+}
+
+.library-rename-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--ds-control-h-md);
+  padding: 0 var(--ds-space-2);
+  color: var(--ds-fg);
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border-strong);
+  border-radius: var(--ds-radius-sm);
+  font: inherit;
+  font-size: var(--ds-text-md);
+}
+
+.library-rename-input[aria-invalid="true"] {
+  border-color: var(--ds-danger-text);
+}
+
+.library-rename-input:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 1px;
+}
+
+/* Bulk action bar: replaces the header (count and a way out) and the toolbar (select all and actions). */
+.library-bulk-header {
+  background: var(--ds-accent-soft);
+  color: var(--ds-accent-soft-fg);
+}
+
+.library-bulk-header:focus {
+  outline: none;
+}
+
+.library-bulk-header:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: -2px;
+}
+
+.library-bulk-count {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.library-bulk-toolbar {
+  justify-content: flex-end;
+}
+
+.library-bulk-toolbar .library-selectall {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  margin-right: auto;
+  margin-left: var(--ds-space-1);
+  color: var(--ds-fg);
+  font-size: var(--ds-text-sm);
+  cursor: pointer;
+}
+
+.library-bulk-toolbar input {
+  margin: 0;
+  accent-color: var(--ds-accent);
+}
+
+.library-danger {
+  color: var(--ds-danger-text);
+}
+
+.library-bulk-dialog {
+  display: grid;
+  gap: var(--ds-space-3);
+}
+
+.library-bulk-status,
+.library-bulk-note {
+  margin: 0;
+  font-size: var(--ds-text-md);
+}
+
+.library-bulk-note {
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-sm);
+}
+
+.library-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ds-space-2);
+}
+
+.library-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }

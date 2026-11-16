@@ -159,6 +159,34 @@
   color: var(--ds-fg);
 }
 
+.shell-link-wrap {
+  position: relative;
+  display: block;
+}
+
+/* The toggle is a button: it fills the row like the link beside it. */
+.shell-link--pane {
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* The rail shows no label; the toggle's own tooltip (hide / show) opens beside the icon. */
+.shell-root[data-mode="rail"] .shell-link-label {
+  display: none;
+}
+
+.shell-root[data-mode="rail"] .shell-link-wrap .ui-tooltip {
+  top: 50%;
+  right: auto;
+  left: calc(100% + var(--ds-space-2));
+  transform: translateY(-50%);
+}
+
+.shell-link--pane[aria-expanded="true"],
 .shell-link[aria-current="page"] {
   background: var(--ds-accent-soft);
   color: var(--ds-accent-soft-fg);

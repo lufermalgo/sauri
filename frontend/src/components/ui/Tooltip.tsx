@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import type { FocusEvent, KeyboardEvent, ReactNode } from "react";
+import type { CSSProperties, FocusEvent, KeyboardEvent, ReactNode } from "react";
 
 /** Delay before a tooltip appears (DESIGN.md section 7). */
 export const TOOLTIP_DELAY_MS = 400;
@@ -22,13 +22,26 @@ type TooltipTriggerProps = {
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
 };
 
+export type TooltipOptions = {
+  /** Delay before the tooltip appears; defaults to `TOOLTIP_DELAY_MS`. */
+  delayMs?: number;
+  /** Extra class on the tooltip (e.g. `ui-tooltip--wrap` for longer text that wraps). */
+  className?: string;
+  /** Inline placement, for a tooltip whose anchor is not the trigger's positioned parent. */
+  style?: CSSProperties;
+  /** Called just before the tooltip appears, so the caller can measure its anchor. */
+  onShow?: () => void;
+};
+
 /** Accessible tooltip for a control that already has its own name.
  * The tooltip complements the name: it is always in the DOM and linked with `aria-describedby`,
  * shown after a short delay on hover or keyboard focus, and dismissed with Escape. */
-export function useTooltip(text: string | undefined) {
+export function useTooltip(text: string | undefined, options: TooltipOptions = {}) {
   const id = useId();
   const [visible, setVisible] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
+  const latest = useRef(options);
+  latest.current = options;
 
   const hide = useCallback(() => {
     clearTimeout(timer.current);
@@ -36,7 +49,10 @@ export function useTooltip(text: string | undefined) {
   }, []);
   const showSoon = useCallback(() => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setVisible(true), TOOLTIP_DELAY_MS);
+    timer.current = setTimeout(() => {
+      latest.current.onShow?.();
+      setVisible(true);
+    }, latest.current.delayMs ?? TOOLTIP_DELAY_MS);
   }, []);
   useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -51,6 +67,7 @@ export function useTooltip(text: string | undefined) {
       onBlur: hide,
       onKeyDown: (event: KeyboardEvent<HTMLElement>) => { if (event.key === "Escape") hide(); },
     } as TooltipTriggerProps,
-    tooltip: <span id={id} role="tooltip" className="ui-tooltip" hidden={!visible}>{text}</span>,
+    tooltip: <span id={id} role="tooltip" className={options.className ? `ui-tooltip ${options.className}` : "ui-tooltip"}
+      style={options.style} hidden={!visible}>{text}</span>,
   };
 }

@@ -2,9 +2,9 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Avatar, Button, Card, ConfirmDialog, Dialog, Menu, MenuItem, Popover, ProgressBar, Skeleton, SkeletonLines, StatusBadge, Tabs,
-  TextField, TimeChip } from "./index";
+  TextField, TimeChip, useTooltip } from "./index";
 
 afterEach(() => {
   cleanup();
@@ -527,5 +527,86 @@ describe("Pane header strip", () => {
     </section>);
     expect(container.querySelector(".ui-pane > .ui-pane-header > .ui-pane-title")).toHaveTextContent("Title");
     expect(container.querySelector(".ui-pane > .ui-pane-body")).toHaveTextContent("Body");
+  });
+});
+
+function TooltipExample({ options }: { options?: Parameters<typeof useTooltip>[1] }) {
+  const tip = useTooltip("Longer summary text", options);
+  return <div><button type="button" {...tip.triggerProps}>Row</button>{tip.tooltip}</div>;
+}
+
+describe("useTooltip options", () => {
+  it("waits for a custom delay, calls onShow just before showing and applies class and style", () => {
+    vi.useFakeTimers();
+    try {
+      const onShow = vi.fn();
+      render(<TooltipExample options={{ delayMs: 500, className: "ui-tooltip--wrap", style: { left: 12 }, onShow }} />);
+      const tip = screen.getByRole("tooltip", { hidden: true });
+      expect(tip).toHaveClass("ui-tooltip", "ui-tooltip--wrap");
+      expect(tip).toHaveStyle({ left: "12px" });
+
+      fireEvent.mouseEnter(screen.getByRole("button"));
+      act(() => { vi.advanceTimersByTime(499); });
+      expect(tip.hidden).toBe(true);
+      expect(onShow).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(onShow).toHaveBeenCalledTimes(1);
+      expect(tip.hidden).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the 400 ms default", () => {
+    vi.useFakeTimers();
+    try {
+      render(<TooltipExample />);
+      const tip = screen.getByRole("tooltip", { hidden: true });
+      fireEvent.mouseEnter(screen.getByRole("button"));
+      act(() => { vi.advanceTimersByTime(399); });
+      expect(tip.hidden).toBe(true);
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(tip.hidden).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("Menu trigger tab order and item hints", () => {
+  it("lets a roving list take the trigger out of the tab order", () => {
+    render(<Menu label="Actions" triggerTabIndex={-1}><MenuItem onSelect={() => undefined}>One</MenuItem></Menu>);
+    expect(screen.getByRole("button", { name: "Actions" })).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("explains a disabled item with a hint that is its title and description", () => {
+    const onSelect = vi.fn();
+    render(<Menu label="Actions"><MenuItem disabled hint="Not ready yet" onSelect={onSelect}>Download</MenuItem></Menu>);
+    fireEvent.click(screen.getByRole("button", { name: "Actions" }));
+    const entry = screen.getByRole("menuitem", { name: "Download" });
+    expect(entry).toHaveAttribute("title", "Not ready yet");
+    expect(entry).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(entry);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("opens upward when there is no room below inside a scrolling parent", () => {
+    render(<div style={{ overflowY: "auto" }} data-testid="scroller"><Menu label="Actions"><MenuItem onSelect={() => undefined}>One</MenuItem></Menu></div>);
+    const trigger = screen.getByRole("button", { name: "Actions" });
+    vi.spyOn(screen.getByTestId("scroller"), "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 200 } as DOMRect);
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({ top: 150, bottom: 180 } as DOMRect);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(120);
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).toHaveClass("ui-menu-panel--up");
+  });
+
+  it("stays below when there is room", () => {
+    render(<div style={{ overflowY: "auto" }} data-testid="scroller"><Menu label="Actions"><MenuItem onSelect={() => undefined}>One</MenuItem></Menu></div>);
+    const trigger = screen.getByRole("button", { name: "Actions" });
+    vi.spyOn(screen.getByTestId("scroller"), "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 600 } as DOMRect);
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({ top: 40, bottom: 70 } as DOMRect);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(120);
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menu")).not.toHaveClass("ui-menu-panel--up");
   });
 });
