@@ -6,6 +6,7 @@ import { storeChunk, getChunksBySession, clearSession, openDB, STORE_NAME, settl
 import { videoPresenceFromStream } from "./core/capture";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
 import { recordedDurationSeconds } from "./core/recording-duration";
+import { DEFAULT_RESOLUTION, RESOLUTION_DIMENSIONS } from "./core/resolution";
 
 console.log("[sauri] Offscreen document loaded");
 
@@ -90,7 +91,7 @@ chrome.runtime.onMessage.addListener(
     } else if (message.type === "start-recording" && message.sessionId) {
       const sessionId = message.sessionId;
       const captureMode: CaptureMode = message.captureMode ?? "screen_audio";
-      const resolution: Resolution = message.resolution ?? { width: 1280, height: 720 };
+      const resolution: Resolution = message.resolution ?? RESOLUTION_DIMENSIONS[DEFAULT_RESOLUTION];
       const micDeviceId: string | null = message.micDeviceId ?? null;
       if (currentSessionId) {
         sendResponse({ ok: false, reason: "busy" });

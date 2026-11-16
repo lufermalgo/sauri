@@ -4,6 +4,7 @@ import { copy } from "../copy/es";
 import { RecordingLibrary } from "./RecordingLibrary";
 import { TranscriptView } from "./TranscriptView";
 import { useLibraryPaneHidden, WORKSPACE_WIDE_QUERY } from "./useLibraryPane";
+import { hiddenPaneAttributes } from "./useSecondaryPane";
 import { useMediaQuery } from "./useMediaQuery";
 import "../styles/workspace.css";
 
@@ -34,8 +35,7 @@ export function LibraryWorkspace({ meetingId }: LibraryWorkspaceProps) {
   return (
     <div className="workspace" data-layout={wide ? "split" : "single"}>
       {showList && (
-        <div className="workspace-list" data-hidden={hidden || undefined} aria-hidden={hidden || undefined}
-          {...(hidden ? { inert: "" } : {})}>
+        <div className="workspace-list" {...hiddenPaneAttributes(hidden)}>
           <RecordingLibrary
             refreshKey={0}
             selectedId={meetingId}

@@ -20,6 +20,8 @@ import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from
 import { canCaptureCurrentTab, isMeetUrl } from "./core/capture";
 import { ensureOverlay } from "./overlay-injection";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
+import { validCaptureDimensions } from "./core/resolution";
+import { readRecordingSettings } from "./panel/recordingSettings";
 import { parseDurationSeconds } from "./core/recording-duration";
 import {
   SessionRequiredError,
@@ -287,7 +289,7 @@ chrome.runtime.onMessage.addListener(
   ) => {
     // Media-owner messages cannot come from a page. Overlay controls are
     // separately bound to the exact recording session and originating Meet tab.
-    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload", "session-restored"].includes(message.type)) {
+    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload", "session-restored", "recording-settings-changed"].includes(message.type)) {
       sendResponse({ ok: false, error: "Message requires an extension capture context" });
       return false;
     }
@@ -314,6 +316,13 @@ chrome.runtime.onMessage.addListener(
 
       case "capture-ready":
         void (async () => { sendResponse(await handleCaptureReady(message.sessionId)); })();
+        return true;
+
+      case "recording-settings-changed":
+        void (async () => {
+          try { sendResponse({ ok: await applyLiveRecordingSettings() }); }
+          catch { sendResponse({ ok: false }); }
+        })();
         return true;
 
       case "get-recording-ui":
@@ -496,7 +505,8 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
         }
         const currentState = await getState();
         const captureMode = currentState.captureMode ?? "screen_audio";
-        const res = resolution ?? { width: 1280, height: 720 };
+        // Only the three offered sizes are accepted; anything else records at the default.
+        const res = validCaptureDimensions(resolution);
         const isMeet = isMeetUrl(tab.url);
         let meetingTitle = isMeet ? currentState.meetingTitle : tabTitleOf(tab.title);
         if (isMeet) {
@@ -566,12 +576,16 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
   }
 }
 
-async function readRecordingSettings(): Promise<{ countdownSeconds: number; showControlBar: boolean }> {
-  const { recordingSettings } = await chrome.storage.local.get("recordingSettings");
-  return {
-    countdownSeconds: [0, 3, 5, 10].includes(recordingSettings?.countdownSeconds) ? recordingSettings.countdownSeconds : 3,
-    showControlBar: typeof recordingSettings?.showControlBar === "boolean" ? recordingSettings.showControlBar : true,
-  };
+/** Applies the settings that can change mid-recording: today only the floating control bar. */
+async function applyLiveRecordingSettings(): Promise<boolean> {
+  const state = await getState();
+  if (state.status !== "recording") return true;
+  const { showControlBar } = await readRecordingSettings();
+  if ((state.showControlBar ?? true) === showControlBar) return true;
+  const next = { ...state, showControlBar };
+  await setState(next);
+  await syncRecordingUI(next);
+  return true;
 }
 
 function recordingUI(state: SauriState) {

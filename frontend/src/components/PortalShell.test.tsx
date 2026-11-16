@@ -138,7 +138,8 @@ describe("PortalShell navigation and profile", () => {
     unmount();
     renderShell({ route: { name: "settings" } });
     expect(screen.getByRole("link", { name: copy.shell.library }).getAttribute("aria-current")).toBeNull();
-    expect(screen.getByRole("link", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBe("page");
+    // On settings the gear becomes the toggle of the categories pane and stays the current item.
+    expect(screen.getByRole("button", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBe("page");
   });
 
   it("opens settings from the gear without reloading", () => {

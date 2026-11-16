@@ -474,7 +474,7 @@ describe("settings inside the app shell", () => {
         </PortalShell>,
       );
     });
-    expect(screen.getByRole("link", { name: copy.shell.profile.settings })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: copy.shell.profile.settings })).toHaveAttribute("aria-current", "page");
     await waitFor(() => expect(screen.getByText(copy.settings.summaries.empty)).toBeInTheDocument());
   });
 });

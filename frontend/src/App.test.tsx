@@ -111,7 +111,8 @@ describe("global authentication gate", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/settings"));
     expect(screen.getByRole("heading", { name: copy.settings.title })).toBeTruthy();
     expect(screen.getByRole("heading", { name: copy.settings.categories.account.label })).toBeTruthy();
-    expect(screen.getByRole("link", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBe("page");
+    // On settings the gear becomes the toggle of the categories pane and stays the current item.
+    expect(screen.getByRole("button", { name: copy.shell.profile.settings }).getAttribute("aria-current")).toBe("page");
 
     act(() => {
       window.history.pushState(null, "", "/settings/extra");
