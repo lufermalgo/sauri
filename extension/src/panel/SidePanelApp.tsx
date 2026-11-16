@@ -263,6 +263,9 @@ export function SidePanelApp() {
       setNotesRequest({ phase: "success", data: notes, previous: null });
     } catch (error) {
       if (error instanceof InvalidSessionError) {
+        // A stale 401 (sent before the user signed in again) leaves the newer token in
+        // place: load with it instead of asking for credentials a second time.
+        if (await readSessionToken()) { void loadNotes(); return; }
         setSessionExpired(true);
         setSessionActive(false);
         setNotesRequest({ phase: "initial", data: null, previous: null });

@@ -1,7 +1,7 @@
 // Shared API client (Side Panel + Detail View) — Req. 13.1, 13.3,
 // 13.4, 13.5, 14.1, 14.4, 14.5
 import type { NoteDTO, TranscriptDTO, DiarizationDTO } from "../types";
-import { clearSessionToken, readSessionToken, storeSessionToken } from "../session-token";
+import { clearSessionTokenIf, readSessionToken, storeSessionToken } from "../session-token";
 
 export const DEFAULT_BACKEND_URL = "http://localhost:8000";
 const TIMEOUT_MS = 10_000;
@@ -62,7 +62,7 @@ async function request<T>(backendUrl: string, path: string, init?: RequestInit):
     });
 
     if (response.status === 401) {
-      await clearSessionToken();
+      await clearSessionTokenIf(session);
       throw new InvalidSessionError();
     }
 
@@ -205,7 +205,7 @@ export async function deleteMeeting(
     });
 
     if (response.status === 401) {
-      await clearSessionToken();
+      await clearSessionTokenIf(session);
       throw new InvalidSessionError();
     }
     if (response.status === 404) {

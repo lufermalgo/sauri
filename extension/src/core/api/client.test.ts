@@ -54,6 +54,40 @@ describe("API client — 401 handling (Req. 13.4)", () => {
   });
 });
 
+describe("API client — a stale 401 never signs the user out of a newer session (#1113)", () => {
+  /** Resolves the in-flight request with 401 only after the user has signed in again. */
+  function lateUnauthorized(store: Record<string, unknown>) {
+    global.fetch = vi.fn(async () => {
+      store.sauriSessionToken = "fresh-token"; // The sign-in finished while the request was in flight.
+      return new Response("", { status: 401 });
+    }) as unknown as typeof fetch;
+  }
+
+  it("keeps the fresh token when a request sent with the expired one comes back 401", async () => {
+    const store = mockChromeStorage({ sauriSessionToken: "expired-token" });
+    lateUnauthorized(store);
+    const { listMeetings, InvalidSessionError } = await import("./client");
+    await expect(listMeetings("http://localhost:8000")).rejects.toBeInstanceOf(InvalidSessionError);
+    expect(store.sauriSessionToken).toBe("fresh-token");
+  });
+
+  it("keeps the fresh token when a request sent with no token comes back 401", async () => {
+    const store = mockChromeStorage({});
+    lateUnauthorized(store);
+    const { listMeetings } = await import("./client");
+    await expect(listMeetings("http://localhost:8000")).rejects.toThrow();
+    expect(store.sauriSessionToken).toBe("fresh-token");
+  });
+
+  it("applies the same rule when deleting a note", async () => {
+    const store = mockChromeStorage({ sauriSessionToken: "expired-token" });
+    lateUnauthorized(store);
+    const { deleteMeeting } = await import("./client");
+    await expect(deleteMeeting("m-1", "http://localhost:8000")).rejects.toThrow();
+    expect(store.sauriSessionToken).toBe("fresh-token");
+  });
+});
+
 describe("API client — timeout and retry (Req. 14.4, 14.5, 4.9, 6.6)", () => {
   beforeEach(() => {
     mockChromeStorage({ sauriSessionToken: "token-abc" });

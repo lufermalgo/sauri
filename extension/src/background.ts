@@ -25,7 +25,7 @@ import { readRecordingSettings } from "./panel/recordingSettings";
 import { parseDurationSeconds } from "./core/recording-duration";
 import {
   SessionRequiredError,
-  clearSessionToken,
+  clearSessionTokenIf,
   purgeLegacyToken,
   readSessionToken,
   restrictSessionStorageToTrustedContexts,
@@ -164,7 +164,9 @@ async function uploadRecording(job: UploadJob): Promise<void> {
     });
 
     if (response.status === 401) {
-      await clearSessionToken();
+      // Only the token this upload used is dropped: the user may have signed in again while
+      // the (long) upload was running.
+      await clearSessionTokenIf(token);
       throw new SessionRequiredError();
     }
 
@@ -848,7 +850,8 @@ async function processUploadQueue(): Promise<void> {
   } catch (error) {
     if (error instanceof SessionRequiredError) {
       await releaseProcessing(job.id);
-      await setSignInRequired();
+      // A newer token means the 401 was stale: the next alarm retries with it.
+      if (!await readSessionToken()) await setSignInRequired();
       console.warn("[sauri] Upload waiting for the user to sign in");
       return;
     }

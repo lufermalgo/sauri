@@ -71,6 +71,34 @@ describe("SidePanelApp", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(copy.sessionAlert);
   });
 
+  it("stays signed in when the notes request is rejected with a stale token but a newer one is stored (#1113)", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    mockChrome(true);
+    // The stored token is replaced by a new sign-in while the first request is in flight.
+    let storedToken = "stale-token";
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(async () => { storedToken = "fresh-token"; return new Response("", { status: 401 }); })
+      .mockImplementation(async () => new Response(JSON.stringify([]), { status: 200 }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    vi.mocked(chrome.storage.session.get).mockImplementation(async () => ({ sauriState: { status: "idle" }, sauriSessionToken: storedToken }));
+    render(<SidePanelApp />);
+    await screen.findByText(copy.recordings);
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(screen.queryByRole("heading", { name: copy.loginHeading })).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.sessionExpired)).not.toBeInTheDocument();
+  });
+
+  it("stays signed in after the panel is closed and opened again (the token is re-read, not cached)", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    mockChrome(true);
+    const first = render(<SidePanelApp />);
+    await screen.findByText(copy.recordings);
+    first.unmount();
+    render(<SidePanelApp />);
+    expect(await screen.findByText(copy.recordings)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: copy.loginHeading })).not.toBeInTheDocument();
+  });
+
   it("switches to sign-in when the token disappears while the panel is open (e.g. an upload got a 401)", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     mockChrome(true);

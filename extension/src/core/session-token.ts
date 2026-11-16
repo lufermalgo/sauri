@@ -51,6 +51,20 @@ export async function clearSessionToken(): Promise<void> {
   await chrome.storage.session.remove(TOKEN_KEY);
 }
 
+/**
+ * Drops the stored token only if it is still the one a rejected request was sent with.
+ * A slow request (an upload, a poll) can come back 401 after the user has already signed
+ * in again; clearing unconditionally would sign them out of the fresh session. A request
+ * sent without a token (`undefined`) can never invalidate a stored one.
+ * Returns true when the stored token was removed.
+ */
+export async function clearSessionTokenIf(rejectedToken: string | undefined): Promise<boolean> {
+  if (!rejectedToken) return false;
+  if (await readSessionToken() !== rejectedToken) return false;
+  await clearSessionToken();
+  return true;
+}
+
 /** Records that queued work is blocked until the user signs in again. */
 export async function setSignInRequired(): Promise<void> {
   await chrome.storage.session.set({ [SIGN_IN_REQUIRED_KEY]: true });
