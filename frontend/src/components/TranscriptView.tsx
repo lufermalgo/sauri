@@ -23,8 +23,10 @@ import { useStageStart } from "../useStageStart";
 import { MeetingHeader } from "./MeetingHeader";
 import { LIBRARY_CHANGED_EVENT } from "../library-events";
 import { ChatTab } from "./ChatTab";
-import { Avatar, Dialog, Tabs, Skeleton, SkeletonLines } from "./ui";
-import { SpeakerReviewPanel, type SpeakerRowModel } from "./SpeakerReviewPanel";
+import { Avatar, Tabs, Skeleton, SkeletonLines } from "./ui";
+import type { SpeakerRowModel } from "./SpeakerReviewPanel";
+import { SpeakerDock, focusSpeakerDock } from "./SpeakerDock";
+import { useSpeakerDock } from "./useSpeakerDock";
 import "../styles/meeting.css";
 import { NO_SPEECH_CAUSE, detectProcessingStage, type SummarySignal } from "../processing-estimate";
 import { useT } from "../i18n";
@@ -108,7 +110,10 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const turnRefs = useRef(new Map<string, HTMLLIElement>());
   const [followPlayback, setFollowPlayback] = useState(true);
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const { open: reviewOpen, setOpen: setReviewOpen } = useSpeakerDock();
+  // True only when the user just opened the panel: a panel restored from the stored choice keeps focus where it is.
+  const dockFocusOnMount = useRef(false);
+  const viewRef = useRef<HTMLElement>(null);
   const [playingSpeakerId, setPlayingSpeakerId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("summary");
   const [keyPointTimes, setKeyPointTimes] = useState<number[]>([]);
@@ -390,11 +395,23 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
     }
   }
 
+  function openReview() {
+    if (reviewOpen) {
+      focusSpeakerDock(viewRef.current?.querySelector<HTMLElement>(".meeting-dock") ?? null);
+      return;
+    }
+    dockFocusOnMount.current = true;
+    setReviewOpen(true);
+  }
+
   function closeReview() {
-    // An excerpt must not keep playing behind the closed dialog.
+    // An excerpt must not keep playing after its row is gone.
     if (playingSpeakerId) pauseRef.current?.();
     setPlayingSpeakerId(null);
+    dockFocusOnMount.current = false;
     setReviewOpen(false);
+    // The panel and the focus inside it disappear: land on the entry point again.
+    viewRef.current?.querySelector<HTMLElement>(".meeting-speakers > button")?.focus();
   }
 
   const presentationTurns = useMemo(
@@ -499,13 +516,15 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   const speakerReview = review && review.items.length > 0 && !noSpeech ? {
     pendingCount,
     hasUnnamed: speakerRows.some(row => row.generic),
-    onReview: () => setReviewOpen(true),
+    onReview: openReview,
   } : undefined;
+  const dockOpen = reviewOpen && speakerReview !== undefined;
+  const speakingId = presentationTurns.find(turn => turn.id === activeTurnId)?.speakerId ?? null;
   const hasNotices = metadataError || speakerWaitExpired || showProcessing ||
     diarizationError || Boolean(error);
 
   return (
-    <section className="meeting-view" tabIndex={-1}>
+    <section className="meeting-view" tabIndex={-1} ref={viewRef}>
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt} recordedAt={metadata.recordedAt}
         stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
         speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} hasSummary={hasSummary}
@@ -523,7 +542,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
         {diarizationError && <p role="alert">{t("processing:diarizationFailed")}</p>}
         {error && <p role="alert" className="meeting-error">{error}</p>}
       </div>}
-      <div className="meeting-body">
+      <div className={`meeting-body${dockOpen ? " meeting-body--dock" : ""}`}>
       <div className="meeting-main">
       <section className="meeting-playback-card" aria-label={t("meeting:playback")}>
       <div id="meeting-playback" ref={playbackRef} onTimeUpdate={updateActiveTurn} onSeeked={updateActiveTurn}
@@ -538,6 +557,13 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
           onSeekToReady={registerSeekTo}
           onPlayIntervalReady={registerPlayInterval}
           onPauseReady={registerPause}
+          sidePanel={dockOpen && review ? <SpeakerDock rows={speakerRows} complete={review.status === "complete"}
+            busyIds={submittingSpeakerIds} playingId={playingSpeakerId} speakingId={speakingId}
+            playbackReady={Boolean(playbackManifest) && !playbackLoading && !playbackError}
+            playbackLoading={playbackLoading} error={reviewError} focusOnMount={dockFocusOnMount.current}
+            onListen={row => { if (row.interval) void listenToSpeaker(row.speakerId, row.interval.startMs, row.interval.endMs); }}
+            onRename={renameSpeaker} onAcceptSuggestion={id => void acceptSuggestion(id)} onLeaveUnnamed={leaveUnnamed}
+            onClose={closeReview} /> : undefined}
         />
       </div>
       </section>
@@ -622,18 +648,9 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
           { id: "chat", label: t("meeting:chatTab"), panel: <ChatTab /> },
         ]} />
       </div>
-      {reviewError && !reviewOpen && <p role="alert" className="meeting-error">{reviewError}</p>}
+      {reviewError && !dockOpen && <p role="alert" className="meeting-error">{reviewError}</p>}
       </aside>
       </div>
-      {reviewOpen && review && <Dialog title={t("speakerReview:heading")} closeLabel={t("speakerReview:close")}
-        onClose={closeReview}>
-        <SpeakerReviewPanel rows={speakerRows} complete={review.status === "complete"}
-          busyIds={submittingSpeakerIds} playingId={playingSpeakerId}
-          playbackReady={Boolean(playbackManifest) && !playbackLoading && !playbackError}
-          playbackLoading={playbackLoading} error={reviewError}
-          onListen={row => { if (row.interval) void listenToSpeaker(row.speakerId, row.interval.startMs, row.interval.endMs); }}
-          onRename={renameSpeaker} onAcceptSuggestion={id => void acceptSuggestion(id)} onLeaveUnnamed={leaveUnnamed} />
-      </Dialog>}
     </section>
   );
 }

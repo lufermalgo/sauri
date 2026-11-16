@@ -14,7 +14,7 @@
   },
   "listenTo": "Listen to {{label}}",
   "stopFor": "Stop playback of {{label}}",
-  "close": "Close",
+  "close": "Close speakers panel",
   "shortInterval": "This speaker has little continuous audio (under 5 seconds); it may not be enough to recognize their voice.",
   "noInterval": "No part of the recording is attributed to this speaker alone, so there's nothing to listen to.",
   "playbackUnavailable": "The original recording isn't available to play.",
