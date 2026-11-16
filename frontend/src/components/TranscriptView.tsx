@@ -402,7 +402,6 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
 
   const sourceTurnById = new Map(data?.turns.map((turn) => [turn.id, turn]));
 
-  const completed = meeting?.processState === "completed" && !statusError;
   // Nothing will ever be transcribed: the status card explains it, so no transcript placeholder.
   const noSpeech = meeting?.processState === "failed" && meeting.failureCause === NO_SPEECH_CAUSE && !statusError;
 
@@ -454,7 +453,7 @@ function MeetingTranscriptView({ meetingId, onBack }: TranscriptViewProps) {
   return (
     <section className="meeting-view">
       <MeetingHeader meetingId={meetingId} title={metadata.title} createdAt={metadata.createdAt}
-        onBack={onBack} completed={completed} processState={statusError ? undefined : meeting?.processState}
+        onBack={onBack} stage={statusError ? undefined : stage ?? undefined} processState={meeting?.processState}
         speakerCount={diarization?.speakers.length} manifest={playbackManifest} turns={presentationTurns} />
       {pendingCount > 0 && <div className="meeting-pending-speakers">
         <span role="status">{text.pendingSpeakers(pendingCount)}</span>

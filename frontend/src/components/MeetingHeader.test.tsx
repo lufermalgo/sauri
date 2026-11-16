@@ -6,6 +6,8 @@ import { MeetingHeader } from "./MeetingHeader";
 import { deleteMeeting, renameMeeting } from "../api";
 import { navigate } from "../router";
 import { meeting as text } from "../copy/meeting";
+import { processing } from "../copy/processing";
+import type { DetectedStage } from "../processing-estimate";
 
 vi.mock("../api", () => ({ renameMeeting: vi.fn(), deleteMeeting: vi.fn() }));
 vi.mock("../router", () => ({ navigate: vi.fn() }));
@@ -129,7 +131,7 @@ it("orders download, rename and more actions, keeping deletion inside the menu",
 
 it.each([[65, "01:05"], [3605, "1:00:05"], [0, "00:00"]])("formats real duration %s and speaker count", (duration, label) => {
   render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" onBack={vi.fn()}
-    completed speakerCount={2} turns={[]} manifest={{ meeting_id: "m1", duration_seconds: Number(duration),
+    stage="done" speakerCount={2} turns={[]} manifest={{ meeting_id: "m1", duration_seconds: Number(duration),
       video_presence: "absent", audio_source: { source_id: "a", url: "/audio", mime_type: "audio/wav" },
       muxed_video_source: null, video_sources: [] }} />);
   expect(screen.getByText(label)).toHaveClass("meeting-duration");
@@ -143,8 +145,27 @@ it("omits duration and speaker count without their source data", () => {
   expect(screen.queryByText(text.speakerCount(0))).not.toBeInTheDocument();
 });
 
-it.each([['transcribing', 'progress'], ['failed', 'error']])("shows the %s badge with its real tone", (processState, tone) => {
+it.each([['transcribing', 'transcription', 'progress'], ['failed', 'failed', 'error']])("shows the %s badge with its real tone", (processState, stage, tone) => {
   render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" onBack={vi.fn()}
-    processState={processState} turns={[]} manifest={null} />);
+    stage={stage as DetectedStage} processState={processState} turns={[]} manifest={null} />);
   expect(document.querySelector(".ui-status-badge")).toHaveClass(`ui-status-badge--${tone}`);
+});
+
+it.each([
+  ["transcription", "queued", "En cola", "progress"],
+  ["speakers", "completed", processing.identifying, "progress"],
+  ["summary", "completed", processing.summarizing, "progress"],
+  ["done", "completed", text.ready, "success"],
+] as const)("shows the %s stage as %s without calling it ready early", (stage, processState, label, tone) => {
+  render(<MeetingHeader title="Synthetic meeting" createdAt={null} meetingId="m1" onBack={vi.fn()}
+    stage={stage} processState={processState} turns={[]} manifest={null} />);
+  const badge = document.querySelector(".ui-status-badge");
+  expect(badge).toHaveTextContent(label);
+  expect(badge).toHaveClass(`ui-status-badge--${tone}`);
+  if (stage !== "done") expect(screen.queryByText(text.ready)).not.toBeInTheDocument();
+});
+
+it("shows no status badge while the stage is unknown to the page", () => {
+  open();
+  expect(document.querySelector(".ui-status-badge")).not.toBeInTheDocument();
 });

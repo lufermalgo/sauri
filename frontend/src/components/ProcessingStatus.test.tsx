@@ -164,6 +164,22 @@ describe("ProcessingStatus — estimate", () => {
     expect(document.querySelector(".processing-remaining")).toHaveTextContent(copy.processing.overtime);
   });
 
+  it("does not claim a slow stage when the page opens right after speakers started", () => {
+    vi.useFakeTimers({ now: NOW });
+    // 94 minutes of audio uploaded 14 minutes ago: transcription took most of that time, not speakers.
+    const props = base({
+      meeting: { meetingId: "m-1", processState: "completed" },
+      audioSeconds: 94 * 60, createdAt: ago(850), hasTranscript: true, diarizationNotFound: true,
+    });
+    render(<ProcessingStatus {...props} />);
+    expect(currentStep()).toBe(copy.processing.steps.speakers);
+    expect(screen.queryByText(copy.processing.overtime)).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.processing.explain.overtime)).not.toBeInTheDocument();
+    // Only time this page watched the running stage can make it overtime.
+    act(() => { vi.advanceTimersByTime(20_000); });
+    expect(document.querySelector(".processing-remaining")).toHaveTextContent(copy.processing.overtime);
+  });
+
   it("announces the estimate politely at most every fifteen seconds", () => {
     vi.useFakeTimers({ now: NOW });
     render(<ProcessingStatus {...base({ audioSeconds: 54 * 60, createdAt: ago(120) })} />);
