@@ -183,7 +183,7 @@
 
 /* The status edge always sits beside the status chip, so state never rests on color alone. */
 .library-item--ready {
-  border-left-color: var(--ds-accent);
+  border-left-color: var(--ds-accent-line);
 }
 
 .library-item--progress {
