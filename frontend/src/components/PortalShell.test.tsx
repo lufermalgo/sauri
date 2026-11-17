@@ -351,6 +351,21 @@ describe("PortalShell app frame", () => {
     expect(tokensCss).toMatch(/--ds-nav-row-h:\s*32px/);
   });
 
+  it("paints the side panel and the mobile top bar with the indigo nav tokens, in both themes", () => {
+    for (const selector of [".shell-sidebar", ".shell-topbar"]) {
+      expect(rule(selector)).toMatch(/background:\s*var\(--ds-nav-bg\)/);
+      expect(rule(selector)).toMatch(/color:\s*var\(--ds-nav-fg\)/);
+      // Pinned to dark so the wordmark's light-dark() fill and the focus ring resolve over the indigo.
+      expect(rule(selector)).toMatch(/color-scheme:\s*dark/);
+    }
+    expect(rule(".shell-link:hover")).toMatch(/color:\s*var\(--ds-nav-fg-strong\)/);
+    for (const selector of ['.shell-link[aria-current="page"]', '.shell-gear[aria-current="page"]']) {
+      expect(rule(selector)).toMatch(/background:\s*var\(--ds-nav-active-bg\)/);
+      expect(rule(selector)).toMatch(/color:\s*var\(--ds-nav-fg-strong\)/);
+      expect(rule(selector)).toMatch(/box-shadow:\s*inset 2px 0 0 var\(--ds-spark\)/);
+    }
+  });
+
   it("does not center the page in a max-width column", () => {
     expect(rule(".shell-main")).not.toMatch(/max-width|margin/);
     expect(shellCss).not.toContain("--ds-layout-max");

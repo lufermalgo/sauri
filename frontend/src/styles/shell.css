@@ -5,6 +5,9 @@
  * the vertical scroll. Pages fill that region; they never center themselves in a max-width column.
  * Modes (data-mode on .shell-root): full (220px), rail (60px, icons only), drawer (under 640px, off-canvas).
  * Each view fills the content region and owns its own panes and scroll (DESIGN.md 6).
+ * The side panel and the mobile top bar are the navigation panel: indigo in BOTH themes (nav-* tokens).
+ * They pin color-scheme to dark so every token read inside them, the wordmark's light-dark() fill and
+ * the focus ring included, resolves to its dark value over the indigo; the volt spark marks the active item.
  */
 .shell-root {
   --shell-sidebar-width: var(--ds-sidebar-w);
@@ -30,8 +33,10 @@
   min-height: 0;
   width: var(--shell-sidebar-width);
   padding: 10px var(--ds-space-2) var(--ds-space-2);
-  background: var(--ds-sidebar);
-  border-right: 1px solid var(--ds-border);
+  color-scheme: dark;
+  color: var(--ds-nav-fg);
+  background: var(--ds-nav-bg);
+  border-right: 1px solid var(--ds-nav-active-bg);
 }
 
 .shell-root[data-mode="rail"] .shell-sidebar {
@@ -69,7 +74,7 @@
   /* Space between isotype and word as in the horizontal logo (22 of 100 of the isotype's size). */
   gap: calc(var(--shell-brand-mark-size, 24px) * 0.22);
   min-width: 0;
-  color: var(--ds-accent-text);
+  color: var(--ds-nav-fg-strong);
   text-decoration: none;
   border-radius: var(--ds-radius-sm);
 }
@@ -94,7 +99,7 @@
   box-sizing: border-box;
   border: 0;
   background: transparent;
-  color: var(--ds-fg-muted);
+  color: var(--ds-nav-fg);
   text-decoration: none;
   cursor: pointer;
   transition: background-color var(--ds-duration) var(--ds-ease), color var(--ds-duration) var(--ds-ease);
@@ -111,8 +116,8 @@
 .shell-icon-button:hover,
 .shell-gear:hover,
 .shell-profile-trigger:hover {
-  background: var(--ds-fill-hover);
-  color: var(--ds-fg);
+  background: var(--ds-nav-active-bg);
+  color: var(--ds-nav-fg-strong);
 }
 
 /* The gear is a button while the settings categories can be hidden; its tooltip opens above the row. */
@@ -135,9 +140,11 @@
   transform: translateY(-50%);
 }
 
+/* The active item: raised indigo, strong text and a 2px volt edge (inset, so nothing shifts). */
 .shell-gear[aria-current="page"] {
-  background: var(--ds-accent-soft);
-  color: var(--ds-accent-soft-fg);
+  background: var(--ds-nav-active-bg);
+  color: var(--ds-nav-fg-strong);
+  box-shadow: inset 2px 0 0 var(--ds-spark);
 }
 
 .shell-nav {
@@ -167,7 +174,7 @@
   box-sizing: border-box;
   padding: 0 10px;
   border-radius: var(--ds-radius-sm);
-  color: var(--ds-fg-muted);
+  color: var(--ds-nav-fg);
   font-size: var(--ds-text-sm);
   font-weight: var(--ds-weight-medium);
   text-decoration: none;
@@ -180,8 +187,8 @@
 }
 
 .shell-link:hover {
-  background: var(--ds-fill-hover);
-  color: var(--ds-fg);
+  background: color-mix(in srgb, var(--ds-nav-active-bg) 55%, transparent);
+  color: var(--ds-nav-fg-strong);
 }
 
 .shell-link-wrap {
@@ -213,8 +220,9 @@
 
 .shell-link--pane[aria-expanded="true"],
 .shell-link[aria-current="page"] {
-  background: var(--ds-accent-soft);
-  color: var(--ds-accent-soft-fg);
+  background: var(--ds-nav-active-bg);
+  color: var(--ds-nav-fg-strong);
+  box-shadow: inset 2px 0 0 var(--ds-spark);
   font-weight: var(--ds-weight-semibold);
 }
 
@@ -229,7 +237,7 @@
   align-items: center;
   gap: 2px;
   padding-top: var(--ds-space-2);
-  border-top: 1px solid var(--ds-border);
+  border-top: 1px solid var(--ds-nav-active-bg);
 }
 
 .shell-root[data-mode="rail"] .shell-profile {
@@ -284,13 +292,13 @@
 }
 
 .shell-profile-name {
-  color: var(--ds-fg);
+  color: var(--ds-nav-fg-strong);
   font-size: var(--ds-text-sm);
   font-weight: var(--ds-weight-semibold);
 }
 
 .shell-profile-email {
-  color: var(--ds-fg-subtle);
+  color: var(--ds-nav-fg);
   font-size: var(--ds-text-2xs);
 }
 
@@ -385,8 +393,10 @@
   align-items: center;
   gap: var(--ds-space-2);
   padding: var(--ds-space-1) var(--ds-space-3);
-  background: var(--ds-sidebar);
-  border-bottom: 1px solid var(--ds-border);
+  color-scheme: dark;
+  color: var(--ds-nav-fg);
+  background: var(--ds-nav-bg);
+  border-bottom: 1px solid var(--ds-nav-active-bg);
 }
 
 .shell-root[data-mode="drawer"] .shell-sidebar {
