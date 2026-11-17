@@ -62,7 +62,7 @@ describe("login screen", () => {
     expect(heading.textContent).toBe(`${t("login:titleLead")} `);
     // The isotype now lives in the lockup: there is no separate tile above the heading.
     expect(container.querySelector(".login-brand")).toBeNull();
-    expect(container.querySelectorAll("svg polygon[fill='#4a7c59']")).toHaveLength(1);
+    expect(container.querySelectorAll("svg polygon[fill='#A59837']")).toHaveLength(1);
     expect(screen.getByText(t("login:subtitle"))).toBeTruthy();
     expect(screen.getByRole("button", { name: t("login:submit") })).toBeTruthy();
     const email = screen.getByLabelText(t("login:emailLabel")) as HTMLInputElement;
