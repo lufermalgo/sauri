@@ -8,7 +8,7 @@ describe("PanelHeader", () => {
     const { container } = render(<PanelHeader />);
     const logo = screen.getByRole("img", { name: copy.brandName });
     expect(copy.brandName).toBe("Sauri");
-    expect(logo.querySelector('polygon[fill="#4a7c59"]')).toBeTruthy();
+    expect(logo.querySelector('polygon[fill="#A59837"]')).toBeTruthy();
     expect(logo.querySelector("path.ui-brand-word")).toBeTruthy();
     expect(screen.getByText("Grabar reunión")).toBeInTheDocument(); // spanish-sample-data
     expect(copy.panelTitle).toBe("Grabar reunión"); // spanish-sample-data
