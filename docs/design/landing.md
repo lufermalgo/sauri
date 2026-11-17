@@ -36,6 +36,19 @@ Todo sale de una reunión inventada («Hortalia», tres personas ficticias con v
 
 Formato: PNG de origen y WebP optimizado, con `width`/`height` declarados; el video corto en WebM sin audio, con póster y sin reproducción automática si el visitante pidió reducir el movimiento.
 
+### Galería del material
+
+Las imágenes viven en `landing/assets/` (aquí se enlazan, no se copian). Todas salen de la reunión de demostración «Hortalia».
+
+| | |
+|---|---|
+| **`meeting-detail`**: reunión completa<br>![Reunión completa con video, transcripción y resumen](../../landing/assets/meeting-detail.png) | **`extension-panel`**: grabar desde Chrome<br>![Panel de la extensión «Grabar reunión»](../../landing/assets/extension-panel.png) |
+| **`speakers`**: quién habló<br>![Panel de hablantes junto al video](../../landing/assets/speakers.png) | **`transcript`**: turnos por hablante<br>![Turnos de la transcripción con colores por hablante](../../landing/assets/transcript.png) |
+| **`summary`**: resumen<br>![Asunto principal y puntos clave](../../landing/assets/summary.png) | **`summary-steps`**: próximos pasos<br>![Próximos pasos y conclusión](../../landing/assets/summary-steps.png) |
+| **`library`**: biblioteca<br>![Biblioteca con tres reuniones](../../landing/assets/library.png) | **`upload`**: subir grabación<br>![Pantalla para subir una grabación](../../landing/assets/upload.png) |
+
+El video corto `follow.webm` (la transcripción sigue al video, sin audio) está en [`landing/assets/follow.webm`](../../landing/assets/follow.webm).
+
 ## 3. Textos
 
 Límite de lo que se promete: `docs/product/baseline.md` (alcance aprobado) y lo ya integrado. No se prometen el chat con la grabación (fase 2), ni tiempos exactos, ni precios.
