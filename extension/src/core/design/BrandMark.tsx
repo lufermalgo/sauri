@@ -11,24 +11,28 @@ export interface BrandMarkProps {
 /** Largest size (px) that uses the small variant (wider gap, bigger diamond), see brand/README.md. Same drawing as frontend/src/components/ui/BrandMark.tsx. */
 export const SMALL_VARIANT_MAX = 32;
 
-export const DARK_HALF = "#A59837";
-export const LIGHT_HALF = "#CFBB23";
+export const SECOND_HALF = "#9A8CE0";
+export const MAIN_HALF = "#6A5ACD";
+/** The center diamond: a small volt accent inside the lavender halves. */
+export const SPARK = "#C6FF24";
 
 // Geometry copied from brand/sauri-isotype.svg (master) and brand/sauri-isotype-small.svg (small).
 export const BRAND_SHAPES = {
   master: {
     rect: { x: 0, y: 0, width: 100, height: 100, rx: 30 },
-    dark: "-10,-10 108.3,-10 54.4,43.9 50,39.5 39.5,50 43.9,54.4 -10,108.3",
-    light: "110,110 110,-8.3 56.1,45.6 60.5,50 50,60.5 45.6,56.1 -8.3,110",
+    second: "-10,-10 108.3,-10 54.4,43.9 50,39.5 39.5,50 43.9,54.4 -10,108.3",
+    main: "110,110 110,-8.3 56.1,45.6 60.5,50 50,60.5 45.6,56.1 -8.3,110",
+    spark: "50,39.5 60.5,50 50,60.5 39.5,50",
   },
   small: {
     rect: { x: 0, y: 0, width: 100, height: 100, rx: 27 },
-    dark: "-10,-10 105.76,-10 54.88,40.88 50,36 36,50 40.88,54.88 -10,105.76",
-    light: "110,110 110,-5.76 59.12,45.12 64,50 50,64 45.12,59.12 -5.76,110",
+    second: "-10,-10 105.76,-10 54.88,40.88 50,36 36,50 40.88,54.88 -10,105.76",
+    main: "110,110 110,-5.76 59.12,45.12 64,50 50,64 45.12,59.12 -5.76,110",
+    spark: "50,36 64,50 50,64 36,50",
   },
 } as const;
 
-/** Sauri isotype drawn inline: two green halves split by a diagonal gap, with a diamond in the center. */
+/** Sauri isotype drawn inline: two lavender halves split by a diagonal gap, with a volt diamond in the center. */
 export function BrandMark({ size = 24, title, className }: BrandMarkProps) {
   const clipId = `brand-mark-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const shape = BRAND_SHAPES[size <= SMALL_VARIANT_MAX ? "small" : "master"];
@@ -41,8 +45,9 @@ export function BrandMark({ size = 24, title, className }: BrandMarkProps) {
         </clipPath>
       </defs>
       <g clipPath={`url(#${clipId})`}>
-        <polygon fill={DARK_HALF} points={shape.dark} />
-        <polygon fill={LIGHT_HALF} points={shape.light} />
+        <polygon fill={SECOND_HALF} points={shape.second} />
+        <polygon fill={MAIN_HALF} points={shape.main} />
+        <polygon fill={SPARK} points={shape.spark} />
       </g>
     </svg>
   );

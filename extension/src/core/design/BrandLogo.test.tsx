@@ -11,8 +11,8 @@ function brandFile(name: string) {
 
 describe("brand artwork stays canonical", () => {
   it.each([
-    ["sauri-logo.svg", "#33322B"],
-    ["sauri-logo-dark.svg", "#F7F3DE"],
+    ["sauri-logo.svg", "#161223"],
+    ["sauri-logo-dark.svg", "#EEEAF8"],
   ])("%s is outlined (no live text) and its word matches the component's path", (file, wordColor) => {
     const svg = brandFile(file);
     expect(svg).not.toMatch(/<text|font-family/);
@@ -40,8 +40,9 @@ describe("BrandLogo and BrandWordmark", () => {
     expect(svg.getAttribute("viewBox")).toBe("0 0 317.18 100");
     expect(svg.getAttribute("height")).toBe("50");
     expect(Number(svg.getAttribute("width"))).toBeCloseTo(158.59, 2);
-    expect(svg.querySelector('polygon[fill="#A59837"]')).toBeTruthy();
-    expect(svg.querySelector('polygon[fill="#CFBB23"]')).toBeTruthy();
+    expect(svg.querySelector('polygon[fill="#9A8CE0"]')).toBeTruthy();
+    expect(svg.querySelector('polygon[fill="#6A5ACD"]')).toBeTruthy();
+    expect(svg.querySelector('polygon[fill="#C6FF24"]')).toBeTruthy();
     expect(svg.querySelector("path.ui-brand-word")!.getAttribute("d")).toBe(WORDMARK_PATH);
     expect(svg.querySelector("text")).toBeNull();
   });
