@@ -40,7 +40,7 @@ export function ProfileCard({ user, route, settingsPane = null, onNavigate, onLo
         label={menuLabel}
         trigger={
           <>
-            <Avatar initials={user ? userInitials(user) : <Icon icon={User} />} color="var(--ds-accent)" />
+            <Avatar initials={user ? userInitials(user) : <Icon icon={User} />} color="var(--ds-accent-line)" />
             <span className="shell-collapsible shell-profile-text">
               <span className="shell-profile-name">{primary}</span>
               {secondary && <span className="shell-profile-email">{secondary}</span>}

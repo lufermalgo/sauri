@@ -95,7 +95,7 @@
 }
 
 .ui-card:is([tabindex="0"], [role="button"], [role="link"]):is(:hover, :focus-visible) {
-  border-color: var(--ds-accent);
+  border-color: var(--ds-accent-line);
   background: var(--ds-bg);
 }
 
@@ -181,7 +181,7 @@ textarea.ui-input {
 .ui-tab[aria-selected="true"] {
   color: var(--ds-accent-text);
   font-weight: var(--ds-weight-semibold);
-  border-bottom-color: var(--ds-accent);
+  border-bottom-color: var(--ds-accent-line);
 }
 
 .ui-tab-panel {
@@ -212,8 +212,8 @@ textarea.ui-input {
 }
 
 .ui-status-badge--success {
-  background: var(--ds-accent-soft);
-  color: var(--ds-accent-soft-fg);
+  background: var(--ds-success-soft);
+  color: var(--ds-success-soft-fg);
 }
 
 .ui-status-badge--error {
@@ -340,7 +340,7 @@ textarea.ui-input {
   overflow: hidden;
   border: 0;
   border-radius: var(--ds-radius-pill);
-  accent-color: var(--ds-accent);
+  accent-color: var(--ds-accent-line);
 }
 
 .ui-progress::-webkit-progress-bar {
@@ -349,12 +349,12 @@ textarea.ui-input {
 }
 
 .ui-progress::-webkit-progress-value {
-  background: var(--ds-accent);
+  background: var(--ds-accent-line);
   border-radius: var(--ds-radius-pill);
 }
 
 .ui-progress::-moz-progress-bar {
-  background: var(--ds-accent);
+  background: var(--ds-accent-line);
   border-radius: var(--ds-radius-pill);
 }
 
@@ -534,7 +534,7 @@ textarea.ui-input {
 
 .ui-time-chip:hover {
   background: var(--ds-fill-hover);
-  border-color: var(--ds-accent);
+  border-color: var(--ds-accent-line);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -638,7 +638,7 @@ textarea.ui-input {
   width: 6px;
   height: 6px;
   box-sizing: content-box;
-  background: var(--ds-accent);
+  background: var(--ds-accent-line);
   border: 2px solid var(--ds-accent-soft);
   border-radius: var(--ds-radius-pill);
 }

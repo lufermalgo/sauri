@@ -373,8 +373,8 @@
 }
 
 .settings-switch[aria-checked="true"] {
-  background: var(--ds-accent);
-  border-color: var(--ds-accent);
+  background: var(--ds-accent-line);
+  border-color: var(--ds-accent-line);
 }
 
 .settings-switch-thumb {

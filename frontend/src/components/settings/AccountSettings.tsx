@@ -23,7 +23,7 @@ export function AccountSettings({ user, onLogout }: AccountSettingsProps) {
     <div className="settings-stack">
       <Card className="settings-card" aria-label={t("settings:categories.account.label")}>
         <div className="settings-account">
-          <Avatar initials={user ? userInitials(user) : <Icon icon={User} />} color="var(--ds-accent)" />
+          <Avatar initials={user ? userInitials(user) : <Icon icon={User} />} color="var(--ds-accent-line)" />
           <div className="settings-account-text">
             <span className="settings-account-name">{primary}</span>
             {secondary && <span className="settings-account-email">{secondary}</span>}
