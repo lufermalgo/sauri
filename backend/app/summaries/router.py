@@ -15,6 +15,7 @@ from app.infra.models import SummaryRequestOutbox
 from app.meetings.schemas import ResourceId
 from app.summaries import repository, service
 from app.summaries.passages import KeyPoint, KeyPointBlock, decode_key_points
+from app.summaries.speaker_names import apply_speaker_names
 from app.templates.router import get_session
 
 router = APIRouter(
@@ -77,16 +78,17 @@ async def current_summary(meeting_id: ResourceId, session: Session, user: Author
         raise api_error(status.HTTP_404_NOT_FOUND, NOT_FOUND)
     summary, template_name = result
     content = decode_key_points(summary.key_points_json)
+    language, names = await repository.speaker_names_for_summary(session, summary)  # Applied to the response only.
     return SummaryResponse(
         summary_id=summary.id,
         meeting_id=summary.meeting_id,
         template_id=summary.template_id,
         template_name=template_name,
         template_version=summary.template_version,
-        topic=summary.topic,
+        topic=apply_speaker_names(summary.topic, names, language),
         schema_version=content.schema_version,
-        key_points=content.key_points,
-        conclusion=content.conclusion,
+        key_points=apply_speaker_names(content.key_points, names, language),
+        conclusion=apply_speaker_names(content.conclusion, names, language),
         generation=summary.generation,
         created_at=summary.created_at,
         updated_at=summary.updated_at,

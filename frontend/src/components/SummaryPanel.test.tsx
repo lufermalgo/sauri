@@ -385,6 +385,48 @@ const structured = {
 };
 
 
+describe("refresh after a speaker name changes", () => {
+  it("asks for the summary again when refreshKey changes and swaps the text without a loading state", async () => {
+    artifact = { ...summary, topic: "Talk with Hablante 2" }; // spanish-sample-data
+    latest = { ...pending, status: "succeeded" };
+    const { rerender } = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} refreshKey={0} />);
+    expect(await screen.findByText("Talk with Hablante 2")).toBeVisible(); // spanish-sample-data
+    expect(callsEndingWith("/summary")).toHaveLength(1);
+
+    artifact = { ...summary, topic: "Talk with Pedro Pablo" };
+    rerender(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} refreshKey={1} />);
+    expect(screen.getByText("Talk with Hablante 2")).toBeVisible(); // spanish-sample-data
+    expect(screen.queryByText(t("summary:loading"))).not.toBeInTheDocument();
+    expect(screen.queryByText(t("summary:generating"))).not.toBeInTheDocument();
+    expect(await screen.findByText("Talk with Pedro Pablo")).toBeVisible();
+    expect(callsEndingWith("/summary")).toHaveLength(2);
+    expect(screen.queryByText("Talk with Hablante 2")).not.toBeInTheDocument(); // spanish-sample-data
+  });
+
+  it("does not request again when refreshKey stays the same", async () => {
+    artifact = summary;
+    latest = { ...pending, status: "succeeded" };
+    const { rerender } = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} refreshKey={3} />);
+    await screen.findByText(summary.topic);
+    rerender(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} refreshKey={3} />);
+    expect(callsEndingWith("/summary")).toHaveLength(1);
+  });
+
+  it("keeps the summary on screen when the silent refresh fails", async () => {
+    artifact = summary;
+    latest = { ...pending, status: "succeeded" };
+    const { rerender } = render(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} refreshKey={0} />);
+    await screen.findByText(summary.topic);
+    const working = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async () => { throw new Error("offline"); });
+    rerender(<SummaryPanel meetingId="meeting-1" onSeek={vi.fn()} refreshKey={1} />);
+    await waitFor(() => expect(callsEndingWith("/summary")).toHaveLength(2));
+    expect(screen.getByText(summary.topic)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    fetchMock.mockImplementation(working);
+  });
+});
+
 describe("structured (v2) summary", () => {
   it("renders the topic paragraph, numbered blocks with nested items and the conclusion", async () => {
     artifact = structured as unknown as typeof summary;

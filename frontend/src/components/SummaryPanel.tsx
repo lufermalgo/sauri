@@ -22,6 +22,8 @@ interface SummaryPanelProps {
   onSignalChange?: (signal: SummarySignal) => void;
   // Inputs of the generation progress shown while the summary is being written.
   progress?: { audioSeconds: number | null; createdAt: string | null; stageStartedAt: number | null };
+  // Bumped by the meeting view when speaker names change: the backend applies the names when it serves the summary.
+  refreshKey?: number;
 }
 
 const SKELETON_POINT_WIDTHS = ["72%", "58%", "66%"];
@@ -127,7 +129,7 @@ export function SummaryPanel(props: SummaryPanelProps) {
 
 function MeetingSummaryPanel({
   meetingId, onSeek, transcriptReady = true, onSummaryChange, expectAutoRequest = false, onSignalChange,
-  progress = { audioSeconds: null, createdAt: null, stageStartedAt: null },
+  progress = { audioSeconds: null, createdAt: null, stageStartedAt: null }, refreshKey = 0,
 }: SummaryPanelProps) {
   const { t } = useT();
   const [summary, setSummary] = useState<MeetingSummary | null>(null);
@@ -142,6 +144,9 @@ function MeetingSummaryPanel({
   const mounted = useRef(false);
   const expectRef = useRef(expectAutoRequest);
   expectRef.current = expectAutoRequest;
+  const summaryRef = useRef<MeetingSummary | null>(null);
+  summaryRef.current = summary;
+  const seenRefreshKey = useRef(refreshKey);
 
   // Look again as soon as an automatic request becomes likely (not on mount: the first load covers it).
   const expectedBefore = useRef(expectAutoRequest);
@@ -159,6 +164,9 @@ function MeetingSummaryPanel({
     let cancelled = false;
     let inFlight = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // A refresh caused by a new speaker name is silent: if it fails, the summary already shown stays.
+    const keepOnError = seenRefreshKey.current !== refreshKey;
+    seenRefreshKey.current = refreshKey;
     setLoadError(false);
 
     async function refresh() {
@@ -178,7 +186,7 @@ function MeetingSummaryPanel({
           timer = setTimeout(() => void refresh(), 5000);
         }
       } catch {
-        if (!cancelled) setLoadError(true);
+        if (!cancelled && !(keepOnError && summaryRef.current)) setLoadError(true);
       } finally {
         inFlight = false;
         if (!cancelled) setLoading(false);
@@ -201,7 +209,7 @@ function MeetingSummaryPanel({
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [meetingId, acceptedRequest, reload]);
+  }, [meetingId, acceptedRequest, reload, refreshKey]);
 
   async function generate() {
     setSubmitting(true);
