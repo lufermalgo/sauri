@@ -123,7 +123,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     },
     storage: {
       // Existing picker tests explicitly opt out of the new countdown.
-      local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds, showControlBar } })) },
+      local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds, showControlBar } })), set: vi.fn(async () => {}) },
       session: {
         get: vi.fn(async () => ({ ...stored })),
         set: vi.fn(async (values: object) => { Object.assign(stored, values); }),
@@ -654,10 +654,39 @@ describe("recording control edge cases", () => {
     const pending = h.start();
     await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
     h.video.dispatchEvent(new Event("ended"));
-    expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+    expect(await pending).toEqual({ ok: false, reason: "sharing-ended" });
     expect(await completions()).toEqual([]);
     expect(h.upload).not.toHaveBeenCalled();
     expect(Recorder.last).toBeUndefined();
+  });
+
+  it("recovers a Meet tab whose page script stopped answering by reinjecting it", async () => {
+    const h = await setup({ countdownSeconds: 3 });
+    const original = vi.mocked(chrome.tabs.sendMessage).getMockImplementation()!;
+    let failed = false;
+    vi.mocked(chrome.tabs.sendMessage).mockImplementation(async (tabId: number, message: any) => {
+      if (message.type === "show-countdown" && !failed) { failed = true; throw new Error("Receiving end does not exist"); }
+      return (original as (...args: unknown[]) => Promise<unknown>)(tabId, message);
+    });
+    expect(await h.start()).toMatchObject({ ok: true });
+    expect(h.executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: [expect.stringContaining("entry")] });
+    const logged = vi.mocked(chrome.storage.local.set).mock.calls.map(call => JSON.stringify(call[0])).join("");
+    expect(logged).toContain("countdown-unreachable");
+    expect(logged).not.toContain("countdown-skipped");
+  });
+
+  it("records without a countdown on Meet when the page script cannot be recovered", async () => {
+    const h = await setup({ countdownSeconds: 3, injectable: false });
+    const original = vi.mocked(chrome.tabs.sendMessage).getMockImplementation()!;
+    vi.mocked(chrome.tabs.sendMessage).mockImplementation(async (tabId: number, message: any) => {
+      if (message.type === "show-countdown") { throw new Error("Receiving end does not exist"); }
+      return (original as (...args: unknown[]) => Promise<unknown>)(tabId, message);
+    });
+    expect(await h.start()).toMatchObject({ ok: true });
+    expect(await completions()).toHaveLength(1);
+    const logged = vi.mocked(chrome.storage.local.set).mock.calls.map(call => JSON.stringify(call[0])).join("");
+    expect(logged).toContain("countdown-unreachable");
+    expect(logged).toContain("countdown-skipped");
   });
 
   it("retains a real recording state when MediaRecorder cannot pause", async () => {

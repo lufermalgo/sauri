@@ -90,7 +90,7 @@ export type CaptureSource = "picker" | "current-tab";
 /** Expected picker outcomes are not recording failures. */
 export type CaptureStartResult =
   | { ok: true; sessionId: string }
-  | { ok: false; reason: "cancelled" | "no-tab-audio" | "unsupported-surface" | "busy" | "current-tab-unavailable" | "microphone-permission" | "failed" };
+  | { ok: false; reason: "cancelled" | "sharing-ended" | "no-tab-audio" | "unsupported-surface" | "busy" | "current-tab-unavailable" | "microphone-permission" | "failed" };
 
 export type RecordingResolution = "480p" | "720p" | "1080p";
 

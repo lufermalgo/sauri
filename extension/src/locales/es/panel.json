@@ -34,6 +34,7 @@
   "tabError": "No se pudo grabar esta pestaña. Abre Sauri desde su icono en una pestaña web e intenta de nuevo.",
   "audioError": "Elige la pestaña de nuevo y deja marcada la opción de compartir audio de la pestaña.",
   "surfaceError": "Elige una pestaña de Chrome, no una ventana ni una pantalla.",
+  "sharingEndedError": "Se dejó de compartir la pestaña antes de que empezara la grabación. Si no fuiste tú, recarga la pestaña de la reunión e intenta de nuevo.",
   "startError": "No se pudo iniciar la grabación. Intenta de nuevo.",
   "commandError": "No se pudo completar la acción. Intenta de nuevo.",
   "recording": "Grabando",

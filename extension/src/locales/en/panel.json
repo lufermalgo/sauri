@@ -34,6 +34,7 @@
   "tabError": "Could not record this tab. Open Sauri from its icon in a web tab and try again.",
   "audioError": "Choose the tab again and leave the option to share tab audio checked.",
   "surfaceError": "Choose a Chrome tab, not a window or a screen.",
+  "sharingEndedError": "Tab sharing stopped before the recording began. If that was not you, reload the meeting tab and try again.",
   "startError": "Could not start the recording. Try again.",
   "commandError": "Could not complete the action. Try again.",
   "recording": "Recording",
