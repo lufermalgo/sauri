@@ -11,31 +11,39 @@
   color-scheme: light dark;
 
   /* Surfaces */
-  --ds-bg: light-dark(#fffcee, #26251f);
-  --ds-surface: light-dark(#ffffff, #2d2c26);
-  --ds-surface-raised: light-dark(#ffffff, #33322b);
-  --ds-sidebar: light-dark(#fbf6de, #2a2923);
-  --ds-fill: light-dark(#f6efcf, #38372f);
-  --ds-fill-hover: light-dark(#f1e8be, #403e35);
-  --ds-fill-strong: light-dark(#ebe0ab, #4a4834);
+  --ds-bg: light-dark(#faf9fe, #161223);
+  --ds-surface: light-dark(#ffffff, #1f1a33);
+  --ds-surface-raised: light-dark(#ffffff, #2a2342);
+  --ds-sidebar: light-dark(#f3f0fb, #1b162b);
+  --ds-fill: light-dark(#efebfa, #262040);
+  --ds-fill-hover: light-dark(#e6e0f7, #30294f);
+  --ds-fill-strong: light-dark(#dcd4f2, #3a325c);
 
   /* Text and lines */
-  --ds-fg: light-dark(#33322b, #f7f3de);
-  --ds-fg-muted: light-dark(#504d35, #ddd6b4);
-  --ds-fg-subtle: light-dark(#625e3a, #bfb78f);
-  --ds-border: light-dark(#e4daa8, #46443a);
-  --ds-border-strong: light-dark(#7a733d, #a59837);
+  --ds-fg: light-dark(#161223, #eeeaf8);
+  --ds-fg-muted: light-dark(#4a4466, #b9b2d6);
+  --ds-fg-subtle: light-dark(#5e5880, #a9a1cc);
+  --ds-border: light-dark(#ddd7ee, #3a3158);
+  --ds-border-strong: light-dark(#7468a8, #8a7fc0);
 
-  /* Primary action and accent */
-  --ds-accent: light-dark(#fadd00, #fadd00);
-  --ds-accent-hover: light-dark(#cfbb23, #cfbb23);
-  --ds-accent-fg: light-dark(#33322b, #33322b);
-  --ds-accent-text: light-dark(#504d35, #fadd00);
-  --ds-accent-soft: light-dark(#fff2a6, #4a4422);
-  --ds-accent-soft-fg: light-dark(#33322b, #fcf0aa);
-  --ds-accent-muted: light-dark(#cfbb23, #a59837);
-  --ds-accent-line: light-dark(#7a733d, #fadd00);
-  --ds-focus: light-dark(#504d35, #fadd00);
+  /* Primary action and accent (lavender); spark is volt, only over nav-bg and dark surfaces */
+  --ds-accent: light-dark(#5b4bae, #6a5acd);
+  --ds-accent-hover: light-dark(#4b3c99, #5b4bae);
+  --ds-accent-fg: light-dark(#ffffff, #ffffff);
+  --ds-accent-text: light-dark(#4b3c99, #b3a8f2);
+  --ds-accent-soft: light-dark(#efebfb, #2a2342);
+  --ds-accent-soft-fg: light-dark(#3f3480, #dcd6f7);
+  --ds-accent-muted: light-dark(#9a8ce0, #6a5acd);
+  --ds-accent-line: light-dark(#5b4bae, #9a8ce0);
+  --ds-focus: light-dark(#5b4bae, #c6ff24);
+  --ds-spark: light-dark(#c6ff24, #c6ff24);
+  --ds-on-spark: light-dark(#161223, #161223);
+
+  /* Navigation panel: indigo in both themes */
+  --ds-nav-bg: light-dark(#161223, #100d1c);
+  --ds-nav-fg: light-dark(#b9b2d6, #b9b2d6);
+  --ds-nav-fg-strong: light-dark(#ffffff, #ffffff);
+  --ds-nav-active-bg: light-dark(#2a2342, #1f1a33);
 
   /* Status */
   --ds-warning: light-dark(#705c30, #d9bd7a);
@@ -48,7 +56,7 @@
   --ds-danger-soft: light-dark(#fce8e6, #43211f);
   --ds-danger-soft-fg: light-dark(#690005, #ffc9c4);
   --ds-recording: light-dark(#b83230, #f2736d);
-  --ds-highlight: light-dark(#ffee8a, #565024);
+  --ds-highlight: light-dark(#eae4fb, #3a2f6b);
   --ds-success: light-dark(#3b6a49, #8fc29d);
   --ds-success-soft: light-dark(#c8e8d0, #243d2c);
   --ds-success-soft-fg: light-dark(#1f4a2d, #bfe6cb);
