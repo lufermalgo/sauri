@@ -1,7 +1,7 @@
 # Sistema de diseño de Sauri
 
 > Contrato visual del portal web (`frontend/`) y de la extensión de Chrome (`extension/`).
-> Identidad: paleta Terra (verde, marfil cálido, tierra) en modo claro y oscuro, tipografía del sistema, componentes sobrios y compactos.
+> Identidad: paleta Sentinela (amarillo como acción principal con texto oscuro, crema cálido y oliva) en modo claro y oscuro, con rojo, verde y ámbar de estado y colores de hablantes conservados por decisión del dueño; tipografía del sistema, componentes sobrios y compactos.
 > Estructura y reglas adaptadas de una especificación genérica de interfaz de trabajo; no se hereda ninguno de sus nombres, logos, conceptos de negocio ni su paleta neutra.
 
 ## 0. Propósito y cómo usarlo
@@ -15,8 +15,8 @@
 
 Herramienta de trabajo, no página de marketing. Jerarquía por superficie, tamaño y peso; no por titulares enormes ni efectos.
 
-- Modo claro: marfil cálido (`bg`) con paneles blancos. Modo oscuro: carbón verdoso cálido derivado de los mismos tonos Terra; nunca negro puro ni una inversión automática del claro.
-- El verde Terra es la única acción principal. El color expresivo se concentra en estados, insignias e identidad de hablantes; no se extiende a títulos, bordes ni fondos.
+- Modo claro: marfil cálido (`bg`) con paneles blancos. Modo oscuro: carbón oliva cálido derivado de los mismos tonos Sentinela; nunca negro puro ni una inversión automática del claro.
+- El amarillo Sentinela (`accent`, con texto oscuro `accent-fg`) es la única acción principal. El color expresivo se concentra en estados, insignias e identidad de hablantes; no se extiende a títulos, bordes ni fondos.
 - Aspecto de aplicación de escritorio, no de página web: regiones planas (paneles) separadas por bordes de 1px, cada una con su cabecera y su scroll; sin tarjetas flotantes en las regiones principales (ver 5b y 6). Sombras solo en controles elevados, menús y diálogos.
 - **No hacer:** gradientes, desenfoques de fondo (glassmorphism), sombras grandes por tarjeta, animaciones que muevan el contenido al pasar el cursor, varios botones primarios en un mismo grupo de acciones, mezclar familias de iconos.
 
@@ -32,40 +32,41 @@ Herramienta de trabajo, no página de marketing. Jerarquía por superficie, tama
 - **Regla:** los componentes consumen `var(--ds-…)`. Prohibidos hexadecimales, `rgb()`/`hsl()` y nombres de fuentes en componentes. Excepción documentada: el color de la insignia del icono de la extensión (`chrome.action.setBadgeBackgroundColor`, API sin CSS) usa el valor claro de `recording`.
 - Cada color se declara una vez con `light-dark(<claro>, <oscuro>)`; el navegador elige según `color-scheme`. No hay bloques duplicados claro/oscuro. Requiere Chrome 123 o superior (marzo de 2024).
 - Parejas inseparables: `accent` + `accent-fg`, `danger` + `danger-fg`, `*-soft` + `*-soft-fg`. Se cambian juntas.
-- `success` no tiene valor propio: es alias de `accent-text` / `accent-soft` / `accent-soft-fg` (en Terra éxito y acento son la misma familia; si divergen, se separa aquí).
-- Violeta e información del documento de origen no tienen equivalente Terra y se omiten. No se inventan tonos nuevos.
+- `success`, `success-soft` y `success-soft-fg` tienen valor propio (el verde de éxito de siempre): con la paleta Sentinela el acento es amarillo y ya no es la misma familia que el éxito, por lo que dejaron de ser alias de `accent-*`. Las insignias y mensajes de éxito usan estos tokens.
+- Violeta e información del documento de origen no tienen equivalente en la paleta y se omiten. No se inventan tonos nuevos.
 - Los componentes usan roles (`ui-button--primary`, `ui-status-badge--error`), no colores.
 
 ## 3. Color
 
-### 3.1 Paleta y mapeo Terra
+### 3.1 Paleta y mapeo Sentinela
 
-Mapeo de roles: `accent` = primary `#4a7c59`; `accent-hover` = verde derivado `#3b6a49`; `accent-soft` = primary-fixed `#c8e8d0`; `accent-muted` = primary-container `#78a886`; `bg` = surface `#faf6f0`; `surface` = surface-lowest; `sidebar` = surface-low `#f5f1ea`; `fill` = surface-container; `fill-hover` = secondary-container; `fill-strong` = surface-high; `fg` = on-surface; `fg-muted` = on-surface-variant; `border` = outline-variant; `border-strong` = outline; `warning` = tertiary `#705c30` con `warning-soft` = tertiary-container; `danger` y `recording` = error `#b83230`. El oscuro es nuevo: mismos matices, luminosidad invertida con jerarquía propia (superficies de `#181b19` a `#272c29`, verde aclarado para la acción principal).
+Mapeo de roles. La paleta «Sentinela» aprobada por el dueño son seis tonos mono: Mono-1 `#CFBB23`, Mono-2 `#A59837`, Mono-3 `#FADD00`, Mono-4 `#7A733D`, Mono-5 `#504D35` y Mono-6 `#33322B`. `accent` = Mono-3 `#FADD00` con texto oscuro `accent-fg` = Mono-6 (9.44:1): la acción principal es amarilla y se identifica por su etiqueta. `accent-hover` = Mono-1; `accent-muted` = Mono-1 (claro) y Mono-2 (oscuro); `fg` = Mono-6 y `fg-muted` = Mono-5 en claro; `border-strong` = Mono-4 en claro y Mono-2 en oscuro; `accent-text` = Mono-5 en claro y Mono-3 en oscuro. `accent-line` es el único token nuevo y nombra la función «acento como única señal de un estado» (ver 3.3): Mono-4 en claro y Mono-3 en oscuro. El resto son tintes y sombras derivados de la paleta y marcados «derivado» en la tabla: en claro, mezclas muy claras de la paleta con blanco (`bg` `#FFFCEE`, `sidebar`, `fill*`, `accent-soft`, `highlight`, `border`); en oscuro, oliva casi negro de la misma familia (superficies de `#26251F` a `#33322B`; nunca negro puro). Por decisión del dueño no cambian el rojo de peligro y grabación, el verde de éxito, el ámbar de aviso ni los seis colores de hablantes con `speaker-unresolved` y `on-speaker`; ahora `success*` son valores explícitos y no alias de `accent-*`. Los nombres de token siguen nombrando la función, no el color.
 
 <!-- palette:start -->
 | Token `--ds-…` | Claro | Oscuro | Uso |
 |---|---|---|---|
-| `bg` | `#faf6f0` | `#181b19` | Lienzo de página (Terra surface) |
-| `surface` | `#ffffff` | `#1f2321` | Tarjetas, campos, contenido principal |
-| `surface-raised` | `#ffffff` | `#272c29` | Menús, diálogos, barra del overlay |
-| `sidebar` | `#f5f1ea` | `#1c201e` | Panel lateral, barra superior móvil y fondos de grupo suaves |
-| `fill` | `#f0ece4` | `#262b28` | Pistas, fondos neutros |
-| `fill-hover` | `#f0e8db` | `#2e3430` | Hover y botón secundario (Terra secondary-container) |
-| `fill-strong` | `#eae6de` | `#373e3a` | Selección, pista de progreso |
-| `fg` | `#2e3230` | `#ecebe6` | Texto principal |
-| `fg-muted` | `#4a4e4a` | `#bfc2b8` | Texto secundario |
-| `fg-subtle` | `#626860` | `#a9ad9f` | Metadatos y texto terciario; derivado, cumple 4.5:1 |
-| `border` | `#c4c8bc` | `#353b37` | Divisores y bordes decorativos |
-| `border-strong` | `#74796e` | `#707769` | Contorno de controles (3:1) |
-| `accent` | `#4a7c59` | `#86bb95` | Relleno de la acción principal |
-| `accent-hover` | `#3b6a49` | `#9bcaa8` | Hover de la acción principal |
-| `accent-fg` | `#ffffff` | `#10201a` | Texto sobre accent |
-| `accent-text` | `#3b6a49` | `#8fc29d` | Enlaces, iconos y texto de acento sobre superficies |
-| `accent-soft` | `#c8e8d0` | `#243d2c` | Insignia de éxito, enlace activo, zona de arrastre |
-| `accent-soft-fg` | `#1f4a2d` | `#bfe6cb` | Texto sobre accent-soft |
-| `accent-muted` | `#78a886` | `#4f7d5d` | Decorativo (viñetas, barra indeterminada) |
-| `focus` | `#3b6a49` | `#9bcaa8` | Anillo de foco |
-| `warning` | `#705c30` | `#d9bd7a` | Progreso/aviso: bordes y texto sobre superficie (Terra tertiary) |
+| `bg` | `#fffcee` | `#26251f` | Lienzo de página (derivado, tinte crema) |
+| `surface` | `#ffffff` | `#2d2c26` | Tarjetas, campos, contenido principal |
+| `surface-raised` | `#ffffff` | `#33322b` | Menús, diálogos, barra del overlay (oscuro = Mono-6) |
+| `sidebar` | `#fbf6de` | `#2a2923` | Panel lateral, barra superior móvil y fondos de grupo suaves (derivado) |
+| `fill` | `#f6efcf` | `#38372f` | Pistas, fondos neutros (derivado) |
+| `fill-hover` | `#f1e8be` | `#403e35` | Hover y botón secundario (derivado) |
+| `fill-strong` | `#ebe0ab` | `#4a4834` | Selección, pista de progreso (derivado) |
+| `fg` | `#33322b` | `#f7f3de` | Texto principal (Mono-6) |
+| `fg-muted` | `#504d35` | `#ddd6b4` | Texto secundario (Mono-5) |
+| `fg-subtle` | `#625e3a` | `#bfb78f` | Metadatos y texto terciario; derivado entre Mono-4 y Mono-5, cumple 4.5:1 |
+| `border` | `#e4daa8` | `#46443a` | Divisores y bordes decorativos (derivado) |
+| `border-strong` | `#7a733d` | `#a59837` | Contorno de controles (3:1; Mono-4 en claro, Mono-2 en oscuro) |
+| `accent` | `#fadd00` | `#fadd00` | Relleno de la acción principal (Mono-3); se identifica por su etiqueta, no por el color |
+| `accent-hover` | `#cfbb23` | `#cfbb23` | Hover de la acción principal (Mono-1) |
+| `accent-fg` | `#33322b` | `#33322b` | Texto sobre accent (Mono-6) |
+| `accent-text` | `#504d35` | `#fadd00` | Enlaces, iconos y texto de acento sobre superficies (Mono-5 en claro, Mono-3 en oscuro) |
+| `accent-soft` | `#fff2a6` | `#4a4422` | Enlace activo, zona de arrastre, selección suave (derivado) |
+| `accent-soft-fg` | `#33322b` | `#fcf0aa` | Texto sobre accent-soft |
+| `accent-muted` | `#cfbb23` | `#a59837` | Decorativo (viñetas, barra indeterminada) |
+| `accent-line` | `#7a733d` | `#fadd00` | Acento como única señal de un estado (relleno de progreso, interruptor activo, contorno de selección, punto activo); 3:1 sobre `base` (ver 3.3) |
+| `focus` | `#504d35` | `#fadd00` | Anillo de foco |
+| `warning` | `#705c30` | `#d9bd7a` | Progreso/aviso: bordes y texto sobre superficie |
 | `warning-soft` | `#f4e7c7` | `#3a3220` | Fondo de aviso y progreso |
 | `warning-soft-fg` | `#4d3f1c` | `#f0e0b4` | Texto sobre warning-soft |
 | `danger` | `#b83230` | `#c9433f` | Relleno de acciones destructivas |
@@ -75,7 +76,10 @@ Mapeo de roles: `accent` = primary `#4a7c59`; `accent-hover` = verde derivado `#
 | `danger-soft` | `#fce8e6` | `#43211f` | Fondo de error |
 | `danger-soft-fg` | `#690005` | `#ffc9c4` | Texto sobre danger-soft |
 | `recording` | `#b83230` | `#f2736d` | Punto de grabación |
-| `highlight` | `#f4e7c7` | `#4a4022` | Turno activo y coincidencias |
+| `highlight` | `#ffee8a` | `#565024` | Turno activo y coincidencias (derivado) |
+| `success` | `#3b6a49` | `#8fc29d` | Verde de éxito (valor propio; ya no es alias de accent-text) |
+| `success-soft` | `#c8e8d0` | `#243d2c` | Insignia de éxito |
+| `success-soft-fg` | `#1f4a2d` | `#bfe6cb` | Texto sobre success-soft |
 | `on-speaker` | `#ffffff` | `#10201a` | Texto sobre avatares de hablante |
 | `speaker-1` | `#4a7c59` | `#7fb58f` | Hablante 1 |
 | `speaker-2` | `#9a5b2e` | `#d4955f` | Hablante 2 |
@@ -98,33 +102,33 @@ Mínimos: 4.5:1 para texto normal, 3:1 para texto grande y elementos de interfaz
 <!-- contrast:start -->
 | Par (texto / fondo) | Mínimo | Claro | Oscuro | Nota |
 |---|---:|---:|---:|---|
-| `fg` / `surfaces` | 4.5 | 10.45 | 9.20 | peor caso del grupo |
-| `fg-muted` / `surfaces` | 4.5 | 6.80 | 6.08 | peor caso del grupo |
-| `fg-subtle` / `surfaces` | 4.5 | 4.60 | 4.79 | peor caso del grupo |
-| `accent-text` / `surfaces` | 4.5 | 5.05 | 5.42 | peor caso del grupo |
-| `danger-text` / `page` | 4.5 | 5.27 | 7.12 | peor caso del grupo |
-| `danger-soft-fg` / `page` | 4.5 | 11.64 | 9.74 | peor caso del grupo |
-| `warning` / `reading` | 4.5 | 5.98 | 8.72 | peor caso del grupo |
-| `accent-fg` / `accent` | 4.5 | 4.86 | 7.68 |  |
-| `accent-fg` / `accent-hover` | 4.5 | 6.28 | 9.17 |  |
-| `accent-text` / `accent-soft` | 4.5 | 4.76 | 5.83 |  |
-| `accent-soft-fg` / `accent-soft` | 4.5 | 7.66 | 8.66 |  |
+| `fg` / `surfaces` | 4.5 | 9.67 | 8.30 | peor caso del grupo |
+| `fg-muted` / `surfaces` | 4.5 | 6.43 | 6.33 | peor caso del grupo |
+| `fg-subtle` / `surfaces` | 4.5 | 4.96 | 4.58 | peor caso del grupo |
+| `accent-text` / `surfaces` | 4.5 | 6.43 | 6.79 | peor caso del grupo |
+| `danger-text` / `page` | 4.5 | 5.47 | 6.45 | peor caso del grupo |
+| `danger-soft-fg` / `page` | 4.5 | 12.07 | 8.83 | peor caso del grupo |
+| `warning` / `reading` | 4.5 | 6.26 | 7.67 | peor caso del grupo |
+| `accent-fg` / `accent` | 4.5 | 9.44 | 9.44 |  |
+| `accent-fg` / `accent-hover` | 4.5 | 6.61 | 6.61 |  |
+| `accent-text` / `accent-soft` | 4.5 | 7.54 | 7.20 |  |
+| `accent-soft-fg` / `accent-soft` | 4.5 | 11.34 | 8.49 |  |
 | `warning-soft-fg` / `warning-soft` | 4.5 | 8.37 | 9.67 |  |
 | `danger-fg` / `danger` | 4.5 | 5.94 | 4.82 |  |
 | `danger-fg` / `danger-hover` | 4.5 | 7.51 | 5.91 |  |
 | `danger-soft-fg` / `danger-soft` | 4.5 | 11.12 | 9.76 |  |
 | `danger-text` / `danger-soft` | 4.5 | 5.04 | 7.13 |  |
-| `fg` / `highlight` | 4.5 | 10.59 | 8.59 |  |
-| `fg` / `accent-soft` | 4.5 | 9.85 | 9.89 |  |
-| `fg` / `warning-soft` | 4.5 | 10.59 | 10.62 |  |
-| `fg` / `danger-soft` | 4.5 | 11.04 | 11.92 |  |
-| `speaker-1` / `reading` | 4.5 | 4.52 | 6.75 | peor caso del grupo |
-| `speaker-2` / `reading` | 4.5 | 4.99 | 6.26 | peor caso del grupo |
-| `speaker-3` / `reading` | 4.5 | 5.36 | 6.86 | peor caso del grupo |
-| `speaker-4` / `reading` | 4.5 | 6.00 | 6.40 | peor caso del grupo |
-| `speaker-5` / `reading` | 4.5 | 4.55 | 7.45 | peor caso del grupo |
-| `speaker-6` / `reading` | 4.5 | 4.69 | 7.18 | peor caso del grupo |
-| `speaker-unresolved` / `surface` | 4.5 | 4.47 | 6.54 | excepción (ver 3.3) |
+| `fg` / `highlight` | 4.5 | 10.94 | 7.33 |  |
+| `fg` / `accent-soft` | 4.5 | 11.34 | 8.79 |  |
+| `fg` / `warning-soft` | 4.5 | 10.48 | 11.36 |  |
+| `fg` / `danger-soft` | 4.5 | 10.92 | 12.76 |  |
+| `speaker-1` / `reading` | 4.5 | 4.73 | 5.94 | peor caso del grupo |
+| `speaker-2` / `reading` | 4.5 | 5.22 | 5.51 | peor caso del grupo |
+| `speaker-3` / `reading` | 4.5 | 5.61 | 6.04 | peor caso del grupo |
+| `speaker-4` / `reading` | 4.5 | 6.28 | 5.64 | peor caso del grupo |
+| `speaker-5` / `reading` | 4.5 | 4.76 | 6.56 | peor caso del grupo |
+| `speaker-6` / `reading` | 4.5 | 4.91 | 6.32 | peor caso del grupo |
+| `speaker-unresolved` / `surface` | 4.5 | 4.47 | 5.76 | excepción (ver 3.3) |
 | `on-speaker` / `speaker-1` | 4.5 | 4.86 | 7.16 |  |
 | `on-speaker` / `speaker-2` | 4.5 | 5.37 | 6.65 |  |
 | `on-speaker` / `speaker-3` | 4.5 | 5.77 | 7.29 |  |
@@ -132,10 +136,10 @@ Mínimos: 4.5:1 para texto normal, 3:1 para texto grande y elementos de interfaz
 | `on-speaker` / `speaker-5` | 4.5 | 4.90 | 7.91 |  |
 | `on-speaker` / `speaker-6` | 4.5 | 5.05 | 7.62 |  |
 | `on-speaker` / `speaker-unresolved` | 4.5 | 4.47 | 6.94 | excepción (ver 3.3) |
-| `border-strong` / `base` | 3 | 3.79 | 3.06 | peor caso del grupo |
-| `focus` / `base` | 3 | 5.33 | 7.72 | peor caso del grupo |
-| `accent` / `base` | 3 | 4.13 | 6.46 | peor caso del grupo |
-| `recording` / `base` | 3 | 5.04 | 5.04 | peor caso del grupo |
+| `border-strong` / `base` | 3 | 4.18 | 4.07 | peor caso del grupo |
+| `focus` / `base` | 3 | 7.40 | 8.78 | peor caso del grupo |
+| `accent-line` / `base` | 3 | 4.18 | 8.78 | peor caso del grupo |
+| `recording` / `base` | 3 | 5.14 | 4.24 | peor caso del grupo |
 <!-- contrast:end -->
 
 Medición adicional (prueba): `on-scrim` sobre `scrim-strong` compuesto sobre blanco puro supera 4.5:1 en ambos modos.
@@ -143,6 +147,7 @@ Medición adicional (prueba): `on-scrim` sobre `scrim-strong` compuesto sobre bl
 ### 3.3 Excepciones conocidas
 
 - `speaker-unresolved` (`#74796e`, decisión del dueño: los colores de hablantes no cambian) sobre `surface` en modo claro mide 4.47:1, 0.03 por debajo de 4.5. Se usa en la etiqueta secundaria «sin resolver», que además lleva texto explícito (`aria-label`), y como relleno de avatar con iniciales ocultas a lectores de pantalla. **Pendiente:** si el dueño autoriza oscurecerlo un paso, el cambio es solo ese token y su fila.
+- `accent-line` existe porque el relleno amarillo `accent` (`#FADD00`) mide solo ~1.3:1 sobre `bg`/`surface` en modo claro, así que **no sirve como indicador de interfaz de 3:1** (WCAG 1.4.11). El botón primario no lo necesita: lo identifica su etiqueta (`accent-fg` / `accent` 9.44:1), no el color del relleno. Todo lo que dependa del color de acento como **única señal** de un estado (relleno de progreso, interruptor encendido, contorno de selección o paso actual, punto activo, casillas y deslizadores nativos) usa `accent-line` (`#7a733d` en claro, 4.18:1; `#fadd00` en oscuro, 8.78:1). La fila `accent-line` / `base` de la tabla 3.2 sustituye a la antigua `accent` / `base`. La insignia de acento sobre un fondo tintado (`accent-soft`) sí cumple por texto, no por color.
 - `fg-subtle` se derivó para cumplir 4.5:1 en todas las superficies (el token equivalente del documento de origen medía 3.2:1 y se descartó).
 - Los bordes decorativos (`border`, 1.6–1.7:1 sobre blanco) solo separan; el contorno de un control usa `border-strong` (≥3:1).
 
@@ -260,22 +265,22 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 
 - **Botones.** Altura sm 28 / md 32 (por defecto) / lg 36 (`size` en `Button`; 44 con puntero táctil), padding horizontal 12 (16 en lg), texto 14 (13 en sm), radio `sm`, peso 500. Primario (`accent`/`accent-fg`, hover `accent-hover`), secundario (`fill-hover`, texto `accent-text`, borde `border`), fantasma (transparente), peligro (`danger`/`danger-fg`, hover `danger-hover`). Un primario por grupo; deshabilitado con opacidad 0.5. Sin sombra en hover: el hover es tonal.
 - **Campos.** Altura mínima 32 (44 con puntero táctil), texto 14, borde `border-strong`, radio `sm`, fondo `surface`. Etiqueta de 13px/500 en `fg-muted`, visible siempre; el marcador de posición no la sustituye. Error: borde `danger-text`, texto de error asociado con `aria-describedby` y `aria-invalid="true"`.
-- **Tarjetas.** Solo para contenido secundario dentro de una pantalla de una columna (ajustes, subida; las regiones principales son paneles, ver 5b). `surface`, borde `border`, radio `card` (10), padding 16, sin sombra. Si es clicable, el hover cambia el fondo a `bg` y el borde a `accent`; nada se desplaza.
+- **Tarjetas.** Solo para contenido secundario dentro de una pantalla de una columna (ajustes, subida; las regiones principales son paneles, ver 5b). `surface`, borde `border`, radio `card` (10), padding 16, sin sombra. Si es clicable, el hover cambia el fondo a `bg` y el borde a `accent-line`; nada se desplaza.
 - **Listas.** Filas planas de 56–68px separadas 2px dentro de un panel; abierta (`fill-strong`, `aria-current`), marcada para acciones en bloque (`accent-soft` más casilla marcada) y hover (`fill-hover`) son estados distintos; el título lleva elipsis de una línea y el texto largo de contenido, `overflow-wrap`.
 - **Lista de hablantes (panel acoplado).** Filas planas de una línea (alto 38px con botones de 30px; 44px con puntero táctil) en una rejilla `avatar 28 | nombre | acciones`, separadas por una línea de `fill-strong`. El nombre va en 14px/500 con elipsis y tooltip con el nombre completo cuando se corta; en el formato «Nombre - Empresa» la empresa va en `fg-muted` y es lo primero que se recorta (el dato guardado no cambia). Una fila asignada muestra solo el nombre; solo el hablante que aún necesita nombre lleva una insignia `StatusBadge` «progreso» con punto («Pendiente de nombre») **pegada al nombre en la misma línea** (el nombre se recorta primero con elipsis, mínimo 4rem, y la insignia nunca se encoge; solo si la columna mide menos de 13.5rem la insignia baja bajo el nombre), y el sugerido, la píldora «Usar «…»». El estado de las demás filas queda en texto oculto para lectores de pantalla. Reproducir es un botón fantasma en `accent-text` (primario relleno mientras suena) y el lápiz uno fantasma en `fg-muted`. Hablante activo: el resaltado de la transcripción suavizado más una barra de 3px del color del hablante y el nombre en 600; el hover es tonal (`fill-hover`).
-- **Pestañas.** Estilo subrayado: altura 32, texto 14/500, indicador de 2px en `accent`, texto `accent-text` y peso 600 en la activa, borde inferior de 1px en la lista, `aria-selected`; sin relleno.
-- **Insignias.** Pastilla de 20px con texto de 11px/600 siempre presente: éxito (`accent-soft`/`accent-soft-fg`), progreso (`warning-soft`/`warning-soft-fg`), error (`danger-soft`/`danger-soft-fg`), neutral (`fill`/`fg-muted`). Variante `dot` de `StatusBadge`: punto de 6px (`currentColor`, decorativo) antes del texto; se usa en los estados de proveedor («● Activo», «● Apagado») y del catálogo («● Disponible», «● No responde»). «Sin configurar» va sin punto. El estado siempre está escrito.
-- **Tarjeta de proveedor.** Catálogo precargado en Configuración > Motores y modelos (réplica de la forma de APX, con la paleta Terra y copy propio): una `Card` por cada tipo que `/capabilities` marca `linkable` (rejilla de mínimo 17rem, separación `space-3`; `chatgpt_plan` no se muestra). Orden: proveedores activos, «Sin clave», apagados, tipos «Sin configurar» y, al final, la ficha punteada «+ Agregar proveedor» (no hay estado vacío ni botón primario). Cabecera: marca circular de 36px (`ProviderLogo`), nombre en 600, tipo en `text-xs` si el nombre difiere e insignia con punto. Cuerpo en filas clave/valor (`dl`, etiqueta `fg-subtle`, valor en mono si es técnico): «Dirección», «Clave» (`••••1234`, «No hace falta» en Ollama/LM Studio, «—»), «Modelos» («N disponibles», «Sin lista», «—» si no se pidió), más «Usado en: …». Pie: interruptor «Activo» (`role="switch"`, nombre «Activo» + nombre del proveedor), lápiz y papelera con nombre accesible. Apagado: `Card` con `dimmed` (fondo `bg`, texto `fg-muted`, marca sin relleno; nunca baja de `fg-subtle`, por eso no usa opacidad). «Sin configurar»: `dimmed` + `dashed` (borde `border-strong` discontinuo), una ayuda («Pega una clave para usar sus modelos.») y «Configurar»; sin papelera ni interruptor. Encender un proveedor es inmediato y no envía nada; apagar uno que usan procesos pide confirmación (esos procesos vuelven al motor local). Una clave nunca se muestra: solo `••••1234` (los últimos cuatro caracteres que informa la API). **Logotipos:** pequeños identificadores de proveedor (36px en tarjetas, 22px en fichas, selectores y catálogo), siempre junto al nombre y decorativos (`aria-hidden`). Son los trazos monocromos de simple-icons (CC0) en `frontend/src/assets/providers/logos.ts`, dibujados con `currentColor` para seguir el tema, sin ficheros ni red en tiempo de ejecución; el proveedor sin trazo (OpenAI, Groq, AssemblyAI, servidor compatible) usa un monograma en el mismo círculo. Las marcas son de sus dueños y se usan solo para identificar al proveedor (uso nominativo), sin implicar afiliación; no van en la extensión ni en `brand/`. El diálogo de proveedor usa fichas con logo (`radiogroup`, selección con contorno `accent`, texto 600 y `accent-soft`), ayuda bajo cada campo, validación en línea (el botón principal «Guardar y probar conexión» queda inactivo hasta que el formulario es válido), sin campo de clave en Ollama/LM Studio y la clave guardada como marcador de posición («••••1234 — Guardada — escribe una nueva para reemplazarla») con «Quitar clave» como enlace secundario que lista los procesos que volverían al local. El resultado de «Guardar y probar conexión» es un bloque con icono y texto («Responde» / «No responde» y la causa), nunca solo color. El catálogo «Modelos» (debajo de los proveedores) tiene buscador, «Actualizar» y una fila plegable por proveedor activo con clave (botón con `aria-expanded`): logo, nombre, «N modelos · pedida hoy HH:MM», insignia «Disponible» / «No responde» con la causa en texto, y al expandir la lista nombre + id en mono con scroll propio.
+- **Pestañas.** Estilo subrayado: altura 32, texto 14/500, indicador de 2px en `accent-line`, texto `accent-text` y peso 600 en la activa, borde inferior de 1px en la lista, `aria-selected`; sin relleno.
+- **Insignias.** Pastilla de 20px con texto de 11px/600 siempre presente: éxito (`success-soft`/`success-soft-fg`), progreso (`warning-soft`/`warning-soft-fg`), error (`danger-soft`/`danger-soft-fg`), neutral (`fill`/`fg-muted`). Variante `dot` de `StatusBadge`: punto de 6px (`currentColor`, decorativo) antes del texto; se usa en los estados de proveedor («● Activo», «● Apagado») y del catálogo («● Disponible», «● No responde»). «Sin configurar» va sin punto. El estado siempre está escrito.
+- **Tarjeta de proveedor.** Catálogo precargado en Configuración > Motores y modelos (réplica de la forma de APX, con la paleta Sentinela y copy propio): una `Card` por cada tipo que `/capabilities` marca `linkable` (rejilla de mínimo 17rem, separación `space-3`; `chatgpt_plan` no se muestra). Orden: proveedores activos, «Sin clave», apagados, tipos «Sin configurar» y, al final, la ficha punteada «+ Agregar proveedor» (no hay estado vacío ni botón primario). Cabecera: marca circular de 36px (`ProviderLogo`), nombre en 600, tipo en `text-xs` si el nombre difiere e insignia con punto. Cuerpo en filas clave/valor (`dl`, etiqueta `fg-subtle`, valor en mono si es técnico): «Dirección», «Clave» (`••••1234`, «No hace falta» en Ollama/LM Studio, «—»), «Modelos» («N disponibles», «Sin lista», «—» si no se pidió), más «Usado en: …». Pie: interruptor «Activo» (`role="switch"`, nombre «Activo» + nombre del proveedor), lápiz y papelera con nombre accesible. Apagado: `Card` con `dimmed` (fondo `bg`, texto `fg-muted`, marca sin relleno; nunca baja de `fg-subtle`, por eso no usa opacidad). «Sin configurar»: `dimmed` + `dashed` (borde `border-strong` discontinuo), una ayuda («Pega una clave para usar sus modelos.») y «Configurar»; sin papelera ni interruptor. Encender un proveedor es inmediato y no envía nada; apagar uno que usan procesos pide confirmación (esos procesos vuelven al motor local). Una clave nunca se muestra: solo `••••1234` (los últimos cuatro caracteres que informa la API). **Logotipos:** pequeños identificadores de proveedor (36px en tarjetas, 22px en fichas, selectores y catálogo), siempre junto al nombre y decorativos (`aria-hidden`). Son los trazos monocromos de simple-icons (CC0) en `frontend/src/assets/providers/logos.ts`, dibujados con `currentColor` para seguir el tema, sin ficheros ni red en tiempo de ejecución; el proveedor sin trazo (OpenAI, Groq, AssemblyAI, servidor compatible) usa un monograma en el mismo círculo. Las marcas son de sus dueños y se usan solo para identificar al proveedor (uso nominativo), sin implicar afiliación; no van en la extensión ni en `brand/`. El diálogo de proveedor usa fichas con logo (`radiogroup`, selección con contorno `accent-line`, texto 600 y `accent-soft`), ayuda bajo cada campo, validación en línea (el botón principal «Guardar y probar conexión» queda inactivo hasta que el formulario es válido), sin campo de clave en Ollama/LM Studio y la clave guardada como marcador de posición («••••1234 — Guardada — escribe una nueva para reemplazarla») con «Quitar clave» como enlace secundario que lista los procesos que volverían al local. El resultado de «Guardar y probar conexión» es un bloque con icono y texto («Responde» / «No responde» y la causa), nunca solo color. El catálogo «Modelos» (debajo de los proveedores) tiene buscador, «Actualizar» y una fila plegable por proveedor activo con clave (botón con `aria-expanded`): logo, nombre, «N modelos · pedida hoy HH:MM», insignia «Disponible» / «No responde» con la causa en texto, y al expandir la lista nombre + id en mono con scroll propio.
 - **Selector de motor por proceso.** En Configuración > Transcripción, Hablantes y Resúmenes: tarjeta «Hoy usa: …» con insignia «Local» o «Externo» y una línea que dice qué sale del equipo; debajo, `ModelPicker`: un botón con aspecto de campo (logo, motor y modelo en mono) que abre un popover no modal (`role="dialog"`) con buscador, una lista `listbox` agrupada («En este equipo» con «Local (recomendado)» y los modelos instalados con su peso y la marca «Activo» (el que sirve el proceso ahora), y un grupo por proveedor activo, con clave y compatible, con su logo), la marca «En uso» (con `aria-selected`) y «Sugerido» en texto, «Volver a pedir» por grupo, nombre de modelo manual si el proveedor no entrega lista, y el pie «Volver al local». El catálogo de cada proveedor se pide al abrir (`listEngineModels`). Teclado: flecha abajo en el botón abre; en el buscador flecha abajo entra en la lista; flechas, Inicio y Fin recorren las opciones; Escape cierra primero el popover y devuelve el foco al botón. Elegir un modelo del proveedor ya en uso se guarda al instante; elegir otro proveedor externo **no guarda**: abre el aviso de privacidad (`Dialog`, «Cancelar» antes de «Aceptar y usar», con las advertencias de doble envío y calidad no validada) y solo guarda al aceptar; volver a local se guarda al elegirlo. Debajo, el interruptor de respaldo local y las advertencias (bloque `warning-soft` con icono `TriangleAlert` y texto, nunca solo color).
 - **Tarjeta de modelos locales.** Una por proceso (Transcripción, Hablantes, Resúmenes), debajo de «Hoy usa» y del selector: `Card` «En este equipo» con la frase de hardware en lenguaje llano (más la razón de la recomendación y sus cautelas, en `text-sm`), el menú «…» de la tarjeta («Buscar instalados») y una fila compacta por opción local (borde de 1px, radio `thumb`, fondo `bg`; la activa, `accent-soft` con borde izquierdo de 3px). Cada fila dice en texto: nombre y peso, insignias de estado («Instalado» y «● Activo ahora», «Disponible para instalar», «Presente sin verificar» con su motivo en una frase, «Verificando…»), «Instalado a mano» (archivo fuera de la carpeta de Sauri: nunca se borra), «Recomendado para tu equipo» y la marca «Medido»/«Propuesta», una línea de descripción (motor y memoria mínima) y, a la derecha, la acción de la fila: «Usar este» (instalado y no activo; guarda al instante la elección local, sin aviso), «Instalar» con el espacio que necesita (inactivo con el motivo si no cabe en el disco) o «Verificar». El avance es un `ProgressBar` con una frase en `role="status"` que cambia solo por porcentaje entero y «Cancelar». «Verificar» y «Quitar» viven en un menú «…» por fila; «Quitar» pide confirmación y queda bloqueado con el motivo escrito en el menú mientras un proceso lo use o si es un archivo instalado a mano. Los motores administrados (Senko) no se descargan: instalado dice «Motor de hablantes de Sauri · Instalado · Activo ahora»; sin instalar muestra el comando. Los archivos de apoyo (detector de voz) son una línea «Detector de voz (apoyo)», no una opción. Mientras el servicio reconoce lo que ya había en el equipo, un `role="status"` dice «Reconociendo lo que ya tienes instalado…». Al final, el grupo «Servicios externos» pone la opción externa junto a las locales y abre el selector de motor (el aviso de privacidad sigue allí). El aviso «Motor no instalado» es un bloque `warning-soft` con el comando en `code` y las herramientas que necesita.
 - **Diálogos.** `<dialog>` nativo: padding 16, borde, radio `md`, `shadow-md`, velo `scrim`, título, acción secundaria antes de la principal, foco inicial dentro, cierre con Escape y retorno del foco al disparador. Para contenido con formulario o listas largas, `Dialog` (`ui/Dialog.tsx`): panel centrado `surface-raised` en un portal (anchos `sm` 28rem y `md` 34rem), cabecera fija (título de 16px y botón `X` de 30px) con relleno de 8/16, cuerpo de relleno 12/16 con desplazamiento propio, resto de la página inerte y sin desplazamiento, foco atrapado, cierre con Escape, botón de cerrar o clic en el velo, y retorno del foco al disparador.
 - **Menús.** Panel `surface`, borde, `shadow-md`, filas de 28px con texto de 13px (44px con puntero táctil), hover `fill-hover`, elemento destructivo en `danger-text`, navegación por teclado; un elemento deshabilitado puede explicar por qué con `hint` (título nativo y descripción). Una elección única usa `role="menuitemradio"` con `aria-checked` y una marca `Check` en la opción activa (`MenuItem checked`).
 - **Popover.** `Popover` (`ui/Popover.tsx`): panel no modal `role="dialog"` para formularios pequeños (p. ej. rango de fechas). Enter, Espacio o Flecha abajo lo abren y el foco pasa a su primer control; Escape lo cierra y devuelve el foco al disparador; un clic fuera o salir con Tab lo cierra sin quitar el foco. El panel se desplaza para quedar dentro del viewport.
 - **Icono con punto de aviso.** `ui-icon-button--alert` (botón fantasma de 30px) pinta un punto `danger` de 6px arriba a la derecha con anillo de 2px del color de la superficie; el punto es decorativo y el estado va en el nombre accesible y el tooltip («Hablantes: 3 sin nombre»). Sin pendientes no hay punto. Lo usa la cabecera de la reunión para los hablantes: icono `UsersRound` a la izquierda de Descargar; es el botón de alternar del panel acoplado de hablantes.
-- **Barra de iconos de filtros.** Botones `ui-icon-button--ghost` de 30px con nombre accesible y tooltip que incluyen el estado actual. Un control con valor distinto del predeterminado usa `ui-icon-button--active` (relleno `accent-soft` y punto de acento: forma, no solo color). La búsqueda se despliega en línea, conserva el foco, se cierra con Escape o con su botón `X` (borrando el término) y, si tiene texto, permanece abierta; mientras la búsqueda está abierta el campo llena la barra (28px de alto) y los demás iconos se ocultan.
+- **Barra de iconos de filtros.** Botones `ui-icon-button--ghost` de 30px con nombre accesible y tooltip que incluyen el estado actual. Un control con valor distinto del predeterminado usa `ui-icon-button--active` (relleno `accent-soft` y punto `accent-line`: forma, no solo color). La búsqueda se despliega en línea, conserva el foco, se cierra con Escape o con su botón `X` (borrando el término) y, si tiene texto, permanece abierta; mientras la búsqueda está abierta el campo llena la barra (28px de alto) y los demás iconos se ocultan.
 - **Tooltips.** Solo texto breve, complemento (no reemplazo) del nombre accesible; sin botones dentro. Los iconos del carril del panel lateral usan CSS a partir de la etiqueta oculta. En el portal, `useTooltip` (`ui/Tooltip.tsx`, hoy en el disparador de `Menu` con `tooltip`) usa `role="tooltip"` enlazado con `aria-describedby`, aparece tras 400ms con el puntero o el foco de teclado y se cierra con Escape. Para texto largo (el resumen de una fila de la biblioteca) la variante `ui-tooltip--wrap` espera 500ms, mide hasta 320px, parte líneas (6 como máximo, con elipsis) y se coloca fija junto al disparador para no quedar recortada por el scroll del panel.
 - **Avisos (toasts).** (Regla para cuando se creen.) Esquina inferior, `surface-raised`, borde y `shadow-md`; se anuncian con `role="status"` (error: `role="alert"`).
-- **Progreso y pasos.** Barra de 8px, pista `fill-strong`, relleno `accent`. Sin estimación, la barra indeterminada pulsa en `accent-muted` (sin degradados). El paso actual se marca con número, contorno de acento y texto en negrita, no solo color.
+- **Progreso y pasos.** Barra de 8px, pista `fill-strong`, relleno `accent-line`. Sin estimación, la barra indeterminada pulsa en `accent-muted` (sin degradados). El paso actual se marca con número, contorno de `accent-line` y texto en negrita, no solo color.
 
 ## 8. Iconos
 
@@ -286,10 +291,10 @@ Los componentes del portal están en `frontend/src/components/ui/` y los de la e
 
 ## 8b. Marca
 
-- El isotipo de Sauri (dos mitades verdes separadas por una diagonal, con un rombo al centro) y el logo horizontal viven en `brand/`; las reglas de uso, la variante pequeña (32px o menos) y el espacio libre están en `brand/README.md`.
-- Sus dos verdes (`#4a7c59`, `#78a886`) son fijos en todos los temas y no forman parte de la paleta de la sección 3: no se convierten en tokens ni se recolorean.
+- El isotipo de Sauri (dos mitades amarillo-oliva separadas por una diagonal, con un rombo al centro) y el logo horizontal viven en `brand/`; las reglas de uso, la variante pequeña (32px o menos) y el espacio libre están en `brand/README.md`.
+- Sus dos colores (`#CFBB23` la mitad principal y `#A59837` la otra) son fijos en todos los temas y no forman parte de la paleta de la sección 3: no se convierten en tokens ni se recolorean.
 - En la interfaz se dibuja con `BrandMark` (`frontend/src/components/ui/BrandMark.tsx` en el portal, `extension/src/core/design/BrandMark.tsx` en la extensión), decorativo junto al nombre «Sauri» visible; con `title` expone ese nombre. En el carril del portal queda solo el isotipo.
-- **Un solo logotipo.** La palabra «Sauri» usada como marca (cabecera del portal, inicio de sesión, cabeceras del panel y de las opciones de la extensión, README) es siempre el trazo oficial de `brand/` (DM Sans Bold convertida a trazos), nunca texto vivo en la fuente de la interfaz ni en la de GitHub. Se dibuja con `BrandLogo` (isotipo + palabra, idéntico a `sauri-logo.svg`) o con `BrandWordmark` (solo la palabra, para cuando el isotipo va aparte y se pliega, como en la barra lateral), en `components/ui/BrandLogo.tsx` (portal) y `core/design/BrandLogo.tsx` (extensión). La palabra sigue el tema (verde muy oscuro `#2f5a3c` en claro, marfil `#faf6f0` en oscuro, igual que los dos SVG); el nombre accesible «Sauri» sale de `title`. Una prueba compara el trazo del componente con `brand/sauri-logo.svg` y comprueba que los SVG de `brand/` no contienen `<text>`. En el README se usa `<picture>` con `sauri-logo-dark.svg` para `prefers-color-scheme: dark`. Dentro de una frase, «Sauri» es texto normal. Los nombres de pestaña, manifiesto y título de documento son texto y no cuentan.
+- **Un solo logotipo.** La palabra «Sauri» usada como marca (cabecera del portal, inicio de sesión, cabeceras del panel y de las opciones de la extensión, README) es siempre el trazo oficial de `brand/` (DM Sans Bold convertida a trazos), nunca texto vivo en la fuente de la interfaz ni en la de GitHub. Se dibuja con `BrandLogo` (isotipo + palabra, idéntico a `sauri-logo.svg`) o con `BrandWordmark` (solo la palabra, para cuando el isotipo va aparte y se pliega, como en la barra lateral), en `components/ui/BrandLogo.tsx` (portal) y `core/design/BrandLogo.tsx` (extensión). La palabra sigue el tema (oliva muy oscuro `#33322B` en claro, crema `#F7F3DE` en oscuro, igual que los dos SVG); el nombre accesible «Sauri» sale de `title`. Una prueba compara el trazo del componente con `brand/sauri-logo.svg` y comprueba que los SVG de `brand/` no contienen `<text>`. En el README se usa `<picture>` con `sauri-logo-dark.svg` para `prefers-color-scheme: dark`. Dentro de una frase, «Sauri» es texto normal. Los nombres de pestaña, manifiesto y título de documento son texto y no cuentan.
 
 ## 9. Estados, feedback y movimiento
 

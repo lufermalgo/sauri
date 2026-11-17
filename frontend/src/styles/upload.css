@@ -37,7 +37,7 @@
 
 .upload-dropzone--active,
 .upload-dropzone:focus-within {
-  border-color: var(--ds-accent);
+  border-color: var(--ds-accent-line);
   background: var(--ds-accent-soft);
 }
 

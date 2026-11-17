@@ -1,10 +1,10 @@
 # Marca de Sauri
 
-El isotipo es un cuadrado de esquinas redondeadas partido por una diagonal en dos mitades verdes, con un rombo recortado en el centro.
+El isotipo es un cuadrado de esquinas redondeadas partido por una diagonal en dos mitades doradas (dorado y oliva), con un rombo recortado en el centro.
 
 ## Qué significa
 
-- Las dos mitades verdes son dos voces distintas en una conversación.
+- Las dos mitades (dorado y oliva) son dos voces distintas en una conversación.
 - El rombo del centro es lo que Sauri conserva de esa conversación para que puedas encontrarlo y revisarlo después.
 
 ## Archivos
@@ -17,7 +17,7 @@ El isotipo es un cuadrado de esquinas redondeadas partido por una diagonal en do
 | `sauri-logo-dark.svg` | Logo horizontal para fondos oscuros. |
 | `isotype-source.png` | Ilustración original del dueño. Solo referencia; no se usa en el producto. |
 
-El isotipo ocupa todo su lienzo, sin margen: los íconos de la extensión y el favicon van de borde a borde. Solo el `apple-touch-icon` del portal lleva fondo marfil con margen. Los PNG de la extensión (`extension/public/icons/`) y del portal (`frontend/public/`) se generan desde estos SVG con `rsvg-convert`, por ejemplo `rsvg-convert -w 128 -h 128 brand/sauri-isotype.svg -o icon-128.png`. En 16 y 32 px se usa la variante pequeña.
+El isotipo ocupa todo su lienzo, sin margen: los íconos de la extensión y el favicon van de borde a borde. Solo el `apple-touch-icon` del portal (180 px) lleva fondo marfil con margen de 32 px por lado (isotipo de 116 px). Los PNG de la extensión (`extension/public/icons/`) y del portal (`frontend/public/`) se generan desde estos SVG con `rsvg-convert`, por ejemplo `rsvg-convert -w 128 -h 128 brand/sauri-isotype.svg -o icon-128.png`. En 16 y 32 px se usa la variante pequeña.
 
 ## Logo horizontal
 
@@ -25,10 +25,11 @@ El isotipo ocupa todo su lienzo, sin margen: los íconos de la extensión y el f
 
 ## Colores
 
-- Mitad oscura: `#4a7c59`
-- Mitad clara: `#78a886`
-- Nombre en el logo horizontal: verde muy oscuro sobre fondo claro y claro sobre fondo oscuro (ya incluidos en los archivos; no se cambian).
-- Fondo del apple-touch-icon: marfil `#faf6f0`
+- Mitad oscura (oliva): `#A59837`
+- Mitad clara (dorado): `#CFBB23`
+- Nombre en el logo horizontal: `#33322B` (casi negro cálido) sobre fondo claro y `#F7F3DE` (marfil) sobre fondo oscuro (ya incluidos en los archivos; no se cambian).
+- Fondo del apple-touch-icon: marfil `#FFFCEE`
+- El isotipo usa solo esos dos colores.
 
 ## Reglas de uso
 

@@ -40,7 +40,7 @@
 }
 
 .library-selectall {
-  accent-color: var(--ds-accent);
+  accent-color: var(--ds-accent-line);
 }
 
 .library-tool {
@@ -361,7 +361,7 @@
   width: 14px;
   height: 14px;
   margin: 0;
-  accent-color: var(--ds-accent);
+  accent-color: var(--ds-accent-line);
   cursor: pointer;
 }
 
@@ -422,7 +422,7 @@
   box-sizing: border-box;
   min-height: 56px;
   padding: var(--ds-space-2) var(--ds-space-2) var(--ds-space-1) var(--ds-space-2);
-  border-left: 3px solid var(--ds-accent);
+  border-left: 3px solid var(--ds-accent-line);
   border-radius: var(--ds-radius-thumb);
   background: var(--ds-fill-strong);
 }
@@ -486,7 +486,7 @@
 
 .library-bulk-toolbar input {
   margin: 0;
-  accent-color: var(--ds-accent);
+  accent-color: var(--ds-accent-line);
 }
 
 .library-danger {

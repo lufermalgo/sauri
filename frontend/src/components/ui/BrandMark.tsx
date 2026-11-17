@@ -11,8 +11,8 @@ export interface BrandMarkProps {
 /** Largest size (px) that uses the small variant (wider gap, bigger diamond), see brand/README.md. */
 export const SMALL_VARIANT_MAX = 32;
 
-export const DARK_HALF = "#4a7c59";
-export const LIGHT_HALF = "#78a886";
+export const DARK_HALF = "#A59837";
+export const LIGHT_HALF = "#CFBB23";
 
 // Geometry copied from brand/sauri-isotype.svg (master) and brand/sauri-isotype-small.svg (small).
 export const BRAND_SHAPES = {
