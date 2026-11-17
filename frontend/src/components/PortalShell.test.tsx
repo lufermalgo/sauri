@@ -191,7 +191,7 @@ describe("PortalShell collapse", () => {
   it("keeps the isotype in the sidebar, alone in the rail, with the brand name as its link name", () => {
     renderShell();
     const brand = () => screen.getByRole("link", { name: t("shell:brand") });
-    expect(brand().querySelector('svg polygon[fill="#A59837"]')).toBeTruthy();
+    expect(brand().querySelector('svg polygon[fill="#9A8CE0"]')).toBeTruthy();
     expect(brand().querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: t("shell:sidebar.toggle") }));
     expect(root().dataset.mode).toBe("rail");
