@@ -18,7 +18,8 @@ import { readFailureCause, resolveProcessingStatus } from "./core/processing-sta
 import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from "./core/recording-completion";
 
 import { canCaptureCurrentTab, isMeetUrl } from "./core/capture";
-import { ensureOverlay } from "./overlay-injection";
+import { ensureOverlay, reinjectOverlay } from "./overlay-injection";
+import { errorCode, logDiagnostic } from "./core/diagnostics";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
 import { validCaptureDimensions } from "./core/resolution";
 import { readRecordingSettings } from "./panel/recordingSettings";
@@ -389,6 +390,7 @@ chrome.runtime.onMessage.addListener(
 
       case "recording-error":
         console.error("[sauri] Recording error from offscreen:", message.error);
+        void logDiagnostic("recording-error", String(message.error));
         void handleRecordingError(message.sessionId);
         sendResponse({ ok: true });
         break;
@@ -458,13 +460,26 @@ async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; re
     if (state.overlayAvailable !== false && request.countdownSeconds > 0) {
       await chrome.storage.session.set({ sauriCountdown: { requestId: state.sessionId, tabId: state.tabId } });
       try {
-        const countdown = await chrome.tabs.sendMessage(state.tabId, { type: "show-countdown", seconds: request.countdownSeconds, requestId: state.sessionId });
+        const showCountdown = () => chrome.tabs.sendMessage(state.tabId, { type: "show-countdown", seconds: request.countdownSeconds, requestId: state.sessionId });
+        let countdown: { ok?: boolean } | undefined;
+        try {
+          countdown = await showCountdown();
+        } catch (error) {
+          // The page script stopped answering (typically a Meet tab opened before the extension
+          // was reloaded). Reinject it once; if it still fails, record without a countdown
+          // rather than dropping the user's share.
+          void logDiagnostic("countdown-unreachable", errorCode(error));
+          if (await reinjectOverlay(state.tabId)) {
+            try { countdown = await showCountdown(); }
+            catch (retry) { void logDiagnostic("countdown-skipped", errorCode(retry)); countdown = undefined; }
+          } else void logDiagnostic("countdown-skipped", "overlay could not be reinjected");
+          if (!countdown) countdown = { ok: true };
+        }
         const stored = (await chrome.storage.session.get("sauriCountdown")).sauriCountdown;
-        if (!countdown?.ok || stored?.cancelled) return { ok: false, reason: "cancelled" };
-      } catch {
-        // Meet always hosts the overlay, so a failure there still cancels. Elsewhere the
-        // injected script may be gone (page closed or navigated): record without it.
-        if (isMeetUrl(state.meetingUrl)) return { ok: false, reason: "cancelled" };
+        if (!countdown?.ok || stored?.cancelled) {
+          void logDiagnostic("countdown-cancelled", stored?.cancelled ? "cancelled by the user" : "no confirmation from the page");
+          return { ok: false, reason: "cancelled" };
+        }
       } finally {
         await chrome.storage.session.remove("sauriCountdown");
       }
@@ -479,6 +494,7 @@ async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; re
     return { ok: true };
   } catch (error) {
     console.error("[sauri] Could not bind selected media:", error);
+    void logDiagnostic("bind-failed", errorCode(error));
     return { ok: false };
   }
 }
@@ -550,6 +566,7 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
           micDeviceId: micDeviceId ?? null,
         });
         if (!result?.ok) {
+          void logDiagnostic("start-not-completed", result?.reason ?? "no response from the recorder");
           if (await getCompletion(sessionId)) await handleRecordingError(sessionId);
           return result ?? { ok: false, reason: "failed" };
         }
@@ -572,6 +589,7 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
         return result;
       } catch (error) {
         console.error("[sauri] Failed to start capture:", error);
+        void logDiagnostic("start-failed", errorCode(error));
         if (startingSessionId && await getCompletion(startingSessionId)) await handleRecordingError(startingSessionId);
         return { ok: false, reason: "failed" };
       } finally {
@@ -623,6 +641,7 @@ async function handleCaptureControl(type: string, sessionId?: string, senderTabI
     if (!request || (sessionId !== undefined && sessionId !== request.state.sessionId)) return false;
     if (senderTabId !== undefined && (senderTabId !== request.state.tabId || sessionId !== request.state.sessionId)) return false;
     await chrome.storage.session.set({ sauriCaptureRequest: { ...request, cancelled: true } });
+    void logDiagnostic("capture-cancelled-before-start", senderTabId === undefined ? "sharing ended or cancelled from the recorder or panel" : "cancelled from the page");
     if (sauriCountdown?.requestId === request.state.sessionId) {
       await chrome.storage.session.set({ sauriCountdown: { ...sauriCountdown, cancelled: true } });
       try { await chrome.tabs.sendMessage(sauriCountdown.tabId, { type: "cancel-countdown" }); }

@@ -332,6 +332,8 @@ export function SidePanelApp() {
         setStartError(t("panel:tabError"));
       } else if (result?.reason === "no-tab-audio") {
         setStartError(t("panel:audioError"));
+      } else if (result?.reason === "sharing-ended") {
+        setStartError(t("panel:sharingEndedError"));
       } else if (result?.reason === "unsupported-surface") {
         setStartError(t("panel:surfaceError"));
       } else if (result?.reason !== "cancelled" && result?.reason !== "busy") {
