@@ -24,7 +24,7 @@ function walk(dir: string): string[] {
     entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
   );
 }
-// The isotype keeps its two fixed brand greens in every theme (brand/README.md); they are not theme tokens.
+// The isotype keeps its two fixed brand colors in every theme (brand/README.md); they are not theme tokens.
 // Same for the logo word and the Google "G", whose official colors are fixed by their owners.
 const BRAND_ASSET_FILES = ["components/ui/BrandMark.tsx", "components/ui/BrandLogo.tsx", "assets/providers/GoogleGlyph.tsx"];
 const governed = walk(srcRoot)

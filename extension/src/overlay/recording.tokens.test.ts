@@ -13,7 +13,7 @@ describe("Meet overlay design tokens", () => {
 
     // Same token file as the extension pages, applied through :host.
     expect(css).toMatch(/:root,\s*:host\s*{/);
-    expect(css).toContain("--ds-bg: light-dark(#faf6f0, #181b19)");
+    expect(css).toContain("--ds-bg: light-dark(#fffcee, #26251f)");
     expect(css).toMatch(/:host\s*{\s*all:\s*initial;\s*color-scheme:\s*light dark/);
     // Inline style on the host would otherwise reset color-scheme to normal and pin the light theme.
     expect(host.style.cssText).toMatch(/color-scheme:\s*light dark/);

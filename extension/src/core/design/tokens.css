@@ -12,30 +12,31 @@
   color-scheme: light dark;
 
   /* Surfaces */
-  --ds-bg: light-dark(#faf6f0, #181b19);
-  --ds-surface: light-dark(#ffffff, #1f2321);
-  --ds-surface-raised: light-dark(#ffffff, #272c29);
-  --ds-sidebar: light-dark(#f5f1ea, #1c201e);
-  --ds-fill: light-dark(#f0ece4, #262b28);
-  --ds-fill-hover: light-dark(#f0e8db, #2e3430);
-  --ds-fill-strong: light-dark(#eae6de, #373e3a);
+  --ds-bg: light-dark(#fffcee, #26251f);
+  --ds-surface: light-dark(#ffffff, #2d2c26);
+  --ds-surface-raised: light-dark(#ffffff, #33322b);
+  --ds-sidebar: light-dark(#fbf6de, #2a2923);
+  --ds-fill: light-dark(#f6efcf, #38372f);
+  --ds-fill-hover: light-dark(#f1e8be, #403e35);
+  --ds-fill-strong: light-dark(#ebe0ab, #4a4834);
 
   /* Text and lines */
-  --ds-fg: light-dark(#2e3230, #ecebe6);
-  --ds-fg-muted: light-dark(#4a4e4a, #bfc2b8);
-  --ds-fg-subtle: light-dark(#626860, #a9ad9f);
-  --ds-border: light-dark(#c4c8bc, #353b37);
-  --ds-border-strong: light-dark(#74796e, #707769);
+  --ds-fg: light-dark(#33322b, #f7f3de);
+  --ds-fg-muted: light-dark(#504d35, #ddd6b4);
+  --ds-fg-subtle: light-dark(#625e3a, #bfb78f);
+  --ds-border: light-dark(#e4daa8, #46443a);
+  --ds-border-strong: light-dark(#7a733d, #a59837);
 
   /* Primary action and accent */
-  --ds-accent: light-dark(#4a7c59, #86bb95);
-  --ds-accent-hover: light-dark(#3b6a49, #9bcaa8);
-  --ds-accent-fg: light-dark(#ffffff, #10201a);
-  --ds-accent-text: light-dark(#3b6a49, #8fc29d);
-  --ds-accent-soft: light-dark(#c8e8d0, #243d2c);
-  --ds-accent-soft-fg: light-dark(#1f4a2d, #bfe6cb);
-  --ds-accent-muted: light-dark(#78a886, #4f7d5d);
-  --ds-focus: light-dark(#3b6a49, #9bcaa8);
+  --ds-accent: light-dark(#fadd00, #fadd00);
+  --ds-accent-hover: light-dark(#cfbb23, #cfbb23);
+  --ds-accent-fg: light-dark(#33322b, #33322b);
+  --ds-accent-text: light-dark(#504d35, #fadd00);
+  --ds-accent-soft: light-dark(#fff2a6, #4a4422);
+  --ds-accent-soft-fg: light-dark(#33322b, #fcf0aa);
+  --ds-accent-muted: light-dark(#cfbb23, #a59837);
+  --ds-accent-line: light-dark(#7a733d, #fadd00);
+  --ds-focus: light-dark(#504d35, #fadd00);
 
   /* Status */
   --ds-warning: light-dark(#705c30, #d9bd7a);
@@ -48,10 +49,10 @@
   --ds-danger-soft: light-dark(#fce8e6, #43211f);
   --ds-danger-soft-fg: light-dark(#690005, #ffc9c4);
   --ds-recording: light-dark(#b83230, #f2736d);
-  --ds-highlight: light-dark(#f4e7c7, #4a4022);
-  --ds-success: var(--ds-accent-text);
-  --ds-success-soft: var(--ds-accent-soft);
-  --ds-success-soft-fg: var(--ds-accent-soft-fg);
+  --ds-highlight: light-dark(#ffee8a, #565024);
+  --ds-success: light-dark(#3b6a49, #8fc29d);
+  --ds-success-soft: light-dark(#c8e8d0, #243d2c);
+  --ds-success-soft-fg: light-dark(#1f4a2d, #bfe6cb);
 
   /* Speakers: fills and text colors share one value per theme */
   --ds-on-speaker: light-dark(#ffffff, #10201a);

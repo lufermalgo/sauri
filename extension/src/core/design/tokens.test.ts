@@ -23,7 +23,7 @@ function walk(dir: string): string[] {
     entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)],
   );
 }
-// The isotype keeps its two fixed brand greens in every theme (brand/README.md); they are not theme tokens.
+// The isotype keeps its two fixed brand colors in every theme (brand/README.md); they are not theme tokens.
 const BRAND_ASSET_FILES = ["core/design/BrandMark.tsx", "core/design/BrandLogo.tsx"];
 const governed = walk(srcRoot)
   .map((path) => relative(srcRoot, path))

@@ -88,7 +88,7 @@
 .meeting-control-volume { flex: 0 0 48px; }
 .meeting-control-quality { flex: 0 0 72px; }
 .meeting-control-time { flex: 0 0 auto; white-space: nowrap; }
-.meeting-player-controls input { width: 100%; max-width: 100%; min-width: 0; margin: 0; accent-color: var(--ds-accent); }
+.meeting-player-controls input { width: 100%; max-width: 100%; min-width: 0; margin: 0; accent-color: var(--ds-accent-line); }
 .meeting-player-controls select { width: 100%; box-sizing: border-box; min-height: var(--ds-control-h-sm); padding: 0 var(--ds-space-1); font-size: var(--ds-text-xs); }
 .meeting-player select { max-width: 100%; border: 1px solid var(--ds-border-strong); border-radius: var(--ds-radius-sm); color: var(--ds-fg); background: var(--ds-surface); }
 .meeting-player > p { margin: 0 0 var(--ds-space-2); font-size: var(--ds-text-sm); }
@@ -115,7 +115,7 @@
 .meeting-transcript-heading { display: flex; flex: none; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--ds-space-2); box-sizing: border-box; min-height: 40px; padding: 0 var(--ds-space-3); border-bottom: 1px solid var(--ds-border); }
 .meeting-transcript-heading h2 { margin: 0; font-size: var(--ds-text-md); font-weight: var(--ds-weight-semibold); }
 .meeting-follow { display: inline-flex; align-items: center; gap: 6px; color: var(--ds-fg-muted); font-size: var(--ds-text-xs); }
-.meeting-follow input { width: 14px; height: 14px; margin: 0; accent-color: var(--ds-accent); }
+.meeting-follow input { width: 14px; height: 14px; margin: 0; accent-color: var(--ds-accent-line); }
 .meeting-transcript-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--ds-space-1) 0; }
 .meeting-transcript-body > p { margin: 0; padding: var(--ds-space-2) var(--ds-space-3) 0; font-size: var(--ds-text-sm); color: var(--ds-fg-muted); }
 @container meeting (max-width: 759px) {
