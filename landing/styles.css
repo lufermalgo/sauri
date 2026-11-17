@@ -3,20 +3,21 @@
  * frontend/src/design/tokens.css, the DESIGN.md contract). The landing is a reading page,
  * not the desktop app, so it adds its own type and layout scale here (--lp-*), documented in
  * docs/design/landing.md. No other raw values: components read var(--ds-*) or var(--lp-*).
- * The landing uses the Sentinela palette (DESIGN.md 3.1): yellow #FADD00 is the only button
- * color; olive and ink tones below are palette members used for variety. Contrast pairs are
- * documented in docs/design/landing.md.
+ * The landing uses the Índigo palette (DESIGN.md 3.1): lavender is the brand and the button
+ * color, indigo is text and the dark bands, volt (spark) appears only over indigo. Contrast pairs
+ * are documented in docs/design/landing.md.
  */
 :root {
-  --lp-olive: light-dark(#7a733d, #a59837);
-  --lp-olive-soft: light-dark(#ebe0ab, #4a4834);
-  --lp-olive-soft-fg: light-dark(#33322b, #f7f3de);
-  --lp-ink: #33322b;
-  --lp-on-ink: #fadd00;
-  --lp-ink-fg: #f7f3de;
-  --lp-ink-muted: #ddd6b4;
-  --lp-sun: #fadd00;
-  --lp-on-sun: #33322b;
+  --lp-lav: var(--ds-accent-line);
+  --lp-lav-soft: var(--ds-fill-strong);
+  --lp-lav-soft-fg: var(--ds-fg);
+  --lp-ink: #161223;
+  --lp-on-ink: #c6ff24;
+  --lp-ink-fg: #eeeaf8;
+  --lp-ink-muted: #b9b2d6;
+  --lp-spark-hover: #d8ff6b;
+  --lp-sun: var(--ds-accent);
+  --lp-on-sun: var(--ds-accent-fg);
   --lp-container: 1120px;
   --lp-gutter: 16px;
   --lp-section-y: 88px;
@@ -125,7 +126,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 .hero-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--ds-space-2); margin: 0; padding: 0; list-style: none; }
 .chip { padding: var(--ds-space-1) var(--ds-space-4); border-radius: var(--ds-radius-pill); font-size: var(--ds-text-lg); font-weight: 600; }
 .chip--green { background: var(--ds-accent-soft); color: var(--ds-accent-soft-fg); }
-.chip--clay { background: var(--lp-olive-soft); color: var(--lp-olive-soft-fg); }
+.chip--clay { background: var(--lp-lav-soft); color: var(--lp-lav-soft-fg); }
 .chip--blue { background: var(--lp-ink); color: var(--lp-on-ink); }
 .shot--hero { margin-top: calc(var(--lp-section-y) * 0.6); }
 
@@ -147,7 +148,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   font-size: var(--ds-text-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--ds-accent-text);
 }
-#funciones .section__label { color: var(--lp-olive); }
+#funciones .section__label { color: var(--lp-lav); }
 .section__intro { font-size: var(--lp-text-lead); color: var(--ds-fg-muted); }
 
 /* Steps */
@@ -165,7 +166,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   background: var(--lp-sun); color: var(--lp-on-sun);
   font-weight: 700; font-variant-numeric: tabular-nums;
 }
-.step:nth-child(2) .step__number { background: var(--lp-olive-soft); color: var(--lp-olive-soft-fg); }
+.step:nth-child(2) .step__number { background: var(--lp-lav-soft); color: var(--lp-lav-soft-fg); }
 .step:nth-child(3) .step__number { background: var(--lp-ink); color: var(--lp-on-ink); }
 
 /* Features */
@@ -181,8 +182,8 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 }
 .feature--wide { background: var(--ds-accent-soft); border-color: transparent; }
 .feature--wide p { color: var(--ds-accent-soft-fg); }
-.features .feature:nth-of-type(2) { background: var(--lp-olive-soft); border-color: transparent; }
-.features .feature:nth-of-type(2) p { color: var(--lp-olive-soft-fg); }
+.features .feature:nth-of-type(2) { background: var(--lp-lav-soft); border-color: transparent; }
+.features .feature:nth-of-type(2) p { color: var(--lp-lav-soft-fg); }
 .features .feature:nth-of-type(3) { background: var(--ds-fill); border-color: transparent; }
 .features .feature:nth-of-type(3) p { color: var(--ds-fg-muted); }
 .feature p { color: var(--ds-fg-muted); }
@@ -202,7 +203,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 }
 @media (min-width: 720px) { .mini-features { grid-template-columns: repeat(3, 1fr); } }
 .mini-features li { display: grid; gap: var(--ds-space-2); padding-top: var(--ds-space-4); border-top: 3px solid var(--lp-sun); }
-.mini-features li:nth-child(2) { border-top-color: var(--lp-olive); }
+.mini-features li:nth-child(2) { border-top-color: var(--lp-lav); }
 .mini-features li:nth-child(3) { border-top-color: var(--lp-ink); }
 .mini-features h3 { font-size: var(--ds-text-2xl); }
 .mini-features p { color: var(--ds-fg-muted); }
@@ -221,13 +222,13 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   fill: none; stroke: var(--lp-on-sun); background: var(--lp-sun);
   stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round;
 }
-.privacy__item:nth-child(2) .icon { stroke: var(--lp-olive-soft-fg); background: var(--lp-olive-soft); }
+.privacy__item:nth-child(2) .icon { stroke: var(--lp-lav-soft-fg); background: var(--lp-lav-soft); }
 .privacy__item:nth-child(3) .icon { stroke: var(--lp-on-ink); background: var(--lp-ink); }
 
 /* Status */
-#estado.section--tinted { background: var(--lp-sun); border-color: transparent; }
+#estado.section--tinted { background: var(--ds-accent-soft); border-color: transparent; }
 .status { max-width: 760px; display: grid; gap: var(--ds-space-3); }
-.status h2, .status p { color: var(--lp-on-sun); }
+.status h2, .status p { color: var(--ds-accent-soft-fg); }
 .status p { font-size: var(--lp-text-lead); }
 
 /* FAQ */
@@ -261,5 +262,5 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 .site-footer__inner p { color: var(--ds-fg-subtle); font-size: var(--ds-text-lg); }
 .site-footer nav { display: flex; gap: var(--ds-space-6); margin-inline-start: auto; }
 @media (max-width: 719px) { .site-footer nav { margin-inline-start: 0; width: 100%; flex-wrap: wrap; } }
-.cta .button--primary { background: var(--lp-sun); color: var(--lp-on-sun); }
-.cta .button--primary:hover { background: var(--ds-accent-hover); }
+.cta .button--primary { background: var(--ds-spark); color: var(--ds-on-spark); }
+.cta .button--primary:hover { background: var(--lp-spark-hover); }
