@@ -27,5 +27,10 @@
     "title": "We couldn't find that page",
     "description": "The address doesn't exist or is no longer available.",
     "backToLibrary": "Back to the library"
+  },
+  "localSession": {
+    "loading": "Opening Sauri…",
+    "error": "Could not connect to Sauri. Check that the app is open.",
+    "retry": "Try again"
   }
 }

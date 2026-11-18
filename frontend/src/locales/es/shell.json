@@ -27,5 +27,10 @@
     "title": "No encontramos esa página",
     "description": "La dirección no existe o ya no está disponible.",
     "backToLibrary": "Volver a la biblioteca"
+  },
+  "localSession": {
+    "loading": "Abriendo Sauri…",
+    "error": "No se pudo conectar con Sauri. Comprueba que la app esté abierta.",
+    "retry": "Reintentar"
   }
 }

@@ -51,7 +51,8 @@
     "fallbackName": "Cuenta",
     "note": "Tu nombre y tu correo vienen de tu inicio de sesión y no se pueden cambiar aquí.",
     "session": "Sesión",
-    "sessionHelp": "Cierra la sesión en este navegador."
+    "sessionHelp": "Cierra la sesión en este navegador.",
+    "localNote": "Esta cuenta pertenece a tu instalación local. No necesitas iniciar ni cerrar sesión."
   },
   "appearance": {
     "themeTitle": "Tema",

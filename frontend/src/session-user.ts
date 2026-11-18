@@ -1,7 +1,8 @@
 import { TOKEN_KEY } from "./api";
 
-/** What the portal knows about the signed-in user: the claims the API puts in the login token. */
+/** Display identity from the local API or password session claims. */
 export interface SessionUser {
+  mode?: "local" | "password";
   name: string | null;
   email: string | null;
 }

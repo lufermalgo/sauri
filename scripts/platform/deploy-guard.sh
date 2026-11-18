@@ -34,26 +34,9 @@ fail_check() {
 
 # No database container running means nothing can be processing.
 if running postgres; then
-  read -r -d '' QUERY <<'SQL' || true
-SELECT 'meeting', substr(m.id, 1, 8), m.process_state,
-       coalesce(to_char(max(h.occurred_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI'), '?')
-  FROM meetings m LEFT JOIN state_history h ON h.meeting_id = m.id
- WHERE m.process_state NOT IN ('completed', 'failed') GROUP BY m.id
-UNION ALL
-SELECT 'speakers', substr(meeting_id, 1, 8), diarization_state,
-       to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI')
-  FROM diarizations WHERE diarization_state IN ('pending', 'in_progress')
-UNION ALL
-SELECT 'summary', substr(meeting_id, 1, 8), status,
-       coalesce(to_char(coalesce(started_at, requested_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI'), '?')
-  FROM summary_request_outbox WHERE status IN ('pending', 'running')
-UNION ALL
-SELECT 'live-claim', substr(meeting_id, 1, 8), claim_kind,
-       to_char(claim_expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI')
-  FROM meeting_processing_claims
- WHERE claim_kind IN ('transcription', 'diarization') AND claim_expires_at > now()
-ORDER BY 1, 4;
-SQL
+  if ! QUERY="$(python3 "$(dirname "${BASH_SOURCE[0]}")/pipeline_admission.py" --inflight-query)"; then
+    fail_check "The shared in-flight query is unavailable."
+  fi
   if ! rows="$(docker compose exec -T postgres psql -U sauri -d sauri -v ON_ERROR_STOP=1 -tA -F ' ' -c "${QUERY}" 2>&1)"; then
     fail_check "${rows}"
   fi

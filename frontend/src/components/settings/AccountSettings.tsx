@@ -15,7 +15,7 @@ function accountLines(user: SessionUser | null): { primary: string; secondary: s
   return { primary, secondary };
 }
 
-/** Read-only account details from the sign-in token, plus sign-out. */
+/** Read-only account details; only password sessions can sign out. */
 export function AccountSettings({ user, onLogout }: AccountSettingsProps) {
   const { t } = useT();
   const { primary, secondary } = accountLines(user);
@@ -29,15 +29,15 @@ export function AccountSettings({ user, onLogout }: AccountSettingsProps) {
             {secondary && <span className="settings-account-email">{secondary}</span>}
           </div>
         </div>
-        <p className="settings-help">{t("settings:account.note")}</p>
+        <p className="settings-help">{t(user?.mode === "local" ? "settings:account.localNote" : "settings:account.note")}</p>
       </Card>
-      <Card className="settings-card" aria-labelledby="settings-session-title">
+      {user?.mode !== "local" && <Card className="settings-card" aria-labelledby="settings-session-title">
         <h3 id="settings-session-title" className="settings-card-title">{t("settings:account.session")}</h3>
         <p className="settings-help">{t("settings:account.sessionHelp")}</p>
         <div>
           <Button variant="secondary" onClick={onLogout}>{t("shell:logout")}</Button>
         </div>
-      </Card>
+      </Card>}
     </div>
   );
 }

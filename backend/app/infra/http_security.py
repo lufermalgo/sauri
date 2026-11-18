@@ -15,13 +15,18 @@ A wildcard origin is never accepted: the application refuses to start with one.
 
 from __future__ import annotations
 
+import hmac
 import os
 import re
 from typing import Any
 from urllib.parse import urlsplit
 
 from starlette.datastructures import MutableHeaders
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
+
+from app.auth.local import LOCAL_COOKIE, LocalConfigurationError, local_mode, local_token
 
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 # Id of the owner's unpacked extension build; override with EXTENSION_ORIGINS for other builds.
@@ -60,23 +65,26 @@ def _normalize_origin(raw: str, variable: str) -> str:
     return f"{parts.scheme}://{parts.netloc}"
 
 
-def extension_origins() -> list[str]:
-    """Chrome extension origins from ``EXTENSION_ORIGINS`` (bare ids are expanded)."""
-    raw = os.environ.get("EXTENSION_ORIGINS")
+def extension_origins(*, local: bool = False) -> list[str]:
+    """Read the mode-specific extension allow-list (bare ids are expanded)."""
+    variable = "SAURI_EXTENSION_ORIGINS" if local else "EXTENSION_ORIGINS"
+    raw = os.environ.get(variable)
     entries = _split(DEFAULT_EXTENSION_ORIGINS if raw is None else raw)
     origins: list[str] = []
     for entry in entries:
         if _EXTENSION_ID.match(entry):
             entry = f"chrome-extension://{entry}"
-        origin = _normalize_origin(entry, "EXTENSION_ORIGINS")
+        origin = _normalize_origin(entry, variable)
         if not origin.startswith("chrome-extension://"):
-            raise HttpSecurityConfigError("EXTENSION_ORIGINS entries must be chrome-extension:// origins or ids")
+            raise HttpSecurityConfigError(f"{variable} entries must be chrome-extension:// origins or ids")
         origins.append(origin)
     return origins
 
 
 def cors_allowed_origins() -> list[str]:
     """The exact origins the browser may call the API from, without duplicates."""
+    if local_mode():
+        return extension_origins(local=True)
     raw = os.environ.get("CORS_ALLOWED_ORIGINS")
     entries = _split(DEFAULT_CORS_ORIGINS if raw is None else raw)
     web = [_normalize_origin(entry, "CORS_ALLOWED_ORIGINS") for entry in entries]
@@ -84,7 +92,7 @@ def cors_allowed_origins() -> list[str]:
 
 
 def cors_options() -> dict[str, Any]:
-    """Keyword arguments for ``CORSMiddleware``; credentials stay off (no cookies are used)."""
+    """Keyword arguments for ``CORSMiddleware``; cross-origin credentials stay off."""
     return {
         "allow_origins": cors_allowed_origins(),
         "allow_methods": CORS_ALLOWED_METHODS,
@@ -156,3 +164,45 @@ class SecurityHeadersMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_headers)
+
+
+class LocalGuardMiddleware:
+    """Reject untrusted hosts and browser origins before any data route runs."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+        self.origins = extension_origins(local=True)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("path") == "/health":
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope)
+        hosts = request.headers.getlist("host")
+        if len(hosts) != 1 or hosts[0] not in {"localhost:8000", "127.0.0.1:8000"}:
+            await JSONResponse({"detail": "local_host_required"}, status_code=421)(scope, receive, send)
+            return
+        path = request.url.path
+        if path.startswith("/api/v1/") and not path.startswith("/api/v1/media/"):
+            origin_allowed = request.headers.get("origin") in self.origins
+            # A preflight carries no credential and cannot execute the route. CORS validates its headers.
+            preflight = request.method == "OPTIONS" and "access-control-request-method" in request.headers
+            pairing = path == "/api/v1/local/pair"
+            same_origin = request.headers.get("sec-fetch-site") == "same-origin"
+            bootstrap = path == "/api/v1/local/status" and request.method == "GET" and same_origin
+            allowed = origin_allowed if preflight or pairing else bootstrap
+            if not (preflight or pairing or bootstrap):
+                try:
+                    token = local_token().encode("ascii")
+                except LocalConfigurationError:
+                    await JSONResponse({"detail": "local_token_unavailable"}, status_code=500)(scope, receive, send)
+                    return
+                cookie = request.cookies.get(LOCAL_COOKIE, "").encode("utf-8")
+                scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+                allowed = (same_origin and hmac.compare_digest(cookie, token)) or (
+                    origin_allowed and scheme.lower() == "bearer" and hmac.compare_digest(bearer.encode("utf-8"), token)
+                )
+            if not allowed:
+                await JSONResponse({"detail": "local_origin_required"}, status_code=403)(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
