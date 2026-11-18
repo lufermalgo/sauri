@@ -56,6 +56,7 @@ from sauri_engine_common.external.asr_common import AdapterCancelled
 from sauri_engine_common.external.audio_prep import vad_cli_runner
 from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
+from sauri_engine_common.local_media import InvalidMediaPathError, local_media_path
 from sauri_engine_common.local_model_use import (
     LocalModelError,
     LocalSelection,
@@ -118,16 +119,17 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         verify_assets(ASR_MODEL_PATH, Path(WHISPER_CLI))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RuntimeError("Native ASR asset verification failed") from exc
-    access_key, secret_key = object_store_credentials()
-    s3_client = boto3.client(
-        "s3",
-        endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        config=Config(signature_version="s3v4", connect_timeout=min(5, server_budget() / 100),
-                      read_timeout=min(5, server_budget() / 100),
-                      retries={"max_attempts": 0}),
-    )
+    if not os.environ.get("SAURI_RECORDINGS_DIR"):
+        access_key, secret_key = object_store_credentials()
+        s3_client = boto3.client(
+            "s3",
+            endpoint_url=MINIO_ENDPOINT,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(signature_version="s3v4", connect_timeout=min(5, server_budget() / 100),
+                          read_timeout=min(5, server_budget() / 100),
+                          retries={"max_attempts": 0}),
+        )
     logger.info("Native ASR initialized (model=%s, parakeet_ready=%s)", MODEL_ID, _parakeet_default() is not None)
     threading.Thread(target=_warm_parakeet, name="parakeet-warm", daemon=True).start()
     yield
@@ -227,6 +229,11 @@ def _require_engine_token(
 
 
 def _validate_audio_ref(audio_ref: str) -> None:
+    if root := os.environ.get("SAURI_RECORDINGS_DIR"):
+        try:
+            local_media_path(Path(root), audio_ref)
+        except InvalidMediaPathError as exc:
+            raise HTTPException(status_code=400, detail="invalid_media_path") from exc
     parts = audio_ref.split("/")
     if (
         not MINIO_AUDIO_PREFIX.endswith("/")
@@ -262,6 +269,9 @@ def _require_recording_capability(audio_ref: str, capability: str | None) -> Non
 
 
 def _download_audio(audio_ref: str, deadline: float) -> str:
+    if root := os.environ.get("SAURI_RECORDINGS_DIR"):
+        remaining(deadline)
+        return str(local_media_path(Path(root), audio_ref))
     if s3_client is None:
         raise RuntimeError("Object store is not initialized")
     suffix = Path(audio_ref).suffix
@@ -418,7 +428,7 @@ async def transcribe(
         selection = await run_in_threadpool(_select_engine, route)
     except LocalModelError as error:
         raise HTTPException(status_code=error.status, detail=error.code) from None
-    if s3_client is None:
+    if s3_client is None and not os.environ.get("SAURI_RECORDINGS_DIR"):
         raise HTTPException(status_code=503, detail="Engine not initialized")
     budget = server_budget()
     deadline = time.monotonic() + budget
@@ -460,7 +470,7 @@ async def _transcribe_external(
     request: TranscribeRequest, http_request: Request, route: Route
 ) -> TranscribeResponse | JSONResponse:
     """Run an external route; the answer has the same v2 body as a local run (``device`` is ``remote``)."""
-    if s3_client is None:
+    if s3_client is None and not os.environ.get("SAURI_RECORDINGS_DIR"):
         raise HTTPException(status_code=503, detail="Engine not initialized")
     deadline = time.monotonic() + server_budget()
     cancel = asyncio.Event()
@@ -548,7 +558,7 @@ async def _run_external(
                 },
             )
     finally:
-        if audio_path is not None:
+        if audio_path is not None and not os.environ.get("SAURI_RECORDINGS_DIR"):
             with suppress(OSError):
                 os.unlink(audio_path)
 
@@ -651,7 +661,7 @@ def _transcribe_audio(
         logger.error("Transcription failed (%s)", type(exc).__name__)
         raise HTTPException(status_code=500, detail="engine_failed") from exc
     finally:
-        if audio_path is not None:
+        if audio_path is not None and not os.environ.get("SAURI_RECORDINGS_DIR"):
             with suppress(OSError):
                 os.unlink(audio_path)
 

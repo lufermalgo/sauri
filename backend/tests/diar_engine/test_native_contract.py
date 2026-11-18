@@ -645,3 +645,84 @@ async def test_health_responds_during_slow_diarization(
             release.set()
             result = await pending
         assert result.status_code == 200
+
+
+@pytest.fixture
+def local_media(monkeypatch, tmp_path):
+    from contextlib import nullcontext
+
+    root = tmp_path / "recordings"
+    source = root / "recordings/m/r/audio"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"original-recording")
+    token_path, key_path = tmp_path / "token", tmp_path / "key"
+    token_path.write_text("test-token")
+    key_path.write_bytes(b"synthetic-secret")
+    monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token_path)
+    monkeypatch.setattr(native, "RECORDING_CAPABILITY_KEY_PATH", key_path)
+    monkeypatch.setattr(native, "s3_client", None)
+    monkeypatch.setattr(native, "KeepAwake", nullcontext)
+    monkeypatch.setattr(native, "diarization_pipeline", SimpleNamespace(diarize=lambda **kwargs: fake_result()))
+    monkeypatch.setenv("SAURI_RECORDINGS_DIR", str(root))
+    monkeypatch.setattr(native.tempfile, "tempdir", str(tmp_path))
+    return root, source
+
+
+@pytest.mark.parametrize("failure", [False, True])
+async def test_local_media_is_not_downloaded_or_deleted(monkeypatch, tmp_path, local_media, failure):
+    root, source = local_media
+    seen = []
+
+    def normalize(path, destination):
+        assert path == source
+        assert path.read_bytes() == b"original-recording"
+        assert not destination.is_relative_to(root)
+        seen.append(destination)
+        if failure:
+            raise native.NormalizeError("synthetic failure")
+        destination.write_bytes(b"normalized")
+        return SimpleNamespace(audio_ms=2000, seconds=0.01)
+
+    monkeypatch.setattr(native, "normalize_to_wav", normalize)
+    before = set(tmp_path.rglob("*"))
+    reference = "recordings/m/r/audio"
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/diarize", json={"audio_ref": reference}, headers={
+            "Authorization": "Bearer test-token", "X-Sauri-Recording-Capability": capability(
+                reference, b"synthetic-secret", int(time.time()) + 60),
+        })
+    assert response.status_code == (422 if failure else 200), response.text
+    assert seen and all(not path.exists() for path in seen)
+    assert source.read_bytes() == b"original-recording"
+    assert set(tmp_path.rglob("*")) == before
+
+
+@pytest.mark.parametrize("reference", ["../outside", "/outside", "recordings/../outside", "recordings/a\0",
+                                       "recordings/escape/audio"])
+async def test_local_media_rejects_escapes_before_open(monkeypatch, tmp_path, local_media, reference):
+    from unittest.mock import Mock
+
+    root, _ = local_media
+    (root / "recordings/escape").symlink_to(tmp_path, target_is_directory=True)
+    opened = Mock(side_effect=AssertionError("must not read media"))
+    monkeypatch.setattr(native, "_download_audio", opened)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/diarize", json={"audio_ref": reference}, headers={
+            "Authorization": "Bearer test-token", "X-Sauri-Recording-Capability": capability(
+                reference, b"synthetic-secret", int(time.time()) + 60),
+        })
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid_media_path"
+    opened.assert_not_called()
+
+
+async def test_local_startup_does_not_create_s3(monkeypatch, local_media):
+    from unittest.mock import Mock
+
+    vad = SimpleNamespace(vad_processor_pyannote_coreml=SimpleNamespace(lib=Mock(), processor=None))
+    monkeypatch.setitem(sys.modules, "senko", SimpleNamespace(Diarizer=lambda **kwargs: vad))
+    client = Mock(side_effect=AssertionError("must not initialize S3"))
+    monkeypatch.setattr(native.boto3, "client", client)
+    async with native.lifespan(native.app):
+        pass
+    client.assert_not_called()

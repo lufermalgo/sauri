@@ -384,3 +384,57 @@ def test_sweep_interval_reads_the_environment_with_a_safe_default(monkeypatch: p
     for raw, expected in (("5", 5), ("0", 30), ("-3", 30), ("soon", 30)):
         monkeypatch.setenv("THUMBNAIL_SWEEP_INTERVAL_SECONDS", raw)
         assert service.sweep_interval_seconds() == expected
+
+
+@pytest.mark.parametrize("presence", ["muxed", "absent"])
+async def test_local_sources_bypass_signed_urls(session_factory, monkeypatch, tmp_path, presence):
+    from pathlib import Path
+    from unittest.mock import AsyncMock
+
+    from app.infra.object_store_fs import FilesystemObjectStore
+
+    monkeypatch.setenv("SAURI_RECORDINGS_DIR", str(tmp_path))
+    meeting_id, recording_id = await add_recording(
+        session_factory, presence=presence, recorded_at_source=None,
+    )
+    store = FilesystemObjectStore(tmp_path)
+    reference = f"recordings/{meeting_id}/a/audio"
+    await store.save(reference, b"synthetic-media")
+    sign = AsyncMock(side_effect=AssertionError("local media must not use a URL"))
+    monkeypatch.setattr(store, "temporary_read_url", sign)
+    probes, frames = [], []
+
+    async def probe(path):
+        assert Path(path) == store.local_path(reference)
+        assert Path(path).read_bytes() == b"synthetic-media"
+        probes.append(path)
+        return MediaProbe(10.0, presence == "muxed")
+
+    async def frame(path, *args):
+        frames.append(path)
+        return JPEG
+
+    monkeypatch.setattr(service, "probe_media", probe)
+    monkeypatch.setattr(service, "extract_best_frame", frame)
+    state = await generate_thumbnail(session_factory, store, recording_id)
+    assert state == ("ready" if presence == "muxed" else "audio_only")
+    assert probes == [str(store.local_path(reference))]
+    if presence == "muxed":
+        assert frames == probes
+        assert await store.get(thumbnail_key(meeting_id, recording_id)) == JPEG
+    sign.assert_not_called()
+    assert await store.get(reference) == b"synthetic-media"
+
+
+async def test_local_thumbnail_rejects_symlink_escape_before_tools(session_factory, monkeypatch, tmp_path):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setenv("SAURI_RECORDINGS_DIR", str(tmp_path / "root"))
+    (tmp_path / "root").mkdir()
+    (tmp_path / "root/recordings").symlink_to(tmp_path, target_is_directory=True)
+    _, recording_id = await add_recording(session_factory)
+    probe = AsyncMock(side_effect=AssertionError("must not open outside media"))
+    monkeypatch.setattr(service, "probe_media", probe)
+    with pytest.raises(ValueError, match="invalid_media_path"):
+        await generate_thumbnail(session_factory, MemoryStore(), recording_id)
+    probe.assert_not_called()
