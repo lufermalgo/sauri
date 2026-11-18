@@ -30,6 +30,7 @@ from sauri_engine_common.credentials import object_store_credentials
 from sauri_engine_common.external.asr_common import AdapterCancelled
 from sauri_engine_common.external.errors import ProviderError
 from sauri_engine_common.keep_awake import KeepAwake, KeepAwakeError
+from sauri_engine_common.local_media import InvalidMediaPathError, local_media_path
 from sauri_engine_common.route import ROUTE_HEADER, Route, RouteError
 from sauri_engine_common.secrets import SecretStore
 
@@ -76,14 +77,15 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         diarization_pipeline = pipeline
     except Exception as exc:
         raise RuntimeError("Unable to initialize native diarization pipeline") from exc
-    access_key, secret_key = object_store_credentials()
-    s3_client = boto3.client(
-        "s3",
-        endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        config=Config(signature_version="s3v4"),
-    )
+    if not os.environ.get("SAURI_RECORDINGS_DIR"):
+        access_key, secret_key = object_store_credentials()
+        s3_client = boto3.client(
+            "s3",
+            endpoint_url=MINIO_ENDPOINT,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
+            config=Config(signature_version="s3v4"),
+        )
     logger.info("Native diarization initialized (model=%s, device=%s)", MODEL_ID, MODEL_DEVICE)
     yield
     diarization_pipeline = None
@@ -134,6 +136,11 @@ def _require_engine_token(
 
 
 def _validate_audio_ref(audio_ref: str) -> None:
+    if root := os.environ.get("SAURI_RECORDINGS_DIR"):
+        try:
+            local_media_path(Path(root), audio_ref)
+        except InvalidMediaPathError as exc:
+            raise HTTPException(status_code=400, detail="invalid_media_path") from exc
     parts = audio_ref.split("/")
     if (
         not MINIO_AUDIO_PREFIX.endswith("/")
@@ -169,6 +176,8 @@ def _require_recording_capability(audio_ref: str, capability: str | None) -> Non
 
 
 def _download_audio(audio_ref: str) -> str:
+    if root := os.environ.get("SAURI_RECORDINGS_DIR"):
+        return str(local_media_path(Path(root), audio_ref))
     if s3_client is None:
         raise RuntimeError("Object store is not initialized")
     with tempfile.NamedTemporaryFile(delete=False, suffix=Path(audio_ref).suffix) as temp:
@@ -245,7 +254,7 @@ async def _diarize_external(
     request: DiarizeRequest, http_request: Request, route: Route
 ) -> DiarizeResponse | JSONResponse:
     """Run an external route; the answer has the same v2 body as a local run (``device`` is ``remote``)."""
-    if s3_client is None:
+    if s3_client is None and not os.environ.get("SAURI_RECORDINGS_DIR"):
         raise HTTPException(status_code=503, detail="Engine not initialized")
     cancel = asyncio.Event()
     watcher = asyncio.create_task(diar_external.watch_disconnect(http_request.is_disconnected, cancel))
@@ -329,7 +338,7 @@ async def _run_external(request: DiarizeRequest, route: Route, cancel: asyncio.E
                 },
             )
     finally:
-        if audio_path is not None:
+        if audio_path is not None and not os.environ.get("SAURI_RECORDINGS_DIR"):
             with suppress(OSError):
                 os.unlink(audio_path)
 
@@ -355,7 +364,11 @@ def _diarize_audio(audio_ref: str) -> DiarizeResponse:
             except Exception as exc:
                 raise HTTPException(status_code=500, detail="Audio download failed") from exc
             download_ms = round((time.monotonic() - started) * 1000)
-            wav_path = Path(audio_path + ".wav")
+            if os.environ.get("SAURI_RECORDINGS_DIR"):
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as normalized:
+                    wav_path = Path(normalized.name)
+            else:
+                wav_path = Path(audio_path + ".wav")
             try:
                 report = normalize_to_wav(Path(audio_path), wav_path)
             except NormalizeError as exc:
@@ -381,7 +394,8 @@ def _diarize_audio(audio_ref: str) -> DiarizeResponse:
     except KeepAwakeError as exc:
         raise HTTPException(status_code=503, detail="keep_awake_failed") from exc
     finally:
-        for path in (audio_path, wav_path):
+        temporary_audio = None if os.environ.get("SAURI_RECORDINGS_DIR") else audio_path
+        for path in (temporary_audio, wav_path):
             if path is not None:
                 with suppress(OSError):
                     os.unlink(path)

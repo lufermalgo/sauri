@@ -13,6 +13,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from app.meetings.recorded_at import parse_timestamp
@@ -37,7 +38,6 @@ ALLOWED_PROTOCOLS = "http,https,tcp,tls,crypto"
 ALLOWED_FORMATS = (
     "matroska,webm,mov,mp4,m4a,3gp,3g2,mj2,avi,asf,flv,mpegts,mpeg,ogg,wav,mp3,aac,flac,aiff"
 )
-_SAFE_INPUT_OPTIONS = ["-protocol_whitelist", ALLOWED_PROTOCOLS, "-format_whitelist", ALLOWED_FORMATS]
 
 _URL = re.compile(r"\w+://\S+")
 _JPEG_MAGIC = b"\xff\xd8\xff"
@@ -139,9 +139,15 @@ def parse_probe(output: bytes) -> MediaProbe:
     return MediaProbe(duration_seconds=duration, has_video=has_video, creation_time=read_creation_time(document))
 
 
+def _input_options(source_url: str) -> list[str]:
+    # Local paths are confined by the service; never allow network protocols in local mode.
+    protocols = "file" if Path(source_url).is_absolute() else ALLOWED_PROTOCOLS
+    return ["-protocol_whitelist", protocols, "-format_whitelist", ALLOWED_FORMATS]
+
+
 def probe_command(source_url: str) -> list[str]:
     return [
-        FFPROBE, "-v", "error", *_SAFE_INPUT_OPTIONS, "-print_format", "json",
+        FFPROBE, "-v", "error", *_input_options(source_url), "-print_format", "json",
         "-show_entries",
         "format=duration:format_tags=" + ",".join(CREATION_TAGS)
         + ":stream=codec_type:stream_disposition=attached_pic",
@@ -152,7 +158,7 @@ def probe_command(source_url: str) -> list[str]:
 def frame_command(source_url: str, seconds: float) -> list[str]:
     """One scaled JPEG frame on stdout. `-ss` before `-i` seeks in the container, not by decoding."""
     return [
-        FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error", *_SAFE_INPUT_OPTIONS,
+        FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error", *_input_options(source_url),
         "-ss", f"{seconds:.3f}", "-i", source_url,
         "-map", "0:v:0", "-frames:v", "1", "-an", "-sn", "-dn",
         "-vf", f"scale={THUMBNAIL_WIDTH}:-2", "-q:v", str(JPEG_QUALITY),
@@ -160,9 +166,12 @@ def frame_command(source_url: str, seconds: float) -> list[str]:
     ]
 
 
-def _redact(text: bytes) -> str:
+def _redact(text: bytes, source: str = "") -> str:
     """First stderr line with URLs removed (signed URLs are credentials)."""
-    first = text.decode("utf-8", errors="replace").strip().splitlines()[:1]
+    decoded = text.decode("utf-8", errors="replace")
+    if Path(source).is_absolute():
+        decoded = decoded.replace(source, "<media>")
+    first = decoded.strip().splitlines()[:1]
     return _URL.sub("<url>", first[0])[:200] if first else ""
 
 
@@ -188,7 +197,7 @@ async def probe_media(source_url: str) -> MediaProbe:
     """Duration and video presence of the object behind `source_url`."""
     stdout, stderr, code = await _run(probe_command(source_url), PROBE_TIMEOUT_SECONDS)
     if code != 0:
-        raise MediaToolError(f"ffprobe exited with {code}: {_redact(stderr)}")
+        raise MediaToolError(f"ffprobe exited with {code}: {_redact(stderr, source_url)}")
     return parse_probe(stdout)
 
 
@@ -196,7 +205,7 @@ async def extract_frame(source_url: str, seconds: float) -> bytes:
     """Cut one JPEG frame at `seconds`; raises MediaToolError when there is no frame to cut."""
     stdout, stderr, code = await _run(frame_command(source_url, seconds), EXTRACT_TIMEOUT_SECONDS)
     if code != 0:
-        raise MediaToolError(f"ffmpeg exited with {code}: {_redact(stderr)}")
+        raise MediaToolError(f"ffmpeg exited with {code}: {_redact(stderr, source_url)}")
     if not stdout.startswith(_JPEG_MAGIC) or len(stdout) > MAX_FRAME_BYTES:
         raise MediaToolError("ffmpeg produced no valid frame")
     return stdout

@@ -27,7 +27,8 @@ INSERT_MEETING = (
 
 def test_revision_is_the_single_head_and_follows_the_refresh_tokens() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == [REVISION]
+    assert script.get_heads() == ["030_job_messages"]
+    assert script.get_revision("030_job_messages").down_revision == REVISION
     assert script.get_revision(REVISION).down_revision == PARENT
     assert len(REVISION) <= 32  # alembic_version.version_num is VARCHAR(32)
 

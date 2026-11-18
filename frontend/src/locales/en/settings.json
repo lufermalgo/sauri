@@ -51,7 +51,8 @@
     "fallbackName": "Account",
     "note": "Your name and email come from your login and can't be changed here.",
     "session": "Session",
-    "sessionHelp": "Logs out of this browser."
+    "sessionHelp": "Logs out of this browser.",
+    "localNote": "This account belongs to your local installation. No sign-in or sign-out is needed."
   },
   "appearance": {
     "themeTitle": "Theme",

@@ -32,24 +32,25 @@ export function ProfileCard({ user, route, settingsPane = null, onNavigate, onLo
   const settingsActive = route.name === "settings";
   const gearTip = useTooltip(settingsPane ? (settingsPane.hidden ? t("shell:settingsPane.show") : t("shell:settingsPane.hide")) : undefined);
 
+  const profile = (
+    <>
+      <Avatar initials={user ? userInitials(user) : <Icon icon={User} />} color="var(--ds-accent-line)" />
+      <span className="shell-collapsible shell-profile-text">
+        <span className="shell-profile-name">{primary}</span>
+        {secondary && <span className="shell-profile-email">{secondary}</span>}
+      </span>
+    </>
+  );
+
   return (
     <div className="shell-profile">
-      <Menu
-        className="shell-profile-menu"
-        triggerClassName="shell-profile-trigger"
-        label={menuLabel}
-        trigger={
-          <>
-            <Avatar initials={user ? userInitials(user) : <Icon icon={User} />} color="var(--ds-accent-line)" />
-            <span className="shell-collapsible shell-profile-text">
-              <span className="shell-profile-name">{primary}</span>
-              {secondary && <span className="shell-profile-email">{secondary}</span>}
-            </span>
-          </>
-        }
-      >
-        <MenuItem onSelect={onLogout}>{t("shell:logout")}</MenuItem>
-      </Menu>
+      {user?.mode === "local" ? (
+        <div className="shell-profile-menu"><div className="shell-profile-trigger">{profile}</div></div>
+      ) : (
+        <Menu className="shell-profile-menu" triggerClassName="shell-profile-trigger" label={menuLabel} trigger={profile}>
+          <MenuItem onSelect={onLogout}>{t("shell:logout")}</MenuItem>
+        </Menu>
+      )}
       {settingsPane ? (
         <span className="shell-gear-wrap">
           <button

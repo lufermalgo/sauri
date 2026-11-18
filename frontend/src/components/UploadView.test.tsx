@@ -20,9 +20,9 @@ vi.mock("./TranscriptView", () => ({
 
 beforeEach(() => {
   vi.mocked(api.listMeetings).mockResolvedValue([]);
-  vi.stubGlobal("URL", {
-    createObjectURL: vi.fn().mockReturnValue("blob:synthetic-recording"),
-    revokeObjectURL: vi.fn(),
+  vi.stubGlobal("URL", class extends URL {
+    static createObjectURL = vi.fn().mockReturnValue("blob:synthetic-recording");
+    static revokeObjectURL = vi.fn();
   });
 });
 
