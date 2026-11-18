@@ -1,6 +1,6 @@
 # Índice de especificaciones
 
-Cada carpeta de `.spectra/specs/<slug>/` contiene la especificación de una función o corrección (requisitos o bugfix, diseño y tareas). Se conservan como historia del proyecto. **Solo `core-speech-pipeline` y `model-engines` están vigentes**; el resto no autoriza trabajo nuevo y, si se retoma, debe hacerse como una unidad nueva con aprobación del dueño.
+Cada carpeta de `.spectra/specs/<slug>/` contiene la especificación de una función o corrección (requisitos o bugfix, diseño y tareas). Se conservan como historia del proyecto. **Solo `core-speech-pipeline`, `model-engines` y `mac-desktop-app` están vigentes**; el resto no autoriza trabajo nuevo y, si se retoma, debe hacerse como una unidad nueva con aprobación del dueño.
 
 Fases: requisitos (o `bugfix.md` en correcciones), diseño y tareas, según `.config.spectra` de cada spec. Documentación completa no prueba implementación ni aceptación de producto.
 
@@ -16,6 +16,7 @@ Fases: requisitos (o `bugfix.md` en correcciones), diseño y tareas, según `.co
 | [`fix-stale-meeting-recovery`](specs/fix-stale-meeting-recovery/) | Bugfix | 3/3 completas | Completada (histórica) |
 | [`fix-transcript-word-fragments`](specs/fix-transcript-word-fragments/) | Bugfix | 3/3 completas | Completada (histórica) |
 | [`local-platform-deployment`](specs/local-platform-deployment/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
+| [`mac-desktop-app`](specs/mac-desktop-app/) | Feature | 3/3 completas (2026-11-18) | Vigente: decisiones del dueño del 2026-11-18 (#1199); implementación por unidades U1–U12; Lugar_de_Descarga (D13) pendiente de confirmación del dueño; reemplaza a `local-platform-deployment` al cerrar U12 |
 | [`meeting-review-playback`](specs/meeting-review-playback/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`meeting-summaries-templates`](specs/meeting-summaries-templates/) | Feature | 3/3 completas | Histórica (pendiente de producto, retomar con nueva unidad) |
 | [`model-engines`](specs/model-engines/) | Feature | 3/3 completas (2026-11-16) | Aprobada por el dueño el 2026-11-16; implementación por unidades (#1050): U1–U9 integradas en `main`, U10 (aceptación con proveedores reales y arquitectura) pendiente; sin aceptación del dueño |
