@@ -66,13 +66,12 @@ async def test_preflight_checks_host_and_extension_origin(local_app: FastAPI) ->
 
 
 async def test_host_guard_and_explicit_exclusions(local_app: FastAPI) -> None:
-    @local_app.get("/api/v1/media/{token}")
-    def media(token: str) -> dict[str, str]:
-        return {"token": token}
-
     async with AsyncClient(transport=ASGITransport(app=local_app), base_url="http://localhost:8000") as client:
         assert (await client.get("/health", headers={"Host": "monitor.test"})).status_code == 200
-        assert (await client.get("/api/v1/media/signed")).status_code == 200
+        # The media route authorizes by its own signed token: the guard must not answer for it.
+        media = await client.get("/api/v1/media/signed")
+        assert media.status_code != 421
+        assert media.json().get("detail") != "local_origin_required"
         for path in ("/", "/api/v1/media/signed", "/api/v1/local/pair"):
             assert (await client.get(path, headers={"Host": "evil.test:8000"})).status_code == 421
         for host in ("localhost", "localhost:8001", "localhost:8000.evil.test", "localhost:8000@evil.test"):

@@ -760,3 +760,70 @@ async def test_failing_cli_logs_safe_tail_and_preserves_http_contract(
     assert "private" not in caplog.text and "/Users/" not in caplog.text
     assert "private" not in response.text
     assert set(tmp_path.iterdir()) == before
+
+
+@pytest.mark.parametrize("failure", [False, True])
+async def test_local_media_is_not_downloaded_or_deleted(monkeypatch, tmp_path, configured, failure):
+    source = tmp_path / "synthetic/recording.wav"
+    source.parent.mkdir()
+    source.write_bytes(b"original-recording")
+    monkeypatch.setenv("SAURI_RECORDINGS_DIR", str(tmp_path))
+    monkeypatch.setattr(native, "s3_client", None)
+    seen = []
+
+    def normalize(path, destination, **kwargs):
+        assert path == source
+        assert path.read_bytes() == b"original-recording"
+        seen.append(path)
+        if failure:
+            raise native.NormalizeError("synthetic failure")
+        destination.write_bytes(b"normalized")
+        return SimpleNamespace(audio_ms=2000, seconds=0.01)
+
+    def run(command, **kwargs):
+        Path(command[-1] + ".json").write_text(json.dumps(document()))
+
+    monkeypatch.setattr(native, "normalize_to_wav", normalize)
+    monkeypatch.setattr(native, "run_group", run)
+    before = set(tmp_path.rglob("*"))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/transcribe", json={"audio_ref": "synthetic/recording.wav", "language": "auto"},
+                                     headers=configured)
+    assert response.status_code == (422 if failure else 200), response.text
+    assert seen == [source]
+    assert source.read_bytes() == b"original-recording"
+    assert set(tmp_path.rglob("*")) == before
+
+
+@pytest.mark.parametrize("reference", ["../outside", "/outside", "synthetic/../outside", "synthetic/a\0",
+                                       "synthetic/escape/audio"])
+async def test_local_media_rejects_escapes_before_open(monkeypatch, tmp_path, configured, reference):
+    from unittest.mock import Mock
+
+    root = tmp_path / "recordings"
+    root.mkdir()
+    (root / "synthetic").mkdir()
+    (root / "synthetic/escape").symlink_to(tmp_path, target_is_directory=True)
+    monkeypatch.setenv("SAURI_RECORDINGS_DIR", str(root))
+    opened = Mock(side_effect=AssertionError("must not read media"))
+    monkeypatch.setattr(native, "_download_audio", opened)
+    headers = {**configured, "X-Sauri-Recording-Capability": capability(
+        reference, b"synthetic-secret", int(time.time()) + 60)}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=native.app), base_url="http://test") as client:
+        response = await client.post("/transcribe", json={"audio_ref": reference}, headers=headers)
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid_media_path"
+    opened.assert_not_called()
+
+
+async def test_local_startup_does_not_create_s3(monkeypatch, tmp_path):
+    from unittest.mock import Mock
+
+    monkeypatch.setenv("SAURI_RECORDINGS_DIR", str(tmp_path))
+    monkeypatch.setattr(native, "verify_assets", lambda *a: None)
+    monkeypatch.setattr(native, "_parakeet_default", lambda: None)
+    client = Mock(side_effect=AssertionError("must not initialize S3"))
+    monkeypatch.setattr(native.boto3, "client", client)
+    async with native.lifespan(native.app):
+        pass
+    client.assert_not_called()

@@ -94,12 +94,24 @@ def create_object_store() -> ObjectStore:
     """Factory that creates the configured ObjectStore implementation.
 
     Reads the environment variables:
+    - OBJECT_STORE_KIND: s3 (default) or filesystem.
+    - SAURI_RECORDINGS_DIR: root for the filesystem adapter.
     - OBJECT_STORE_ENDPOINT: internal S3/MinIO endpoint URL used by backend I/O.
     - OBJECT_STORE_PUBLIC_ENDPOINT: optional browser-reachable endpoint used only in signatures.
     - OBJECT_STORE_BUCKET: bucket name.
     - OBJECT_STORE_ACCESS_KEY_FILE / OBJECT_STORE_SECRET_KEY_FILE: private key files
       (fallback: MINIO_ROOT_USER / MINIO_ROOT_PASSWORD values, used by tests and CI).
     """
+    kind = os.environ.get("OBJECT_STORE_KIND", "s3")
+    if kind == "filesystem":
+        from pathlib import Path
+
+        from app.infra.object_store_fs import FilesystemObjectStore
+
+        return FilesystemObjectStore(Path(os.environ["SAURI_RECORDINGS_DIR"]))
+    if kind != "s3":
+        raise ValueError("Unsupported OBJECT_STORE_KIND")
+
     from app.infra.object_store_s3 import S3ObjectStore
     from app.infra.secrets import object_store_credentials
 

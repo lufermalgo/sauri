@@ -1,9 +1,10 @@
-"""Wait for the configured S3-compatible service and ensure its bucket exists."""
+"""Ensure the local recordings root or the configured S3-compatible bucket exists."""
 
 from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 
 import boto3
 from botocore.config import Config
@@ -13,6 +14,12 @@ from app.infra.secrets import object_store_credentials
 
 
 def ensure_bucket() -> None:
+    kind = os.environ.get("OBJECT_STORE_KIND", "s3")
+    if kind == "filesystem":
+        Path(os.environ["SAURI_RECORDINGS_DIR"]).expanduser().mkdir(parents=True, exist_ok=True)
+        return
+    if kind != "s3":
+        raise ValueError("Unsupported OBJECT_STORE_KIND")
     endpoint = os.environ["OBJECT_STORE_ENDPOINT"]
     bucket = os.environ["OBJECT_STORE_BUCKET"]
     access_key, secret_key = object_store_credentials()
