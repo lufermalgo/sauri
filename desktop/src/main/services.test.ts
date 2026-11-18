@@ -101,7 +101,9 @@ describe("service environment", () => {
       expect(env.DATABASE_URL).toBe(databaseUrl(ctx));
       expect(env.DATABASE_URL).toContain(`?host=${encodeURIComponent(ctx.paths.runDir)}`);
       // Exactly the documented allow-list, nothing wider.
-      expect(env.SAURI_EXTENSION_ORIGINS).toBe("chrome-extension://ilnkkojmkfnbdilogldabpodoobfigce");
+      expect(env.SAURI_EXTENSION_ORIGINS).toBe(
+        "chrome-extension://ilnkkojmkfnbdilogldabpodoobfigce,chrome-extension://inebachhkahcdepkbdkhchnpahladpnk",
+      );
       expect(env.MANAGEMENT_TOKEN_FILE).toBe(secretFile(ctx.paths, "management_token"));
       expect(coreEnv(ctx, { api: false }).MANAGEMENT_TOKEN_FILE).toBeUndefined();
       expect(Object.values(env).join("\n")).not.toContain("should-not-leak");

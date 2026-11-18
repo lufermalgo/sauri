@@ -21,6 +21,7 @@ export const DB_NAME = "sauri";
  */
 export const ALLOWED_EXTENSION_IDS = [
   "ilnkkojmkfnbdilogldabpodoobfigce", // Owner's unpacked build.
+  "inebachhkahcdepkbdkhchnpahladpnk", // Chrome Web Store item (owner's developer account).
 ] as const;
 export const EXTENSION_ORIGINS = ALLOWED_EXTENSION_IDS.map(id => `chrome-extension://${id}`);
 /** On "Quit anyway" a running stage is handed back quickly and repeats on the next start. */
