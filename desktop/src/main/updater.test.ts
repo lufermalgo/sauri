@@ -121,7 +121,8 @@ describe("versions and the feed", () => {
 
 describe("where the updater may go", () => {
   it("stays off without a download place and reads the feed from GitHub by default", () => {
-    expect(releaseSource({})).toBeNull();
+    expect(releaseSource({ SAURI_RELEASES_REPO: "" })).toBeNull();
+    expect(releaseSource({})?.repo).toBe("lufermalgo/sauri-app");
     expect(releasesRepo({ SAURI_RELEASES_REPO: "not a repo" })).toBe("");
     expect(releaseSource({ SAURI_RELEASES_REPO: REPO })).toEqual({
       repo: REPO,
