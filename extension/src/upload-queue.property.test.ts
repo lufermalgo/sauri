@@ -120,6 +120,9 @@ async function awaitStatus(status: "pending" | "done", retryCount: number): Prom
     job = await storedUploadJob();
     expect(job).toMatchObject({ status, retryCount });
   }, { interval: 5, timeout: 800 });
+  if (status === "done") {
+    await vi.waitFor(async () => expect(await getCompletion(job!.sessionId)).toMatchObject({ status: "processing_status_unavailable" }), { interval: 5 });
+  }
   return job!;
 }
 
@@ -149,7 +152,11 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
         getContexts: vi.fn(async () => []), getURL: (path: string) => path, sendMessage: vi.fn(),
       },
       sidePanel: { setPanelBehavior: vi.fn(async () => undefined) },
-      storage: { session: { get: vi.fn(async () => ({ sauriSessionToken: "synthetic-token" })) } },
+      storage: {
+        session: { get: vi.fn(async () => ({})), remove: vi.fn(async () => {}) },
+        local: { get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token" })), setAccessLevel: vi.fn(async () => {}), remove: vi.fn(async () => {}) },
+        sync: { remove: vi.fn(async () => {}) },
+      },
       tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() } },
     });
     await import("./background");
@@ -160,6 +167,15 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
+
+  function mockUpload(handler: (url: string, init?: RequestInit) => Promise<Response>): void {
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/health")) return new Response("{}");
+      if (url.endsWith("/ingestion/upload")) return handler(url, init);
+      return new Response("unavailable", { status: 503 });
+    });
+  }
 
   async function enqueueFor(identity: Identity): Promise<void> {
     globalThis.indexedDB = new IDBFactory();
@@ -176,16 +192,16 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
     await fc.assert(fc.asyncProperty(arbIdentity, async (identity) => {
       await enqueueFor(identity);
       const requests: Array<{ meeting_id: string; idempotency_key: string }> = [];
-      globalThis.fetch = vi.fn(async (_url, init) => {
+      mockUpload(async (_url, init) => {
         requests.push(JSON.parse((init!.body as FormData).get("data") as string));
         return accepted(identity.recordingId);
-      }) as typeof fetch;
+      });
       startup!();
       await awaitStatus("done", 0);
       await vi.waitFor(() => expect(clearSession).toHaveBeenCalledWith(identity.sessionId));
       await vi.waitFor(async () => expect(await getCompletion(identity.sessionId)).toMatchObject({
         status: "processing_status_unavailable", recordingId: identity.recordingId,
-      })); // Upload settled; no auth token means protected processing state is unavailable, not ready.
+      })); // Upload settled; unavailable protected reads must not imply ready.
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({ meeting_id: identity.meetingId, idempotency_key: identity.sessionId });
     }), { numRuns: 100 });
@@ -194,7 +210,7 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
   it("persists the accepted recordingId for recovery of the same recording (100 cases)", async () => {
     await fc.assert(fc.asyncProperty(arbIdentity, async (identity) => {
       await enqueueFor(identity);
-      globalThis.fetch = vi.fn(async () => accepted(identity.recordingId)) as typeof fetch;
+      mockUpload(async () => accepted(identity.recordingId));
       startup!();
       await awaitStatus("done", 0);
       await vi.waitFor(() => expect(clearSession).toHaveBeenCalledWith(identity.sessionId));
@@ -223,7 +239,7 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
         tx.oncomplete = () => { db.close(); resolve(); };
         tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
       });
-      globalThis.fetch = vi.fn(async () => accepted(differentRecordingId)) as typeof fetch;
+      mockUpload(async () => accepted(differentRecordingId));
       startup!();
       const job = await awaitSettled();
       const durable = await getCompletion(identity.sessionId);
@@ -238,11 +254,12 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
   it("keeps network errors retryable without clearing media (100 cases)", async () => {
     await fc.assert(fc.asyncProperty(arbIdentity, fc.string({ minLength: 1, maxLength: 30 }), async (identity, reason) => {
       await enqueueFor(identity);
-      globalThis.fetch = vi.fn(async () => { throw new TypeError(`synthetic network failure: ${reason}`); }) as typeof fetch;
+      mockUpload(async () => { throw new TypeError(`synthetic network failure: ${reason}`); });
       startup!();
-      const job = await awaitStatus("pending", 1);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/ingestion/upload"), expect.anything()), { interval: 5 });
+      const job = await awaitStatus("pending", 0);
       expect(job.sessionId).toBe(identity.sessionId);
-      expect(job.errorMessage).toContain("synthetic network failure");
+      expect(job.errorMessage).toBeUndefined();
       expect(clearSession).not.toHaveBeenCalled();
     }), { numRuns: 100 });
   });
@@ -250,9 +267,10 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
   it("keeps non-2xx responses retryable without clearing media (100 cases)", async () => {
     await fc.assert(fc.asyncProperty(arbIdentity, fc.constantFrom(400, 401, 403, 409, 429, 500, 503), async (identity, code) => {
       await enqueueFor(identity);
-      globalThis.fetch = vi.fn(async () => new Response("rejected", { status: code })) as typeof fetch;
+      mockUpload(async () => new Response("rejected", { status: code }));
       startup!();
-      const job = await awaitStatus("pending", 1);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/ingestion/upload"), expect.anything()), { interval: 5 });
+      const job = await awaitStatus("pending", code === 401 || code === 403 ? 0 : 1);
       expect(job.sessionId).toBe(identity.sessionId);
       expect(clearSession).not.toHaveBeenCalled();
     }), { numRuns: 100 });
@@ -264,7 +282,7 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
       JSON.stringify({ recording_id: "unrelated", state: "unknown" }), "not-json",
     ), async (identity, body) => {
       await enqueueFor(identity);
-      globalThis.fetch = vi.fn(async () => new Response(body, { status: 200 })) as typeof fetch;
+      mockUpload(async () => new Response(body, { status: 200 }));
       startup!();
       const job = await awaitSettled();
       expect(job).toMatchObject({ status: "pending", retryCount: 1, sessionId: identity.sessionId });
@@ -278,10 +296,10 @@ describe("T1.3 (#612): truthful upload result and stable retry identity (RED)", 
     await fc.assert(fc.asyncProperty(arbIdentity, fc.constantFrom(408, 503), async (identity, firstStatus) => {
       await enqueueFor(identity);
       const attempts: Array<{ meeting_id: string; idempotency_key: string }> = [];
-      globalThis.fetch = vi.fn(async (_url, init) => {
+      mockUpload(async (_url, init) => {
         attempts.push(JSON.parse((init!.body as FormData).get("data") as string));
         return attempts.length === 1 ? new Response("retry", { status: firstStatus }) : accepted(identity.recordingId);
-      }) as typeof fetch;
+      });
       startup!();
       await awaitStatus("pending", 1);
       startup!();

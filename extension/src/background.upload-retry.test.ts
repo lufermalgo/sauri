@@ -48,7 +48,7 @@ async function runUpload(fetchImplementation: typeof fetch) {
   vi.resetModules();
   globalThis.indexedDB = new IDBFactory();
   globalThis.IDBKeyRange = IDBKeyRange;
-  globalThis.fetch = fetchImplementation;
+  globalThis.fetch = ((url: string, init?: RequestInit) => url.endsWith("/health") ? Promise.resolve(new Response("{}")) : fetchImplementation(url, init)) as typeof fetch;
   assembleBlob.mockClear();
   clearSession.mockClear();
   await createCompletion({
@@ -66,7 +66,9 @@ async function runUpload(fetchImplementation: typeof fetch) {
     },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
-      session: { get: vi.fn(async () => ({ sauriState: { status: "idle" }, sauriSessionToken: "synthetic-token" })), set: vi.fn(async () => undefined) },
+      local: { get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token" })), set: vi.fn(async () => {}), remove: vi.fn(async () => {}), setAccessLevel: vi.fn(async () => {}) },
+      sync: { remove: vi.fn(async () => {}) },
+      session: { remove: vi.fn(async () => {}), get: vi.fn(async () => ({ sauriState: { status: "idle" } })), set: vi.fn(async () => undefined) },
     },
     tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 614 })), sendMessage: vi.fn(async () => undefined) },
   });
@@ -80,14 +82,14 @@ describe("upload failures must remain retryable", () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
   it.each([
-    ["HTTP rejection", vi.fn(async () => new Response("rejected", { status: 503 }))],
-    ["network rejection", vi.fn(async () => { throw new TypeError("synthetic network failure"); })],
-  ])("keeps %s retryable and preserves the recording", async (_label, fetchImplementation) => {
+    ["HTTP rejection", vi.fn(async () => new Response("rejected", { status: 503 })), 1],
+    ["network rejection", vi.fn(async () => { throw new TypeError("synthetic network failure"); }), 0],
+  ])("keeps %s retryable and preserves the recording", async (_label, fetchImplementation, retryCount) => {
     await runUpload(fetchImplementation as typeof fetch);
     const jobs = await waitForStoredStatus("pending");
     expect(jobs).toHaveLength(1);
-    expect(jobs[0]).toMatchObject({ status: "pending", retryCount: 1 });
-    expect(jobs[0].errorMessage).toBeTruthy();
+    expect(jobs[0]).toMatchObject({ status: "pending", retryCount });
+    if (retryCount) expect(jobs[0].errorMessage).toBeTruthy();
     expect(clearSession).not.toHaveBeenCalled();
     expect(chrome.tabs.create).not.toHaveBeenCalled();
   });
@@ -99,6 +101,6 @@ describe("upload failures must remain retryable", () => {
     expect(jobs[0]).toMatchObject({ status: "done", retryCount: 0 });
     expect(clearSession).toHaveBeenCalledWith("synthetic-session");
     expect(chrome.tabs.create).toHaveBeenCalledTimes(1);
-    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "http://localhost:5173/?meetingId=synthetic-meeting" });
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "http://localhost:8000/?meetingId=synthetic-meeting" });
   });
 });

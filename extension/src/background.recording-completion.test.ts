@@ -33,8 +33,10 @@ async function harness(sessionId: string, tabId: number, legacy = false) {
     },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
-      session: {
-        get: vi.fn(async () => ({ sauriState: structuredClone(state), sauriSessionToken: "synthetic-token" })),
+      local: { get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token" })), set: vi.fn(async () => {}), remove: vi.fn(async () => {}), setAccessLevel: vi.fn(async () => {}) },
+      sync: { remove: vi.fn(async () => {}) },
+      session: { remove: vi.fn(async () => {}),
+        get: vi.fn(async () => ({ sauriState: structuredClone(state) })),
         set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = structuredClone(value.sauriState); }),
       },
     },
