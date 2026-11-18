@@ -107,5 +107,12 @@
   "uninstall.done.foldersTrashed": "Tus carpetas están en la Papelera.",
   "uninstall.done.appLeft": "Para terminar, arrastra Sauri.app a la Papelera ({path}).",
   "uninstall.done.failed": "No se pudo borrar: {paths}",
-  "uninstall.done.close": "Cerrar"
+  "uninstall.done.close": "Cerrar",
+  "relocate.done.title": "Sauri ya usa la nueva carpeta de {kind}",
+  "relocate.done.detail": "La carpeta anterior sigue intacta en {path}. ¿Quieres moverla a la Papelera?",
+  "relocate.keep": "Conservarla",
+  "relocate.trash": "Mover a la Papelera",
+  "relocate.cancel": "Cancelar",
+  "relocate.confirm.title": "¿Mover {path} a la Papelera?",
+  "relocate.confirm.detail": "Sauri ya no la usa. Podrás recuperarla desde la Papelera mientras no la vacíes."
 }

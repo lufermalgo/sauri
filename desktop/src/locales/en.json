@@ -107,5 +107,12 @@
   "uninstall.done.foldersTrashed": "Your folders are in the Trash.",
   "uninstall.done.appLeft": "To finish, drag Sauri.app to the Trash ({path}).",
   "uninstall.done.failed": "Could not delete: {paths}",
-  "uninstall.done.close": "Close"
+  "uninstall.done.close": "Close",
+  "relocate.done.title": "Sauri now uses the new {kind} folder",
+  "relocate.done.detail": "The previous folder is still intact at {path}. Do you want to move it to the Trash?",
+  "relocate.keep": "Keep it",
+  "relocate.trash": "Move to Trash",
+  "relocate.cancel": "Cancel",
+  "relocate.confirm.title": "Move {path} to the Trash?",
+  "relocate.confirm.detail": "Sauri no longer uses it. You can recover it from the Trash until you empty it."
 }

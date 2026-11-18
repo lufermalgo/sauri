@@ -518,6 +518,10 @@ export class Core extends EventEmitter {
     const engines = order.filter((name) => name.endsWith("-engine"));
     await Promise.all(engines.map((name) => this.supervisors.get(name)?.stop()));
     for (const name of ["worker", "api", "postgres"]) await this.supervisors.get(name)?.stop();
+    // A later start (after a folder move) begins from scratch.
+    this.supervisors.clear();
+    this.blocked.clear();
+    this.emit("change");
     this.log.line("all services stopped");
   }
 }

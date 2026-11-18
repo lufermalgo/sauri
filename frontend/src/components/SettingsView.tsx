@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  HardDrive,
   Mic,
   Palette,
   Search,
@@ -26,6 +27,7 @@ import { AccountSettings } from "./settings/AccountSettings";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
 import { EnginesSettings } from "./settings/EnginesSettings";
 import { ProcessSettings } from "./settings/ProcessSettings";
+import { StorageSettings } from "./settings/StorageSettings";
 import { filterSettingsGroups } from "./settings/settingsSearch";
 import { SummarySettings } from "./settings/SummarySettings";
 import { Button, Icon } from "./ui";
@@ -48,6 +50,7 @@ const SETTINGS_ROOT: SettingsRoute = { name: "settings" };
 const ICONS: Record<SettingsCategory, LucideIcon> = {
   account: UserRound,
   appearance: Palette,
+  storage: HardDrive,
   engines: Sparkles,
   transcription: Mic,
   speakers: UsersRound,
@@ -221,6 +224,8 @@ function renderCategory(category: SettingsCategory, user: SessionUser | null, on
       return <AccountSettings user={user} onLogout={onLogout} />;
     case "appearance":
       return <AppearanceSettings />;
+    case "storage":
+      return <StorageSettings />;
     case "engines":
       return <EnginesSettings />;
     case "transcription":

@@ -26,6 +26,11 @@
       "description": "Idioma y tema",
       "keywords": "idioma español inglés language tema claro oscuro sistema colores"
     },
+    "storage": {
+      "label": "Almacenamiento",
+      "description": "Dónde se guardan tus datos",
+      "keywords": "carpetas disco espacio grabaciones base de datos mover externo ruta"
+    },
     "engines": {
       "label": "Motores y modelos",
       "description": "Proveedores, claves y modelos",
@@ -62,6 +67,55 @@
       "system": "Sistema",
       "light": "Claro",
       "dark": "Oscuro"
+    }
+  },
+  "storage": {
+    "intro": "Estas son las carpetas donde Sauri guarda tus datos. Puedes moverlas a otro disco: Sauri copia todo, comprueba la copia y solo entonces empieza a usar la nueva carpeta.",
+    "browserOnly": "Abre la app Sauri para cambiar carpetas.",
+    "browserOnlyHelp": "Este navegador no tiene acceso a las carpetas de tu Mac. Desde la app Sauri puedes ver cuánto ocupa cada una y moverla.",
+    "loading": "Midiendo las carpetas…",
+    "loadError": "No pude leer las carpetas.",
+    "retry": "Reintentar",
+    "kinds": {
+      "recordings": {
+        "label": "Grabaciones",
+        "hint": "Audio, video y miniaturas de tus reuniones."
+      },
+      "database": {
+        "label": "Base de datos",
+        "hint": "Transcripciones, resúmenes y ajustes."
+      },
+      "models": {
+        "label": "Modelos",
+        "hint": "Modelos de IA instalados en este Mac."
+      }
+    },
+    "used": "Ocupa {{size}}",
+    "free": "{{size}} libres en este disco",
+    "missing": "No encuentro esta carpeta. Si está en un disco externo, conéctalo.",
+    "change": "Cambiar",
+    "changeLabel": "Cambiar la carpeta de {{kind}}",
+    "moving": "Copiando y comprobando tus datos. Sauri se pausa un momento y vuelve solo cuando termina…",
+    "moved": "Listo: {{kind}} ahora está en {{path}}. La carpeta anterior sigue intacta.",
+    "movedTrashed": "Listo: {{kind}} ahora está en {{path}}. La carpeta anterior se movió a la Papelera.",
+    "errors": {
+      "processing_one": "Hay {{count}} reunión procesándose. Espera a que termine para cambiar carpetas.",
+      "processing_other": "Hay {{count}} reuniones procesándose. Espera a que terminen para cambiar carpetas.",
+      "status_unavailable": "No pude saber si hay reuniones procesándose. Vuelve a intentarlo en un momento.",
+      "busy": "Ya se está moviendo una carpeta. Espera a que termine.",
+      "same": "Esa ya es la carpeta que Sauri usa.",
+      "nested": "Elige una carpeta que no esté dentro de la actual ni la contenga.",
+      "not_empty": "Esa carpeta ya tiene otros archivos. Elige una vacía o crea una nueva.",
+      "no_space": "No hay espacio suficiente en ese disco: hacen falta {{needed}} y hay {{free}} libres.",
+      "not_writable": "Sauri no puede escribir en esa carpeta. Elige otra o revisa sus permisos.",
+      "not_a_directory": "Esa ruta es un archivo, no una carpeta.",
+      "foreign": "Esa carpeta pertenece a otra instalación de Sauri.",
+      "duplicate": "Esa carpeta ya la usa otro tipo de dato. Usa una distinta para cada uno.",
+      "unavailable": "No encuentro esa ubicación.",
+      "unsupported_file": "La carpeta actual tiene un acceso directo o un archivo especial que Sauri no puede copiar con seguridad: {{detail}}",
+      "copy_failed": "No se pudo terminar la copia. Sauri sigue usando la carpeta anterior, que está intacta. Si lo intentas de nuevo con la misma carpeta, continúa donde quedó.",
+      "verify_failed": "La copia de {{detail}} no coincide con el original. Sauri sigue usando la carpeta anterior, que está intacta.",
+      "generic": "No pude cambiar la carpeta. Sauri sigue usando la anterior."
     }
   },
   "summaries": {

@@ -1,5 +1,5 @@
-// Bundles the main process (ESM), the setup preload (CommonJS: sandboxed preloads cannot be ESM) and the setup
-// window into dist/.
+// Bundles the main process (ESM), the setup and portal preloads (CommonJS: sandboxed preloads cannot be ESM) and
+// the setup window into dist/.
 import fs from "node:fs";
 import path from "node:path";
 import { build } from "esbuild";
@@ -23,6 +23,15 @@ await build({
   ...common,
   entryPoints: [path.join(root, "src/setup/preload.ts")],
   outfile: path.join(out, "setup-preload.cjs"),
+  platform: "node",
+  target: "node22",
+  format: "cjs",
+  external: ["electron"],
+});
+await build({
+  ...common,
+  entryPoints: [path.join(root, "src/preload.ts")],
+  outfile: path.join(out, "portal-preload.cjs"),
   platform: "node",
   target: "node22",
   format: "cjs",

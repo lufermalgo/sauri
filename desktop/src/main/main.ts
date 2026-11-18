@@ -4,11 +4,13 @@
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { app, BrowserWindow, dialog, Menu, shell } from "electron";
-import { formatGigabytes, type Locale, plural, t } from "../i18n.ts";
+import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu, shell } from "electron";
+import { formatGigabytes, type Locale, type MessageKey, plural, t } from "../i18n.ts";
+import { PORTAL_CHANNELS, type RelocateResult } from "../shared/portal-api.ts";
 import { setLaunchAtLogin } from "./autostart.ts";
 import { type AppConfig, ConfigError, loadConfig, phaseADone, saveConfig } from "./config.ts";
-import { appPaths, folderProblems, PathError, socketPath, type UserFolders } from "./paths.ts";
+import { appPaths, FOLDER_KINDS, type FolderKind, folderProblems, PathError, socketPath, type UserFolders } from "./paths.ts";
+import { folderUsage, relocate } from "./relocate.ts";
 import { busyPorts, DEFAULT_API_PORT, portPlan, portsToCheck } from "./ports.ts";
 import { Core, CoreError, ensureSecrets, type Layout, PG_SOCKET_PORT, readSecret, type ServiceContext } from "./services.ts";
 import { SetupController } from "./setup.ts";
@@ -137,6 +139,95 @@ function portalUrl(): string {
   return `http://localhost:${ports.api}/`;
 }
 
+/** Phase B of the first run (models and extension) lives in the portal until it marks setup done. */
+function portalStartUrl(): string {
+  return config.setupStep === "done" ? portalUrl() : `${portalUrl()}bienvenida`;
+}
+
+function fromPortal(event: IpcMainInvokeEvent): boolean {
+  const url = event.senderFrame?.url;
+  return Boolean(url && portalWindow && event.sender === portalWindow.webContents && new URL(url).origin === new URL(portalUrl()).origin);
+}
+
+function confirm(target: BrowserWindow | null, options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  return target ? dialog.showMessageBox(target, options) : dialog.showMessageBox(options);
+}
+
+let relocating = false;
+
+/** «Cambiar» on the storage page: the whole move runs here, the portal only waits for the result. */
+async function relocateFolder(kind: FolderKind): Promise<RelocateResult> {
+  if (relocating) return { ok: false, reason: "busy" };
+  relocating = true;
+  try {
+    return await relocate(kind, {
+      config: () => config,
+      update,
+      processing: processingCount,
+      chooseFolder: async (which) => {
+        const options: Electron.OpenDialogOptions = {
+          title: t(locale(), `folder.${which}` as MessageKey),
+          properties: ["openDirectory", "createDirectory"],
+        };
+        const result = portalWindow ? await dialog.showOpenDialog(portalWindow, options) : await dialog.showOpenDialog(options);
+        return result.canceled ? null : (result.filePaths[0] ?? null);
+      },
+      confirmTrash: async (which, previous) => {
+        const kindName = t(locale(), `folder.${which}` as MessageKey).toLowerCase();
+        const offer = await confirm(portalWindow, {
+          type: "question",
+          message: t(locale(), "relocate.done.title", { kind: kindName }),
+          detail: t(locale(), "relocate.done.detail", { path: previous }),
+          buttons: [t(locale(), "relocate.keep"), t(locale(), "relocate.trash")],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        if (offer.response !== 1) return false;
+        const sure = await confirm(portalWindow, {
+          type: "warning",
+          message: t(locale(), "relocate.confirm.title", { path: previous }),
+          detail: t(locale(), "relocate.confirm.detail"),
+          buttons: [t(locale(), "relocate.cancel"), t(locale(), "relocate.trash")],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        return sure.response === 1;
+      },
+      trash: (dir) => shell.trashItem(dir),
+      stopServices: async () => {
+        clearInterval(poll);
+        started = false;
+        await core?.stop();
+      },
+      startServices,
+      log: (line) => log.line(line),
+    });
+  } finally {
+    relocating = false;
+  }
+}
+
+function registerPortalApi(): void {
+  const handle = (channel: string, listener: (...args: unknown[]) => unknown) => {
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, (event, ...args) => {
+      if (!fromPortal(event)) throw new Error("forbidden");
+      return listener(...args);
+    });
+  };
+  handle(PORTAL_CHANNELS.getPaths, () => (config.paths ? folderUsage(config.paths) : []));
+  handle(PORTAL_CHANNELS.relocate, (kind) => {
+    if (!FOLDER_KINDS.includes(kind as FolderKind)) throw new Error("invalid_kind");
+    return relocateFolder(kind as FolderKind);
+  });
+  handle(PORTAL_CHANNELS.markSetupDone, () => {
+    if (phaseADone(config) && config.setupStep !== "done") {
+      update({ setupStep: "done" });
+      log.line("setup phase B finished");
+    }
+  });
+}
+
 function openPortalWindow(): void {
   if (portalWindow) {
     portalWindow.show();
@@ -151,7 +242,12 @@ function openPortalWindow(): void {
     minHeight: 600,
     title: "Sauri",
     backgroundColor: "#faf9fe",
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+    webPreferences: {
+      preload: path.join(DIST, "portal-preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+    },
   });
   // The portal stays on its own origin; any other link opens in the default browser.
   portalWindow.webContents.on("will-navigate", (event, url) => {
@@ -172,7 +268,7 @@ function openPortalWindow(): void {
   portalWindow.on("closed", () => {
     portalWindow = null;
   });
-  void portalWindow.loadURL(portalUrl());
+  void portalWindow.loadURL(portalStartUrl());
 }
 
 function showMain(): void {
@@ -239,6 +335,7 @@ async function startServices(): Promise<void> {
   log.line(`services: ${JSON.stringify(services.summary())}`);
   openPortalWindow();
   setupWindow?.hide();
+  clearInterval(poll);
   poll = setInterval(() => void refreshTray(), 5000);
   await refreshTray();
 }
@@ -444,6 +541,7 @@ app.whenReady().then(async () => {
       setLaunchAtLogin(on);
     },
   });
+  registerPortalApi();
   controller = new SetupController({
     paths,
     layout,

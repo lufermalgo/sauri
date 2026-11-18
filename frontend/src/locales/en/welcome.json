@@ -1,0 +1,42 @@
+{
+  "title": "Welcome to Sauri",
+  "intro": "Two steps are left: install the AI models that process your meetings on this Mac, and connect the Chrome extension that records them.",
+  "step": "Step {{n}} of 2",
+  "models": {
+    "title": "Models for this Mac",
+    "intro": "We recommend the models that work best on this computer. They download once, and from then on everything is processed here, without sending anything out.",
+    "later": "You can install or change models at any time in Settings.",
+    "loading": "Reading what each process uses…",
+    "loadError": "I couldn't read which model each process uses.",
+    "retry": "Try again",
+    "saveError": "I couldn't save the chosen model. Try again.",
+    "processes": {
+      "transcription": {
+        "title": "Transcription",
+        "help": "Turns the audio of your meetings into text."
+      },
+      "diarization": {
+        "title": "Speakers",
+        "help": "Tells who is speaking at each moment."
+      },
+      "summary": {
+        "title": "Summaries",
+        "help": "Writes the summary of each meeting."
+      }
+    },
+    "continue": "Continue"
+  },
+  "extension": {
+    "title": "Connect the Chrome extension",
+    "intro": "The extension records your Google Meet meetings and sends them to Sauri on this Mac.",
+    "install": "Install from the Chrome Web Store",
+    "how": "After installing it, open it once in Chrome: it connects to this Mac on its own.",
+    "paired": "The extension is connected.",
+    "waiting": "Waiting for the extension. This notice changes on its own once it connects.",
+    "statusError": "I couldn't check whether the extension is connected.",
+    "later": "You can connect it later; Sauri already works with recordings you upload yourself."
+  },
+  "back": "Back",
+  "finish": "Start using Sauri",
+  "finishError": "I couldn't save that you finished setup. Try again."
+}

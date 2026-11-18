@@ -134,7 +134,8 @@ interface LocalModelCardProps {
   onUse: (choiceKey: string) => void;
   /** True while the screen is saving a choice. */
   choosing?: boolean;
-  external: ExternalChoice;
+  /** The external-services row; the first-run welcome page leaves it out (local models only). */
+  external?: ExternalChoice;
   /** Wait between looks at a running job; tests shorten it. */
   pollIntervalMs?: number;
 }
@@ -402,7 +403,7 @@ export function LocalModelCard({
             onRemove={setPendingRemoval}
             onCancel={cancel}
           />
-          <ExternalGroup external={external} />
+          {external && <ExternalGroup external={external} />}
         </>
       )}
 
