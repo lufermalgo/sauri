@@ -1,12 +1,12 @@
 // The download place (design D13): one public GitHub repository whose Releases carry the app (.zip + .sha256) and
-// the downloadable components. It does not exist yet, so the repository is empty by default: the updater stays off
-// and the speaker runtime says it is not available yet. Setting it is one value, here or in SAURI_RELEASES_REPO.
+// the downloadable components. The owner approved lufermalgo/sauri-app on 2026-11-18. SAURI_RELEASES_REPO overrides
+// it; an empty or malformed value turns the updater and component downloads off.
 //
 // Only that repository's release downloads, GitHub's release-asset host and its Releases API are ever asked;
 // loopback is accepted only with SAURI_ALLOW_LOOPBACK_DOWNLOADS=1 (tests). Nothing about the user is sent.
 
-/** owner/repo of the download place; empty until the owner approves one (design D13). */
-export const DEFAULT_RELEASES_REPO = "";
+/** owner/repo of the download place (design D13). */
+export const DEFAULT_RELEASES_REPO = "lufermalgo/sauri-app";
 
 const REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 const LOOPBACK_BASE = /^http:\/\/127\.0\.0\.1:\d{1,5}$/;
