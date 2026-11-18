@@ -6,10 +6,33 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 
 LOCAL_COOKIE = "sauri_local"
+DEFAULT_API_PORT = 8000
 
 
 class LocalConfigurationError(ValueError):
     """Invalid local configuration; messages never contain credentials."""
+
+
+def api_port() -> int:
+    """Loopback port the API listens on (``SAURI_API_PORT``, default 8000)."""
+    raw = os.environ.get("SAURI_API_PORT", "").strip()
+    if not raw:
+        return DEFAULT_API_PORT
+    if not raw.isdigit() or not 1 <= int(raw) <= 65535:
+        raise LocalConfigurationError("invalid_api_port")
+    return int(raw)
+
+
+def local_hosts() -> frozenset[str]:
+    """The only ``Host`` values the local API answers (defends against DNS rebinding)."""
+    port = api_port()
+    return frozenset({f"localhost:{port}", f"127.0.0.1:{port}"})
+
+
+def public_api_origin() -> str:
+    """Origin the browser uses to reach the API: ``SAURI_PUBLIC_API_ORIGIN`` or ``http://localhost:<port>``."""
+    origin = os.environ.get("SAURI_PUBLIC_API_ORIGIN") or f"http://localhost:{api_port()}"
+    return origin.rstrip("/")
 
 
 def local_mode() -> bool:

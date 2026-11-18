@@ -139,6 +139,16 @@ async def test_origin_is_configurable_and_s3_mode_does_not_serve_files(tmp_path)
                 assert (await client.get(urlsplit(url).path)).status_code == 404
 
 
+async def test_default_origin_follows_the_configured_api_port(tmp_path) -> None:
+    # An empty SAURI_PUBLIC_API_ORIGIN counts as unset: the origin comes from SAURI_API_PORT.
+    overrides = {**environment(tmp_path), "SAURI_API_PORT": "18100", "SAURI_PUBLIC_API_ORIGIN": ""}
+    with patch.dict("os.environ", overrides):
+        store = FilesystemObjectStore(tmp_path)
+        await store.save(KEY, b"data")
+        url = await store.temporary_read_url(KEY)
+    assert url.startswith("http://localhost:18100/api/v1/media/")
+
+
 async def test_signatures_reuse_raw_existing_key_including_newline(tmp_path) -> None:
     import hashlib
     import hmac

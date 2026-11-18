@@ -15,6 +15,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import BinaryIO
 
+from app.auth.local import public_api_origin
 from app.infra.object_store import ObjectAvailability, ObjectStore
 from app.ingestion.upload_limits import detect_container
 from app.media.tokens import sign_media_token
@@ -133,8 +134,7 @@ class FilesystemObjectStore(ObjectStore):
     async def _url(self, reference: str, ttl_seconds: int, filename: str | None = None) -> str:
         content_type = await asyncio.to_thread(self._content_type, reference)
         token = sign_media_token(reference, ttl_seconds, content_type, filename=filename)
-        origin = os.environ.get("SAURI_PUBLIC_API_ORIGIN", "http://localhost:8000").rstrip("/")
-        return f"{origin}/api/v1/media/{token}"
+        return f"{public_api_origin()}/api/v1/media/{token}"
 
     async def temporary_read_url(self, reference: str, ttl_seconds: int = 3600) -> str:
         return await self._url(reference, ttl_seconds)

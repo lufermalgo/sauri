@@ -4,13 +4,15 @@
   "workspaces": [
     "extension",
     "frontend",
+    "desktop",
     "packages/*"
   ],
   "scripts": {
     "prepare": "git config core.hooksPath .githooks",
     "typecheck": "npm run typecheck --workspaces",
     "test": "npm run test --workspaces",
-    "test:e2e": "npm run test:e2e --workspaces --if-present"
+    "test:e2e": "npm run test:e2e --workspaces --if-present",
+    "desktop:dev": "npm run dev -w desktop"
   },
   "engines": {
     "node": ">=20"

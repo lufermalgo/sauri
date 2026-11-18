@@ -23,9 +23,22 @@ def provenance_path() -> Path:
     return venv.parent / "asr-provenance" / "provenance.json"
 
 
+def _valid_pin(pin: Any) -> bool:
+    """A pinned build: exact size and SHA-256 of one binary file."""
+    return (
+        isinstance(pin, dict)
+        and type(pin.get("size")) is int and pin["size"] > 0
+        and isinstance(pin.get("sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", pin["sha256"]) is not None
+    )
+
+
 def load_manifest() -> dict[str, Any]:
     manifest = json.loads(manifest_path().read_text())["asr"]
     manifest = _validate_model(manifest)
+    # The desktop runtime ships its own whisper.cpp build; its pin is optional but never malformed.
+    if "runtime_binary" in manifest and not _valid_pin(manifest["runtime_binary"]):
+        raise ValueError("Invalid ASR hash manifest")
     if vad_enabled():
         vad = manifest["vad"]
         _validate_model(vad)
@@ -35,6 +48,7 @@ def load_manifest() -> dict[str, Any]:
             or re.fullmatch(r"[0-9a-f]{64}", vad["binary_sha256"]) is None
             or not isinstance(vad.get("model_url"), str)
             or not vad["model_url"].startswith("https://huggingface.co/ggml-org/whisper-vad/resolve/")
+            or ("runtime_binary" in vad and not _valid_pin(vad["runtime_binary"]))
         ):
             raise ValueError("Invalid VAD hash manifest")
     return manifest
@@ -83,9 +97,14 @@ def binary_record(cli: Path, manifest: dict[str, Any]) -> dict[str, str]:
 def vad_binary_record(cli: Path, manifest: dict[str, Any]) -> dict[str, str]:
     if not cli.is_file() or not os.access(cli, os.X_OK):
         raise ValueError("VAD executable unavailable")
-    if cli.stat().st_size != manifest["binary_size"] or digest(cli) != manifest["binary_sha256"]:
+    # Accepted builds: the Homebrew one and, when pinned, the desktop runtime's own build.
+    accepted = {(manifest["binary_size"], manifest["binary_sha256"])}
+    if "runtime_binary" in manifest:
+        accepted.add((manifest["runtime_binary"]["size"], manifest["runtime_binary"]["sha256"]))
+    actual = digest(cli)
+    if (cli.stat().st_size, actual) not in accepted:
         raise ValueError("VAD binary size or SHA-256 mismatch")
-    return {"vad_binary_sha256": manifest["binary_sha256"], "vad_model_sha256": manifest["model_sha256"]}
+    return {"vad_binary_sha256": actual, "vad_model_sha256": manifest["model_sha256"]}
 
 
 def verify_provenance(record: dict[str, str], path: Path, *, allow_upgrade: bool = False) -> None:
