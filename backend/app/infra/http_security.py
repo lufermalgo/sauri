@@ -26,7 +26,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.auth.local import LOCAL_COOKIE, LocalConfigurationError, local_mode, local_token
+from app.auth.local import LOCAL_COOKIE, LocalConfigurationError, local_hosts, local_mode, local_token
 
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 # Id of the owner's unpacked extension build; override with EXTENSION_ORIGINS for other builds.
@@ -172,6 +172,7 @@ class LocalGuardMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
         self.origins = extension_origins(local=True)
+        self.hosts = local_hosts()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope.get("path") == "/health":
@@ -179,7 +180,7 @@ class LocalGuardMiddleware:
             return
         request = Request(scope)
         hosts = request.headers.getlist("host")
-        if len(hosts) != 1 or hosts[0] not in {"localhost:8000", "127.0.0.1:8000"}:
+        if len(hosts) != 1 or hosts[0] not in self.hosts:
             await JSONResponse({"detail": "local_host_required"}, status_code=421)(scope, receive, send)
             return
         path = request.url.path

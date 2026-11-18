@@ -39,7 +39,17 @@
       "binary_file": "whisper-vad-speech-segments",
       "binary_size": 452336,
       "binary_sha256": "f6b922e2a4c2c8428c5a8c25a07d9953d35457d2b7567dfbc82e05c2ab94613f",
-      "binary_source": "Homebrew whisper.cpp 1.9.2, macOS arm64; /opt/homebrew/Cellar/whisper.cpp/1.9.2/bin/whisper-vad-speech-segments"
+      "binary_source": "Homebrew whisper.cpp 1.9.2, macOS arm64; /opt/homebrew/Cellar/whisper.cpp/1.9.2/bin/whisper-vad-speech-segments",
+      "runtime_binary": {
+        "size": 7914296,
+        "sha256": "5e49e031922714935ca992dab48df062e4737b3c3b28844f3443865417aa70a3",
+        "source": "desktop/scripts/build-runtime.sh, whisper.cpp v1.9.5 (d1be6fde11ac6e0407606b4e42fe72d34add8037), macOS arm64; desktop/runtime-manifest.json"
+      }
+    },
+    "runtime_binary": {
+      "size": 8033832,
+      "sha256": "b3575ee62166b4184bf2d142cff2c1bbd6a7d54fff1231fed00665fa0052da39",
+      "source": "desktop/scripts/build-runtime.sh, whisper.cpp v1.9.5 (d1be6fde11ac6e0407606b4e42fe72d34add8037), macOS arm64; desktop/runtime-manifest.json"
     }
   },
   "parakeet": {

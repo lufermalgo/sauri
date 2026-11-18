@@ -100,3 +100,27 @@ async def test_simple_fetch_form_and_image_cannot_read_or_write(local_app: FastA
             assert response.status_code == 403
             assert response.json() == {"detail": "local_origin_required"}
             assert "access-control-allow-origin" not in response.headers
+
+
+async def test_host_guard_follows_the_configured_api_port(local_app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.main import create_app
+
+    monkeypatch.setenv("SAURI_API_PORT", "18100")
+    application = create_app()
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://localhost:18100") as client:
+        for host in ("localhost:18100", "127.0.0.1:18100"):
+            response = await client.get("/api/v1/meetings/", headers={"Host": host})
+            assert response.status_code == 403, host
+            assert response.json() == {"detail": "local_origin_required"}
+        for host in ("localhost:8000", "127.0.0.1:8000", "localhost:18101", "evil.test:18100"):
+            response = await client.get("/api/v1/meetings/", headers={"Host": host})
+            assert response.status_code == 421, host
+
+
+@pytest.mark.parametrize("value", ["0", "65536", "80a", "-1", " 8000 x"])
+def test_invalid_api_port_is_a_configuration_error(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    from app.auth.local import LocalConfigurationError, local_hosts
+
+    monkeypatch.setenv("SAURI_API_PORT", value)
+    with pytest.raises(LocalConfigurationError, match="invalid_api_port"):
+        local_hosts()
