@@ -559,3 +559,29 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Storage */
+.settings-storage-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-space-3);
+  min-width: 0;
+}
+
+.settings-storage-row > .ui-button {
+  flex: none;
+}
+
+.settings-storage-text {
+  display: grid;
+  flex: 1;
+  gap: var(--ds-space-1);
+  min-width: 0;
+}
+
+.settings-storage-path {
+  color: var(--ds-fg);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-text-xs);
+  overflow-wrap: anywhere;
+}

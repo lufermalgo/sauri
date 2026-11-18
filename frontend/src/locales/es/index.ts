@@ -10,11 +10,12 @@ import speakerReview from "./speakerReview.json";
 import summary from "./summary.json";
 import transcript from "./transcript.json";
 import upload from "./upload.json";
+import welcome from "./welcome.json";
 
 /**
  * Spanish is the source language: its JSON files define the shape (and so the typed keys) that every
  * other language must match. One namespace per area; `src/i18n/index.ts` registers them.
  */
-export const es = { engines, language, library, login, meeting, processing, settings, shell, speakerReview, summary, transcript, upload };
+export const es = { engines, language, library, login, meeting, processing, settings, shell, speakerReview, summary, transcript, upload, welcome };
 
 export type Resources = typeof es;

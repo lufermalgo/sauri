@@ -55,6 +55,23 @@ def local_token() -> str:
     return token
 
 
+def _pairing_marker() -> Path:
+    path = os.environ.get("SAURI_LOCAL_TOKEN_FILE")
+    if not path:
+        raise LocalConfigurationError("local_token_unavailable")
+    return Path(path).with_name("extension_paired")
+
+
+def extension_paired() -> bool:
+    """True once the extension has fetched the local token at least once."""
+    return _pairing_marker().is_file()
+
+
+def mark_extension_paired() -> None:
+    """Remembers the pairing next to the token, so the welcome page can say the extension is connected."""
+    _pairing_marker().touch(mode=0o600, exist_ok=True)
+
+
 def local_cookie_header() -> str:
     """Set-Cookie value for U3's index.html response and the same-origin status bootstrap."""
     cookie = SimpleCookie()

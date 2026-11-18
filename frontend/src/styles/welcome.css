@@ -1,0 +1,89 @@
+/* First-run welcome (phase B): one centered column, the same cards as Settings. */
+.welcome {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: var(--ds-space-8) var(--ds-space-4);
+  background: var(--ds-bg);
+  color: var(--ds-fg);
+}
+
+.welcome-frame {
+  display: grid;
+  gap: var(--ds-space-6);
+  max-width: 46rem;
+  margin: 0 auto;
+}
+
+.welcome-header {
+  display: grid;
+  gap: var(--ds-space-2);
+}
+
+.welcome-step {
+  margin: var(--ds-space-4) 0 0;
+  color: var(--ds-accent-text);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.welcome-title {
+  margin: 0;
+  font-size: var(--ds-text-2xl);
+}
+
+.welcome-section,
+.welcome-process {
+  display: grid;
+  gap: var(--ds-space-3);
+  min-width: 0;
+}
+
+.welcome-section-title {
+  margin: 0;
+  font-size: var(--ds-text-xl);
+}
+
+.welcome-process {
+  margin-top: var(--ds-space-2);
+}
+
+.welcome-process-title {
+  margin: 0;
+  font-size: var(--ds-text-lg);
+}
+
+.welcome-store-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  text-decoration: none;
+}
+
+.welcome-pairing {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  font-size: var(--ds-text-sm);
+}
+
+.welcome-pairing:empty {
+  display: none;
+}
+
+.welcome-pairing--paired {
+  color: var(--ds-success);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.welcome-pairing--waiting,
+.welcome-pairing--error {
+  color: var(--ds-fg-muted);
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ds-space-2);
+  padding-top: var(--ds-space-2);
+}

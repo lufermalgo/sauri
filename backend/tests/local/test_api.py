@@ -61,7 +61,13 @@ async def test_status_bootstraps_cookie_and_me_uses_database(local_app: FastAPI)
     async with AsyncClient(transport=ASGITransport(app=local_app), base_url="http://localhost:8000") as client:
         response = await client.get("/api/v1/local/status", headers={"Sec-Fetch-Site": "same-origin"})
         assert response.status_code == 200
-        assert response.json() == {"ready": True, "processing": 0, "version": local_app.version, "mode": "local"}
+        assert response.json() == {
+            "ready": True,
+            "processing": 0,
+            "version": local_app.version,
+            "mode": "local",
+            "extension_paired": False,
+        }
         assert response.headers["cache-control"] == "no-store"
         cookie = response.headers["set-cookie"]
         assert all(part in cookie for part in ("sauri_local=", "HttpOnly", "SameSite=Strict", "Path=/"))
@@ -72,6 +78,20 @@ async def test_status_bootstraps_cookie_and_me_uses_database(local_app: FastAPI)
         assert me.json()["is_sales"] is True
         assert "password_hash" not in me.json()
         assert (await client.get("/api/v1/meetings/", headers={"Sec-Fetch-Site": "same-origin"})).status_code == 200
+
+
+async def test_status_reports_pairing_only_after_a_trusted_pair(local_app: FastAPI) -> None:
+    portal = {"Sec-Fetch-Site": "same-origin", "Cookie": f"sauri_local={TOKEN}"}
+    async with AsyncClient(transport=ASGITransport(app=local_app), base_url="http://localhost:8000") as client:
+        assert (await client.get("/api/v1/local/status", headers=portal)).json()["extension_paired"] is False
+        refused = await client.post("/api/v1/local/pair", headers={"Origin": "chrome-extension://" + "c" * 32})
+        assert refused.status_code == 403
+        assert (await client.get("/api/v1/local/status", headers=portal)).json()["extension_paired"] is False
+        assert (await client.post("/api/v1/local/pair", headers={"Origin": ORIGIN})).status_code == 200
+        assert (await client.get("/api/v1/local/status", headers=portal)).json()["extension_paired"] is True
+        # Pairing again keeps the state and the token.
+        assert (await client.post("/api/v1/local/pair", headers={"Origin": ORIGIN})).json() == {"token": TOKEN}
+        assert (await client.get("/api/v1/local/status", headers=portal)).json()["extension_paired"] is True
 
 
 async def test_pair_only_trusted_extension_no_cookie_leak(local_app: FastAPI) -> None:

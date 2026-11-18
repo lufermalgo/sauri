@@ -5,6 +5,7 @@ import { UploadView } from "./components/UploadView";
 import { PortalShell } from "./components/PortalShell";
 import { Button } from "./components/ui";
 import { SettingsView } from "./components/SettingsView";
+import { WelcomeView } from "./components/welcome/WelcomeView";
 import { navigate, routePath, useRoute, type Route } from "./router";
 import { readLastMeetingId } from "./last-meeting";
 import { canDetectLocalMode, detectLocalSession } from "./api";
@@ -93,6 +94,11 @@ export function App() {
         <LoginScreen onLogin={() => setAuthenticated(true)} />
       </main>
     );
+  }
+
+  // First-run phase B is a page of its own, without the portal's navigation.
+  if (route.name === "welcome") {
+    return <WelcomeView onFinished={() => navigate({ name: "library" }, { replace: true })} />;
   }
 
   return (

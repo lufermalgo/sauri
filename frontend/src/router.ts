@@ -3,6 +3,7 @@ import { useLayoutEffect, useState } from "react";
 export type Route =
   | { name: "library" }
   | { name: "upload" }
+  | { name: "welcome" }
   | { name: "settings"; category?: SettingsCategory }
   | { name: "meeting"; meetingId: string }
   | { name: "notFound" };
@@ -11,6 +12,7 @@ export type Route =
 export const SETTINGS_CATEGORIES = [
   "account",
   "appearance",
+  "storage",
   "engines",
   "transcription",
   "speakers",
@@ -22,6 +24,7 @@ export type SettingsCategory = (typeof SETTINGS_CATEGORIES)[number];
 export const SETTINGS_SLUGS: Record<SettingsCategory, string> = {
   account: "cuenta",
   appearance: "apariencia",
+  storage: "almacenamiento",
   engines: "motores",
   transcription: "transcripcion", // spanish-sample-data i18n-ignore
   speakers: "hablantes", // spanish-sample-data i18n-ignore
@@ -30,7 +33,7 @@ export const SETTINGS_SLUGS: Record<SettingsCategory, string> = {
 
 /** Navigation groups, in display order; the group labels live in the `settings` translation namespace. */
 export const SETTINGS_GROUPS = [
-  { id: "general", categories: ["account", "appearance"] },
+  { id: "general", categories: ["account", "appearance", "storage"] },
   { id: "models", categories: ["engines", "transcription", "speakers", "summaries"] },
 ] as const satisfies ReadonlyArray<{ id: string; categories: readonly SettingsCategory[] }>;
 export type SettingsGroupId = (typeof SETTINGS_GROUPS)[number]["id"];
@@ -48,6 +51,8 @@ const MEETING_PREFIX = "/meetings/";
 const SETTINGS_PATH = "/settings";
 const SETTINGS_PREFIX = "/settings/";
 const NOT_FOUND_PATH = "/not-found";
+/** First-run phase B (models and extension); the desktop app opens it until setup is done. */
+const WELCOME_PATH = "/bienvenida";
 
 /** Slugs of removed categories: an old link still opens Settings (on the default category) instead of "not found". */
 const REMOVED_SETTINGS_SLUGS: readonly string[] = ["grabacion"]; // spanish-sample-data i18n-ignore: a shipped URL slug
@@ -70,7 +75,7 @@ function meetingRoute(rawId: string): Route {
 
 /**
  * Maps a location to a route.
- * `/` -> library, `/upload` -> upload, `/settings` -> settings, `/settings/<category slug>` -> settings
+ * `/` -> library, `/upload` -> upload, `/bienvenida` -> welcome, `/settings` -> settings, `/settings/<category slug>` -> settings
  * with that category, `/meetings/<id>` -> meeting,
  * `/?meetingId=<id>` -> meeting (the extension opens this form), anything else -> notFound.
  */
@@ -81,6 +86,7 @@ export function parseRoute(pathname: string, search: string): Route {
     return legacyId ? { name: "meeting", meetingId: legacyId } : { name: "library" };
   }
   if (path === "/upload") return { name: "upload" };
+  if (path === WELCOME_PATH) return { name: "welcome" };
   if (path === SETTINGS_PATH) return { name: "settings" };
   if (path.startsWith(SETTINGS_PREFIX)) return settingsRoute(path.slice(SETTINGS_PREFIX.length));
   if (path.startsWith(MEETING_PREFIX)) return meetingRoute(path.slice(MEETING_PREFIX.length));
@@ -94,6 +100,8 @@ export function routePath(route: Route): string {
       return "/";
     case "upload":
       return "/upload";
+    case "welcome":
+      return WELCOME_PATH;
     case "settings":
       return route.category
         ? `${SETTINGS_PREFIX}${SETTINGS_SLUGS[route.category]}`
