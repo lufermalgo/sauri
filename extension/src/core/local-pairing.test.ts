@@ -1,0 +1,147 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BACKEND_URL } from "./backend";
+
+let local: Record<string, unknown>;
+let areas: Record<string, { remove: ReturnType<typeof vi.fn<[], Promise<void>>> }>;
+beforeEach(() => {
+  vi.resetModules();
+  local = {};
+  areas = Object.fromEntries(["session", "local", "sync"].map(area => [area, { remove: vi.fn(async () => {}) }]));
+  vi.stubGlobal("chrome", { storage: {
+    ...areas,
+    local: { ...areas.local,
+      setAccessLevel: vi.fn(async () => {}),
+      get: vi.fn(async (key: string) => ({ [key]: local[key] })),
+      set: vi.fn(async (values: Record<string, unknown>) => { Object.assign(local, values); }),
+    },
+  } });
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ token: "paired" }))));
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+describe("local pairing", () => {
+  it("pairs automatically, persists locally, and reuses it after context reload", async () => {
+    const first = await import("./local-pairing");
+    expect(await first.ensureLocalToken()).toBe("paired");
+    expect(local.sauriLocalToken).toBe("paired");
+    expect(fetch).toHaveBeenCalledWith(`${BACKEND_URL}/api/v1/local/pair`, expect.objectContaining({ method: "POST", credentials: "omit", redirect: "error" }));
+    expect(chrome.storage.local.setAccessLevel).toHaveBeenCalledWith({ accessLevel: "TRUSTED_CONTEXTS" });
+    vi.resetModules();
+    expect(await (await import("./local-pairing")).ensureLocalToken()).toBe("paired");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces concurrent pairing and uses a cross-context Web Lock", async () => {
+    const request = vi.fn(async (_name: string, work: () => Promise<string>) => work());
+    vi.stubGlobal("navigator", { locks: { request } });
+    const { ensureLocalToken } = await import("./local-pairing");
+    expect(await Promise.all([ensureLocalToken(), ensureLocalToken()])).toEqual(["paired", "paired"]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith("sauri-local-pairing", expect.any(Function));
+  });
+
+  it("keeps a newer token when a stale request is rejected", async () => {
+    local.sauriLocalToken = "newer";
+    const { ensureLocalToken } = await import("./local-pairing");
+    expect(await ensureLocalToken("older")).toBe("newer");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { token: "" }, { token: 1 }])("rejects malformed pairing response %s without storing it", async body => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(body)));
+    const { ensureLocalToken, LocalAppUnavailableError } = await import("./local-pairing");
+    await expect(ensureLocalToken()).rejects.toBeInstanceOf(LocalAppUnavailableError);
+    expect(local).toEqual({});
+  });
+
+  it.each([401, 403])("renews once on %s, then stops if rejected again", async status => {
+    local.sauriLocalToken = "old";
+    vi.mocked(fetch).mockImplementation(async url => String(url).endsWith("/pair")
+      ? new Response(JSON.stringify({ token: "new" })) : new Response("", { status }));
+    const { authorizedRequest } = await import("./api/authorized-fetch");
+    await expect(authorizedRequest(BACKEND_URL, "/api/v1/meetings/", {}, async r => r.json())).rejects.toThrow("Local app unavailable");
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/pair"))).toHaveLength(1);
+  });
+
+  it("reports health without sending credentials and treats an offline or unhealthy app as unavailable", async () => {
+    const { isLocalAppAvailable } = await import("./local-pairing");
+    expect(await isLocalAppAvailable()).toBe(true);
+    expect(fetch).toHaveBeenCalledWith(`${BACKEND_URL}/health`, expect.objectContaining({ credentials: "omit", cache: "no-store" }));
+    vi.mocked(fetch).mockResolvedValue(new Response("", { status: 503 }));
+    expect(await isLocalAppAvailable()).toBe(false);
+    vi.mocked(fetch).mockRejectedValue(new TypeError("offline"));
+    expect(await isLocalAppAvailable()).toBe(false);
+  });
+
+  it("deletes all legacy credential keys in each storage area, not recording settings", async () => {
+    const { migrateLegacyCredentials } = await import("./local-pairing");
+    await migrateLegacyCredentials();
+    for (const area of Object.values(areas)) expect(area.remove).toHaveBeenCalledWith(["authToken", "sauriSessionToken", "sauriRefreshToken", "sauriSignInRequired"]);
+  });
+
+  it("never sends the bearer to another origin", async () => {
+    local.sauriLocalToken = "private";
+    const { authorizedRequest } = await import("./api/authorized-fetch");
+    await expect(authorizedRequest("https://example.invalid", "/api/v1/meetings/", {}, async r => r.json())).rejects.toThrow("destination mismatch");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+it("does not mistake a concurrent cached read for renewal of a rejected token", async () => {
+  local.sauriLocalToken = "old";
+  const { ensureLocalToken } = await import("./local-pairing");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  vi.mocked(chrome.storage.local.get).mockImplementationOnce(async () => { await gate; return { sauriLocalToken: "old" }; });
+  const read = ensureLocalToken();
+  const renewal = ensureLocalToken("old");
+  expect(await renewal).toBe("paired");
+  release();
+  await read;
+  expect(local.sauriLocalToken).toBe("paired");
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("retries a stale unauthorized request with the token another context already paired", async () => {
+  local.sauriLocalToken = "old";
+  vi.mocked(fetch).mockImplementation(async (_url, init) => {
+    if ((init?.headers as Record<string, string>).Authorization === "Bearer old") {
+      local.sauriLocalToken = "newer";
+      return new Response("", { status: 401 });
+    }
+    return new Response("[]");
+  });
+  const { authorizedRequest } = await import("./api/authorized-fetch");
+  expect(await authorizedRequest(BACKEND_URL, "/api/v1/meetings/", {}, async r => r.json())).toEqual([]);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(local.sauriLocalToken).toBe("newer");
+});
+
+it("shares one renewal for concurrent unauthorized requests", async () => {
+  local.sauriLocalToken = "old";
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    if (String(url).endsWith("/pair")) return new Response(JSON.stringify({ token: "paired" }));
+    return (init?.headers as Record<string, string>).Authorization === "Bearer old"
+      ? new Response("", { status: 403 }) : new Response("[]");
+  });
+  const { authorizedRequest } = await import("./api/authorized-fetch");
+  const request = () => authorizedRequest(BACKEND_URL, "/api/v1/meetings/", {}, async r => r.json());
+  expect(await Promise.all([request(), request(), request()])).toEqual([[], [], []]);
+  expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/pair"))).toHaveLength(1);
+});
+
+it("bounds an unresponsive health request without credentials", async () => {
+  const controller = new AbortController();
+  const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+  vi.mocked(fetch).mockImplementation(async (_url, init) => new Promise((_resolve, reject) => {
+    init!.signal!.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+  }));
+  try {
+    const { isLocalAppAvailable } = await import("./local-pairing");
+    const result = isLocalAppAvailable();
+    controller.abort();
+    expect(await result).toBe(false);
+    expect(timeout).toHaveBeenCalledWith(10_000);
+  } finally { timeout.mockRestore(); }
+});

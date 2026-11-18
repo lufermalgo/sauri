@@ -26,7 +26,8 @@ def test_asr_installer_is_wired_and_has_a_separate_venv() -> None:
 def test_native_asr_has_only_service_dependencies() -> None:
     requirements = (REPO_ROOT / "scripts/engines/requirements-native-asr.txt").read_text()
     assert [line for line in requirements.splitlines() if line and not line.startswith("#")] == [
-        "fastapi>=0.115", "uvicorn[standard]>=0.30", "pydantic>=2", "boto3>=1.34",
+        # httpx serves the external transcription routes of the gateway (#1117).
+        "fastapi>=0.115", "uvicorn[standard]>=0.30", "pydantic>=2", "boto3>=1.34", "httpx>=0.27",
     ]
 
 

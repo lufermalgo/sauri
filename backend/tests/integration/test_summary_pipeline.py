@@ -1,6 +1,6 @@
 """T9/#277 RED: request transaction and recoverable dispatch on real PostgreSQL/RabbitMQ.
 
-Run with disposable SAURI_QA_POSTGRES_URL and SAURI_QA_RABBITMQ_URL. No external
+Run with disposable SAURI_QA_T9_POSTGRES_URL (or SAURI_QA_POSTGRES_URL) and SAURI_QA_RABBITMQ_URL. No external
 personal data, fake persistence, simulated broker confirmation, or worker/provider.
 """
 
@@ -40,7 +40,7 @@ from app.infra.models import (
 from app.infra.queue_rabbitmq import RabbitMQJobQueue
 from app.main import app
 from app.summaries.engine import SummaryAnswer
-from app.summaries.passages import CanonicalSummary
+from app.summaries.passages import CanonicalSummary, Passage
 
 
 def _id() -> str:
@@ -82,9 +82,10 @@ async def pg_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str]]:
     """Fresh schema in a dedicated disposable PG database, never a shared installation."""
-    url = os.environ.get("SAURI_QA_POSTGRES_URL")
+    # The dedicated variable lets one disposable server also serve the suites that need "sauri_qa".
+    url = os.environ.get("SAURI_QA_T9_POSTGRES_URL") or os.environ.get("SAURI_QA_POSTGRES_URL")
     if not url:
-        pytest.skip("requires disposable PostgreSQL URL in SAURI_QA_POSTGRES_URL")
+        pytest.skip("requires disposable PostgreSQL URL in SAURI_QA_T9_POSTGRES_URL or SAURI_QA_POSTGRES_URL")
     parsed = _dedicated_pg_url(url)
     broker = os.environ.get("SAURI_QA_RABBITMQ_URL")
     if broker:
@@ -403,9 +404,10 @@ async def test_committed_request_survives_failed_publication_and_recovery_confir
 
 
 @pytest.mark.asyncio
-async def test_concurrent_requests_allocate_distinct_generations(
+async def test_concurrent_requests_converge_on_one_active_generation(
     pg_request: tuple[AsyncClient, async_sessionmaker[AsyncSession], str, str, str],
 ) -> None:
+    # Since #1045 a request while another is pending or running returns that one (single active request).
     client, factory, owner, meeting, template = pg_request
     responses = await asyncio.gather(
         *(
@@ -418,9 +420,9 @@ async def test_concurrent_requests_allocate_distinct_generations(
         )
     )
     assert all(response.status_code == 202 for response in responses), [r.text for r in responses]
-    assert sorted(response.json()["generation"] for response in responses) == list(range(1, 9))
+    assert [response.json()["generation"] for response in responses] == [1] * 8
     async with factory() as session:
-        assert len((await session.scalars(select(SummaryRequestOutbox))).all()) == 8
+        assert len((await session.scalars(select(SummaryRequestOutbox))).all()) == 1
 
 
 @pytest.mark.asyncio
@@ -545,11 +547,11 @@ async def test_request_to_persisted_content_uses_frozen_lineage(
             )
         }
 
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[list[str], str]] = []
 
     class Engine:
-        async def generate(self, text: str, instructions: str, route: object = None) -> SummaryAnswer:
-            calls.append((text, instructions))
+        async def generate(self, passages: list[Passage], instructions: str, route: object = None) -> SummaryAnswer:
+            calls.append(([turn.text for passage in passages for turn in passage.turns], instructions))
             return SummaryAnswer(CanonicalSummary.model_validate({
                 "topic": "Identifiable topic", "conclusion": "Identifiable conclusion",
                 "key_points": [{
@@ -569,7 +571,7 @@ async def test_request_to_persisted_content_uses_frozen_lineage(
     queue = Queue()
     await worker.start_worker(queue, factory)  # type: ignore[arg-type]  # Minimal subscription seam.
     await queue.handlers["summarize"](message)
-    assert calls == [("Synthetic transcript.", "Keep these exact words")]
+    assert calls == [(["Synthetic transcript."], "Keep these exact words")]
     async with factory() as session:
         row = (await session.scalars(select(MeetingSummary).where(MeetingSummary.event_id == event_id))).one()
         stored = json.loads(row.key_points_json)

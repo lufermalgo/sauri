@@ -11,6 +11,7 @@ import json
 import math
 import re
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -246,9 +247,18 @@ def check(
 
 def main() -> int:
     cli = argparse.ArgumentParser(description=__doc__)
-    cli.add_argument("--inventory", type=Path, required=True,
+    cli.add_argument("--inflight-query", action="store_true", help="print the shared deployment guard SQL")
+    cli.add_argument("--inventory", type=Path,
                      help="reviewed exact resource identities; never infer persistence from names")
     args = cli.parse_args()
+    if args.inflight_query:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
+        from app.local.inflight import DEPLOY_GUARD_QUERY
+
+        print(DEPLOY_GUARD_QUERY)
+        return 0
+    if args.inventory is None:
+        cli.error("--inventory is required unless --inflight-query is used")
     try:
         result = check(Inventory.load(args.inventory))
     except (TelemetryError, OSError, UnicodeError, json.JSONDecodeError):

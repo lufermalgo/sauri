@@ -36,7 +36,9 @@ function profile() {
       alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
       tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), create: vi.fn(async () => ({ id: 80 })), sendMessage: vi.fn() },
       storage: {
-        session: { get: vi.fn(async () => ({ sauriState: { status: "idle", paused: false }, sauriSessionToken: "synthetic-token" })), set: vi.fn(async () => undefined) },
+      local: { get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token" })), set: vi.fn(async () => {}), remove: vi.fn(async () => {}), setAccessLevel: vi.fn(async () => {}) },
+      sync: { remove: vi.fn(async () => {}) },
+        session: { remove: vi.fn(async () => {}), get: vi.fn(async () => ({ sauriState: { status: "idle", paused: false } })), set: vi.fn(async () => undefined) },
       },
     });
     const db = await import("./recording-db");
@@ -73,7 +75,7 @@ describe("recorded duration in the upload payload", () => {
 
   it("keeps the value across failed attempts and a manual retry", async () => {
     const p = profile();
-    p.fetchMock.mockImplementation(async () => new Response("down", { status: 503 }));
+    p.fetchMock.mockImplementation(async url => String(url).endsWith("/health") ? new Response("{}") : new Response("down", { status: 503 }));
     const { db, queue } = await p.boot();
     await seedCapture(db, "s2");
     await p.message({ type: "recording-stopped", sessionId: "s2", size: 5, mimeType: "video/webm", durationSeconds: 120 });

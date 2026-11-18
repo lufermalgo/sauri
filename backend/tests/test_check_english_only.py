@@ -95,7 +95,7 @@ def test_flags_accented_identifiers(tmp_path: Path) -> None:
     assert "añadirNota" in result.stdout  # spanish-sample-data
 
 
-def test_excludes_ui_copy_module(tmp_path: Path) -> None:
+def test_excludes_backend_ui_copy_module(tmp_path: Path) -> None:
     copy_dir = tmp_path / "backend" / "app" / "copy"
     copy_dir.mkdir(parents=True)
     copy_file = copy_dir / "templates_es.py"

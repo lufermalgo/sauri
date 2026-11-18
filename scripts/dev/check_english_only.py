@@ -38,6 +38,8 @@ EXCLUDED_PATH_PARTS = (
     # Extension translations (Spanish is the source language), like the portal's.
     "/extension/src/locales/",
     "/extension/src/i18n/",
+    # Desktop app translations (Spanish is the source language), like the portal's.
+    "/desktop/src/locales/",
     # A rename migration (and the test that verifies it happened) must name
     # both the old and new identifiers — that's not leftover Spanish code,
     # it's the record of the rename itself.

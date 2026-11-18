@@ -120,3 +120,38 @@ def test_repository_pins_measured_vad_assets():
     assert manifest["model_sha256"] == "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987"
     assert "/9ffd54a1e1ee413ddf265af9913beaf518d1639b/" in manifest["model_url"]
     assert manifest["binary_size"] == 452336 and len(manifest["binary_sha256"]) == 64
+
+
+def test_runtime_vad_build_is_accepted_and_unpinned_builds_are_not(installed, tmp_path):
+    manifest = json.loads(installed["hashes"].read_text())["asr"]["vad"]
+    runtime_cli = tmp_path / "runtime-vad-cli"
+    runtime_cli.write_bytes(b"synthetic runtime build")
+    runtime_cli.chmod(0o700)
+    with pytest.raises(ValueError, match="VAD binary size or SHA-256 mismatch"):
+        assets.vad_binary_record(runtime_cli, manifest)
+    manifest["runtime_binary"] = {"size": runtime_cli.stat().st_size, "sha256": assets.digest(runtime_cli)}
+    record = assets.vad_binary_record(runtime_cli, manifest)
+    assert record["vad_binary_sha256"] == assets.digest(runtime_cli)
+    # The Homebrew pin keeps working next to the runtime one.
+    assert assets.vad_binary_record(installed["binary"], manifest)["vad_binary_sha256"] == assets.digest(
+        installed["binary"]
+    )
+
+
+@pytest.mark.parametrize("where", ["asr", "vad"])
+def test_malformed_runtime_pin_is_rejected(installed, where):
+    hashes = json.loads(installed["hashes"].read_text())
+    section = hashes["asr"] if where == "asr" else hashes["asr"]["vad"]
+    section["runtime_binary"] = {"size": 1, "sha256": "invalid"}
+    installed["hashes"].write_text(json.dumps(hashes))
+    with pytest.raises(ValueError, match="hash manifest"):
+        assets.load_manifest()
+
+
+def test_runtime_pins_match_the_desktop_runtime_manifest():
+    root = Path(__file__).resolve().parents[3]
+    asr = json.loads((root / "scripts/engines/engine-hashes.json").read_text())["asr"]
+    runtime = json.loads((root / "desktop/runtime-manifest.json").read_text())
+    whisper = next(artifact for artifact in runtime["artifacts"] if artifact["name"] == "whisper.cpp")
+    assert asr["runtime_binary"]["sha256"] == whisper["binaries"]["whisper-cli"]["sha256"]
+    assert asr["vad"]["runtime_binary"]["sha256"] == whisper["binaries"]["whisper-vad-speech-segments"]["sha256"]

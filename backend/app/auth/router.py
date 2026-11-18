@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import refresh as refresh_tokens
 from app.auth.dependencies import get_current_user
+from app.auth.local import local_mode, local_token
 from app.auth.passwords import hash_password, needs_rehash, verify_dummy_password, verify_password
 from app.auth.rate_limit import (
     clear_failures,
@@ -56,8 +57,11 @@ _REFRESH_RESOURCE = "POST /api/v1/auth/refresh"
 
 @asynccontextmanager
 async def _startup_checks(_: FastAPI) -> AsyncIterator[None]:
-    """Refuse to start without a usable JWT signing secret (the message never contains it)."""
-    get_jwt_secret()
+    """Validate the configured mode's credential without revealing its value."""
+    if local_mode():
+        local_token()
+    else:
+        get_jwt_secret()
     yield
 
 
@@ -68,6 +72,8 @@ class _SanitizedValidationRoute(APIRoute):
         original = super().get_route_handler()
 
         async def handler(request: Request) -> Response:
+            if local_mode():
+                return JSONResponse(status_code=404, content={"detail": "local_password_auth_disabled"})
             try:
                 return await original(request)
             except RequestValidationError as exc:

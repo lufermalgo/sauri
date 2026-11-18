@@ -512,6 +512,31 @@ describe("TranscriptView — speaker review", () => {
     expect(screen.getByText(t("speakerReview:namedState"))).toHaveClass("meeting-sr-only");
   });
 
+  it("asks for the summary again after a name is saved and shows the text with the new name", async () => {
+    loadTranscript(); loadReview().mockResolvedValue(review());
+    const stored = {
+      summaryId: "s-1", meetingId: "r-1", templateId: "tpl", templateName: "General", templateVersion: 1,
+      keyPoints: [], reviewState: "draft" as const, generation: 1,
+      createdAt: "2026-11-14T12:00:00Z", updatedAt: "2026-11-14T12:00:00Z",
+    };
+    const loadSummary = vi.mocked(api.getMeetingSummary);
+    loadSummary.mockResolvedValue({ ...stored, topic: "Talk led by Hablante 1" }); // spanish-sample-data
+    vi.mocked(api.getLatestSummaryRequest).mockResolvedValue({ eventId: "e-1", generation: 1, status: "succeeded" } as Awaited<ReturnType<typeof api.getLatestSummaryRequest>>);
+    submit().mockResolvedValue(review({
+      labelsBySpeakerId: { "speaker-1": "Ana", "speaker-2": "Known Speaker" },
+      items: [{ ...review().items[0], currentLabel: "Ana", disposition: "named", expectedVersion: 2 }, review().items[1]],
+    }));
+    render(<TranscriptView meetingId="r-1" />);
+    expect(await screen.findByText("Talk led by Hablante 1")).toBeVisible(); // spanish-sample-data
+    const before = loadSummary.mock.calls.length;
+    loadSummary.mockResolvedValue({ ...stored, topic: "Talk led by Ana" });
+    await openReview();
+    await typeName(t("transcript:numberedSpeaker", { number: "1" }), "Ana");
+    expect(await screen.findByText("Talk led by Ana")).toBeVisible();
+    expect(loadSummary.mock.calls.length).toBe(before + 1);
+    expect(screen.queryByText("Talk led by Hablante 1")).not.toBeInTheDocument(); // spanish-sample-data
+  });
+
   it("reuses the idempotency key when the same name is retried after a failure", async () => {
     loadTranscript(); loadReview().mockResolvedValue(review());
     const update = submit().mockRejectedValueOnce(new Error("Error 503")).mockResolvedValue(review());

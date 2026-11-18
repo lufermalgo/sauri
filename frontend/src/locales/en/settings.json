@@ -26,6 +26,11 @@
       "description": "Language and theme",
       "keywords": "language english spanish idioma theme light dark system colors"
     },
+    "storage": {
+      "label": "Storage",
+      "description": "Where your data is kept",
+      "keywords": "folders disk space recordings database move external path"
+    },
     "engines": {
       "label": "Engines and models",
       "description": "Providers, keys and models",
@@ -51,7 +56,8 @@
     "fallbackName": "Account",
     "note": "Your name and email come from your login and can't be changed here.",
     "session": "Session",
-    "sessionHelp": "Logs out of this browser."
+    "sessionHelp": "Logs out of this browser.",
+    "localNote": "This account belongs to your local installation. No sign-in or sign-out is needed."
   },
   "appearance": {
     "themeTitle": "Theme",
@@ -61,6 +67,55 @@
       "system": "System",
       "light": "Light",
       "dark": "Dark"
+    }
+  },
+  "storage": {
+    "intro": "These are the folders where Sauri keeps your data. You can move them to another disk: Sauri copies everything, checks the copy and only then starts using the new folder.",
+    "browserOnly": "Open the Sauri app to change folders.",
+    "browserOnlyHelp": "This browser cannot reach your Mac's folders. In the Sauri app you can see how much space each one takes and move it.",
+    "loading": "Measuring the folders…",
+    "loadError": "I couldn't read the folders.",
+    "retry": "Try again",
+    "kinds": {
+      "recordings": {
+        "label": "Recordings",
+        "hint": "Audio, video and thumbnails of your meetings."
+      },
+      "database": {
+        "label": "Database",
+        "hint": "Transcripts, summaries and settings."
+      },
+      "models": {
+        "label": "Models",
+        "hint": "AI models installed on this Mac."
+      }
+    },
+    "used": "Uses {{size}}",
+    "free": "{{size}} free on this disk",
+    "missing": "I can't find this folder. If it is on an external disk, connect it.",
+    "change": "Change",
+    "changeLabel": "Change the {{kind}} folder",
+    "moving": "Copying and checking your data. Sauri pauses for a moment and comes back on its own when it finishes…",
+    "moved": "Done: {{kind}} is now in {{path}}. The previous folder is still intact.",
+    "movedTrashed": "Done: {{kind}} is now in {{path}}. The previous folder was moved to the Trash.",
+    "errors": {
+      "processing_one": "{{count}} meeting is being processed. Wait for it to finish before changing folders.",
+      "processing_other": "{{count}} meetings are being processed. Wait for them to finish before changing folders.",
+      "status_unavailable": "I couldn't tell whether meetings are being processed. Try again in a moment.",
+      "busy": "A folder is already being moved. Wait for it to finish.",
+      "same": "That is already the folder Sauri uses.",
+      "nested": "Choose a folder that is not inside the current one and does not contain it.",
+      "not_empty": "That folder already has other files. Choose an empty one or create a new one.",
+      "no_space": "There isn't enough space on that disk: {{needed}} are needed and {{free}} are free.",
+      "not_writable": "Sauri can't write to that folder. Choose another one or check its permissions.",
+      "not_a_directory": "That path is a file, not a folder.",
+      "foreign": "That folder belongs to another Sauri installation.",
+      "duplicate": "Another kind of data already uses that folder. Use a different one for each.",
+      "unavailable": "I can't find that location.",
+      "unsupported_file": "The current folder has a shortcut or a special file that Sauri can't copy safely: {{detail}}",
+      "copy_failed": "The copy couldn't finish. Sauri keeps using the previous folder, which is intact. If you try again with the same folder, it continues where it stopped.",
+      "verify_failed": "The copy of {{detail}} does not match the original. Sauri keeps using the previous folder, which is intact.",
+      "generic": "I couldn't change the folder. Sauri keeps using the previous one."
     }
   },
   "summaries": {

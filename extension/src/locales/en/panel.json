@@ -34,6 +34,7 @@
   "tabError": "Could not record this tab. Open Sauri from its icon in a web tab and try again.",
   "audioError": "Choose the tab again and leave the option to share tab audio checked.",
   "surfaceError": "Choose a Chrome tab, not a window or a screen.",
+  "sharingEndedError": "Tab sharing stopped before the recording began. If that was not you, reload the meeting tab and try again.",
   "startError": "Could not start the recording. Try again.",
   "commandError": "Could not complete the action. Try again.",
   "recording": "Recording",
@@ -55,15 +56,7 @@
   "enableMic": "Turn on the microphone and continue",
   "withoutMic": "Continue without a microphone",
   "skipWarning": "Do not show this again",
-  "loginHeading": "Sign in",
-  "sessionExpired": "Your session expired. Sign in again to see and save your recordings.",
-  "sessionAlert": "We could not load your recordings because the session is no longer valid.",
-  "email": "Email",
-  "password": "Password",
-  "login": "Sign in",
-  "loginError": "Could not sign in. Check your details and try again.",
   "unavailable": "The service is not available right now.",
-  "locked": "Access temporarily blocked after several failed attempts. Try again in a few seconds.",
   "recordings": "My recordings",
   "portal": "Open portal",
   "search": "Search recordings",
@@ -101,5 +94,6 @@
   "openPortal": "Open in the portal",
   "noSpeech": "No speech detected",
   "noSpeechHelp": "This recording has no speech to transcribe. Check that the microphone or the tab audio was on.",
-  "processingFailedHelp": "You can open it in the portal to see the details."
+  "processingFailedHelp": "You can open it in the portal to see the details.",
+  "openLocalApp": "Open Sauri on your Mac to record or view your meetings"
 }

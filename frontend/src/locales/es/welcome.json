@@ -1,0 +1,42 @@
+{
+  "title": "Te damos la bienvenida a Sauri",
+  "intro": "Faltan dos pasos: instalar los modelos de IA que procesan tus reuniones en este Mac y conectar la extensión de Chrome que las graba.",
+  "step": "Paso {{n}} de 2",
+  "models": {
+    "title": "Modelos para este Mac",
+    "intro": "Te recomendamos los modelos que mejor funcionan con este equipo. Se descargan una vez y después todo se procesa aquí, sin enviar nada fuera.",
+    "later": "Puedes instalar o cambiar modelos cuando quieras desde Ajustes.",
+    "loading": "Leyendo qué usa cada proceso…",
+    "loadError": "No pude leer qué modelo usa cada proceso.",
+    "retry": "Reintentar",
+    "saveError": "No pude guardar el modelo elegido. Vuelve a intentarlo.",
+    "processes": {
+      "transcription": {
+        "title": "Transcripción",
+        "help": "Convierte el audio de tus reuniones en texto."
+      },
+      "diarization": {
+        "title": "Hablantes",
+        "help": "Distingue quién habla en cada momento."
+      },
+      "summary": {
+        "title": "Resúmenes",
+        "help": "Redacta el resumen de cada reunión."
+      }
+    },
+    "continue": "Continuar"
+  },
+  "extension": {
+    "title": "Conecta la extensión de Chrome",
+    "intro": "La extensión graba tus reuniones de Google Meet y las envía a Sauri en este Mac.",
+    "install": "Instalar desde Chrome Web Store",
+    "how": "Después de instalarla, ábrela una vez en Chrome: se conecta sola con este Mac.",
+    "paired": "La extensión está conectada.",
+    "waiting": "Esperando a la extensión. Este aviso cambia solo cuando se conecte.",
+    "statusError": "No pude comprobar si la extensión está conectada.",
+    "later": "Puedes conectarla más tarde; Sauri ya funciona con grabaciones que subas tú."
+  },
+  "back": "Atrás",
+  "finish": "Empezar a usar Sauri",
+  "finishError": "No pude guardar que terminaste la configuración. Vuelve a intentarlo."
+}

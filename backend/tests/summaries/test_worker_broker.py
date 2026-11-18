@@ -33,7 +33,7 @@ async def test_real_broker_exhaustion_marks_failed_without_losing_success(
 ) -> None:
     url = os.environ.get("SAURI_QA_RABBITMQ_URL")
     if not url:
-        pytest.fail("Set SAURI_QA_RABBITMQ_URL to exclusively disposable RabbitMQ")
+        pytest.skip("SAURI_QA_RABBITMQ_URL required (disposable RabbitMQ)")
     monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "t12-synthetic-signing-key-with-more-than-32-bytes")
     monkeypatch.setenv("SUMMARIZE_MAX_RETRIES", "1")
     monkeypatch.setenv("SUMMARIZE_RETRY_DELAY_SECONDS", "1")  # exercises the delay queue on the real broker

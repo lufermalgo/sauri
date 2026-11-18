@@ -9,5 +9,4 @@ export * from "./speakerTime";
 export * from "./view";
 export * from "./capture";
 export * from "./detailUrl";
-export * from "./authLock";
 export * from "./design";

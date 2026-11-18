@@ -278,10 +278,10 @@ async function startRecording(
     const recordingStream = new MediaStream([
       ...audioTracks, ...(captureMode === "audio_only" ? [] : [videoTrack]),
     ]);
-    if (sharingEnded()) { cleanup(); return { ok: false, reason: "cancelled" }; }
+    if (sharingEnded()) { cleanup(); return { ok: false, reason: "sharing-ended" }; }
     const ready = await chrome.runtime.sendMessage({ type: "capture-ready", sessionId });
     if (!ready?.ok) {
-      if (ready?.reason === "cancelled") { cleanup(); return { ok: false, reason: "cancelled" }; }
+      if (ready?.reason === "cancelled") { const ended = sharingEnded(); cleanup(); return { ok: false, reason: ended ? "sharing-ended" : "cancelled" }; }
       throw new Error("Could not bind capture identity");
     }
     captureReady = true;

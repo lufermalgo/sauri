@@ -155,6 +155,8 @@ async def world(
     monkeypatch.setenv("SAURI_ASR_SUPPRESS_NST", "off")
     monkeypatch.setenv("SAURI_ASR_VOCABULARY_FILE", str(tmp_path / "no-vocabulary"))
     monkeypatch.setenv("SAURI_ASR_ALLOW_LOCAL_PROVIDERS", "1")
+    # Isolate from a Parakeet install on the host: "no configuration" means Whisper is the local default.
+    monkeypatch.setenv("SAURI_PARAKEET_HOME", str(tmp_path / "no-parakeet"))
     monkeypatch.setenv("SAURI_ENGINE_TOKEN_FILE", str(token))
     monkeypatch.setenv("SAURI_RECORDING_CAPABILITY_KEY_FILE", str(capability_key))
     monkeypatch.setattr(native, "ENGINE_TOKEN_PATH", token)

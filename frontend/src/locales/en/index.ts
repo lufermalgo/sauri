@@ -11,6 +11,7 @@ import speakerReview from "./speakerReview.json";
 import summary from "./summary.json";
 import transcript from "./transcript.json";
 import upload from "./upload.json";
+import welcome from "./welcome.json";
 
 /** English bundle. Loaded on demand (dynamic import), so Spanish users never download it. */
-export const en: Resources = { engines, language, library, login, meeting, processing, settings, shell, speakerReview, summary, transcript, upload };
+export const en: Resources = { engines, language, library, login, meeting, processing, settings, shell, speakerReview, summary, transcript, upload, welcome };

@@ -20,8 +20,8 @@ pytest_plugins = ("tests.summaries.test_worker",)  # shared disposable PG fixtur
 @pytest.fixture(autouse=True)
 def require_disposable_postgres() -> None:
     # Runs before the shared `case` fixture, which fails hard without the disposable database.
-    if not os.environ.get("SAURI_QA_POSTGRES_URL"):
-        pytest.skip("SAURI_QA_POSTGRES_URL required (disposable sauri_t11_* PostgreSQL)")
+    if not (os.environ.get("SAURI_QA_T11_POSTGRES_URL") or os.environ.get("SAURI_QA_POSTGRES_URL")):
+        pytest.skip("SAURI_QA_T11_POSTGRES_URL or SAURI_QA_POSTGRES_URL required (disposable sauri_t11_* PostgreSQL)")
 
 
 NOW = datetime.now(UTC)

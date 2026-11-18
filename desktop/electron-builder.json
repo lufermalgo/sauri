@@ -1,0 +1,37 @@
+{
+  "appId": "com.sauri.desktop",
+  "productName": "Sauri",
+  "artifactName": "Sauri-${version}-mac-${arch}.${ext}",
+  "directories": {
+    "output": "out",
+    "buildResources": "assets"
+  },
+  "files": ["dist/**", "!dist/**/*.map", "package.json"],
+  "extraResources": [
+    { "from": ".stage/runtime", "to": "runtime", "filter": ["**/*"] },
+    { "from": ".stage/app-sources", "to": "app-sources", "filter": ["**/*"] },
+    { "from": ".stage/portal", "to": "portal", "filter": ["**/*"] },
+    { "from": ".stage/THIRD_PARTY_NOTICES.md", "to": "THIRD_PARTY_NOTICES.md" },
+    { "from": ".stage/build.json", "to": "build.json" }
+  ],
+  "npmRebuild": false,
+  "nodeGypRebuild": false,
+  "electronVersion": "44.10.2",
+  "publish": null,
+  "mac": {
+    "target": [
+      { "target": "dmg", "arch": ["arm64"] },
+      { "target": "zip", "arch": ["arm64"] }
+    ],
+    "icon": "assets/icon.png",
+    "category": "public.app-category.productivity",
+    "identity": "-",
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false,
+    "minimumSystemVersion": "14.0"
+  },
+  "dmg": {
+    "title": "Sauri ${version}",
+    "writeUpdateInfo": false
+  }
+}

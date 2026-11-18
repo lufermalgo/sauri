@@ -156,6 +156,8 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackLoading, setPlaybackLoading] = useState(true);
   const [review, setReview] = useState<SpeakerReview | null>(null);
+  // Bumped after each saved speaker choice so the summary is requested again with the new names.
+  const [speakerNamesVersion, setSpeakerNamesVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -344,6 +346,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
       pendingActions.current.delete(speakerId);
       reviewRef.current = updatedReview;
       setReview(updatedReview);
+      setSpeakerNamesVersion((version) => version + 1);
       return null;
     } catch (err) {
       // A conflict or a missing meeting will not succeed on retry; anything else keeps the key.
@@ -648,7 +651,7 @@ function MeetingTranscriptView({ meetingId, onBack, onResolved }: TranscriptView
           { id: "summary", label: t("meeting:summaryTab"), panel: meeting
             // Stays mounted behind the other tab so summary-status polling (and the header) keeps going.
             ? <SummaryPanel meetingId={meetingId} onSeek={timeMs => seekToRef.current?.(timeMs)} transcriptReady={data !== null} onSummaryChange={handleSummaryChange}
-              expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal}
+              expectAutoRequest={expectSummary} onSignalChange={handleSummarySignal} refreshKey={speakerNamesVersion}
               progress={{ audioSeconds: playbackManifest?.duration_seconds ?? metadata.durationSeconds,
                 createdAt: metadata.createdAt, stageStartedAt: stage === "summary" ? stageStartedAt : null }} /> : null },
           { id: "chat", label: t("meeting:chatTab"), panel: <ChatTab /> },

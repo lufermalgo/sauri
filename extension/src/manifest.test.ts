@@ -68,7 +68,7 @@ describe("manifest.json — recording any browser tab with least privilege", () 
 describe("manifest.json — minimal exposure to web pages", () => {
   it("declares no new permissions (only the ones the recorder already needs)", () => {
     expect([...manifest.permissions].sort()).toEqual(
-      ["activeTab", "alarms", "notifications", "offscreen", "scripting", "sidePanel", "storage", "tabCapture", "tabs"],
+      ["activeTab", "alarms", "offscreen", "scripting", "sidePanel", "storage", "tabCapture", "tabs"],
     );
   });
 
@@ -111,5 +111,17 @@ describe("manifest.json — brand name", () => {
       const html = fs.readFileSync(path.resolve(__dirname, page, "index.html"), "utf-8");
       expect(html).toMatch(/<title>Sauri\b/);
     }
+  });
+});
+
+describe("store material matches the runtime manifest", () => {
+  it.each(["es", "en"])("justifies every permission and host in %s", language => {
+    const permissions = fs.readFileSync(path.resolve(__dirname, `../store/${language}/permissions.md`), "utf8");
+    for (const permission of [...manifest.permissions, ...manifest.host_permissions]) {
+      expect(permissions).toContain(`| \`${permission}\` |`);
+    }
+    const listing = fs.readFileSync(path.resolve(__dirname, `../store/${language}/listing.md`), "utf8");
+    expect(listing).toContain(messages(language).extensionDescription.message);
+    expect(messages(language).extensionDescription.message.length).toBeLessThanOrEqual(132);
   });
 });

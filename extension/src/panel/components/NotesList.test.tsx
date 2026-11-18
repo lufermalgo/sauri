@@ -20,7 +20,7 @@ describe("NotesList approved library", () => {
     expect(screen.getByText(copy.untitled)).toBeInTheDocument();
     for (const label of [copy.ready, copy.transcribing, copy.failed]) expect(screen.getByText(label)).toBeInTheDocument();
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: copy.portal })).toHaveAttribute("href", "http://localhost:5173/");
+    expect(screen.getByRole("link", { name: copy.portal })).toHaveAttribute("href", "http://localhost:8000/");
   });
   it("filters the loaded list from an inline search and restores it when closed", () => {
     render(<NotesList state="withData" notes={notes} onRetry={vi.fn()} onOpenNote={vi.fn()} />);

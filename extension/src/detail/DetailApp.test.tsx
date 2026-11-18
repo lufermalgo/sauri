@@ -7,8 +7,13 @@ import { DetailApp } from "./DetailApp";
 function mockChrome() {
   (globalThis as unknown as { chrome: unknown }).chrome = {
     storage: {
+      local: {
+        setAccessLevel: vi.fn(async () => {}),
+        get: vi.fn(async () => ({ sauriLocalToken: "token-x" })),
+        set: vi.fn(async () => {}),
+      },
       session: {
-        get: vi.fn(async () => ({ sauriSessionToken: "token-x" })),
+        get: vi.fn(async () => ({})),
         set: vi.fn(async () => {}),
         remove: vi.fn(async () => {}),
       },

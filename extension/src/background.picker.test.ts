@@ -56,7 +56,7 @@ async function completions() {
   });
 }
 
-async function setup({ url = "https://meet.google.com/test-picker", existing = false, recording = false, liveOffscreen = false, captureMode = "screen_audio", countdownSeconds = 0, showControlBar = true, realUI = false, title = "Example page", injectable = true } = {}) {
+async function setup({ url = "https://meet.google.com/test-picker", existing = false, recording = false, liveOffscreen = false, captureMode = "screen_audio", countdownSeconds = 0, showControlBar = true, realUI = false, title = "Example page", injectable = true, appAvailable = true } = {}) {
   vi.resetModules();
   Recorder.last = undefined as unknown as Recorder;
   vi.stubGlobal("indexedDB", new IDBFactory());
@@ -68,7 +68,8 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     get(key: string) { return this.values.get(key); }
   });
   const original = { status: recording ? "recording" : "pending", meetingTitle: "Prior title", meetingUrl: "https://meet.google.com/previous", captureMode };
-  const stored: Record<string, any> = { sauriState: original, sauriSessionToken: "synthetic-token" };
+  const stored: Record<string, any> = { sauriState: original };
+  let alarm!: (value: { name: string }) => void;
   const video = new Track("video");
   const audio = new Track("audio");
   const stream = new Stream([audio, video]);
@@ -79,6 +80,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     permissions: { query: vi.fn(async () => ({ state: "granted" })) },
     mediaDevices: { getDisplayMedia: display, getUserMedia: userMedia },
     locks: { request: vi.fn(async (_name, _options, callback) => {
+      if (typeof _options === "function") return _options({ name: _name });
       if (locked) return callback(null);
       locked = true;
       try { return await callback({ name: "sauri-capture-start" }); }
@@ -105,7 +107,11 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
   });
   const upload = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ recording_id: "server-picker", state: "queued" }), { status: 200 }));
   // Only ingestion uploads count; the later processing-status reads are answered with a failure.
-  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => String(url).endsWith("/ingestion/upload") ? upload(url, init) : Promise.resolve(new Response("", { status: 503 })));
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (!appAvailable) return Promise.reject(new TypeError("Desktop app closed"));
+    if (String(url).endsWith("/health")) return Promise.resolve(new Response("{}"));
+    return String(url).endsWith("/ingestion/upload") ? upload(url, init) : Promise.resolve(new Response("", { status: 503 }));
+  });
   vi.stubGlobal("chrome", {
     runtime: {
       ContextType: { OFFSCREEN_DOCUMENT: "OFFSCREEN_DOCUMENT" },
@@ -123,7 +129,8 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     },
     storage: {
       // Existing picker tests explicitly opt out of the new countdown.
-      local: { get: vi.fn(async () => ({ recordingSettings: { countdownSeconds, showControlBar } })) },
+      sync: { remove: vi.fn(async () => {}) },
+      local: { remove: vi.fn(async () => {}), setAccessLevel: vi.fn(async () => {}), get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token", recordingSettings: { countdownSeconds, showControlBar } })), set: vi.fn(async () => {}) },
       session: {
         get: vi.fn(async () => ({ ...stored })),
         set: vi.fn(async (values: object) => { Object.assign(stored, values); }),
@@ -146,7 +153,7 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
     scripting: { executeScript },
     action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
-    alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
+    alarms: { create: vi.fn(), onAlarm: { addListener: (fn: typeof alarm) => { alarm = fn; } } },
   });
   await import("./offscreen");
   const startupProcessing = vi.spyOn(await import("./recording-db"), "getProcessingCompletions");
@@ -155,6 +162,8 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
   await startupProcessing.mock.results[0].value;
   return {
     display, userMedia, original, stored, stream, audio, video, upload, send,
+    setAppAvailable: (value: boolean) => { appAvailable = value; },
+    alarm: () => alarm({ name: "sauri-upload-check" }),
     start: (source: "picker" | "current-tab" = "picker", micDeviceId?: string, resolution?: unknown) => dispatch(listeners[1], { type: "start-capture", source, micDeviceId, ...(resolution === undefined ? {} : { resolution }) }),
     stop: () => dispatch(listeners[1], { type: "stop-capture" }),
     close: (id = 7) => removed(id),
@@ -167,6 +176,24 @@ async function setup({ url = "https://meet.google.com/test-picker", existing = f
 afterEach(() => { cancelCountdown(); hideRecordingUI(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("#994: native picker to durable upload", () => {
+  it("records with the desktop closed and automatically sends the retained bytes when it opens", async () => {
+    const h = await setup({ appAvailable: false });
+    const result = await h.start();
+    expect(result.ok).toBe(true);
+    await h.stop();
+    const { getUploadJob } = await import("./upload-queue");
+    await vi.waitFor(async () => expect(await getUploadJob(result.sessionId)).toMatchObject({ status: "pending", retryCount: 0 }));
+    expect(await getChunksBySession(result.sessionId)).toHaveLength(1);
+    expect(h.upload).not.toHaveBeenCalled();
+    h.setAppAvailable(true);
+    h.alarm();
+    await vi.waitFor(async () => expect(await getUploadJob(result.sessionId)).toMatchObject({ status: "done", retryCount: 0 }));
+    expect(h.upload).toHaveBeenCalledOnce();
+    const payload = h.upload.mock.calls[0][1]!.body as FormData;
+    expect(await (payload.get("audio") as Blob).arrayBuffer()).toEqual(await media.arrayBuffer());
+    await vi.waitFor(async () => expect(await getChunksBySession(result.sessionId)).toHaveLength(0));
+  });
+
   it("creates a DISPLAY_MEDIA + USER_MEDIA offscreen and binds only after selection", async () => {
     const h = await setup();
     let select!: (stream: Stream) => void;
@@ -245,7 +272,7 @@ describe("#994: native picker to durable upload", () => {
     expect((payload.get("audio") as Blob).size).toBe(media.size);
     expect(JSON.parse(payload.get("data") as string)).toMatchObject({ meeting_id: completion!.meetingId, idempotency_key: result.sessionId, video_presence: "muxed" });
     expect(await getCompletion(result.sessionId)).toMatchObject({ recordingId: "server-picker", reviewStatus: "review_opened", trigger: "captured_tab_closed" });
-    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:5173/?meetingId=${completion!.meetingId}` });
+    expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:8000/?meetingId=${completion!.meetingId}` });
     await h.close();
     await h.stop();
     h.video.dispatchEvent(new Event("ended"));
@@ -372,6 +399,8 @@ describe("#994: native picker to durable upload", () => {
       const accepted = await h.message({ type: "stop-capture", sessionId }, { tab: { id: 7 } } as chrome.runtime.MessageSender);
       expect(accepted).toEqual({ ok: true });
       expect(Recorder.last.stop).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(h.stored.sauriState.status).toBe("idle"));
+      expect(h.upload).toHaveBeenCalledOnce();
     });
   });
 
@@ -612,7 +641,7 @@ describe("recording resolution", () => {
 });
 
 describe("recording control bar setting changed mid-recording", () => {
-  const storeControlBar = (showControlBar: boolean) => vi.mocked(chrome.storage.local.get).mockImplementation(async () => ({ recordingSettings: { countdownSeconds: 0, showControlBar } }));
+  const storeControlBar = (showControlBar: boolean) => vi.mocked(chrome.storage.local.get).mockImplementation(async () => ({ sauriLocalToken: "synthetic-token", recordingSettings: { countdownSeconds: 0, showControlBar } }));
 
   it("hides and shows the floating bar without touching the recording", async () => {
     const h = await setup({ realUI: true });
@@ -640,7 +669,7 @@ describe("recording control bar setting changed mid-recording", () => {
 describe("recording control edge cases", () => {
   it.each([undefined, { countdownSeconds: 7, showControlBar: "invalid" }])("uses safe defaults for missing or malformed preferences (%j)", async settings => {
     const h = await setup({ realUI: true });
-    vi.mocked(chrome.storage.local.get).mockImplementationOnce(async () => ({ recordingSettings: settings }));
+    vi.mocked(chrome.storage.local.get).mockImplementationOnce(async () => ({ sauriLocalToken: "synthetic-token", recordingSettings: settings }));
     const pending = h.start();
     await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
     expect(document.getElementById("sauri-countdown-host")!.shadowRoot!.querySelector("strong")!.textContent).toBe("3");
@@ -654,10 +683,39 @@ describe("recording control edge cases", () => {
     const pending = h.start();
     await vi.waitFor(() => expect(document.getElementById("sauri-countdown-host")).not.toBeNull());
     h.video.dispatchEvent(new Event("ended"));
-    expect(await pending).toEqual({ ok: false, reason: "cancelled" });
+    expect(await pending).toEqual({ ok: false, reason: "sharing-ended" });
     expect(await completions()).toEqual([]);
     expect(h.upload).not.toHaveBeenCalled();
     expect(Recorder.last).toBeUndefined();
+  });
+
+  it("recovers a Meet tab whose page script stopped answering by reinjecting it", async () => {
+    const h = await setup({ countdownSeconds: 3 });
+    const original = vi.mocked(chrome.tabs.sendMessage).getMockImplementation()!;
+    let failed = false;
+    vi.mocked(chrome.tabs.sendMessage).mockImplementation(async (tabId: number, message: any) => {
+      if (message.type === "show-countdown" && !failed) { failed = true; throw new Error("Receiving end does not exist"); }
+      return (original as (...args: unknown[]) => Promise<unknown>)(tabId, message);
+    });
+    expect(await h.start()).toMatchObject({ ok: true });
+    expect(h.executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: [expect.stringContaining("entry")] });
+    const logged = vi.mocked(chrome.storage.local.set).mock.calls.map(call => JSON.stringify(call[0])).join("");
+    expect(logged).toContain("countdown-unreachable");
+    expect(logged).not.toContain("countdown-skipped");
+  });
+
+  it("records without a countdown on Meet when the page script cannot be recovered", async () => {
+    const h = await setup({ countdownSeconds: 3, injectable: false });
+    const original = vi.mocked(chrome.tabs.sendMessage).getMockImplementation()!;
+    vi.mocked(chrome.tabs.sendMessage).mockImplementation(async (tabId: number, message: any) => {
+      if (message.type === "show-countdown") { throw new Error("Receiving end does not exist"); }
+      return (original as (...args: unknown[]) => Promise<unknown>)(tabId, message);
+    });
+    expect(await h.start()).toMatchObject({ ok: true });
+    expect(await completions()).toHaveLength(1);
+    const logged = vi.mocked(chrome.storage.local.set).mock.calls.map(call => JSON.stringify(call[0])).join("");
+    expect(logged).toContain("countdown-unreachable");
+    expect(logged).toContain("countdown-skipped");
   });
 
   it("retains a real recording state when MediaRecorder cannot pause", async () => {

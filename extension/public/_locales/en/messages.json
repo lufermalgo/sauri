@@ -1,6 +1,6 @@
 {
   "extensionDescription": {
-    "message": "Records the audio and video of any browser tab, and Sauri transcribes and summarizes it.",
+    "message": "Record any browser tab and send it to Sauri on your Mac for transcripts and summaries. No sign-in required.",
     "description": "Extension description shown in the Chrome Web Store and chrome://extensions."
   },
   "actionTitle": {

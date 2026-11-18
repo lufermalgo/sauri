@@ -1,5 +1,6 @@
 """Request persistence; the caller owns the transaction."""
 
+from datetime import UTC, datetime
 from typing import cast
 
 from sqlalchemy import and_, func, select
@@ -12,6 +13,8 @@ from app.infra.models import (
     MeetingSummary,
     Speaker,
     SpeakerAssignment,
+    SpeakerReview,
+    SpeakerReviewItem,
     SpeechTurn,
     SummaryRequestOutbox,
     SummaryTemplate,
@@ -171,3 +174,46 @@ async def transcript_passages(session: AsyncSession, transcript_id: str) -> list
         )
         for turn, speaker in rows
     ])
+
+
+def _aware(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+async def speaker_names_for_summary(session: AsyncSession, summary: MeetingSummary) -> tuple[str, dict[int, str]]:
+    """The transcript language and the chosen name of each speaker number, for reading a summary.
+
+    Numbers and names come from the latest completed diarization (the one ``transcript_passages`` numbers
+    speakers with) and its speaker review. Stale rule: the summary's numbering is only trusted when that
+    diarization was completed (``updated_at``) no later than the summary's request was first taken by the
+    worker (``started_at``, falling back to ``created_at`` for rows without it). Every attempt builds the
+    passages after that moment, so none of them can have seen a newer diarization; otherwise the summary may
+    use another numbering and no name is applied, because a missing name is better than a wrong one.
+    """
+    language = await session.scalar(select(Transcript.language).where(Transcript.id == summary.transcript_id)) or "es"
+    diarization = await session.scalar(
+        select(Diarization)
+        .where(Diarization.transcript_id == summary.transcript_id, Diarization.diarization_state == "completed")
+        .order_by(Diarization.processing_revision.desc())
+        .limit(1)
+    )
+    if diarization is None:
+        return language, {}
+    started_at = await session.scalar(
+        select(SummaryRequestOutbox.started_at).where(SummaryRequestOutbox.event_id == summary.event_id)
+    )
+    if _aware(diarization.updated_at) > _aware(started_at or summary.created_at):
+        return language, {}
+    rows = (
+        await session.execute(
+            select(Speaker.sequence, SpeakerReviewItem.chosen_label)
+            .join(SpeakerReviewItem, SpeakerReviewItem.speaker_key == Speaker.id)
+            .join(SpeakerReview, SpeakerReview.id == SpeakerReviewItem.review_id)
+            .where(
+                Speaker.diarization_id == diarization.id,
+                SpeakerReview.meeting_id == diarization.meeting_id,
+                SpeakerReview.processing_revision == diarization.processing_revision,
+            )
+        )
+    ).all()
+    return language, {sequence: name for sequence, name in rows if name and name.strip()}

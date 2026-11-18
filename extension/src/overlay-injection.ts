@@ -24,3 +24,17 @@ export async function ensureOverlay(tabId: number, url?: string): Promise<boolea
     return false;
   }
 }
+
+/**
+ * Injects the overlay again, replacing a script orphaned by an extension reload. Meet's static
+ * content script stops answering after a reload until the tab is refreshed; this recovers it.
+ */
+export async function reinjectOverlay(tabId: number): Promise<boolean> {
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: [overlayScript] });
+    return true;
+  } catch (error) {
+    console.warn("[sauri] Could not reinject the overlay:", error);
+    return false;
+  }
+}

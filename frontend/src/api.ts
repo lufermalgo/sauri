@@ -1,4 +1,4 @@
-
+import type { SessionUser } from "./session-user";
 import type {
   Meeting,
   MeetingListApiResponse,
@@ -104,19 +104,59 @@ export interface MeetingDiarization {
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 export const TOKEN_KEY = "sauri_token";
 
-function getAuthHeaders(): HeadersInit {
+let localMode = false;
+
+/** Local credentials work only on the portal/API's shared origin, never on the Vite dev origin. */
+export function canDetectLocalMode(): boolean {
+  return new URL(BASE_URL || "/", window.location.href).origin === window.location.origin;
+}
+
+/** Probe before mounting data screens: a stale password token must never reach the local API. */
+export async function detectLocalSession(): Promise<SessionUser | null> {
+  localMode = false;
+  const response = await fetch(`${BASE_URL}/api/v1/local/status`, { credentials: "same-origin", cache: "no-store" });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Error ${response.status}`);
+  const status = await response.json();
+  if (status.mode !== "local" || status.ready !== true) throw new Error("Local API is not ready");
+  localMode = true;
+  const me = await fetch(`${BASE_URL}/api/v1/local/me`, { credentials: "same-origin", cache: "no-store" });
+  if (!me.ok) throw new Error(`Error ${me.status}`);
+  const user = await me.json();
+  if (typeof user.name !== "string" || typeof user.email !== "string") throw new Error("Invalid local user");
+  return { name: user.name, email: user.email, mode: "local" };
+}
+
+export interface LocalStatus {
+  ready: boolean;
+  processing: number;
+  version: string;
+  mode: string;
+  /** True once the Chrome extension has paired with this Mac. */
+  extension_paired: boolean;
+}
+
+/** The local core's status (meetings in progress, extension pairing); only in local mode. */
+export async function getLocalStatus(): Promise<LocalStatus> {
+  const response = await fetch(`${BASE_URL}/api/v1/local/status`, { credentials: "same-origin", cache: "no-store" });
+  return handleResponse<LocalStatus>(response);
+}
+
+function getAuthHeaders(json = true): HeadersInit {
+  const contentType: Record<string, string> = json ? { "Content-Type": "application/json" } : {};
+  if (localMode) return contentType;
   const token = localStorage.getItem(TOKEN_KEY);
   if (!token) {
     throw new Error("Not authenticated: token not found");
   }
   return {
     Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
+    ...contentType,
   };
 }
 
 function endSessionOn401(response: Response): void {
-  if (response.status === 401) {
+  if (!localMode && response.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     window.dispatchEvent(new Event("sauri:unauthorized"));
   }
@@ -188,8 +228,8 @@ export async function uploadWithProgress(
   data: RecordingUploadData,
   onProgress: (progress: UploadProgress) => void
 ): Promise<RecordingUploadResult> {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) throw new Error(t("upload:errors.unauthenticated"));
+  const token = localMode ? null : localStorage.getItem(TOKEN_KEY);
+  if (!localMode && !token) throw new Error(t("upload:errors.unauthenticated"));
 
   const formData = new FormData();
   formData.append("audio", audio);
@@ -202,7 +242,7 @@ export async function uploadWithProgress(
       total: event.lengthComputable && event.total > 0 ? event.total : null,
     });
     xhr.onload = () => {
-      if (xhr.status === 401) {
+      if (!localMode && xhr.status === 401) {
         localStorage.removeItem(TOKEN_KEY);
         window.dispatchEvent(new Event("sauri:unauthorized"));
       }
@@ -227,7 +267,7 @@ export async function uploadWithProgress(
     xhr.ontimeout = () => reject(new Error(t("upload:errors.timeout")));
     xhr.onabort = () => reject(new Error(t("upload:errors.aborted")));
     xhr.open("POST", `${BASE_URL}/api/v1/ingestion/upload`);
-    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    if (!localMode) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.send(formData);
   });
 }
@@ -236,10 +276,7 @@ export async function uploadRecording(
   audio: File,
   data: RecordingUploadData
 ): Promise<RecordingUploadResult> {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) {
-    throw new Error("Not authenticated: token not found");
-  }
+  const headers = getAuthHeaders(false);
 
   const formData = new FormData();
   formData.append("audio", audio);
@@ -247,7 +284,7 @@ export async function uploadRecording(
 
   const response = await fetch(`${BASE_URL}/api/v1/ingestion/upload`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers,
     body: formData,
   });
   return handleResponse<RecordingUploadResult>(response);

@@ -18,20 +18,16 @@ import { readFailureCause, resolveProcessingStatus } from "./core/processing-sta
 import { matchesCaptureHandle, type CompletionTrigger, type CaptureHandle } from "./core/recording-completion";
 
 import { canCaptureCurrentTab, isMeetUrl } from "./core/capture";
-import { ensureOverlay } from "./overlay-injection";
+import { ensureOverlay, reinjectOverlay } from "./overlay-injection";
+import { errorCode, logDiagnostic } from "./core/diagnostics";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
 import { validCaptureDimensions } from "./core/resolution";
+import { portalDestination } from "./panel/portal";
 import { readRecordingSettings } from "./panel/recordingSettings";
 import { parseDurationSeconds } from "./core/recording-duration";
-import {
-  SessionRequiredError,
-  purgeLegacyToken,
-  readSessionToken,
-  restrictSessionStorageToTrustedContexts,
-  setSignInRequired,
-} from "./core/session-token";
-import { authorizedRequest, InvalidSessionError } from "./core/api/authorized-fetch";
-import { ensureAccessToken } from "./core/api/session-refresh";
+import { BACKEND_URL } from "./core/backend";
+import { ensureLocalToken, isLocalAppAvailable, LocalAppUnavailableError, migrateLegacyCredentials } from "./core/local-pairing";
+import { authorizedRequest } from "./core/api/authorized-fetch";
 
 export {};
 
@@ -119,9 +115,7 @@ async function ensureOffscreenDocument(): Promise<boolean> {
   return true;
 }
 
-// --- Backend upload (PoC) ---
-
-const BACKEND_URL = import.meta.env.VITE_SAURI_BACKEND_URL ?? "http://localhost:8000";
+// --- Backend upload ---
 
 async function uploadRecording(job: UploadJob): Promise<void> {
   const { mimeType, sessionId, meetingId, notificationEmittedAt, title, meetLink } = job;
@@ -155,21 +149,12 @@ async function uploadRecording(job: UploadJob): Promise<void> {
     formData.append("audio", blob, "recording.webm");
     formData.append("data", JSON.stringify(ingestionData));
 
-    // The access token comes from chrome.storage.session; after a browser restart it is renewed
-    // silently from the refresh token. A 401 renews it once and retries the upload. Only when the
-    // session is really over is the job released back to the queue and the panel asks for a sign-in.
-    let response: Response;
-    try {
-      response = await authorizedRequest(
-        BACKEND_URL,
-        "/api/v1/ingestion/upload",
-        { method: "POST", body: formData },
-        async (reply) => reply,
-      );
-    } catch (error) {
-      if (error instanceof InvalidSessionError) throw new SessionRequiredError();
-      throw error;
-    }
+    const response = await authorizedRequest(
+      BACKEND_URL,
+      "/api/v1/ingestion/upload",
+      { method: "POST", body: formData },
+      async (reply) => reply,
+    );
 
     if (response.ok) {
       const result = await response.json();
@@ -209,19 +194,8 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // --- Initialization ---
 
-// Hardening runs on every service worker start: the legacy synced token is deleted (never
-// copied) and session storage stays out of reach of content scripts.
-void restrictSessionStorageToTrustedContexts();
-void purgeLegacyToken();
-
-// After an extension reload or a browser restart the access token is gone but the refresh token is
-// not: sign back in silently and resume the uploads that were waiting for a session.
-async function restoreSession(): Promise<void> {
-  if (await readSessionToken()) return;
-  if ((await ensureAccessToken(BACKEND_URL)).status === "ok") await processUploadQueue();
-}
-void restoreSession().catch(() => {
-  console.warn("[sauri] Silent sign-in unavailable; the panel will ask if it is still needed");
+void migrateLegacyCredentials().catch(() => {
+  console.warn("[sauri] Legacy credential cleanup unavailable");
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -302,7 +276,7 @@ chrome.runtime.onMessage.addListener(
   ) => {
     // Media-owner messages cannot come from a page. Overlay controls are
     // separately bound to the exact recording session and originating Meet tab.
-    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload", "session-restored", "recording-settings-changed"].includes(message.type)) {
+    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload", "recording-settings-changed"].includes(message.type)) {
       sendResponse({ ok: false, error: "Message requires an extension capture context" });
       return false;
     }
@@ -369,14 +343,6 @@ chrome.runtime.onMessage.addListener(
         })();
         return true;
 
-      case "session-restored":
-        // The panel just signed in: resume the uploads that were waiting for a token.
-        void processUploadQueue().catch(() => {
-          console.warn("[sauri] Upload processing unavailable; pending jobs remain queued");
-        });
-        sendResponse({ ok: true });
-        break;
-
       case "recording-stopped":
         handleRecordingStopped(message.size!, message.mimeType!, message.sessionId, message.durationSeconds);
         sendResponse({ ok: true });
@@ -389,6 +355,7 @@ chrome.runtime.onMessage.addListener(
 
       case "recording-error":
         console.error("[sauri] Recording error from offscreen:", message.error);
+        void logDiagnostic("recording-error", String(message.error));
         void handleRecordingError(message.sessionId);
         sendResponse({ ok: true });
         break;
@@ -458,13 +425,26 @@ async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; re
     if (state.overlayAvailable !== false && request.countdownSeconds > 0) {
       await chrome.storage.session.set({ sauriCountdown: { requestId: state.sessionId, tabId: state.tabId } });
       try {
-        const countdown = await chrome.tabs.sendMessage(state.tabId, { type: "show-countdown", seconds: request.countdownSeconds, requestId: state.sessionId });
+        const showCountdown = () => chrome.tabs.sendMessage(state.tabId, { type: "show-countdown", seconds: request.countdownSeconds, requestId: state.sessionId });
+        let countdown: { ok?: boolean } | undefined;
+        try {
+          countdown = await showCountdown();
+        } catch (error) {
+          // The page script stopped answering (typically a Meet tab opened before the extension
+          // was reloaded). Reinject it once; if it still fails, record without a countdown
+          // rather than dropping the user's share.
+          void logDiagnostic("countdown-unreachable", errorCode(error));
+          if (await reinjectOverlay(state.tabId)) {
+            try { countdown = await showCountdown(); }
+            catch (retry) { void logDiagnostic("countdown-skipped", errorCode(retry)); countdown = undefined; }
+          } else void logDiagnostic("countdown-skipped", "overlay could not be reinjected");
+          if (!countdown) countdown = { ok: true };
+        }
         const stored = (await chrome.storage.session.get("sauriCountdown")).sauriCountdown;
-        if (!countdown?.ok || stored?.cancelled) return { ok: false, reason: "cancelled" };
-      } catch {
-        // Meet always hosts the overlay, so a failure there still cancels. Elsewhere the
-        // injected script may be gone (page closed or navigated): record without it.
-        if (isMeetUrl(state.meetingUrl)) return { ok: false, reason: "cancelled" };
+        if (!countdown?.ok || stored?.cancelled) {
+          void logDiagnostic("countdown-cancelled", stored?.cancelled ? "cancelled by the user" : "no confirmation from the page");
+          return { ok: false, reason: "cancelled" };
+        }
       } finally {
         await chrome.storage.session.remove("sauriCountdown");
       }
@@ -479,6 +459,7 @@ async function handleCaptureReady(sessionId?: string): Promise<{ ok: boolean; re
     return { ok: true };
   } catch (error) {
     console.error("[sauri] Could not bind selected media:", error);
+    void logDiagnostic("bind-failed", errorCode(error));
     return { ok: false };
   }
 }
@@ -550,6 +531,7 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
           micDeviceId: micDeviceId ?? null,
         });
         if (!result?.ok) {
+          void logDiagnostic("start-not-completed", result?.reason ?? "no response from the recorder");
           if (await getCompletion(sessionId)) await handleRecordingError(sessionId);
           return result ?? { ok: false, reason: "failed" };
         }
@@ -572,6 +554,7 @@ async function handleStartCapture(source: CaptureSource, resolution?: Resolution
         return result;
       } catch (error) {
         console.error("[sauri] Failed to start capture:", error);
+        void logDiagnostic("start-failed", errorCode(error));
         if (startingSessionId && await getCompletion(startingSessionId)) await handleRecordingError(startingSessionId);
         return { ok: false, reason: "failed" };
       } finally {
@@ -623,6 +606,7 @@ async function handleCaptureControl(type: string, sessionId?: string, senderTabI
     if (!request || (sessionId !== undefined && sessionId !== request.state.sessionId)) return false;
     if (senderTabId !== undefined && (senderTabId !== request.state.tabId || sessionId !== request.state.sessionId)) return false;
     await chrome.storage.session.set({ sauriCaptureRequest: { ...request, cancelled: true } });
+    void logDiagnostic("capture-cancelled-before-start", senderTabId === undefined ? "sharing ended or cancelled from the recorder or panel" : "cancelled from the page");
     if (sauriCountdown?.requestId === request.state.sessionId) {
       await chrome.storage.session.set({ sauriCountdown: { ...sauriCountdown, cancelled: true } });
       try { await chrome.tabs.sendMessage(sauriCountdown.tabId, { type: "cancel-countdown" }); }
@@ -842,17 +826,10 @@ async function processUploadQueue(): Promise<void> {
     return;
   }
 
-  // No usable session (the refresh token was refused or there never was one): the job stays pending
-  // and uncounted, and the panel asks the user to sign in. Signing in resumes the queue. When the
-  // session merely cannot be renewed right now (offline), the next alarm tries again silently.
-  const session = await ensureAccessToken(BACKEND_URL);
-  if (session.status !== "ok") {
-    if (session.status === "rejected") {
-      await setSignInRequired();
-      console.warn("[sauri] Upload waiting for the user to sign in");
-    }
-    return;
-  }
+  // Waiting for the desktop app is not a failed upload and must not exhaust retries.
+  if (!await isLocalAppAvailable()) return;
+  try { await ensureLocalToken(); }
+  catch { return; }
 
   console.log(`[sauri] Processing upload job: ${job.id} (session: ${job.sessionId}, attempt: ${job.retryCount + 1})`);
 
@@ -863,11 +840,8 @@ async function processUploadQueue(): Promise<void> {
     await uploadRecording(job);
     await markDone(job.id);
   } catch (error) {
-    if (error instanceof SessionRequiredError) {
+    if (error instanceof LocalAppUnavailableError || !await isLocalAppAvailable()) {
       await releaseProcessing(job.id);
-      // A newer token means the 401 was stale: the next alarm retries with it.
-      if (!await readSessionToken()) await setSignInRequired();
-      console.warn("[sauri] Upload waiting for the user to sign in");
       return;
     }
     const errorMsg = error instanceof Error ? error.message : "Upload outcome unavailable";
@@ -897,7 +871,7 @@ async function processUploadQueue(): Promise<void> {
 // Only authenticated reads of the persisted meeting can establish processing success.
 async function reconcileProcessing(record: RecordingCompletion): Promise<void> {
   if (!record.recordingId) return;
-  if ((await ensureAccessToken(BACKEND_URL)).status !== "ok") {
+  if (!await isLocalAppAvailable()) {
     await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing_status_unavailable");
     return;
   }
@@ -934,18 +908,6 @@ async function reconcilePendingProcessing(): Promise<void> {
 }
 
 // The portal resolves this query parameter to its existing protected meeting review.
-// A deployment may override the portal origin; no bearer token or asset enters the URL.
-const PORTAL_URL = import.meta.env.VITE_SAURI_PORTAL_URL ?? "http://localhost:5173";
-
-function reviewDestination(meetingId: string): string {
-  const url = new URL(PORTAL_URL);
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new Error("Invalid Sauri portal origin");
-  }
-  url.searchParams.set("meetingId", meetingId);
-  return url.href;
-}
-
 async function reconcileReviewLaunches(): Promise<void> {
   for (const candidate of await getPendingReviewLaunches()) {
     try {
@@ -954,7 +916,7 @@ async function reconcileReviewLaunches(): Promise<void> {
       const record = await getCompletion(candidate.sessionId);
       if (!record || (record.reviewStatus ?? record.status) !== "review_launch_pending" || record.meetingId !== candidate.meetingId ||
           record.recordingId !== candidate.recordingId) continue;
-      const target = reviewDestination(record.meetingId);
+      const target = portalDestination(record.meetingId);
       // Query before creation, including on a fresh launch: a lost Chrome result
       // must be recovered by the exact canonical URL, never by a prefix match.
       const existing = (await chrome.tabs.query({})).find(tab => tab.url === target);

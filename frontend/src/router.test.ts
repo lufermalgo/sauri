@@ -12,6 +12,8 @@ describe("parseRoute", () => {
   it("resolves every route", () => {
     expect(parseRoute("/", "")).toEqual({ name: "library" });
     expect(parseRoute("/upload", "")).toEqual({ name: "upload" });
+    expect(parseRoute("/bienvenida", "")).toEqual({ name: "welcome" });
+    expect(parseRoute("/bienvenida/", "")).toEqual({ name: "welcome" });
     expect(parseRoute("/settings", "")).toEqual({ name: "settings" });
     expect(parseRoute("/settings/", "")).toEqual({ name: "settings" });
     expect(parseRoute("/settings/extra", "")).toEqual({ name: "notFound" });
@@ -35,6 +37,7 @@ describe("parseRoute", () => {
     expect(slugs).toEqual({
       account: "cuenta",
       appearance: "apariencia",
+      storage: "almacenamiento",
       engines: "motores",
       transcription: "transcripcion", // spanish-sample-data
       speakers: "hablantes", // spanish-sample-data
@@ -72,6 +75,7 @@ describe("routePath", () => {
   const routes: Route[] = [
     { name: "library" },
     { name: "upload" },
+    { name: "welcome" },
     { name: "settings" },
     ...SETTINGS_CATEGORIES.map((category): Route => ({ name: "settings", category })),
     { name: "meeting", meetingId: "m1" },

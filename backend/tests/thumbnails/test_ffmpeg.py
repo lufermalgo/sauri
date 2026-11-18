@@ -216,3 +216,38 @@ async def test_probe_media_reports_a_tool_failure_without_the_url(monkeypatch: p
     with pytest.raises(MediaToolError) as caught:
         await probe_media(SIGNED_URL)
     assert "secret-signature" not in str(caught.value)
+
+
+def test_local_tools_allow_files_but_not_network_or_playlists(tmp_path) -> None:
+    path = str(tmp_path / "video")
+    for command in (probe_command(path), frame_command(path, 1.0)):
+        assert command[command.index("-protocol_whitelist") + 1] == "file"
+        formats = command[command.index("-format_whitelist") + 1].split(",")
+        assert "hls" not in formats and "concat" not in formats
+
+
+async def test_local_media_paths_are_redacted_on_error(monkeypatch, tmp_path) -> None:
+    path = str(tmp_path / "private-meeting/video")
+    install(monkeypatch, FakeProcess(stderr=f"Error opening input {path}".encode(), returncode=1))
+    with pytest.raises(MediaToolError) as caught:
+        await probe_media(path)
+    assert path not in str(caught.value)
+    assert "<media>" in str(caught.value)
+
+
+async def test_real_tools_can_probe_and_extract_local_file(tmp_path) -> None:
+    import shutil
+    import subprocess
+
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("ffmpeg and ffprobe are not installed")
+    path = tmp_path / "video"
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x64:d=1",
+        "-c:v", "mpeg4", "-f", "mp4", str(path),
+    ], check=True, capture_output=True, timeout=30)
+    probe = await probe_media(str(path))
+    assert probe.has_video and probe.duration_seconds == 1.0
+    frame = await extract_frame(str(path), 0.0)
+    assert frame.startswith(b"\xff\xd8\xff")
+    assert path.exists()
