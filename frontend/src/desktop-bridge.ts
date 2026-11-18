@@ -61,6 +61,8 @@ export interface SauriDesktop {
   getPaths(): Promise<FolderUsage[]>;
   relocate(kind: FolderKind): Promise<RelocateResult>;
   markSetupDone(): Promise<void>;
+  /** The language chosen in the app's setup. Missing in older app versions. */
+  getLocale?(): Promise<string>;
   /** Missing in app versions older than the updater. */
   updates?: DesktopUpdates;
 }

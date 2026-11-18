@@ -13,6 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { strayBytecode } from "./verify-package.mjs";
 
 const desktop = path.resolve(import.meta.dirname, "..");
 const repo = path.resolve(desktop, "..");
@@ -67,9 +68,10 @@ function clone(from, to, skip = () => false) {
 // FluidAudio's Apache-2.0 (its ThirdPartyLicenses/LuxTtsEnglishG2P-LICENSE.md). Sauri never runs text-to-speech
 // and `fluidaudiocli transcribe` works without it, so it is not shipped.
 const NOT_SHIPPED = ["bin/FluidAudio_LuxTtsG2pResources.bundle"];
-// Runtime without its build stamps, the downloadable components and what is not shipped.
+// Runtime without its build stamps, the downloadable components, stray bytecode and what is not shipped.
 const runtimeSkip = (rel) =>
-  rel === ".stamps" || rel === ".gitignore" || downloadable.includes(rel) || NOT_SHIPPED.includes(rel);
+  rel === ".stamps" || rel === ".gitignore" || downloadable.includes(rel) || NOT_SHIPPED.includes(rel) ||
+  strayBytecode(rel);
 clone(runtime, path.join(out, "runtime"), runtimeSkip);
 
 // Sauri's own sources: no tests, caches or container files.

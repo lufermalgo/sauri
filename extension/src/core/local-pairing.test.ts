@@ -54,6 +54,25 @@ describe("local pairing", () => {
     expect(local).toEqual({});
   });
 
+  it("tells a refused extension copy apart from an unavailable app", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ detail: "extension_not_allowed" }), { status: 403 }));
+    const { ensureLocalToken, ExtensionNotAllowedError } = await import("./local-pairing");
+    await expect(ensureLocalToken()).rejects.toBeInstanceOf(ExtensionNotAllowedError);
+    expect(local).toEqual({});
+  });
+
+  it.each([
+    new Response(JSON.stringify({ detail: "local_origin_required" }), { status: 403 }),
+    new Response("not json", { status: 403 }),
+    new Response(JSON.stringify({ detail: "extension_not_allowed" }), { status: 500 }),
+  ])("keeps other pairing failures as an unavailable app", async response => {
+    vi.mocked(fetch).mockResolvedValue(response);
+    const { ensureLocalToken, ExtensionNotAllowedError, LocalAppUnavailableError } = await import("./local-pairing");
+    const failure = ensureLocalToken();
+    await expect(failure).rejects.toBeInstanceOf(LocalAppUnavailableError);
+    await expect(failure).rejects.not.toBeInstanceOf(ExtensionNotAllowedError);
+  });
+
   it.each([401, 403])("renews once on %s, then stops if rejected again", async status => {
     local.sauriLocalToken = "old";
     vi.mocked(fetch).mockImplementation(async url => String(url).endsWith("/pair")

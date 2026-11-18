@@ -27,16 +27,18 @@ export function matchLanguage(tag: string | null | undefined): Language | null {
 interface DetectionInput {
   /** The language saved by the user, if any. */
   stored?: string | null;
+  /** The language chosen in the desktop app's setup, when the portal runs inside the app. */
+  desktop?: string | null;
   /** The browser's preferred languages, most preferred first (`navigator.languages`). */
   browserLanguages?: readonly string[];
 }
 
 /**
- * Saved choice first; otherwise the first browser-preferred language that is supported (es* or en*);
- * otherwise Spanish.
+ * Saved choice first; then the desktop app's setup choice; otherwise the first browser-preferred language
+ * that is supported (es* or en*); otherwise Spanish.
  */
-export function detectLanguage({ stored, browserLanguages = [] }: DetectionInput): Language {
-  const saved = matchLanguage(stored);
+export function detectLanguage({ stored, desktop, browserLanguages = [] }: DetectionInput): Language {
+  const saved = matchLanguage(stored) ?? matchLanguage(desktop);
   if (saved) return saved;
   for (const tag of browserLanguages) {
     const match = matchLanguage(tag);
@@ -63,10 +65,10 @@ export function storeLanguage(language: Language): void {
   }
 }
 
-/** The language to start with, from the saved choice and the browser's preferences. */
-export function detectInitialLanguage(): Language {
+/** The language to start with, from the saved choice, the desktop app's setup and the browser's preferences. */
+export function detectInitialLanguage(desktop?: string | null): Language {
   const browserLanguages = typeof navigator === "undefined"
     ? []
     : navigator.languages?.length ? navigator.languages : [navigator.language];
-  return detectLanguage({ stored: readStoredLanguage(), browserLanguages });
+  return detectLanguage({ stored: readStoredLanguage(), desktop, browserLanguages });
 }

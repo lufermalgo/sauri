@@ -7,6 +7,7 @@ const api: PortalDesktopApi = {
   getPaths: () => ipcRenderer.invoke(PORTAL_CHANNELS.getPaths),
   relocate: (kind) => ipcRenderer.invoke(PORTAL_CHANNELS.relocate, kind),
   markSetupDone: () => ipcRenderer.invoke(PORTAL_CHANNELS.markSetupDone),
+  getLocale: () => ipcRenderer.invoke(PORTAL_CHANNELS.getLocale),
   updates: {
     status: () => ipcRenderer.invoke(PORTAL_CHANNELS.updateStatus),
     check: () => ipcRenderer.invoke(PORTAL_CHANNELS.updateCheck),

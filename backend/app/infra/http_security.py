@@ -31,6 +31,8 @@ from app.auth.local import LOCAL_COOKIE, LocalConfigurationError, local_hosts, l
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 # Id of the owner's unpacked extension build; override with EXTENSION_ORIGINS for other builds.
 DEFAULT_EXTENSION_ORIGINS = "chrome-extension://ilnkkojmkfnbdilogldabpodoobfigce"
+# Stable refusal code of the pairing route when the calling extension is not in the allow-list.
+EXTENSION_NOT_ALLOWED = "extension_not_allowed"
 
 CORS_ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 CORS_ALLOWED_HEADERS = ["Authorization", "Content-Type", "Accept"]
@@ -204,6 +206,8 @@ class LocalGuardMiddleware:
                     origin_allowed and scheme.lower() == "bearer" and hmac.compare_digest(bearer.encode("utf-8"), token)
                 )
             if not allowed:
-                await JSONResponse({"detail": "local_origin_required"}, status_code=403)(scope, receive, send)
+                # A pairing refusal has its own code so the extension can tell this copy is not authorized.
+                detail = EXTENSION_NOT_ALLOWED if pairing and not preflight else "local_origin_required"
+                await JSONResponse({"detail": detail}, status_code=403)(scope, receive, send)
                 return
         await self.app(scope, receive, send)

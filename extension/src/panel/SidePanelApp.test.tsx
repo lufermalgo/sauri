@@ -75,6 +75,19 @@ describe("SidePanelApp", () => {
     expect(screen.queryByText(copy.openLocalApp)).not.toBeInTheDocument();
   });
 
+  it("explains a refused extension copy instead of a generic list error", async () => {
+    vi.stubGlobal("indexedDB", new IDBFactory());
+    mockChrome(true);
+    vi.mocked(chrome.storage.local.get).mockResolvedValue({} as never);
+    vi.mocked(fetch).mockImplementation(async url => String(url).endsWith("/pair")
+      ? new Response(JSON.stringify({ detail: "extension_not_allowed" }), { status: 403 })
+      : new Response("{}", { status: 200 }));
+    render(<SidePanelApp />);
+    expect(await screen.findByRole("alert")).toHaveTextContent(copy.extensionNotAllowed);
+    expect(screen.queryByText(copy.listError)).not.toBeInTheDocument();
+    expect(screen.queryByText(copy.openLocalApp)).not.toBeInTheDocument();
+  });
+
   it("renders Header + Controls + List with an active session (Req. 1.4)", async () => {
     vi.stubGlobal("indexedDB", new IDBFactory());
     mockChrome(true);

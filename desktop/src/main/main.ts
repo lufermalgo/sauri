@@ -291,6 +291,7 @@ function registerPortalApi(): void {
     if (!FOLDER_KINDS.includes(kind as FolderKind)) throw new Error("invalid_kind");
     return relocateFolder(kind as FolderKind);
   });
+  handle(PORTAL_CHANNELS.getLocale, () => locale());
   handle(PORTAL_CHANNELS.updateStatus, () => updater?.status());
   handle(PORTAL_CHANNELS.updateCheck, () => updater?.check());
   // The portal's «Reiniciar y actualizar» button is the person's confirmation.

@@ -10,7 +10,7 @@ import {
   listMeetings,
 } from "../core/api/client";
 import { BACKEND_URL } from "../core/backend";
-import { isLocalAppAvailable } from "../core/local-pairing";
+import { ExtensionNotAllowedError, isLocalAppAvailable } from "../core/local-pairing";
 import { portalDestination } from "./portal";
 import { useT } from "../i18n";
 import { MicrophoneWarning } from "./components/MicrophoneWarning";
@@ -57,6 +57,7 @@ export function SidePanelApp() {
   const commandPendingRef = useRef(false);
   const [completionVisible, setCompletionVisible] = useState(false);
   const [appAvailable, setAppAvailable] = useState<boolean | null>(null);
+  const [extensionNotAllowed, setExtensionNotAllowed] = useState(false);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [startingSource, setStartingSource] = useState<CaptureSource | null>(null);
   const selecting = startingSource !== null;
@@ -258,8 +259,10 @@ export function SidePanelApp() {
     setNotesRequest((prev) => ({ phase: "in_progress", data: null, previous: prev.data }));
     try {
       const notes = await listMeetings(BACKEND_URL);
+      setExtensionNotAllowed(false);
       setNotesRequest({ phase: "success", data: notes, previous: null });
-    } catch {
+    } catch (error) {
+      setExtensionNotAllowed(error instanceof ExtensionNotAllowedError);
       setNotesRequest((prev) => ({ phase: "failure", data: null, previous: prev.data }));
     }
   }, []);
@@ -419,7 +422,8 @@ export function SidePanelApp() {
         selecting={selecting || !microphonesReady || !projectionReady || !settingsReady || settingsPending || modePending}
         startError={selecting ? null : startError}
       />}
-      {appAvailable && !completionVisible && captureState === "idle" && <NotesList state={notesViewState} notes={notesRequest.data ?? notesRequest.previous ?? []} onRetry={loadNotes} onOpenNote={handleOpenNote} />}
+      {appAvailable && extensionNotAllowed && <p role="alert">{t("panel:extensionNotAllowed")}</p>}
+      {appAvailable && !extensionNotAllowed && !completionVisible && captureState === "idle" && <NotesList state={notesViewState} notes={notesRequest.data ?? notesRequest.previous ?? []} onRetry={loadNotes} onOpenNote={handleOpenNote} />}
     </main>
     {warningSource && <MicrophoneWarning pending={settingsPending} error={settingsError} skip={skipWarning} onSkip={setSkipWarning} onDismiss={() => setWarningSource(null)} onContinue={enable => { void (async () => {
       if (skipWarning && !await saveSettings({ skipMicWarning: true })) return;

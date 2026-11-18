@@ -27,7 +27,9 @@ PYTHON="$RUNTIME/python/bin/python3"
 [ -d "$RUNTIME/components/diar" ] || { echo "no components/diar in $RUNTIME" >&2; exit 1; }
 mkdir -p "$OUT"
 
-"$PYTHON" -I - "$RUNTIME" "$ROOT" "$OUT" "$VERSION" <<'PY'
+# -B: this run must not leave stdlib bytecode in the runtime's python/ folder, which is shipped in the app.
+# (-I ignores PYTHON* variables, so PYTHONDONTWRITEBYTECODE alone would not be enough.)
+"$PYTHON" -I -B - "$RUNTIME" "$ROOT" "$OUT" "$VERSION" <<'PY'
 import gzip, hashlib, json, os, re, sys, tarfile
 
 runtime, root, out, version = sys.argv[1:5]

@@ -11,6 +11,27 @@ export class LocalAppUnavailableError extends Error {
   }
 }
 
+/** The app refused this copy of the extension (its id is not allowed); pairing again cannot help. */
+export class ExtensionNotAllowedError extends LocalAppUnavailableError {
+  constructor() {
+    super();
+    this.name = "ExtensionNotAllowedError";
+  }
+}
+
+/** Stable refusal code of POST /api/v1/local/pair (backend app/infra/http_security.py). */
+const EXTENSION_NOT_ALLOWED = "extension_not_allowed";
+
+async function isExtensionRefusal(response: Response): Promise<boolean> {
+  if (response.status !== 403) return false;
+  try {
+    const body: { detail?: unknown } = await response.json();
+    return body.detail === EXTENSION_NOT_ALLOWED;
+  } catch {
+    return false;
+  }
+}
+
 /** Removes credentials from pre-desktop builds without touching queued recordings. */
 export async function migrateLegacyCredentials(): Promise<void> {
   for (const area of ["session", "local", "sync"] as const) {
@@ -41,12 +62,14 @@ async function pair(rejectedToken?: string): Promise<string> {
     const response = await fetch(`${BACKEND_URL}/api/v1/local/pair`, {
       method: "POST", cache: "no-store", credentials: "omit", redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    if (await isExtensionRefusal(response)) throw new ExtensionNotAllowedError();
     if (!response.ok) throw new LocalAppUnavailableError();
     const body: { token?: unknown } = await response.json();
     if (typeof body.token !== "string" || !body.token.trim()) throw new LocalAppUnavailableError();
     await chrome.storage.local.set({ [TOKEN_KEY]: body.token });
     return body.token;
-  } catch {
+  } catch (error) {
+    if (error instanceof ExtensionNotAllowedError) throw error;
     throw new LocalAppUnavailableError();
   }
 }
