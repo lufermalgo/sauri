@@ -127,6 +127,21 @@ export async function detectLocalSession(): Promise<SessionUser | null> {
   return { name: user.name, email: user.email, mode: "local" };
 }
 
+export interface LocalStatus {
+  ready: boolean;
+  processing: number;
+  version: string;
+  mode: string;
+  /** True once the Chrome extension has paired with this Mac. */
+  extension_paired: boolean;
+}
+
+/** The local core's status (meetings in progress, extension pairing); only in local mode. */
+export async function getLocalStatus(): Promise<LocalStatus> {
+  const response = await fetch(`${BASE_URL}/api/v1/local/status`, { credentials: "same-origin", cache: "no-store" });
+  return handleResponse<LocalStatus>(response);
+}
+
 function getAuthHeaders(json = true): HeadersInit {
   const contentType: Record<string, string> = json ? { "Content-Type": "application/json" } : {};
   if (localMode) return contentType;

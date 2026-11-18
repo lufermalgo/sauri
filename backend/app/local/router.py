@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app.auth.dependencies import get_current_user
-from app.auth.local import local_cookie_header, local_mode, local_token
+from app.auth.local import extension_paired, local_cookie_header, local_mode, local_token, mark_extension_paired
 from app.auth.schemas import AuthenticatedUser
 from app.infra.database import create_engine, create_session_factory
 from app.infra.http_security import extension_origins
@@ -32,7 +32,13 @@ async def local_status(request: Request, response: Response, user: LocalUser) ->
     response.headers["Cache-Control"] = "no-store"
     if request.headers.get("sec-fetch-site") == "same-origin":
         response.headers["Set-Cookie"] = local_cookie_header()
-    return {"ready": True, "processing": processing, "version": request.app.version, "mode": "local"}
+    return {
+        "ready": True,
+        "processing": processing,
+        "version": request.app.version,
+        "mode": "local",
+        "extension_paired": extension_paired(),
+    }
 
 
 @router.get("/me")
@@ -46,4 +52,6 @@ async def pair(request: Request, response: Response) -> dict[str, str]:
     if request.headers.get("origin") not in extension_origins(local=True):
         raise HTTPException(status_code=403, detail="local_origin_required")
     response.headers["Cache-Control"] = "no-store"
-    return {"token": local_token()}
+    token = local_token()
+    mark_extension_paired()
+    return {"token": token}
