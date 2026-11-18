@@ -21,6 +21,7 @@ from app.ingestion.router import router as ingestion_router
 from app.local.router import router as local_router
 from app.media.router import router as media_router
 from app.meetings.router import router as meetings_router
+from app.portal.static import mount_portal
 from app.regeneration.router import router as regeneration_router
 from app.summaries.outbox import recover_outbox
 from app.summaries.router import router as summaries_router
@@ -82,6 +83,8 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         """Health-check endpoint."""
         return {"status": "ok"}
+
+    mount_portal(application)
 
     return application
 
