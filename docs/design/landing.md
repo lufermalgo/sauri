@@ -48,7 +48,7 @@ Las imágenes viven en `landing/assets/` (aquí se enlazan, no se copian). Todas
 | **`summary`**: resumen<br>![Asunto principal y puntos clave](../../landing/assets/summary.png) | **`summary-steps`**: próximos pasos<br>![Próximos pasos y conclusión](../../landing/assets/summary-steps.png) |
 | **`library`**: biblioteca<br>![Biblioteca con tres reuniones](../../landing/assets/library.png) | **`upload`**: subir grabación<br>![Pantalla para subir una grabación](../../landing/assets/upload.png) |
 
-El video corto `follow.webm` (la transcripción sigue al video, sin audio) está en [`landing/assets/follow.webm`](../../landing/assets/follow.webm). **Pendiente:** es de la paleta anterior y con la interfaz en inglés; hay que regrabarlo en Índigo y en español con el mismo método de las capturas.
+El video corto `follow.webm` (la transcripción sigue al video, sin audio) está en [`landing/assets/follow.webm`](../../landing/assets/follow.webm). Desde el 2026-11-18 está regrabado en Índigo y en español con el mismo método de las capturas (10,5 s a 800 × 498, sin audio, unos 48 KB); su póster es `follow-poster.webp`, que también sirve de imagen alternativa si el navegador no reproduce el video.
 
 ## 3. Textos
 
@@ -60,7 +60,7 @@ Límite de lo que se promete: `docs/product/baseline.md` (alcance aprobado) y lo
 - Etiqueta: «En desarrollo · acceso anticipado para Mac»
 - Titular: «Tus reuniones, transcritas y resumidas en tu propio Mac»
 - Bajada: «Sauri graba la reunión desde una pestaña de Chrome, reconoce quién habló y te deja un resumen en borrador para revisar. La grabación no sale de tu equipo.»
-- Botones: «Solicitar acceso anticipado» (principal) · «Ver cómo funciona» (secundario)
+- Botones: «Solicitar acceso anticipado» (principal) · «Ver cómo funciona» (secundario) · «Descargar para Mac» (secundario, solo en pantallas de menos de 720 px, donde el menú de la cabecera no se muestra)
 
 **Cómo funciona** — «De la reunión al resumen en tres pasos»
 1. «Graba desde Chrome» — «Abre la extensión, elige la pestaña de la reunión y pulsa grabar. Funciona con Google Meet y con cualquier reunión que tengas abierta en el navegador.»

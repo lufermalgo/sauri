@@ -90,8 +90,11 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 .site-nav { display: flex; gap: var(--ds-space-6); margin-inline-start: auto; }
 .site-nav a, .site-footer nav a { color: var(--ds-fg-muted); text-decoration: none; font-size: var(--ds-text-lg); font-weight: 500; }
 .site-nav a:hover, .site-footer nav a:hover { color: var(--ds-fg); text-decoration: underline; text-underline-offset: 4px; }
+/* The hero download link stands in for the nav, which is hidden on narrow screens. */
+.button.hero__download { display: none; }
 @media (max-width: 719px) {
   .site-nav { display: none; }
+  .button.hero__download { display: inline-flex; }
   .site-header__inner > .button { margin-inline-start: auto; }
 }
 
