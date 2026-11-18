@@ -166,5 +166,30 @@
     "nameRequired": "Type a name.",
     "nameTooLong": "The name can be up to 128 characters.",
     "error": "We couldn't create the category. Try again."
+  },
+  "updates": {
+    "title": "Updates",
+    "loading": "Checking…",
+    "loadError": "I couldn't check the updates.",
+    "current": "Installed version: {{version}}",
+    "disabled": "Automatic updates aren't available for this installation yet.",
+    "auto": "Check for updates automatically (every 6 hours)",
+    "check": "Check now",
+    "checking": "Looking for a new version…",
+    "downloading": "Downloading Sauri {{version}}… {{percent}} %",
+    "progressLabel": "Update download",
+    "upToDate": "You have the latest version.",
+    "ready": "Sauri {{version}} is downloaded and checked. On restart, Sauri saves a copy of your database, prepares it for the new version and opens again. If anything fails, everything stays as it was.",
+    "apply": "Restart and update to {{version}}",
+    "applying": "Installing Sauri {{version}}. Sauri will close and open again by itself in a few seconds…",
+    "checkFailed": "We couldn't check for updates right now. We'll try again later.",
+    "errors": {
+      "processing_one": "{{count}} meeting is being processed. Try again when it finishes.",
+      "processing_other": "{{count}} meetings are being processed. Try again when they finish.",
+      "status_unavailable": "We couldn't check whether meetings are being processed, so we didn't update.",
+      "not_writable": "Sauri can't be replaced in the folder it's in. Open the file {{path}}, drag the Sauri that appears to Applications and open it again.",
+      "migration_failed": "The database couldn't be prepared for the new version. We restored the copy: you keep the current version and your data didn't change.",
+      "generic": "We couldn't install the update. You keep the current version and your data didn't change."
+    }
   }
 }

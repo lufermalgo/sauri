@@ -15,7 +15,7 @@ export function t(locale: Locale, key: MessageKey, vars: Record<string, string |
 /** `_one` / `_other` pair chosen by count. */
 export function plural(
   locale: Locale,
-  base: "tray.status.processing" | "quit.message" | "uninstall.processing",
+  base: "tray.status.processing" | "quit.message" | "uninstall.processing" | "update.failed.processing",
   count: number,
 ): string {
   return t(locale, `${base}_${count === 1 ? "one" : "other"}` as MessageKey, { count });

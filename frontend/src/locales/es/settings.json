@@ -166,5 +166,30 @@
     "nameRequired": "Escribe un nombre.",
     "nameTooLong": "El nombre admite hasta 128 caracteres.",
     "error": "No pudimos crear la categoría. Inténtalo de nuevo."
+  },
+  "updates": {
+    "title": "Actualizaciones",
+    "loading": "Consultando…",
+    "loadError": "No pude consultar las actualizaciones.",
+    "current": "Versión instalada: {{version}}",
+    "disabled": "Las actualizaciones automáticas todavía no están disponibles para esta instalación.",
+    "auto": "Buscar actualizaciones automáticamente (cada 6 horas)",
+    "check": "Buscar ahora",
+    "checking": "Buscando una versión nueva…",
+    "downloading": "Descargando Sauri {{version}}… {{percent}} %",
+    "progressLabel": "Descarga de la actualización",
+    "upToDate": "Tienes la versión más reciente.",
+    "ready": "Sauri {{version}} está descargada y comprobada. Al reiniciar, Sauri guarda una copia de tu base de datos, la prepara para la versión nueva y se abre otra vez. Si algo falla, todo queda como estaba.",
+    "apply": "Reiniciar y actualizar a {{version}}",
+    "applying": "Instalando Sauri {{version}}. Sauri se cerrará y se abrirá sola en unos segundos…",
+    "checkFailed": "No pudimos buscar actualizaciones ahora. Lo intentaremos más tarde.",
+    "errors": {
+      "processing_one": "Hay {{count}} reunión procesándose. Cuando termine, vuelve a intentarlo.",
+      "processing_other": "Hay {{count}} reuniones procesándose. Cuando terminen, vuelve a intentarlo.",
+      "status_unavailable": "No pudimos comprobar si hay reuniones procesándose, así que no actualizamos.",
+      "not_writable": "Sauri no puede reemplazarse en la carpeta donde está. Abre el archivo {{path}}, arrastra la Sauri que aparece a Aplicaciones y ábrela otra vez.",
+      "migration_failed": "La base de datos no se pudo preparar para la versión nueva. Restauramos la copia: sigues con la versión actual y tus datos no cambiaron.",
+      "generic": "No pudimos instalar la actualización. Sigues con la versión actual y tus datos no cambiaron."
+    }
   }
 }

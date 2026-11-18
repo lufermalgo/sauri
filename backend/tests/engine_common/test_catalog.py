@@ -60,7 +60,7 @@ def test_the_catalog_matches_engine_hashes_for_every_default_model() -> None:
     assert catalog.get("whisper-large-v3-turbo-q5_0").size == asr["model_size"]  # type: ignore[union-attr]
     assert catalog.get("silero-vad-v6.2.0").size == vad["model_size"]  # type: ignore[union-attr]
     defaults = {model.id for model in catalog.models if model.default}
-    assert defaults == {*expected, "senko-coreml"}
+    assert defaults == {*expected, "senko-coreml", "diar-runtime"}
 
 
 def test_parakeet_is_the_preferred_bundle_and_whisper_stays_the_default_fallback() -> None:
@@ -88,6 +88,25 @@ def test_the_unmeasured_4b_stays_a_proposal() -> None:
     assert four is not None and four.status == "proposal" and not four.default
 
 
+def entry_of(raw: dict[str, Any], model_id: str) -> dict[str, Any]:
+    entry: dict[str, Any] = next(m for m in raw["models"] if m["id"] == model_id)
+    return entry
+
+
+def test_the_speaker_runtime_component_matches_the_runtime_manifest() -> None:
+    """The catalog pins the archive and the unpacked tree that build-runtime.sh recorded (design D9)."""
+    manifest = json.loads((ROOT / "desktop/runtime-manifest.json").read_text())
+    piece = next(item for item in manifest["artifacts"] if item.get("path") == "components/diar")
+    component = load_catalog().get("diar-runtime")
+    assert component is not None and component.kind == "component" and component.downloadable
+    assert component.component == "diar" and component.replaces == "senko-coreml"
+    assert component.tree_sha256 == piece["tree_sha256"]
+    assert component.file == f"diar-{component.version}-mac-arm64.tar.gz"
+    assert component.release_tag == f"diar-{component.version}"
+    assert component.revision == HASHES["senko"]["commit"]
+    assert component.size and component.unpacked_size and component.size < component.unpacked_size
+
+
 def mutated(change: Any) -> dict[str, Any]:
     raw = copy.deepcopy(RAW)
     change(raw)
@@ -109,9 +128,17 @@ def mutated(change: Any) -> dict[str, Any]:
         lambda r: r["models"][0].update(requires=["cuda"]),
         lambda r: r["models"][1].update(id=r["models"][0]["id"]),
         lambda r: r["models"][1].update(file=r["models"][0]["file"]),
-        lambda r: r["models"][-1].update(sha256="0" * 64, file="x.bin", size=1),
+        lambda r: entry_of(r, "senko-coreml").update(sha256="0" * 64, file="x.bin", size=1),
         lambda r: r["models"][1].update(default=True),
         lambda r: r.update(models=[]),
+        # The speaker runtime component: only the fixed GitHub Releases template, a pinned tree and a managed engine.
+        lambda r: entry_of(r, "diar-runtime").update(url_template="https://evil.example/{releases_repo}/{tag}/{file}"),
+        lambda r: entry_of(r, "diar-runtime").pop("tree_sha256"),
+        lambda r: entry_of(r, "diar-runtime").update(unpacked_size=0),
+        lambda r: entry_of(r, "diar-runtime").update(version="latest"),
+        lambda r: entry_of(r, "diar-runtime").update(release_tag="../x"),
+        lambda r: entry_of(r, "diar-runtime").update(replaces="whisper-large-v3-turbo-q5_0"),
+        lambda r: entry_of(r, "diar-runtime").update(component="../diar"),
     ],
 )
 def test_a_malformed_catalog_is_rejected(change: Any) -> None:

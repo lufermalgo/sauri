@@ -379,7 +379,8 @@
     "unverifiedReason": {
       "size_mismatch": "The file is on your computer but its size doesn't match the catalog's, so we don't trust it yet.",
       "hash_mismatch": "The file is on your computer but doesn't match the catalog's, so we don't trust it yet.",
-      "generic": "The file is on your computer but we haven't checked it yet."
+      "generic": "The file is on your computer but we haven't checked it yet.",
+      "outdated": "An older version is on your computer. Install the new one to replace it."
     },
     "use": "Use this one",
     "useLabel": "Use “{{name}}”",
@@ -421,6 +422,8 @@
     "removeConfirm": "Remove",
     "removeCancel": "Keep",
     "managedHow": "It's installed along with the engine. To install or repair it, run this in a terminal: {{command}}",
+    "componentUnavailable": "This component isn't available to download yet. Once it's published, you can install it from here.",
+    "componentHow": "It's downloaded once, checked, and Sauri starts it when it finishes.",
     "managedInstalled": "Comes with the Sauri engine.",
     "outcome": {
       "installed": "Installed “{{id}}” and checked that it matches the catalog.",
@@ -440,7 +443,12 @@
       "download_unauthorized": "The download site didn't let us in without authorization.",
       "download_not_found": "The file is no longer on the download site.",
       "io_error": "We couldn't write to the disk. Check the free space and the permissions.",
-      "not_installed": "The model is no longer installed."
+      "not_installed": "The model is no longer installed.",
+      "archive_invalid": "The downloaded package has files outside its folder, so we didn't install it.",
+      "archive_too_large": "The downloaded package is bigger than expected, so we didn't install it.",
+      "tree_mismatch": "What the package contains doesn't match the catalog, so we didn't install it.",
+      "url_not_allowed": "The download address isn't on an allowed site.",
+      "redirect_not_allowed": "The download sent us to a site that isn't allowed, so we stopped it."
     },
     "insufficientDisk": "Not enough disk space: {{needed}} are needed and {{free}} are free. Free up some space and try again.",
     "modelInUse": "Can't be removed: {{list}} uses it. Choose another model in the picker and come back.",
@@ -452,6 +460,7 @@
       "legacy_location": "Installed manually; Sauri doesn't delete it.",
       "host_unavailable": "The service that manages this computer's models isn't responding.",
       "selection_unreadable": "We couldn't check whether the model is in use, so we didn't remove it, to be safe.",
+      "component_not_published": "This component isn't available to download yet.",
       "generic": "We couldn't complete the action. Nothing was changed."
     },
     "engineMissing": {

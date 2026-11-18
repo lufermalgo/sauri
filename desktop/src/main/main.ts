@@ -1,6 +1,7 @@
 // Sauri desktop: one instance, setup phase A when needed, then PostgreSQL, the API, the worker and the engines
 // in order, the portal in its window and the menu-bar icon. Closing the window keeps the services running;
 // quitting asks first when meetings are being processed.
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -12,7 +13,21 @@ import { type AppConfig, ConfigError, loadConfig, phaseADone, saveConfig } from 
 import { appPaths, FOLDER_KINDS, type FolderKind, folderProblems, PathError, socketPath, type UserFolders } from "./paths.ts";
 import { folderUsage, relocate } from "./relocate.ts";
 import { busyPorts, DEFAULT_API_PORT, portPlan, portsToCheck } from "./ports.ts";
-import { Core, CoreError, ensureSecrets, type Layout, PG_SOCKET_PORT, readSecret, type ServiceContext } from "./services.ts";
+import {
+  bundleLayout,
+  Core,
+  CoreError,
+  ensureSecrets,
+  type Layout,
+  PG_SOCKET_PORT,
+  prepareDatabase,
+  readSecret,
+  resourcesLayout,
+  type ServiceContext,
+} from "./services.ts";
+import { releaseSource } from "./releases.ts";
+import { UpdateController } from "./update-menu.ts";
+import { type ApplyDeps, swapBundle } from "./updater.ts";
 import { SetupController } from "./setup.ts";
 import { fetchLocalStatus } from "./status.ts";
 import { RotatingLog } from "./supervisor.ts";
@@ -38,14 +53,7 @@ const ports = portPlan(process.env.SAURI_API_PORT ? Number(process.env.SAURI_API
 const APP_ID = "com.sauri.desktop";
 
 function resolveLayout(): Layout {
-  if (!dev) {
-    const resources = process.resourcesPath;
-    return {
-      runtimeDir: path.join(resources, "runtime"),
-      sourceRoot: path.join(resources, "app-sources"),
-      portalDir: path.join(resources, "portal"),
-    };
-  }
+  if (!dev) return resourcesLayout(process.resourcesPath);
   const repo = path.resolve(DIST, "..", "..");
   return {
     runtimeDir:
@@ -73,6 +81,7 @@ let controller: SetupController | undefined;
 let started = false;
 let quitting = false;
 let poll: NodeJS.Timeout | undefined;
+let updater: UpdateController | undefined;
 
 const locale = (): Locale => config?.locale ?? "es";
 
@@ -207,6 +216,68 @@ async function relocateFolder(kind: FolderKind): Promise<RelocateResult> {
   }
 }
 
+/** What applying an update does to this app (design D12); the order and the rollback live in updater.ts. */
+function updateDeps(): Omit<ApplyDeps, "log"> {
+  const folders = () => config.paths as UserFolders;
+  return {
+    processing: processingCount,
+    stopServices: async () => {
+      clearInterval(poll);
+      started = false;
+      await core?.stop();
+    },
+    startDatabase: async () => {
+      await getCore(context(folders())).startDatabase();
+    },
+    stopDatabase: async () => {
+      await core?.stop();
+    },
+    migrate: async (stagedApp) => {
+      try {
+        await prepareDatabase({ ...context(folders()), layout: bundleLayout(stagedApp) }, log);
+        return true;
+      } catch (error) {
+        log.line(`update migration: ${error instanceof Error ? error.message : String(error)}`);
+        return false;
+      }
+    },
+    restartServices: startServices,
+    swap: swapBundle,
+    applied: (version) => {
+      update({ appVersionOfData: version });
+      fs.rmSync(paths.updatesDir, { recursive: true, force: true });
+    },
+    relaunch: () => {
+      quitting = true;
+      updater?.stop();
+      tray?.destroy();
+      log.close();
+      app.relaunch({ execPath: process.execPath, args: process.argv.slice(1) });
+      app.exit(0);
+    },
+  };
+}
+
+function createUpdater(): UpdateController {
+  return new UpdateController({
+    currentVersion: app.getVersion(),
+    // Development builds never update themselves; the installed app needs a download place (design D13).
+    source: app.isPackaged ? releaseSource() : null,
+    updatesDir: paths.updatesDir,
+    databaseDir: () => config.paths?.database ?? null,
+    bundle: () => appBundleOf(process.execPath, app.isPackaged),
+    autoCheck: () => config.autoUpdate,
+    saveAutoCheck: (on) => update({ autoUpdate: on }),
+    locale,
+    deps: updateDeps,
+    log: (line) => log.line(line),
+    onChange: () => {
+      setAppMenu();
+      tray?.refresh();
+    },
+  });
+}
+
 function registerPortalApi(): void {
   const handle = (channel: string, listener: (...args: unknown[]) => unknown) => {
     ipcMain.removeHandler(channel);
@@ -220,6 +291,11 @@ function registerPortalApi(): void {
     if (!FOLDER_KINDS.includes(kind as FolderKind)) throw new Error("invalid_kind");
     return relocateFolder(kind as FolderKind);
   });
+  handle(PORTAL_CHANNELS.updateStatus, () => updater?.status());
+  handle(PORTAL_CHANNELS.updateCheck, () => updater?.check());
+  // The portal's «Reiniciar y actualizar» button is the person's confirmation.
+  handle(PORTAL_CHANNELS.updateApply, () => updater?.apply());
+  handle(PORTAL_CHANNELS.updateAutoCheck, (on) => updater?.setAutoCheck(on === true));
   handle(PORTAL_CHANNELS.markSetupDone, () => {
     if (phaseADone(config) && config.setupStep !== "done") {
       update({ setupStep: "done" });
@@ -336,7 +412,11 @@ async function startServices(): Promise<void> {
   openPortalWindow();
   setupWindow?.hide();
   clearInterval(poll);
-  poll = setInterval(() => void refreshTray(), 5000);
+  poll = setInterval(() => {
+    void refreshTray();
+    // Engines waiting for a model or the speaker runtime start as soon as setup phase B installs it.
+    void services.startWaitingEngines();
+  }, 5000);
   await refreshTray();
 }
 
@@ -361,6 +441,7 @@ async function quitFlow(ask: boolean): Promise<void> {
   }
   quitting = true;
   clearInterval(poll);
+  updater?.stop();
   log.line("quitting");
   await core?.stop();
   tray?.destroy();
@@ -482,6 +563,7 @@ function setAppMenu(): void {
         label: app.name,
         submenu: [
           { role: "about" },
+          ...(updater?.menuItems() ?? []),
           { type: "separator" },
           { label: t(locale(), "menu.uninstall"), click: () => void uninstallFlow() },
           { type: "separator" },
@@ -515,6 +597,11 @@ app.on("before-quit", (event) => {
   void quitFlow(true);
 });
 for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => void quitFlow(false));
+// An error nothing caught goes to desktop.log instead of a blocking dialog that stops every service and window.
+process.on("uncaughtException", (error) => log.line(`uncaught error: ${error.stack ?? String(error)}`));
+process.on("unhandledRejection", (reason) =>
+  log.line(`unhandled rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`),
+);
 
 app.whenReady().then(async () => {
   if (!single) return;
@@ -529,6 +616,7 @@ app.whenReady().then(async () => {
   }
   saveConfig(paths.configFile, config);
   setLaunchAtLogin(config.launchAtLogin);
+  updater = createUpdater();
   setAppMenu();
   tray = new SauriTray(locale(), {
     open: showMain,
@@ -540,7 +628,9 @@ app.whenReady().then(async () => {
       update({ launchAtLogin: on });
       setLaunchAtLogin(on);
     },
+    updateItems: () => updater?.menuItems() ?? [],
   });
+  updater.start();
   registerPortalApi();
   controller = new SetupController({
     paths,

@@ -114,5 +114,21 @@
   "relocate.trash": "Mover a la Papelera",
   "relocate.cancel": "Cancelar",
   "relocate.confirm.title": "¿Mover {path} a la Papelera?",
-  "relocate.confirm.detail": "Sauri ya no la usa. Podrás recuperarla desde la Papelera mientras no la vacíes."
+  "relocate.confirm.detail": "Sauri ya no la usa. Podrás recuperarla desde la Papelera mientras no la vacíes.",
+  "update.menu.check": "Buscar actualizaciones…",
+  "update.menu.apply": "Reiniciar y actualizar a {version}…",
+  "update.menu.auto": "Buscar actualizaciones automáticamente",
+  "update.upToDate": "Tienes la versión más reciente de Sauri ({version}).",
+  "update.checkFailed": "No pudimos buscar actualizaciones ahora ({code}). Lo intentaremos más tarde.",
+  "update.ok": "Aceptar",
+  "update.ready.title": "Sauri {version} está lista para instalarse",
+  "update.ready.detail": "Sauri se cerrará, guardará una copia de tu base de datos, la preparará para la versión nueva y se abrirá otra vez. Si algo falla, todo queda como estaba.",
+  "update.later": "Más tarde",
+  "update.restart": "Reiniciar y actualizar",
+  "update.failed.title": "No se instaló la actualización",
+  "update.failed.processing_one": "Hay 1 reunión procesándose. Cuando termine, vuelve a intentarlo.",
+  "update.failed.processing_other": "Hay {count} reuniones procesándose. Cuando terminen, vuelve a intentarlo.",
+  "update.failed.not_writable": "Sauri no puede reemplazarse en la carpeta donde está. Abre el archivo {path}, arrastra la Sauri que aparece a Aplicaciones y ábrela otra vez.",
+  "update.failed.migration_failed": "La base de datos no se pudo preparar para la versión nueva. Restauramos la copia: sigues con la versión actual y tus datos no cambiaron.",
+  "update.failed.generic": "No pudimos instalar la actualización. Sigues con la versión actual y tus datos no cambiaron."
 }

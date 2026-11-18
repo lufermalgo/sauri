@@ -558,7 +558,10 @@ function ModelRow(props: RowProps) {
   const state = stateOf(model, running, externalActive, savedKey);
   const blocked = jobRunning || busyModel !== null;
   const managed = model.kind === "managed_engine" || model.state === "managed" || model.install?.method === "managed_command";
-  const name = (model.kind === "managed_engine" && translateIfKnown(`engines:local.managedTitle.${process}`)) || model.id;
+  const component = model.kind === "component";
+  const unpublished = component && model.install?.source_available === false;
+  const titled = model.kind === "managed_engine" || component;
+  const name = (titled && translateIfKnown(`engines:local.managedTitle.${process}`)) || model.id;
   const titleId = `engines-model-${process}-${model.id}`;
   const size = model.size ?? model.installed_size;
   const installed = availabilityOf(model) === "installed";
@@ -611,6 +614,9 @@ function ModelRow(props: RowProps) {
           <p className="settings-help">{t("engines:local.inUse", { list: processList(model.in_use_by) })}</p>
         )}
         {managed && !installed && !running && command && <p className="settings-help">{t("engines:local.managedHow", { command: `bash ${command}` })}</p>}
+        {component && !installed && !running && (
+          <p className="settings-help">{t(unpublished ? "engines:local.componentUnavailable" : "engines:local.componentHow")}</p>
+        )}
         {noRoom && !running && needed !== null && (
           <p id={`${titleId}-room`} className="settings-help">{t("engines:local.notEnoughSpace", { size: formatBytes(needed) })}</p>
         )}
@@ -623,7 +629,7 @@ function ModelRow(props: RowProps) {
               {t("engines:local.use")}
             </Button>
           )}
-          {state === "available" && !managed && (
+          {(state === "available" || (component && (state === "unverified" || state === "corrupt"))) && !managed && !unpublished && (
             <>
               {needed !== null && !noRoom && <span className="settings-help">{t("engines:local.spaceNeeded", { size: formatBytes(needed) })}</span>}
               <Button

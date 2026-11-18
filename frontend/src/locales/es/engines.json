@@ -371,7 +371,8 @@
     "unverifiedReason": {
       "size_mismatch": "El archivo está en tu equipo pero su tamaño no coincide con el del catálogo, así que no lo damos por bueno todavía.",
       "hash_mismatch": "El archivo está en tu equipo pero no coincide con el del catálogo, así que no lo damos por bueno todavía.",
-      "generic": "El archivo está en tu equipo pero todavía no lo comprobamos."
+      "generic": "El archivo está en tu equipo pero todavía no lo comprobamos.",
+      "outdated": "Hay una versión anterior en tu equipo. Instala la nueva para reemplazarla."
     },
     "use": "Usar este",
     "useLabel": "Usar «{{name}}»",
@@ -413,6 +414,8 @@
     "removeConfirm": "Quitar",
     "removeCancel": "Conservar",
     "managedHow": "Se instala junto con el motor. Para instalarlo o repararlo, ejecuta en una terminal: {{command}}",
+    "componentUnavailable": "Este componente todavía no está disponible para descargar. Cuando se publique, podrás instalarlo desde aquí.",
+    "componentHow": "Se descarga una sola vez, se comprueba y Sauri lo pone en marcha al terminar.",
     "managedInstalled": "Viene con el motor de Sauri.",
     "outcome": {
       "installed": "Instalamos «{{id}}» y comprobamos que coincide con el catálogo.",
@@ -432,7 +435,12 @@
       "download_unauthorized": "El sitio de descarga no dejó entrar sin autorización.",
       "download_not_found": "El archivo ya no está en el sitio de descarga.",
       "io_error": "No pudimos escribir en el disco. Revisa el espacio libre y los permisos.",
-      "not_installed": "El modelo ya no está instalado."
+      "not_installed": "El modelo ya no está instalado.",
+      "archive_invalid": "El paquete descargado trae archivos fuera de su lugar, así que no lo instalamos.",
+      "archive_too_large": "El paquete descargado ocupa más de lo esperado, así que no lo instalamos.",
+      "tree_mismatch": "Lo que trae el paquete no coincide con el catálogo, así que no lo instalamos.",
+      "url_not_allowed": "La dirección de descarga no es de un sitio permitido.",
+      "redirect_not_allowed": "La descarga nos mandó a un sitio que no está permitido, así que la detuvimos."
     },
     "insufficientDisk": "No hay espacio suficiente en el disco: se necesitan {{needed}} y hay {{free}} libres. Libera espacio e inténtalo de nuevo.",
     "modelInUse": "No se puede quitar: lo usa {{list}}. Elige otro modelo en el selector y vuelve.",
@@ -444,6 +452,7 @@
       "legacy_location": "Instalado a mano; Sauri no lo borra.",
       "host_unavailable": "El servicio que administra los modelos de este equipo no responde.",
       "selection_unreadable": "No pudimos comprobar si el modelo está en uso, así que no lo quitamos por seguridad.",
+      "component_not_published": "Este componente todavía no está disponible para descargar.",
       "generic": "No pudimos completar la acción. No se cambió nada."
     },
     "engineMissing": {

@@ -22,6 +22,10 @@ export interface AppPaths {
   secretsDir: string;
   runDir: string;
   enginesDir: string;
+  /** Downloadable components (the speaker runtime) once installed (design D9, D11). */
+  componentsDir: string;
+  /** Downloaded and verified app versions waiting to be applied (design D12). */
+  updatesDir: string;
   cacheDir: string;
   electronDir: string;
   logsDir: string;
@@ -52,6 +56,8 @@ export function appPaths(opts: { dev: boolean; home?: string }): AppPaths {
     secretsDir: path.join(dataDir, "secrets"),
     runDir: path.join(dataDir, "run"),
     enginesDir: path.join(dataDir, "engines"),
+    componentsDir: path.join(dataDir, "components"),
+    updatesDir: path.join(dataDir, "updates"),
     cacheDir: path.join(dataDir, "cache"),
     electronDir: path.join(dataDir, "electron"),
     logsDir: path.join(home, "Library", "Logs", name),
