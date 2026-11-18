@@ -3,8 +3,11 @@
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from starlette.responses import FileResponse, Response
+from fastapi import FastAPI
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import Request
+from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
@@ -41,8 +44,16 @@ def mount_portal(application: FastAPI) -> None:
     }
     application.mount("/assets", PortalAssets(root / "assets", headers), name="portal-assets")
 
-    @application.get("/{path:path}", include_in_schema=False)
-    async def portal_index(path: str) -> FileResponse:
-        if path.startswith("api") or path == "health":
-            raise HTTPException(status_code=404)
-        return FileResponse(index, headers={**headers, "Cache-Control": "no-cache"})
+    async def portal_fallback(request: Request, exc: Exception) -> Response:
+        # Serve the SPA only for browser routes that no API route claimed. A catch-all route would
+        # win over FastAPI's trailing-slash redirect (e.g. /api/v1/meetings -> /api/v1/meetings/).
+        path = request.url.path
+        assert isinstance(exc, StarletteHTTPException)
+        is_portal_route = not (path.startswith(("/api", "/assets")) or path == "/health")
+        if exc.status_code == 404 and is_portal_route:
+            if request.method in {"GET", "HEAD"}:
+                return FileResponse(index, headers={**headers, "Cache-Control": "no-cache"})
+            return JSONResponse({"detail": "Method Not Allowed"}, status_code=405, headers={"Allow": "GET, HEAD"})
+        return await http_exception_handler(request, exc)
+
+    application.add_exception_handler(StarletteHTTPException, portal_fallback)

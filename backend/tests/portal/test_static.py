@@ -131,3 +131,28 @@ def test_spa_only_handles_get(portal: Path) -> None:
     response = TestClient(create_app()).post("/settings/motores")
     assert response.status_code == 405
     assert response.headers["content-type"] == "application/json"
+
+
+def test_api_trailing_slash_redirect_is_not_shadowed_by_the_portal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi import FastAPI
+
+    from app.portal.static import mount_portal
+
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<html><script>1</script></html>")
+    monkeypatch.setenv("SAURI_PORTAL_DIR", str(tmp_path))
+    application = FastAPI()
+
+    @application.get("/api/v1/items/")
+    def items() -> list[str]:
+        return []
+
+    mount_portal(application)
+    client = TestClient(application)
+    redirected = client.get("/api/v1/items", follow_redirects=False)
+    assert redirected.status_code == 307
+    assert redirected.headers["location"].endswith("/api/v1/items/")
+    assert client.get("/api/v1/items").json() == []
+    assert client.get("/api/v1/unknown").headers["content-type"].startswith("application/json")
