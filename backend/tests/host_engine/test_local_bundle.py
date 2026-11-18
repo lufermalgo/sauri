@@ -305,6 +305,20 @@ def test_an_engine_whose_provenance_names_another_commit_is_not_ready(service: l
     assert view(service, ENGINE)["state"] == "managed" and view(service, ENGINE)["location"] is None
 
 
+def test_the_desktop_app_cli_lives_in_its_runtime_and_its_provenance_in_the_engine_home(
+    service: local_models.LocalModelService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_engine(service)
+    runtime_cli = tmp_path / "runtime" / "bin" / "fluidaudiocli"
+    runtime_cli.parent.mkdir(parents=True)
+    (service.managed_dirs["fluidaudio"] / "bin" / "fluidaudiocli").rename(runtime_cli)
+    assert view(service, ENGINE)["location"] is None
+    monkeypatch.setenv("SAURI_PARAKEET_CLI", str(runtime_cli))
+    assert view(service, ENGINE)["location"] == "managed"
+    (service.managed_dirs["fluidaudio"] / "provenance.json").unlink()
+    assert view(service, ENGINE)["location"] is None
+
+
 def test_the_gateway_helpers_pick_the_preferred_model_only_when_ready(service: local_models.LocalModelService) -> None:
     write_bundle(service.models_dir / "parakeet-dir")
     asyncio.run(_adopt(service))

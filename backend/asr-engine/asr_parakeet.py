@@ -221,7 +221,9 @@ def parakeet_home() -> Path:
 
 
 def binary_path() -> Path:
-    return parakeet_home() / "bin" / BINARY_NAME
+    """``SAURI_PARAKEET_CLI`` (the desktop app's runtime copy, next to its resource bundle) or ``<home>/bin``."""
+    override = os.environ.get("SAURI_PARAKEET_CLI")
+    return Path(override).expanduser() if override else parakeet_home() / "bin" / BINARY_NAME
 
 
 def provenance_path() -> Path:

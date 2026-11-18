@@ -461,8 +461,12 @@ class LocalModelService:
 
     @staticmethod
     def _fluidaudio_detected(home: Path, model: CatalogModel) -> bool:
-        """The CLI is present and its provenance names the pinned source commit (presence only, no hashing)."""
-        binary = home / "bin" / "fluidaudiocli"
+        """The CLI is present and its provenance names the pinned source commit (presence only, no hashing).
+
+        The desktop app keeps the CLI in its runtime (``SAURI_PARAKEET_CLI``) and the provenance in ``home``.
+        """
+        override = os.getenv("SAURI_PARAKEET_CLI")
+        binary = Path(override) if override else home / "bin" / "fluidaudiocli"
         if not binary.is_file() or not os.access(binary, os.X_OK):
             return False
         record = read_manifest(home / "provenance.json")

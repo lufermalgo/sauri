@@ -26,6 +26,7 @@
     "icon": "assets/icon.png",
     "category": "public.app-category.productivity",
     "identity": "-",
+    "signIgnore": ["/Contents/Resources/runtime/"],
     "hardenedRuntime": false,
     "gatekeeperAssess": false,
     "minimumSystemVersion": "14.0"
