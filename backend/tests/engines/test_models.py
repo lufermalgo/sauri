@@ -54,7 +54,7 @@ def keep_logging_state() -> Iterator[None]:
 
 def test_revision_chain_ends_in_a_single_head() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["029_meeting_recorded_at"]  # The recording-date revision follows.
+    assert script.get_heads() == ["030_job_messages"]  # The job queue revision follows.
     assert script.get_revision(HEAD).down_revision == REVISION
     assert script.get_revision(REVISION).down_revision == PARENT
     assert len(REVISION) <= 32  # alembic_version.version_num is VARCHAR(32)

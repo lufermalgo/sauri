@@ -2,7 +2,7 @@
 
 Defines the `JobQueue` interface with at-least-once delivery semantics,
 retries, and dead-letter support. The concrete implementation is selected
-via configuration (QUEUE_BROKER_URL environment variable) without
+via configuration (QUEUE_KIND environment variable) without
 modifying business logic.
 """
 
@@ -72,8 +72,16 @@ class JobQueue(ABC):
 def create_job_queue() -> JobQueue:
     """Factory that creates the configured JobQueue implementation.
 
-    Reads QUEUE_BROKER_URL from the environment; there is no built-in default credential.
+    RabbitMQ remains the default; PostgreSQL uses the application database.
     """
+    kind = os.environ.get("QUEUE_KIND", "rabbitmq")
+    if kind == "postgres":
+        from app.infra.queue_postgres import PostgresJobQueue
+
+        return PostgresJobQueue()
+    if kind != "rabbitmq":
+        raise ValueError(f"Unsupported QUEUE_KIND: {kind}")
+
     from app.infra.queue_rabbitmq import RabbitMQJobQueue
     from app.infra.secrets import SecretUnavailableError, read_secret, require_url_password, with_password
 

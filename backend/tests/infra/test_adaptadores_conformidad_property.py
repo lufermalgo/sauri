@@ -4,22 +4,29 @@
 Task: 7.3 — Validates: Requirements 8.3, 8.4
 
 Exercises the same observable contract against multiple conforming
-implementations of `ObjectStore` and `JobQueue` (without depending on a live
-MinIO/RabbitMQ, covered by integration test 17.3). Any real implementation
-(S3/MinIO, RabbitMQ) must satisfy the same contract.
+implementations of `ObjectStore` and `JobQueue`. PostgreSQL and RabbitMQ
+join the queue contract when their disposable SAURI_QA_* URLs are configured;
+the default suite keeps the in-memory adapters without contacting live services.
 """
 
 from __future__ import annotations
 
+import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any
+from uuid import uuid4
 
+import aio_pika
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from app.infra.object_store import ObjectStore
 from app.infra.queue import JobQueue
+from app.infra.queue_postgres import PostgresJobQueue
+from app.infra.queue_rabbitmq import RabbitMQJobQueue
+from tests.infra.test_queue_postgres import pg_url  # noqa: F401 - shared disposable database fixture
 
 
 class _InMemoryStore(ObjectStore):
@@ -198,12 +205,53 @@ async def test_property_13_queue_published_message_is_delivered_to_subscriber(
 ) -> None:
     """A message published on a topic is delivered to that topic's subscriber, for any conforming implementation."""
     queue: JobQueue = impl_cls()
+    await _assert_queue_delivery(queue, topic, message)
+
+
+async def _assert_queue_delivery(queue: JobQueue, topic: str, message: dict[str, Any]) -> None:
     received: list[dict[str, Any]] = []
+    delivered = asyncio.Event()
 
     async def handler(msg: dict[str, Any]) -> None:
         received.append(msg)
+        delivered.set()
 
-    await queue.subscribe(topic, handler)
-    await queue.publish(topic, message)
+    await queue.connect()
+    try:
+        await queue.subscribe(topic, handler)
+        await queue.publish(topic, message)
+        await asyncio.wait_for(delivered.wait(), 5)
+        await queue.stop_consuming()
+        assert await queue.wait_idle(5)
+        assert received == [message]
+    finally:
+        await queue.disconnect()
 
-    assert message in received
+
+_LIVE_SETTINGS = settings(max_examples=12, suppress_health_check=[HealthCheck.function_scoped_fixture])
+_MESSAGES = st.dictionaries(
+    st.text(alphabet=st.characters(blacklist_categories=("Cs",), blacklist_characters="\0"), min_size=1, max_size=10),
+    st.integers(), max_size=5,
+)
+
+
+@_LIVE_SETTINGS
+@given(message=_MESSAGES)
+async def test_property_13_postgres_queue(pg_url: str, message: dict[str, Any]) -> None:  # noqa: F811
+    await _assert_queue_delivery(PostgresJobQueue(pg_url), f"qa_{uuid4().hex}", message)
+
+
+@_LIVE_SETTINGS
+@given(message=_MESSAGES)
+async def test_property_13_rabbitmq_queue(monkeypatch: pytest.MonkeyPatch, message: dict[str, Any]) -> None:
+    raw = os.environ.get("SAURI_QA_RABBITMQ_URL")
+    if not raw:
+        pytest.skip("requires disposable RabbitMQ in SAURI_QA_RABBITMQ_URL")
+    monkeypatch.setenv("QUEUE_MESSAGE_SIGNING_KEY", "synthetic-test-key-0123456789abcdef")
+    topic = f"sauri_qa_conformance_{uuid4().hex}"
+    try:
+        await _assert_queue_delivery(RabbitMQJobQueue(raw), topic, message)
+    finally:
+        async with await aio_pika.connect_robust(raw) as cleanup:
+            channel = await cleanup.channel()
+            await channel.queue_delete(topic)
