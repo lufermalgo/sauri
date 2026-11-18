@@ -111,6 +111,7 @@ package:
 	node desktop/scripts/stage.mjs --runtime "$(RUNTIME_DIR)" --portal frontend/dist
 	rm -rf $(DESKTOP_OUT)
 	cd desktop && npx --no-install electron-builder --mac --arm64 --config electron-builder.json --publish never
+	node desktop/scripts/verify-package.mjs $(DESKTOP_OUT)/mac-arm64/Sauri.app "$(RUNTIME_DIR)"
 	cd $(DESKTOP_OUT) && for f in Sauri-*-mac-arm64.dmg Sauri-*-mac-arm64.zip; do shasum -a 256 "$$f" > "$$f.sha256"; done
 	rm -rf desktop/.stage $(DESKTOP_OUT)/mac-arm64 $(DESKTOP_OUT)/.icon-icns $(DESKTOP_OUT)/builder-*.yml $(DESKTOP_OUT)/*.blockmap
 	@ls -l $(DESKTOP_OUT)

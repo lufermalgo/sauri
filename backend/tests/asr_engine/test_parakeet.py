@@ -345,6 +345,22 @@ async def test_without_the_cli_provenance_the_default_is_whisper(setup: Setup) -
     assert response.json()["engine"]["name"] == "whisper.cpp" and setup.cli_runs() == []
 
 
+async def test_the_desktop_app_runs_the_cli_of_its_runtime_with_the_provenance_in_its_home(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    setup.install_parakeet()
+    runtime_cli = setup.tmp / "runtime" / "bin" / "fluidaudiocli"
+    runtime_cli.parent.mkdir(parents=True)
+    (setup.home / "bin" / "fluidaudiocli").rename(runtime_cli)
+    monkeypatch.setenv("SAURI_PARAKEET_CLI", str(runtime_cli))
+    assert pk.binary_path() == runtime_cli
+    response = await setup.transcribe(None)
+    assert response.json()["engine"]["name"] == pk.ENGINE_NAME and len(setup.cli_runs()) == 1
+    runtime_cli.write_text("#!/bin/sh\nexit 0\n")
+    response = await setup.transcribe(None)
+    assert response.json()["engine"]["name"] == "whisper.cpp"
+
+
 async def test_a_modified_binary_is_not_trusted(setup: Setup) -> None:
     setup.install_parakeet()
     (setup.home / "bin" / "fluidaudiocli").write_text("#!/bin/sh\nexit 0\n")

@@ -15,9 +15,11 @@ import {
   engineEnv,
   enginePlans,
   ensureAsrProvenance,
+  ensureParakeetProvenance,
   ensureSecrets,
   SECRET_NAMES,
   secretFile,
+  parakeetHome,
   type ServiceContext,
   VAD_MODEL_FILE,
 } from "./services.ts";
@@ -38,11 +40,19 @@ beforeEach(() => {
   const sourceRoot = path.join(dir, "src");
   const cli = writeBinary(path.join(runtimeDir, "bin", "whisper-cli"), "synthetic whisper-cli");
   const vad = writeBinary(path.join(runtimeDir, "bin", "whisper-vad-speech-segments"), "synthetic vad");
+  const fluid = writeBinary(path.join(runtimeDir, "bin", "fluidaudiocli"), "synthetic fluidaudiocli");
+  fs.writeFileSync(
+    path.join(runtimeDir, "runtime-manifest.json"),
+    JSON.stringify({
+      artifacts: [{ name: "fluidaudio", commit: "c".repeat(40), binaries: { fluidaudiocli: { sha256: fluid.sha256 } } }],
+    }),
+  );
   fs.mkdirSync(path.join(sourceRoot, "scripts", "engines"), { recursive: true });
   fs.writeFileSync(
     path.join(sourceRoot, "scripts", "engines", "engine-hashes.json"),
     JSON.stringify({
       asr: { model_sha256: "a".repeat(64), runtime_binary: cli, vad: { model_sha256: "b".repeat(64), runtime_binary: vad } },
+      parakeet: { source_commit: "c".repeat(40) },
     }),
   );
   ctx = {
@@ -174,6 +184,38 @@ describe("engines", () => {
   });
 });
 
+describe("parakeet", () => {
+  const record = () => path.join(parakeetHome(ctx.paths), "provenance.json");
+
+  it("vouches for the runtime's fluidaudiocli when it equals its pin and the pinned commit", () => {
+    expect(ensureParakeetProvenance(ctx)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(record(), "utf8"))).toEqual({
+      source_commit: "c".repeat(40),
+      binary_sha256: createHash("sha256").update("synthetic fluidaudiocli").digest("hex"),
+      origin: "bundled",
+    });
+    for (const name of ["host", "asr"] as const) {
+      expect(engineEnv(ctx, name)).toMatchObject({
+        SAURI_PARAKEET_HOME: parakeetHome(ctx.paths),
+        SAURI_PARAKEET_CLI: path.join(ctx.layout.runtimeDir, "bin", "fluidaudiocli"),
+      });
+    }
+  });
+
+  it("removes the record when the binary or the commit no longer match", () => {
+    expect(ensureParakeetProvenance(ctx)).toBe(true);
+    fs.writeFileSync(path.join(ctx.layout.runtimeDir, "bin", "fluidaudiocli"), "re-signed fluidaudiocli");
+    expect(ensureParakeetProvenance(ctx)).toBe(false);
+    expect(fs.existsSync(record())).toBe(false);
+    fs.writeFileSync(path.join(ctx.layout.runtimeDir, "bin", "fluidaudiocli"), "synthetic fluidaudiocli");
+    const hashes = path.join(ctx.layout.sourceRoot, "scripts", "engines", "engine-hashes.json");
+    fs.writeFileSync(hashes, JSON.stringify({ parakeet: { source_commit: "d".repeat(40) } }));
+    expect(ensureParakeetProvenance(ctx)).toBe(false);
+    fs.rmSync(path.join(ctx.layout.runtimeDir, "runtime-manifest.json"));
+    expect(ensureParakeetProvenance(ctx)).toBe(false);
+  });
+});
+
 describe("texts", () => {
   it("has the same keys in Spanish and English", () => {
     expect(Object.keys(catalogs.en).sort()).toEqual(Object.keys(catalogs.es).sort());
@@ -188,5 +230,7 @@ describe("runtime pins", () => {
     const whisper = manifest.artifacts.find((artifact: { name: string }) => artifact.name === "whisper.cpp");
     expect(hashes.asr.runtime_binary.sha256).toBe(whisper.binaries["whisper-cli"].sha256);
     expect(hashes.asr.vad.runtime_binary.sha256).toBe(whisper.binaries["whisper-vad-speech-segments"].sha256);
+    const fluid = manifest.artifacts.find((artifact: { name: string }) => artifact.name === "fluidaudio");
+    expect(fluid.commit).toBe(hashes.parakeet.source_commit);
   });
 });

@@ -164,6 +164,11 @@ export function asrProvenanceFile(paths: AppPaths): string {
   return path.join(paths.enginesDir, "asr-provenance", "provenance.json");
 }
 
+/** SAURI_PARAKEET_HOME: Parakeet's provenance and warm-up marker; its CLI stays in the runtime (SAURI_PARAKEET_CLI). */
+export function parakeetHome(paths: AppPaths): string {
+  return path.join(paths.enginesDir, "parakeet");
+}
+
 /**
  * Where the speaker runtime is: the downloaded component once installed, else the one a development runtime
  * carries (the installed app's runtime leaves it out, design D9). Null while it is in neither place.
@@ -193,7 +198,9 @@ export function engineEnv(ctx: ServiceContext, name: EngineName): Record<string,
     SAURI_MODEL_CATALOG: enginesConfig(ctx, "model-catalog.json"),
     SAURI_ENGINE_HASHES_FILE: enginesConfig(ctx, "engine-hashes.json"),
     // Managed engines install inside Sauri's own folder, never the developer's ~/.local/share/sauri.
-    SAURI_PARAKEET_HOME: path.join(paths.enginesDir, "parakeet"),
+    SAURI_PARAKEET_HOME: parakeetHome(paths),
+    // The runtime's own fluidaudiocli, next to its resource bundle; ensureParakeetProvenance vouches for it.
+    SAURI_PARAKEET_CLI: bin(ctx, "bin", "fluidaudiocli"),
     SAURI_DIAR_VENV: path.join(paths.enginesDir, "diar-venv"),
     SAURI_HF_TOKEN_FILE: path.join(paths.secretsDir, "hf_token"),
   };
@@ -369,6 +376,39 @@ export function ensureAsrProvenance(ctx: ServiceContext): boolean {
   return true;
 }
 
+/**
+ * Records the runtime's fluidaudiocli as Parakeet's verified installation (`<parakeet home>/provenance.json`, the
+ * record install-parakeet-engine.sh writes), but only when the binary equals its pin in the runtime manifest and that
+ * build is of the commit engine-hashes.json pins. Otherwise any old record is removed and Whisper stays the engine.
+ */
+export function ensureParakeetProvenance(ctx: ServiceContext): boolean {
+  const file = path.join(parakeetHome(ctx.paths), "provenance.json");
+  try {
+    const manifest = JSON.parse(fs.readFileSync(bin(ctx, "runtime-manifest.json"), "utf8")) as {
+      artifacts: { name: string; commit?: string; binaries?: Record<string, { sha256: string }> }[];
+    };
+    const hashes = JSON.parse(fs.readFileSync(enginesConfig(ctx, "engine-hashes.json"), "utf8")) as {
+      parakeet?: { source_commit?: string };
+    };
+    const fluid = manifest.artifacts.find((artifact) => artifact.name === "fluidaudio");
+    const pin = fluid?.binaries?.fluidaudiocli?.sha256;
+    const commit = hashes.parakeet?.source_commit;
+    const cli = bin(ctx, "bin", "fluidaudiocli");
+    const present = fs.statSync(cli, { throwIfNoEntry: false })?.isFile() === true;
+    if (pin && commit && fluid?.commit === commit && present && sha256(cli) === pin) {
+      const record = { source_commit: commit, binary_sha256: pin, origin: "bundled" };
+      ensurePrivateDir(path.dirname(file));
+      fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+      fs.renameSync(`${file}.tmp`, file);
+      return true;
+    }
+  } catch {
+    // An unreadable manifest vouches for nothing.
+  }
+  fs.rmSync(file, { force: true });
+  return false;
+}
+
 /** Which engines can start now, and why the others wait (models come in setup phase B). */
 export function enginePlans(ctx: ServiceContext, names: readonly EngineName[] = ENGINE_NAMES): EnginePlan[] {
   return names.map((name): EnginePlan => {
@@ -527,6 +567,8 @@ export class Core extends EventEmitter {
 
   /** Engines start together; one that cannot start is reported, never faked, and never blocks the portal. */
   async startEngines(): Promise<void> {
+    const parakeet = ensureParakeetProvenance(this.ctx);
+    this.log.line(`parakeet cli ${parakeet ? "verified" : "unverified: transcription uses whisper.cpp"}`);
     const plans = enginePlans(this.ctx);
     await Promise.all(
       plans.map(async (plan) => {
@@ -561,7 +603,9 @@ export class Core extends EventEmitter {
       });
       for (const plan of enginePlans(this.ctx, waiting)) {
         if ("blocked" in plan) {
-          this.blocked.set(`${plan.name}-engine`, plan.blocked);
+          const name = `${plan.name}-engine`;
+          if (this.blocked.get(name) !== plan.blocked) this.log.line(`${name} not started: ${plan.blocked}`);
+          this.blocked.set(name, plan.blocked);
           continue;
         }
         if (generation !== this.generation) break;
