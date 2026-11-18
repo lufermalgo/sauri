@@ -8,15 +8,17 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth.local import local_mode
 from app.auth.router import router as auth_router
 from app.engines.local_router import router as local_engines_router
 from app.engines.router import router as engines_router
 from app.infra.database import create_engine, create_session_factory
 from app.infra.http_errors import request_validation_exception_handler, unhandled_exception_handler
-from app.infra.http_security import SecurityHeadersMiddleware, cors_options, docs_paths
+from app.infra.http_security import LocalGuardMiddleware, SecurityHeadersMiddleware, cors_options, docs_paths
 from app.infra.queue import create_job_queue
 from app.infra.secrets import log_secret_sources
 from app.ingestion.router import router as ingestion_router
+from app.local.router import router as local_router
 from app.meetings.router import router as meetings_router
 from app.regeneration.router import router as regeneration_router
 from app.summaries.outbox import recover_outbox
@@ -57,6 +59,8 @@ def create_app() -> FastAPI:
     # app.infra.http_security. The last middleware added is the outermost, so the security headers
     # also cover preflight answers produced by the CORS layer.
     application.add_middleware(CORSMiddleware, **cors_options())
+    if local_mode():
+        application.add_middleware(LocalGuardMiddleware)
     application.add_middleware(SecurityHeadersMiddleware)
 
     application.add_exception_handler(RequestValidationError, request_validation_exception_handler)
@@ -66,6 +70,7 @@ def create_app() -> FastAPI:
     application.include_router(meetings_router)
     application.include_router(regeneration_router)
     application.include_router(auth_router)
+    application.include_router(local_router)
     application.include_router(templates_router)
     application.include_router(summaries_router)
     application.include_router(engines_router)

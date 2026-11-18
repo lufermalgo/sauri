@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 
+from app.auth.local import local_mode
 from app.auth.schemas import AuthenticatedUser
 from app.auth.token import decode_token
 from app.infra.database import create_engine, create_session_factory
@@ -86,6 +87,13 @@ async def get_current_user(
     Raises:
         HTTPException 401: if the token is missing, invalid, expired or revoked.
     """
+    if local_mode():
+        user_id = os.environ.get("SAURI_LOCAL_USER_ID", "")
+        account = await _load_account(user_id) if user_id else None
+        if account is None:
+            raise HTTPException(status_code=500, detail="local_user_missing")
+        return AuthenticatedUser(id=account.id, email=account.email, name=account.name, is_sales=account.is_sales)
+
     # Bypass only in the test environment (AUTH_DISABLED=1 and APP_ENV=test), Req. 13.1, 13.4
     if _bypass_active():
         return _DEV_USER
