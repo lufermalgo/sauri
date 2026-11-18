@@ -253,8 +253,11 @@ export interface LocalHardware {
 /** Catalog mark: `measured` by the team with real recordings, or an unmeasured `proposal`. */
 export type LocalModelMark = "measured" | "proposal";
 
-/** `auxiliary` supports a model of its process (voice detection); `managed_engine` ships with its engine. */
-export type LocalModelKind = "model" | "auxiliary" | "managed_engine";
+/**
+ * `auxiliary` supports a model of its process (voice detection); `managed_engine` ships with its engine;
+ * `component` is a runtime the desktop app downloads once (the speaker runtime) and starts when it is installed.
+ */
+export type LocalModelKind = "model" | "auxiliary" | "managed_engine" | "component";
 
 /** State of the files on disk; `managed` has no download and `installing` is an install in progress. */
 export type LocalModelState =
@@ -275,8 +278,8 @@ export type LocalModelAvailability = "installed" | "available" | "present_unveri
 /** Where the file lives: the models directory, the engine's legacy location (never moved) or a managed engine's environment. */
 export type LocalModelLocation = "models_dir" | "legacy" | "managed";
 
-/** Why a present file was not adopted as installed. */
-export type LocalModelReason = "size_mismatch" | "hash_mismatch";
+/** Why a present file was not adopted as installed; `outdated` is a component of an older version. */
+export type LocalModelReason = "size_mismatch" | "hash_mismatch" | "outdated";
 
 /** What installing a model that is not installed still needs. */
 export interface LocalModelInstallNeeds {
@@ -287,6 +290,8 @@ export interface LocalModelInstallNeeds {
   /** Free space an install needs (download plus headroom). */
   disk_required_bytes: number | null;
   fits_on_disk: boolean | null;
+  /** Components only: false while there is no download place yet (nothing to install from). */
+  source_available?: boolean;
 }
 
 export interface LocalModel {
@@ -303,6 +308,8 @@ export interface LocalModel {
   default: boolean;
   /** Command that installs a managed engine. */
   managed_by: string | null;
+  /** Version of a component; null for models. */
+  version?: string | null;
   /** `local:default` means this model when it is installed and its engine is ready; the `default` model is the fallback. */
   preferred?: boolean;
   /** Id of the managed engine this model cannot run without (Parakeet needs the FluidAudio CLI). */

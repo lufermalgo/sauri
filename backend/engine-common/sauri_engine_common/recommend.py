@@ -47,11 +47,11 @@ from typing import Any, Final, Literal, cast
 from sauri_engine_common.model_bundle import MAX_BUNDLE_FILES, BundleFile, bundle_digest, bundle_size, safe_relative
 
 Process = Literal["transcription", "summary", "diarization"]
-Kind = Literal["model", "auxiliary", "managed_engine"]
+Kind = Literal["model", "auxiliary", "managed_engine", "component"]
 Status = Literal["measured", "proposal"]
 
 PROCESSES: Final[tuple[Process, ...]] = ("transcription", "summary", "diarization")
-KINDS: Final = frozenset({"model", "auxiliary", "managed_engine"})
+KINDS: Final = frozenset({"model", "auxiliary", "managed_engine", "component"})
 STATUSES: Final = frozenset({"measured", "proposal"})
 CAPABILITIES: Final = frozenset({"metal"})
 CATALOG_VERSION: Final = 1
@@ -62,6 +62,10 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 _REVISION = re.compile(r"[0-9a-f]{40}")
 _REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*")
 _FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+_VERSION = re.compile(r"\d{1,4}\.\d{1,4}\.\d{1,6}")
+_TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+# A downloadable component comes only from the Releases of the one configured repository (design D9, D13).
+RELEASE_URL_TEMPLATE: Final = "https://github.com/{releases_repo}/releases/download/{tag}/{file}"
 
 
 class CatalogError(ValueError):
@@ -108,6 +112,14 @@ class CatalogModel:
     min_macos: int | None = None
     license: str | None = None
     attribution: str | None = None
+    # ``component`` only: a runtime folder (``component`` names it) shipped as a release archive (``file``).
+    component: str | None = None
+    version: str | None = None
+    release_tag: str | None = None
+    tree_sha256: str | None = None
+    unpacked_size: int | None = None
+    # Id of the managed engine this component stands in for inside the desktop app.
+    replaces: str | None = None
 
     @property
     def bundle(self) -> bool:
@@ -190,6 +202,7 @@ def _parse_model(raw: Any) -> CatalogModel:
     _require(type(entry.get("default")) is bool, "default")
     file, size, sha256, managed_by = entry.get("file"), entry.get("size"), entry.get("sha256"), entry.get("managed_by")
     bundle = _parse_bundle(entry.get("files"))
+    component = _parse_component(entry) if kind == "component" else {}
     if kind == "managed_engine":
         _require(isinstance(managed_by, str) and managed_by != "", "managed_by")
         _require(file is None and size is None and sha256 is None and not bundle, "managed_files")
@@ -228,7 +241,24 @@ def _parse_model(raw: Any) -> CatalogModel:
         min_macos=min_macos,
         license=licence,
         attribution=attribution,
+        **component,
     )
+
+
+def _parse_component(entry: dict[str, Any]) -> dict[str, Any]:
+    """The release fields of a ``component`` entry; its archive URL can only be the fixed Releases template."""
+    name, version, tag = entry.get("component"), entry.get("version"), entry.get("release_tag")
+    tree, unpacked, replaces = entry.get("tree_sha256"), entry.get("unpacked_size"), entry.get("replaces")
+    _require(isinstance(name, str) and _ID.fullmatch(name) is not None, "component")
+    _require(isinstance(version, str) and _VERSION.fullmatch(version) is not None, "version")
+    _require(isinstance(tag, str) and _TAG.fullmatch(tag) is not None, "release_tag")
+    _require(entry.get("url_template") == RELEASE_URL_TEMPLATE, "url_template")
+    _require(isinstance(tree, str) and _SHA256.fullmatch(tree) is not None, "tree_sha256")
+    _require(type(unpacked) is int and unpacked > 0, "unpacked_size")
+    _require(replaces is None or (isinstance(replaces, str) and _ID.fullmatch(replaces) is not None), "replaces")
+    _require(entry.get("files") is None, "component_files")
+    return {"component": name, "version": version, "release_tag": tag, "tree_sha256": tree,
+            "unpacked_size": unpacked, "replaces": replaces}  # fmt: skip
 
 
 def parse_catalog(raw: Any) -> Catalog:
@@ -249,6 +279,11 @@ def parse_catalog(raw: Any) -> Catalog:
         if model.needs is not None:
             dependency = ids.get(model.needs)
             _require(dependency is not None and dependency.kind == "managed_engine", "needs")
+        if model.replaces is not None:
+            replaced = ids.get(model.replaces)
+            _require(replaced is not None and replaced.kind == "managed_engine", "replaces")
+    components = [model.component for model in models if model.component]
+    _require(len(set(components)) == len(components), "duplicate_component")
     return Catalog(version=CATALOG_VERSION, models=models)
 
 
@@ -272,10 +307,14 @@ def _blocker(model: CatalogModel, hardware: HardwareProfile) -> str | None:
 def _recommend_process(process: Process, hardware: HardwareProfile, models: Iterable[CatalogModel]) -> Recommendation:
     models = list(models)
     dependencies = {model.needs for model in models if model.needs}
+    present = {model.id for model in models}
+    # A component stands in for its managed engine only where that engine is not offered (the desktop app).
+    standing_in = {model.id for model in models if model.replaces is not None and model.replaces in present}
     candidates = sorted(
         (
             model for model in models
             if model.process == process and model.kind != "auxiliary" and model.id not in dependencies
+            and model.id not in standing_in
         ),
         key=lambda model: (-model.rank, model.id),
     )

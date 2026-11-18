@@ -28,6 +28,15 @@ them without downloading.
 A managed engine (Senko) has no file: it is "installed" when its virtual environment holds the package
 (presence only, never hashed; ``scripts/engines/install-diar-engine.sh --check`` does the hash check).
 
+A component (the speaker runtime of the desktop app, design D9) is a runtime folder shipped as a release
+archive. It exists only when ``SAURI_COMPONENTS_DIR`` is set (the desktop app), and then it replaces the
+managed engine it names in ``replaces``; elsewhere it is hidden. Its archive comes only from the Releases of
+``SAURI_RELEASES_REPO`` on github.com (and GitHub's release-asset redirect host); with no repository
+configured the listing says it is not available yet and install is refused. The archive is downloaded into
+``<components>/<file>.part`` (resumable), its SHA-256 checked, extracted into a staging folder (regular
+files and folders only, nothing outside the component's own folder), the extracted tree hashed against the
+catalog ``tree_sha256`` and moved to ``<components>/<component>`` with ``os.replace``.
+
 "In use" check (``in_use_processes``): the process settings layer records the chosen local model of
 each process in ``<models>/selection.json`` (``{"transcription": "<id>", "summary": "<id>"}``). A
 process without an entry runs its catalog default, because the gateways fall back to it; auxiliary
@@ -45,6 +54,8 @@ import os
 import re
 import shutil
 import stat
+import tarfile
+import threading
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable, Coroutine
@@ -76,6 +87,12 @@ from sauri_engine_common.recommend import (
     load_catalog,
     recommend,
 )
+
+_RELEASES_REPO: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
+_LOOPBACK_BASE: Final = re.compile(r"http://127\.0\.0\.1:\d{1,5}")
+# Where github.com sends a release download today (checked 2026-11-18: a 302 to this host).
+RELEASE_ASSET_HOSTS: Final = ("release-assets.githubusercontent.com",)
+COMPONENT_MANIFEST_SUFFIX: Final = ".component.json"
 
 logger = logging.getLogger("sauri.host_engine.local_models")
 
@@ -124,6 +141,88 @@ class DownloadPolicy:
 
     def url_for(self, model: CatalogModel, path: str | None = None) -> str:
         return f"{self.base_url}/{model.repo}/resolve/{model.revision}/{path or model.file}"
+
+
+@dataclass(frozen=True)
+class ReleasePolicy:
+    """Where a component archive may come from: the configured repository's Releases and nothing else.
+
+    ``repo`` empty means no download place exists yet. ``loopback_base`` (tests only, with
+    ``SAURI_ALLOW_LOOPBACK_DOWNLOADS=1``) serves the same paths from ``http://127.0.0.1:<port>``.
+    No credential is ever sent.
+    """
+
+    repo: str = ""
+    loopback_base: str | None = None
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.repo)
+
+    def _release_path(self, path: str) -> bool:
+        return self.configured and path.startswith(f"/{self.repo}/releases/download/") and ".." not in path
+
+    def allows(self, url: str) -> bool:
+        try:
+            parts = urlsplit(url)
+            port = parts.port
+        except ValueError:
+            return False
+        host = (parts.hostname or "").lower()
+        if parts.username is not None or parts.password is not None or not host:
+            return False
+        if parts.scheme == "https" and (port or 443) == 443:
+            if host == "github.com":
+                return self._release_path(parts.path)
+            return host in RELEASE_ASSET_HOSTS
+        if self.loopback_base is not None and parts.scheme == "http" and host == "127.0.0.1":
+            return f"http://127.0.0.1:{port}" == self.loopback_base and self._release_path(parts.path)
+        return False
+
+    def sends_token(self, _url: str) -> bool:
+        return False
+
+    def url_for(self, model: CatalogModel) -> str:
+        assert model.release_tag is not None and model.file is not None
+        base = self.loopback_base or "https://github.com"
+        return f"{base}/{self.repo}/releases/download/{model.release_tag}/{model.file}"
+
+
+def release_policy_from_env() -> ReleasePolicy:
+    """``SAURI_RELEASES_REPO`` (owner/repo, empty by default); loopback only with the explicit test switch."""
+    repo = os.getenv("SAURI_RELEASES_REPO", "").strip()
+    if repo and _RELEASES_REPO.fullmatch(repo) is None:
+        logger.warning("releases_repo_invalid")
+        repo = ""
+    loopback = None
+    if os.getenv("SAURI_ALLOW_LOOPBACK_DOWNLOADS") == "1":
+        base = os.getenv("SAURI_RELEASES_BASE_URL", "").rstrip("/")
+        loopback = base if _LOOPBACK_BASE.fullmatch(base) else None
+    return ReleasePolicy(repo=repo, loopback_base=loopback)
+
+
+def _env_dir(name: str) -> Path | None:
+    value = os.getenv(name)
+    return Path(value) if value else None
+
+
+def tree_sha256(base: Path) -> tuple[str, int, int]:
+    """Digest of a folder as ``build-runtime.sh`` writes ``tree_sha256``: sorted walk, ``path\0sha256`` lines."""
+    lines: list[str] = []
+    size = 0
+    for dirpath, dirs, names in os.walk(base):
+        dirs.sort()
+        for name in sorted(names):
+            path = os.path.join(dirpath, name)
+            relative = os.path.relpath(path, base)
+            if os.path.islink(path):
+                lines.append(f"{relative}\0link:{os.readlink(path)}\n")
+                continue
+            with open(path, "rb") as handle:
+                digest = hashlib.file_digest(handle, "sha256").hexdigest()
+            size += os.path.getsize(path)
+            lines.append(f"{relative}\0{digest}\n")
+    return hashlib.sha256("".join(lines).encode()).hexdigest(), len(lines), size
 
 
 class LocalModelError(Exception):
@@ -250,8 +349,17 @@ class LocalModelService:
         token_path: Path | None = None,
         legacy_locator: Callable[[CatalogModel], Path | None] | None = None,
         managed_dirs: dict[str, Path] | None = None,
+        components_dir: Path | None = None,
+        bundled_components_dir: Path | None = None,
+        release_policy: ReleasePolicy | None = None,
     ) -> None:
         self.models_dir = models_dir or default_models_dir()
+        # Components exist only in the desktop app, which sets SAURI_COMPONENTS_DIR.
+        self.components_dir = components_dir or _env_dir("SAURI_COMPONENTS_DIR")
+        self.bundled_components_dir = bundled_components_dir or _env_dir("SAURI_BUNDLED_COMPONENTS_DIR")
+        self.release_policy = release_policy or release_policy_from_env()
+        self._view: Catalog | None = None
+        self._view_source: Catalog | None = None
         self._legacy_locator = legacy_locator or legacy_path_for
         self.managed_dirs = default_managed_dirs() if managed_dirs is None else managed_dirs
         self._last_adoption: dict[str, Any] | None = None
@@ -265,13 +373,23 @@ class LocalModelService:
 
     @property
     def catalog(self) -> Catalog:
+        """The catalog as this installation sees it: components replace their managed engine in the desktop
+        app, and are hidden everywhere else."""
         if self._catalog is None:
             try:
                 path = os.getenv("SAURI_MODEL_CATALOG")
                 self._catalog = load_catalog(Path(path)) if path else load_catalog()
             except CatalogError:
                 raise LocalModelError(503, "catalog_unavailable") from None
-        return self._catalog
+        if self._view is None or self._view_source is not self._catalog:
+            self._view_source = self._catalog
+            if self.components_dir is not None:
+                replaced = {model.replaces for model in self._catalog.models if model.kind == "component"}
+                models = tuple(model for model in self._catalog.models if model.id not in replaced)
+            else:
+                models = tuple(model for model in self._catalog.models if model.kind != "component")
+            self._view = Catalog(version=self._catalog.version, models=models)
+        return self._view
 
     def _model(self, model_id: str) -> CatalogModel:
         model = self.catalog.get(model_id)
@@ -281,6 +399,14 @@ class LocalModelService:
 
     def _paths(self, model: CatalogModel) -> tuple[Path, Path, Path]:
         assert model.file is not None
+        if model.kind == "component":
+            assert self.components_dir is not None and model.component is not None
+            root = self.components_dir
+            return (
+                root / model.component,
+                root / f"{model.file}.part",
+                root / f"{model.component}{COMPONENT_MANIFEST_SUFFIX}",
+            )
         final = self.models_dir / model.file
         return final, final.with_name(final.name + ".part"), final.with_name(final.name + MANIFEST_SUFFIX)
 
@@ -364,6 +490,8 @@ class LocalModelService:
         absent = {"installed_size": None, "installed_at": None, "location": None, "reason": None}
         if self._active and self._active.type == "install" and self._active.model_id == model.id:
             return {"state": "installing", **absent}
+        if model.kind == "component":
+            return self._component_state(model, absent)
         found = self._locate_file(model)
         if found is None:
             return {"state": "not_installed", **absent}
@@ -392,6 +520,44 @@ class LocalModelService:
             "installed_size": info.st_size,
             "installed_at": installed_at,
             "location": found.location,
+            "reason": reason,
+        }
+
+    def _locate_component(self, model: CatalogModel) -> _Found | None:
+        """The component folder: the installed one, else one the runtime carries (development)."""
+        final = self._paths(model)[0]
+        info = _directory(final)
+        if info is not None:
+            return _Found(final, LOCATION_MODELS_DIR, info)
+        if self.bundled_components_dir is not None and model.component is not None:
+            bundled = self.bundled_components_dir / model.component
+            info = _directory(bundled)
+            if info is not None:
+                return _Found(bundled, LOCATION_LEGACY, info)
+        return None
+
+    def _component_state(self, model: CatalogModel, absent: dict[str, Any]) -> dict[str, Any]:
+        """From the folder and its manifest only; a folder of another version is ``unverified``/``outdated``."""
+        found = self._locate_component(model)
+        if found is None:
+            return {"state": "not_installed", **absent}
+        if found.location == LOCATION_LEGACY:
+            return {"state": "installed", "installed_size": model.unpacked_size, "installed_at": None,
+                    "location": LOCATION_LEGACY, "reason": None}  # fmt: skip
+        record = read_manifest(self._paths(model)[2]) or {}
+        same = record.get("sha256") == model.sha256 and record.get("tree_sha256") == model.tree_sha256
+        state, reason = "unverified", None
+        if same and record.get("status") == "installed":
+            state = "installed"
+        elif same and record.get("status") == "corrupt":
+            state = "corrupt"
+        elif record.get("version") and record.get("version") != model.version:
+            reason = "outdated"
+        return {
+            "state": state,
+            "installed_size": record.get("unpacked_size") if same else None,
+            "installed_at": record.get("installed_at"),
+            "location": LOCATION_MODELS_DIR,
             "reason": reason,
         }
 
@@ -509,10 +675,20 @@ class LocalModelService:
         if not model.downloadable:
             return {"method": "managed_command", "managed_by": model.managed_by, "download_bytes": None,
                     "disk_required_bytes": None, "fits_on_disk": None}  # fmt: skip
-        assert model.size is not None
-        required = -(-model.size * DISK_HEADROOM_PERCENT // 100)
-        return {"method": "download", "managed_by": None, "download_bytes": model.size,
+        required = self._disk_required(model)
+        hint: dict[str, Any] = {"method": "download", "managed_by": None, "download_bytes": model.size,
                 "disk_required_bytes": required, "fits_on_disk": free_bytes >= required}  # fmt: skip
+        if model.kind == "component":
+            # No download place yet (design D13): the listing says so instead of offering a failing install.
+            hint["source_available"] = self.release_policy.configured
+        return hint
+
+    @staticmethod
+    def _disk_required(model: CatalogModel) -> int:
+        """The download plus 20 %; a component also needs room for its unpacked folder (with the same margin)."""
+        assert model.size is not None
+        total = model.size + (model.unpacked_size or 0)
+        return -(-total * DISK_HEADROOM_PERCENT // 100)
 
     def list_models(self) -> dict[str, Any]:
         profile = self.hardware()
@@ -543,6 +719,7 @@ class LocalModelService:
                 "license": model.license,
                 "attribution": model.attribution,
                 "managed_by": model.managed_by,
+                "version": model.version,
                 "recommended": model.id in recommended,
                 "in_use_by": in_use_by,
                 **state,
@@ -598,31 +775,46 @@ class LocalModelService:
         model = self._downloadable(model_id)
         assert model.size is not None
         self._require_idle()
+        if model.kind == "component" and not self.release_policy.configured:
+            raise LocalModelError(409, "component_not_published")
         current = self._state(model)
         incomplete = model.bundle and current["state"] == "unverified" and current["installed_size"] is None
+        if model.kind == "component" and current["location"] == LOCATION_LEGACY:
+            raise LocalModelError(409, "already_installed")
         if not incomplete and (
-            current["state"] == "installed" or (current["state"] == "unverified" and current["reason"] is None)
+            current["state"] == "installed"
+            or (current["state"] == "unverified" and current["reason"] is None and model.kind != "component")
         ):
             raise LocalModelError(409, "already_installed")
         final, part, _manifest = self._paths(model)
+        target_dir = final.parent if model.kind == "component" else self.models_dir
         try:
-            self.models_dir.mkdir(parents=True, exist_ok=True)
+            target_dir.mkdir(parents=True, exist_ok=True)
             part_info = None if model.bundle else _regular(part)
-            needed = -(-model.size * DISK_HEADROOM_PERCENT // 100) - (part_info.st_size if part_info else 0)
-            free = disk_free_bytes(self.models_dir)
+            needed = self._disk_required(model) - (part_info.st_size if part_info else 0)
+            free = disk_free_bytes(target_dir)
         except OSError:
             raise LocalModelError(503, "models_dir_unavailable") from None
         if free < max(needed, 0):
             raise LocalModelError(507, "insufficient_disk", needed_bytes=needed, free_bytes=free)
         job = Job(id=uuid.uuid4().hex, model_id=model.id, type="install", bytes_total=model.size)
         logger.info("local_model_install_started model=%s", model.id)
-        body = self._install_bundle(job, model) if model.bundle else self._install(job, model)
+        if model.kind == "component":
+            body = self._install_component(job, model)
+        else:
+            body = self._install_bundle(job, model) if model.bundle else self._install(job, model)
         return self._start(job, self._run(job, body, part))
 
     def verify(self, model_id: str) -> Job:
         model = self._downloadable(model_id)
         assert model.size is not None
         self._require_idle()
+        if model.kind == "component":
+            found = self._locate_component(model)
+            if found is None or found.location != LOCATION_MODELS_DIR:
+                raise LocalModelError(404, "not_installed")
+            job = Job(id=uuid.uuid4().hex, model_id=model.id, type="verify", bytes_total=model.unpacked_size or 0)
+            return self._start(job, self._run(job, self._verify_component(job, model), None))
         found = self._locate_file(model)
         if found is None:
             raise LocalModelError(404, "not_installed")
@@ -649,7 +841,7 @@ class LocalModelService:
         if self._active is not None and self._active.model_id == model.id:
             raise LocalModelError(409, "job_active", job_id=self._active.id)
         final, part, manifest = self._paths(model)
-        found = self._locate_file(model)
+        found = self._locate_component(model) if model.kind == "component" else self._locate_file(model)
         if found is None:
             raise LocalModelError(404, "not_installed")
         if found.location == LOCATION_LEGACY:
@@ -658,7 +850,11 @@ class LocalModelService:
         processes = self.in_use_processes(model)
         if processes:
             raise LocalModelError(409, "model_in_use", processes=processes)
-        if model.bundle:
+        if model.kind == "component":
+            _unlink(manifest)
+            _unlink(part)
+            shutil.rmtree(final, ignore_errors=True)
+        elif model.bundle:
             for directory in (final, part):
                 shutil.rmtree(directory, ignore_errors=True)
             _unlink(manifest)
@@ -726,6 +922,7 @@ class LocalModelService:
         sha256: str,
         part: Path,
         base: int = 0,
+        source: tuple[str, DownloadPolicy | ReleasePolicy] | None = None,
     ) -> None:
         """Download one catalog file into ``part`` (resumable) and check its SHA-256; ``part`` stays for the caller.
 
@@ -745,13 +942,13 @@ class LocalModelService:
         fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
         with os.fdopen(fd, "ab") as out:
             sink = _Sink(out, sha, job.bytes_done - base, base)
-            token = self._token()
+            url, policy = source or (self.policy.url_for(model, relative), self.policy)
+            token = self._token() if isinstance(policy, DownloadPolicy) else None
             attempts = 0
-            url = self.policy.url_for(model, relative)
             while sink.done < size:
                 before = sink.done
                 try:
-                    await self._fetch(client, url, size, sink, job, token)
+                    await self._fetch(client, url, size, sink, job, token, policy)
                 except httpx.TransportError as exc:
                     logger.warning("local_model_connection_lost type=%s", type(exc).__name__)
                 if sink.done < size:
@@ -806,6 +1003,88 @@ class LocalModelService:
         self._write_manifest(model, final.stat(), manifest, "installed", files=found)
         job.result = "installed"
 
+    async def _install_component(self, job: Job, model: CatalogModel) -> None:
+        """Download the archive, check it, unpack it into staging, check the tree, then move it into place."""
+        assert model.size is not None and model.sha256 is not None and model.component is not None
+        final, part, manifest = self._paths(model)
+        staging = final.with_name(f".{model.component}.extract")
+        source = (self.release_policy.url_for(model), self.release_policy)
+        async with self._client() as client:
+            await self._download_file(client, job, model, None, model.size, model.sha256, part, source=source)
+        stop = threading.Event()
+        shutil.rmtree(staging, ignore_errors=True)
+        work = asyncio.ensure_future(asyncio.to_thread(self._unpack_component, model, part, staging, stop))
+        try:
+            await asyncio.shield(work)
+            self._replace_directory(staging / model.component, final)
+        except asyncio.CancelledError:
+            stop.set()  # the unpacking thread stops at the next entry; its files go with the staging folder
+            await asyncio.wait({work})
+            if not work.cancelled():
+                work.exception()  # retrieved, so it is not reported as unhandled
+            raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        _unlink(part)
+        self._write_component_manifest(model, manifest, "installed")
+        job.result = "installed"
+
+    @staticmethod
+    def _unpack_component(model: CatalogModel, archive: Path, staging: Path, stop: threading.Event) -> None:
+        """Blocking: regular files and folders under ``<component>/`` only, never more than the catalog size."""
+        assert model.component is not None and model.unpacked_size is not None
+        prefix = model.component + "/"
+        staging.mkdir(mode=0o700, parents=True)
+        total = 0
+        try:
+            with tarfile.open(archive, "r:gz") as tar:
+                for member in tar:
+                    if stop.is_set():
+                        raise JobError("cancelled")
+                    name = member.name.rstrip("/")
+                    inside = (name == model.component or name.startswith(prefix)) and ".." not in name.split("/")
+                    if not inside or not (member.isfile() or member.isdir()):
+                        raise JobError("archive_invalid")
+                    total += member.size
+                    if total > model.unpacked_size:
+                        raise JobError("archive_too_large")
+                    tar.extract(member, staging, filter="data")
+        except (tarfile.TarError, EOFError):
+            raise JobError("archive_invalid") from None
+        root = staging / model.component
+        if _directory(root) is None:
+            raise JobError("archive_invalid")
+        digest, _count, size = tree_sha256(root)
+        if not hmac.compare_digest(digest, model.tree_sha256 or "") or size != model.unpacked_size:
+            raise JobError("tree_mismatch")
+
+    async def _verify_component(self, job: Job, model: CatalogModel) -> None:
+        final, _part, manifest = self._paths(model)
+        if _directory(final) is None:
+            raise JobError("not_installed")
+        digest, _count, size = await asyncio.to_thread(tree_sha256, final)
+        job.bytes_done = size
+        matches = hmac.compare_digest(digest, model.tree_sha256 or "") and size == model.unpacked_size
+        self._write_component_manifest(model, manifest, "installed" if matches else "corrupt")
+        job.result = "verified" if matches else "corrupt"
+
+    @staticmethod
+    def _write_component_manifest(model: CatalogModel, manifest: Path, status: str) -> None:
+        record = {
+            "id": model.id,
+            "component": model.component,
+            "version": model.version,
+            "file": model.file,
+            "sha256": model.sha256,
+            "tree_sha256": model.tree_sha256,
+            "unpacked_size": model.unpacked_size,
+            "installed_at": _now(),
+            "status": status,
+        }
+        temporary = manifest.with_name(manifest.name + ".tmp")
+        temporary.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        os.replace(temporary, manifest)
+
     @staticmethod
     def _replace_directory(staging: Path, final: Path) -> None:
         """Move a complete staging directory to its final name; an older (incomplete or corrupt) one goes first."""
@@ -819,22 +1098,30 @@ class LocalModelService:
             os.replace(staging, final)
 
     async def _fetch(
-        self, client: httpx.AsyncClient, url: str, size: int, sink: _Sink, job: Job, token: str | None
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        size: int,
+        sink: _Sink,
+        job: Job,
+        token: str | None,
+        policy: DownloadPolicy | ReleasePolicy | None = None,
     ) -> None:
+        policy = policy or self.policy
         headers = {"Accept-Encoding": "identity"}
         if sink.done:
             headers["Range"] = f"bytes={sink.done}-"
-        if not self.policy.allows(url):
+        if not policy.allows(url):
             raise JobError("url_not_allowed")
         for _hop in range(MAX_REDIRECTS + 1):
             hop_headers = dict(headers)
-            if token and self.policy.sends_token(url):
+            if token and policy.sends_token(url):
                 hop_headers["Authorization"] = f"Bearer {token}"
             async with client.stream("GET", url, headers=hop_headers) as response:
                 if response.status_code in _REDIRECT_STATUSES:
                     location = response.headers.get("location")
                     url = urljoin(url, location) if location else ""
-                    if not url or not self.policy.allows(url):
+                    if not url or not policy.allows(url):
                         raise JobError("redirect_not_allowed")
                     continue
                 await self._consume(response, size, sink, job)
@@ -968,7 +1255,7 @@ class LocalModelService:
     def _adoption_candidates(self) -> list[tuple[CatalogModel, _Found]]:
         candidates = []
         for model in self.catalog.models:
-            if not model.downloadable:
+            if not model.downloadable or model.kind == "component":
                 continue
             found = self._locate_file(model)
             if found is None or self._state(model)["state"] == "installed":

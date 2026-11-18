@@ -34,10 +34,35 @@ export type RelocateResult =
   | { ok: true; kind: FolderKind; path: string; previous: string; previousTrashed: boolean }
   | { ok: false; reason: RelocateFailure; count?: number; neededBytes?: number; freeBytes?: number; detail?: string };
 
+/** Where the app's updater stands (desktop `shared/portal-api.ts`, design D12). */
+export type UpdateState = "disabled" | "idle" | "checking" | "downloading" | "up_to_date" | "ready" | "applying" | "error";
+
+export interface UpdateStatus {
+  state: UpdateState;
+  current: string;
+  version?: string;
+  percent?: number;
+  error?: string;
+  count?: number;
+  manualZip?: string;
+  autoCheck: boolean;
+  lastCheck?: string;
+}
+
+export interface DesktopUpdates {
+  status(): Promise<UpdateStatus>;
+  check(): Promise<UpdateStatus>;
+  /** The button is the person's confirmation: the app stops, migrates the data, swaps itself and opens again. */
+  apply(): Promise<UpdateStatus>;
+  setAutoCheck(on: boolean): Promise<UpdateStatus>;
+}
+
 export interface SauriDesktop {
   getPaths(): Promise<FolderUsage[]>;
   relocate(kind: FolderKind): Promise<RelocateResult>;
   markSetupDone(): Promise<void>;
+  /** Missing in app versions older than the updater. */
+  updates?: DesktopUpdates;
 }
 
 declare global {

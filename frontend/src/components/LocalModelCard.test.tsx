@@ -454,6 +454,51 @@ describe("install", () => {
   });
 });
 
+describe("the speaker runtime as a downloadable component", () => {
+  const runtime = (overrides: Partial<LocalModel> = {}) =>
+    available({
+      id: "diar-runtime", process: "diarization", kind: "component", engine: "senko", size: 251_532_143, min_ram_gib: 0,
+      default: true, recommended: true, version: "0.1.0",
+      install: {
+        method: "download", managed_by: null, download_bytes: 251_532_143, disk_required_bytes: 1_161_762_376,
+        fits_on_disk: true, source_available: true,
+      },
+      ...overrides,
+    });
+  const title = () => t("engines:local.managedTitle.diarization");
+
+  it("installs it like a model, under the engine's plain name", async () => {
+    await renderCard([runtime()], {}, { process: "diarization" });
+    const entry = row(title());
+    expect(within(entry).getByText(t("engines:local.componentHow"))).toBeInTheDocument();
+    backend.jobAnswers.push({ state: "done", bytes_done: 1000, result: "installed" });
+    fireEvent.click(within(entry).getByRole("button", { name: t("engines:local.installLabel", { id: title() }) }));
+    expect(await screen.findByText(t("engines:local.outcome.installed", { id: "diar-runtime" }))).toBeInTheDocument();
+    expect(backend.calls).toContainEqual({ method: "POST", path: "/local/models/diar-runtime/install" });
+  });
+
+  it("says it is not available yet, without an install button, when there is no download place", async () => {
+    const unpublished = runtime({
+      install: {
+        method: "download", managed_by: null, download_bytes: 251_532_143, disk_required_bytes: 1_161_762_376,
+        fits_on_disk: true, source_available: false,
+      },
+    });
+    await renderCard([unpublished], {}, { process: "diarization" });
+    const entry = row(title());
+    expect(within(entry).getByText(t("engines:local.componentUnavailable"))).toBeInTheDocument();
+    expect(within(entry).queryByRole("button", { name: t("engines:local.installLabel", { id: title() }) })).toBeNull();
+  });
+
+  it("offers to install the new version over an older one", async () => {
+    const older = runtime({ state: "unverified", availability: "present_unverified", reason: "outdated", location: "models_dir" });
+    await renderCard([older], {}, { process: "diarization" });
+    const entry = row(title());
+    expect(within(entry).getByText(t("engines:local.unverifiedReason.outdated"))).toBeInTheDocument();
+    expect(within(entry).getByRole("button", { name: t("engines:local.installLabel", { id: title() }) })).toBeEnabled();
+  });
+});
+
 describe("verify and remove", () => {
   it("verifies from the row menu and reports an intact file", async () => {
     await renderCard([TURBO, SMALL_INSTALLED]);
