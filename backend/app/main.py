@@ -17,6 +17,7 @@ from app.infra.http_security import SecurityHeadersMiddleware, cors_options, doc
 from app.infra.queue import create_job_queue
 from app.infra.secrets import log_secret_sources
 from app.ingestion.router import router as ingestion_router
+from app.media.router import router as media_router
 from app.meetings.router import router as meetings_router
 from app.regeneration.router import router as regeneration_router
 from app.summaries.outbox import recover_outbox
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     application.add_exception_handler(RequestValidationError, request_validation_exception_handler)
     application.add_exception_handler(Exception, unhandled_exception_handler)
 
+    application.include_router(media_router)
     application.include_router(ingestion_router)
     application.include_router(meetings_router)
     application.include_router(regeneration_router)

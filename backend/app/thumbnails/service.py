@@ -13,6 +13,7 @@ import os
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from sqlalchemy import ColumnElement, or_, select
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infra.models import Meeting, SessionRecording
 from app.infra.object_store import ObjectStore
+from app.infra.object_store_fs import FilesystemObjectStore
 from app.meetings.recorded_at import SOURCE_FILE_METADATA, is_stronger_source, plausible_recorded_at
 from app.meetings.service import load_playback_source_inventory
 from app.thumbnails.ffmpeg import MediaToolError, extract_best_frame, probe_media
@@ -143,6 +145,12 @@ async def note_creation_time(
         return True
 
 
+async def _media_source(object_store: ObjectStore, reference: str) -> str:
+    if root := os.environ.get("SAURI_RECORDINGS_DIR"):
+        return str(FilesystemObjectStore(Path(root)).local_path(reference))
+    return await object_store.temporary_read_url(reference, ttl_seconds=SOURCE_URL_TTL_SECONDS)
+
+
 async def generate_thumbnail(
     session_factory: async_sessionmaker[AsyncSession],
     object_store: ObjectStore,
@@ -163,7 +171,7 @@ async def generate_thumbnail(
         state = job.fixed_state or "unavailable"
         if job.creation_ref is not None:
             # Audio only has no frame to cut, but its header can still carry the creation date.
-            url = await object_store.temporary_read_url(job.creation_ref, ttl_seconds=SOURCE_URL_TTL_SECONDS)
+            url = await _media_source(object_store, job.creation_ref)
             try:
                 await note_creation_time(session_factory, job.meeting_id, (await probe_media(url)).creation_time)
             except MediaToolError as exc:
@@ -171,7 +179,7 @@ async def generate_thumbnail(
         await _record_result(session_factory, object_store, job, state, None)
         return state
 
-    source_url = await object_store.temporary_read_url(job.source_ref, ttl_seconds=SOURCE_URL_TTL_SECONDS)
+    source_url = await _media_source(object_store, job.source_ref)
     jpeg: bytes | None = None
     try:
         probe = await probe_media(source_url)
