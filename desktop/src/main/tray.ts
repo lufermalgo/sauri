@@ -56,6 +56,7 @@ function icon(state: TrayState): Electron.NativeImage {
 export interface TrayActions {
   open: () => void;
   openLogs: () => void;
+  uninstall: () => void;
   quit: () => void;
   launchAtLogin: () => boolean;
   toggleLaunchAtLogin: (on: boolean) => void;
@@ -103,6 +104,7 @@ export class SauriTray {
           click: (item) => actions.toggleLaunchAtLogin(item.checked),
         },
         { type: "separator" },
+        { label: t(locale, "menu.uninstall"), click: actions.uninstall },
         { label: t(locale, "tray.quit"), click: actions.quit },
       ]),
     );

@@ -3,8 +3,9 @@
 // quitting asks first when meetings are being processed.
 import os from "node:os";
 import path from "node:path";
-import { app, BrowserWindow, dialog, shell } from "electron";
-import { type Locale, plural, t } from "../i18n.ts";
+import { spawn } from "node:child_process";
+import { app, BrowserWindow, dialog, Menu, shell } from "electron";
+import { formatGigabytes, type Locale, plural, t } from "../i18n.ts";
 import { setLaunchAtLogin } from "./autostart.ts";
 import { type AppConfig, ConfigError, loadConfig, phaseADone, saveConfig } from "./config.ts";
 import { appPaths, folderProblems, PathError, socketPath, type UserFolders } from "./paths.ts";
@@ -14,12 +15,25 @@ import { SetupController } from "./setup.ts";
 import { fetchLocalStatus } from "./status.ts";
 import { RotatingLog } from "./supervisor.ts";
 import { SauriTray, trayStatus } from "./tray.ts";
+import {
+  afterExitSweep,
+  appBundleOf,
+  type FolderTarget,
+  internalPaths,
+  planUninstall,
+  runUninstall,
+  type UninstallPlan,
+  type UninstallReport,
+} from "./uninstall.ts";
 
 const DIST = import.meta.dirname;
 const dev = process.env.SAURI_DEV === "1" || !app.isPackaged;
-const paths = appPaths({ dev, home: dev ? process.env.SAURI_DESKTOP_HOME : undefined });
-// Fixed ports in the installed app; development may move the whole block (the owner's Docker holds 8000).
-const ports = portPlan(dev && process.env.SAURI_API_PORT ? Number(process.env.SAURI_API_PORT) : DEFAULT_API_PORT);
+// SAURI_DESKTOP_HOME and SAURI_API_PORT isolate a test run (a temporary home, another port block) in development
+// and in the installed app alike; a normal launch from Finder sets neither.
+const paths = appPaths({ dev, home: process.env.SAURI_DESKTOP_HOME });
+const ports = portPlan(process.env.SAURI_API_PORT ? Number(process.env.SAURI_API_PORT) : DEFAULT_API_PORT);
+/** electron-builder.json appId: macOS keeps preferences and saved window state under it. */
+const APP_ID = "com.sauri.desktop";
 
 function resolveLayout(): Layout {
   if (!dev) {
@@ -257,6 +271,137 @@ async function quitFlow(ask: boolean): Promise<void> {
   app.exit(0);
 }
 
+function megabytes(bytes: number): string {
+  return bytes >= 1e9 ? formatGigabytes(locale(), bytes) : `${Math.round(bytes / 1e6)} MB`;
+}
+
+function uninstallPlan(): UninstallPlan {
+  return planUninstall({
+    paths,
+    folders: config.paths as UserFolders | undefined,
+    installId: config.installId,
+    appId: dev ? undefined : APP_ID,
+    appBundle: appBundleOf(process.execPath, app.isPackaged),
+  });
+}
+
+async function ask(options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  const target = portalWindow?.isVisible() ? portalWindow : setupWindow?.isVisible() ? setupWindow : null;
+  return target ? dialog.showMessageBox(target, options) : dialog.showMessageBox(options);
+}
+
+function folderLine(folder: FolderTarget): string {
+  const kind = t(locale(), `folder.${folder.kind}`);
+  if (folder.verdict === "ok") return t(locale(), "uninstall.folders.item", { kind, path: folder.path, size: megabytes(folder.bytes) });
+  return t(locale(), "uninstall.folders.itemKept", {
+    kind,
+    path: folder.path,
+    reason: t(locale(), `uninstall.reason.${folder.verdict}`),
+  });
+}
+
+function uninstallSummary(report: UninstallReport, appLeft: string | null): string {
+  const lines = [t(locale(), "uninstall.done.internal")];
+  lines.push(t(locale(), report.trashed.length > 0 ? "uninstall.done.foldersTrashed" : "uninstall.done.foldersKept"));
+  if (appLeft) lines.push(t(locale(), "uninstall.done.appLeft", { path: appLeft }));
+  if (report.failed.length > 0) lines.push(t(locale(), "uninstall.done.failed", { paths: report.failed.map((item) => item.path).join(", ") }));
+  return lines.join("\n\n");
+}
+
+/** Settings action "Uninstall Sauri" (Requirement 10); every question defaults to the safe answer. */
+async function uninstallFlow(): Promise<void> {
+  if (quitting) return;
+  const report = await runUninstall({
+    plan: uninstallPlan,
+    processing: processingCount,
+    confirm: async (plan) => {
+      const bytes = plan.internal.reduce((sum, item) => sum + item.bytes, 0);
+      const bundle = plan.appBundle;
+      const detail = [t(locale(), "uninstall.message", { size: megabytes(bytes) })];
+      if (bundle && !bundle.writable) detail.push(t(locale(), "uninstall.appNotWritable", { path: bundle.path }));
+      const answer = await ask({
+        type: "warning",
+        message: t(locale(), "uninstall.title"),
+        detail: detail.join("\n\n"),
+        buttons: [t(locale(), "uninstall.cancel"), t(locale(), "uninstall.confirm")],
+        defaultId: 0,
+        cancelId: 0,
+        ...(bundle?.writable ? { checkboxLabel: t(locale(), "uninstall.removeApp"), checkboxChecked: true } : {}),
+      });
+      return { proceed: answer.response === 1, removeApp: answer.checkboxChecked };
+    },
+    confirmProcessing: async (count) => {
+      const answer = await ask({
+        type: "warning",
+        message: t(locale(), "quit.title"),
+        detail: plural(locale(), "uninstall.processing", count),
+        buttons: [t(locale(), "quit.wait"), t(locale(), "uninstall.anyway")],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      return answer.response === 1;
+    },
+    trashFolders: async (folders) => {
+      const answer = await ask({
+        type: "question",
+        message: t(locale(), "uninstall.folders.title"),
+        detail: `${t(locale(), "uninstall.folders.message")}\n\n${folders.map(folderLine).join("\n")}`,
+        buttons: [t(locale(), "uninstall.folders.keep"), t(locale(), "uninstall.folders.trash")],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      return answer.response === 1;
+    },
+    stopServices: async () => {
+      quitting = true;
+      clearInterval(poll);
+      log.line("uninstalling: stopping services");
+      await core?.stop();
+      setLaunchAtLogin(false);
+      tray?.destroy();
+      log.close();
+    },
+    trash: (target) => shell.trashItem(target),
+  });
+  if (!report) return;
+  const bundle = appBundleOf(process.execPath, app.isPackaged);
+  const appLeft = bundle && !report.appRemoved ? bundle.path : null;
+  await dialog.showMessageBox({
+    type: "info",
+    message: t(locale(), "uninstall.done.title"),
+    detail: uninstallSummary(report, appLeft),
+    buttons: [t(locale(), "uninstall.done.close")],
+  });
+  // Electron may write its profile and logs again while it exits: remove them once more after the exit.
+  const sweep = afterExitSweep(process.pid, internalPaths(paths, dev ? undefined : APP_ID));
+  spawn(sweep.command, sweep.args, { detached: true, stdio: "ignore" }).unref();
+  app.exit(0);
+}
+
+function setAppMenu(): void {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      {
+        label: app.name,
+        submenu: [
+          { role: "about" },
+          { type: "separator" },
+          { label: t(locale(), "menu.uninstall"), click: () => void uninstallFlow() },
+          { type: "separator" },
+          { role: "hide" },
+          { role: "hideOthers" },
+          { role: "unhide" },
+          { type: "separator" },
+          { role: "quit" },
+        ],
+      },
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { role: "windowMenu" },
+    ]),
+  );
+}
+
 async function retry(): Promise<void> {
   config = loadConfig(paths.configFile);
   await startServices();
@@ -287,9 +432,11 @@ app.whenReady().then(async () => {
   }
   saveConfig(paths.configFile, config);
   setLaunchAtLogin(config.launchAtLogin);
+  setAppMenu();
   tray = new SauriTray(locale(), {
     open: showMain,
     openLogs,
+    uninstall: () => void uninstallFlow(),
     quit: () => app.quit(),
     launchAtLogin: () => config.launchAtLogin,
     toggleLaunchAtLogin: (on) => {
@@ -306,7 +453,10 @@ app.whenReady().then(async () => {
     core: getCore,
     log,
     window: () => setupWindow,
-    onLocale: (value) => tray?.setLocale(value),
+    onLocale: (value) => {
+      tray?.setLocale(value);
+      setAppMenu();
+    },
     retry: () => void retry(),
     openLogs,
     quit: () => app.quit(),
