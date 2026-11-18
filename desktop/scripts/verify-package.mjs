@@ -1,6 +1,7 @@
-// Checks that the runtime inside a packaged Sauri.app is byte for byte the runtime it was staged from, and that every
-// pinned binary still equals runtime-manifest.json. Packaging must never rewrite them: a re-signed whisper-cli no
-// longer equals its pin in engine-hashes.json, and the transcription engine then refuses to start.
+// Checks that the runtime inside a packaged Sauri.app is byte for byte the runtime it was staged from, that every
+// pinned binary still equals runtime-manifest.json and that no stray Python bytecode was shipped. Packaging must never
+// rewrite them: a re-signed whisper-cli no longer equals its pin in engine-hashes.json, and the transcription engine
+// then refuses to start.
 //
 // Usage: node desktop/scripts/verify-package.mjs <Sauri.app> <runtime dir it was staged from>
 import { createHash } from "node:crypto";
@@ -17,6 +18,14 @@ function* regularFiles(base, dir = base) {
   }
 }
 
+/**
+ * Bytecode that a run of the runtime's Python left behind (stage.mjs leaves it out; the app writes its own under
+ * PYTHONPYCACHEPREFIX). Only components/ carries bytecode on purpose: compiled at build time, pinned by tree_sha256.
+ */
+export function strayBytecode(rel) {
+  return !rel.startsWith(`components${path.sep}`) && (rel.split(path.sep).includes("__pycache__") || rel.endsWith(".pyc"));
+}
+
 /** Problems in a packaged runtime; empty when it is intact. */
 export function runtimeProblems(packaged, source) {
   const problems = [];
@@ -29,7 +38,9 @@ export function runtimeProblems(packaged, source) {
     }
   }
   let changed = 0;
+  let stray = 0;
   for (const rel of regularFiles(packaged)) {
+    if (strayBytecode(rel) && ++stray <= 5) problems.push(`${rel} is stray Python bytecode`);
     const original = path.join(source, rel);
     if (!fs.existsSync(original) || fileSha(original) !== fileSha(path.join(packaged, rel))) {
       changed += 1;
@@ -37,6 +48,7 @@ export function runtimeProblems(packaged, source) {
     }
   }
   if (changed > 20) problems.push(`... ${changed} files differ in total`);
+  if (stray > 5) problems.push(`... ${stray} stray bytecode files in total`);
   return problems;
 }
 

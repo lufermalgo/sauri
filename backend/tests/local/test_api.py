@@ -86,6 +86,9 @@ async def test_status_reports_pairing_only_after_a_trusted_pair(local_app: FastA
         assert (await client.get("/api/v1/local/status", headers=portal)).json()["extension_paired"] is False
         refused = await client.post("/api/v1/local/pair", headers={"Origin": "chrome-extension://" + "c" * 32})
         assert refused.status_code == 403
+        # A stable code lets the extension tell its copy is not authorized, apart from any other refusal.
+        assert refused.json() == {"detail": "extension_not_allowed"}
+        assert (await client.post("/api/v1/local/pair")).json() == {"detail": "extension_not_allowed"}
         assert (await client.get("/api/v1/local/status", headers=portal)).json()["extension_paired"] is False
         assert (await client.post("/api/v1/local/pair", headers={"Origin": ORIGIN})).status_code == 200
         assert (await client.get("/api/v1/local/status", headers=portal)).json()["extension_paired"] is True

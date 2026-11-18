@@ -95,5 +95,6 @@
   "noSpeech": "No se detectó voz",
   "noSpeechHelp": "Esta grabación no tiene voz que transcribir. Revisa que el micrófono o el audio de la pestaña estuvieran activos.",
   "processingFailedHelp": "Puedes abrirla en el portal para ver el detalle.",
-  "openLocalApp": "Abre Sauri en tu Mac para grabar o ver tus reuniones"
+  "openLocalApp": "Abre Sauri en tu Mac para grabar o ver tus reuniones",
+  "extensionNotAllowed": "Esta copia de la extensión no está autorizada para conectarse con Sauri. Instálala desde Chrome Web Store."
 }

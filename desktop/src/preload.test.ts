@@ -13,12 +13,13 @@ describe("portal preload", () => {
     await import("./preload.ts");
     expect(Object.keys(exposed)).toEqual(["sauriDesktop"]);
     const api = exposed.sauriDesktop as Record<string, (...args: unknown[]) => Promise<unknown>>;
-    expect(Object.keys(api).sort()).toEqual(["getPaths", "markSetupDone", "relocate", "updates"]);
+    expect(Object.keys(api).sort()).toEqual(["getLocale", "getPaths", "markSetupDone", "relocate", "updates"]);
     const updates = api.updates as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
     expect(Object.keys(updates).sort()).toEqual(["apply", "check", "setAutoCheck", "status"]);
     await api.getPaths();
     await api.relocate("models");
     await api.markSetupDone();
+    await api.getLocale();
     await updates.status();
     await updates.check();
     await updates.apply();
@@ -27,6 +28,7 @@ describe("portal preload", () => {
       [PORTAL_CHANNELS.getPaths],
       [PORTAL_CHANNELS.relocate, "models"],
       [PORTAL_CHANNELS.markSetupDone],
+      [PORTAL_CHANNELS.getLocale],
       [PORTAL_CHANNELS.updateStatus],
       [PORTAL_CHANNELS.updateCheck],
       [PORTAL_CHANNELS.updateApply],

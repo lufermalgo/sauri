@@ -67,7 +67,8 @@ log() { printf '[build-runtime %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { printf '[build-runtime] ERROR: %s\n' "$*" >&2; exit 1; }
 sha256_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
 PY="$OUT/python/bin/python3"
-rpy() { "$PY" -I "$@"; }  # the runtime's own CPython, isolated from the environment
+# The runtime's own CPython, isolated from the environment; -B so build steps leave no stray bytecode in python/.
+rpy() { "$PY" -I -B "$@"; }
 
 # Build tools come from a private folder: only cmake and pkg-config are borrowed, by absolute path, and
 # never linked. Homebrew stays out of PATH so configure scripts cannot pick up its libraries.

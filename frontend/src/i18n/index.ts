@@ -1,6 +1,7 @@
 import i18n, { type TFunction } from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
 import { es, type Resources } from "../locales/es";
+import { desktopBridge } from "../desktop-bridge";
 import { DEFAULT_LANGUAGE, detectInitialLanguage, storeLanguage, type Language } from "./languages";
 
 export * from "./languages";
@@ -94,13 +95,23 @@ export async function setLanguage(language: Language, { persist = true }: { pers
   if (persist) storeLanguage(language);
 }
 
+/** The language chosen in the desktop app's setup, or null in a browser, an older app or on failure. */
+async function desktopLanguage(): Promise<string | null> {
+  try {
+    return (await desktopBridge()?.getLocale?.()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Applies the saved or browser language at start-up, before the first render. If the language cannot
- * be loaded the portal simply stays in Spanish.
+ * Applies the saved, desktop-setup or browser language at start-up, before the first render. It is not
+ * saved, so a later choice in the portal's own settings still wins. If the language cannot be loaded
+ * the portal simply stays in Spanish.
  */
 export async function initLanguage(): Promise<void> {
   try {
-    await setLanguage(detectInitialLanguage(), { persist: false });
+    await setLanguage(detectInitialLanguage(await desktopLanguage()), { persist: false });
   } catch {
     syncDocument();
   }

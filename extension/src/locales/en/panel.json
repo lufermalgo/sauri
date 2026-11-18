@@ -95,5 +95,6 @@
   "noSpeech": "No speech detected",
   "noSpeechHelp": "This recording has no speech to transcribe. Check that the microphone or the tab audio was on.",
   "processingFailedHelp": "You can open it in the portal to see the details.",
-  "openLocalApp": "Open Sauri on your Mac to record or view your meetings"
+  "openLocalApp": "Open Sauri on your Mac to record or view your meetings",
+  "extensionNotAllowed": "This copy of the extension is not authorized to connect to Sauri. Install it from the Chrome Web Store."
 }

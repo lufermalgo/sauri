@@ -32,6 +32,18 @@ describe("packaged runtime check", () => {
     expect(runtimeProblems(path.join(dir, "packaged"), path.join(dir, "source"))).toEqual([]);
   });
 
+  it("rejects stray bytecode outside the components, even when the staged runtime had it", () => {
+    for (const root of ["source", "packaged"]) {
+      write(path.join(dir, root), "python/lib/python3.11/re/__pycache__/_parser.cpython-311.pyc", "bytecode");
+      write(path.join(dir, root), "python/lib/python3.11/stray.pyc", "bytecode");
+      write(path.join(dir, root), "components/core/sqlalchemy/__pycache__/sql.cpython-311.pyc", "pinned bytecode");
+    }
+    expect(runtimeProblems(path.join(dir, "packaged"), path.join(dir, "source"))).toEqual([
+      "python/lib/python3.11/re/__pycache__/_parser.cpython-311.pyc is stray Python bytecode",
+      "python/lib/python3.11/stray.pyc is stray Python bytecode",
+    ]);
+  });
+
   it("names a re-signed binary and a changed library", () => {
     write(path.join(dir, "packaged"), "bin/whisper-cli", "whisper build, signed again");
     write(path.join(dir, "packaged"), "python/lib/module.so", "extension, signed again");

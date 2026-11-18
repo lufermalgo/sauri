@@ -14,8 +14,15 @@ import { commandHealth, httpHealth, RotatingLog, type ServiceSpec, Supervisor } 
 export const PG_SOCKET_PORT = 5432;
 export const DB_USER = "sauri";
 export const DB_NAME = "sauri";
-/** The published extension's id joins this list once Chrome Web Store assigns it (U10). */
-export const EXTENSION_ORIGINS = ["chrome-extension://ilnkkojmkfnbdilogldabpodoobfigce"];
+/**
+ * The only Chrome extensions the local API pairs with (passed as SAURI_EXTENSION_ORIGINS).
+ * Any other copy gets `extension_not_allowed` and the side panel says so. To allow the
+ * Chrome Web Store build, add its 32-letter id here once the store assigns it (U10).
+ */
+export const ALLOWED_EXTENSION_IDS = [
+  "ilnkkojmkfnbdilogldabpodoobfigce", // Owner's unpacked build.
+] as const;
+export const EXTENSION_ORIGINS = ALLOWED_EXTENSION_IDS.map(id => `chrome-extension://${id}`);
 /** On "Quit anyway" a running stage is handed back quickly and repeats on the next start. */
 const WORKER_SHUTDOWN_GRACE_SECONDS = "10";
 

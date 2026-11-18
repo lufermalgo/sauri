@@ -39,6 +39,12 @@ describe("detectLanguage", () => {
     expect(detectLanguage({ browserLanguages: ["es-MX", "en"] })).toBe("es");
   });
 
+  it("puts the desktop setup language between the saved one and the browser", () => {
+    expect(detectLanguage({ desktop: "es", browserLanguages: ["en-US"] })).toBe("es");
+    expect(detectLanguage({ stored: "en", desktop: "es", browserLanguages: ["es"] })).toBe("en");
+    expect(detectLanguage({ desktop: "fr", browserLanguages: ["en-US"] })).toBe("en");
+  });
+
   it("falls back to Spanish for any other language or none", () => {
     expect(detectLanguage({ browserLanguages: ["fr-FR", "de"] })).toBe("es");
     expect(detectLanguage({})).toBe("es");
@@ -60,6 +66,37 @@ describe("start-up language", () => {
     await initLanguage();
     expect(i18n.language).toBe("es");
     expect(document.documentElement.lang).toBe("es");
+  });
+
+  it("inside the desktop app, follows its setup language over the browser", async () => {
+    stubLanguages(["en-US"]);
+    vi.stubGlobal("sauriDesktop", { getLocale: vi.fn(async () => "es") });
+    await initLanguage();
+    expect(i18n.language).toBe("es");
+    expect(localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBeNull();
+    stubLanguages(["es-CO"]);
+    vi.stubGlobal("sauriDesktop", { getLocale: vi.fn(async () => "en") });
+    await initLanguage();
+    expect(i18n.language).toBe("en");
+  });
+
+  it("keeps the portal's own saved choice over the desktop setup language", async () => {
+    stubLanguages(["es-CO"]);
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, "es");
+    vi.stubGlobal("sauriDesktop", { getLocale: vi.fn(async () => "en") });
+    await initLanguage();
+    expect(i18n.language).toBe("es");
+  });
+
+  it("falls back to the browser when the desktop app cannot say or is older", async () => {
+    stubLanguages(["en-US"]);
+    vi.stubGlobal("sauriDesktop", { getLocale: vi.fn(async () => { throw new Error("forbidden"); }) });
+    await initLanguage();
+    expect(i18n.language).toBe("en");
+    await setLanguage("es", { persist: false });
+    vi.stubGlobal("sauriDesktop", {});
+    await initLanguage();
+    expect(i18n.language).toBe("en");
   });
 
   it("starts in Spanish for an unsupported browser language", async () => {

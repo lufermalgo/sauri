@@ -67,6 +67,8 @@ export interface PortalDesktopApi {
   getPaths(): Promise<FolderUsage[]>;
   relocate(kind: FolderKind): Promise<RelocateResult>;
   markSetupDone(): Promise<void>;
+  /** The language chosen in the app's setup; the portal starts in it unless the person picked another there. */
+  getLocale(): Promise<"es" | "en">;
   updates: PortalUpdatesApi;
 }
 
@@ -74,6 +76,7 @@ export const PORTAL_CHANNELS = {
   getPaths: "portal:get-paths",
   relocate: "portal:relocate",
   markSetupDone: "portal:mark-setup-done",
+  getLocale: "portal:get-locale",
   updateStatus: "portal:update-status",
   updateCheck: "portal:update-check",
   updateApply: "portal:update-apply",
