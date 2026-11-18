@@ -1,6 +1,7 @@
 """SQLAlchemy domain models for sauri — Capture and Transcription module."""
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -981,3 +983,23 @@ class EnginePrivacyConsent(Base):
     notice_version: Mapped[int] = mapped_column(Integer, nullable=False)
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class JobMessage(Base):
+    """Durable queue delivery; attempts counts retries, not deferrals."""
+
+    __tablename__ = "job_messages"
+    __table_args__ = (
+        Index("job_messages_ready", "topic", "available_at", postgresql_where=text("locked_until IS NULL")),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    topic: Mapped[str] = mapped_column(String(64), nullable=False)
+    body: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    headers: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, server_default=text("'{}'"))
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

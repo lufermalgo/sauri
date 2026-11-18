@@ -22,7 +22,7 @@ PARENT = "021_default_summary_legacy_default"
 
 def test_revision_chains_after_the_summary_structure_revision() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["029_meeting_recorded_at"]  # The recording-date revision follows.
+    assert script.get_heads() == ["030_job_messages"]  # The job queue revision follows.
     assert script.get_revision("023_summary_request_timestamps").down_revision == REVISION
     assert script.get_revision(REVISION).down_revision == PARENT
 

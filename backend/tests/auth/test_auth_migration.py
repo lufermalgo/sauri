@@ -22,7 +22,7 @@ PARENT = "024_regeneration_operations"
 
 def test_revision_is_the_single_head_and_follows_regeneration_operations() -> None:
     script = ScriptDirectory.from_config(Config(str(BACKEND / "alembic.ini")))
-    assert script.get_heads() == ["029_meeting_recorded_at"]  # The recording-date revision follows.
+    assert script.get_heads() == ["030_job_messages"]  # The job queue revision follows.
     assert script.get_revision(REVISION).down_revision == PARENT
     assert len(REVISION) <= 32  # alembic_version.version_num is VARCHAR(32)
 
