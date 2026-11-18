@@ -1,0 +1,3 @@
+# The runtime is built by desktop/scripts/build-runtime.sh and is never committed.
+*
+!.gitignore
