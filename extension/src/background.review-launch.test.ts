@@ -18,7 +18,7 @@ async function worker(record: RecordingCompletion, crashAfterCreate = false, alr
   let startup: () => unknown;
   let alarm: (value: { name: string }) => unknown;
   const tabs: Array<{ id: number; url: string }> = alreadyOpen
-    ? [{ id: 614, url: `http://localhost:5173/?meetingId=${encodeURIComponent(record.meetingId)}` }] : [];
+    ? [{ id: 614, url: `http://localhost:8000/?meetingId=${encodeURIComponent(record.meetingId)}` }] : [];
   const boundaryErrors: string[] = [];
   const create = vi.fn(async (options: { url?: string }) => {
     const saved = await getCompletion(record.sessionId);
@@ -50,8 +50,9 @@ async function worker(record: RecordingCompletion, crashAfterCreate = false, alr
     },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
-      session: { get: vi.fn(async () => ({ sauriState: { status: "idle" } })), set: vi.fn(async () => undefined) },
-      local: { get: vi.fn(async () => ({})), set: vi.fn(async () => undefined), remove: vi.fn(async () => undefined) },
+      sync: { remove: vi.fn(async () => {}) },
+      session: { remove: vi.fn(async () => {}), get: vi.fn(async () => ({ sauriState: { status: "idle" } })), set: vi.fn(async () => undefined) },
+      local: { setAccessLevel: vi.fn(async () => {}), get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token" })), set: vi.fn(async () => undefined), remove: vi.fn(async () => undefined) },
     },
     tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query, create, sendMessage: vi.fn(async () => undefined) },
   });
@@ -171,9 +172,9 @@ it("opens the uploaded meeting before processing and never reopens after success
   const record = { ...ready("uploaded-session"), status: "upload_succeeded" as const };
   const harness = await worker(record);
   expect(harness.create).toHaveBeenCalledTimes(1);
-  expect(harness.create).toHaveBeenCalledWith({ url: "http://localhost:5173/?meetingId=meeting-uploaded-session" });
+  expect(harness.create).toHaveBeenCalledWith({ url: "http://localhost:8000/?meetingId=meeting-uploaded-session" });
   expect(harness.boundaryErrors).toEqual([]);
-  expect(await getCompletion(record.sessionId)).toMatchObject({ status: "processing_status_unavailable", reviewStatus: "review_opened" });
+  expect(await getCompletion(record.sessionId)).toMatchObject({ status: "processing_succeeded", reviewStatus: "review_opened" });
   // The portal normalizes its URL, and users may close it before processing ends.
   // Neither an absent nor a changed URL authorizes a second creation attempt.
   harness.tabs.splice(0);

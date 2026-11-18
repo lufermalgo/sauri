@@ -12,7 +12,7 @@ let sessionStore: Record<string, unknown>;
 let listeners: Array<(changes: Record<string, chrome.storage.StorageChange>, area: string) => void>;
 
 beforeEach(() => {
-  sessionStore = { sauriSessionToken: "synthetic" };
+  sessionStore = {};
   settings = { ...DEFAULT_RECORDING_SETTINGS };
   listeners = [];
   vi.stubGlobal("indexedDB", new IDBFactory());
@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.stubGlobal("chrome", {
     runtime: { openOptionsPage: vi.fn(async () => {}), sendMessage: vi.fn(async () => ({ ok: true })) },
     storage: {
-      local: { get: vi.fn(async () => ({ recordingSettings: settings })), set: vi.fn(async (value: { recordingSettings: RecordingSettings }) => { settings = value.recordingSettings; }), remove: vi.fn(async () => undefined) },
+      local: { setAccessLevel: vi.fn(async () => {}), get: vi.fn(async () => ({ sauriLocalToken: "synthetic-local", recordingSettings: settings })), set: vi.fn(async (value: { recordingSettings: RecordingSettings }) => { settings = value.recordingSettings; }), remove: vi.fn(async () => undefined) },
       session: {
         get: vi.fn(async () => ({ sauriState: { status: "idle" }, ...sessionStore })),
         set: vi.fn(async (value: Record<string, unknown>) => { Object.assign(sessionStore, value); }),
@@ -49,21 +49,13 @@ function project(state: unknown) {
 }
 
 describe("Terra recording journey", () => {
-  it("maps a real HTTP 401 to expired login rather than the technical history error", async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response("", { status: 401 }));
+  it("keeps recording available when local pairing is refused, without a login form", async () => {
+    vi.mocked(fetch).mockImplementation(async url => String(url).endsWith("/health")
+      ? new Response("{}", { status: 200 }) : new Response("", { status: 403 }));
     render(<SidePanelApp />);
-    expect(await screen.findByRole("heading", { name: copy.loginHeading })).toBeInTheDocument();
-    expect(screen.getByText(copy.sessionExpired)).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent(copy.sessionAlert);
-    expect(screen.queryByText(copy.listError)).not.toBeInTheDocument();
-    expect(chrome.storage.session.remove).toHaveBeenCalledWith("sauriSessionToken");
-    expect(sessionStore.sauriSessionToken).toBeUndefined();
-    fireEvent.change(screen.getByLabelText(copy.email), { target: { value: "test@example.com" } });
-    fireEvent.change(screen.getByLabelText(copy.password), { target: { value: "test" } });
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "synthetic-new", expires_in: 3600 }), { status: 200 })).mockResolvedValue(new Response("[]", { status: 200 }));
-    fireEvent.click(screen.getByRole("button", { name: copy.login }));
     await ready();
-    expect(screen.queryByText(copy.sessionExpired)).not.toBeInTheDocument();
+    expect(await screen.findByText(copy.listError)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/password|correo/i)).not.toBeInTheDocument();
   });
   it.each([false, true])("warns about a disabled microphone unless skipped=%s", async skip => {
     settings.skipMicWarning = skip;

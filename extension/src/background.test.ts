@@ -73,7 +73,7 @@ async function setup() {
   let onRemoved: RemovedListener | undefined;
   const stops: Message[] = [];
   const fetchMock = vi.fn(async (_url: string, _options: RequestInit) => new Response("offline", { status: 503 }));
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", (url: string, options: RequestInit) => String(url).endsWith("/health") ? Promise.resolve(new Response("{}")) : fetchMock(url, options));
   vi.stubGlobal("chrome", {
     action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
@@ -85,8 +85,10 @@ async function setup() {
     },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
-      session: {
-        get: vi.fn(async () => ({ sauriState: { ...state }, sauriSessionToken: "synthetic-token" })),
+      local: { get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token" })), set: vi.fn(async () => {}), remove: vi.fn(async () => {}), setAccessLevel: vi.fn(async () => {}) },
+      sync: { remove: vi.fn(async () => {}) },
+      session: { remove: vi.fn(async () => {}),
+        get: vi.fn(async () => ({ sauriState: { ...state } })),
         set: vi.fn(async (value: { sauriState: typeof state }) => { state = { ...value.sauriState }; }),
       },
     },

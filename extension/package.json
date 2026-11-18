@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && cd dist && zip -q -r sauri-extension.zip . -x '*.zip' '.vite/*'",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "i18n:check": "vite-node scripts/i18n-check.ts",

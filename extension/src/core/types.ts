@@ -80,11 +80,6 @@ export interface SpeakingTimeEntry {
   timeMs: number;
 }
 
-export interface AuthAttempt {
-  success: boolean;
-  atMs: number;
-}
-
 export type CaptureSource = "picker" | "current-tab";
 
 /** Expected picker outcomes are not recording failures. */

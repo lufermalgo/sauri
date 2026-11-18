@@ -22,17 +22,12 @@ import { ensureOverlay, reinjectOverlay } from "./overlay-injection";
 import { errorCode, logDiagnostic } from "./core/diagnostics";
 import type { CaptureSource, CaptureStartResult } from "./core/types";
 import { validCaptureDimensions } from "./core/resolution";
+import { portalDestination } from "./panel/portal";
 import { readRecordingSettings } from "./panel/recordingSettings";
 import { parseDurationSeconds } from "./core/recording-duration";
-import {
-  SessionRequiredError,
-  purgeLegacyToken,
-  readSessionToken,
-  restrictSessionStorageToTrustedContexts,
-  setSignInRequired,
-} from "./core/session-token";
-import { authorizedRequest, InvalidSessionError } from "./core/api/authorized-fetch";
-import { ensureAccessToken } from "./core/api/session-refresh";
+import { BACKEND_URL } from "./core/backend";
+import { ensureLocalToken, isLocalAppAvailable, LocalAppUnavailableError, migrateLegacyCredentials } from "./core/local-pairing";
+import { authorizedRequest } from "./core/api/authorized-fetch";
 
 export {};
 
@@ -120,9 +115,7 @@ async function ensureOffscreenDocument(): Promise<boolean> {
   return true;
 }
 
-// --- Backend upload (PoC) ---
-
-const BACKEND_URL = import.meta.env.VITE_SAURI_BACKEND_URL ?? "http://localhost:8000";
+// --- Backend upload ---
 
 async function uploadRecording(job: UploadJob): Promise<void> {
   const { mimeType, sessionId, meetingId, notificationEmittedAt, title, meetLink } = job;
@@ -156,21 +149,12 @@ async function uploadRecording(job: UploadJob): Promise<void> {
     formData.append("audio", blob, "recording.webm");
     formData.append("data", JSON.stringify(ingestionData));
 
-    // The access token comes from chrome.storage.session; after a browser restart it is renewed
-    // silently from the refresh token. A 401 renews it once and retries the upload. Only when the
-    // session is really over is the job released back to the queue and the panel asks for a sign-in.
-    let response: Response;
-    try {
-      response = await authorizedRequest(
-        BACKEND_URL,
-        "/api/v1/ingestion/upload",
-        { method: "POST", body: formData },
-        async (reply) => reply,
-      );
-    } catch (error) {
-      if (error instanceof InvalidSessionError) throw new SessionRequiredError();
-      throw error;
-    }
+    const response = await authorizedRequest(
+      BACKEND_URL,
+      "/api/v1/ingestion/upload",
+      { method: "POST", body: formData },
+      async (reply) => reply,
+    );
 
     if (response.ok) {
       const result = await response.json();
@@ -210,19 +194,8 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 // --- Initialization ---
 
-// Hardening runs on every service worker start: the legacy synced token is deleted (never
-// copied) and session storage stays out of reach of content scripts.
-void restrictSessionStorageToTrustedContexts();
-void purgeLegacyToken();
-
-// After an extension reload or a browser restart the access token is gone but the refresh token is
-// not: sign back in silently and resume the uploads that were waiting for a session.
-async function restoreSession(): Promise<void> {
-  if (await readSessionToken()) return;
-  if ((await ensureAccessToken(BACKEND_URL)).status === "ok") await processUploadQueue();
-}
-void restoreSession().catch(() => {
-  console.warn("[sauri] Silent sign-in unavailable; the panel will ask if it is still needed");
+void migrateLegacyCredentials().catch(() => {
+  console.warn("[sauri] Legacy credential cleanup unavailable");
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -303,7 +276,7 @@ chrome.runtime.onMessage.addListener(
   ) => {
     // Media-owner messages cannot come from a page. Overlay controls are
     // separately bound to the exact recording session and originating Meet tab.
-    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload", "session-restored", "recording-settings-changed"].includes(message.type)) {
+    if (_sender.tab && ["start-capture", "capture-ready", "recording-stopped", "recording-error", "capture-video-presence", "set-capture-mode", "retry-upload", "recording-settings-changed"].includes(message.type)) {
       sendResponse({ ok: false, error: "Message requires an extension capture context" });
       return false;
     }
@@ -369,14 +342,6 @@ chrome.runtime.onMessage.addListener(
           }
         })();
         return true;
-
-      case "session-restored":
-        // The panel just signed in: resume the uploads that were waiting for a token.
-        void processUploadQueue().catch(() => {
-          console.warn("[sauri] Upload processing unavailable; pending jobs remain queued");
-        });
-        sendResponse({ ok: true });
-        break;
 
       case "recording-stopped":
         handleRecordingStopped(message.size!, message.mimeType!, message.sessionId, message.durationSeconds);
@@ -861,17 +826,10 @@ async function processUploadQueue(): Promise<void> {
     return;
   }
 
-  // No usable session (the refresh token was refused or there never was one): the job stays pending
-  // and uncounted, and the panel asks the user to sign in. Signing in resumes the queue. When the
-  // session merely cannot be renewed right now (offline), the next alarm tries again silently.
-  const session = await ensureAccessToken(BACKEND_URL);
-  if (session.status !== "ok") {
-    if (session.status === "rejected") {
-      await setSignInRequired();
-      console.warn("[sauri] Upload waiting for the user to sign in");
-    }
-    return;
-  }
+  // Waiting for the desktop app is not a failed upload and must not exhaust retries.
+  if (!await isLocalAppAvailable()) return;
+  try { await ensureLocalToken(); }
+  catch { return; }
 
   console.log(`[sauri] Processing upload job: ${job.id} (session: ${job.sessionId}, attempt: ${job.retryCount + 1})`);
 
@@ -882,11 +840,8 @@ async function processUploadQueue(): Promise<void> {
     await uploadRecording(job);
     await markDone(job.id);
   } catch (error) {
-    if (error instanceof SessionRequiredError) {
+    if (error instanceof LocalAppUnavailableError || !await isLocalAppAvailable()) {
       await releaseProcessing(job.id);
-      // A newer token means the 401 was stale: the next alarm retries with it.
-      if (!await readSessionToken()) await setSignInRequired();
-      console.warn("[sauri] Upload waiting for the user to sign in");
       return;
     }
     const errorMsg = error instanceof Error ? error.message : "Upload outcome unavailable";
@@ -916,7 +871,7 @@ async function processUploadQueue(): Promise<void> {
 // Only authenticated reads of the persisted meeting can establish processing success.
 async function reconcileProcessing(record: RecordingCompletion): Promise<void> {
   if (!record.recordingId) return;
-  if ((await ensureAccessToken(BACKEND_URL)).status !== "ok") {
+  if (!await isLocalAppAvailable()) {
     await setProcessingStatus(record.sessionId, record.meetingId, record.recordingId, "processing_status_unavailable");
     return;
   }
@@ -953,18 +908,6 @@ async function reconcilePendingProcessing(): Promise<void> {
 }
 
 // The portal resolves this query parameter to its existing protected meeting review.
-// A deployment may override the portal origin; no bearer token or asset enters the URL.
-const PORTAL_URL = import.meta.env.VITE_SAURI_PORTAL_URL ?? "http://localhost:5173";
-
-function reviewDestination(meetingId: string): string {
-  const url = new URL(PORTAL_URL);
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new Error("Invalid Sauri portal origin");
-  }
-  url.searchParams.set("meetingId", meetingId);
-  return url.href;
-}
-
 async function reconcileReviewLaunches(): Promise<void> {
   for (const candidate of await getPendingReviewLaunches()) {
     try {
@@ -973,7 +916,7 @@ async function reconcileReviewLaunches(): Promise<void> {
       const record = await getCompletion(candidate.sessionId);
       if (!record || (record.reviewStatus ?? record.status) !== "review_launch_pending" || record.meetingId !== candidate.meetingId ||
           record.recordingId !== candidate.recordingId) continue;
-      const target = reviewDestination(record.meetingId);
+      const target = portalDestination(record.meetingId);
       // Query before creation, including on a fresh launch: a lost Chrome result
       // must be recovered by the exact canonical URL, never by a prefix match.
       const existing = (await chrome.tabs.query({})).find(tab => tab.url === target);

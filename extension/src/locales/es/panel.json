@@ -56,15 +56,7 @@
   "enableMic": "Encender el micrófono y continuar",
   "withoutMic": "Continuar sin micrófono",
   "skipWarning": "No mostrar esto de nuevo",
-  "loginHeading": "Inicia sesión",
-  "sessionExpired": "Tu sesión venció. Entra de nuevo para ver y guardar tus grabaciones.",
-  "sessionAlert": "No pudimos cargar tus grabaciones porque la sesión ya no es válida.",
-  "email": "Correo",
-  "password": "Contraseña",
-  "login": "Entrar",
-  "loginError": "No se pudo iniciar sesión. Revisa tus datos e intenta de nuevo.",
   "unavailable": "El servicio no está disponible en este momento.",
-  "locked": "Acceso bloqueado temporalmente tras varios intentos fallidos. Intenta de nuevo en unos segundos.",
   "recordings": "Mis grabaciones",
   "portal": "Abrir portal",
   "search": "Buscar grabaciones",
@@ -102,5 +94,6 @@
   "openPortal": "Abrir en el portal",
   "noSpeech": "No se detectó voz",
   "noSpeechHelp": "Esta grabación no tiene voz que transcribir. Revisa que el micrófono o el audio de la pestaña estuvieran activos.",
-  "processingFailedHelp": "Puedes abrirla en el portal para ver el detalle."
+  "processingFailedHelp": "Puedes abrirla en el portal para ver el detalle.",
+  "openLocalApp": "Abre Sauri en tu Mac para grabar o ver tus reuniones"
 }

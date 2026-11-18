@@ -38,8 +38,10 @@ async function loadBackgroundWithHandles(handles: Handle[], projected?: Handle, 
     },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
-      session: {
-        get: vi.fn(async () => ({ sauriState: { ...state }, sauriSessionToken: "synthetic-token" })),
+      local: { get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token" })), set: vi.fn(async () => {}), remove: vi.fn(async () => {}), setAccessLevel: vi.fn(async () => {}) },
+      sync: { remove: vi.fn(async () => {}) },
+      session: { remove: vi.fn(async () => {}),
+        get: vi.fn(async () => ({ sauriState: { ...state } })),
         set: vi.fn(async (value: { sauriState: typeof state }) => { state = { ...value.sauriState }; }),
       },
     },

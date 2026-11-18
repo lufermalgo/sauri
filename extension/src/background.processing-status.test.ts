@@ -38,7 +38,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
   });
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
-    fetched.push(url);
+    if (!url.endsWith("/health")) fetched.push(url);
     if (init?.method === "POST") {
       // The ingestion response has recording_id and state, not meeting_id.
       return new Response(JSON.stringify({ recording_id: recordingId, state: scenario.state }), { status: 200 });
@@ -72,7 +72,9 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
     },
     sidePanel: { setPanelBehavior: vi.fn(async () => undefined), open: vi.fn() },
     storage: {
-      session: { get: vi.fn(async () => ({ sauriState: state, sauriSessionToken: "synthetic-token" })), set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = value.sauriState; }) },
+      local: { get: vi.fn(async () => ({ sauriLocalToken: "synthetic-token" })), set: vi.fn(async () => {}), remove: vi.fn(async () => {}), setAccessLevel: vi.fn(async () => {}) },
+      sync: { remove: vi.fn(async () => {}) },
+      session: { remove: vi.fn(async () => {}), get: vi.fn(async () => ({ sauriState: state })), set: vi.fn(async (value: { sauriState: Record<string, unknown> }) => { state = value.sauriState; }) },
     },
     tabs: { onRemoved: { addListener: vi.fn() }, onUpdated: { addListener: vi.fn() }, query: vi.fn(async () => []), sendMessage: vi.fn(async () => undefined), create: createTab },
   });
@@ -137,7 +139,7 @@ it("Stop uploads and opens the confirmed meeting before making any processing re
   const scenario: Scenario = { ...ready, state: "transcribing" };
   const { meetingId, recordingId, createTab, launchSnapshots, completion, retry } = await runScenario(scenario, "early-launch");
   expect(createTab).toHaveBeenCalledTimes(1);
-  expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:5173/?meetingId=${meetingId}` });
+  expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:8000/?meetingId=${meetingId}` });
   expect(launchSnapshots).toEqual([{
     completion: expect.objectContaining({ meetingId, recordingId, status: "upload_succeeded", reviewStatus: "review_launch_pending", reviewCreateAttempted: true }),
     fetched: ["http://localhost:8000/api/v1/ingestion/upload"],
