@@ -285,11 +285,9 @@ async def test_recovery_json_fields_allow_only_null_or_empty_values(
 def _recovery_migration() -> ModuleType:
     script = _migration_script()
     heads = script.get_heads()
-    assert heads == ["014_meeting_summaries_templates"], (
-        "expected one sequential summary head after recovery persistence; "
-        f"found {heads!r}"
-    )
-    assert script.get_revision(heads[0]).down_revision == RECOVERY_MIGRATION_REVISION
+    assert len(heads) == 1, f"expected one converged Alembic head; found {heads!r}"
+    ancestry = {revision.revision for revision in script.iterate_revisions(heads[0], "base")}
+    assert RECOVERY_MIGRATION_REVISION in ancestry
 
     migration = _load_published_migration(RECOVERY_MIGRATION_FILENAME)
     assert migration.revision == RECOVERY_MIGRATION_REVISION

@@ -529,6 +529,7 @@ LINKLESS_REVISION = "011_linkless_cleanup"
 DIARIZATION_GENERATIONS_REVISION = "012_diarization_generations"
 MANUAL_RECOVERY_REVISION = "013_manual_recovery_persistence"
 SUMMARY_TEMPLATES_REVISION = "014_meeting_summaries_templates"
+MIGRATION_HEAD_REVISION = "030_job_messages"
 LEGACY_PREDECESSOR_REVISION = "007_rename_schema_to_english"
 LEGACY_PREDECESSOR_PARENT = "006_add_titulo_reunion"
 
@@ -572,11 +573,11 @@ def test_summary_head_follows_manual_recovery_generations_and_009_reconciliation
     script = _migration_script()
     heads = script.get_heads()
 
-    assert heads == [SUMMARY_TEMPLATES_REVISION], (
-        "Alembic graph must have one summary templates head; "
+    assert heads == [MIGRATION_HEAD_REVISION], (
+        "Alembic graph must have one current head; "
         f"found {heads!r}"
     )
-    summary_migration = script.get_revision(heads[0])
+    summary_migration = script.get_revision(SUMMARY_TEMPLATES_REVISION)
     assert summary_migration.down_revision == MANUAL_RECOVERY_REVISION
     recovery_migration = script.get_revision(MANUAL_RECOVERY_REVISION)
     assert recovery_migration.down_revision == DIARIZATION_GENERATIONS_REVISION
