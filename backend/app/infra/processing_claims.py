@@ -48,6 +48,8 @@ class Holder(str):
     the reservation exactly as its dispatcher left it, never extended."""
 
     reserved_until: datetime | None = None
+    # True when the meeting has no claim row: any number of workers may hold it at once.
+    untracked: bool = False
 
 
 class ClaimBusy(DeferDelivery):
@@ -236,7 +238,9 @@ async def claim_worker_generation(
     if claim is None:
         if operation_id is not None:
             return None
-        return Holder(job_id if isinstance(job_id, str) and job_id else UNTRACKED_HOLDER)
+        untracked = Holder(job_id if isinstance(job_id, str) and job_id else UNTRACKED_HOLDER)
+        untracked.untracked = True
+        return untracked
     if not isinstance(generation, int) or isinstance(generation, bool) or generation != claim.generation:
         return None
 

@@ -15,9 +15,25 @@ import pytest
 
 from app.infra.object_store_s3 import S3ObjectStore
 
+_REQUIRED_ENV = (
+    "OBJECT_STORE_ENDPOINT",
+    "OBJECT_STORE_BUCKET",
+    "MINIO_ROOT_USER",
+    "MINIO_ROOT_PASSWORD",
+    "PLAYBACK_TEST_FRONTEND_ORIGIN",
+)
+
 
 @pytest.mark.asyncio
 async def test_signed_playback_source_supports_range_and_frontend_cors() -> None:
+    missing = [name for name in _REQUIRED_ENV if not os.environ.get(name)]
+    if len(missing) == len(_REQUIRED_ENV):
+        pytest.skip(
+            "requires a disposable S3-compatible bucket (MinIO/RustFS) in "
+            + ", ".join(_REQUIRED_ENV)
+        )
+    if missing:
+        pytest.fail(f"incomplete playback storage configuration; missing: {', '.join(missing)}")
     endpoint = os.environ["OBJECT_STORE_ENDPOINT"]
     bucket = os.environ["OBJECT_STORE_BUCKET"]
     access_key = os.environ["MINIO_ROOT_USER"]

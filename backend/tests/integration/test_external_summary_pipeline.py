@@ -6,7 +6,8 @@ Fake parts: the provider (an OpenAI-shaped chat server on loopback) and the loca
 gateway answers a fixed summary). No real provider, key or meeting is involved; real-provider behavior stays
 NO VERIFICADO until the owner's run (U10).
 
-Needs ``SAURI_QA_POSTGRES_URL`` (a disposable ``sauri_t11_*`` database), like the other summary worker tests.
+Needs ``SAURI_QA_T11_POSTGRES_URL`` or ``SAURI_QA_POSTGRES_URL`` (a disposable ``sauri_t11_*`` database),
+like the other summary worker tests.
 """
 
 from __future__ import annotations
@@ -202,6 +203,9 @@ async def test_property_2_without_a_current_consent_nothing_is_sent_and_the_loca
         (429, {"error": {"message": "slow down"}}, "provider_rate_limited"),
         (402, {"error": {"message": "pay"}}, "provider_quota"),
         (504, {"error": {"message": "late"}}, "provider_timeout"),
+        # Since 7a937be1 any failure the owner cannot fix falls back too (routing.NO_FALLBACK lists the rest).
+        (400, {"error": {"message": "bad parameter"}}, "provider_bad_request"),
+        (400, {"error": {"code": "context_length_exceeded"}}, "provider_context_exceeded"),
     ],
 )
 async def test_property_14_a_transient_failure_with_fallback_runs_the_local_engine_once_and_records_it(
@@ -242,8 +246,6 @@ async def test_property_14_a_transient_failure_without_fallback_is_retried_by_th
     "status,body,cause",
     [
         (401, {"error": {"message": "bad key"}}, "provider_auth"),
-        (400, {"error": {"message": "bad parameter"}}, "provider_bad_request"),
-        (400, {"error": {"code": "context_length_exceeded"}}, "provider_context_exceeded"),
     ],
 )
 async def test_property_14_user_action_failures_end_the_request_and_never_change_the_engine(
@@ -261,7 +263,8 @@ async def test_property_14_user_action_failures_end_the_request_and_never_change
 
 async def test_property_13_an_invalid_provider_answer_is_rejected_locally_and_saves_nothing(world: World) -> None:
     world.set_handler(replying(openai_events([json.dumps({"topic": "no key points"})])))
-    await world.link(fallback=True)
+    # Without the local fallback (with it, an unusable answer runs the local engine since 7a937be1).
+    await world.link(fallback=False)
 
     await world.deliver()
 
@@ -273,7 +276,7 @@ async def test_property_13_an_invalid_provider_answer_is_rejected_locally_and_sa
 async def test_property_13_a_citation_to_a_missing_passage_is_not_saved(world: World) -> None:
     invented = {**SUMMARY, "key_points": [{**SUMMARY["key_points"][0], "sources": [{"passage_id": "P9999"}]}]}
     world.set_handler(replying(openai_events([json.dumps(invented)])))
-    await world.link(fallback=True)
+    await world.link(fallback=False)  # with the fallback, the local engine would answer instead
     await world.deliver()
     request = await world.request()
     assert (request.status, request.failure_cause) == ("failed", "provider_invalid_output")

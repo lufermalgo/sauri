@@ -51,7 +51,12 @@ async def pg():
 
 
 @pytest.fixture
-async def seeded(pg):
+async def seeded(pg, tmp_path, monkeypatch):
+    # A versioned delivery revalidates the audio object; keep it in a local filesystem store.
+    monkeypatch.setenv("OBJECT_STORE_KIND", "filesystem")
+    monkeypatch.setenv("SAURI_RECORDINGS_DIR", str(tmp_path))
+    (tmp_path / "qa").mkdir()
+    (tmp_path / "qa" / "synthetic.webm").write_bytes(b"synthetic audio")
     meeting_id, transcript_id, turn_id, recording_id = (str(uuid.uuid4()) for _ in range(4))
     now = datetime.now(UTC)
     async with pg() as session, session.begin():

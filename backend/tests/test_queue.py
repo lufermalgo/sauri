@@ -283,7 +283,11 @@ class TestRabbitMQJobQueueBehavior:
 
     @pytest.mark.asyncio
     async def test_nack_without_requeue_on_exception_retries_exhausted(self) -> None:
-        """Req 1.6: Exception with retries exhausted → nack(requeue=False)."""
+        """Req 1.6: Exception with retries exhausted → nack(requeue=False).
+
+        Uses "diarize": "transcribe" and "summarize" first hand off to their
+        terminal ".failed" topic instead.
+        """
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
         queue._dlx_exchange = "dlx-exchange"
 
@@ -292,11 +296,13 @@ class TestRabbitMQJobQueueBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"meeting_id": "abc"}).encode()
-        mock_message.headers = _signed_headers("transcribe", mock_message.body, retries=3)
+        mock_message.headers = _signed_headers("diarize", mock_message.body, retries=3)
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
         queue._channel = AsyncMock()
+        # An open channel: a closed one returns early and lets the broker requeue.
+        queue._channel.is_closed = False
         mock_queue = AsyncMock()
         queue._channel.declare_queue.return_value = mock_queue
 
@@ -308,7 +314,7 @@ class TestRabbitMQJobQueueBehavior:
 
         mock_queue.consume = capture_consume
 
-        await queue.subscribe("transcribe", failing_handler)
+        await queue.subscribe("diarize", failing_handler)
         assert captured_callback is not None
         await captured_callback(mock_message)
 
@@ -339,9 +345,10 @@ class TestRabbitMQJobQueueBehavior:
         mock_message.nack = AsyncMock()
 
         queue._channel = AsyncMock()
+        queue._channel.is_closed = False
         mock_queue = AsyncMock()
         queue._channel.declare_queue.return_value = mock_queue
-        queue._channel.default_exchange.publish = AsyncMock()
+        queue._channel.default_exchange.publish = AsyncMock(return_value=Basic.Ack(delivery_tag=1))
 
         captured_callback: Callable[[AbstractIncomingMessage], Awaitable[None]] | None = None
 
@@ -389,7 +396,11 @@ class TestRabbitMQJobQueueBehavior:
 
     @pytest.mark.asyncio
     async def test_discard_without_dlx(self) -> None:
-        """Req 9.4: No DLX + retries exhausted → discard (nack requeue=False)."""
+        """Req 9.4: No DLX + retries exhausted → discard (nack requeue=False).
+
+        Uses "diarize": "transcribe" and "summarize" first hand off to their
+        terminal ".failed" topic instead of discarding.
+        """
         queue = RabbitMQJobQueue("amqp://guest:guest@localhost/")
         queue._dlx_exchange = None
 
@@ -398,11 +409,12 @@ class TestRabbitMQJobQueueBehavior:
 
         mock_message = AsyncMock()
         mock_message.body = json.dumps({"meeting_id": "abc"}).encode()
-        mock_message.headers = _signed_headers("transcribe", mock_message.body, retries=2)
+        mock_message.headers = _signed_headers("diarize", mock_message.body, retries=2)
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
         queue._channel = AsyncMock()
+        queue._channel.is_closed = False
         mock_queue = AsyncMock()
         queue._channel.declare_queue.return_value = mock_queue
 
@@ -415,7 +427,7 @@ class TestRabbitMQJobQueueBehavior:
         mock_queue.consume = capture_consume
 
         with patch("app.infra.queue_rabbitmq._read_max_retries", return_value=2):
-            await queue.subscribe("transcribe", failing_handler)
+            await queue.subscribe("diarize", failing_handler)
         assert captured_callback is not None
         await captured_callback(mock_message)
 

@@ -54,6 +54,7 @@ from app.infra.models import (
 from app.infra.object_store import create_object_store
 from app.infra.processing_claims import (
     ClaimBusy,
+    Holder,
     claim_worker_generation,
     verify_worker_binding,
     verify_worker_generation,
@@ -201,7 +202,7 @@ async def _run_diarization(
         await _request_summary(session_factory, meeting_id, owner_id, completed.processing_revision)
         return
 
-    holder: str | None = None
+    holder: Holder | None = None
     if has_processing_fence:
         async with session_factory() as session, session.begin():
             holder = await claim_worker_generation(
@@ -219,6 +220,10 @@ async def _run_diarization(
             )
             if live is not None:
                 await regeneration.mark_running(session, live)
+
+    # Only an exclusive claim proves that an attempt left in progress belongs to a dead worker; an
+    # untracked meeting (no claim row) may have another live delivery working on it right now.
+    exclusive_claim = holder is not None and not holder.untracked
 
     # --- Load Transcript + turns (Req. 1.6) ---
     transcript_repo = TranscriptRepository(session_factory)
@@ -257,7 +262,7 @@ async def _run_diarization(
         # object under the meeting lock, and fail closed before engine creation.
         async with session_factory() as session, session.begin():
             await session.scalar(select(Meeting).where(Meeting.id == meeting_id).with_for_update())
-            if has_processing_fence:
+            if exclusive_claim:
                 await repo.reopen_orphaned_revision(session, meeting_id, revision)
             current = await session.scalar(select(Diarization).where(
                 Diarization.meeting_id == meeting_id,
@@ -292,7 +297,7 @@ async def _run_diarization(
                 return
     else:
         async with session_factory() as session, session.begin():
-            if has_processing_fence:
+            if exclusive_claim:
                 await repo.reopen_orphaned_revision(session, meeting_id, revision)
             if not await repo.claim_revision(session, meeting_id, revision):
                 logger.info("Diarization delivery acknowledged without claim; reason=revision_not_pending")
