@@ -513,9 +513,14 @@ export class Core extends EventEmitter {
     if (!(await this.run(postgresSpec(this.ctx), 60_000))) throw new CoreError("postgres_not_ready");
   }
 
-  async startCore(): Promise<void> {
+  get databaseRunning(): boolean {
+    return this.supervisors.has("postgres");
+  }
+
+  /** `migrated`: the caller already ran the migrations (startup, with its copy first). */
+  async startCore(opts: { migrated?: boolean } = {}): Promise<void> {
     await this.startDatabase();
-    await prepareDatabase(this.ctx, this.log);
+    if (!opts.migrated) await prepareDatabase(this.ctx, this.log);
     if (!(await this.run(apiSpec(this.ctx), 90_000))) throw new CoreError("api_not_ready");
     if (!(await this.run(workerSpec(this.ctx), 15_000))) throw new CoreError("worker_not_ready");
   }

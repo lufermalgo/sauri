@@ -130,5 +130,7 @@
   "update.failed.processing_other": "Hay {count} reuniones procesándose. Cuando terminen, vuelve a intentarlo.",
   "update.failed.not_writable": "Sauri no puede reemplazarse en la carpeta donde está. Abre el archivo {path}, arrastra la Sauri que aparece a Aplicaciones y ábrela otra vez.",
   "update.failed.migration_failed": "La base de datos no se pudo preparar para la versión nueva. Restauramos la copia: sigues con la versión actual y tus datos no cambiaron.",
-  "update.failed.generic": "No pudimos instalar la actualización. Sigues con la versión actual y tus datos no cambiaron."
+  "update.failed.generic": "No pudimos instalar la actualización. Sigues con la versión actual y tus datos no cambiaron.",
+  "error.migration": "No pudimos preparar la base de datos para esta versión de Sauri ({code}). No se inició nada; abre los registros para ver el detalle.",
+  "error.migration.restored": "No pudimos preparar la base de datos para esta versión de Sauri ({code}). Restauramos la copia de seguridad: tus datos quedaron como estaban y no se inició nada."
 }

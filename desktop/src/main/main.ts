@@ -27,7 +27,7 @@ import {
 } from "./services.ts";
 import { releaseSource } from "./releases.ts";
 import { UpdateController } from "./update-menu.ts";
-import { type ApplyDeps, swapBundle } from "./updater.ts";
+import { type ApplyDeps, migrateOnStart, swapBundle } from "./updater.ts";
 import { SetupController } from "./setup.ts";
 import { fetchLocalStatus } from "./status.ts";
 import { RotatingLog } from "./supervisor.ts";
@@ -393,11 +393,35 @@ async function startServices(): Promise<void> {
   }
   ensureSecrets(paths);
   const services = getCore(context(folders));
+  controller?.show({ view: "progress", key: "startup.database" });
+  // Requirement 9.3: a copy of the database before any migration a new app version brings.
+  const migration = await migrateOnStart({
+    databaseDir: folders.database,
+    dataVersion: config.appVersionOfData,
+    appVersion: app.getVersion(),
+    databaseRunning: services.databaseRunning,
+    startDatabase: () => services.startDatabase(),
+    stopDatabase: () => services.stop(),
+    migrate: async () => {
+      try {
+        await prepareDatabase(context(folders), log);
+        return true;
+      } catch (error) {
+        log.line(`startup migration: ${error instanceof Error ? error.message : String(error)}`);
+        return false;
+      }
+    },
+    log: (line) => log.line(line),
+  });
+  if (!migration.ok) {
+    await services.stop();
+    core = undefined;
+    return showError(t(locale(), migration.restored ? "error.migration.restored" : "error.migration", { code: migration.reason }));
+  }
+  if (config.appVersionOfData !== app.getVersion()) update({ appVersionOfData: app.getVersion() });
   try {
-    controller?.show({ view: "progress", key: "startup.database" });
-    await services.startDatabase();
     controller?.show({ view: "progress", key: "startup.core" });
-    await services.startCore();
+    await services.startCore({ migrated: true });
     controller?.show({ view: "progress", key: "startup.engines" });
     await services.startEngines();
   } catch (error) {
@@ -650,7 +674,11 @@ app.whenReady().then(async () => {
     quit: () => app.quit(),
   });
   openSetupWindow();
-  if (!phaseADone(config)) await controller.done;
+  if (!phaseADone(config)) {
+    await controller.done;
+    // Setup phase A just created and migrated this data with this version: no copy is due on this start.
+    update({ appVersionOfData: app.getVersion() });
+  }
   controller.mode = "startup";
   await startServices();
 });

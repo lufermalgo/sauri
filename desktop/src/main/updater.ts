@@ -466,3 +466,59 @@ export async function applyUpdate(opts: {
   deps.relaunch();
   return { ok: true, version: staged.version };
 }
+
+// --- startup ---------------------------------------------------------------------------------------------------
+
+export type StartupMigration =
+  | { ok: true; backup: string | null }
+  | { ok: false; reason: "backup_failed" | "migration_failed"; restored: boolean };
+
+/**
+ * Requirement 9.3 on every start, whatever brought the new version (the updater, a manual install, a downgrade):
+ * when the data was last used by another app version (or by an unknown one), the stopped pgdata is copied to
+ * backups/pgdata-<data version> first (only the last copy is kept), then the migrations run. A failure restores
+ * the copy and leaves the database stopped, so nothing starts on half-migrated data. The caller saves the new
+ * data version only after `ok`.
+ */
+export async function migrateOnStart(opts: {
+  databaseDir: string;
+  /** `config.appVersionOfData`; undefined for data from before it was recorded. */
+  dataVersion: string | undefined;
+  appVersion: string;
+  /** The database is running (setup phase A started it); it is stopped before a copy. */
+  databaseRunning: boolean;
+  startDatabase(): Promise<void>;
+  stopDatabase(): Promise<void>;
+  /** Creates the database if needed and runs `alembic upgrade head`; false when it fails. */
+  migrate(): Promise<boolean>;
+  log(line: string): void;
+}): Promise<StartupMigration> {
+  const pgdata = path.join(opts.databaseDir, "pgdata");
+  const hasData = fs.existsSync(path.join(pgdata, "PG_VERSION"));
+  let backup: string | null = null;
+  if (hasData && opts.dataVersion !== opts.appVersion) {
+    const from = opts.dataVersion ?? "unknown";
+    if (opts.databaseRunning) await opts.stopDatabase();
+    try {
+      backup = backupPgdata(opts.databaseDir, from);
+    } catch (error) {
+      opts.log(`startup: database copy failed (${error instanceof Error ? error.message : String(error)})`);
+      return { ok: false, reason: "backup_failed", restored: false };
+    }
+    opts.log(`startup: data of ${from} copied to ${backup} before migrating to ${opts.appVersion}`);
+  }
+  let migrated = false;
+  try {
+    await opts.startDatabase();
+    migrated = await opts.migrate();
+  } catch (error) {
+    opts.log(`startup: migration could not run (${error instanceof Error ? error.message : String(error)})`);
+  }
+  if (migrated) return { ok: true, backup };
+  await opts.stopDatabase().catch(() => undefined);
+  if (backup) {
+    restorePgdata(opts.databaseDir, backup);
+    opts.log("startup: migration failed, pgdata restored from the copy; services not started");
+  }
+  return { ok: false, reason: "migration_failed", restored: backup !== null };
+}

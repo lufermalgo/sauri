@@ -16,6 +16,7 @@ import {
   applyUpdate,
   backupDir,
   compareVersions,
+  migrateOnStart,
   parseSha256File,
   pickRelease,
   readStaged,
@@ -424,5 +425,72 @@ describe("applying a version (Property 10)", () => {
     expect(await apply(s)).toEqual({ ok: false, reason: "backup_failed" });
     expect(spy).not.toHaveBeenCalled();
     expect(treeDigest(s.current)).toBe(s.before.app);
+  });
+});
+
+describe("migrations on start (Requirement 9.3, Property 10)", () => {
+  function data() {
+    const databaseDir = path.join(dir, "Base de datos");
+    const pgdata = path.join(databaseDir, "pgdata");
+    fs.mkdirSync(path.join(pgdata, "base", "1"), { recursive: true });
+    fs.writeFileSync(path.join(pgdata, "PG_VERSION"), "16\n");
+    fs.writeFileSync(path.join(pgdata, "base", "1", "1259"), Buffer.alloc(8192, 7), { mode: 0o600 });
+    fs.mkdirSync(path.join(databaseDir, "backups", "pgdata-0.0.9"), { recursive: true });
+    return { databaseDir, pgdata, before: treeDigest(pgdata) };
+  }
+
+  function run(databaseDir: string, dataVersion: string | undefined, migrate: () => Promise<boolean>, databaseRunning = false) {
+    const calls: string[] = [];
+    const result = migrateOnStart({
+      databaseDir,
+      dataVersion,
+      appVersion: "0.1.1",
+      databaseRunning,
+      startDatabase: async () => void calls.push("start"),
+      stopDatabase: async () => void calls.push("stop"),
+      migrate: async () => {
+        calls.push("migrate");
+        return migrate();
+      },
+      log: () => undefined,
+    });
+    return { result, calls };
+  }
+
+  it("makes no copy when the data already belongs to this version", async () => {
+    const { databaseDir } = data();
+    const { result, calls } = run(databaseDir, "0.1.1", async () => true);
+    expect(await result).toEqual({ ok: true, backup: null });
+    expect(fs.readdirSync(path.join(databaseDir, "backups"))).toEqual(["pgdata-0.0.9"]);
+    expect(calls).toEqual(["start", "migrate"]);
+  });
+
+  it("makes no copy of a database that does not exist yet", async () => {
+    const databaseDir = path.join(dir, "empty");
+    const { result } = run(databaseDir, undefined, async () => true);
+    expect(await result).toEqual({ ok: true, backup: null });
+    expect(fs.existsSync(path.join(databaseDir, "backups"))).toBe(false);
+  });
+
+  it("copies the stopped data before migrating to a new version, keeping only that copy", async () => {
+    const { databaseDir, before } = data();
+    const { result, calls } = run(databaseDir, "0.1.0", async () => true, true);
+    expect(await result).toEqual({ ok: true, backup: backupDir(databaseDir, "0.1.0") });
+    expect(fs.readdirSync(path.join(databaseDir, "backups"))).toEqual(["pgdata-0.1.0"]);
+    expect(treeDigest(backupDir(databaseDir, "0.1.0"))).toBe(before);
+    expect(calls).toEqual(["stop", "start", "migrate"]);
+  });
+
+  it("restores the copy and starts nothing when the migration fails", async () => {
+    const { databaseDir, pgdata, before } = data();
+    const { result, calls } = run(databaseDir, undefined, async () => {
+      fs.writeFileSync(path.join(pgdata, "base", "1", "1259"), "half migrated");
+      fs.writeFileSync(path.join(pgdata, "base", "1", "16384"), "new table");
+      return false;
+    });
+    expect(await result).toEqual({ ok: false, reason: "migration_failed", restored: true });
+    expect(treeDigest(pgdata)).toBe(before);
+    expect(treeDigest(backupDir(databaseDir, "unknown"))).toBe(before);
+    expect(calls).toEqual(["start", "migrate", "stop"]);
   });
 });
