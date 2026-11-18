@@ -32,14 +32,50 @@ export type RelocateResult =
   | { ok: true; kind: FolderKind; path: string; previous: string; previousTrashed: boolean }
   | { ok: false; reason: RelocateFailure; count?: number; neededBytes?: number; freeBytes?: number; detail?: string };
 
+/**
+ * Where the updater stands (design D12). `disabled`: no download place yet or a development build; `ready`: a
+ * verified version waits for «Reiniciar y actualizar».
+ */
+export type UpdateState = "disabled" | "idle" | "checking" | "downloading" | "up_to_date" | "ready" | "applying" | "error";
+
+export interface UpdateStatus {
+  state: UpdateState;
+  current: string;
+  /** The newer version found, downloading or ready. */
+  version?: string;
+  /** Download progress 0–100 while `downloading`. */
+  percent?: number;
+  /** Stable code of the last failure (a check, a download or an apply). */
+  error?: string;
+  /** Meetings in process when an apply was refused for that reason. */
+  count?: number;
+  /** The verified zip to install by hand when the app's folder is not writable. */
+  manualZip?: string;
+  autoCheck: boolean;
+  lastCheck?: string;
+}
+
+export interface PortalUpdatesApi {
+  status(): Promise<UpdateStatus>;
+  check(): Promise<UpdateStatus>;
+  /** The button itself is the confirmation: stops the services, migrates, swaps the app and relaunches. */
+  apply(): Promise<UpdateStatus>;
+  setAutoCheck(on: boolean): Promise<UpdateStatus>;
+}
+
 export interface PortalDesktopApi {
   getPaths(): Promise<FolderUsage[]>;
   relocate(kind: FolderKind): Promise<RelocateResult>;
   markSetupDone(): Promise<void>;
+  updates: PortalUpdatesApi;
 }
 
 export const PORTAL_CHANNELS = {
   getPaths: "portal:get-paths",
   relocate: "portal:relocate",
   markSetupDone: "portal:mark-setup-done",
+  updateStatus: "portal:update-status",
+  updateCheck: "portal:update-check",
+  updateApply: "portal:update-apply",
+  updateAutoCheck: "portal:update-auto-check",
 } as const;

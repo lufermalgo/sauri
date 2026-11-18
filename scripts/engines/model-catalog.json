@@ -152,6 +152,31 @@
       "rank": 1,
       "status": "measured",
       "default": true
+    },
+    {
+      "id": "diar-runtime",
+      "process": "diarization",
+      "kind": "component",
+      "engine": "senko",
+      "component": "diar",
+      "replaces": "senko-coreml",
+      "repo": "narcotic-sh/senko",
+      "revision": "1bcb09041bfa170b4a5a4b0af92f66eff76204d5",
+      "version": "0.1.0",
+      "release_tag": "diar-0.1.0",
+      "url_template": "https://github.com/{releases_repo}/releases/download/{tag}/{file}",
+      "file": "diar-0.1.0-mac-arm64.tar.gz",
+      "size": 251532143,
+      "sha256": "aed90c88caa13f6e70c702b9f39c0882377bfaeb5519f99381b6d570b7921d9d",
+      "tree_sha256": "5404be0c77b3b182edd005f0d3f6a4eaa5e2a343114c24b995748442f17a5e84",
+      "unpacked_size": 716603171,
+      "min_ram_gib": 0,
+      "requires": ["metal"],
+      "rank": 1,
+      "status": "measured",
+      "default": true,
+      "license": "MIT",
+      "attribution": "Senko by narcotic-sh (MIT) with pyannote segmentation-3.0 (MIT) and CAM++ (Apache-2.0) weights, packed with its Python dependencies for Sauri's desktop app."
     }
   ]
 }

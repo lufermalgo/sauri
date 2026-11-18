@@ -11,6 +11,8 @@ import {
   asrProvenanceFile,
   coreEnv,
   databaseUrl,
+  diarComponentDir,
+  engineEnv,
   enginePlans,
   ensureAsrProvenance,
   ensureSecrets,
@@ -125,6 +127,44 @@ describe("engines", () => {
     });
     const asr = plans.find((plan) => plan.name === "asr");
     expect(asr && "spec" in asr ? asr.spec.env.SAURI_ASR_VENV : "").toBe(path.join(ctx.paths.enginesDir, "asr-venv"));
+  });
+
+  it("starts the speaker engine from the downloaded component, which wins over a development copy", () => {
+    const bundled = path.join(ctx.layout.runtimeDir, "components", "diar");
+    fs.mkdirSync(bundled, { recursive: true });
+    expect(diarComponentDir(ctx)).toBe(bundled);
+    const installed = path.join(ctx.paths.componentsDir, "diar");
+    fs.mkdirSync(installed, { recursive: true });
+    expect(diarComponentDir(ctx)).toBe(installed);
+    const diar = enginePlans(ctx, ["diar"])[0];
+    expect(diar && "spec" in diar ? diar.spec.env.PYTHONPATH.split(":") : []).toContain(installed);
+  });
+
+  it("tells the host service where components go and where they come from, loopback only on request", () => {
+    const saved = { ...process.env };
+    try {
+      process.env.SAURI_RELEASES_REPO = "owner/sauri-app";
+      process.env.SAURI_RELEASES_BASE_URL = "http://127.0.0.1:18999";
+      delete process.env.SAURI_ALLOW_LOOPBACK_DOWNLOADS;
+      const plain = engineEnv(ctx, "host");
+      expect(plain).toMatchObject({
+        SAURI_COMPONENTS_DIR: ctx.paths.componentsDir,
+        SAURI_BUNDLED_COMPONENTS_DIR: path.join(ctx.layout.runtimeDir, "components"),
+        SAURI_RELEASES_REPO: "owner/sauri-app",
+      });
+      expect(plain.SAURI_ALLOW_LOOPBACK_DOWNLOADS).toBeUndefined();
+      expect(plain.SAURI_RELEASES_BASE_URL).toBeUndefined();
+      process.env.SAURI_ALLOW_LOOPBACK_DOWNLOADS = "1";
+      expect(engineEnv(ctx, "host")).toMatchObject({
+        SAURI_ALLOW_LOOPBACK_DOWNLOADS: "1",
+        SAURI_RELEASES_BASE_URL: "http://127.0.0.1:18999",
+      });
+      delete process.env.SAURI_RELEASES_REPO;
+      expect(engineEnv(ctx, "host").SAURI_RELEASES_REPO).toBe("");
+      expect(engineEnv(ctx, "asr").SAURI_COMPONENTS_DIR).toBeUndefined();
+    } finally {
+      process.env = saved;
+    }
   });
 
   it("does not vouch for a runtime binary that differs from its pin", () => {

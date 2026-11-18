@@ -1,6 +1,6 @@
 // Menu-bar icon (Requirement 8.2): ready, processing or error, told apart by shape (template images are
 // monochrome) and by the status line of its menu.
-import { Menu, nativeImage, Tray } from "electron";
+import { Menu, type MenuItemConstructorOptions, nativeImage, Tray } from "electron";
 import { type Locale, plural, t } from "../i18n.ts";
 import type { ServiceSummary } from "./services.ts";
 
@@ -60,6 +60,8 @@ export interface TrayActions {
   quit: () => void;
   launchAtLogin: () => boolean;
   toggleLaunchAtLogin: (on: boolean) => void;
+  /** The updater's entries (check, restart and update, automatic checks); empty while it is off. */
+  updateItems?: () => MenuItemConstructorOptions[];
 }
 
 export class SauriTray {
@@ -88,6 +90,11 @@ export class SauriTray {
     this.render();
   }
 
+  /** Rebuilds the menu (after the updater changed state). */
+  refresh(): void {
+    this.render();
+  }
+
   private render(): void {
     const { locale, actions } = this;
     this.tray.setToolTip(`Sauri · ${this.status.label}`);
@@ -103,6 +110,7 @@ export class SauriTray {
           checked: actions.launchAtLogin(),
           click: (item) => actions.toggleLaunchAtLogin(item.checked),
         },
+        ...(actions.updateItems?.() ?? []),
         { type: "separator" },
         { label: t(locale, "menu.uninstall"), click: actions.uninstall },
         { label: t(locale, "tray.quit"), click: actions.quit },

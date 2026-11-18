@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { type AppPaths, ensurePrivateDir, pgDataDir, socketPath, type UserFolders } from "./paths.ts";
 import type { PortPlan } from "./ports.ts";
+import { loopbackDownloadEnv, releasesRepo } from "./releases.ts";
 import { commandHealth, httpHealth, RotatingLog, type ServiceSpec, Supervisor } from "./supervisor.ts";
 
 /** PostgreSQL listens on no TCP port; the number only names its socket file. */
@@ -32,6 +33,20 @@ export interface Layout {
   runtimeDir: string;
   sourceRoot: string;
   portalDir: string;
+}
+
+/** What an installed Sauri.app carries next to its code (`Contents/Resources`, see scripts/stage.mjs). */
+export function resourcesLayout(resources: string): Layout {
+  return {
+    runtimeDir: path.join(resources, "runtime"),
+    sourceRoot: path.join(resources, "app-sources"),
+    portalDir: path.join(resources, "portal"),
+  };
+}
+
+/** The layout of a Sauri.app bundle, such as a staged update whose core runs the migration (design D12). */
+export function bundleLayout(appPath: string): Layout {
+  return resourcesLayout(path.join(appPath, "Contents", "Resources"));
 }
 
 export interface ServiceContext {
@@ -149,14 +164,28 @@ export function asrProvenanceFile(paths: AppPaths): string {
   return path.join(paths.enginesDir, "asr-provenance", "provenance.json");
 }
 
+/**
+ * Where the speaker runtime is: the downloaded component once installed, else the one a development runtime
+ * carries (the installed app's runtime leaves it out, design D9). Null while it is in neither place.
+ */
+export function diarComponentDir(ctx: ServiceContext): string | null {
+  for (const dir of [path.join(ctx.paths.componentsDir, "diar"), bin(ctx, "components", "diar")]) {
+    if (fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return dir;
+  }
+  return null;
+}
+
+function componentDir(ctx: ServiceContext, name: EngineName): string {
+  if (name === "diar") return diarComponentDir(ctx) ?? path.join(ctx.paths.componentsDir, "diar");
+  return bin(ctx, "components", ENGINE_SOURCES[name].component);
+}
+
 /** The same variables `scripts/engines/native-engines.sh start` relies on, pointed at the runtime and user folders. */
 export function engineEnv(ctx: ServiceContext, name: EngineName): Record<string, string> {
   const { paths, folders } = ctx;
   const env: Record<string, string> = {
     ...baseEnv(ctx),
-    PYTHONPATH: [path.join(backendDir(ctx), "engine-common"), bin(ctx, "components", ENGINE_SOURCES[name].component)].join(
-      ":",
-    ),
+    PYTHONPATH: [path.join(backendDir(ctx), "engine-common"), componentDir(ctx, name)].join(":"),
     SAURI_RECORDING_CAPABILITY_KEY_FILE: secretFile(paths, "recording_capability_key"),
     SAURI_MODELS_DIR: folders.models,
     SAURI_RECORDINGS_DIR: folders.recordings,
@@ -171,6 +200,11 @@ export function engineEnv(ctx: ServiceContext, name: EngineName): Record<string,
   if (name === "host") {
     env.SAURI_MANAGEMENT_TOKEN_FILE = secretFile(paths, "management_token");
     env.SAURI_ADOPT_ON_START = "0";
+    // Downloadable components (design D9): where they install, the development copy, and where they come from.
+    env.SAURI_COMPONENTS_DIR = paths.componentsDir;
+    env.SAURI_BUNDLED_COMPONENTS_DIR = bin(ctx, "components");
+    env.SAURI_RELEASES_REPO = releasesRepo();
+    Object.assign(env, loopbackDownloadEnv());
   } else {
     env.SAURI_ENGINE_TOKEN_FILE = secretFile(paths, "engine_token");
   }
@@ -336,9 +370,9 @@ export function ensureAsrProvenance(ctx: ServiceContext): boolean {
 }
 
 /** Which engines can start now, and why the others wait (models come in setup phase B). */
-export function enginePlans(ctx: ServiceContext): EnginePlan[] {
-  return ENGINE_NAMES.map((name): EnginePlan => {
-    if (name === "diar" && !fs.existsSync(bin(ctx, "components", "diar"))) return { name, blocked: "component_missing" };
+export function enginePlans(ctx: ServiceContext, names: readonly EngineName[] = ENGINE_NAMES): EnginePlan[] {
+  return names.map((name): EnginePlan => {
+    if (name === "diar" && diarComponentDir(ctx) === null) return { name, blocked: "component_missing" };
     if (name === "asr") {
       const models = [ASR_MODEL_FILE, VAD_MODEL_FILE].map((file) => path.join(ctx.folders.models, file));
       if (!models.every((file) => fs.existsSync(file))) return { name, blocked: "models_missing" };
@@ -479,9 +513,14 @@ export class Core extends EventEmitter {
     if (!(await this.run(postgresSpec(this.ctx), 60_000))) throw new CoreError("postgres_not_ready");
   }
 
-  async startCore(): Promise<void> {
+  get databaseRunning(): boolean {
+    return this.supervisors.has("postgres");
+  }
+
+  /** `migrated`: the caller already ran the migrations (startup, with its copy first). */
+  async startCore(opts: { migrated?: boolean } = {}): Promise<void> {
     await this.startDatabase();
-    await prepareDatabase(this.ctx, this.log);
+    if (!opts.migrated) await prepareDatabase(this.ctx, this.log);
     if (!(await this.run(apiSpec(this.ctx), 90_000))) throw new CoreError("api_not_ready");
     if (!(await this.run(workerSpec(this.ctx), 15_000))) throw new CoreError("worker_not_ready");
   }
@@ -502,6 +541,42 @@ export class Core extends EventEmitter {
     this.emit("change");
   }
 
+  private retrying = false;
+  /** Bumped by `stop()`, so a retry that was already running never starts an engine after it. */
+  private generation = 0;
+
+  /**
+   * Starts the engines that were waiting for something setup phase B installs (a model, the speaker runtime) once
+   * it is there; the main process calls this every few seconds. Unverified binaries keep waiting.
+   */
+  async startWaitingEngines(): Promise<string[]> {
+    if (this.retrying || this.blocked.size === 0) return [];
+    this.retrying = true;
+    const started: string[] = [];
+    const generation = this.generation;
+    try {
+      const waiting = ENGINE_NAMES.filter((name) => {
+        const reason = this.blocked.get(`${name}-engine`);
+        return reason !== undefined && reason !== "binary_unverified";
+      });
+      for (const plan of enginePlans(this.ctx, waiting)) {
+        if ("blocked" in plan) {
+          this.blocked.set(`${plan.name}-engine`, plan.blocked);
+          continue;
+        }
+        if (generation !== this.generation) break;
+        this.blocked.delete(plan.spec.name);
+        this.log.line(`${plan.spec.name} can start now`);
+        await this.run(plan.spec, 120_000);
+        started.push(plan.spec.name);
+      }
+    } finally {
+      this.retrying = false;
+    }
+    if (started.length > 0) this.emit("change");
+    return started;
+  }
+
   summary(): ServiceSummary[] {
     const running = [...this.supervisors.entries()].map(([name, supervisor]) => ({
       name,
@@ -514,6 +589,7 @@ export class Core extends EventEmitter {
 
   /** Reverse order: engines, worker, API, and PostgreSQL last. */
   async stop(): Promise<void> {
+    this.generation += 1;
     const order = [...this.supervisors.keys()];
     const engines = order.filter((name) => name.endsWith("-engine"));
     await Promise.all(engines.map((name) => this.supervisors.get(name)?.stop()));

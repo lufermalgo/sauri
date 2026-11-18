@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { HardDrive } from "lucide-react";
 import { desktopBridge, type FolderKind, type FolderUsage, type RelocateResult, type SauriDesktop } from "../../desktop-bridge";
+import { UpdateSettings } from "./UpdateSettings";
 import { Button, Card, Icon, Skeleton } from "../ui";
 import { formatBytes } from "./engineLabels";
 import { t, useT } from "../../i18n";
@@ -139,6 +140,7 @@ function DesktopStorage({ bridge }: { bridge: SauriDesktop }) {
         {moving ? t("settings:storage.moving") : outcome?.kind === "success" ? outcome.text : null}
       </div>
       {outcome?.kind === "error" && <p role="alert" className="ui-field-error settings-notice">{outcome.text}</p>}
+      {bridge.updates && <UpdateSettings updates={bridge.updates} />}
     </div>
   );
 }
