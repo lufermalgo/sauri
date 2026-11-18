@@ -3,6 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    Release config: the only place to edit when a version is published (docs/design/landing.md, section 4).
+    Leave a value empty until it is real. Empty downloadUrl or chromeWebStoreUrl renders that button disabled
+    with «Disponible pronto»; an empty sha256 hides the checksum. Never put a placeholder URL here.
+  -->
+  <script id="sauri-release" type="application/json">
+    {
+      "version": "",
+      "downloadUrl": "",
+      "sha256": "",
+      "chromeWebStoreUrl": ""
+    }
+  </script>
   <title>Sauri · Tus reuniones, transcritas y resumidas en tu Mac</title>
   <meta name="description" content="Sauri graba tus reuniones desde una pestaña de Chrome, reconoce quién habló y te deja un resumen en borrador para revisar. Todo se procesa en tu Mac.">
   <meta name="color-scheme" content="light dark">
@@ -29,6 +42,7 @@
       <nav class="site-nav" aria-label="Secciones">
         <a href="#como-funciona">Cómo funciona</a>
         <a href="#privacidad">Privacidad</a>
+        <a href="#descargar">Descargar</a>
         <a href="#preguntas">Preguntas</a>
       </nav>
       <a class="button button--primary button--sm" href="#acceso">Solicitar acceso</a>
@@ -55,7 +69,7 @@
         <figure class="shot shot--hero">
           <picture>
             <source srcset="assets/meeting-detail.webp" type="image/webp">
-            <img src="assets/meeting-detail.png" width="1746" height="1092" fetchpriority="high"
+            <img src="assets/meeting-detail.png" width="1746" height="1091" fetchpriority="high"
               alt="Una reunión abierta en Sauri: arriba el video con tres participantes, debajo la transcripción con cada hablante en un color y, a la derecha, el resumen con el asunto principal y los puntos clave.">
           </picture>
         </figure>
@@ -78,7 +92,7 @@
             <figure class="shot shot--narrow">
               <picture>
                 <source srcset="assets/extension-panel.webp" type="image/webp">
-                <img src="assets/extension-panel.png" width="400" height="310" loading="lazy"
+                <img src="assets/extension-panel.png" width="800" height="580" loading="lazy"
                   alt="Panel de la extensión de Sauri en Chrome, con el título «Grabar reunión» y el botón para empezar a grabar.">
               </picture>
             </figure>
@@ -92,7 +106,7 @@
             <figure class="shot">
               <picture>
                 <source srcset="assets/speakers.webp" type="image/webp">
-                <img src="assets/speakers.png" width="1188" height="660" loading="lazy"
+                <img src="assets/speakers.png" width="1187" height="583" loading="lazy"
                   alt="Panel de hablantes junto al video, con tres personas nombradas: Laura Méndez, Andrés Ríos y Sofía Vargas.">
               </picture>
             </figure>
@@ -107,14 +121,14 @@
               <figure class="shot">
                 <picture>
                   <source srcset="assets/summary.webp" type="image/webp">
-                  <img src="assets/summary.png" width="462" height="975" loading="lazy"
+                  <img src="assets/summary.png" width="486" height="987" loading="lazy"
                     alt="Resumen de la reunión: asunto principal y puntos clave con marcas de tiempo.">
                 </picture>
               </figure>
               <figure class="shot">
                 <picture>
                   <source srcset="assets/summary-steps.webp" type="image/webp">
-                  <img src="assets/summary-steps.png" width="462" height="725" loading="lazy"
+                  <img src="assets/summary-steps.png" width="486" height="426" loading="lazy"
                     alt="Final del resumen: próximos pasos con sus responsables y la conclusión de la reunión.">
                 </picture>
               </figure>
@@ -148,7 +162,7 @@
             <figure class="shot">
               <picture>
                 <source srcset="assets/library.webp" type="image/webp">
-                <img src="assets/library.png" width="396" height="308" loading="lazy"
+                <img src="assets/library.png" width="412" height="373" loading="lazy"
                   alt="Biblioteca de Sauri con tres reuniones, cada una con su miniatura, fecha, duración y número de hablantes.">
               </picture>
             </figure>
@@ -159,8 +173,8 @@
             <figure class="shot">
               <picture>
                 <source srcset="assets/upload.webp" type="image/webp">
-                <img src="assets/upload.png" width="920" height="413" loading="lazy"
-                  alt="Pantalla «Subir grabación» con una zona para arrastrar el archivo.">
+                <img src="assets/upload.png" width="917" height="369" loading="lazy"
+                  alt="Pantalla «Subir una grabación» con una zona para arrastrar el archivo y el botón «Elegir archivo».">
               </picture>
             </figure>
             <h3>Sube grabaciones que ya tienes</h3>
@@ -199,6 +213,177 @@
             <p>Al activar un servicio externo, Sauri te muestra qué sale del equipo y hacia dónde, y te pide confirmarlo.</p>
           </li>
         </ul>
+        <p class="privacy__more"><a href="privacidad.html">Lee la política de privacidad completa</a></p>
+      </div>
+    </section>
+
+    <section class="section section--tinted" id="descargar" aria-labelledby="download-title">
+      <div class="container">
+        <header class="section__header">
+          <p class="section__label">Descargar</p>
+          <h2 id="download-title">Descarga Sauri para tu Mac</h2>
+          <p class="section__intro">Instala la app en tu Mac y agrega la extensión de Chrome para grabar tus reuniones. Después, Sauri busca versiones nuevas y te pregunta antes de instalarlas.</p>
+        </header>
+        <div class="download">
+          <div class="download__main">
+            <h3>La app de Sauri</h3>
+            <p class="download__meta" data-release-version hidden></p>
+            <a class="button button--primary button--lg download__button" data-download-url aria-disabled="true">Disponible pronto</a>
+            <p class="download__note">Archivo para Mac de unos 259 MB.</p>
+            <details class="download__sha" data-release-sha hidden>
+              <summary>Comprobar que el archivo es el original</summary>
+              <p>Esta es la huella SHA-256 del archivo. Si sabes usar la Terminal, compárala con la que da <code>shasum -a 256</code> sobre el archivo descargado.</p>
+              <code class="download__hash" data-release-sha-value></code>
+            </details>
+            <div class="download__aside">
+              <p>Sauri todavía no está verificado por Apple, así que la primera vez macOS te pide confirmar que quieres abrirlo.</p>
+              <a href="#instalar">Mira los cinco pasos para abrirlo</a>
+            </div>
+          </div>
+          <div class="download__card">
+            <h3>Qué necesitas</h3>
+            <ul class="requirements">
+              <li><strong>Un Mac con chip de Apple</strong> (M1 o posterior). No funciona en Mac con procesador Intel.</li>
+              <li><strong>macOS 14 Sonoma o posterior.</strong></li>
+              <li><strong>Unos 10 GB libres.</strong> La app ocupa cerca de 1,4 GB con el reconocimiento de voces, y lo necesario para transcribir y resumir se descarga la primera vez que lo usas (hasta 6 GB más).</li>
+              <li><strong>8 GB de memoria o más.</strong> Con 16 GB o más los resúmenes son más completos.</li>
+              <li><strong>Google Chrome</strong>, para grabar con la extensión.</li>
+            </ul>
+          </div>
+          <div class="download__card">
+            <h3>La extensión de Chrome</h3>
+            <p>Con ella grabas la pestaña de la reunión. Se conecta sola con Sauri en tu Mac, sin correo ni contraseña.</p>
+            <a class="button button--secondary" data-store-url aria-disabled="true">Disponible pronto en Chrome Web Store</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="instalar" aria-labelledby="install-title">
+      <div class="container">
+        <header class="section__header">
+          <p class="section__label">Primera vez</p>
+          <h2 id="install-title">Cómo abrirla la primera vez</h2>
+          <p class="section__intro">Sauri todavía no está verificado por Apple. Por eso, la primera vez macOS te pide confirmar que quieres abrirlo. Solo lo haces una vez.</p>
+        </header>
+        <svg class="sprite" aria-hidden="true" focusable="false">
+          <defs>
+            <clipPath id="mark-clip"><rect width="100" height="100" rx="30"/></clipPath>
+            <symbol id="sauri-mark" viewBox="0 0 100 100">
+              <g clip-path="url(#mark-clip)">
+                <polygon fill="#9A8CE0" points="-10,-10 108.3,-10 54.4,43.9 50,39.5 39.5,50 43.9,54.4 -10,108.3"/>
+                <polygon fill="#6A5ACD" points="110,110 110,-8.3 56.1,45.6 60.5,50 50,60.5 45.6,56.1 -8.3,110"/>
+                <polygon fill="#C6FF24" points="50,39.5 60.5,50 50,60.5 39.5,50"/>
+              </g>
+            </symbol>
+          </defs>
+        </svg>
+        <ol class="install">
+          <li class="install__step">
+            <svg class="install__art" viewBox="0 0 320 180" role="img" aria-labelledby="art1">
+              <title id="art1">Ventana del archivo descargado: a la izquierda el ícono de Sauri, una flecha y a la derecha la carpeta Aplicaciones.</title>
+              <rect class="art-window" x="8" y="8" width="304" height="164" rx="12"/>
+              <circle class="art-dot" cx="26" cy="24" r="4"/><circle class="art-dot" cx="40" cy="24" r="4"/><circle class="art-dot" cx="54" cy="24" r="4"/>
+              <use href="#sauri-mark" x="54" y="62" width="64" height="64"/>
+              <text class="art-label" x="86" y="148" text-anchor="middle">Sauri</text>
+              <path class="art-arrow" d="M134 94h46m-10-10 10 10-10 10"/>
+              <path class="art-folder" d="M204 70h22l8 8h38a6 6 0 0 1 6 6v36a6 6 0 0 1-6 6h-68a6 6 0 0 1-6-6V76a6 6 0 0 1 6-6Z"/>
+              <text class="art-label" x="238" y="148" text-anchor="middle">Aplicaciones</text>
+            </svg>
+            <div class="install__text">
+              <span class="step__number" aria-hidden="true">1</span>
+              <h3>Arrastra Sauri a Aplicaciones</h3>
+              <p>Haz doble clic en el archivo que descargaste. En la ventana que se abre, arrastra el ícono de Sauri a la carpeta Aplicaciones.</p>
+            </div>
+          </li>
+          <li class="install__step">
+            <svg class="install__art" viewBox="0 0 320 180" role="img" aria-labelledby="art2">
+              <title id="art2">Aviso de macOS sobre Sauri, con dos botones abajo.</title>
+              <rect class="art-backdrop" x="8" y="8" width="304" height="164" rx="12"/>
+              <rect class="art-window" x="80" y="20" width="160" height="140" rx="14"/>
+              <use href="#sauri-mark" x="140" y="32" width="40" height="40"/>
+              <circle class="art-warn" cx="176" cy="68" r="9"/>
+              <path class="art-warn-mark" d="M176 63v5m0 3.5v.5"/>
+              <rect class="art-line" x="100" y="84" width="120" height="8" rx="4"/>
+              <rect class="art-line art-line--soft" x="108" y="98" width="104" height="6" rx="3"/>
+              <rect class="art-line art-line--soft" x="116" y="110" width="88" height="6" rx="3"/>
+              <rect class="art-button" x="96" y="128" width="60" height="20" rx="6"/>
+              <rect class="art-button" x="164" y="128" width="60" height="20" rx="6"/>
+            </svg>
+            <div class="install__text">
+              <span class="step__number" aria-hidden="true">2</span>
+              <h3>Intenta abrirla</h3>
+              <p>Abre Sauri desde la carpeta Aplicaciones. macOS te avisa que no puede comprobar la app y no la abre todavía. Cierra el aviso, sin mover Sauri a la Papelera.</p>
+            </div>
+          </li>
+          <li class="install__step">
+            <svg class="install__art" viewBox="0 0 320 180" role="img" aria-labelledby="art3">
+              <title id="art3">Configuración del Sistema con la opción Privacidad y seguridad marcada en la barra lateral.</title>
+              <rect class="art-window" x="8" y="8" width="304" height="164" rx="12"/>
+              <path class="art-sidebar" d="M20 8h96v164H20a12 12 0 0 1-12-12V20A12 12 0 0 1 20 8Z"/>
+              <circle class="art-dot" cx="26" cy="24" r="4"/><circle class="art-dot" cx="40" cy="24" r="4"/><circle class="art-dot" cx="54" cy="24" r="4"/>
+              <rect class="art-line art-line--soft" x="20" y="44" width="72" height="6" rx="3"/>
+              <rect class="art-line art-line--soft" x="20" y="62" width="60" height="6" rx="3"/>
+              <rect class="art-line art-line--soft" x="20" y="80" width="66" height="6" rx="3"/>
+              <rect class="art-pick" x="14" y="94" width="96" height="40" rx="8"/>
+              <text class="art-pick-label" x="22" y="110">Privacidad</text>
+              <text class="art-pick-label" x="22" y="125">y seguridad</text>
+              <rect class="art-line art-line--soft" x="20" y="146" width="56" height="6" rx="3"/>
+              <rect class="art-line" x="136" y="36" width="120" height="10" rx="5"/>
+              <rect class="art-panel" x="136" y="58" width="160" height="40" rx="8"/>
+              <rect class="art-panel" x="136" y="106" width="160" height="52" rx="8"/>
+            </svg>
+            <div class="install__text">
+              <span class="step__number" aria-hidden="true">3</span>
+              <h3>Ve a Privacidad y seguridad</h3>
+              <p>Abre el menú Apple (arriba a la izquierda) y elige «Configuración del Sistema». En algunos Mac se llama «Ajustes del Sistema». En la barra lateral, haz clic en «Privacidad y seguridad» y baja hasta la parte «Seguridad».</p>
+            </div>
+          </li>
+          <li class="install__step">
+            <svg class="install__art" viewBox="0 0 320 180" role="img" aria-labelledby="art4">
+              <title id="art4">La parte Seguridad con el aviso sobre Sauri y el botón Abrir de todos modos resaltado.</title>
+              <rect class="art-window" x="8" y="8" width="304" height="164" rx="12"/>
+              <text class="art-heading" x="28" y="42">Seguridad</text>
+              <rect class="art-panel" x="24" y="56" width="272" height="100" rx="10"/>
+              <use href="#sauri-mark" x="40" y="72" width="28" height="28"/>
+              <rect class="art-line" x="80" y="76" width="150" height="8" rx="4"/>
+              <rect class="art-line art-line--soft" x="80" y="90" width="120" height="6" rx="3"/>
+              <rect class="art-focus" x="134" y="111" width="150" height="34" rx="10"/>
+              <rect class="art-cta" x="138" y="115" width="142" height="26" rx="7"/>
+              <text class="art-cta-label" x="209" y="132" text-anchor="middle">Abrir de todos modos</text>
+            </svg>
+            <div class="install__text">
+              <span class="step__number" aria-hidden="true">4</span>
+              <h3>Haz clic en «Abrir de todos modos»</h3>
+              <p>Junto al aviso sobre Sauri verás ese botón; en algunos Mac dice «Abrir igualmente». Si macOS te vuelve a preguntar, elige la misma opción. El botón aparece durante cerca de una hora después del paso 2; si ya no está, repite ese paso.</p>
+            </div>
+          </li>
+          <li class="install__step">
+            <svg class="install__art" viewBox="0 0 320 180" role="img" aria-labelledby="art5">
+              <title id="art5">Ventana para escribir la contraseña del Mac, con el botón OK.</title>
+              <rect class="art-backdrop" x="8" y="8" width="304" height="164" rx="12"/>
+              <rect class="art-window" x="70" y="20" width="180" height="140" rx="14"/>
+              <rect class="art-lock" x="148" y="44" width="24" height="20" rx="4"/>
+              <path class="art-lock-arc" d="M152 44v-6a8 8 0 0 1 16 0v6"/>
+              <rect class="art-line art-line--soft" x="100" y="76" width="120" height="6" rx="3"/>
+              <rect class="art-field" x="92" y="92" width="136" height="24" rx="6"/>
+              <text class="art-dots" x="104" y="110">••••••••</text>
+              <rect class="art-cta" x="172" y="126" width="56" height="22" rx="6"/>
+              <text class="art-cta-label" x="200" y="141" text-anchor="middle">OK</text>
+            </svg>
+            <div class="install__text">
+              <span class="step__number" aria-hidden="true">5</span>
+              <h3>Confirma con tu contraseña</h3>
+              <p>Escribe la contraseña con la que entras a tu Mac y haz clic en «OK». Sauri se abre y, desde ahora, lo abres con doble clic como cualquier otra app.</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="uninstall" id="desinstalar">
+          <h3>Si quieres quitar Sauri</h3>
+          <p>Abre Sauri y, en su menú, elige «Desinstalar Sauri…». Te pregunta aparte qué hacer con tus carpetas de grabaciones; si no eliges nada, se conservan.</p>
+          <p><strong>Si Sauri ya no abre:</strong> arrástralo desde la carpeta Aplicaciones a la Papelera. Luego, en el Finder, elige el menú «Ir» → «Ir a la carpeta…», escribe <code>~/Library/Application Support/Sauri</code> y mueve esa carpeta a la Papelera. Haz lo mismo con <code>~/Library/Logs/Sauri</code>. Tus carpetas de grabaciones siguen donde las elegiste; bórralas tú si ya no las quieres. Para quitar la extensión, ábrela en la página de extensiones de Chrome y quítala.</p>
+        </div>
       </div>
     </section>
 
@@ -226,7 +411,11 @@
         </details>
         <details>
           <summary>¿Qué necesito para usarlo?</summary>
-          <p>Un Mac con Apple silicon y Google Chrome.</p>
+          <p>Un Mac con chip de Apple (M1 o posterior) y macOS 14 Sonoma o posterior, además de Google Chrome para grabar. Los detalles están en <a href="#descargar">Descargar</a>.</p>
+        </details>
+        <details>
+          <summary>¿Por qué macOS me avisa al abrir Sauri?</summary>
+          <p>Porque Sauri todavía no está verificado por Apple. Puedes abrirlo igual siguiendo los <a href="#instalar">pasos para la primera vez</a>; solo lo haces una vez.</p>
         </details>
         <details>
           <summary>¿En qué idiomas funciona?</summary>
@@ -260,11 +449,14 @@
       <nav aria-label="Pie de página">
         <a href="#como-funciona">Cómo funciona</a>
         <a href="#privacidad">Privacidad</a>
+        <a href="#descargar">Descargar</a>
         <a href="#preguntas">Preguntas</a>
+        <a href="privacidad.html">Política de privacidad</a>
       </nav>
     </div>
   </footer>
 
+  <script src="release.js" defer></script>
   <script src="motion.js" defer></script>
 </body>
 </html>
