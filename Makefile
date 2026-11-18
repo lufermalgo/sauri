@@ -2,7 +2,7 @@
 # sauri - Makefile para desarrollo local
 # =============================================================================
 
-.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english test-scripts engines-install engines-up engines-down engines-status
+.PHONY: up down logs build clean migrate setup-hooks worktree worktree-rm check-english test-scripts test-pg engines-install engines-up engines-down engines-status
 
 SAURI_NATIVE_VENV ?= $(HOME)/.local/share/sauri/native-engines/asr-venv
 NATIVE_PYTHON311 ?= python3.11
@@ -27,6 +27,11 @@ worktree-rm:
 ## Pruebas de los scripts (compose-bringup, validacion de plataforma, admision de pipeline).
 test-scripts:
 	cd backend && uv run --extra dev python -m pytest ../scripts/tests -q
+	scripts/tests/test_pg_disposable.sh
+
+## Ejecutar las pruebas PostgreSQL contra un clúster local desechable.
+test-pg:
+	scripts/tests/pg-disposable.sh -- sh -c 'cd backend && uv run --extra dev python -m pytest tests/infra/test_queue_postgres.py -q'
 
 ## Instalar motores nativos en un venv fuera del repositorio (whisper.cpp + Senko/CoreML + Parakeet si hay Swift).
 engines-install:
