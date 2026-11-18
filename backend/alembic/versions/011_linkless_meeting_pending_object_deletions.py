@@ -54,9 +54,11 @@ def downgrade() -> None:
         raise RuntimeError("Cannot downgrade while meetings have null Meet links.")
 
     op.drop_table("pending_object_deletions")
-    op.alter_column(
-        "meetings",
-        "meet_link",
-        existing_type=sa.String(length=512),
-        nullable=False,
-    )
+    # Batch mode emits a plain ALTER on PostgreSQL and recreates the table on SQLite,
+    # which has no ALTER COLUMN ... SET NOT NULL.
+    with op.batch_alter_table("meetings") as batch:
+        batch.alter_column(
+            "meet_link",
+            existing_type=sa.String(length=512),
+            nullable=False,
+        )

@@ -12,7 +12,9 @@ from alembic import context
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers that already exist: an in-process upgrade (tests, tooling) must not
+    # silence the application's loggers for the rest of the process.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Override sqlalchemy.url from the environment (password from DATABASE_PASSWORD_FILE when set).
 from app.infra.database import get_database_url  # noqa: E402

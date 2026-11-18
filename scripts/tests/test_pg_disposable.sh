@@ -16,10 +16,15 @@ if [[ -z ${PG_BIN:-} || ! -x "$PG_BIN/initdb" ]] || ! "$PG_BIN/initdb" --version
   exit 0
 fi
 
-output=$("$script" -- sh -c 'printf "%s\n%s\n" "$SAURI_QA_POSTGRES_URL" "$SAURI_QA_POSTGRES_ROOT"')
+output=$("$script" -- sh -c 'printf "%s\n%s\n%s\n%s\n%s\n" "$SAURI_QA_POSTGRES_URL" "$SAURI_QA_POSTGRES_ROOT" \
+  "$SAURI_QA_T9_POSTGRES_URL" "$SAURI_QA_T11_POSTGRES_URL" "$SAURI_MIGRATION_TEST_ADMIN_URL"')
 url=$(sed -n 1p <<<"$output")
 root=$(sed -n 2p <<<"$output")
-[[ $url =~ ^postgresql\+asyncpg://postgres:[0-9a-f]{32}@127\.0\.0\.1:[0-9]+/sauri_qa$ ]] || { echo "URL missing or malformed in child output" >&2; exit 1; }
+server='^postgresql\+asyncpg://postgres:[0-9a-f]{32}@127\.0\.0\.1:[0-9]+/'
+[[ $url =~ ${server}sauri_qa$ ]] || { echo "URL missing or malformed in child output" >&2; exit 1; }
+[[ $(sed -n 3p <<<"$output") =~ ${server}sauri_t9_qa$ ]] || { echo "T9 URL missing or malformed" >&2; exit 1; }
+[[ $(sed -n 4p <<<"$output") =~ ${server}sauri_t11_qa$ ]] || { echo "T11 URL missing or malformed" >&2; exit 1; }
+[[ $(sed -n 5p <<<"$output") =~ ${server}postgres$ ]] || { echo "migration admin URL missing or malformed" >&2; exit 1; }
 [[ -n $root && ! -e $root ]] || { echo "temporary cluster directory remains: $root" >&2; exit 1; }
 if ps -axo command | grep '[p]ostgres.*sauri-qa-pg\.' | grep -q .; then
   echo "temporary postgres process remains after cleanup" >&2; exit 1

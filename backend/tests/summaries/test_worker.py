@@ -106,9 +106,13 @@ class Case:
 
 @pytest.fixture
 async def case() -> AsyncIterator[Case]:
-    raw = os.environ.get("SAURI_QA_POSTGRES_URL")
+    # The dedicated variable lets one disposable server also serve the suites that need "sauri_qa".
+    raw = os.environ.get("SAURI_QA_T11_POSTGRES_URL") or os.environ.get("SAURI_QA_POSTGRES_URL")
     if not raw:
-        pytest.fail("Set SAURI_QA_POSTGRES_URL to an exclusively disposable sauri_t11_* PostgreSQL database")
+        pytest.fail(
+            "Set SAURI_QA_T11_POSTGRES_URL (or SAURI_QA_POSTGRES_URL) to an exclusively disposable "
+            "sauri_t11_* PostgreSQL database"
+        )
     url = make_url(raw)
     if url.drivername != "postgresql+asyncpg" or not re.fullmatch(r"sauri_t11_[a-zA-Z0-9_]+", url.database or ""):
         pytest.fail("Refusing database outside the dedicated sauri_t11_* namespace")

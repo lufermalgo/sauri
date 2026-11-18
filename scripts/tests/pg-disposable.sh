@@ -51,11 +51,19 @@ if ! "$PG_BIN/pg_ctl" -D "$data" -o "-c listen_addresses='127.0.0.1' -c unix_soc
   exit 1
 fi
 started=1
-# Tests refuse any database whose name lacks "sauri_qa" (a guard against touching real data).
-if ! PGPASSWORD="$password" "$PG_BIN/createdb" -h 127.0.0.1 -p "$port" -U postgres sauri_qa >/dev/null 2>&1; then
-  echo "Could not create the sauri_qa database; see $root/postgres.log" >&2
-  exit 1
-fi
-export SAURI_QA_POSTGRES_URL="postgresql+asyncpg://postgres:$password@127.0.0.1:$port/sauri_qa"
+# Tests refuse any database outside their dedicated namespace (a guard against touching real data):
+# most need "sauri_qa"; the summary pipeline suites need "sauri_t9_*" and "sauri_t11_*".
+for database in sauri_qa sauri_t9_qa sauri_t11_qa; do
+  if ! PGPASSWORD="$password" "$PG_BIN/createdb" -h 127.0.0.1 -p "$port" -U postgres "$database" >/dev/null 2>&1; then
+    echo "Could not create the $database database; see $root/postgres.log" >&2
+    exit 1
+  fi
+done
+server="postgresql+asyncpg://postgres:$password@127.0.0.1:$port"
+export SAURI_QA_POSTGRES_URL="$server/sauri_qa"
+export SAURI_QA_T9_POSTGRES_URL="$server/sauri_t9_qa"
+export SAURI_QA_T11_POSTGRES_URL="$server/sauri_t11_qa"
+# Migration tests create and drop their own databases through this superuser URL.
+export SAURI_MIGRATION_TEST_ADMIN_URL="$server/postgres"
 export SAURI_QA_POSTGRES_ROOT="$root"
 "$@"
