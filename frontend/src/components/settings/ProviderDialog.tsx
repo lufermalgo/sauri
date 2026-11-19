@@ -40,11 +40,19 @@ export function describeEngineError(error: unknown): string {
   return (code && translateIfKnown(`engines:saveErrors.${code}`)) || t("engines:genericError");
 }
 
+/** The kind's name, or "Name 2", "Name 3"… when a linked provider already uses it (the API refuses repeated names). */
+function freeLabel(base: string, linked: { label: string }[]): string {
+  const taken = new Set(linked.map((other) => other.label.trim().toLowerCase()));
+  let candidate = base;
+  for (let suffix = 2; taken.has(candidate.toLowerCase()); suffix += 1) candidate = `${base} ${suffix}`;
+  return candidate;
+}
+
 interface ProviderDialogProps {
   /** The provider to manage, or `null` to link a new one. */
   provider: EngineProvider | null;
-  /** Kind preselected when linking a new provider (the "Configurar" button of a card). */
-  initialKind?: EngineProviderKind;
+  /** Kind of the provider: the one chosen in the «Agregar» list, or the provider's own when editing. */
+  kind: EngineProviderKind;
   kinds: EngineKindInfo[];
   /** Every linked provider; the API refuses a repeated name, this says so while typing. */
   linked: { id: string; label: string }[];
@@ -53,18 +61,15 @@ interface ProviderDialogProps {
   onClose: () => void;
 }
 
-/** Links or edits one provider in a single dialog: kind chips with their logo, name, address, key and the
+/** Links or edits one provider of a fixed kind in a single dialog: its logo and type, name, address, key and the
  * on/off switch. A key is typed into a password field that is never preloaded; once saved only its last
- * four characters appear, as the field's placeholder. the primary button saves and tests the connection in one go. */
-export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged, onClose }: ProviderDialogProps) {
+ * four characters appear, as the field's placeholder. The primary button saves and tests the connection in one go. */
+export function ProviderDialog({ provider, kind, kinds, linked, onChanged, onClose }: ProviderDialogProps) {
   const { t } = useT();
   const ids = useId();
-  // An account kind is linked from its own card («Conectar con Codex»), not from the key-and-address form.
-  const linkable = kinds.filter((info) => info.linkable && info.auth !== "account");
   const [current, setCurrent] = useState<EngineProvider | null>(provider);
-  const [kind, setKind] = useState<EngineProviderKind>(provider?.kind ?? initialKind ?? linkable[0]?.kind ?? "openai");
   const info = kinds.find((candidate) => candidate.kind === kind);
-  const [label, setLabel] = useState(provider?.label ?? t(`engines:kinds.${kind}.label`));
+  const [label, setLabel] = useState(() => provider?.label ?? freeLabel(t(`engines:kinds.${kind}.label`), linked));
   const [baseUrl, setBaseUrl] = useState(provider?.base_url ?? info?.default_base_url ?? "");
   const [enabled, setEnabled] = useState(provider?.enabled ?? true);
   const [keyInput, setKeyInput] = useState("");
@@ -93,16 +98,6 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
   } else if (!ADDRESS_PATTERN.test(trimmedUrl)) errors.baseUrl = t("engines:dialog.baseUrlInvalid");
   if (/\s/.test(keyInput.trim())) errors.key = t("engines:dialog.keyInvalid");
   const valid = trimmedLabel !== "" && trimmedUrl !== "" && !errors.label && !errors.baseUrl && !errors.key;
-
-  function chooseKind(next: EngineProviderKind) {
-    const previous = kinds.find((candidate) => candidate.kind === kind);
-    const nextInfo = kinds.find((candidate) => candidate.kind === next);
-    // A name or address the person has not changed follows the type; one they typed is kept.
-    if (label === t(`engines:kinds.${kind}.label`) || label === "") setLabel(t(`engines:kinds.${next}.label`));
-    if (baseUrl === (previous?.default_base_url ?? "")) setBaseUrl(nextInfo?.default_base_url ?? "");
-    setKind(next);
-    setKeyInput("");
-  }
 
   /** Re-reads the provider after a key change: the API, not this screen, decides its state. */
   async function refresh(id: string): Promise<EngineProvider> {
@@ -194,43 +189,26 @@ export function ProviderDialog({ provider, initialKind, kinds, linked, onChanged
 
   const revertsOnRemoval: EngineProcess[] = keyRequired && current ? current.used_by : [];
   const closeIfIdle = busy ? () => undefined : onClose;
+  const kindLabel = t(`engines:kinds.${kind}.label`);
   const typeHelp = `${t(`engines:kinds.${kind}.description`)}${servedBy.length > 0 ? ` ${t("engines:dialog.typeServes", { list: processList(servedBy) })}` : ""}`;
   const urlHelp = kind === "openai_compatible" ? t("engines:dialog.baseUrlCompatibleHelp") : t("engines:dialog.baseUrlHelp");
 
   return (
-    <Dialog title={current ? t("engines:dialog.editTitle") : t("engines:dialog.createTitle")} closeLabel={t("engines:dialog.close")} onClose={closeIfIdle}>
+    <Dialog
+      title={current ? t("engines:dialog.editTitle") : t("engines:dialog.createTitle", { name: kindLabel })}
+      closeLabel={t("engines:dialog.close")}
+      onClose={closeIfIdle}
+    >
       <form className="settings-form engines-form" onSubmit={submit} noValidate>
         {!current && <p className="settings-help">{t("engines:dialog.createIntro")}</p>}
-        {current ? (
-          <div className="engines-fixed-type">
-            <span className="engines-fixed-type-label">{t("engines:dialog.typeFixed")}</span>
-            <span className="engines-chip engines-chip--static">
-              <ProviderLogo kind={kind} name={t(`engines:kinds.${kind}.label`)} size="sm" />
-              {t(`engines:kinds.${kind}.label`)}
-            </span>
-          </div>
-        ) : (
-          <div className="engines-kind">
-            <span id={`${ids}-kind`} className="engines-fixed-type-label">{t("engines:dialog.type")}</span>
-            <div role="radiogroup" aria-labelledby={`${ids}-kind`} aria-describedby={`${ids}-kind-help`} className="engines-chips">
-              {linkable.map((entry) => (
-                <label key={entry.kind} className="engines-chip">
-                  <input
-                    type="radio"
-                    name={`${ids}-kind`}
-                    value={entry.kind}
-                    checked={entry.kind === kind}
-                    disabled={busy}
-                    onChange={() => chooseKind(entry.kind)}
-                  />
-                  <ProviderLogo kind={entry.kind} name={t(`engines:kinds.${entry.kind}.label`)} size="sm" />
-                  {t(`engines:kinds.${entry.kind}.label`)}
-                </label>
-              ))}
-            </div>
-            <span id={`${ids}-kind-help`} className="settings-help">{typeHelp}</span>
-          </div>
-        )}
+        <div className="engines-fixed-type">
+          <span className="engines-fixed-type-label">{t("engines:dialog.typeFixed")}</span>
+          <span className="engines-chip">
+            <ProviderLogo kind={kind} name={kindLabel} size="sm" />
+            {kindLabel}
+          </span>
+        </div>
+        {!current && <p className="settings-help">{typeHelp}</p>}
         {localApp && !current && <p className="settings-help">{t("engines:dialog.localNote")}</p>}
 
         <div className="engines-field">

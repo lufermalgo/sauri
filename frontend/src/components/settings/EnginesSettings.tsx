@@ -14,8 +14,9 @@ import { processList } from "./engineLabels";
 import { AccountDialog } from "./AccountDialog";
 import { ModelsCatalog } from "./ModelsCatalog";
 import { ProviderDialog, describeEngineError } from "./ProviderDialog";
-import { AddProviderCard, ProviderCard, UnconfiguredCard } from "./ProviderCard";
+import { AddProviderCard, ProviderCard } from "./ProviderCard";
 import type { AccountView } from "./ProviderCard";
+import { AddProviderDialog } from "./AddProviderDialog";
 import { useModelCatalogs } from "./useModelCatalogs";
 import "../../styles/engines.css";
 import { useT } from "../../i18n";
@@ -25,18 +26,19 @@ type Load =
   | { status: "error" }
   | { status: "ready"; providers: EngineProvider[]; kinds: EngineKindInfo[] };
 
-type OpenDialog = { provider: EngineProvider | null; kind?: EngineProviderKind } | null;
+type OpenDialog = { provider: EngineProvider | null; kind: EngineProviderKind } | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
 
 /** Cards are listed by state: working ones first, then incomplete, then off. */
 const STATE_ORDER: Record<EngineProvider["status"], number> = { active: 0, no_key: 1, disabled: 2, unconfigured: 3 };
 
-/** Everything Sauri can link, preloaded: the providers the person set up (on, off), one dashed card per
- * kind not set up yet, and a last tile to add any provider. Keys never reach this screen, only their last
- * four characters. Below, the models each active provider offers. */
+/** Only what the person linked: one card per provider they set up (on or off) and a last tile, «Agregar
+ * proveedor», that lists every kind Sauri can link. Keys never reach this screen, only their last four
+ * characters. Below, the models each active provider offers. */
 export function EnginesSettings() {
   const { t } = useT();
   const [load, setLoad] = useState<Load>({ status: "loading" });
+  const [adding, setAdding] = useState(false);
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [deleting, setDeleting] = useState<EngineProvider | null>(null);
   const [turningOff, setTurningOff] = useState<EngineProvider | null>(null);
@@ -157,7 +159,7 @@ export function EnginesSettings() {
     }
   }
 
-  /** The card of an account kind creates its provider (fixed name and address) and opens the sign-in. */
+  /** An account kind creates its provider (fixed name and address) and opens the sign-in. */
   async function connectNew(info: EngineKindInfo) {
     setPending(info.kind);
     setNotice(null);
@@ -207,9 +209,20 @@ export function EnginesSettings() {
     }
   }
 
+  /** A kind chosen in the «Agregar» list: an account kind creates its provider and opens the sign-in;
+   * any other opens the set-up dialog for that kind. */
+  function chooseKind(kind: EngineProviderKind) {
+    setAdding(false);
+    const info = ready ? load.kinds.find((candidate) => candidate.kind === kind) : undefined;
+    if (info?.auth === "account") void connectNew(info);
+    else setDialog({ provider: null, kind });
+  }
+
   const providers = ready ? [...load.providers].sort((a, b) => STATE_ORDER[a.status] - STATE_ORDER[b.status]) : [];
-  const notSetUp = ready
-    ? load.kinds.filter((info) => info.linkable && !load.providers.some((provider) => provider.kind === info.kind))
+  // An account kind signs in once per computer, so it is offered only while it is not linked yet.
+  const addable = ready
+    ? load.kinds.filter((info) =>
+        info.linkable && !(info.auth === "account" && load.providers.some((provider) => provider.kind === info.kind)))
     : [];
 
   return (
@@ -242,6 +255,7 @@ export function EnginesSettings() {
             <Button variant="secondary" onClick={fetchAll}>{t("engines:retry")}</Button>
           </div>
         )}
+        {load.status === "ready" && providers.length === 0 && <p className="engines-empty">{t("engines:empty")}</p>}
         {load.status === "ready" && (
           <ul ref={grid} className="engines-grid" aria-label={t("engines:listLabel")}>
             {providers.map((provider) => (
@@ -253,24 +267,15 @@ export function EnginesSettings() {
                   busy={pending === provider.id}
                   account={accounts[provider.id]}
                   onToggle={(enabled) => toggle(provider, enabled)}
-                  onEdit={() => setDialog({ provider })}
+                  onEdit={() => setDialog({ provider, kind: provider.kind })}
                   onDelete={() => setDeleting(provider)}
                   onConnect={() => setSigningIn(provider)}
                   onDisconnect={() => setDisconnecting(provider)}
                 />
               </li>
             ))}
-            {notSetUp.map((info) => (
-              <li key={info.kind} className="engines-grid-item">
-                <UnconfiguredCard
-                  info={info}
-                  disabled={pending === info.kind}
-                  onConfigure={() => (info.auth === "account" ? void connectNew(info) : setDialog({ provider: null, kind: info.kind }))}
-                />
-              </li>
-            ))}
             <li className="engines-grid-item">
-              <AddProviderCard onAdd={() => setDialog({ provider: null })} />
+              <AddProviderCard disabled={addable.some((info) => info.kind === pending)} onAdd={() => setAdding(true)} />
             </li>
           </ul>
         )}
@@ -285,10 +290,13 @@ export function EnginesSettings() {
         />
       )}
 
+      {adding && load.status === "ready" && (
+        <AddProviderDialog kinds={addable} onChoose={chooseKind} onClose={() => setAdding(false)} />
+      )}
       {dialog && load.status === "ready" && (
         <ProviderDialog
           provider={dialog.provider}
-          initialKind={dialog.kind}
+          kind={dialog.kind}
           kinds={load.kinds}
           linked={load.providers}
           onChanged={providerChanged}

@@ -172,6 +172,12 @@ const dialog = () => screen.getByRole("dialog");
 /** The state badge of a card (its «Activo» switch label reads the same). */
 const badge = (name: string) => card(name).querySelector(".ui-status-badge")!;
 const openAdd = () => fireEvent.click(screen.getByRole("button", { name: t("engines:add") }));
+const addList = () => screen.getByRole("dialog", { name: t("engines:addDialog.title") });
+/** «Agregar proveedor», then a kind from the list: opens the set-up dialog for that kind. */
+function addKind(kind: EngineProviderKind) {
+  openAdd();
+  fireEvent.click(within(addList()).getByRole("button", { name: t(`engines:kinds.${kind}.label`) }));
+}
 
 /** Everything a person or a screen reader could see of a key: text, field values and attributes. */
 function renderedKeyTraces(secret: string): string[] {
@@ -217,39 +223,30 @@ describe("what a provider serves", () => {
   });
 });
 
-describe("preloaded provider cards", () => {
-  it("lists set up providers by state, then each kind not set up, then the add tile; never the ChatGPT plan", async () => {
+describe("linked provider cards", () => {
+  it("lists only the linked providers, by state, then one «Agregar» tile", async () => {
     await renderReady([
       provider({ id: "p1", label: "Paused", kind: "anthropic", status: "disabled", enabled: false }),
       provider({ id: "p2", label: "Work OpenAI" }),
     ]);
-    expect(cardNames()).toEqual([
-      "Work OpenAI",
-      "Paused",
-      t("engines:kinds.ollama.label"),
-      t("engines:kinds.lmstudio.label"),
-      t("engines:kinds.openai_compatible.label"),
-    ]);
-    expect(screen.queryByText(t("engines:kinds.chatgpt_plan.label"))).toBeNull();
+    expect(cardNames()).toEqual(["Work OpenAI", "Paused"]);
+    expect(screen.queryByText(t("engines:statuses.unconfigured"))).toBeNull();
+    expect(document.querySelector(".ui-card--dashed")).toBeNull();
+    expect(screen.queryByText(t("engines:empty"))).toBeNull();
     const items = screen.getAllByRole("listitem").filter((item) => item.classList.contains("engines-grid-item"));
-    expect(within(items[items.length - 1]).getByRole("button", { name: t("engines:add") })).toBeInTheDocument();
+    expect(items).toHaveLength(3);
+    const add = within(items[2]).getByRole("button", { name: t("engines:add") });
+    expect(add).toHaveAccessibleDescription(t("engines:addHint"));
     expect(screen.getAllByRole("button", { name: t("engines:add") })).toHaveLength(1);
   });
 
-  it("shows a card for every linkable kind when nothing is set up, with no empty state", async () => {
+  it("with nothing linked, says everything stays on the Mac and shows only the «Agregar» tile", async () => {
     await renderReady([]);
-    expect(cardNames()).toEqual(
-      ["openai", "anthropic", "ollama", "lmstudio", "openai_compatible"].map((kind) => t(`engines:kinds.${kind as EngineProviderKind}.label`)),
-    );
-    const openai = card(t("engines:kinds.openai.label"));
-    expect(within(openai).getByText(t("engines:statuses.unconfigured"))).toBeInTheDocument();
-    expect(within(openai).getByText(t("engines:card.unconfiguredKey"))).toBeInTheDocument();
-    expect(within(card(t("engines:kinds.ollama.label"))).getByText(t("engines:card.unconfiguredLocal"))).toBeInTheDocument();
-    expect(openai).toHaveClass("ui-card--dashed", "ui-card--dimmed");
-    // Nothing to delete, switch or edit yet: one way forward.
-    expect(within(openai).queryByRole("button", { name: t("engines:card.remove", { name: t("engines:kinds.openai.label") }) })).toBeNull();
-    expect(within(openai).queryByRole("switch")).toBeNull();
-    expect(within(openai).getByRole("button", { name: t("engines:card.configureLabel", { name: t("engines:kinds.openai.label") }) })).toBeInTheDocument();
+    expect(screen.queryAllByRole("heading", { level: 4 })).toHaveLength(0);
+    expect(screen.getByText(t("engines:empty"))).toBeInTheDocument();
+    const items = screen.getAllByRole("listitem").filter((item) => item.classList.contains("engines-grid-item"));
+    expect(items).toHaveLength(1);
+    expect(within(items[0]).getByRole("button", { name: t("engines:add") })).toBeInTheDocument();
   });
 
   it("writes every state as text, with key hint, address and model count in rows", async () => {
@@ -436,24 +433,67 @@ describe("models catalog", () => {
   });
 });
 
-describe("adding a provider", () => {
-  const radio = (name: string) => within(dialog()).getByRole("radio", { name });
-
-  it("offers the kinds the API says can be linked as logo chips, with the default address filled in", async () => {
+describe("the «Agregar» list", () => {
+  it("lists the kinds the API says can be linked, each with its logo, name and where it runs and what it serves", async () => {
     await renderReady([]);
     openAdd();
-    const group = within(dialog()).getByRole("radiogroup", { name: t("engines:dialog.type") });
-    expect(within(group).getAllByRole("radio")).toHaveLength(5);
-    for (const kind of ["openai", "anthropic", "ollama", "lmstudio", "openai_compatible"] as const) {
-      expect(within(group).getByRole("radio", { name: t(`engines:kinds.${kind}.label`) })).toBeInTheDocument();
+    const list = within(addList()).getByRole("list", { name: t("engines:addDialog.listLabel") });
+    const options = within(list).getAllByRole("button");
+    // In the API's order; chatgpt_plan is not linkable in this setup, so it is not offered.
+    const kinds = ["openai", "anthropic", "ollama", "lmstudio", "openai_compatible"] as const;
+    expect(options).toHaveLength(kinds.length);
+    kinds.forEach((kind, index) => expect(options[index]).toHaveAccessibleName(t(`engines:kinds.${kind}.label`)));
+    expect(within(list).queryByRole("button", { name: t("engines:kinds.chatgpt_plan.label") })).toBeNull();
+    for (const option of options) {
+      const logo = option.querySelector(".engines-logo")!;
+      expect(logo).toHaveAttribute("aria-hidden", "true");
+      expect(logo.querySelector("svg")).not.toBeNull();
     }
-    expect(radio(t("engines:kinds.openai.label"))).toBeChecked();
-    expect(within(dialog()).getByLabelText(t("engines:dialog.baseUrl"))).toHaveValue("https://api.openai.example/v1");
-    expect(within(dialog()).getByLabelText(t("engines:dialog.name"))).toHaveValue(t("engines:kinds.openai.label"));
-    expect(within(dialog()).getByLabelText(t("engines:dialog.key"))).toBeInTheDocument();
+    const openai = within(list).getByRole("button", { name: t("engines:kinds.openai.label") });
+    expect(openai).toHaveAccessibleDescription(
+      t("engines:addDialog.line", { where: t("engines:addDialog.where.cloud"), serves: processList(["transcription", "summary"]) }),
+    );
+    expect(within(list).getByRole("button", { name: t("engines:kinds.ollama.label") })).toHaveAccessibleDescription(
+      t("engines:addDialog.line", { where: t("engines:addDialog.where.local"), serves: processList(["summary"]) }),
+    );
+    expect(within(list).getByRole("button", { name: t("engines:kinds.openai_compatible.label") })).toHaveAccessibleDescription(
+      t("engines:addDialog.line", { where: t("engines:addDialog.where.server"), serves: processList(["summary"]) }),
+    );
+    expect(writes()).toEqual([]);
+  });
 
-    fireEvent.click(radio(t("engines:kinds.ollama.label")));
-    expect(radio(t("engines:kinds.ollama.label"))).toBeChecked();
+  it("moves focus in, keeps Tab inside, closes with Escape and returns focus to the tile", async () => {
+    await renderReady([]);
+    const add = screen.getByRole("button", { name: t("engines:add") });
+    add.focus();
+    fireEvent.click(add);
+    const panel = addList();
+    expect(panel).toHaveAttribute("aria-modal", "true");
+    expect(panel.contains(document.activeElement)).toBe(true);
+    const tabbables = Array.from(panel.querySelectorAll<HTMLElement>("button:not(:disabled)"));
+    const last = tabbables[tabbables.length - 1];
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(document.activeElement).toBe(tabbables[0]);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(add);
+  });
+
+  it("closes with its close button without adding anything", async () => {
+    await renderReady([]);
+    openAdd();
+    fireEvent.click(within(addList()).getByRole("button", { name: t("engines:addDialog.close") }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
+  it("opens the set-up dialog of the chosen kind, with its type fixed and the usual address filled in", async () => {
+    await renderReady([]);
+    addKind("ollama");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(dialog()).toHaveAccessibleName(t("engines:dialog.createTitle", { name: t("engines:kinds.ollama.label") }));
+    expect(within(dialog()).queryByRole("radiogroup")).toBeNull();
     expect(within(dialog()).getByLabelText(t("engines:dialog.baseUrl"))).toHaveValue("http://127.0.0.1:11434/v1");
     expect(within(dialog()).getByLabelText(t("engines:dialog.name"))).toHaveValue(t("engines:kinds.ollama.label"));
     expect(within(dialog()).getByText(t("engines:dialog.localNote"))).toBeInTheDocument();
@@ -461,16 +501,42 @@ describe("adding a provider", () => {
     expect(within(dialog()).queryByLabelText(t("engines:dialog.key"))).toBeNull();
   });
 
-  it("opens with the kind of the card whose «Configurar» was pressed", async () => {
+  it("returns focus to the tile when the set-up dialog opened from the list is closed", async () => {
     await renderReady([]);
-    fireEvent.click(screen.getByRole("button", { name: t("engines:card.configureLabel", { name: t("engines:kinds.anthropic.label") }) }));
-    expect(radio(t("engines:kinds.anthropic.label"))).toBeChecked();
-    expect(within(dialog()).getByLabelText(t("engines:dialog.name"))).toHaveValue(t("engines:kinds.anthropic.label"));
+    const add = screen.getByRole("button", { name: t("engines:add") });
+    add.focus();
+    fireEvent.click(add);
+    fireEvent.click(within(addList()).getByRole("button", { name: t("engines:kinds.anthropic.label") }));
+    expect(dialog().contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(add);
+  });
+
+  it("keeps offering a kind already linked, proposing a name that is still free", async () => {
+    await renderReady([provider({ id: "p1", label: t("engines:kinds.openai.label") })]);
+    addKind("openai");
+    expect(within(dialog()).getByLabelText(t("engines:dialog.name"))).toHaveValue(`${t("engines:kinds.openai.label")} 2`);
+    expect(within(dialog()).queryByText(t("engines:dialog.nameDuplicate"))).toBeNull();
+  });
+});
+
+describe("adding a provider", () => {
+  it("shows the kind it adds, with what it is and what it can serve", async () => {
+    await renderReady([]);
+    addKind("openai");
+    expect(dialog()).toHaveAccessibleName(t("engines:dialog.createTitle", { name: t("engines:kinds.openai.label") }));
+    expect(within(dialog()).getByText(t("engines:kinds.openai.label"), { selector: ".engines-chip" })).toBeInTheDocument();
+    expect(within(dialog()).getByText(
+      `${t("engines:kinds.openai.description")} ${t("engines:dialog.typeServes", { list: processList(["transcription", "summary"]) })}`,
+    )).toBeInTheDocument();
+    expect(within(dialog()).getByLabelText(t("engines:dialog.baseUrl"))).toHaveValue("https://api.openai.example/v1");
+    expect(within(dialog()).getByLabelText(t("engines:dialog.key"))).toBeInTheDocument();
   });
 
   it("explains every field with a line of help", async () => {
     await renderReady([]);
-    openAdd();
+    addKind("openai");
     expect(within(dialog()).getByText(t("engines:dialog.nameHelp"))).toBeInTheDocument();
     expect(within(dialog()).getByText(t("engines:dialog.baseUrlHelp"))).toBeInTheDocument();
     expect(within(dialog()).getByText(t("engines:dialog.keyHelp"))).toBeInTheDocument();
@@ -478,17 +544,9 @@ describe("adding a provider", () => {
     expect(within(dialog()).getByLabelText(t("engines:dialog.key"))).toHaveAttribute("placeholder", t("engines:dialog.keyPlaceholder"));
   });
 
-  it("keeps a name the person typed when the kind changes", async () => {
-    await renderReady([]);
-    openAdd();
-    fireEvent.change(within(dialog()).getByLabelText(t("engines:dialog.name")), { target: { value: "My account" } });
-    fireEvent.click(radio(t("engines:kinds.anthropic.label")));
-    expect(within(dialog()).getByLabelText(t("engines:dialog.name"))).toHaveValue("My account");
-  });
-
   it("creates, stores the key, tests the connection and never renders the key", async () => {
     await renderReady([]);
-    openAdd();
+    addKind("openai");
     const keyField = within(dialog()).getByLabelText(t("engines:dialog.key")) as HTMLInputElement;
     expect(keyField.type).toBe("password");
     expect(keyField).toHaveValue("");
@@ -520,7 +578,7 @@ describe("adding a provider", () => {
     await renderReady([]);
     backend.probe.json_schema_ok = true;
     backend.probe.schema_model = "model-a";
-    openAdd();
+    addKind("openai");
     fireEvent.change(within(dialog()).getByLabelText(t("engines:dialog.key")), { target: { value: SECRET } });
     fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
     expect(await within(dialog()).findByText(t("engines:dialog.testSchemaOk", { model: "model-a" }))).toBeInTheDocument();
@@ -534,7 +592,7 @@ describe("adding a provider", () => {
   ])("tells a %s model apart when the connection itself responds", async (_name, found, expected) => {
     await renderReady([]);
     Object.assign(backend.probe, found, { schema_model: "model-b" });
-    openAdd();
+    addKind("openai");
     fireEvent.change(within(dialog()).getByLabelText(t("engines:dialog.key")), { target: { value: SECRET } });
     fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
     expect(await within(dialog()).findByText(expected())).toBeInTheDocument();
@@ -545,7 +603,7 @@ describe("adding a provider", () => {
     await renderReady([]);
     backend.probe.ok = false;
     backend.probe.error_class = "provider_auth";
-    openAdd();
+    addKind("openai");
     fireEvent.change(within(dialog()).getByLabelText(t("engines:dialog.key")), { target: { value: SECRET } });
     fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
 
@@ -556,7 +614,7 @@ describe("adding a provider", () => {
 
   it("saves without testing when a provider that needs a key has none", async () => {
     await renderReady([]);
-    openAdd();
+    addKind("openai");
     fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
     expect(await within(dialog()).findByText(t("engines:dialog.savedNoKey"))).toBeInTheDocument();
     expect(writes().map((call) => `${call.method} ${call.path}`)).toEqual(["POST /providers"]);
@@ -565,8 +623,7 @@ describe("adding a provider", () => {
 
   it("tests a local program without any key", async () => {
     await renderReady([]);
-    openAdd();
-    fireEvent.click(radio(t("engines:kinds.ollama.label")));
+    addKind("ollama");
     fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
     expect(await within(dialog()).findByText(t("engines:dialog.testOk"))).toBeInTheDocument();
     expect(writes().map((call) => `${call.method} ${call.path}`)).toEqual(["POST /providers", "POST /providers/p1/test"]);
@@ -574,7 +631,7 @@ describe("adding a provider", () => {
 
   it("keeps the primary button off until the form is valid, with the reason written under the field", async () => {
     await renderReady([provider({ id: "p1", label: "Taken" })]);
-    openAdd();
+    addKind("openai");
     const primary = () => within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") });
     expect(primary()).toBeEnabled();
 
@@ -602,7 +659,7 @@ describe("adding a provider", () => {
 
   it("rejects a key with spaces locally and never sends it", async () => {
     await renderReady([]);
-    openAdd();
+    addKind("openai");
     fireEvent.change(within(dialog()).getByLabelText(t("engines:dialog.key")), { target: { value: "not a key" } });
     expect(within(dialog()).getByText(t("engines:dialog.keyInvalid"))).toBeInTheDocument();
     expect(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") })).toBeDisabled();
@@ -611,7 +668,7 @@ describe("adding a provider", () => {
 
   it("explains a name the API refuses and keeps the dialog open", async () => {
     await renderReady([]);
-    openAdd();
+    addKind("openai");
     // The screen did not know about this name (another tab created it), so the API answers.
     backend.providers.push(provider({ id: "px", label: t("engines:kinds.openai.label") }));
     fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
@@ -621,7 +678,7 @@ describe("adding a provider", () => {
   it("does not retry the creation when the key step fails after the provider was created", async () => {
     await renderReady([]);
     backend.failing.add("PUT /providers/p1/key");
-    openAdd();
+    addKind("openai");
     fireEvent.change(within(dialog()).getByLabelText(t("engines:dialog.key")), { target: { value: SECRET } });
     fireEvent.click(within(dialog()).getByRole("button", { name: t("engines:dialog.saveAndTest") }));
     expect(await within(dialog()).findByRole("alert")).toHaveTextContent(t("engines:genericError"));
@@ -720,8 +777,10 @@ describe("deleting a provider", () => {
     await waitFor(() => expect(screen.queryByRole("heading", { level: 4, name: "Work OpenAI" })).toBeNull());
     expect(writes()).toEqual([{ method: "DELETE", path: "/providers/p1", body: null }]);
     expect(screen.getByText(t("engines:remove.doneReverted", { name: "Work OpenAI", list }))).toBeInTheDocument();
-    // The kind is offered again as «Sin configurar».
-    expect(within(card(t("engines:kinds.openai.label"))).getByText(t("engines:statuses.unconfigured"))).toBeInTheDocument();
+    // No card stands in for it: the screen is back to its empty state, with focus on the «Agregar» tile.
+    expect(screen.queryAllByRole("heading", { level: 4 })).toHaveLength(0);
+    expect(screen.getByText(t("engines:empty"))).toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: t("engines:add") }));
   });
 
   it("says nothing changes when no process uses the provider, and cancel deletes nothing", async () => {
@@ -766,15 +825,5 @@ describe("provider dialog focus", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(opener);
-  });
-
-  it("returns focus to the add tile when the add dialog is closed", async () => {
-    await renderReady([provider({ id: "p1", label: "Work OpenAI" })]);
-    const add = screen.getByRole("button", { name: t("engines:add") });
-    add.focus();
-    fireEvent.click(add);
-    expect(dialog().contains(document.activeElement)).toBe(true);
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(document.activeElement).toBe(add);
   });
 });
