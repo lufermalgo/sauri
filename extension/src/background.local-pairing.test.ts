@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { isHealth, sauriHealth } from "./test-backend";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { createCompletion } from "./recording-db";
 
@@ -51,7 +52,12 @@ async function boot(initialSession: Record<string, unknown>, initialLocal: Recor
   globalThis.IDBKeyRange = IDBKeyRange;
   session = { sauriState: { status: "idle" }, ...initialSession };
   local = { ...initialLocal };
-  fetchMock = vi.fn(handler ?? (async () => uploaded.clone()));
+  const reply: FetchHandler = handler ?? (async () => uploaded.clone());
+  // A reachable app answers discovery as Sauri; an offline one still throws.
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const response = await reply(url, init);
+    return isHealth(url) && response.ok ? sauriHealth() : response;
+  });
   syncRemove = vi.fn(async () => undefined);
   syncSet = vi.fn(async () => undefined);
   localRemove = vi.fn(async () => undefined);

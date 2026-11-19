@@ -12,8 +12,9 @@ function mockChrome() {
         get: vi.fn(async () => ({ sauriLocalToken: "token-x" })),
         set: vi.fn(async () => {}),
       },
+      // The app was found on the desktop port earlier in this browser session.
       session: {
-        get: vi.fn(async () => ({})),
+        get: vi.fn(async () => ({ sauriBackendUrl: "http://localhost:41750" })),
         set: vi.fn(async () => {}),
         remove: vi.fn(async () => {}),
       },

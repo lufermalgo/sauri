@@ -236,6 +236,13 @@ describe("engines", () => {
     }
   });
 
+  it("hands the derived ports to the engines that need them: llama-server's and the API's for the host service", () => {
+    expect(engineEnv(ctx, "llm").SAURI_LLAMA_PORT).toBe("18104");
+    expect(engineEnv(ctx, "host").SAURI_API_PORT).toBe("18100");
+    expect(engineEnv(ctx, "asr").SAURI_LLAMA_PORT).toBeUndefined();
+    expect(coreEnv({ ...ctx, appVersion: "0.2.0" }, { api: true }).SAURI_APP_VERSION).toBe("0.2.0");
+  });
+
   it("does not vouch for a runtime binary that differs from its pin", () => {
     fs.writeFileSync(path.join(ctx.layout.runtimeDir, "bin", "whisper-cli"), "tampered whisper-cli");
     expect(ensureAsrProvenance(ctx)).toBe(false);

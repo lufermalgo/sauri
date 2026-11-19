@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { sauriHealth } from "./test-backend";
 import * as fc from "fast-check";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { createCompletion, getCompletion, storeChunk } from "./recording-db";
@@ -39,6 +40,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
     if (!url.endsWith("/health")) fetched.push(url);
+    else return sauriHealth();
     if (init?.method === "POST") {
       // The ingestion response has recording_id and state, not meeting_id.
       return new Response(JSON.stringify({ recording_id: recordingId, state: scenario.state }), { status: 200 });
@@ -84,7 +86,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
   listener!({ type: "recording-stopped", sessionId, size: 15, mimeType: "video/webm" }, {}, vi.fn());
   // Only matching mappings must POST. A conflict may be rejected before sending a request.
   if (scenario.sameRecording) {
-    await vi.waitFor(() => expect(fetched).toContain("http://localhost:8000/api/v1/ingestion/upload"), { timeout: 2000, interval: 5 });
+    await vi.waitFor(() => expect(fetched).toContain("http://localhost:41750/api/v1/ingestion/upload"), { timeout: 2000, interval: 5 });
   }
   // Do not create an empty queue DB before enqueueUpload creates its object store.
   await vi.waitFor(async () => expect((await indexedDB.databases()).some(db => db.name === "sauri-upload-queue")).toBe(true),
@@ -112,7 +114,7 @@ async function runScenario(scenario: Scenario, sessionId: string = crypto.random
   }, { timeout: 2000, interval: 5 });
   if (scenario.sameRecording) {
     await vi.waitFor(async () => {
-      expect(fetched).toContain(`http://localhost:8000/api/v1/meetings/${meetingId}`);
+      expect(fetched).toContain(`http://localhost:41750/api/v1/meetings/${meetingId}`);
       const completion = await getCompletion(sessionId);
       expect(scenario.sameMeeting
         ? ["processing", "processing_failed", "processing_assets_unavailable", "processing_succeeded"]
@@ -133,16 +135,16 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 const state = fc.constantFrom<ProcessState>("queued", "joining", "recording", "transcribing", "failed", "completed");
 const combinations = fc.record({ state, transcript: fc.boolean(), video: fc.boolean(), sameMeeting: fc.boolean(), sameRecording: fc.boolean() });
 const ready: Scenario = { state: "completed", transcript: true, video: true, sameMeeting: true, sameRecording: true };
-const statusUrl = (id: string) => `http://localhost:8000/api/v1/meetings/${id}`;
+const statusUrl = (id: string) => `http://localhost:41750/api/v1/meetings/${id}`;
 
 it("Stop uploads and opens the confirmed meeting before making any processing request", async () => {
   const scenario: Scenario = { ...ready, state: "transcribing" };
   const { meetingId, recordingId, createTab, launchSnapshots, completion, retry } = await runScenario(scenario, "early-launch");
   expect(createTab).toHaveBeenCalledTimes(1);
-  expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:8000/?meetingId=${meetingId}` });
+  expect(chrome.tabs.create).toHaveBeenCalledWith({ url: `http://localhost:41750/?meetingId=${meetingId}` });
   expect(launchSnapshots).toEqual([{
     completion: expect.objectContaining({ meetingId, recordingId, status: "upload_succeeded", reviewStatus: "review_launch_pending", reviewCreateAttempted: true }),
-    fetched: ["http://localhost:8000/api/v1/ingestion/upload"],
+    fetched: ["http://localhost:41750/api/v1/ingestion/upload"],
   }]);
   expect(completion).toMatchObject({ status: "processing", reviewStatus: "review_opened" });
   scenario.state = "completed";
@@ -168,7 +170,7 @@ it("checks the same meeting's status and never marks incomplete or mismatched as
     const { completion, fetched, meetingId, persistedRecordingId, job, createTab } = await runScenario(scenario);
     const wrongRecording = !scenario.sameRecording;
     const wrongMapping = wrongRecording
-      ? job.status === "done" || completion?.recordingId !== persistedRecordingId || fetched.some(url => url !== "http://localhost:8000/api/v1/ingestion/upload")
+      ? job.status === "done" || completion?.recordingId !== persistedRecordingId || fetched.some(url => url !== "http://localhost:41750/api/v1/ingestion/upload")
       : !fetched.includes(statusUrl(meetingId));
     if (wrongMapping || completion?.meetingId !== meetingId ||
         completion?.status === "processing_succeeded" || createTab.mock.calls.length !== (scenario.sameRecording ? 1 : 0)) {
@@ -186,7 +188,7 @@ it("rejects a conflicting persisted recording before reading protected assets or
   expect(job.status === "failed" || job.retryCount > 0).toBe(true);
   expect(completion).toMatchObject({ meetingId, recordingId: persistedRecordingId });
   expect(completion?.status).not.toBe("processing_succeeded");
-  expect(fetched.every(url => url === "http://localhost:8000/api/v1/ingestion/upload")).toBe(true);
+  expect(fetched.every(url => url === "http://localhost:41750/api/v1/ingestion/upload")).toBe(true);
   expect(createTab).not.toHaveBeenCalled();
 });
 

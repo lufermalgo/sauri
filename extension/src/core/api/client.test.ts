@@ -7,7 +7,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 let localStore: Record<string, unknown> = {};
 
 function mockChromeStorage(initial: Record<string, unknown> = {}, initialLocal: Record<string, unknown> = {}) {
-  const store: Record<string, unknown> = { ...initial };
+  // The app was found on the desktop port earlier in this browser session.
+  const store: Record<string, unknown> = { sauriBackendUrl: "http://localhost:41750", ...initial };
   localStore = { ...initial, ...initialLocal };
   const listeners: Array<(changes: unknown, area: string) => void> = [];
   (globalThis as unknown as { chrome: unknown }).chrome = {
@@ -45,7 +46,7 @@ describe("API client — authorization header and storage (Req. 13.1, 13.3, 14.1
 
   it("attaches Authorization: Bearer {local token} read from chrome.storage on every request", async () => {
     const { listMeetings } = await import("./client");
-    await listMeetings("http://localhost:8000");
+    await listMeetings();
     expect(fetch).toHaveBeenCalled();
     const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     const init = callArgs[1] as RequestInit;
@@ -75,7 +76,7 @@ describe("API client — timeout and retry (Req. 14.4, 14.5, 4.9, 6.6)", () => {
     ) as unknown as typeof fetch;
 
     const { listMeetings } = await import("./client");
-    const promise = listMeetings("http://localhost:8000");
+    const promise = listMeetings();
     const expectation = expect(promise).rejects.toThrow();
     await vi.advanceTimersByTimeAsync(10_000);
     await expectation;
@@ -90,8 +91,8 @@ describe("API client — timeout and retry (Req. 14.4, 14.5, 4.9, 6.6)", () => {
     }) as unknown as typeof fetch;
 
     const { listMeetings } = await import("./client");
-    await listMeetings("http://localhost:8000");
-    await listMeetings("http://localhost:8000");
+    await listMeetings();
+    await listMeetings();
     expect(calls).toBe(2);
   });
 });
@@ -105,7 +106,7 @@ describe("API client — 404 distinguished from a real failure (Req. 7.6, 8.8, 1
   it("throws NotFoundError when the backend responds 404", async () => {
     global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
     const { getTranscript, NotFoundError } = await import("./client");
-    await expect(getTranscript("r1", "http://localhost:8000")).rejects.toBeInstanceOf(NotFoundError);
+    await expect(getTranscript("r1")).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
@@ -121,11 +122,11 @@ describe("API client — renameMeeting / deleteMeeting (My Notes → manage)", (
     ) as unknown as typeof fetch;
 
     const { renameMeeting } = await import("./client");
-    await renameMeeting("r1", "New title", "http://localhost:8000");
+    await renameMeeting("r1", "New title");
 
     expect(fetch).toHaveBeenCalled();
     const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[0]).toBe("http://localhost:8000/api/v1/meetings/r1");
+    expect(callArgs[0]).toBe("http://localhost:41750/api/v1/meetings/r1");
     const init = callArgs[1] as RequestInit;
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(init.body as string)).toEqual({ title: "New title" });
@@ -134,7 +135,7 @@ describe("API client — renameMeeting / deleteMeeting (My Notes → manage)", (
   it("renameMeeting throws NotFoundError on 404", async () => {
     global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
     const { renameMeeting, NotFoundError } = await import("./client");
-    await expect(renameMeeting("r1", "X", "http://localhost:8000")).rejects.toBeInstanceOf(
+    await expect(renameMeeting("r1", "X")).rejects.toBeInstanceOf(
       NotFoundError
     );
   });
@@ -142,10 +143,10 @@ describe("API client — renameMeeting / deleteMeeting (My Notes → manage)", (
   it("deleteMeeting issues a DELETE and doesn't fail parsing the bodyless 204", async () => {
     global.fetch = vi.fn(async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
     const { deleteMeeting } = await import("./client");
-    await expect(deleteMeeting("r1", "http://localhost:8000")).resolves.toBeUndefined();
+    await expect(deleteMeeting("r1")).resolves.toBeUndefined();
 
     const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(callArgs[0]).toBe("http://localhost:8000/api/v1/meetings/r1");
+    expect(callArgs[0]).toBe("http://localhost:41750/api/v1/meetings/r1");
     const init = callArgs[1] as RequestInit;
     expect(init.method).toBe("DELETE");
   });
@@ -153,7 +154,7 @@ describe("API client — renameMeeting / deleteMeeting (My Notes → manage)", (
   it("deleteMeeting throws NotFoundError on 404", async () => {
     global.fetch = vi.fn(async () => new Response("", { status: 404 })) as unknown as typeof fetch;
     const { deleteMeeting, NotFoundError } = await import("./client");
-    await expect(deleteMeeting("r1", "http://localhost:8000")).rejects.toBeInstanceOf(
+    await expect(deleteMeeting("r1")).rejects.toBeInstanceOf(
       NotFoundError
     );
   });
@@ -164,21 +165,21 @@ describe("API client — encrypted transport (Req. 13.5)", () => {
     mockChromeStorage({ sauriLocalToken: "token-abc" });
   });
 
-  it("rejects a non-localhost http:// backendUrl", async () => {
-    const { listMeetings } = await import("./client");
-    await expect(listMeetings("http://api.sauri.example.com")).rejects.toThrow();
-  });
-
   it("accepts http://localhost", async () => {
     global.fetch = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })) as unknown as typeof fetch;
     const { listMeetings } = await import("./client");
-    await expect(listMeetings("http://localhost:8000")).resolves.toEqual([]);
+    await expect(listMeetings()).resolves.toEqual([]);
   });
 
-  it("refuses to send a local credential to an unrelated HTTPS origin", async () => {
+  it("ignores a remembered address that is not one of the fixed local candidates", async () => {
+    vi.resetModules();
+    mockChromeStorage({ sauriLocalToken: "token-abc", sauriBackendUrl: "https://api.sauri.example.com" });
     global.fetch = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })) as unknown as typeof fetch;
     const { listMeetings } = await import("./client");
-    await expect(listMeetings("https://api.sauri.example.com")).rejects.toThrow("Local credential destination mismatch");
+    // No candidate answers as Sauri, so nothing is sent with the credential.
+    await expect(listMeetings()).rejects.toThrow("Local app unavailable");
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls).toEqual(["http://localhost:41750/health", "http://localhost:8000/health"]);
   });
 });
 
@@ -205,15 +206,6 @@ describe("API client — validateTransport policy", () => {
   ])("rejects %s", async (url) => {
     const { validateTransport, InsecureTransportError } = await import("./client");
     expect(() => validateTransport(url)).toThrow(InsecureTransportError);
-  });
-
-  it("never sends the token (or credentials) over an insecure backend URL", async () => {
-    mockChromeStorage({ sauriLocalToken: "token-abc" });
-    global.fetch = vi.fn(async () => new Response("[]", { status: 200 })) as unknown as typeof fetch;
-    const { listMeetings, deleteMeeting } = await import("./client");
-    await expect(listMeetings("http://api.sauri.example.com")).rejects.toThrow();
-    await expect(deleteMeeting("m1", "http://api.sauri.example.com")).rejects.toThrow();
-    expect(fetch).not.toHaveBeenCalled();
   });
 
 });

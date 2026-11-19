@@ -93,7 +93,18 @@ async def test_internal_targets_are_rejected_even_over_https(url: str) -> None:
     assert await _code(url, allow_loopback=True) == "base_url_not_allowed"
 
 
-async def test_loopback_needs_a_local_kind_and_avoids_sauri_ports() -> None:
+async def test_sauri_ports_follow_the_api_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SAURI_API_PORT", "41750")
+    for port in range(41750, 41756):
+        assert await _code(f"http://127.0.0.1:{port}/v1", allow_loopback=True) == "base_url_not_allowed"
+    assert await validate_base_url("http://127.0.0.1:41756/v1", allow_loopback=True) == "http://127.0.0.1:41756/v1"
+    # The development block no longer belongs to this install, so a local server there is allowed.
+    assert await validate_base_url("http://127.0.0.1:8004/v1", allow_loopback=True) == "http://127.0.0.1:8004/v1"
+    assert await _code("http://127.0.0.1:5432", allow_loopback=True) == "base_url_not_allowed"
+
+
+async def test_loopback_needs_a_local_kind_and_avoids_sauri_ports(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SAURI_API_PORT", raising=False)
     assert await _code("http://127.0.0.1:11434/v1", allow_loopback=False) == "base_url_not_allowed"
     for port in (8000, 8001, 8002, 8003, 8004, 8005, 5432):
         assert await _code(f"http://127.0.0.1:{port}/v1", allow_loopback=True) == "base_url_not_allowed"

@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { ExternalLink, RotateCcw, Search } from "lucide-react";
 import { Icon } from "../../core/design/Icon";
 import { sortNotes } from "../../core/order";
@@ -20,12 +20,24 @@ function stateLabel(state: string, t: TranslateFn): { label: string; tone: strin
   return { label: state === "queued" ? t("panel:queued") : t("panel:transcribing"), tone: "progress" };
 }
 
+/** The portal's address once the app is found; the link stays hidden while no Sauri app answers. */
+function usePortalLink(state: ViewState): string | null {
+  const [portal, setPortal] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    portalDestination().then(url => { if (!cancelled) setPortal(url); }, () => { if (!cancelled) setPortal(null); });
+    return () => { cancelled = true; };
+  }, [state]);
+  return portal;
+}
+
 export function NotesList({ state, notes, onRetry, onOpenNote }: NotesListProps) {
   const { t, i18n } = useT();
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const searchId = useId();
   const searchButton = useRef<HTMLButtonElement>(null);
+  const portal = usePortalLink(state);
   const searchAvailable = state === "withData";
   const showSearch = searchAvailable && searching;
   const needle = showSearch ? query.trim().toLocaleLowerCase(i18n.language) : "";
@@ -36,7 +48,7 @@ export function NotesList({ state, notes, onRetry, onOpenNote }: NotesListProps)
       <h2 id="recordings-heading">{t("panel:recordings")}</h2>
       <div className="panel-row panel-library-tools">
         {searchAvailable && <button ref={searchButton} type="button" className="panel-icon-button" aria-label={t("panel:search")} title={t("panel:search")} aria-expanded={showSearch} aria-controls={searchId} onClick={() => showSearch ? closeSearch() : setSearching(true)}><Icon icon={Search} size={16} /></button>}
-        <a href={portalDestination()} target="_blank" rel="noreferrer" className="panel-icon-button" aria-label={t("panel:portal")} title={t("panel:portal")}><Icon icon={ExternalLink} size={16} /></a>
+        {portal && <a href={portal} target="_blank" rel="noreferrer" className="panel-icon-button" aria-label={t("panel:portal")} title={t("panel:portal")}><Icon icon={ExternalLink} size={16} /></a>}
       </div>
     </div>
     {showSearch && <input id={searchId} type="search" autoFocus aria-label={t("panel:searchField")} placeholder={t("panel:searchField")} value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === "Escape") closeSearch(); }} />}

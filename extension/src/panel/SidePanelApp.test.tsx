@@ -3,6 +3,7 @@ import { panelCopy as copy } from "../i18n/spanish";
 // Exercise the public panel until RecordingCompletionStatus exists: missing
 // production UI must fail a visible assertion, not an unresolved import.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { isHealth, sauriHealth } from "../test-backend";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { IDBFactory } from "fake-indexeddb";
 import { COMPLETION_STORE, createCompletion, getCompletion, openDB, type RecordingCompletion } from "../recording-db";
@@ -29,7 +30,7 @@ function mockChrome(_appAvailable: boolean) {
     tabs: mockTabs(),
     runtime: { sendMessage: vi.fn(), openOptionsPage: vi.fn(async () => undefined) },
   };
-  global.fetch = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })) as unknown as typeof fetch;
+  global.fetch = vi.fn(async (url: string) => isHealth(url) ? sauriHealth() : new Response(JSON.stringify([]), { status: 200 })) as unknown as typeof fetch;
 }
 
 afterEach(() => {
@@ -68,7 +69,7 @@ describe("SidePanelApp", () => {
     vi.mocked(chrome.storage.local.get).mockResolvedValue({} as never);
     vi.mocked(fetch).mockImplementation(async url => String(url).endsWith("/pair")
       ? new Response(JSON.stringify({ token: "paired" }), { status: 200 })
-      : new Response("[]", { status: 200 }));
+      : isHealth(url) ? sauriHealth() : new Response("[]", { status: 200 }));
     fireEvent.focus(window);
     expect(await screen.findByText(copy.recordings)).toBeInTheDocument();
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/meetings/"), expect.objectContaining({ headers: { Authorization: "Bearer paired" } })));
@@ -81,7 +82,7 @@ describe("SidePanelApp", () => {
     vi.mocked(chrome.storage.local.get).mockResolvedValue({} as never);
     vi.mocked(fetch).mockImplementation(async url => String(url).endsWith("/pair")
       ? new Response(JSON.stringify({ detail: "extension_not_allowed" }), { status: 403 })
-      : new Response("{}", { status: 200 }));
+      : isHealth(url) ? sauriHealth() : new Response("{}", { status: 200 }));
     render(<SidePanelApp />);
     expect(await screen.findByRole("alert")).toHaveTextContent(copy.extensionNotAllowed);
     expect(screen.queryByText(copy.listError)).not.toBeInTheDocument();
@@ -410,7 +411,7 @@ describe("T1.9: durable same-recording completion feedback", () => {
       tabs: mockTabs(),
       runtime: { sendMessage: vi.fn(), openOptionsPage: vi.fn(async () => undefined) },
     });
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })));
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => isHealth(url) ? sauriHealth() : new Response(JSON.stringify([]), { status: 200 })));
   });
 
   it("does not recover an unrelated success before the initial selected-session read resolves", async () => {

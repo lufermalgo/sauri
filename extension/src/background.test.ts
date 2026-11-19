@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Blob as NativeBlob } from "node:buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sauriHealth } from "./test-backend";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { createCompletion, getChunksBySession, getCompletion, storeChunk } from "./recording-db";
 import { getNextPendingJob, type UploadJob } from "./upload-queue";
@@ -73,7 +74,7 @@ async function setup() {
   let onRemoved: RemovedListener | undefined;
   const stops: Message[] = [];
   const fetchMock = vi.fn(async (_url: string, _options: RequestInit) => new Response("offline", { status: 503 }));
-  vi.stubGlobal("fetch", (url: string, options: RequestInit) => String(url).endsWith("/health") ? Promise.resolve(new Response("{}")) : fetchMock(url, options));
+  vi.stubGlobal("fetch", (url: string, options: RequestInit) => String(url).endsWith("/health") ? Promise.resolve(sauriHealth()) : fetchMock(url, options));
   vi.stubGlobal("chrome", {
     action: { onClicked: { addListener: vi.fn() }, setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     alarms: { create: vi.fn(), onAlarm: { addListener: vi.fn() } },
@@ -89,7 +90,7 @@ async function setup() {
       sync: { remove: vi.fn(async () => {}) },
       session: { remove: vi.fn(async () => {}),
         get: vi.fn(async () => ({ sauriState: { ...state } })),
-        set: vi.fn(async (value: { sauriState: typeof state }) => { state = { ...value.sauriState }; }),
+        set: vi.fn(async (value: { sauriState?: typeof state }) => { if (value.sauriState) state = { ...value.sauriState }; }),
       },
     },
     tabs: {

@@ -25,7 +25,6 @@ import { validCaptureDimensions } from "./core/resolution";
 import { portalDestination } from "./panel/portal";
 import { readRecordingSettings } from "./panel/recordingSettings";
 import { parseDurationSeconds } from "./core/recording-duration";
-import { BACKEND_URL } from "./core/backend";
 import { ensureLocalToken, isLocalAppAvailable, LocalAppUnavailableError, migrateLegacyCredentials } from "./core/local-pairing";
 import { authorizedRequest } from "./core/api/authorized-fetch";
 
@@ -150,7 +149,6 @@ async function uploadRecording(job: UploadJob): Promise<void> {
     formData.append("data", JSON.stringify(ingestionData));
 
     const response = await authorizedRequest(
-      BACKEND_URL,
       "/api/v1/ingestion/upload",
       { method: "POST", body: formData },
       async (reply) => reply,
@@ -877,7 +875,7 @@ async function reconcileProcessing(record: RecordingCompletion): Promise<void> {
   }
   const base = `/api/v1/meetings/${encodeURIComponent(record.meetingId)}`;
   async function read(path: string): Promise<unknown> {
-    return authorizedRequest(BACKEND_URL, `${base}${path}`, {}, async (response) => {
+    return authorizedRequest(`${base}${path}`, {}, async (response) => {
       if (!response.ok) throw new Error(`Protected recording asset unavailable (${response.status})`);
       return response.json();
     });
@@ -916,7 +914,7 @@ async function reconcileReviewLaunches(): Promise<void> {
       const record = await getCompletion(candidate.sessionId);
       if (!record || (record.reviewStatus ?? record.status) !== "review_launch_pending" || record.meetingId !== candidate.meetingId ||
           record.recordingId !== candidate.recordingId) continue;
-      const target = portalDestination(record.meetingId);
+      const target = await portalDestination(record.meetingId);
       // Query before creation, including on a fresh launch: a lost Chrome result
       // must be recovered by the exact canonical URL, never by a prefix match.
       const existing = (await chrome.tabs.query({})).find(tab => tab.url === target);

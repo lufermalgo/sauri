@@ -108,7 +108,7 @@ export function RecordingCompletionStatus({ sessionId, onVisibleChange }: { sess
 
   const openPortal = async () => {
     if (!record) return;
-    try { await chrome.tabs.create({ url: portalDestination(record.meetingId) }); }
+    try { await chrome.tabs.create({ url: await portalDestination(record.meetingId) }); }
     catch { setActionError(t("panel:commandError")); }
   };
 

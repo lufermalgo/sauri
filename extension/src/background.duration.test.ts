@@ -1,5 +1,6 @@
 import { Blob as NativeBlob } from "node:buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isHealth, sauriHealth } from "./test-backend";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 
 interface Message { type: string; sessionId?: string; size?: number; mimeType?: string; durationSeconds?: unknown }
@@ -24,7 +25,8 @@ function profile() {
       append(name: string, value: unknown) { this.fields.set(name, value); }
       get(name: string) { return this.fields.get(name); }
     });
-    vi.stubGlobal("fetch", fetchMock);
+    // The local app answers discovery as Sauri; every other call goes to the mock.
+    vi.stubGlobal("fetch", (url: string, init: RequestInit) => isHealth(url) ? Promise.resolve(sauriHealth()) : fetchMock(url, init));
     vi.stubGlobal("chrome", {
       runtime: {
         onMessage: { addListener: (handler: Listener) => { listener = handler; } },
@@ -75,7 +77,7 @@ describe("recorded duration in the upload payload", () => {
 
   it("keeps the value across failed attempts and a manual retry", async () => {
     const p = profile();
-    p.fetchMock.mockImplementation(async url => String(url).endsWith("/health") ? new Response("{}") : new Response("down", { status: 503 }));
+    p.fetchMock.mockImplementation(async url => String(url).endsWith("/health") ? sauriHealth() : new Response("down", { status: 503 }));
     const { db, queue } = await p.boot();
     await seedCapture(db, "s2");
     await p.message({ type: "recording-stopped", sessionId: "s2", size: 5, mimeType: "video/webm", durationSeconds: 120 });

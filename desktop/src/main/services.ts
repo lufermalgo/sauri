@@ -64,6 +64,8 @@ export interface ServiceContext {
   folders: UserFolders;
   ports: PortPlan;
   localUserId?: string;
+  /** The app's version, reported by the API's /health so the extension can tell which Sauri it reached. */
+  appVersion?: string;
 }
 
 export class CoreError extends Error {
@@ -153,6 +155,7 @@ export function coreEnv(ctx: ServiceContext, opts: { api: boolean }): Record<str
     WORKER_SHUTDOWN_GRACE_SECONDS,
   };
   if (ctx.localUserId) env.SAURI_LOCAL_USER_ID = ctx.localUserId;
+  if (ctx.appVersion) env.SAURI_APP_VERSION = ctx.appVersion;
   if (opts.api) env.MANAGEMENT_TOKEN_FILE = secretFile(ctx.paths, "management_token");
   return env;
 }
@@ -214,6 +217,8 @@ export function engineEnv(ctx: ServiceContext, name: EngineName): Record<string,
     SAURI_HF_TOKEN_FILE: path.join(paths.secretsDir, "hf_token"),
   };
   if (name === "host") {
+    // The host service reports on the engines at the ports derived from this one.
+    env.SAURI_API_PORT = String(ctx.ports.api);
     env.SAURI_MANAGEMENT_TOKEN_FILE = secretFile(paths, "management_token");
     env.SAURI_ADOPT_ON_START = "0";
     // Downloadable components (design D9): where they install, the development copy, and where they come from.
@@ -235,6 +240,7 @@ export function engineEnv(ctx: ServiceContext, name: EngineName): Record<string,
   if (name === "llm") {
     env.SAURI_LLAMA_SERVER = bin(ctx, "bin", "llama-server");
     env.SAURI_LLM_MODEL_FILE = path.join(folders.models, LLM_MODEL_FILE);
+    env.SAURI_LLAMA_PORT = String(ctx.ports.llama);
   }
   return env;
 }

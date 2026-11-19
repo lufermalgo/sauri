@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — Sauri
 
-Last updated: 2026-11-18. Version: 0.9.1. Status: draft, not submitted.
+Last updated: 2026-11-19. Version: 0.9.2. Status: draft, not submitted.
 
 ## Store listing
 Name: Sauri. Category: Productivity. Primary language: Spanish, with English localization.
@@ -11,7 +11,7 @@ Store icon: `public/icons/icon-128.png` (128 × 128 PNG).
 Current screenshots at 1280 × 800 or 640 × 400 are pending: show the recording panel, app-unavailable notice, and recording controls. No new screenshots are included in this unit.
 
 ## Permission justifications
-One justification for each of the eight permissions and two hosts in `manifest.json`:
+One justification for each of the eight permissions and three host patterns in `manifest.json`:
 [Spanish](store/es/permissions.md), [English](store/en/permissions.md).
 No notifications permission or broad host access.
 
@@ -27,6 +27,7 @@ Owner intends public Chrome Web Store distribution; owner handles registration, 
 ## Version history
 | Version | Date | Changes | Status |
 | --- | --- | --- | --- |
+| 0.9.2 | 2026-11-19 | Finds the desktop app on its new port 41750 and, during the transition, on 8000. Adds the host pattern `http://localhost:41750/*`: same host as before, so Chrome shows no new permission warning (see the permission documents). | Draft |
 | 0.9.1 | 2026-11-18 | Automatic desktop pairing without sign-in; offline queue retained; notifications permission removed. | Draft |
 
 ## Review notes and packaging

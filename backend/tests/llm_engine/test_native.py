@@ -242,6 +242,17 @@ while True: time.sleep(1)
                 os.kill(pid, signal.SIGKILL)
 
 
+def test_llama_port_comes_from_the_desktop_block(native: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SAURI_LLAMA_PORT", raising=False)
+    assert native.LlamaServer().url == "http://127.0.0.1:8004"
+    monkeypatch.setenv("SAURI_LLAMA_PORT", "41754")
+    assert native.LlamaServer().url == "http://127.0.0.1:41754"
+    for invalid in ("80", "port", "70000"):
+        monkeypatch.setenv("SAURI_LLAMA_PORT", invalid)
+        with pytest.raises(ValueError, match="SAURI_LLAMA_PORT"):
+            native.LlamaServer()
+
+
 def test_single_budget_covers_gateway_cold_start(
     native: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

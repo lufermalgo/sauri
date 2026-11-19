@@ -16,16 +16,25 @@ import socket
 from typing import Final
 from urllib.parse import urlsplit
 
+from app.auth.local import api_port
+
 MAX_URL_CHARS: Final = 2048
 RESOLVE_TIMEOUT_S: Final = 3.0
 
-# Sauri's own local services (API, engines, host service, llama-server, database, broker, object store):
-# a "local provider" must not be able to point the host service back at them.
-SAURI_LOCAL_PORTS: Final = frozenset({8000, 8001, 8002, 8003, 8004, 8005, 5432, 5672, 15672, 9000, 9001})
+# Database, broker and object store of the development stack; the API's own block is derived from its port.
+_INFRA_PORTS: Final = frozenset({5432, 5672, 15672, 9000, 9001})
+# The block after the API port: speech, speakers and summary engines, llama-server, host service.
+_BLOCK_SIZE: Final = 6
 _FORBIDDEN_NAMES: Final = frozenset({"metadata", "instance-data"})
 _FORBIDDEN_SUFFIXES: Final = (".internal", ".local", ".localdomain", ".lan", ".home.arpa", ".intranet", ".corp")
 _NUMERIC_HOST: Final = re.compile(r"^[0-9a-fA-Fx.]+$")
 _UNSAFE_CHARS: Final = re.compile(r"[\x00-\x20\x7f-\x9f\\]")
+
+
+def sauri_local_ports() -> frozenset[int]:
+    """Sauri's own local services: a "local provider" must not be able to point the host service back at them."""
+    first = api_port()
+    return _INFRA_PORTS | frozenset(range(first, first + _BLOCK_SIZE))
 
 
 class BaseUrlError(ValueError):
@@ -96,7 +105,7 @@ async def validate_base_url(url: str, *, allow_loopback: bool) -> str:
         raise BaseUrlError("invalid_base_url")
 
     if is_loopback_name(host):
-        if not allow_loopback or (port or (443 if scheme == "https" else 80)) in SAURI_LOCAL_PORTS:
+        if not allow_loopback or (port or (443 if scheme == "https" else 80)) in sauri_local_ports():
             raise BaseUrlError("base_url_not_allowed")
     else:
         if scheme != "https":

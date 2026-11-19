@@ -1,4 +1,3 @@
-import { BACKEND_URL } from "../core/backend";
 // Detail_View composition — Req. 6.1-6.6, 7.1-7.6, 14.3
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { SummarySpace } from "./SummarySpace";
@@ -65,7 +64,7 @@ export function DetailApp() {
         setTranscriptRequest((prev) => ({ phase: "in_progress", data: null, previous: prev.data }));
       }
       try {
-        const transcript = await getTranscript(meetingId, BACKEND_URL);
+        const transcript = await getTranscript(meetingId);
         setTranscriptRequest({ phase: "success", data: transcript.segments, previous: null });
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -85,7 +84,7 @@ export function DetailApp() {
         setDiarizationRequest((prev) => ({ phase: "in_progress", data: null, previous: prev.data }));
       }
       try {
-        const diarization = await getDiarization(meetingId, BACKEND_URL);
+        const diarization = await getDiarization(meetingId);
         setDiarizationRequest({ phase: "success", data: diarization.speakers, previous: null });
         setAssignments(diarization.assignments);
       } catch (err) {
@@ -109,7 +108,7 @@ export function DetailApp() {
       await loadDiarization();
 
       for (let attempt = 0; attempt < MAX_POLLING_ATTEMPTS && !canceled; attempt++) {
-        const meeting = await getMeeting(meetingId!, BACKEND_URL).catch(() => null);
+        const meeting = await getMeeting(meetingId!).catch(() => null);
         // If the status query fails (missing note, network error), retrying
         // for 60s makes no sense — polling stops.
         if (canceled || !meeting || TERMINAL_STATES.has(meeting.processState)) break;

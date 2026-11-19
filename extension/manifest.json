@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sauri",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "default_locale": "es",
   "description": "__MSG_extensionDescription__",
   "permissions": [
@@ -16,6 +16,7 @@
   ],
   "host_permissions": [
     "https://meet.google.com/*",
+    "http://localhost:41750/*",
     "http://localhost:8000/*"
   ],
   "background": {

@@ -1,5 +1,5 @@
-import { BACKEND_URL } from "../backend";
-import { ensureLocalToken, LocalAppUnavailableError } from "../local-pairing";
+import { forgetBackendUrl } from "../backend";
+import { ensureLocalToken, LocalAppUnavailableError, requireBackendUrl } from "../local-pairing";
 import { validateTransport } from "./transport";
 
 type Attempt<T> = { unauthorized: true } | { unauthorized: false; value: T };
@@ -20,7 +20,11 @@ async function attempt<T>(
     try {
       response = await fetch(url, { ...init, headers, credentials: "omit", redirect: "error", signal: controller.signal });
     } catch (error) {
-      if (error instanceof TypeError) throw new LocalAppUnavailableError();
+      if (error instanceof TypeError) {
+        // Nothing answers at the remembered address any more: the next call looks again.
+        await forgetBackendUrl();
+        throw new LocalAppUnavailableError();
+      }
       throw error;
     }
     if (response.status === 401 || response.status === 403) return { unauthorized: true };
@@ -30,19 +34,20 @@ async function attempt<T>(
   }
 }
 
-/** Sends a local bearer, pairing again once if the API rejects it. */
+/**
+ * Sends a local bearer to the app found by discovery, pairing again once if the API rejects it. The destination is
+ * always one of the fixed candidates and an API path: the credential never goes anywhere else.
+ */
 export async function authorizedRequest<T>(
-  backendUrl: string,
   path: string,
   init: RequestInit,
   handle: (response: Response) => Promise<T>,
   timeoutMs?: number,
 ): Promise<T> {
-  validateTransport(backendUrl);
-  if (new URL(backendUrl).origin !== new URL(BACKEND_URL).origin || !path.startsWith("/api/")) {
-    throw new Error("Local credential destination mismatch");
-  }
-  const url = `${backendUrl}${path}`;
+  if (!path.startsWith("/api/")) throw new Error("Local credential destination mismatch");
+  const base = await requireBackendUrl();
+  validateTransport(base);
+  const url = `${base}${path}`;
   const token = await ensureLocalToken();
   const first = await attempt(url, init, token, handle, timeoutMs);
   if (!first.unauthorized) return first.value;

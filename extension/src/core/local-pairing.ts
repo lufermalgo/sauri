@@ -1,5 +1,4 @@
-import { BACKEND_URL } from "./backend";
-import { validateTransport } from "./api/transport";
+import { answersAsSauri, discoverBackendUrl, forgetBackendUrl, rememberedBackendUrl, resolveBackendUrl } from "./backend";
 
 const TOKEN_KEY = "sauriLocalToken";
 const TIMEOUT_MS = 10_000;
@@ -39,27 +38,29 @@ export async function migrateLegacyCredentials(): Promise<void> {
   }
 }
 
+/** Checks the remembered address first and looks again on every candidate when the app no longer answers there. */
 export async function isLocalAppAvailable(): Promise<boolean> {
-  validateTransport(BACKEND_URL);
-  try {
-    const response = await fetch(`${BACKEND_URL}/health`, {
-      cache: "no-store", credentials: "omit", redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  const known = await rememberedBackendUrl();
+  if (known && await answersAsSauri(known)) return true;
+  return (await discoverBackendUrl()) !== null;
+}
+
+/** Where the local app answers; LocalAppUnavailableError when no Sauri app does. */
+export async function requireBackendUrl(): Promise<string> {
+  const url = await resolveBackendUrl();
+  if (!url) throw new LocalAppUnavailableError();
+  return url;
 }
 
 async function pair(rejectedToken?: string): Promise<string> {
-  validateTransport(BACKEND_URL);
+  const backendUrl = await requireBackendUrl();
   // Local storage is otherwise exposed to content scripts by default.
   await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
   const stored = await chrome.storage.local.get(TOKEN_KEY);
   const current = stored[TOKEN_KEY];
   if (typeof current === "string" && current && current !== rejectedToken) return current;
   try {
-    const response = await fetch(`${BACKEND_URL}/api/v1/local/pair`, {
+    const response = await fetch(`${backendUrl}/api/v1/local/pair`, {
       method: "POST", cache: "no-store", credentials: "omit", redirect: "error", signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (await isExtensionRefusal(response)) throw new ExtensionNotAllowedError();
@@ -70,6 +71,8 @@ async function pair(rejectedToken?: string): Promise<string> {
     return body.token;
   } catch (error) {
     if (error instanceof ExtensionNotAllowedError) throw error;
+    // Nothing answers at the remembered address any more: the next call looks again.
+    if (error instanceof TypeError) await forgetBackendUrl();
     throw new LocalAppUnavailableError();
   }
 }
