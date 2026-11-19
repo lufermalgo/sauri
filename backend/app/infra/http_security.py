@@ -202,8 +202,14 @@ class LocalGuardMiddleware:
                     return
                 cookie = request.cookies.get(LOCAL_COOKIE, "").encode("utf-8")
                 scheme, _, bearer = request.headers.get("authorization", "").partition(" ")
+                # Chrome sends no Origin on a GET from an extension with host permission, and marks it
+                # `Sec-Fetch-Site: none`. A web page cannot send that: any request of its carrying an
+                # Authorization header is a CORS request with an Origin. The token stays mandatory.
+                extension_read = "origin" not in request.headers and request.headers.get("sec-fetch-site") == "none"
                 allowed = (same_origin and hmac.compare_digest(cookie, token)) or (
-                    origin_allowed and scheme.lower() == "bearer" and hmac.compare_digest(bearer.encode("utf-8"), token)
+                    (origin_allowed or extension_read)
+                    and scheme.lower() == "bearer"
+                    and hmac.compare_digest(bearer.encode("utf-8"), token)
                 )
             if not allowed:
                 # A pairing refusal has its own code so the extension can tell this copy is not authorized.

@@ -86,7 +86,7 @@ Ya existen piezas que ayudan. La cola (`backend/app/infra/queue.py`) y el almac�
 #### Criterios de Aceptación
 
 1. IF una petición llega con un encabezado `Host` distinto de `127.0.0.1` o `localhost` en el puerto de la API, THEN THE API SHALL rechazarla. Esto evita el «DNS rebinding».
-2. IF una petición que lee o cambia datos no viene de un Origen_Autorizado, THEN THE API SHALL rechazarla, aunque sea una petición «simple» (formulario multipart o GET) que el navegador envía sin consulta previa.
+2. IF una petición que lee o cambia datos no viene de un Origen_Autorizado, THEN THE API SHALL rechazarla, aunque sea una petición «simple» (formulario multipart o GET) que el navegador envía sin consulta previa. Excepción (aprobada por el dueño el 19/11/2026): Chrome no envía `Origin` en las lecturas de una extensión con permiso de host y las marca `Sec-Fetch-Site: none`; THE API SHALL aceptar esa petición solo si además trae la credencial local válida (una página web no puede producir esa combinación).
 3. THE API SHALL exigir en toda ruta de datos una credencial local que solo pueden obtener el portal de la App_Sauri y la extensión emparejada. Una página de otro sitio SHALL NOT poder obtenerla.
 4. THE pruebas SHALL demostrar que una página servida desde otro origen en el mismo Mac no puede listar reuniones, subir una grabación, descargar un archivo ni cambiar un ajuste.
 
