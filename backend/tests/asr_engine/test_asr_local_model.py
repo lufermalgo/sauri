@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import importlib.util
+import logging
 import sys
 import time
 from contextlib import nullcontext
@@ -42,10 +43,33 @@ SPEC.loader.exec_module(native)
 DEFAULT = catalog_entry("asr-big", "transcription", "ggml-big.bin", BIG, default=True, rank=2)
 SMALLER = catalog_entry("asr-small", "transcription", "ggml-small.bin", SMALL)
 FAKE_WHISPER = """#!{python}
-import json, sys
+import json, os, sys
 argv = sys.argv
+model = argv[argv.index('-m') + 1]
 with open({log!r}, 'a') as log:
-    log.write(argv[argv.index('-m') + 1] + '\\n')
+    log.write(model + '\\n')
+with open(model, 'rb') as weights:
+    head = weights.read(10)
+# The stderr lines below are the ones the pinned whisper-cli (v1.9.5) prints in each case.
+if head == b'unloadable':  # bad magic: cli.cpp exits 3
+    sys.stderr.write('whisper_model_load: loading model\\nwhisper_model_load: invalid model data (bad magic)\\n'
+                     'whisper_init_with_params_no_state: failed to load model\\n'
+                     'error: failed to initialize whisper context\\n')
+    sys.exit(3)
+if head == b'assertfail':  # another architecture: GGML_ASSERT inside whisper_model_load aborts
+    sys.stderr.write('whisper_model_load: loading model\\n'
+                     'src/ggml.c:1467: GGML_ASSERT(wtype != GGML_TYPE_COUNT) failed\\n')
+    sys.stderr.flush()
+    os.abort()
+if head == b'badprocess':  # loaded, then inference failed: cli.cpp exits 10
+    sys.stderr.write("whisper_model_load: model size = 1 MB\\nmain: processing 'audio.wav' (32000 samples, 2.0 sec)\\n"
+                     'main: failed to process audio\\n')
+    sys.exit(10)
+if head == b'crashlater':  # loaded, then an assert during inference aborts
+    sys.stderr.write("whisper_model_load: model size = 1 MB\\nmain: processing 'audio.wav' (32000 samples, 2.0 sec)\\n"
+                     'src/ggml.c:1467: GGML_ASSERT(x) failed\\n')
+    sys.stderr.flush()
+    os.abort()
 document = {{"result": {{"language": "en"}}, "transcription": [{{
     "text": " hello", "offsets": {{"from": 250, "to": 1500}},
     "tokens": [{{"text": " hello", "id": 1, "p": 0.9, "offsets": {{"from": 500, "to": 700}}}}],
@@ -202,3 +226,78 @@ async def test_a_custom_model_that_cannot_be_used_transcribes_with_the_default(s
         assert response.status_code == 200, response.text
         assert response.json()["engine"]["model"] == native.MODEL_ID
     assert setup.models_used() == [str(setup.legacy)] * 2
+
+
+# Excerpts of what the pinned whisper-cli (v1.9.5) printed for each file (run by hand, 2026-11-19).
+REAL_BAD_MAGIC = (
+    "whisper_model_load: loading model\nwhisper_model_load: invalid model data (bad magic)\n"
+    "whisper_init_with_params_no_state: failed to load model\nerror: failed to initialize whisper context\n"
+)
+REAL_KV_CACHE = (
+    "whisper_kv_cache_init: failed to allocate memory for the kv cache\n"
+    "whisper_init_state: whisper_kv_cache_init() failed for self-attention cache\n"
+    "error: failed to initialize whisper context\n"
+)
+REAL_ASSERT = "whisper_model_load: loading model\nsrc/ggml.c:1467: GGML_ASSERT(wtype != GGML_TYPE_COUNT) failed\n"
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stderr", "expected"),
+    [
+        (3, REAL_BAD_MAGIC, True),
+        (3, REAL_BAD_MAGIC.encode(), True),
+        (-6, REAL_KV_CACHE, True),  # printed the error, then aborted while cleaning up
+        (-6, REAL_ASSERT, True),
+        (3, "error: model file not found 'x.bin'\n", True),
+        (1, REAL_ASSERT, False),  # no abort and no classified line: unknown, not a load failure
+        (-6, "whisper_model_load: model size = 1 MB\nmain: processing 'a.wav' (1 samples)\nGGML_ASSERT(x)\n", False),
+        (10, "main: processing 'a.wav' (1 samples)\nmain: failed to process audio\n", False),
+        (-9, "", False),
+        (3, None, False),
+    ],
+)
+def test_whisper_load_failures_are_told_apart_from_other_failures(
+    returncode: int, stderr: str | bytes | None, expected: bool
+) -> None:
+    assert native.whisper_load_failed(returncode, stderr) is expected
+
+
+@pytest.mark.parametrize("head", [b"unloadable", b"assertfail"])
+async def test_a_custom_model_whisper_cannot_load_falls_back_once_to_the_default(
+    setup: Setup, head: bytes, caplog: pytest.LogCaptureFixture
+) -> None:
+    model_id, final = install_custom(setup.models, "transcription", head + SMALL, "ggml-broken.bin")
+    with caplog.at_level(logging.WARNING, logger="asr-engine-native"):
+        response = await setup.transcribe(route_header(f"local:{model_id}", process="transcription"))
+    assert response.status_code == 200, response.text
+    assert response.json()["engine"]["model"] == native.MODEL_ID
+    assert setup.models_used() == [str(final), str(setup.legacy)]
+    assert f"custom_model_load_failed model={model_id} fallback=default" in caplog.text
+
+
+@pytest.mark.parametrize("head", [b"badprocess", b"crashlater"])
+async def test_a_custom_model_that_fails_after_loading_is_not_retried(setup: Setup, head: bytes) -> None:
+    model_id, final = install_custom(setup.models, "transcription", head + SMALL, "ggml-flaky.bin")
+    response = await setup.transcribe(route_header(f"local:{model_id}", process="transcription"))
+    assert response.status_code == 500 and response.json() == {"detail": "engine_failed"}
+    assert setup.models_used() == [str(final)]
+
+
+async def test_a_catalog_model_that_cannot_load_is_still_engine_failed(
+    setup: Setup, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    broken = b"unloadable" + SMALL[10:]
+    entry = catalog_entry("asr-small", "transcription", "ggml-small.bin", broken)
+    monkeypatch.setenv("SAURI_MODEL_CATALOG", str(write_catalog(tmp_path / "broken.json", [DEFAULT, entry])))
+    small = install_model(setup.models, entry, broken)
+    response = await setup.transcribe(route_header("local:asr-small", process="transcription"))
+    assert response.status_code == 500 and response.json() == {"detail": "engine_failed"}
+    assert setup.models_used() == [str(small)]
+
+
+async def test_the_default_failing_after_the_fallback_is_engine_failed_without_a_loop(setup: Setup) -> None:
+    setup.legacy.write_bytes(b"unloadable" + BIG[10:])
+    model_id, final = install_custom(setup.models, "transcription", b"unloadable" + SMALL, "ggml-broken.bin")
+    response = await setup.transcribe(route_header(f"local:{model_id}", process="transcription"))
+    assert response.status_code == 500 and response.json() == {"detail": "engine_failed"}
+    assert setup.models_used() == [str(final), str(setup.legacy)]
