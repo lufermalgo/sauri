@@ -894,8 +894,15 @@ async def test_engine_failures_are_persisted_without_leaking_content(
     (500, {"detail": "no_speech"}, "engine_failed"),
     (422, {"detail": ["no_speech"]}, "engine_failed"),
     (422, ["no_speech"], "engine_failed"),
+    # The active local model's own refusals: no other model ran, so the cause says what the user can do.
+    (409, {"detail": "model_not_installed"}, "local_model_missing"),
+    (409, {"detail": "model_not_verified"}, "local_model_missing"),
+    (422, {"detail": "language_not_supported"}, "language_not_supported"),
+    (500, {"detail": "model_failed"}, "local_model_failed"),
+    (503, {"detail": "model_failed"}, "local_model_failed"),
+    (422, {"detail": "model_failed"}, "engine_failed"),
 ])
-async def test_only_the_engine_no_speech_result_maps_to_the_no_speech_cause(
+async def test_engine_refusals_map_to_their_failure_causes(
     session_factory, status, body, cause,
 ):
     meeting_id = str(uuid.uuid4())

@@ -61,7 +61,10 @@
     "engine_contract_mismatch": "The transcription engine returned an incompatible format.",
     "invalid_response": "The transcription engine returned an invalid response.",
     "unknown": "Processing failed for an unknown reason.",
-    "processing_interrupted": "Processing was interrupted before it finished."
+    "processing_interrupted": "Processing was interrupted before it finished.",
+    "local_model_missing": "The transcription model active on this Mac is missing. Install it or choose another one in Settings → Engines and models, then regenerate the transcript.",
+    "local_model_failed": "The active transcription model couldn't handle this recording. Regenerate the transcript, or choose Whisper in Settings → Engines and models and regenerate it.",
+    "language_not_supported": "The active transcription model doesn't support this recording's language. Choose Whisper in Settings → Engines and models and regenerate the transcript."
   },
   "retry": "Try again",
   "retrying": "Trying again…",

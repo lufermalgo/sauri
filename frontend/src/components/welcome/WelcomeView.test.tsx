@@ -18,11 +18,13 @@ interface Host {
   /** A job the host is already running when the page opens (the startup check). */
   startupJob?: boolean;
   memory?: 8 | 16 | 24;
+  /** Ids already installed when the page opens (a Mac set up before this version). */
+  preinstalled?: string[];
 }
 
 /** A fake core: installs finish after two looks and the listing then shows the file as installed. */
 function stubHost(host: Host) {
-  const installed = new Set<string>();
+  const installed = new Set<string>(host.preinstalled ?? []);
   const jobs = new Map<string, { job: LocalJob; looks: number }>();
   let active: string | null = host.startupJob ? "startup" : null;
   if (host.startupJob) {
@@ -103,15 +105,15 @@ describe("WelcomeView", () => {
     expect(screen.getByText(t("welcome:step", { n: 1 }))).toBeInTheDocument();
     const continueButton = screen.getByRole("button", { name: t("welcome:models.continue") });
     expect(continueButton).toBeDisabled();
-    expect(await screen.findByText(t("welcome:models.installing", { what: t("welcome:models.items.transcription"), n: 1, count: 5 }))).toBeInTheDocument();
+    expect(await screen.findByText(t("welcome:models.installing", { what: t("welcome:models.items.transcription"), n: 1, count: 3 }))).toBeInTheDocument();
     expect(screen.getByRole("progressbar", { name: t("welcome:models.progressLabel") })).toBeInTheDocument();
     // No choice to make: no install buttons, no model names, no list of options.
     expect(screen.queryAllByRole("button").map((button) => button.textContent)).toEqual([t("welcome:models.continue")]);
     expect(screen.queryByText(new RegExp(PARAKEET))).toBeNull();
 
     expect(await screen.findByText(t("welcome:models.ready"))).toBeInTheDocument();
-    expect(installs(host).map((call) => call.split("/").at(-2))).toEqual([PARAKEET, WHISPER, VAD, LARGE_LLM, DIAR]);
-    expect([...installed]).toEqual([PARAKEET, WHISPER, VAD, LARGE_LLM, DIAR]);
+    expect(installs(host).map((call) => call.split("/").at(-2))).toEqual([PARAKEET, LARGE_LLM, DIAR]);
+    expect([...installed]).toEqual([PARAKEET, LARGE_LLM, DIAR]);
     // On 16 GB every process already runs its recommended model with `local:default`: nothing to save.
     expect(host.calls.some((call) => call.startsWith("PUT"))).toBe(false);
 
@@ -137,8 +139,18 @@ describe("WelcomeView", () => {
     stubHost(host);
     render(<WelcomeView onFinished={vi.fn()} pollIntervalMs={POLL_MS} />);
     expect(await screen.findByText(t("welcome:models.ready"))).toBeInTheDocument();
-    expect(installs(host).map((call) => call.split("/").at(-2))).toEqual([PARAKEET, WHISPER, VAD, SMALL_LLM, DIAR]);
+    expect(installs(host).map((call) => call.split("/").at(-2))).toEqual([PARAKEET, SMALL_LLM, DIAR]);
     expect(host.calls).toContain("PUT /api/v1/engines/processes/summary");
+  });
+
+  it("keeps Whisper and its voice detector on a Mac installed before, and installs only what is missing", async () => {
+    const host: Host = { calls: [], paired: [false], preinstalled: [PARAKEET, WHISPER, VAD] };
+    const installed = stubHost(host);
+    render(<WelcomeView onFinished={vi.fn()} pollIntervalMs={POLL_MS} />);
+    expect(await screen.findByText(t("welcome:models.ready"))).toBeInTheDocument();
+    expect(installs(host).map((call) => call.split("/").at(-2))).toEqual([LARGE_LLM, DIAR]);
+    expect(host.calls.some((call) => call.startsWith("DELETE"))).toBe(false);
+    expect([...installed]).toEqual([PARAKEET, WHISPER, VAD, LARGE_LLM, DIAR]);
   });
 
   it("waits for a job the core is already running, then installs", async () => {
@@ -147,7 +159,7 @@ describe("WelcomeView", () => {
     render(<WelcomeView onFinished={vi.fn()} pollIntervalMs={POLL_MS} />);
     expect(await screen.findByText(t("welcome:models.waiting"))).toBeInTheDocument();
     expect(await screen.findByText(t("welcome:models.ready"))).toBeInTheDocument();
-    expect(installs(host)).toHaveLength(5);
+    expect(installs(host)).toHaveLength(3);
   });
 
   it("says plainly when the download fails without internet, keeps what finished and retries the rest", async () => {
@@ -155,13 +167,13 @@ describe("WelcomeView", () => {
     const installed = stubHost(host);
     render(<WelcomeView onFinished={vi.fn()} pollIntervalMs={POLL_MS} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(t("welcome:models.failed.offline"));
-    expect([...installed]).toEqual([PARAKEET, WHISPER, VAD]);
+    expect([...installed]).toEqual([PARAKEET]);
     expect(screen.getByRole("button", { name: t("welcome:models.skip") })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: t("welcome:models.retry") }));
     expect(await screen.findByText(t("welcome:models.ready"))).toBeInTheDocument();
     // The retry downloads only what was missing.
-    expect(installs(host).map((call) => call.split("/").at(-2))).toEqual([PARAKEET, WHISPER, VAD, LARGE_LLM, LARGE_LLM, DIAR]);
+    expect(installs(host).map((call) => call.split("/").at(-2))).toEqual([PARAKEET, LARGE_LLM, LARGE_LLM, DIAR]);
   });
 
   it("can continue without finishing when the core cannot be reached", async () => {
@@ -185,7 +197,7 @@ describe("WelcomeView", () => {
     expect(screen.getByText(t("welcome:step", { n: 1 }))).toBeInTheDocument();
     // Coming back finds everything installed and does not download again.
     await screen.findByText(t("welcome:models.ready"));
-    expect(installs(host)).toHaveLength(5);
+    expect(installs(host)).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: t("welcome:models.continue") }));
     fireEvent.click(screen.getByRole("button", { name: t("welcome:finish") }));
     await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1));

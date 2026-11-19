@@ -11,6 +11,8 @@ export interface CatalogModel {
   id: string;
   process: string;
   kind: string;
+  /** The engine that runs it; an auxiliary file (the voice detector) serves the models of its own engine only. */
+  engine?: string;
   size?: number;
   min_ram_gib: number;
   min_macos?: number;
@@ -81,12 +83,15 @@ export function checkHardware(input: HardwareInput): HardwareReport {
       warnings.push({ code: "memory_none", gib: memoryGib, needed, process });
       continue;
     }
+    // One model per process, like host-engine's setup plan: no second model is installed behind it.
     downloads += model.size ?? 0;
-    // The first run also installs the process default behind a preferred model: its engine falls back to it.
-    if (model.preferred) downloads += candidates.find((entry) => entry.default)?.size ?? 0;
+    // Plus the auxiliary files of its own engine (the voice detector comes with Whisper, not with Parakeet).
+    for (const entry of input.models) {
+      if (entry.kind === "auxiliary" && entry.default && entry.process === process && entry.engine === model.engine) {
+        downloads += entry.size ?? 0;
+      }
+    }
   }
-  // Auxiliary files every installation needs (the voice detector).
-  for (const entry of input.models) if (entry.kind === "auxiliary" && entry.default) downloads += entry.size ?? 0;
   const fullNeed = Math.max(0, ...models.map((entry) => entry.min_ram_gib));
   if (fullNeed > memoryGib && !warnings.some((warning) => warning.code === "memory_none")) {
     warnings.push({ code: "memory_lighter", gib: memoryGib, needed: fullNeed, missing: Math.ceil(fullNeed - memoryGib) });

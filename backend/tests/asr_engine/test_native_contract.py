@@ -62,6 +62,10 @@ def configured(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(native, "s3_client", FakeS3())
     monkeypatch.setattr(native, "KeepAwake", nullcontext)
     monkeypatch.setattr(native.tempfile, "tempdir", str(tmp_path))
+    # The built-in Whisper model must be on disk for a Whisper request (startup hashes it; see the startup tests).
+    model = tmp_path / "ggml-synthetic.bin"
+    model.write_bytes(b"synthetic model")
+    monkeypatch.setattr(native, "ASR_MODEL_PATH", model)
     def normalize(source, dest, **kwargs):
         dest.write_bytes(b"normalized")
         return SimpleNamespace(audio_ms=2000, seconds=0.01)
@@ -482,7 +486,7 @@ async def test_startup_rejects_invalid_default_prompt_switch(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tamper", [None, "model", "binary", "missing_provenance", "provenance"])
+@pytest.mark.parametrize("tamper", [None, "model", "missing_model", "binary", "missing_provenance", "provenance"])
 async def test_startup_verifies_assets_once(monkeypatch, tmp_path, tamper):
     from asr_assets import binary_record, load_manifest, provenance_path
 
@@ -507,6 +511,8 @@ async def test_startup_verifies_assets_once(monkeypatch, tmp_path, tamper):
     path.write_text(json.dumps(binary_record(binary, load_manifest())))
     if tamper == "model":
         model.write_bytes(b"x" * model.stat().st_size)
+    elif tamper == "missing_model":
+        model.unlink()
     elif tamper == "binary":
         binary.write_bytes(b"tampered binary")
     elif tamper == "missing_provenance":
@@ -515,7 +521,16 @@ async def test_startup_verifies_assets_once(monkeypatch, tmp_path, tamper):
         path.write_text("{}")
     calls = []
     monkeypatch.setattr(native.boto3, "client", lambda *args, **kwargs: calls.append(True) or FakeS3())
-    if tamper:
+    if tamper in ("model", "missing_model"):
+        # A Whisper file belongs to Whisper: without it (or with another file) only Whisper requests are refused.
+        async with native.lifespan(native.app):
+            assert calls == [True]
+            expected = "model_not_verified" if tamper == "model" else "model_not_installed"
+            assert native._file_problem(model) == expected
+            with pytest.raises(native.LocalModelError) as refused:
+                native._select_engine(None, "es")
+            assert (refused.value.status, refused.value.code) == (409, expected)
+    elif tamper:
         with pytest.raises(RuntimeError, match="asset verification failed"):
             async with native.lifespan(native.app):
                 pytest.fail("Tampered assets must not start")
@@ -524,6 +539,7 @@ async def test_startup_verifies_assets_once(monkeypatch, tmp_path, tamper):
         async with native.lifespan(native.app):
             assert calls == [True]
             assert native.s3_client is not None
+            assert native._file_problem(model) is None
         assert native.s3_client is None
 
 
@@ -820,7 +836,8 @@ async def test_local_startup_does_not_create_s3(monkeypatch, tmp_path):
     from unittest.mock import Mock
 
     monkeypatch.setenv("SAURI_RECORDINGS_DIR", str(tmp_path))
-    monkeypatch.setattr(native, "verify_assets", lambda *a: None)
+    monkeypatch.setattr(native, "verify_runtime", lambda *a: {})
+    monkeypatch.setattr(native, "_check_whisper_files", lambda *a: None)
     monkeypatch.setattr(native, "_parakeet_default", lambda: None)
     client = Mock(side_effect=AssertionError("must not initialize S3"))
     monkeypatch.setattr(native.boto3, "client", client)

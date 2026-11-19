@@ -122,11 +122,26 @@ def verify_provenance(record: dict[str, str], path: Path, *, allow_upgrade: bool
         raise ValueError("ASR provenance mismatch")
 
 
-def verify_assets(model: Path, cli: Path) -> None:
+def verify_runtime(cli: Path) -> dict[str, Any]:
+    """Check the whisper.cpp binaries against their recorded provenance and return the manifest.
+
+    Model files are not part of it: each one belongs to the model that uses it and is checked with ``file_problem``,
+    so an engine whose active model is Parakeet starts without any Whisper file on disk.
+    """
     manifest = load_manifest()
-    verify_model(model, manifest)
     record = binary_record(cli, manifest)
     if vad_enabled():
-        verify_model(vad_model_path(), manifest["vad"])
         record.update(vad_binary_record(vad_cli_path(), manifest["vad"]))
     verify_provenance(record, provenance_path())
+    return manifest
+
+
+def file_problem(path: Path, metadata: dict[str, Any]) -> str | None:
+    """``None`` for the pinned file, else the request code: ``model_not_installed`` or ``model_not_verified``."""
+    try:
+        verify_model(path, metadata)
+    except FileNotFoundError:
+        return "model_not_installed"
+    except (OSError, ValueError):
+        return "model_not_verified"
+    return None

@@ -7,6 +7,9 @@ Subscribes to the "transcribe" topic of the JobQueue. For each message:
 4. If there are no segments -> transitions to "failed" with cause "engine_failure".
 5. If the engine reports no detected speech -> "failed" with cause "no_speech_detected"
    (no retry offered, no diarization, no summary).
+6. A local engine that refuses the request for its one model says why: the active model's files are missing
+   ("local_model_missing"), it cannot serve the language ("language_not_supported") or it failed on this
+   recording ("local_model_failed"). No other model transcribes it instead; the user retries or chooses another.
 
 Requirements: 3.1, 3.2, 3.4, 3.5, 3.6, 3.7
 """
@@ -60,17 +63,29 @@ from app.transcription.repository import TranscriptRepository, replace_transcrip
 logger = logging.getLogger(__name__)
 
 NO_SPEECH_CAUSE = "no_speech_detected"
+# Local engine refusals (HTTP status, ``detail``) and the failure cause each one records.
+LOCAL_ENGINE_CAUSES: dict[tuple[int, str], str] = {
+    (422, "no_speech"): NO_SPEECH_CAUSE,
+    (409, "model_not_installed"): "local_model_missing",
+    (409, "model_not_verified"): "local_model_missing",
+    (422, "language_not_supported"): "language_not_supported",
+    (500, "model_failed"): "local_model_failed",
+    (503, "model_failed"): "local_model_failed",
+}
 
 
-def _is_no_speech_response(exc: httpx.HTTPError) -> bool:
-    """True when the engine reported that the recording holds no detectable speech."""
-    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 422:
-        return False
+def _local_engine_cause(exc: httpx.HTTPError) -> str:
+    """The failure cause of an engine HTTP error: a known refusal, else the generic ``engine_failed``."""
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return "engine_failed"
     try:
         body = exc.response.json()
     except ValueError:
-        return False
-    return isinstance(body, dict) and body.get("detail") == "no_speech"
+        return "engine_failed"
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if not isinstance(detail, str):
+        return "engine_failed"
+    return LOCAL_ENGINE_CAUSES.get((exc.response.status_code, detail), "engine_failed")
 
 
 async def _publish_diarization(
@@ -266,7 +281,6 @@ async def _run_transcription(
                     return await call_with_fallback(resolved, attempt, _engine_names)
 
         result, provenance = await scope.guard(run_engine())
-        provenance = _with_local_fallback(provenance, result)
         if type(result.contract_version) is not int or result.contract_version != 2:
             raise EngineContractError("Unsupported ASR contract_version")
         if result.language == "auto":
@@ -286,7 +300,7 @@ async def _run_transcription(
         elif isinstance(exc, TimeoutError):
             cause = "engine_timeout"
         elif isinstance(exc, httpx.HTTPError):
-            cause = NO_SPEECH_CAUSE if _is_no_speech_response(exc) else "engine_failed"
+            cause = _local_engine_cause(exc)
         else:
             cause = "invalid_response"
         elapsed_seconds = time.monotonic() - started_at
@@ -446,14 +460,6 @@ async def _run_transcription(
 def _with_capabilities(provenance: Provenance, capabilities: ASRCapabilities) -> Provenance:
     """An engine that is not local (the legacy cloud provider) sent the audio out whatever the route said."""
     return provenance if capabilities.is_local else replace(provenance, external=True)
-
-
-def _with_local_fallback(provenance: Provenance, result: TranscriptionResult) -> Provenance:
-    """The gateway moved this audio from Parakeet to whisper.cpp: keep its reason (a closed code) as provenance."""
-    reason = result.diagnostics.get("engine_fallback_reason")
-    if provenance.fallback_reason is None and isinstance(reason, str) and 0 < len(reason) <= 64:
-        return replace(provenance, fallback_reason=reason)
-    return provenance
 
 
 def _engine_names(result: TranscriptionResult) -> tuple[str | None, str | None]:

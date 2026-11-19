@@ -12,8 +12,9 @@ that leaves, a timeout or an engine shutdown kills it. Nothing here downloads an
 
 The CLI output is converted to the contract-v2 words and segments and then judged by ``sanity_check``: language
 drift (the stock v3 model slips into English), empty output, repetition loops and broken timestamps. A rejected
-output is not an error: the gateway runs the same audio through the whisper.cpp path and records why
-(``engine_fallback_reason``). Thresholds come from the environment with the safe defaults below.
+output fails the transcription (``ParakeetRejected``, mapped by ``failure``): Parakeet is the one model of the
+request and no other model transcribes the audio again. The user can retry, or choose Whisper in Settings and
+regenerate. Thresholds come from the environment with the safe defaults below.
 
 Logs carry reason codes and counts only, never transcript text or the CLI's stderr.
 """
@@ -47,7 +48,7 @@ CATALOG_ENGINE: Final = "fluidaudio"
 MODEL_ID: Final = "parakeet-tdt-0.6b-v3-ultra-coreml"
 DEVICE: Final = "coreml-ane"
 BINARY_NAME: Final = "fluidaudiocli"
-# The 25 languages of Parakeet-TDT-0.6B-v3 (model card). Any other language goes to Whisper.
+# The 25 languages of Parakeet-TDT-0.6B-v3 (model card). Any other language is refused (``language_not_supported``).
 SUPPORTED_LANGUAGES: Final = frozenset(
     [
         "en",
@@ -131,7 +132,7 @@ REPEAT_MIN_WORDS: Final = 12
 MIN_WORDS_FOR_RATE: Final = 40
 TOKEN_STRIP: Final = re.compile(r"^\W+|\W+$")
 
-# Reason codes recorded as ``engine_fallback_reason`` (at most 64 characters, content-free).
+# Reason codes of a refused or rejected run (content-free; logged, never returned with any text).
 REASON_LANGUAGE_AUTO: Final = "parakeet_language_auto"
 REASON_LANGUAGE_UNSUPPORTED: Final = "parakeet_language_unsupported"
 REASON_UNAVAILABLE: Final = "parakeet_unavailable"
@@ -144,12 +145,26 @@ REASON_REPETITION: Final = "parakeet_repetition"
 REASON_TIMESTAMPS: Final = "parakeet_timestamps"
 
 
-class ParakeetRejected(Exception):  # noqa: N818 - a control signal: the audio goes to Whisper
-    """Parakeet cannot or should not answer this audio; ``reason`` is the content-free code to record."""
+class ParakeetRejected(Exception):  # noqa: N818 - the request fails with the code ``failure`` gives
+    """Parakeet cannot or should not answer this audio; ``reason`` is the content-free code to log."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+def serves_language(language: str) -> bool:
+    """Parakeet needs a known language of its 25 (it does not detect the language: ``auto`` is refused)."""
+    return language in SUPPORTED_LANGUAGES
+
+
+def failure(reason: str) -> tuple[int, str]:
+    """The HTTP status and the stable code a request gets when Parakeet refused or rejected its audio."""
+    if reason in (REASON_LANGUAGE_AUTO, REASON_LANGUAGE_UNSUPPORTED):
+        return 422, "language_not_supported"
+    if reason == REASON_UNAVAILABLE:
+        return 503, "model_failed"
+    return 500, "model_failed"
 
 
 @dataclass(frozen=True)
@@ -196,7 +211,10 @@ def guard_config() -> GuardConfig:
 
 
 def default_engine() -> str:
-    """``auto`` (Parakeet when it is installed and healthy, else Whisper) or ``whisper`` (rollback switch)."""
+    """``auto`` (``local:default`` is Parakeet when it is installed and healthy, else Whisper) or ``whisper``.
+
+    It decides which model ``local:default`` means before a request runs; it never moves a running request.
+    """
     value = os.environ.get("SAURI_ASR_DEFAULT_ENGINE", "auto")
     if value not in {"auto", "whisper"}:
         raise ValueError("SAURI_ASR_DEFAULT_ENGINE must be auto or whisper")
@@ -475,11 +493,11 @@ def transcribe(
     deadline_left_s: float,
     config: GuardConfig | None = None,
 ) -> ParakeetResult:
-    """Transcribe ``wav`` or raise ``ParakeetRejected`` (the caller falls back to Whisper)."""
+    """Transcribe ``wav`` or raise ``ParakeetRejected`` (the request fails with ``failure(reason)``)."""
     config = config or guard_config()
     if language == "auto":
         raise ParakeetRejected(REASON_LANGUAGE_AUTO)  # Parakeet does not detect the language
-    if language not in SUPPORTED_LANGUAGES:
+    if not serves_language(language):
         raise ParakeetRejected(REASON_LANGUAGE_UNSUPPORTED)
     verify_binary()
     cancellation.checkpoint()
@@ -571,8 +589,10 @@ __all__ = [
     "ParakeetResult",
     "default_engine",
     "engine_ready",
+    "failure",
     "guard_config",
     "is_warm",
+    "serves_language",
     "transcribe",
     "warm",
 ]

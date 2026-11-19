@@ -310,7 +310,7 @@ export interface LocalModel {
   managed_by: string | null;
   /** Version of a component; null for models. */
   version?: string | null;
-  /** `local:default` means this model when it is installed and its engine is ready; the `default` model is the fallback. */
+  /** `local:default` means this model when it is installed and its engine is ready, else the `default` model (decided once per request). */
   preferred?: boolean;
   /** Id of the managed engine this model cannot run without (Parakeet needs the FluidAudio CLI). */
   needs?: string | null;

@@ -23,13 +23,13 @@ export const DIAR = "diar-runtime";
 export function desktopListing(memoryGib: 8 | 16 | 24): LocalModelList {
   const summary = memoryGib >= 16 ? LARGE_LLM : SMALL_LLM;
   const models = [
-    entry(WHISPER, "transcription", 574_041_195, { default: true }),
-    entry(PARAKEET, "transcription", 632_314_500, { preferred: true, needs: "fluidaudio-cli" }),
+    entry(WHISPER, "transcription", 574_041_195, { default: true, engine: "whisper.cpp" }),
+    entry(PARAKEET, "transcription", 632_314_500, { preferred: true, needs: "fluidaudio-cli", engine: "fluidaudio" }),
     entry("fluidaudio-cli", "transcription", null, {
       kind: "managed_engine", state: "managed", availability: "installed", location: "managed", install: null,
       managed_by: "scripts/engines/install-parakeet-engine.sh",
     }),
-    entry(VAD, "transcription", 885_098, { kind: "auxiliary", default: true }),
+    entry(VAD, "transcription", 885_098, { kind: "auxiliary", default: true, engine: "whisper.cpp" }),
     entry(LARGE_LLM, "summary", 5_680_522_464, { default: true, min_ram_gib: 16 }),
     entry(SMALL_LLM, "summary", 2_740_937_888, { min_ram_gib: 8 }),
     entry(DIAR, "diarization", 251_532_143, { kind: "component", default: true }),
@@ -41,7 +41,8 @@ export function desktopListing(memoryGib: 8 | 16 | 24): LocalModelList {
     catalog_version: 1,
     models,
     recommendations: { transcription: rec("transcription", PARAKEET), summary: rec("summary", summary), diarization: rec("diarization", DIAR) },
-    setup_plan: [PARAKEET, WHISPER, VAD, summary, DIAR],
+    // One model per process: Parakeet comes alone (Whisper and its voice detector stay installable in Settings).
+    setup_plan: [PARAKEET, summary, DIAR],
     active_job: null,
     active: {},
     adoption: null,

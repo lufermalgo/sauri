@@ -39,8 +39,12 @@ catalog ``tree_sha256`` and moved to ``<components>/<component>`` with ``os.repl
 
 "In use" check (``in_use_processes``): the process settings layer records the chosen local model of
 each process in ``<models>/selection.json`` (``{"transcription": "<id>", "summary": "<id>"}``). A
-process without an entry runs its catalog default, because the gateways fall back to it; auxiliary
-files (the VAD model) are in use by their process. An unreadable marker blocks removal (fail closed).
+process without an entry runs ``local:default`` (its preferred or default model), so both are in use;
+auxiliary files (the VAD model) are in use by their process. An unreadable marker blocks removal (fail closed).
+
+Companions: installing a model also installs the default auxiliary files of its own engine that are missing
+(``recommend.companions``: the voice detector comes with a whisper.cpp model, never with Parakeet), in the same
+job and before the model, so a model chosen later in Settings can run as soon as its install is done.
 """
 
 from __future__ import annotations
@@ -84,6 +88,7 @@ from sauri_engine_common.recommend import (
     CatalogError,
     CatalogModel,
     HardwareProfile,
+    companions,
     load_catalog,
     recommend,
     setup_plan,
@@ -802,15 +807,25 @@ class LocalModelService:
             free = disk_free_bytes(target_dir)
         except OSError:
             raise LocalModelError(503, "models_dir_unavailable") from None
+        extra = self._missing_companions(model)
+        needed += sum(self._disk_required(companion) for companion in extra)
         if free < max(needed, 0):
             raise LocalModelError(507, "insufficient_disk", needed_bytes=needed, free_bytes=free)
-        job = Job(id=uuid.uuid4().hex, model_id=model.id, type="install", bytes_total=model.size)
+        total = model.size + sum(companion.size or 0 for companion in extra)
+        job = Job(id=uuid.uuid4().hex, model_id=model.id, type="install", bytes_total=total)
         logger.info("local_model_install_started model=%s", model.id)
         if model.kind == "component":
             body = self._install_component(job, model)
         else:
-            body = self._install_bundle(job, model) if model.bundle else self._install(job, model)
+            body = self._install_with_companions(job, model, extra)
         return self._start(job, self._run(job, body, part))
+
+    def _missing_companions(self, model: CatalogModel) -> list[CatalogModel]:
+        """The auxiliary files ``model`` runs with that are absent (a present one is left to ``verify``)."""
+        return [
+            companion for companion in companions(model, self.catalog)
+            if companion.downloadable and not companion.bundle and self._state(companion)["state"] == "not_installed"
+        ]
 
     def verify(self, model_id: str) -> Job:
         model = self._downloadable(model_id)
@@ -969,21 +984,33 @@ class LocalModelService:
         if not hmac.compare_digest(sink.sha.hexdigest(), sha256):
             raise JobError("hash_mismatch")
 
-    async def _install(self, job: Job, model: CatalogModel) -> None:
+    async def _install_with_companions(self, job: Job, model: CatalogModel, extra: list[CatalogModel]) -> None:
+        """Install the missing companions, then the model, under one job whose progress covers all of them."""
+        base = 0
+        for companion in extra:
+            assert companion.size is not None
+            try:
+                await self._install(job, companion, base)
+            except BaseException:
+                self._discard_part(self._paths(companion)[1])  # ``_run`` only knows the model's own part
+                raise
+            base += companion.size
+        await (self._install_bundle(job, model, base) if model.bundle else self._install(job, model, base))
+
+    async def _install(self, job: Job, model: CatalogModel, base: int = 0) -> None:
         assert model.size is not None and model.sha256 is not None
         final, part, manifest = self._paths(model)
         async with self._client() as client:
-            await self._download_file(client, job, model, None, model.size, model.sha256, part)
+            await self._download_file(client, job, model, None, model.size, model.sha256, part, base)
         os.replace(part, final)
         self._write_manifest(model, final.stat(), manifest, "installed")
         job.result = "installed"
 
-    async def _install_bundle(self, job: Job, model: CatalogModel) -> None:
+    async def _install_bundle(self, job: Job, model: CatalogModel, base: int = 0) -> None:
         """Download every file of a bundle into ``<dir>.part/`` and move it into place when all of them match."""
         final, part, manifest = self._paths(model)
         if os.path.lexists(part) and _directory(part) is None:
             raise JobError("unsafe_path")
-        base = 0
         async with self._client() as client:
             for item in model.files:
                 target = part / item.path

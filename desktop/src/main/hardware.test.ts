@@ -25,8 +25,21 @@ describe("hardware check", () => {
     const report = checkHardware(input());
     expect(report.problems).toEqual([]);
     expect(report.warnings).toEqual([]);
-    // Parakeet + its Whisper fallback + Qwen 9B + the voice detector + the speaker runtime, with the 20 % margin.
-    expect(report.neededBytes).toBe(Math.ceil((632314500 + 574041195 + 5680522464 + 885098 + 716.6e6) * 1.2));
+    // Parakeet + Qwen 9B + the speaker runtime, with the 20 % margin: no Whisper and no voice detector behind it.
+    expect(report.neededBytes).toBe(Math.ceil((632314500 + 5680522464 + 716.6e6) * 1.2));
+  });
+
+  it.each([
+    [8, 632314500 + 2740937888],
+    [16, 632314500 + 5680522464],
+    [24, 632314500 + 5680522464],
+  ])("plans one transcription model on a %i GB Mac", (gib, models) => {
+    expect(checkHardware(input({ memoryBytes: gib * GIB })).neededBytes).toBe(Math.ceil((models + 716.6e6) * 1.2));
+  });
+
+  it("adds the voice detector when Whisper is the transcription model (a macOS without Parakeet)", () => {
+    const report = checkHardware(input({ macosVersion: "13.6" }));
+    expect(report.neededBytes).toBe(Math.ceil((574041195 + 885098 + 5680522464 + 716.6e6) * 1.2));
   });
 
   it("blocks an Intel Mac and a macOS older than the minimum", () => {

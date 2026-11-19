@@ -417,13 +417,49 @@ export function ensureParakeetProvenance(ctx: ServiceContext): boolean {
   return false;
 }
 
+/**
+ * True when `local:default` of transcription means Parakeet on this Mac: the catalog's preferred model is installed
+ * (its folder and an `installed` manifest from host-engine, which checked every file) and the runtime's
+ * fluidaudiocli was vouched for (`ensureParakeetProvenance`, run when the engines start). The ASR engine makes the
+ * same choice per request and checks the files again; this only decides whether the engine can start.
+ */
+export function parakeetActive(ctx: ServiceContext): boolean {
+  try {
+    const catalog = JSON.parse(fs.readFileSync(enginesConfig(ctx, "model-catalog.json"), "utf8")) as {
+      models: { process: string; kind: string; preferred?: boolean; file?: string }[];
+    };
+    const preferred = catalog.models.find((m) => m.process === "transcription" && m.kind === "model" && m.preferred);
+    if (!preferred?.file) return false;
+    const folder = path.join(ctx.folders.models, preferred.file);
+    const manifest = JSON.parse(fs.readFileSync(`${folder}.manifest.json`, "utf8")) as { status?: string };
+    return (
+      manifest.status === "installed" &&
+      fs.statSync(folder, { throwIfNoEntry: false })?.isDirectory() === true &&
+      fs.existsSync(path.join(parakeetHome(ctx.paths), "provenance.json"))
+    );
+  } catch {
+    return false; // no catalog, no manifest or an unreadable one: Parakeet is not what local:default runs
+  }
+}
+
+/**
+ * The files the ASR engine's active model needs before the engine can start. One model runs per request: with
+ * Parakeet active nothing of Whisper is needed (its model and voice detector serve Whisper only); with Whisper
+ * active, both are. A model chosen by hand in Settings is checked by the engine itself, which refuses its requests
+ * with a clear code when its files are missing (Settings offers only installed models).
+ */
+export function activeAsrFiles(ctx: ServiceContext): string[] {
+  if (parakeetActive(ctx)) return [];
+  return [ASR_MODEL_FILE, VAD_MODEL_FILE].map((file) => path.join(ctx.folders.models, file));
+}
+
 /** Which engines can start now, and why the others wait (models come in setup phase B). */
 export function enginePlans(ctx: ServiceContext, names: readonly EngineName[] = ENGINE_NAMES): EnginePlan[] {
   return names.map((name): EnginePlan => {
     if (name === "diar" && diarComponentDir(ctx) === null) return { name, blocked: "component_missing" };
     if (name === "asr") {
-      const models = [ASR_MODEL_FILE, VAD_MODEL_FILE].map((file) => path.join(ctx.folders.models, file));
-      if (!models.every((file) => fs.existsSync(file))) return { name, blocked: "models_missing" };
+      if (!activeAsrFiles(ctx).every((file) => fs.existsSync(file))) return { name, blocked: "models_missing" };
+      // The runtime's whisper.cpp binaries are always there; the engine checks them at startup for every model.
       if (!ensureAsrProvenance(ctx)) return { name, blocked: "binary_unverified" };
     }
     return { name, spec: engineSpec(ctx, name) };
@@ -576,7 +612,7 @@ export class Core extends EventEmitter {
   /** Engines start together; one that cannot start is reported, never faked, and never blocks the portal. */
   async startEngines(): Promise<void> {
     const parakeet = ensureParakeetProvenance(this.ctx);
-    this.log.line(`parakeet cli ${parakeet ? "verified" : "unverified: transcription uses whisper.cpp"}`);
+    this.log.line(`parakeet cli ${parakeet ? "verified" : "unverified: local:default runs whisper.cpp"}`);
     const plans = enginePlans(this.ctx);
     await Promise.all(
       plans.map(async (plan) => {
