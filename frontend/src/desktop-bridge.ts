@@ -34,6 +34,27 @@ export type RelocateResult =
   | { ok: true; kind: FolderKind; path: string; previous: string; previousTrashed: boolean }
   | { ok: false; reason: RelocateFailure; count?: number; neededBytes?: number; freeBytes?: number; detail?: string };
 
+/**
+ * The step a move is in (desktop `shared/portal-api.ts`): `choosing` and `confirm_trash` wait for a window of the
+ * app; `copying` and `verifying` come with byte counts.
+ */
+export type RelocatePhase =
+  | "choosing"
+  | "preparing"
+  | "copying"
+  | "verifying"
+  | "switching"
+  | "restarting"
+  | "confirm_trash"
+  | "trashing";
+
+export interface RelocateProgress {
+  kind: FolderKind;
+  phase: RelocatePhase;
+  bytesDone?: number;
+  bytesTotal?: number;
+}
+
 /** Where the app's updater stands (desktop `shared/portal-api.ts`, design D12). */
 export type UpdateState = "disabled" | "idle" | "checking" | "downloading" | "up_to_date" | "ready" | "applying" | "error";
 
@@ -60,6 +81,8 @@ export interface DesktopUpdates {
 export interface SauriDesktop {
   getPaths(): Promise<FolderUsage[]>;
   relocate(kind: FolderKind): Promise<RelocateResult>;
+  /** Each step of a running move; returns the function that stops listening. Missing in older app versions. */
+  onRelocateProgress?(listener: (progress: RelocateProgress) => void): () => void;
   markSetupDone(): Promise<void>;
   /** The language chosen in the app's setup. Missing in older app versions. */
   getLocale?(): Promise<string>;

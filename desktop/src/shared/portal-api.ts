@@ -1,6 +1,6 @@
 // The contract between the portal window (the web portal, untrusted for Node access), its preload and the main
 // process. The portal declares the same shape in `frontend/src/desktop-bridge.ts`.
-import type { FolderKind } from "./folders.ts";
+import { FOLDER_KINDS, type FolderKind } from "./folders.ts";
 
 export interface FolderUsage {
   kind: FolderKind;
@@ -31,6 +31,47 @@ export type RelocateFailure =
 export type RelocateResult =
   | { ok: true; kind: FolderKind; path: string; previous: string; previousTrashed: boolean }
   | { ok: false; reason: RelocateFailure; count?: number; neededBytes?: number; freeBytes?: number; detail?: string };
+
+/**
+ * The step a move («Cambiar») is in, sent while it runs. `choosing`: the folder dialog is open; `confirm_trash`: the
+ * question about the old folder is open; `restarting`: the services start again (on the new folder, or on the old
+ * one after a failure). The final answer is the `relocate` result, not an event.
+ */
+export const RELOCATE_PHASES = [
+  "choosing",
+  "preparing",
+  "copying",
+  "verifying",
+  "switching",
+  "restarting",
+  "confirm_trash",
+  "trashing",
+] as const;
+export type RelocatePhase = (typeof RELOCATE_PHASES)[number];
+
+/** `bytesDone`/`bytesTotal` come with `copying` and `verifying`. */
+export interface RelocateProgress {
+  kind: FolderKind;
+  phase: RelocatePhase;
+  bytesDone?: number;
+  bytesTotal?: number;
+}
+
+function byteCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** A copy of a progress event with only the known fields, or null when it is not one (the preload's check). */
+export function relocateProgressOf(value: unknown): RelocateProgress | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { kind, phase, bytesDone, bytesTotal } = value as Record<string, unknown>;
+  if (!FOLDER_KINDS.includes(kind as FolderKind) || !RELOCATE_PHASES.includes(phase as RelocatePhase)) return null;
+  const progress: RelocateProgress = { kind: kind as FolderKind, phase: phase as RelocatePhase };
+  const done = byteCount(bytesDone);
+  const total = byteCount(bytesTotal);
+  if (done !== undefined && total !== undefined) Object.assign(progress, { bytesDone: Math.min(done, total), bytesTotal: total });
+  return progress;
+}
 
 /**
  * Where the updater stands (design D12). `disabled`: no download place yet or a development build; `ready`: a
@@ -66,6 +107,8 @@ export interface PortalUpdatesApi {
 export interface PortalDesktopApi {
   getPaths(): Promise<FolderUsage[]>;
   relocate(kind: FolderKind): Promise<RelocateResult>;
+  /** Calls `listener` with each step of a running move; returns the function that stops listening. */
+  onRelocateProgress(listener: (progress: RelocateProgress) => void): () => void;
   markSetupDone(): Promise<void>;
   /** The language chosen in the app's setup; the portal starts in it unless the person picked another there. */
   getLocale(): Promise<"es" | "en">;
@@ -75,6 +118,8 @@ export interface PortalDesktopApi {
 export const PORTAL_CHANNELS = {
   getPaths: "portal:get-paths",
   relocate: "portal:relocate",
+  /** Main process -> portal only (the one channel the portal listens on). */
+  relocateProgress: "portal:relocate-progress",
   markSetupDone: "portal:mark-setup-done",
   getLocale: "portal:get-locale",
   updateStatus: "portal:update-status",
