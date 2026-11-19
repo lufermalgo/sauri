@@ -500,8 +500,7 @@ describe("local options of the process", () => {
     await renderReady("transcription", { models: [TURBO_ACTIVE, SMALL_INSTALLED] });
     const small = await screen.findByRole("listitem", { name: "whisper-small" });
     const readsBefore = backend.calls.filter((call) => call.path === "/local/models").length;
-    fireEvent.click(within(small).getByRole("button", { name: t("engines:local.moreLabel", { name: "whisper-small" }) }));
-    fireEvent.click(screen.getByRole("menuitem", { name: t("engines:local.use") }));
+    fireEvent.click(within(small).getByRole("button", { name: t("engines:local.useLabel", { name: "whisper-small" }) }));
     await waitFor(() => expect(writes()).toHaveLength(1));
     expect(writes()[0].body).toMatchObject({ provider_id: null, model: "local:whisper-small" });
     expect(screen.queryByRole("dialog")).toBeNull();

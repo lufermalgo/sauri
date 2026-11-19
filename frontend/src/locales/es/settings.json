@@ -136,7 +136,6 @@
     }
   },
   "summaries": {
-    "templatesTitle": "Plantillas",
     "help": "Las plantillas indican a Sauri cómo redactar el resumen de una reunión. La plantilla por defecto se usa en los resúmenes automáticos. Los cambios solo afectan a los resúmenes futuros: los que ya existen conservan la versión con la que se generaron.",
     "newTemplate": "Nueva plantilla",
     "newCategory": "Nueva categoría",
@@ -154,7 +153,10 @@
     "defaultSaved": "«{{name}}» es ahora la plantilla por defecto.",
     "defaultError": "No pudimos cambiar la plantilla por defecto. Se mantiene la anterior.",
     "templateSaved": "Guardamos «{{name}}».",
-    "categorySaved": "Creamos la categoría «{{name}}»."
+    "categorySaved": "Creamos la categoría «{{name}}».",
+    "tabsLabel": "Secciones de resúmenes",
+    "tabModels": "Modelos",
+    "tabTemplates": "Plantillas"
   },
   "templateDialog": {
     "createTitle": "Nueva plantilla",

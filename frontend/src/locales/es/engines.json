@@ -247,7 +247,7 @@
     "help": {
       "transcription": "Aquí eliges qué motor convierte el audio de tus reuniones en texto. Mientras no cambies nada, todo se procesa en este equipo.",
       "diarization": "Aquí eliges qué motor distingue quién habla en cada reunión. Mientras no cambies nada, todo se procesa en este equipo.",
-      "summary": "Aquí eliges qué modelo redacta los resúmenes. Mientras no cambies nada, todo se procesa en este equipo. Las plantillas están más abajo."
+      "summary": "Aquí eliges qué modelo redacta los resúmenes. Mientras no cambies nada, todo se procesa en este equipo. Las plantillas están en la pestaña «Plantillas»."
     },
     "currentTitle": "Motor actual",
     "current": "Hoy usa: {{name}}",
@@ -315,7 +315,6 @@
     "loading": "Consultando tu equipo…",
     "loadError": "No pudimos consultar los modelos locales.",
     "retry": "Reintentar",
-    "hardwareTitle": "Tu equipo",
     "cardMenu": "Más acciones de los modelos de este equipo",
     "scan": "Buscar instalados",
     "metalYes": "Tiene aceleración Metal, que hace mucho más rápidos los modelos locales.",
@@ -330,7 +329,6 @@
       "measured": "El equipo de Sauri lo midió con reuniones reales.",
       "proposal": "Es una propuesta: todavía no se midió con reuniones reales."
     },
-    "noRecommendation": "No hay un modelo local recomendado para este proceso.",
     "reasons": {
       "reduced": "Un modelo mejor ({{better}}) no es posible porque {{limit}}. Con {{memory}} de memoria este es el más capaz que cabe.",
       "noModelMemory": "Tu equipo tiene {{memory}} de memoria y el modelo local más pequeño pide al menos {{minimum}} GB.",
@@ -351,13 +349,12 @@
       "suggest_external_provider": "Si necesitas más calidad, considera un proveedor externo para este proceso.",
       "no_metal_slow": "Sin aceleración Metal este proceso será lento."
     },
-    "modelsTitle": "Modelos de este proceso",
-    "noModels": "No hay modelos locales en el catálogo para este proceso.",
+    "modelsTitle": "Modelos instalados",
     "states": {
       "active": "Activo ahora",
       "installed": "Instalado",
       "available": "Disponible para instalar",
-      "unverified": "Presente sin verificar",
+      "unverified": "Por verificar",
       "verifying": "Verificando…",
       "installing": "Instalando",
       "corrupt": "Dañado",
@@ -386,7 +383,7 @@
       "outdated": "Hay una versión anterior en tu equipo. Instala la nueva para reemplazarla."
     },
     "use": "Usar este",
-    "useLabel": "Usar «{{name}}»",
+    "useLabel": "Usar este: {{name}}",
     "auxiliaryLine": "Detector de voz (apoyo): {{name}} · {{state}}",
     "moreLabel": "Más acciones de «{{name}}»",
     "inUse": "En uso por: {{list}}",
@@ -425,8 +422,6 @@
     "removeConfirm": "Quitar",
     "removeCancel": "Conservar",
     "managedHow": "Se instala junto con el motor. Para instalarlo o repararlo, ejecuta en una terminal: {{command}}",
-    "componentUnavailable": "Este componente todavía no está disponible para descargar. Cuando se publique, podrás instalarlo desde aquí.",
-    "componentHow": "Se descarga una sola vez, se comprueba y Sauri lo pone en marcha al terminar.",
     "managedInstalled": "Viene con el motor de Sauri.",
     "outcome": {
       "installed": "Instalamos «{{id}}» y comprobamos que coincide con el catálogo.",
@@ -435,7 +430,8 @@
       "cancelled": "Cancelamos la operación. No quedaron archivos a medias.",
       "removed": "Quitamos «{{id}}» de este equipo.",
       "lost": "Perdimos contacto con la operación. Revisa el estado de los modelos y vuelve a intentarlo.",
-      "failed": "La operación falló. {{cause}}"
+      "failed": "La operación falló. {{cause}}",
+      "installedCustom": "Instalamos «{{id}}» y comprobamos que el archivo es el publicado."
     },
     "jobErrors": {
       "hash_mismatch": "El archivo descargado no coincide con el catálogo (hash inválido), así que lo descartamos. Puedes intentarlo de nuevo.",
@@ -464,6 +460,9 @@
       "host_unavailable": "El servicio que administra los modelos de este equipo no responde.",
       "selection_unreadable": "No pudimos comprobar si el modelo está en uso, así que no lo quitamos por seguridad.",
       "component_not_published": "Este componente todavía no está disponible para descargar.",
+      "revision_changed": "El modelo cambió en Hugging Face mientras lo elegías. Búscalo de nuevo para descargar la versión actual.",
+      "custom_registry_unreadable": "No pudimos leer la lista de tus modelos propios. Cierra y vuelve a abrir Sauri; si sigue igual, revisa los registros.",
+      "custom_registry_unwritable": "No pudimos guardar tu modelo en la lista de modelos propios. Revisa el espacio libre en el disco e inténtalo de nuevo.",
       "generic": "No pudimos completar la acción. No se cambió nada."
     },
     "engineMissing": {
@@ -504,7 +503,13 @@
     "hardwareShort": "{{chip}}, {{memory}} de memoria, {{free}} libres.",
     "tags": {
       "active": "Activo",
-      "available": "Disponible"
+      "installed": "Instalado",
+      "unverified": "Por verificar",
+      "verifying": "Verificando…",
+      "installing": "Instalando…",
+      "corrupt": "Dañado",
+      "custom": "Personalizado",
+      "recommended": "Recomendado"
     },
     "short": {
       "parakeet": "Muy rápido: una hora de reunión en 1 o 2 minutos.",
@@ -513,11 +518,8 @@
       "summaryFull": "Resúmenes más completos; pide al menos {{minRam}} GB de memoria.",
       "summaryLight": "Más liviano: funciona desde {{minRam}} GB de memoria.",
       "speakers": "Reconoce quién habla en cada parte de la reunión.",
-      "needsEngine": "Falta el motor que lo ejecuta; mira «Detalles».",
-      "unpublished": "Todavía no está disponible para descargar.",
-      "managedHow": "Se instala junto con el motor; el comando está en «Detalles»."
+      "needsEngine": "Falta el motor que lo ejecuta; mira «Detalles»."
     },
-    "installWithSize": "Instalar (necesita {{size}})",
     "details": {
       "open": "Detalles",
       "title": "Detalles de «{{name}}»",
@@ -531,7 +533,73 @@
       "rating": "Evaluación",
       "license": "Licencia",
       "notes": "Para tenerlo en cuenta",
-      "computer": "Tu equipo"
+      "computer": "Tu equipo",
+      "origin": "Origen"
+    },
+    "empty": {
+      "title": {
+        "transcription": "Aún no tienes un modelo de transcripción en este equipo",
+        "diarization": "Aún no tienes un modelo de hablantes en este equipo",
+        "summary": "Aún no tienes un modelo de resumen en este equipo"
+      },
+      "body": "Agrega uno para que Sauri haga este trabajo en tu Mac, sin enviar nada fuera.",
+      "action": "Agregar un modelo"
+    },
+    "add": {
+      "open": "Agregar",
+      "label": {
+        "transcription": "Agregar un modelo de transcripción",
+        "diarization": "Agregar un modelo de hablantes",
+        "summary": "Agregar un modelo de resumen"
+      },
+      "title": {
+        "transcription": "Agregar un modelo de transcripción",
+        "diarization": "Agregar un modelo de hablantes",
+        "summary": "Agregar un modelo de resumen"
+      },
+      "close": "Cerrar",
+      "intro": "Elegidos para tu equipo: {{computer}}",
+      "suggested": "Sugeridos",
+      "allInstalled": "Ya tienes instalados los modelos que te sugerimos para este equipo.",
+      "noneFits": "Ningún otro modelo de la lista de Sauri funciona bien en este equipo.",
+      "otherTitle": "Otro modelo",
+      "otherHelp": "¿Conoces un modelo público de Hugging Face? Puedes traerlo tú.",
+      "other": "Buscar otro modelo…"
+    },
+    "custom": {
+      "back": "Volver a las sugerencias",
+      "label": "Modelo de Hugging Face",
+      "placeholder": "autor/modelo",
+      "help": {
+        "transcription": "Escribe autor/modelo o pega el enlace de huggingface.co. Sirven los modelos de Whisper en formato ggml (archivos .bin).",
+        "summary": "Escribe autor/modelo o pega el enlace de huggingface.co. Sirven los modelos en formato GGUF (archivos .gguf)."
+      },
+      "public": "Solo modelos públicos: no hace falta cuenta ni clave.",
+      "search": "Buscar",
+      "searching": "Buscando…",
+      "foundTitle": "Lo que encontramos",
+      "found": "{{repo}}, versión {{revision}}.",
+      "license": "Licencia: {{license}}. Revisa que te permita usarlo.",
+      "noLicense": "El modelo no indica su licencia. Revísala en Hugging Face antes de usarlo.",
+      "filesLegend": "Elige qué archivo descargar",
+      "oneFile": "Archivo: {{file}} ({{size}})",
+      "safety": "Sauri comprueba que el archivo descargado sea el publicado y lo usa solo como datos: no ejecuta nada de lo que baja.",
+      "install": "Instalar ({{size}})",
+      "origin": "De {{repo}}, versión {{revision}}",
+      "originDetail": "Hugging Face: {{repo}}, versión {{revision}}",
+      "errors": {
+        "empty": "Escribe el nombre del modelo (autor/modelo) o pega su enlace.",
+        "host_not_allowed": "Ese enlace no es de Hugging Face. Pega un enlace de huggingface.co o escribe autor/modelo.",
+        "not_found": "No encontramos ese modelo en Hugging Face. Revisa que el nombre esté bien escrito.",
+        "gated": "Este modelo es privado, restringido o no existe. Sauri solo trae modelos públicos: revisa el nombre o prueba con otro.",
+        "invalid_source": "No entendimos ese nombre o enlace. Escribe autor/modelo o pega un enlace de huggingface.co.",
+        "no_compatible_files": {
+          "transcription": "Ese modelo no tiene archivos que Sauri pueda usar para transcribir. Busca una versión de Whisper en formato ggml (.bin).",
+          "summary": "Ese modelo no tiene archivos que Sauri pueda usar para resumir. Busca una versión en formato GGUF (.gguf)."
+        },
+        "unreachable": "No pudimos conectar con Hugging Face. Revisa tu conexión a internet e inténtalo de nuevo.",
+        "generic": "No pudimos buscar ese modelo. Inténtalo de nuevo en un momento."
+      }
     }
   },
   "account": {
