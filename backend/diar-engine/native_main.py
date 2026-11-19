@@ -51,6 +51,10 @@ RECORDING_CAPABILITY_KEY_PATH = Path(
 )
 RECORDING_CAPABILITY_TTL_SECONDS = 60
 MODEL_ID = "senko-coreml"
+# Senko merges two speaker groups only when their voices are at least this similar (its own default is 0.875).
+# At 0.875 one person who speaks in short turns comes out as several speakers; 0.78 joins them and still keeps
+# different people apart in the reference recordings (see the measurements in the PR).
+SPEAKER_MERGE_COSINE = 0.78
 MODEL_DEVICE = "coreml"
 _bearer_scheme = HTTPBearer(auto_error=False)
 _bearer_dependency = Depends(_bearer_scheme)
@@ -70,7 +74,14 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         from senko import Diarizer  # type: ignore[import-not-found]
 
         with KeepAwake():
-            pipeline = Diarizer(device="coreml", vad="pyannote", clustering="cpu", warmup=True, quiet=True)
+            pipeline = Diarizer(
+                device="coreml",
+                vad="pyannote",
+                clustering="cpu",
+                warmup=True,
+                quiet=True,
+                mer_cos=SPEAKER_MERGE_COSINE,
+            )
             vad = pipeline.vad_processor_pyannote_coreml
             vad.lib.vad_set_min_duration_on(vad.processor, 0.0)
             vad.lib.vad_set_min_duration_off(vad.processor, 0.0)

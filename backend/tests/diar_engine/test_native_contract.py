@@ -514,7 +514,7 @@ async def test_startup_uses_exact_coreml_options(monkeypatch: pytest.MonkeyPatch
     async with native.lifespan(native.app):
         assert native.diarization_pipeline is pipeline
         constructor.assert_called_once_with(
-            device="coreml", vad="pyannote", clustering="cpu", warmup=True, quiet=True,
+            device="coreml", vad="pyannote", clustering="cpu", warmup=True, quiet=True, mer_cos=0.78,
         )
         vad.lib.vad_set_min_duration_on.assert_called_once_with(vad.processor, 0.0)
         vad.lib.vad_set_min_duration_off.assert_called_once_with(vad.processor, 0.0)
