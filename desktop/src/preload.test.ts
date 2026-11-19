@@ -26,9 +26,18 @@ describe("portal preload", () => {
     await import("./preload.ts");
     expect(Object.keys(exposed)).toEqual(["sauriDesktop"]);
     const api = exposed.sauriDesktop as Record<string, (...args: unknown[]) => Promise<unknown>>;
-    expect(Object.keys(api).sort()).toEqual(["getLocale", "getPaths", "markSetupDone", "onRelocateProgress", "relocate", "updates"]);
+    expect(Object.keys(api).sort()).toEqual([
+      "getLocale",
+      "getPaths",
+      "getServicesStatus",
+      "markSetupDone",
+      "onRelocateProgress",
+      "onServicesStatus",
+      "relocate",
+      "updates",
+    ]);
     const updates = api.updates as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
-    expect(Object.keys(updates).sort()).toEqual(["apply", "check", "setAutoCheck", "status"]);
+    expect(Object.keys(updates).sort()).toEqual(["apply", "check", "onChange", "setAutoCheck", "status"]);
     await api.getPaths();
     await api.relocate("models");
     await api.markSetupDone();
@@ -37,6 +46,7 @@ describe("portal preload", () => {
     await updates.check();
     await updates.apply();
     await updates.setAutoCheck("yes");
+    await api.getServicesStatus();
     expect(invoke.mock.calls).toEqual([
       [PORTAL_CHANNELS.getPaths],
       [PORTAL_CHANNELS.relocate, "models"],
@@ -46,6 +56,7 @@ describe("portal preload", () => {
       [PORTAL_CHANNELS.updateCheck],
       [PORTAL_CHANNELS.updateApply],
       [PORTAL_CHANNELS.updateAutoCheck, false],
+      [PORTAL_CHANNELS.servicesStatus],
     ]);
   });
 
@@ -68,5 +79,35 @@ describe("portal preload", () => {
     emit(PORTAL_CHANNELS.relocateProgress, { kind: "models", phase: "trashing" });
     expect(seen).toHaveLength(2);
     expect(listeners.get(PORTAL_CHANNELS.relocateProgress)?.size).toBe(0);
+  });
+
+  it("passes checked copies of the updater's state, without the IPC event", async () => {
+    await import("./preload.ts");
+    const updates = (exposed.sauriDesktop as { updates: { onChange: (listener: (value: unknown) => void) => () => void } }).updates;
+    const seen: unknown[] = [];
+    const stop = updates.onChange((value) => seen.push(value));
+    emit(PORTAL_CHANNELS.updateChanged, { state: "ready", current: "0.1.3", version: "0.1.4", autoCheck: true, percent: -1, extra: "x" });
+    emit(PORTAL_CHANNELS.updateChanged, { state: "explode", current: "0.1.3", autoCheck: true });
+    emit(PORTAL_CHANNELS.updateChanged, { state: "ready", current: 3, autoCheck: true });
+    emit(PORTAL_CHANNELS.updateChanged, { state: "ready", current: "0.1.3", version: "0.1.4", autoCheck: false, error: "processing", count: 2 });
+    expect(seen).toEqual([
+      { state: "ready", current: "0.1.3", version: "0.1.4", autoCheck: true },
+      { state: "ready", current: "0.1.3", version: "0.1.4", autoCheck: false, error: "processing", count: 2 },
+    ]);
+    stop();
+    expect(listeners.get(PORTAL_CHANNELS.updateChanged)?.size).toBe(0);
+  });
+
+  it("passes checked copies of the services status, without the IPC event", async () => {
+    await import("./preload.ts");
+    const api = exposed.sauriDesktop as { onServicesStatus: (listener: (value: unknown) => void) => () => void };
+    const seen: unknown[] = [];
+    const stop = api.onServicesStatus((value) => seen.push(value));
+    emit(PORTAL_CHANNELS.servicesChanged, { starting: true, problem: false, names: ["worker"] });
+    emit(PORTAL_CHANNELS.servicesChanged, { starting: "yes", problem: false });
+    emit(PORTAL_CHANNELS.servicesChanged, null);
+    expect(seen).toEqual([{ starting: true, problem: false }]);
+    stop();
+    expect(listeners.get(PORTAL_CHANNELS.servicesChanged)?.size).toBe(0);
   });
 });

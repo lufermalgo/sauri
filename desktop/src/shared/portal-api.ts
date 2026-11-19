@@ -96,12 +96,48 @@ export interface UpdateStatus {
   lastCheck?: string;
 }
 
+const UPDATE_STATES: readonly UpdateState[] = ["disabled", "idle", "checking", "downloading", "up_to_date", "ready", "applying", "error"];
+
+/** A copy of an update status event with only the known fields, or null when it is not one (the preload's check). */
+export function updateStatusOf(value: unknown): UpdateStatus | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { state, current, version, percent, error, count, manualZip, autoCheck, lastCheck } = value as Record<string, unknown>;
+  if (!UPDATE_STATES.includes(state as UpdateState) || typeof current !== "string" || typeof autoCheck !== "boolean") return null;
+  const status: UpdateStatus = { state: state as UpdateState, current, autoCheck };
+  for (const [key, text] of Object.entries({ version, error, manualZip, lastCheck })) if (typeof text === "string") Object.assign(status, { [key]: text });
+  for (const [key, number] of Object.entries({ percent, count })) {
+    const checked = byteCount(number);
+    if (checked !== undefined) Object.assign(status, { [key]: checked });
+  }
+  return status;
+}
+
 export interface PortalUpdatesApi {
   status(): Promise<UpdateStatus>;
   check(): Promise<UpdateStatus>;
   /** The button itself is the confirmation: stops the services, migrates, swaps the app and relaunches. */
   apply(): Promise<UpdateStatus>;
   setAutoCheck(on: boolean): Promise<UpdateStatus>;
+  /** Calls `listener` each time the updater changes state (not for each download percent); returns the stop function. */
+  onChange(listener: (status: UpdateStatus) => void): () => void;
+}
+
+/**
+ * The services behind the portal. The window opens as soon as the API answers; `starting` stays true while the
+ * engines and the worker are still on their first start (new meetings wait in the queue until then). `problem`: a
+ * service did not start in time or keeps failing; the menu-bar icon says the same.
+ */
+export interface ServicesStatus {
+  starting: boolean;
+  problem: boolean;
+}
+
+/** A copy of a services status event, or null when it is not one (the preload's check). */
+export function servicesStatusOf(value: unknown): ServicesStatus | null {
+  if (typeof value !== "object" || value === null) return null;
+  const { starting, problem } = value as Record<string, unknown>;
+  if (typeof starting !== "boolean" || typeof problem !== "boolean") return null;
+  return { starting, problem };
 }
 
 export interface PortalDesktopApi {
@@ -113,13 +149,19 @@ export interface PortalDesktopApi {
   /** The language chosen in the app's setup; the portal starts in it unless the person picked another there. */
   getLocale(): Promise<"es" | "en">;
   updates: PortalUpdatesApi;
+  getServicesStatus(): Promise<ServicesStatus>;
+  /** Calls `listener` each time the services status changes; returns the function that stops listening. */
+  onServicesStatus(listener: (status: ServicesStatus) => void): () => void;
 }
 
 export const PORTAL_CHANNELS = {
   getPaths: "portal:get-paths",
   relocate: "portal:relocate",
-  /** Main process -> portal only (the one channel the portal listens on). */
+  /** Main process -> portal only, like `updateChanged` and `servicesChanged` (the channels the portal listens on). */
   relocateProgress: "portal:relocate-progress",
+  updateChanged: "portal:update-changed",
+  servicesStatus: "portal:services-status",
+  servicesChanged: "portal:services-changed",
   markSetupDone: "portal:mark-setup-done",
   getLocale: "portal:get-locale",
   updateStatus: "portal:update-status",

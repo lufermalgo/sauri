@@ -76,6 +76,17 @@ export interface DesktopUpdates {
   /** The button is the person's confirmation: the app stops, migrates the data, swaps itself and opens again. */
   apply(): Promise<UpdateStatus>;
   setAutoCheck(on: boolean): Promise<UpdateStatus>;
+  /** Each change of state (not each download percent); returns the function that stops listening. Missing in older app versions. */
+  onChange?(listener: (status: UpdateStatus) => void): () => void;
+}
+
+/**
+ * The services behind the portal (desktop `shared/portal-api.ts`). `starting`: the engines or the worker are still on
+ * their first start, so new meetings wait; `problem`: one did not start or keeps failing.
+ */
+export interface ServicesStatus {
+  starting: boolean;
+  problem: boolean;
 }
 
 export interface SauriDesktop {
@@ -88,6 +99,9 @@ export interface SauriDesktop {
   getLocale?(): Promise<string>;
   /** Missing in app versions older than the updater. */
   updates?: DesktopUpdates;
+  /** Missing in app versions that opened the portal only once every service was ready. */
+  getServicesStatus?(): Promise<ServicesStatus>;
+  onServicesStatus?(listener: (status: ServicesStatus) => void): () => void;
 }
 
 declare global {

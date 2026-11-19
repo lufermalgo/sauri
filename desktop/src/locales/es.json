@@ -21,7 +21,6 @@
   "startup.title": "Iniciando Sauri…",
   "startup.database": "Abriendo la base de datos…",
   "startup.core": "Iniciando el servicio…",
-  "startup.engines": "Iniciando los motores de IA…",
   "error.title": "Sauri no pudo iniciar",
   "error.ports": "Otro programa está usando {ports}. Ciérralo y vuelve a intentarlo.",
   "error.folder.missing": "No encuentro la carpeta de {kind}: {path}. Si está en un disco externo, conéctalo.",

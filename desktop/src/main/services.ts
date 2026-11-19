@@ -6,6 +6,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import { type AppPaths, ensurePrivateDir, pgDataDir, socketPath, type UserFolders } from "./paths.ts";
+import type { ServicesStatus } from "../shared/portal-api.ts";
 import type { PortPlan } from "./ports.ts";
 import { loopbackDownloadEnv, releasesRepo } from "./releases.ts";
 import { commandHealth, httpHealth, RotatingLog, type ServiceSpec, Supervisor } from "./supervisor.ts";
@@ -567,6 +568,10 @@ export type ServiceSummary = { name: string; state: string; failed: boolean } | 
 export class Core extends EventEmitter {
   private readonly supervisors = new Map<string, Supervisor>();
   private readonly blocked = new Map<string, BlockedReason>();
+  /** Started and still waiting for their first readiness. */
+  private readonly pending = new Set<string>();
+  /** Not ready within their start's time limit; removed once the service answers. */
+  private readonly late = new Set<string>();
 
   constructor(
     private ctx: ServiceContext,
@@ -580,14 +585,39 @@ export class Core extends EventEmitter {
   }
 
   private async run(spec: ServiceSpec, readyMs: number): Promise<boolean> {
+    const generation = this.generation;
     const supervisor = new Supervisor(spec);
     this.supervisors.set(spec.name, supervisor);
-    supervisor.on("state", () => this.emit("change"));
+    this.pending.add(spec.name);
+    supervisor.on("state", (state) => {
+      if (state === "ready") this.late.delete(spec.name);
+      this.emit("change");
+    });
     supervisor.on("failed", () => this.emit("change"));
-    await supervisor.start();
-    const ready = await supervisor.waitReady(readyMs);
-    this.log.line(`${spec.name} ${ready ? "ready" : `not ready after ${readyMs} ms`}`);
+    let ready = false;
+    try {
+      await supervisor.start();
+      ready = await supervisor.waitReady(readyMs);
+      this.log.line(`${spec.name} ${ready ? "ready" : `not ready after ${readyMs} ms`}`);
+    } finally {
+      // A `stop()` meanwhile already cleared both sets: nothing of this start is reported after it.
+      if (generation === this.generation) {
+        this.pending.delete(spec.name);
+        if (!ready) this.late.add(spec.name);
+        this.emit("change");
+      }
+    }
     return ready;
+  }
+
+  /** Like `run`, for the services that start behind the open portal: a start that throws is logged and reported. */
+  private async runReported(spec: ServiceSpec, readyMs: number): Promise<boolean> {
+    try {
+      return await this.run(spec, readyMs);
+    } catch (error) {
+      this.log.line(`${spec.name} could not start: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
   }
 
   /** PostgreSQL first: setup needs it before the API exists. */
@@ -601,18 +631,30 @@ export class Core extends EventEmitter {
     return this.supervisors.has("postgres");
   }
 
-  /** `migrated`: the caller already ran the migrations (startup, with its copy first). */
-  async startCore(opts: { migrated?: boolean } = {}): Promise<void> {
+  /** PostgreSQL and the API: the portal opens once this resolves. `migrated`: the caller already ran the migrations. */
+  async startApi(opts: { migrated?: boolean } = {}): Promise<void> {
     await this.startDatabase();
     if (!opts.migrated) await prepareDatabase(this.ctx, this.log);
     if (!(await this.run(apiSpec(this.ctx), 90_000))) throw new CoreError("api_not_ready");
-    if (!(await this.run(workerSpec(this.ctx), 15_000))) throw new CoreError("worker_not_ready");
+  }
+
+  /**
+   * The engines, then the worker, behind the open portal; never throws. The worker starts last so it never takes a
+   * queued meeting before the engines answer (a transcription sent to an engine that is not listening yet fails the
+   * meeting); until then the jobs wait in PostgreSQL. A service that is not ready in time shows as failed in
+   * `summary()` and `portalStatus()` until it answers, and its supervisor keeps trying.
+   */
+  async startBackground(): Promise<void> {
+    const generation = this.generation;
+    await this.startEngines();
+    if (generation !== this.generation) return;
+    await this.runReported(workerSpec(this.ctx), 15_000);
   }
 
   /** Engines start together; one that cannot start is reported, never faked, and never blocks the portal. */
   async startEngines(): Promise<void> {
     const parakeet = ensureParakeetProvenance(this.ctx);
-    this.log.line(`parakeet cli ${parakeet ? "verified" : "unverified: local:default runs whisper.cpp"}`);
+    this.log.line(`parakeet cli ${parakeet ? "verified" : "not verified"}`);
     const plans = enginePlans(this.ctx);
     await Promise.all(
       plans.map(async (plan) => {
@@ -621,7 +663,7 @@ export class Core extends EventEmitter {
           this.log.line(`${plan.name}-engine not started: ${plan.blocked}`);
           return;
         }
-        await this.run(plan.spec, 120_000);
+        await this.runReported(plan.spec, 120_000);
       }),
     );
     this.emit("change");
@@ -655,7 +697,7 @@ export class Core extends EventEmitter {
         if (generation !== this.generation) break;
         this.blocked.delete(plan.spec.name);
         this.log.line(`${plan.spec.name} can start now`);
-        await this.run(plan.spec, 120_000);
+        await this.runReported(plan.spec, 120_000);
         started.push(plan.spec.name);
       }
     } finally {
@@ -665,19 +707,27 @@ export class Core extends EventEmitter {
     return started;
   }
 
+  /** `failed`: five crashes in a row, or not ready in time on its start; either lasts until the service answers. */
   summary(): ServiceSummary[] {
     const running = [...this.supervisors.entries()].map(([name, supervisor]) => ({
       name,
       state: supervisor.state,
-      failed: supervisor.failed,
+      failed: supervisor.failed || this.late.has(name),
     }));
     const waiting = [...this.blocked.entries()].map(([name, blocked]) => ({ name, blocked }));
     return [...running, ...waiting];
   }
 
+  /** What the portal shows in its top bar: services still on their first start, and whether one failed. */
+  portalStatus(): ServicesStatus {
+    return { starting: this.pending.size > 0, problem: this.summary().some((item) => "failed" in item && item.failed) };
+  }
+
   /** Reverse order: engines, worker, API, and PostgreSQL last. */
   async stop(): Promise<void> {
     this.generation += 1;
+    this.pending.clear();
+    this.late.clear();
     const order = [...this.supervisors.keys()];
     const engines = order.filter((name) => name.endsWith("-engine"));
     await Promise.all(engines.map((name) => this.supervisors.get(name)?.stop()));

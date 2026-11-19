@@ -1,13 +1,13 @@
-// Sauri desktop: one instance, setup phase A when needed, then PostgreSQL, the API, the worker and the engines
-// in order, the portal in its window and the menu-bar icon. Closing the window keeps the services running;
-// quitting asks first when meetings are being processed.
+// Sauri desktop: one instance, setup phase A when needed, then PostgreSQL and the API, the portal in its window and
+// the menu-bar icon; the engines and then the worker start behind the open window. Closing the window keeps the
+// services running; quitting asks first when meetings are being processed.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu, shell } from "electron";
 import { formatGigabytes, type Locale, type MessageKey, plural, t } from "../i18n.ts";
-import { PORTAL_CHANNELS, type RelocateProgress, type RelocateResult } from "../shared/portal-api.ts";
+import { PORTAL_CHANNELS, type RelocateResult, type ServicesStatus } from "../shared/portal-api.ts";
 import { setLaunchAtLogin } from "./autostart.ts";
 import { type AppConfig, ConfigError, loadConfig, phaseADone, saveConfig } from "./config.ts";
 import { appPaths, FOLDER_KINDS, type FolderKind, folderProblems, PathError, socketPath, type UserFolders } from "./paths.ts";
@@ -98,7 +98,10 @@ function context(folders: UserFolders): ServiceContext {
 function getCore(ctx: ServiceContext): Core {
   if (!core) {
     core = new Core(ctx, log);
-    core.on("change", () => void refreshTray());
+    core.on("change", () => {
+      void refreshTray();
+      sendToPortal(PORTAL_CHANNELS.servicesChanged, servicesStatus());
+    });
   } else core.setContext(ctx);
   return core;
 }
@@ -174,13 +177,17 @@ function bringPortalToFront(): BrowserWindow | null {
   return portalWindow;
 }
 
-/** Sends a step of the move to the portal window, and only while it shows the portal's own origin. */
-function sendRelocateProgress(progress: RelocateProgress): void {
+/** Sends an event to the portal window, and only while it shows the portal's own origin. */
+function sendToPortal(channel: string, payload: unknown): void {
   const contents = portalWindow && !portalWindow.isDestroyed() ? portalWindow.webContents : null;
   if (!contents || contents.isDestroyed()) return;
   const url = contents.getURL();
   if (!url || new URL(url).origin !== new URL(portalUrl()).origin) return;
-  contents.send(PORTAL_CHANNELS.relocateProgress, progress);
+  contents.send(channel, payload);
+}
+
+function servicesStatus(): ServicesStatus {
+  return core?.portalStatus() ?? { starting: false, problem: false };
 }
 
 /** «Cambiar» on the storage page: the whole move runs here, the portal only waits for the result. */
@@ -231,7 +238,7 @@ async function relocateFolder(kind: FolderKind): Promise<RelocateResult> {
       },
       startServices,
       log: (line) => log.line(line),
-      progress: sendRelocateProgress,
+      progress: (progress) => sendToPortal(PORTAL_CHANNELS.relocateProgress, progress),
     });
   } finally {
     relocating = false;
@@ -296,6 +303,7 @@ function createUpdater(): UpdateController {
     onChange: () => {
       setAppMenu();
       tray?.refresh();
+      if (updater) sendToPortal(PORTAL_CHANNELS.updateChanged, updater.status());
     },
   });
 }
@@ -319,6 +327,7 @@ function registerPortalApi(): void {
   // The portal's «Reiniciar y actualizar» button is the person's confirmation.
   handle(PORTAL_CHANNELS.updateApply, () => updater?.apply());
   handle(PORTAL_CHANNELS.updateAutoCheck, (on) => updater?.setAutoCheck(on === true));
+  handle(PORTAL_CHANNELS.servicesStatus, () => servicesStatus());
   handle(PORTAL_CHANNELS.markSetupDone, () => {
     if (phaseADone(config) && config.setupStep !== "done") {
       update({ setupStep: "done" });
@@ -444,9 +453,7 @@ async function startServices(): Promise<void> {
   if (config.appVersionOfData !== app.getVersion()) update({ appVersionOfData: app.getVersion() });
   try {
     controller?.show({ view: "progress", key: "startup.core" });
-    await services.startCore({ migrated: true });
-    controller?.show({ view: "progress", key: "startup.engines" });
-    await services.startEngines();
+    await services.startApi({ migrated: true });
   } catch (error) {
     const code = error instanceof CoreError ? error.code : "unexpected";
     log.line(`startup failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -454,8 +461,8 @@ async function startServices(): Promise<void> {
     core = undefined;
     return showError(t(locale(), "error.start", { code }));
   }
+  // The window opens as soon as the API answers; the portal shows that the engines are still starting.
   started = true;
-  log.line(`services: ${JSON.stringify(services.summary())}`);
   openPortalWindow();
   setupWindow?.hide();
   clearInterval(poll);
@@ -464,6 +471,10 @@ async function startServices(): Promise<void> {
     // Engines waiting for a model or the speaker runtime start as soon as setup phase B installs it.
     void services.startWaitingEngines();
   }, 5000);
+  await refreshTray();
+  // Never throws: a service that does not come up shows in the tray and the portal, and keeps being retried.
+  await services.startBackground();
+  log.line(`services: ${JSON.stringify(services.summary())}`);
   await refreshTray();
 }
 
