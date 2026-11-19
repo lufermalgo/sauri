@@ -358,12 +358,11 @@
       "diarization": "Motor de hablantes de Sauri",
       "transcription": "Motor de Parakeet (FluidAudio)"
     },
-    "fallbackBadge": "Respaldo · Mayor precisión en nombres propios",
     "modelNotes": {
-      "parakeet": "Mucho más rápido: una hora de reunión se transcribe en 1 o 2 minutos. La transcripción es más literal (conserva muletillas) y puede escribir mal nombres propios poco comunes; para esos casos conviene Whisper. Si algo sale raro, Sauri repite la transcripción con Whisper por su cuenta.",
-      "whisper": "Más lento (una hora de reunión tarda unos 9 o 10 minutos) pero más preciso con nombres propios poco comunes. Es el respaldo automático de Parakeet."
+      "parakeet": "Mucho más rápido: una hora de reunión se transcribe en 1 o 2 minutos. La transcripción es más literal (conserva muletillas) y puede escribir mal nombres propios poco comunes; para esos casos conviene Whisper.",
+      "whisper": "Más lento (una hora de reunión tarda unos 9 o 10 minutos) pero más preciso con nombres propios poco comunes."
     },
-    "needsEngine": "Los archivos están instalados, pero falta el motor que los ejecuta. Para instalarlo, ejecuta en una terminal: {{command}}. Mientras tanto Sauri transcribe con Whisper.",
+    "needsEngine": "Los archivos están instalados, pero falta el motor que los ejecuta. Para instalarlo, ejecuta en una terminal: {{command}}.",
     "license": "Licencia {{license}}. {{attribution}}",
     "verifiedBy": {
       "hash": "Archivo comprobado contra el catálogo.",
@@ -480,7 +479,7 @@
       "diarization": "Python 3.11 (solo en Mac)",
       "summary": "uv, cmake y git"
     },
-    "chipAppleSilicon": "Mac con chip Apple silicon",
+    "chipAppleSilicon": "Mac con chip de Apple",
     "chipIntelMac": "Mac con procesador Intel",
     "chipOther": "{{system}} ({{arch}})",
     "chipUnknownSystem": "Equipo",
@@ -488,9 +487,41 @@
     "hardware_other": "{{chip}}, {{memory}} de memoria, {{count}} núcleos y {{free}} libres en disco.",
     "description": "Motor {{engine}}.",
     "descriptionMinRam": "Motor {{engine}}. Pide al menos {{minRam}} GB de memoria.",
-    "needsEngineDesktop": "Los archivos están instalados, pero el motor que los ejecuta no está listo. Mientras tanto Sauri transcribe con Whisper. Si sigue así, cierra y vuelve a abrir Sauri.",
+    "needsEngineDesktop": "Los archivos están instalados, pero el motor que los ejecuta no está listo. Si sigue así, cierra y vuelve a abrir Sauri.",
     "managedDesktop": "Viene con Sauri. Si no aparece como instalado, cierra y vuelve a abrir Sauri.",
-    "engineLine": "{{name}} (apoyo) · {{state}}"
+    "engineLine": "{{name}} (apoyo) · {{state}}",
+    "hardwareShort": "{{chip}}, {{memory}} de memoria, {{free}} libres.",
+    "tags": {
+      "active": "Activo",
+      "available": "Disponible"
+    },
+    "short": {
+      "parakeet": "Muy rápido: una hora de reunión en 1 o 2 minutos.",
+      "whisper": "Más lento, más preciso con nombres propios poco comunes.",
+      "whisperLight": "Más liviano, para equipos con poca memoria; menos preciso.",
+      "summaryFull": "Resúmenes más completos; pide al menos {{minRam}} GB de memoria.",
+      "summaryLight": "Más liviano: funciona desde {{minRam}} GB de memoria.",
+      "speakers": "Reconoce quién habla en cada parte de la reunión.",
+      "needsEngine": "Falta el motor que lo ejecuta; mira «Detalles».",
+      "unpublished": "Todavía no está disponible para descargar.",
+      "managedHow": "Se instala junto con el motor; el comando está en «Detalles»."
+    },
+    "installWithSize": "Instalar (necesita {{size}})",
+    "details": {
+      "open": "Detalles",
+      "title": "Detalles de «{{name}}»",
+      "close": "Cerrar",
+      "id": "Nombre técnico",
+      "state": "Estado",
+      "size": "Tamaño",
+      "engine": "Motor y memoria",
+      "speed": "Velocidad y precisión",
+      "check": "Comprobación",
+      "rating": "Evaluación",
+      "license": "Licencia",
+      "notes": "Para tenerlo en cuenta",
+      "computer": "Tu equipo"
+    }
   },
   "account": {
     "row": "Cuenta",

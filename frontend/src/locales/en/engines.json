@@ -366,12 +366,11 @@
     "manual": "Installed manually",
     "manualNote": "Installed manually; Sauri doesn't delete it.",
     "managedTitle": { "diarization": "Sauri speaker engine", "transcription": "Parakeet engine (FluidAudio)" },
-    "fallbackBadge": "Fallback · More accurate on proper names",
     "modelNotes": {
-      "parakeet": "Much faster: an hour of meeting is transcribed in 1 or 2 minutes. The transcript is more literal (keeps filler words) and may misspell uncommon proper names; Whisper is the better choice for those. If anything looks off, Sauri transcribes the recording again with Whisper on its own.",
-      "whisper": "Slower (an hour of meeting takes about 9 or 10 minutes) but more accurate on uncommon proper names. It is Parakeet's automatic fallback."
+      "parakeet": "Much faster: an hour of meeting is transcribed in 1 or 2 minutes. The transcript is more literal (keeps filler words) and may misspell uncommon proper names; Whisper is the better choice for those.",
+      "whisper": "Slower (an hour of meeting takes about 9 or 10 minutes) but more accurate on uncommon proper names."
     },
-    "needsEngine": "The files are installed, but the engine that runs them is missing. To install it, run in a terminal: {{command}}. Meanwhile Sauri transcribes with Whisper.",
+    "needsEngine": "The files are installed, but the engine that runs them is missing. To install it, run in a terminal: {{command}}.",
     "license": "License {{license}}. {{attribution}}",
     "verifiedBy": {
       "hash": "File checked against the catalog.",
@@ -488,7 +487,7 @@
       "diarization": "Python 3.11 (Mac only)",
       "summary": "uv, cmake and git"
     },
-    "chipAppleSilicon": "Mac with Apple silicon chip",
+    "chipAppleSilicon": "Mac with an Apple chip",
     "chipIntelMac": "Mac with Intel processor",
     "chipOther": "{{system}} ({{arch}})",
     "chipUnknownSystem": "Computer",
@@ -496,8 +495,40 @@
     "hardware_other": "{{chip}}, {{memory}} of memory, {{count}} cores and {{free}} free on disk.",
     "description": "{{engine}} engine.",
     "descriptionMinRam": "{{engine}} engine. Needs at least {{minRam}} GB of memory.",
-    "needsEngineDesktop": "The files are installed, but the engine that runs them isn't ready. Meanwhile Sauri transcribes with Whisper. If it stays like this, quit Sauri and open it again.",
+    "needsEngineDesktop": "The files are installed, but the engine that runs them isn't ready. If it stays like this, quit Sauri and open it again.",
     "managedDesktop": "Comes with Sauri. If it doesn't show as installed, quit Sauri and open it again.",
-    "engineLine": "{{name}} (support) · {{state}}"
+    "engineLine": "{{name}} (support) · {{state}}",
+    "hardwareShort": "{{chip}}, {{memory}} of memory, {{free}} free.",
+    "tags": {
+      "active": "Active",
+      "available": "Available"
+    },
+    "short": {
+      "parakeet": "Very fast: an hour of meeting in 1 or 2 minutes.",
+      "whisper": "Slower, more accurate on uncommon proper names.",
+      "whisperLight": "Lighter, for computers with little memory; less accurate.",
+      "summaryFull": "Fuller summaries; needs at least {{minRam}} GB of memory.",
+      "summaryLight": "Lighter: works from {{minRam}} GB of memory.",
+      "speakers": "Tells who speaks in each part of the meeting.",
+      "needsEngine": "The engine that runs it is missing; see “Details”.",
+      "unpublished": "Not available to download yet.",
+      "managedHow": "Installed together with its engine; the command is under “Details”."
+    },
+    "installWithSize": "Install (needs {{size}})",
+    "details": {
+      "open": "Details",
+      "title": "Details of “{{name}}”",
+      "close": "Close",
+      "id": "Technical name",
+      "state": "Status",
+      "size": "Size",
+      "engine": "Engine and memory",
+      "speed": "Speed and accuracy",
+      "check": "Check",
+      "rating": "Rating",
+      "license": "License",
+      "notes": "Good to know",
+      "computer": "Your computer"
+    }
   }
 }
