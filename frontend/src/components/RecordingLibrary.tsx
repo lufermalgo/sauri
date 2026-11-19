@@ -28,6 +28,8 @@ const IN_PROGRESS_STATES: ReadonlySet<ProcessState> = new Set([
   ProcessState.Queued, ProcessState.Joining, ProcessState.Recording, ProcessState.Transcribing,
 ]);
 const LIBRARY_REFRESH_MS = 10_000;
+/** While nothing is in progress the list still looks for recordings that arrived from outside (the extension). */
+const LIBRARY_IDLE_REFRESH_MS = 15_000;
 
 const EMPTY_QUERY: LibraryQuery = { text: "", from: null, to: null, sort: DEFAULT_LIBRARY_SORT };
 
@@ -177,12 +179,20 @@ export function RecordingLibrary({ refreshKey, onSelectMeeting, selectedId, onLi
     };
     // The open recording can be renamed or deleted from the detail pane beside this list.
     window.addEventListener(LIBRARY_CHANGED_EVENT, refresh);
-    const timer = inProgress
-      ? setInterval(() => { if (!document.hidden) refresh(); }, LIBRARY_REFRESH_MS)
-      : undefined;
+    // A recording can arrive from outside this window (the extension uploads straight to the app), so the list
+    // keeps looking even when nothing is in progress: slowly while idle, and at once when the window is back.
+    const timer = setInterval(
+      () => { if (!document.hidden) refresh(); },
+      inProgress ? LIBRARY_REFRESH_MS : LIBRARY_IDLE_REFRESH_MS,
+    );
+    const onVisible = () => { if (!document.hidden) refresh(); };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       window.removeEventListener(LIBRARY_CHANGED_EVENT, refresh);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
       clearInterval(timer);
     };
   }, [inProgress]);

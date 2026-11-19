@@ -816,7 +816,7 @@ describe("RecordingLibrary processing progress", () => {
     expect(view.container.textContent).not.toContain("%");
   });
 
-  it("refreshes quietly every ten seconds only while a recording is in progress", async () => {
+  it("refreshes quietly every ten seconds while a recording is in progress, then every fifteen", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { list } = await openWith([meeting({ processState: ProcessState.Transcribing, durationSeconds: 600,
       createdAt: new Date().toISOString() })]);
@@ -826,8 +826,27 @@ describe("RecordingLibrary processing progress", () => {
     expect(list).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(screen.getByText(t("library:states.completed"))).toBeDefined());
     expect(screen.queryByText(t("library:loading"))).toBeNull();
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(list).toHaveBeenCalledTimes(2);
+    // Idle now: the slower look for recordings that arrive from outside.
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(list).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows a recording that arrives from outside while the list is idle, and when the window is back", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { list } = await openWith([meeting({ id: "old", title: "Old meeting", processState: ProcessState.Completed })]);
+    list.mockResolvedValue([
+      meeting({ id: "new", title: "Recording from the extension", processState: ProcessState.Completed }),
+      meeting({ id: "old", title: "Old meeting", processState: ProcessState.Completed }),
+    ]);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await waitFor(() => expect(screen.getByText("Recording from the extension")).toBeDefined());
+
+    list.mockResolvedValue([
+      meeting({ id: "third", title: "Another one on return", processState: ProcessState.Completed }),
+      meeting({ id: "new", title: "Recording from the extension", processState: ProcessState.Completed }),
+    ]);
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(screen.getByText("Another one on return")).toBeDefined());
   });
 });
 
