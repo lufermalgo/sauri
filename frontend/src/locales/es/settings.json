@@ -96,6 +96,23 @@
     "change": "Cambiar",
     "changeLabel": "Cambiar la carpeta de {{kind}}",
     "moving": "Copiando y comprobando tus datos. Sauri se pausa un momento y vuelve solo cuando termina…",
+    "progress": {
+      "choosing": "Elige la carpeta nueva en la ventana que se abrió.",
+      "preparing": "Preparando…",
+      "copying": "Copiando archivos…",
+      "verifying": "Comprobando que la copia está completa…",
+      "switching": "Cambiando a la nueva carpeta…",
+      "restarting": "Volviendo a poner en marcha Sauri…",
+      "restartingDatabase": "Reiniciando la base de datos…",
+      "confirm_trash": "Responde en la ventana que se abrió: ¿quieres mover la carpeta anterior a la Papelera?",
+      "trashing": "Moviendo la carpeta anterior a la Papelera…",
+      "bytes": "{{done}} de {{total}}",
+      "label": "Avance del cambio de la carpeta de {{kind}}",
+      "lessThanMinute": "Falta menos de un minuto para terminar la copia.",
+      "minutesLeft_one": "Falta cerca de {{count}} minuto para terminar la copia.",
+      "minutesLeft_other": "Faltan cerca de {{count}} minutos para terminar la copia.",
+      "keepOpen": "No cierres Sauri hasta que termine. Si algo lo interrumpe, tus datos siguen intactos en la carpeta anterior."
+    },
     "moved": "Listo: {{kind}} ahora está en {{path}}. La carpeta anterior sigue intacta.",
     "movedTrashed": "Listo: {{kind}} ahora está en {{path}}. La carpeta anterior se movió a la Papelera.",
     "errors": {

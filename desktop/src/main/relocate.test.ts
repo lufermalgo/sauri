@@ -5,7 +5,16 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppConfig, defaultConfig } from "./config.ts";
 import { MARKER_FILE, readMarker, type UserFolders, writeMarker } from "./paths.ts";
-import { checkTarget, copyAndVerify, folderUsage, PART_SUFFIX, relocate, type RelocateDeps } from "./relocate.ts";
+import type { RelocateProgress } from "../shared/portal-api.ts";
+import {
+  checkTarget,
+  copyAndVerify,
+  folderUsage,
+  PART_SUFFIX,
+  progressThrottle,
+  relocate,
+  type RelocateDeps,
+} from "./relocate.ts";
 
 let dir: string;
 
@@ -279,6 +288,118 @@ describe("relocate", () => {
     const { deps: d, calls } = deps(state, { chooseFolder: async () => null });
     expect(await relocate("recordings", d)).toEqual({ ok: false, reason: "cancelled" });
     expect(calls).toEqual([]);
+  });
+});
+
+/** The phases in the order they were sent, each repeated phase counted once. */
+function phases(events: RelocateProgress[]): string[] {
+  return events.map((event) => event.phase).filter((phase, index, all) => phase !== all[index - 1]);
+}
+
+describe("move progress", () => {
+  it("counts the bytes of each step up to the folder's size, for a fresh copy and a resumed one", async () => {
+    const source = path.join(dir, "source");
+    const target = path.join(dir, "target");
+    randomTree(source, 5);
+    for (const name of ["a", "b", "c"]) fs.writeFileSync(path.join(source, `${name}.bin`), name.repeat(200_000));
+    const total = Object.values(snapshot(source)).reduce((sum, value) => sum + Number(value.split(":")[0]), 0);
+    for (const run of ["fresh", "resumed"]) {
+      const events: Array<[string, number, number]> = [];
+      await copyAndVerify(source, target, { onProgress: (phase, done, all) => events.push([phase, done, all]) });
+      expect(events.every(([, , all]) => all === total), run).toBe(true);
+      for (const phase of ["copying", "verifying"]) {
+        const counts = events.filter(([name]) => name === phase).map(([, done]) => done);
+        expect(counts[0], `${run} ${phase}`).toBe(0);
+        expect(counts.at(-1), `${run} ${phase}`).toBe(total);
+        expect(counts.every((value, index) => index === 0 || value >= counts[index - 1]), `${run} ${phase}`).toBe(true);
+      }
+      // Copying comes first, then verifying: never back.
+      const firstVerify = events.findIndex(([name]) => name === "verifying");
+      expect(events.slice(firstVerify).every(([name]) => name === "verifying"), run).toBe(true);
+    }
+  });
+
+  it("lets through each new step and each finished step, and at most one count per interval in between", () => {
+    let clock = 0;
+    const sent: RelocateProgress[] = [];
+    const send = progressThrottle((progress) => sent.push(progress), 250, () => clock);
+    const copying = (bytesDone: number): RelocateProgress => ({ kind: "models", phase: "copying", bytesDone, bytesTotal: 100 });
+    send({ kind: "models", phase: "preparing" });
+    send(copying(0));
+    for (let done = 1; done < 100; done += 1) {
+      clock += 10;
+      send(copying(done));
+    }
+    send(copying(100));
+    send({ kind: "models", phase: "verifying", bytesDone: 0, bytesTotal: 100 });
+    const counts = sent.filter((event) => event.phase === "copying").map((event) => event.bytesDone);
+    // 990 ms of counts every 10 ms: the first one, one every 250 ms, and the finished one.
+    expect(counts).toEqual([0, 25, 50, 75, 100]);
+    expect(phases(sent)).toEqual(["preparing", "copying", "verifying"]);
+  });
+
+  it("reports every step of a move, in order, ending with the question about the old folder", async () => {
+    const state = installation();
+    const events: RelocateProgress[] = [];
+    const { deps: d } = deps(state, { progress: (event) => events.push(event) });
+    expect(await relocate("recordings", d)).toMatchObject({ ok: true });
+    expect(phases(events)).toEqual(["choosing", "preparing", "copying", "verifying", "switching", "restarting", "confirm_trash"]);
+    expect(events.every((event) => event.kind === "recordings")).toBe(true);
+    const lastCopy = events.filter((event) => event.phase === "copying").at(-1);
+    expect(lastCopy?.bytesTotal).toBeGreaterThan(0);
+    expect(lastCopy?.bytesDone).toBe(lastCopy?.bytesTotal);
+  });
+
+  it("says when the old folder goes to the Trash, only after it was confirmed", async () => {
+    const state = installation();
+    const events: RelocateProgress[] = [];
+    const { deps: d } = deps(state, { progress: (event) => events.push(event), confirmTrash: async () => true });
+    expect(await relocate("recordings", d)).toMatchObject({ ok: true, previousTrashed: true });
+    expect(phases(events).slice(-2)).toEqual(["confirm_trash", "trashing"]);
+  });
+
+  it("after a failed copy reports the restart on the old folder and nothing about switching", async () => {
+    const state = installation();
+    const events: RelocateProgress[] = [];
+    let seen = 0;
+    const { deps: d } = deps(state, {
+      progress: (event) => events.push(event),
+      hooks: {
+        beforeFile: () => {
+          seen += 1;
+          if (seen === 2) throw new Error("disk unplugged");
+        },
+      },
+    });
+    expect(await relocate("recordings", d)).toMatchObject({ ok: false, reason: "copy_failed" });
+    expect(phases(events)).toEqual(["choosing", "preparing", "copying", "restarting"]);
+  });
+
+  it("only shows the folder dialog step when the dialog is closed, and nothing when the move is refused first", async () => {
+    const cancelled: RelocateProgress[] = [];
+    const state = installation();
+    await relocate("recordings", deps(state, { chooseFolder: async () => null, progress: (event) => cancelled.push(event) }).deps);
+    expect(phases(cancelled)).toEqual(["choosing"]);
+    const refused: RelocateProgress[] = [];
+    await relocate("recordings", deps(state, { processing: async () => 1, progress: (event) => refused.push(event) }).deps);
+    expect(refused).toEqual([]);
+  });
+
+  it("a listener that fails does not change the move", async () => {
+    const state = installation();
+    const previous = state.folders.recordings;
+    const before = snapshot(previous);
+    const lines: string[] = [];
+    const { deps: d } = deps(state, {
+      log: (line) => lines.push(line),
+      progress: () => {
+        throw new Error("window gone");
+      },
+    });
+    const result = await relocate("recordings", d);
+    expect(result).toMatchObject({ ok: true, path: path.join(dir, "External", "Recordings") });
+    expect(snapshot(path.join(dir, "External", "Recordings"))).toEqual(before);
+    expect(lines.filter((line) => line.includes("progress not sent"))).toHaveLength(1);
   });
 });
 

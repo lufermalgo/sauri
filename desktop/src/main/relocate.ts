@@ -4,8 +4,9 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { FolderUsage, RelocateResult } from "../shared/portal-api.ts";
+import type { FolderUsage, RelocatePhase, RelocateProgress, RelocateResult } from "../shared/portal-api.ts";
 import type { FolderIssue } from "../shared/setup-api.ts";
 import type { AppConfig } from "./config.ts";
 import { inspectFolder } from "./folders.ts";
@@ -70,9 +71,19 @@ export function folderSize(root: string): number {
   return total;
 }
 
-export async function sha256(file: string): Promise<string> {
+/** Passes the bytes through unchanged and reports how many went by; it only observes the stream. */
+function counter(onBytes?: (count: number) => void): Transform {
+  return new Transform({
+    transform(chunk: Buffer, _encoding, done) {
+      onBytes?.(chunk.length);
+      done(null, chunk);
+    },
+  });
+}
+
+export async function sha256(file: string, onBytes?: (count: number) => void): Promise<string> {
   const hash = createHash("sha256");
-  await pipeline(fs.createReadStream(file), hash);
+  await pipeline(fs.createReadStream(file), counter(onBytes), hash);
   return hash.digest("hex");
 }
 
@@ -86,9 +97,9 @@ function modeOf(file: string): number {
 }
 
 /** Copies through `<name>.sauri-relocate.part`, fsync and rename: a finished name always holds a whole file. */
-async function copyFile(source: string, target: string): Promise<void> {
+async function copyFile(source: string, target: string, onBytes?: (count: number) => void): Promise<void> {
   const part = `${target}${PART_SUFFIX}`;
-  await pipeline(fs.createReadStream(source), fs.createWriteStream(part));
+  await pipeline(fs.createReadStream(source), counter(onBytes), fs.createWriteStream(part));
   fs.chmodSync(part, modeOf(source));
   const fd = fs.openSync(part, "r");
   try {
@@ -102,6 +113,11 @@ async function copyFile(source: string, target: string): Promise<void> {
 export interface CopyHooks {
   /** Called before each file is copied; tests use it to interrupt a copy. */
   beforeFile?: (entry: FileEntry) => void;
+  /**
+   * How far the copy is, in bytes of the folder: `copying` counts each file once it is hashed and written (or found
+   * already copied), `verifying` counts the bytes checked again at the target. It only reports, it never steers.
+   */
+  onProgress?: (phase: "copying" | "verifying", bytesDone: number, bytesTotal: number) => void;
 }
 
 /** Bytes still to copy: files already at the target with the same size are resumed, not copied again. */
@@ -118,27 +134,49 @@ export async function copyAndVerify(source: string, target: string, hooks: CopyH
   const { files, dirs } = listTree(source);
   fs.mkdirSync(target, { recursive: true });
   for (const dir of dirs) fs.mkdirSync(path.join(target, dir), { recursive: true });
+  const total = files.reduce((sum, entry) => sum + entry.size, 0);
+  // Each file is read twice while copying (its hash, then the copy or the resumed file's hash): half a byte each.
+  let done = 0;
+  let fileStart = 0;
+  let fileRead = 0;
+  const report = (phase: "copying" | "verifying") => hooks.onProgress?.(phase, Math.floor(done), total);
+  const copyBytes = (size: number) => (count: number) => {
+    fileRead += count;
+    done = fileStart + Math.min(size, fileRead / 2);
+    report("copying");
+  };
+  report("copying");
   const digests = new Map<string, string>();
   for (const entry of files) {
     hooks.beforeFile?.(entry);
     const from = path.join(source, entry.relative);
     const to = path.join(target, entry.relative);
-    const digest = await sha256(from);
+    fileStart = done;
+    fileRead = 0;
+    const onBytes = copyBytes(entry.size);
+    const digest = await sha256(from, onBytes);
     digests.set(entry.relative, digest);
-    if (sameSize(to, entry.size) && (await sha256(to)) === digest) continue;
-    try {
-      await copyFile(from, to);
-    } catch (error) {
-      throw new RelocateError("copy_failed", `${entry.relative}: ${error instanceof Error ? error.message : String(error)}`);
+    if (!(sameSize(to, entry.size) && (await sha256(to, onBytes)) === digest)) {
+      try {
+        await copyFile(from, to, onBytes);
+      } catch (error) {
+        throw new RelocateError("copy_failed", `${entry.relative}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
+    done = fileStart + entry.size;
+    report("copying");
   }
   // Folder permissions last, so a read-only source folder never blocks copying into it.
   for (const dir of dirs) fs.chmodSync(path.join(target, dir), modeOf(path.join(source, dir)));
+  done = 0;
+  report("verifying");
   for (const entry of files) {
     const to = path.join(target, entry.relative);
-    if (!sameSize(to, entry.size) || (await sha256(to)) !== digests.get(entry.relative)) {
-      throw new RelocateError("verify_failed", entry.relative);
-    }
+    const checked = sameSize(to, entry.size) && (await sha256(to, (count) => {
+      done += count;
+      report("verifying");
+    })) === digests.get(entry.relative);
+    if (!checked) throw new RelocateError("verify_failed", entry.relative);
   }
   return files;
 }
@@ -181,6 +219,30 @@ export function checkTarget(
   return null;
 }
 
+/** At most this often a byte count of the same step goes to the portal (about four times a second). */
+export const PROGRESS_INTERVAL_MS = 250;
+
+/**
+ * Wraps `send` so a new step, and the end of a step, always go through, while byte counts of the same step are
+ * dropped when they come sooner than `intervalMs` after the last one sent.
+ */
+export function progressThrottle(
+  send: (progress: RelocateProgress) => void,
+  intervalMs = PROGRESS_INTERVAL_MS,
+  now: () => number = Date.now,
+): (progress: RelocateProgress) => void {
+  let lastPhase: RelocatePhase | null = null;
+  let lastAt = -Infinity;
+  return (progress) => {
+    const at = now();
+    const finished = progress.bytesTotal !== undefined && progress.bytesDone === progress.bytesTotal;
+    if (progress.phase === lastPhase && !finished && at - lastAt < intervalMs) return;
+    lastPhase = progress.phase;
+    lastAt = at;
+    send(progress);
+  };
+}
+
 export interface RelocateDeps {
   config: () => AppConfig;
   update: (change: Partial<AppConfig>) => AppConfig;
@@ -194,16 +256,31 @@ export interface RelocateDeps {
   /** Starts the services on the folders config.json holds at that moment. */
   startServices: () => Promise<void>;
   log: (line: string) => void;
+  /** Each step of the move, for the portal; byte counts arrive throttled by `progressThrottle`. */
+  progress?: (progress: RelocateProgress) => void;
   hooks?: CopyHooks;
 }
 
 /** The whole flow of «Cambiar». Services are restarted on the old folder when anything fails after they stop. */
 export async function relocate(kind: FolderKind, deps: RelocateDeps): Promise<RelocateResult> {
+  // Reporting never steers the move: a failing listener is logged once and the move goes on.
+  let reportFailed = false;
+  const send = progressThrottle((progress) => {
+    try {
+      deps.progress?.(progress);
+    } catch (error) {
+      if (!reportFailed) deps.log(`relocate ${kind}: progress not sent (${error instanceof Error ? error.message : String(error)})`);
+      reportFailed = true;
+    }
+  });
+  const step = (phase: RelocatePhase) => send({ kind, phase });
   const count = await deps.processing();
   if (count === null) return { ok: false, reason: "status_unavailable" };
   if (count > 0) return { ok: false, reason: "processing", count };
+  step("choosing");
   const chosen = await deps.chooseFolder(kind);
   if (!chosen) return { ok: false, reason: "cancelled" };
+  step("preparing");
   const config = deps.config();
   if (!config.paths) return { ok: false, reason: "unavailable" };
   const folders = config.paths;
@@ -228,19 +305,30 @@ export async function relocate(kind: FolderKind, deps: RelocateDeps): Promise<Re
     fs.mkdirSync(target, { recursive: true });
     // Marked first: a retry after an interruption recognizes the half-copied folder as ours and resumes.
     writeMarker(target, { installId: config.installId, kind });
-    const files = await copyAndVerify(previous, target, deps.hooks);
+    const files = await copyAndVerify(previous, target, {
+      ...deps.hooks,
+      onProgress: (phase, bytesDone, bytesTotal) => {
+        deps.hooks?.onProgress?.(phase, bytesDone, bytesTotal);
+        send({ kind, phase, bytesDone, bytesTotal });
+      },
+    });
+    step("switching");
     deps.update({ paths: { ...folders, [kind]: target } });
     deps.log(`relocate ${kind}: ${files.length} files copied and verified`);
   } catch (error) {
     const code = error instanceof RelocateError ? error.code : "copy_failed";
     const detail = error instanceof RelocateError ? error.detail : error instanceof Error ? error.message : String(error);
     deps.log(`relocate ${kind} failed (${code}): ${detail}`);
+    step("restarting");
     await deps.startServices();
     return { ok: false, reason: code, detail };
   }
+  step("restarting");
   await deps.startServices();
   let previousTrashed = false;
+  step("confirm_trash");
   if (await deps.confirmTrash(kind, previous)) {
+    step("trashing");
     await deps.trash(previous);
     previousTrashed = true;
     deps.log(`relocate ${kind}: previous folder moved to the Trash`);

@@ -585,3 +585,46 @@
   font-size: var(--ds-text-xs);
   overflow-wrap: anywhere;
 }
+
+.settings-storage-progress {
+  display: grid;
+  gap: var(--ds-space-2);
+  margin-top: var(--ds-space-2);
+  min-width: 0;
+}
+
+.settings-storage-phase {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-1) var(--ds-space-2);
+  margin: 0;
+  color: var(--ds-fg);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-semibold);
+}
+
+.settings-storage-spinner {
+  display: inline-flex;
+  color: var(--ds-accent-line);
+}
+
+.settings-storage-bytes {
+  color: var(--ds-fg-muted);
+  font-weight: var(--ds-weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-storage-done {
+  margin: var(--ds-space-2) 0 0;
+  color: var(--ds-success);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .settings-storage-spinner svg { animation: settings-storage-spin 1s linear infinite; }
+}
+
+@keyframes settings-storage-spin { to { transform: rotate(360deg); } }

@@ -7,7 +7,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu, shell } from "electron";
 import { formatGigabytes, type Locale, type MessageKey, plural, t } from "../i18n.ts";
-import { PORTAL_CHANNELS, type RelocateResult } from "../shared/portal-api.ts";
+import { PORTAL_CHANNELS, type RelocateProgress, type RelocateResult } from "../shared/portal-api.ts";
 import { setLaunchAtLogin } from "./autostart.ts";
 import { type AppConfig, ConfigError, loadConfig, phaseADone, saveConfig } from "./config.ts";
 import { appPaths, FOLDER_KINDS, type FolderKind, folderProblems, PathError, socketPath, type UserFolders } from "./paths.ts";
@@ -164,6 +164,25 @@ function confirm(target: BrowserWindow | null, options: Electron.MessageBoxOptio
 
 let relocating = false;
 
+/** The portal window in front of everything, so a sheet attached to it is seen at once (macOS can leave it behind). */
+function bringPortalToFront(): BrowserWindow | null {
+  if (!portalWindow || portalWindow.isDestroyed()) return null;
+  if (portalWindow.isMinimized()) portalWindow.restore();
+  portalWindow.show();
+  if (process.platform === "darwin") app.focus({ steal: true });
+  portalWindow.focus();
+  return portalWindow;
+}
+
+/** Sends a step of the move to the portal window, and only while it shows the portal's own origin. */
+function sendRelocateProgress(progress: RelocateProgress): void {
+  const contents = portalWindow && !portalWindow.isDestroyed() ? portalWindow.webContents : null;
+  if (!contents || contents.isDestroyed()) return;
+  const url = contents.getURL();
+  if (!url || new URL(url).origin !== new URL(portalUrl()).origin) return;
+  contents.send(PORTAL_CHANNELS.relocateProgress, progress);
+}
+
 /** «Cambiar» on the storage page: the whole move runs here, the portal only waits for the result. */
 async function relocateFolder(kind: FolderKind): Promise<RelocateResult> {
   if (relocating) return { ok: false, reason: "busy" };
@@ -178,12 +197,14 @@ async function relocateFolder(kind: FolderKind): Promise<RelocateResult> {
           title: t(locale(), `folder.${which}` as MessageKey),
           properties: ["openDirectory", "createDirectory"],
         };
-        const result = portalWindow ? await dialog.showOpenDialog(portalWindow, options) : await dialog.showOpenDialog(options);
+        // A sheet on the portal window: it cannot end up behind it.
+        const parent = bringPortalToFront();
+        const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
         return result.canceled ? null : (result.filePaths[0] ?? null);
       },
       confirmTrash: async (which, previous) => {
         const kindName = t(locale(), `folder.${which}` as MessageKey).toLowerCase();
-        const offer = await confirm(portalWindow, {
+        const offer = await confirm(bringPortalToFront(), {
           type: "question",
           message: t(locale(), "relocate.done.title", { kind: kindName }),
           detail: t(locale(), "relocate.done.detail", { path: previous }),
@@ -210,6 +231,7 @@ async function relocateFolder(kind: FolderKind): Promise<RelocateResult> {
       },
       startServices,
       log: (line) => log.line(line),
+      progress: sendRelocateProgress,
     });
   } finally {
     relocating = false;
