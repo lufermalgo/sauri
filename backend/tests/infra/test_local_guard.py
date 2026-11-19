@@ -19,6 +19,14 @@ ATTACKS = [
     ({"Sec-Fetch-Site": "same-origin", "Cookie": "sauri_local=invalid"}, 403),
     ({"Authorization": f"Bearer {TOKEN}", "Origin": "http://localhost:9999"}, 403),
     ({"Authorization": f"Bearer {TOKEN}"}, 403),
+    *[
+        ({"Authorization": f"Bearer {TOKEN}", "Sec-Fetch-Site": site}, 403)
+        for site in ("same-site", "cross-site", "same-origin", "")
+    ],
+    ({"Authorization": f"Bearer {TOKEN}", "Sec-Fetch-Site": "none", "Origin": "http://localhost:9999"}, 403),
+    ({"Authorization": f"Bearer {TOKEN}", "Sec-Fetch-Site": "none", "Origin": "null"}, 403),
+    ({"Authorization": "Bearer invalid", "Sec-Fetch-Site": "none"}, 403),
+    ({"Sec-Fetch-Site": "none"}, 403),
     ({"Authorization": "Bearer invalid", "Origin": ORIGIN}, 403),
 ]
 
@@ -124,3 +132,13 @@ def test_invalid_api_port_is_a_configuration_error(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("SAURI_API_PORT", value)
     with pytest.raises(LocalConfigurationError, match="invalid_api_port"):
         local_hosts()
+
+
+async def test_extension_read_without_origin_needs_the_token(local_app: FastAPI) -> None:
+    """Chrome sends a GET from an extension with host permission without Origin and with
+    `Sec-Fetch-Site: none`; the bearer token alone authorizes it."""
+    async with AsyncClient(transport=ASGITransport(app=local_app), base_url="http://localhost:8000") as client:
+        headers = {"Authorization": f"Bearer {TOKEN}", "Sec-Fetch-Site": "none"}
+        response = await client.get("/api/v1/meetings/", headers=headers)
+        assert response.status_code != 403, response.text
+        assert response.json() != {"detail": "local_origin_required"}
