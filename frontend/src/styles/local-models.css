@@ -1,0 +1,127 @@
+/* Local models by process: the installed rows, the empty state and the «Agregar» dialog (suggestions and «Otro»).
+ * The rows reuse `.engines-local-*` from engines.css. */
+
+.local-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+}
+
+/* Size first (mono, tabular) and then what the model is for, wrapping as one sentence. */
+.local-row-line .engines-local-size::after {
+  content: "·";
+  margin: 0 var(--ds-space-2);
+  font-family: var(--ds-font-sans);
+  color: var(--ds-fg-subtle);
+}
+
+/* Empty state: title, why, and «Agregar» as the one main action. */
+.local-empty {
+  display: grid;
+  gap: var(--ds-space-2);
+  justify-items: start;
+  padding: var(--ds-space-4);
+  background: var(--ds-bg);
+  border: 1px dashed var(--ds-border-strong);
+  border-radius: var(--ds-radius-thumb);
+}
+
+.local-empty p {
+  margin: 0;
+}
+
+.local-empty-title {
+  margin: 0;
+  font-size: var(--ds-text-md);
+  font-weight: var(--ds-weight-semibold);
+}
+
+/* «Agregar» dialog */
+.local-add {
+  display: grid;
+  gap: var(--ds-space-3);
+  min-width: 0;
+}
+
+.local-add p {
+  margin: 0;
+}
+
+.local-add-section {
+  display: grid;
+  gap: var(--ds-space-2);
+  min-width: 0;
+}
+
+.local-add-other {
+  padding-top: var(--ds-space-3);
+  border-top: 1px solid var(--ds-border);
+}
+
+.local-add-back {
+  justify-self: start;
+}
+
+.local-custom {
+  display: grid;
+  gap: var(--ds-space-3);
+  min-width: 0;
+}
+
+.local-custom-search {
+  display: grid;
+  gap: var(--ds-space-2);
+}
+
+.local-custom-files {
+  display: grid;
+  gap: var(--ds-space-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.local-custom-files legend {
+  margin-bottom: var(--ds-space-1);
+  padding: 0;
+  color: var(--ds-fg-muted);
+  font-size: var(--ds-text-sm);
+  font-weight: var(--ds-weight-medium);
+}
+
+.local-custom-file {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  min-height: var(--ds-control-h-sm);
+  padding: var(--ds-space-1) var(--ds-space-2);
+  background: var(--ds-bg);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-thumb);
+  cursor: pointer;
+  transition: border-color var(--ds-duration) var(--ds-ease), background-color var(--ds-duration) var(--ds-ease);
+}
+
+.local-custom-file:has(input:checked) {
+  background: var(--ds-accent-soft);
+  border-color: var(--ds-accent-line);
+}
+
+.local-custom-file input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--ds-accent-line);
+}
+
+.local-custom-file:has(input:focus-visible) {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+
+.local-custom-file-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-text-xs);
+  overflow-wrap: anywhere;
+}

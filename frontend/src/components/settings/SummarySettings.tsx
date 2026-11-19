@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FolderPlus, Plus } from "lucide-react";
 import { listTemplateCategories, listTemplates, setDefaultTemplate } from "../../api";
 import type { SummaryTemplate, TemplateCategory } from "../../api";
-import { Button, Icon, Skeleton, StatusBadge } from "../ui";
+import { Button, Icon, Skeleton, StatusBadge, Tabs } from "../ui";
 import { CategoryDialog } from "./CategoryDialog";
 import { ProcessSettings } from "./ProcessSettings";
 import { TemplateDialog } from "./TemplateDialog";
@@ -13,6 +13,11 @@ type Load =
   | { status: "error" }
   | { status: "ready"; templates: SummaryTemplate[]; categories: TemplateCategory[] };
 
+type SummaryTab = "models" | "templates";
+
+/** The tab last chosen, kept while the person moves around Settings in this session; «Modelos» comes first. */
+let lastTab: SummaryTab = "models";
+
 type OpenDialog = { kind: "template"; template: SummaryTemplate | null } | { kind: "category" } | null;
 type Notice = { kind: "success" | "error"; text: string } | null;
 
@@ -20,10 +25,12 @@ function withDefault(templates: SummaryTemplate[], defaultId: string | null): Su
   return templates.map((template) => ({ ...template, isDefault: template.id === defaultId }));
 }
 
-/** Templates grouped by category, with the default marked. Editing, creating and choosing the
- * default all go through the templates API; there is no delete because the API has none. */
+/** Summaries in two tabs: «Modelos» (the engine and the local models of the process) and «Plantillas» (templates
+ * grouped by category, with the default marked). Editing, creating and choosing the default all go through the
+ * templates API; there is no delete because the API has none. */
 export function SummarySettings() {
   const { t } = useT();
+  const [tab, setTab] = useState<SummaryTab>(lastTab);
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -87,11 +94,8 @@ export function SummarySettings() {
     setDialog(null);
   }
 
-  return (
+  const templatesPanel = (
     <div className="settings-stack">
-      <ProcessSettings process="summary" />
-      <section className="settings-stack" aria-labelledby="summary-templates-title">
-      <h3 id="summary-templates-title" className="settings-group-title">{t("settings:summaries.templatesTitle")}</h3>
       <p className="settings-help">{t("settings:summaries.help")}</p>
       <div className="settings-toolbar">
         <Button variant="primary" disabled={load.status !== "ready"} onClick={() => setDialog({ kind: "template", template: null })}>
@@ -127,8 +131,23 @@ export function SummarySettings() {
           onEdit={(template) => setDialog({ kind: "template", template })}
         />
       )}
+    </div>
+  );
 
-      </section>
+  return (
+    <div className="settings-stack">
+      <Tabs
+        aria-label={t("settings:summaries.tabsLabel")}
+        activeId={tab}
+        onChange={(id) => {
+          lastTab = id as SummaryTab;
+          setTab(lastTab);
+        }}
+        tabs={[
+          { id: "models", label: t("settings:summaries.tabModels"), panel: <ProcessSettings process="summary" /> },
+          { id: "templates", label: t("settings:summaries.tabTemplates"), panel: templatesPanel },
+        ]}
+      />
 
       {dialog?.kind === "template" && load.status === "ready" && (
         <TemplateDialog

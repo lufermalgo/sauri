@@ -101,11 +101,12 @@ async function renderReady(data = initial()) {
   backend = fakeBackend(data);
   vi.stubGlobal("fetch", backend.handler);
   render(<SummarySettings />);
+  fireEvent.click(screen.getByRole("tab", { name: t("settings:summaries.tabTemplates") }));
   await screen.findByRole("heading", { name: "Sales" });
 }
 
 const row = (name: string) => screen.getByText(name, { selector: ".settings-template-name" }).closest("li")!;
-const templatesSection = () => screen.getByRole("region", { name: t("settings:summaries.templatesTitle") });
+const templatesSection = () => screen.getByRole("tabpanel", { name: t("settings:summaries.tabTemplates") });
 const writes = () => backend.calls.filter((call) => call.method !== "GET");
 
 beforeEach(() => {
@@ -133,7 +134,7 @@ describe("summary templates list", () => {
   it("groups templates by category, then without category, and marks the default", async () => {
     await renderReady();
     const headings = within(templatesSection()).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent);
-    expect(headings).toEqual([t("settings:summaries.templatesTitle"), "Sales", "Support", t("settings:summaries.uncategorized")]);
+    expect(headings).toEqual(["Sales", "Support", t("settings:summaries.uncategorized")]);
 
     const commercial = screen.getByRole("region", { name: "Sales" });
     expect(within(commercial).getAllByRole("listitem").map((item) => item.querySelector(".settings-template-name")?.textContent))
@@ -355,5 +356,63 @@ describe("creating templates and categories", () => {
     fireEvent.change(name, { target: { value: "Management" } });
     fireEvent.click(within(dialog).getByRole("button", { name: t("settings:categoryDialog.create") }));
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(t("settings:categoryDialog.error"));
+  });
+});
+
+describe("tabs «Modelos» and «Plantillas»", () => {
+  /** A fresh copy of the screen, as when Settings opens for the first time in a session. */
+  async function freshScreen() {
+    vi.resetModules();
+    const fresh = await import("./settings/SummarySettings");
+    const i18n = await import("../i18n");
+    return { Screen: fresh.SummarySettings, tr: i18n.t };
+  }
+
+  it("opens on «Modelos», with the engine and local models of summaries, and announces the tabs", async () => {
+    const { Screen, tr } = await freshScreen();
+    backend = fakeBackend(initial());
+    vi.stubGlobal("fetch", backend.handler);
+    render(<Screen />);
+    const tablist = screen.getByRole("tablist", { name: tr("settings:summaries.tabsLabel") });
+    const tabs = within(tablist).getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual([tr("settings:summaries.tabModels"), tr("settings:summaries.tabTemplates")]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    const models = screen.getByRole("tabpanel", { name: tr("settings:summaries.tabModels") });
+    expect(await within(models).findByRole("region", { name: tr("engines:local.title") })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Sales" })).toBeNull();
+  });
+
+  it("moves between the tabs with the arrow keys, Home and End", async () => {
+    const { Screen, tr } = await freshScreen();
+    backend = fakeBackend(initial());
+    vi.stubGlobal("fetch", backend.handler);
+    render(<Screen />);
+    const models = screen.getByRole("tab", { name: tr("settings:summaries.tabModels") });
+    const templates = screen.getByRole("tab", { name: tr("settings:summaries.tabTemplates") });
+    models.focus();
+    fireEvent.keyDown(models, { key: "ArrowRight" });
+    expect(templates).toHaveFocus();
+    expect(templates).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("heading", { name: "Sales" })).toBeInTheDocument();
+    fireEvent.keyDown(templates, { key: "ArrowLeft" });
+    expect(models).toHaveFocus();
+    expect(models).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(models, { key: "End" });
+    expect(templates).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(templates, { key: "Home" });
+    expect(models).toHaveAttribute("aria-selected", "true");
+    expect(templates).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("keeps the chosen tab when the person comes back to Summaries in the same session", async () => {
+    const { Screen, tr } = await freshScreen();
+    backend = fakeBackend(initial());
+    vi.stubGlobal("fetch", backend.handler);
+    const first = render(<Screen />);
+    fireEvent.click(screen.getByRole("tab", { name: tr("settings:summaries.tabTemplates") }));
+    first.unmount();
+    render(<Screen />);
+    expect(screen.getByRole("tab", { name: tr("settings:summaries.tabTemplates") })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("heading", { name: "Sales" })).toBeInTheDocument();
   });
 });

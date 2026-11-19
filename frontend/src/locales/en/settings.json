@@ -136,7 +136,6 @@
     }
   },
   "summaries": {
-    "templatesTitle": "Templates",
     "help": "Templates tell Sauri how to write a meeting's summary. The default template is used for automatic summaries. Changes only affect future summaries: existing ones keep the version they were generated with.",
     "newTemplate": "New template",
     "newCategory": "New category",
@@ -154,7 +153,10 @@
     "defaultSaved": "“{{name}}” is now the default template.",
     "defaultError": "We couldn't change the default template. The previous one stays.",
     "templateSaved": "Saved “{{name}}”.",
-    "categorySaved": "Created the category “{{name}}”."
+    "categorySaved": "Created the category “{{name}}”.",
+    "tabsLabel": "Summary sections",
+    "tabModels": "Models",
+    "tabTemplates": "Templates"
   },
   "templateDialog": {
     "createTitle": "New template",
