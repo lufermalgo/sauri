@@ -17,6 +17,7 @@ import {
   getLocalHardware,
   getLocalJob,
   installLocalModel,
+  isLocalMode,
   listLocalModels,
   removeLocalModel,
   verifyLocalModel,
@@ -461,17 +462,31 @@ function HardwareSummary({ hardware, recommendation }: { hardware: LocalHardware
   );
 }
 
-/** The engine does not answer: either it was never installed or it is stopped. The portal cannot tell
- * which tools are missing, so it names the ones this engine needs along with the command. */
+/** The engine does not answer. In the desktop app the engines come with Sauri and start on their own, so the person
+ * is told what they can do (reopen Sauri, then look at the logs); elsewhere it was never installed or is stopped, and
+ * the portal names the tools this engine needs along with the command. */
 function EngineMissing({ process, host = false }: { process: EngineProcess; host?: boolean }) {
   const { t } = useT();
+  const engine = t(`engines:local.engineNames.${process}`);
+  if (isLocalMode()) {
+    return (
+      <section className="engines-missing" aria-label={t("engines:local.engineMissing.desktopTitle")}>
+        <h4 className="engines-missing-title">
+          <Icon icon={CircleAlert} />
+          {t("engines:local.engineMissing.desktopTitle")}
+        </h4>
+        <p>{host ? t("engines:local.engineMissing.desktopHostBody") : t("engines:local.engineMissing.desktopBody", { engine })}</p>
+        <p className="settings-help">{t("engines:local.engineMissing.desktopWait")}</p>
+      </section>
+    );
+  }
   return (
     <section className="engines-missing" aria-label={t("engines:local.engineMissing.title")}>
       <h4 className="engines-missing-title">
         <Icon icon={CircleAlert} />
         {t("engines:local.engineMissing.title")}
       </h4>
-      <p>{host ? t("engines:local.engineMissing.hostBody") : t("engines:local.engineMissing.body", { engine: t(`engines:local.engineNames.${process}`) })}</p>
+      <p>{host ? t("engines:local.engineMissing.hostBody") : t("engines:local.engineMissing.body", { engine })}</p>
       <p>{t("engines:local.engineMissing.installIntro")}</p>
       <p><code className="engines-command"><Icon icon={Terminal} size={14} />{t("engines:local.engineMissing.installCommand")}</code></p>
       <p className="settings-help">{t("engines:local.engineMissing.tools", { list: t(`engines:local.engineTools.${process}`) })}</p>
@@ -497,12 +512,15 @@ interface ModelListProps {
   onCancel: () => void;
 }
 
-/** The options of the process (models and managed engines), then the supporting files in one line each. */
+/** The options of the process (models and managed engines), then the supporting files and the engines a model needs
+ * in one line each: an engine Parakeet runs on is not a choice of its own. */
 function ModelList(props: ModelListProps) {
   const { t } = useT();
   const { process, models, job } = props;
-  const options = models.filter((model) => model.kind !== "auxiliary");
+  const dependencies = new Set(models.flatMap((model) => (model.needs ? [model.needs] : [])));
+  const options = models.filter((model) => model.kind !== "auxiliary" && !dependencies.has(model.id));
   const supporting = models.filter((model) => model.kind === "auxiliary");
+  const engines = models.filter((model) => dependencies.has(model.id));
   const jobRunning = job?.state === "running" && job.type !== "adopt";
   return (
     <section className="engines-local-section" aria-label={t("engines:local.modelsTitle")}>
@@ -512,6 +530,7 @@ function ModelList(props: ModelListProps) {
         {options.map((model) => <ModelRow key={model.id} {...props} model={model} />)}
       </ul>
       {supporting.map((model) => <SupportLine key={model.id} {...props} model={model} idPrefix={`engines-model-${process}`} />)}
+      {engines.map((model) => <EngineLine key={model.id} process={process} model={model} />)}
     </section>
   );
 }
@@ -603,7 +622,9 @@ function ModelRow(props: RowProps) {
         {noteKey && <p className="settings-help">{t(`engines:local.modelNotes.${noteKey}`)}</p>}
         {missingEngine && (
           <p className="settings-help">
-            {t("engines:local.needsEngine", { command: `bash ${engineEntry?.managed_by ?? engineEntry?.install?.managed_by ?? "scripts/engines/install-parakeet-engine.sh"}` })}
+            {isLocalMode()
+              ? t("engines:local.needsEngineDesktop")
+              : t("engines:local.needsEngine", { command: `bash ${engineEntry?.managed_by ?? engineEntry?.install?.managed_by ?? "scripts/engines/install-parakeet-engine.sh"}` })}
           </p>
         )}
         {model.license && model.attribution && (
@@ -613,7 +634,9 @@ function ModelRow(props: RowProps) {
         {inUse && model.in_use_by.length > 0 && state !== "available" && (
           <p className="settings-help">{t("engines:local.inUse", { list: processList(model.in_use_by) })}</p>
         )}
-        {managed && !installed && !running && command && <p className="settings-help">{t("engines:local.managedHow", { command: `bash ${command}` })}</p>}
+        {managed && !installed && !running && command && (
+          <p className="settings-help">{isLocalMode() ? t("engines:local.managedDesktop") : t("engines:local.managedHow", { command: `bash ${command}` })}</p>
+        )}
         {component && !installed && !running && (
           <p className="settings-help">{t(unpublished ? "engines:local.componentUnavailable" : "engines:local.componentHow")}</p>
         )}
@@ -684,6 +707,26 @@ function SupportLine({ model, job, busyModel, cancelling, onInstall, onCancel, i
         </Button>
       )}
       {running && <JobProgress job={running} cancelling={cancelling} onCancel={onCancel} />}
+    </div>
+  );
+}
+
+/** An engine a model runs on (Parakeet's FluidAudio): one line with its state, never a choice or a download. */
+function EngineLine({ process, model }: { process: EngineProcess; model: LocalModel }) {
+  const { t } = useT();
+  const installed = availabilityOf(model) === "installed";
+  const name = translateIfKnown(`engines:local.managedTitle.${process}`) ?? model.id;
+  const command = model.install?.managed_by ?? model.managed_by;
+  return (
+    <div className="engines-local-support">
+      <p className="settings-help">
+        {t("engines:local.engineLine", { name, state: t(installed ? "engines:local.states.installed" : "engines:local.states.notReady") })}
+      </p>
+      {!installed && (isLocalMode() || command) && (
+        <p className="settings-help">
+          {isLocalMode() ? t("engines:local.managedDesktop") : t("engines:local.managedHow", { command: `bash ${command}` })}
+        </p>
+      )}
     </div>
   );
 }

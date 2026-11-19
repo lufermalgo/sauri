@@ -333,6 +333,8 @@ def test_in_the_desktop_app_the_component_replaces_the_managed_engine(
     assert component["install"]["method"] == "download" and component["install"]["source_available"] is True
     assert component["install"]["disk_required_bytes"] >= component["size"]
     assert component["recommended"] and body["recommendations"]["diarization"]["model_id"] == COMPONENT_ID
+    # The first run downloads the component on its own: it is in the setup plan.
+    assert body["setup_plan"] == [COMPONENT_ID]
 
 
 def test_without_a_download_place_the_listing_says_so_and_install_is_refused(

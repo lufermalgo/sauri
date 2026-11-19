@@ -106,6 +106,11 @@ export const TOKEN_KEY = "sauri_token";
 
 let localMode = false;
 
+/** True once `detectLocalSession` found the desktop app's local core (its engines come with the app). */
+export function isLocalMode(): boolean {
+  return localMode;
+}
+
 /** Local credentials work only on the portal/API's shared origin, never on the Vite dev origin. */
 export function canDetectLocalMode(): boolean {
   return new URL(BASE_URL || "/", window.location.href).origin === window.location.origin;

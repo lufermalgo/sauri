@@ -25,8 +25,8 @@ describe("hardware check", () => {
     const report = checkHardware(input());
     expect(report.problems).toEqual([]);
     expect(report.warnings).toEqual([]);
-    // Parakeet + Qwen 9B + the voice detector + the speaker runtime, with the 20 % margin.
-    expect(report.neededBytes).toBe(Math.ceil((632314500 + 5680522464 + 885098 + 716.6e6) * 1.2));
+    // Parakeet + its Whisper fallback + Qwen 9B + the voice detector + the speaker runtime, with the 20 % margin.
+    expect(report.neededBytes).toBe(Math.ceil((632314500 + 574041195 + 5680522464 + 885098 + 716.6e6) * 1.2));
   });
 
   it("blocks an Intel Mac and a macOS older than the minimum", () => {

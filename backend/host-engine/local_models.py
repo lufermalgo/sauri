@@ -86,6 +86,7 @@ from sauri_engine_common.recommend import (
     HardwareProfile,
     load_catalog,
     recommend,
+    setup_plan,
 )
 
 _RELEASES_REPO: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
@@ -741,6 +742,8 @@ class LocalModelService:
             "catalog_version": self.catalog.version,
             "models": models,
             "recommendations": {process: rec.as_dict() for process, rec in recommendations.items()},
+            # What the first run installs on its own, in order (installed entries included; the portal skips them).
+            "setup_plan": list(setup_plan(recommendations, self.catalog)),
             "active_job": self._active.id if self._active else None,
             "active": active,
             "adoption": self._last_adoption,

@@ -615,6 +615,8 @@ def test_the_listing_carries_state_recommendation_and_the_managed_engine(
     assert body["recommendations"]["transcription"]["model_id"] == MODEL_ID
     assert body["recommendations"]["transcription"]["reason_key"] == "fits"
     assert body["recommendations"]["diarization"]["model_id"] == ENGINE_ID
+    # A managed engine is never downloaded, so the plan lists only the recommended file.
+    assert ENGINE_ID not in body["setup_plan"] and MODEL_ID in body["setup_plan"]
     assert "url" not in json.dumps(body) and "sha256" not in json.dumps(body)
 
 

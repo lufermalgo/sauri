@@ -1,27 +1,45 @@
 {
   "title": "Welcome to Sauri",
-  "intro": "Two steps are left: install the AI models that process your meetings on this Mac, and connect the Chrome extension that records them.",
+  "intro": "Two steps are left: Sauri installs the AI models that process your meetings on this Mac, and then you connect the Chrome extension that records them.",
   "step": "Step {{n}} of 2",
   "models": {
     "title": "Models for this Mac",
-    "intro": "We recommend the models that work best on this computer. They download once, and from then on everything is processed here, without sending anything out.",
-    "later": "You can install or change models at any time in Settings.",
-    "loading": "Reading what each process uses…",
-    "loadError": "I couldn't read which model each process uses.",
+    "intro": "Sauri picks and installs the models that work best on this Mac on its own. They download once, and from then on everything is processed here, without sending anything out.",
+    "later": "If you want a different model later, you can change it in Settings › Engines and models.",
+    "preparing": "Getting the installation ready…",
+    "waiting": "Finishing a check of what is already installed…",
+    "estimate": "About {{size}} in total. It may take a few minutes depending on your connection.",
+    "installing": "Installing {{what}} ({{n}} of {{count}})",
+    "checking": "Checking {{what}} ({{n}} of {{count}})",
+    "items": {
+      "transcription": "what turns speech into text",
+      "diarization": "what tells who is speaking",
+      "summary": "what writes the summaries"
+    },
+    "progressLabel": "Installation progress",
+    "bytes": "{{done}} of {{total}}",
+    "saving": "Getting everything ready…",
+    "ready": "All set: Sauri can now transcribe, tell who is speaking and summarize on this Mac.",
+    "noLocal": "{{process}}: this Mac can't do it here. You can use an external service from Settings.",
+    "failed": {
+      "offline": "We couldn't download the models. Check your internet connection and try again; what already finished installing is kept.",
+      "disk": "There isn't enough disk space: {{needed}} are needed and {{free}} are free. Free up some space and try again.",
+      "unavailable": "Part of Sauri isn't available to download yet. You can continue and finish later from Settings.",
+      "host": "Sauri isn't responding right now. Wait a few seconds and try again.",
+      "generic": "We couldn't finish the installation. Try again."
+    },
     "retry": "Try again",
-    "saveError": "I couldn't save the chosen model. Try again.",
+    "skip": "Continue without finishing",
+    "skipHelp": "You can finish the installation later from Settings › Engines and models.",
     "processes": {
       "transcription": {
-        "title": "Transcription",
-        "help": "Turns the audio of your meetings into text."
+        "title": "Transcription"
       },
       "diarization": {
-        "title": "Speakers",
-        "help": "Tells who is speaking at each moment."
+        "title": "Speakers"
       },
       "summary": {
-        "title": "Summaries",
-        "help": "Writes the summary of each meeting."
+        "title": "Summaries"
       }
     },
     "continue": "Continue"

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { EngineProcess, LocalAdoption, LocalJob, LocalModel } from "@sauri/shared-types";
+import { detectLocalSession } from "../api";
 import { LocalModelCard } from "./settings/LocalModelCard";
 import type { ExternalChoice, LocalSelection } from "./settings/LocalModelCard";
 import { t } from "../i18n";
@@ -682,6 +683,23 @@ describe("Parakeet as the preferred transcription model", () => {
     expect(onUse).toHaveBeenLastCalledWith("local:whisper-turbo");
   });
 
+  const fluidaudio = (overrides: Partial<LocalModel> = {}) => model({
+    id: "fluidaudio-cli", kind: "managed_engine", engine: "fluidaudio", size: null, installed_size: null, state: "managed",
+    location: "managed", verified_by: "presence", managed_by: "scripts/engines/install-parakeet-engine.sh", ...overrides,
+  });
+
+  it("shows Parakeet's engine as one supporting line, never as a model to use", async () => {
+    const onUse = vi.fn();
+    await renderCard([parakeet(), whisper(), fluidaudio()], {}, { onUse });
+    const name = t("engines:local.managedTitle.transcription");
+    expect(screen.queryByRole("listitem", { name })).toBeNull();
+    expect(screen.queryByRole("button", { name: t("engines:local.useLabel", { name }) })).toBeNull();
+    expect(screen.getByText(t("engines:local.engineLine", { name, state: t("engines:local.states.installed") }))).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").map((item) => item.getAttribute("aria-labelledby"))).toEqual([
+      `engines-model-transcription-${PARAKEET_ID}`, "engines-model-transcription-whisper-turbo",
+    ]);
+  });
+
   it("does not call Parakeet active, nor offer it, while its engine is missing, and says how to install the engine", async () => {
     const engine = model({
       id: "fluidaudio-cli", kind: "managed_engine", engine: "fluidaudio", size: null, installed_size: null, state: "not_installed",
@@ -696,3 +714,59 @@ describe("Parakeet as the preferred transcription model", () => {
     expect(within(row("whisper-turbo")).getByText(t("engines:local.states.active"))).toBeInTheDocument();
   });
 });
+
+describe("inside the desktop app", () => {
+  async function localMode(on: boolean) {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (!on) return new Response("{}", { status: 404 });
+      return String(input).endsWith("/local/me") ? json({ name: "Ana", email: "ana@sauri.local" }) : json({ mode: "local", ready: true });
+    }));
+    await detectLocalSession();
+  }
+
+  beforeEach(() => localMode(true));
+  afterEach(() => localMode(false));
+
+  const noTerminal = () => {
+    for (const text of [/make engines/, /bash /, /Homebrew/, /terminal/i]) expect(screen.queryByText(text)).toBeNull();
+  };
+
+  it("tells the person to reopen Sauri and where the logs are when an engine does not answer, without terminal commands", async () => {
+    await renderCard([TURBO], { engineState: "stopped" });
+    const missing = screen.getByRole("region", { name: t("engines:local.engineMissing.desktopTitle") });
+    expect(within(missing).getByText(t("engines:local.engineMissing.desktopBody", { engine: t("engines:local.engineNames.transcription") }))).toBeInTheDocument();
+    expect(within(missing).getByText(t("engines:local.engineMissing.desktopWait"))).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: t("engines:local.engineMissing.title") })).toBeNull();
+    noTerminal();
+  });
+
+  it("says the same when the service that manages models does not answer", async () => {
+    backend = fakeBackend([TURBO], { hostDown: true });
+    vi.stubGlobal("fetch", backend.handler);
+    render(<LocalModelCard {...cardProps({})} />);
+    const missing = await screen.findByRole("region", { name: t("engines:local.engineMissing.desktopTitle") });
+    expect(within(missing).getByText(t("engines:local.engineMissing.desktopHostBody"))).toBeInTheDocument();
+    noTerminal();
+  });
+
+  it("never asks to run an install script for Parakeet's engine or the speaker engine", async () => {
+    const parakeet = model({ id: "parakeet-tdt-0.6b-v3-ultra-coreml", engine: "fluidaudio", preferred: true, needs: "fluidaudio-cli", needs_ready: false });
+    const engine = model({
+      id: "fluidaudio-cli", kind: "managed_engine", engine: "fluidaudio", size: null, installed_size: null, state: "not_installed",
+      availability: "available", location: null, managed_by: "scripts/engines/install-parakeet-engine.sh",
+      install: { method: "managed_command", managed_by: "scripts/engines/install-parakeet-engine.sh", download_bytes: null, disk_required_bytes: null, fits_on_disk: null },
+    });
+    await renderCard([parakeet, TURBO, engine]);
+    expect(within(row(parakeet.id)).getByText(t("engines:local.needsEngineDesktop"))).toBeInTheDocument();
+    expect(screen.getByText(t("engines:local.managedDesktop"))).toBeInTheDocument();
+    noTerminal();
+    cleanup();
+    const senko = { ...SENKO, state: "not_installed" as const, availability: "available" as const, active: false, in_use: false, in_use_by: [],
+      location: null, install: { method: "managed_command" as const, managed_by: "scripts/engines/install-diar-engine.sh", download_bytes: null, disk_required_bytes: null, fits_on_disk: null } };
+    await renderCard([senko], {}, { process: "diarization" });
+    expect(screen.getByText(t("engines:local.managedDesktop"))).toBeInTheDocument();
+    noTerminal();
+  });
+});
+

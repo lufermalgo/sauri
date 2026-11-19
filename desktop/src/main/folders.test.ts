@@ -36,11 +36,11 @@ describe("paths", () => {
     expect(appPaths({ dev: true, home: dir }).dataDir).toBe(path.join(dir, "Library", "Application Support", "Sauri-dev"));
     expect(appPaths({ dev: false, home: dir }).logsDir).toBe(path.join(dir, "Library", "Logs", "Sauri"));
     expect(defaultFolders({ home: dir, dev: false })).toEqual({
-      recordings: path.join(dir, "Sauri", "Grabaciones"),
-      database: path.join(dir, "Sauri", "Base de datos"),
-      models: path.join(dir, "Sauri", "Modelos"),
+      recordings: path.join(dir, "Sauri", "Recordings"),
+      database: path.join(dir, "Sauri", "Database"),
+      models: path.join(dir, "Sauri", "Models"),
     });
-    expect(defaultFolders({ home: dir, dev: true }).models).toBe(path.join(dir, "Sauri-dev", "Modelos"));
+    expect(defaultFolders({ home: dir, dev: true }).models).toBe(path.join(dir, "Sauri-dev", "Models"));
   });
 
   it("fails clearly when the PostgreSQL socket path is too long for macOS", () => {
@@ -66,7 +66,7 @@ describe("paths", () => {
 
 describe("folders", () => {
   it("shows the free space of the disk that will hold a folder not created yet", () => {
-    const info = inspectFolder("recordings", path.join(dir, "a", "b", "Grabaciones"), INSTALL);
+    const info = inspectFolder("recordings", path.join(dir, "a", "b", "Recordings"), INSTALL);
     expect(info.issue).toBeUndefined();
     expect(info.freeBytes).toBeGreaterThan(0);
   });
@@ -74,7 +74,7 @@ describe("folders", () => {
   it("rejects a folder without write permission", () => {
     const locked = path.join(dir, "locked");
     fs.mkdirSync(locked, { mode: 0o500 });
-    expect(inspectFolder("models", path.join(locked, "Modelos"), INSTALL).issue).toBe("not_writable");
+    expect(inspectFolder("models", path.join(locked, "Models"), INSTALL).issue).toBe("not_writable");
     expect(inspectFolder("models", locked, INSTALL).issue).toBe("not_writable");
   });
 
@@ -107,7 +107,7 @@ describe("folders", () => {
     const paths = folders();
     const locked = path.join(dir, "locked");
     fs.mkdirSync(locked, { mode: 0o500 });
-    const result = prepareFolders({ ...paths, models: path.join(locked, "Modelos") }, INSTALL);
+    const result = prepareFolders({ ...paths, models: path.join(locked, "Models") }, INSTALL);
     expect(result.find((info) => info.kind === "models")?.issue).toBe("not_writable");
     expect(fs.existsSync(paths.recordings)).toBe(false);
   });

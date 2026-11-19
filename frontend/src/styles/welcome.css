@@ -52,6 +52,22 @@
   font-size: var(--ds-text-lg);
 }
 
+.welcome-install:empty {
+  display: none;
+}
+
+.welcome-install p {
+  margin: 0;
+}
+
+.welcome-install-ready {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  color: var(--ds-success);
+  font-weight: var(--ds-weight-semibold);
+}
+
 .welcome-store-link {
   display: inline-flex;
   align-items: center;
