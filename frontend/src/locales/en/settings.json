@@ -96,6 +96,23 @@
     "change": "Change",
     "changeLabel": "Change the {{kind}} folder",
     "moving": "Copying and checking your data. Sauri pauses for a moment and comes back on its own when it finishes…",
+    "progress": {
+      "choosing": "Choose the new folder in the window that opened.",
+      "preparing": "Preparing…",
+      "copying": "Copying files…",
+      "verifying": "Checking that the copy is complete…",
+      "switching": "Switching to the new folder…",
+      "restarting": "Starting Sauri again…",
+      "restartingDatabase": "Restarting the database…",
+      "confirm_trash": "Answer in the window that opened: do you want to move the previous folder to the Trash?",
+      "trashing": "Moving the previous folder to the Trash…",
+      "bytes": "{{done}} of {{total}}",
+      "label": "Progress of moving the {{kind}} folder",
+      "lessThanMinute": "Less than a minute left to finish the copy.",
+      "minutesLeft_one": "About {{count}} minute left to finish the copy.",
+      "minutesLeft_other": "About {{count}} minutes left to finish the copy.",
+      "keepOpen": "Do not quit Sauri until it finishes. If anything interrupts it, your data stays intact in the previous folder."
+    },
     "moved": "Done: {{kind}} is now in {{path}}. The previous folder is still intact.",
     "movedTrashed": "Done: {{kind}} is now in {{path}}. The previous folder was moved to the Trash.",
     "errors": {
