@@ -7,19 +7,23 @@ const processes = () => [localProcess("transcription"), localProcess("diarizatio
 
 describe("setup plan", () => {
   it.each([
-    [8, [PARAKEET, WHISPER, VAD, SMALL_LLM, DIAR]],
-    [16, [PARAKEET, WHISPER, VAD, LARGE_LLM, DIAR]],
-    [24, [PARAKEET, WHISPER, VAD, LARGE_LLM, DIAR]],
-  ] as const)("installs the host's plan for a %i GB Mac, in order", (memory, ids) => {
-    expect(pendingItems(desktopListing(memory)).map((item) => item.id)).toEqual(ids);
+    [8, [PARAKEET, SMALL_LLM, DIAR], 632_314_500 + 2_740_937_888 + 251_532_143],
+    [16, [PARAKEET, LARGE_LLM, DIAR], 632_314_500 + 5_680_522_464 + 251_532_143],
+    [24, [PARAKEET, LARGE_LLM, DIAR], 632_314_500 + 5_680_522_464 + 251_532_143],
+  ] as const)("installs the host's plan for a %i GB Mac, in order, without Whisper", (memory, ids, bytes) => {
+    const items = pendingItems(desktopListing(memory));
+    expect(items.map((item) => item.id)).toEqual(ids);
+    expect(items.map((item) => item.id)).not.toContain(WHISPER);
+    expect(items.map((item) => item.id)).not.toContain(VAD);
+    expect(items.reduce((sum, item) => sum + item.bytes, 0)).toBe(bytes);
     // Same listing, same plan.
     expect(pendingItems(desktopListing(memory))).toEqual(pendingItems(desktopListing(memory)));
   });
 
   it("skips what is already installed and adds up only what is left to download", () => {
-    const items = pendingItems(withInstalled(desktopListing(16), [PARAKEET, VAD]));
-    expect(items.map((item) => item.id)).toEqual([WHISPER, LARGE_LLM, DIAR]);
-    expect(items.reduce((sum, item) => sum + item.bytes, 0)).toBe(574_041_195 + 5_680_522_464 + 251_532_143);
+    const items = pendingItems(withInstalled(desktopListing(16), [PARAKEET]));
+    expect(items.map((item) => item.id)).toEqual([LARGE_LLM, DIAR]);
+    expect(items.reduce((sum, item) => sum + item.bytes, 0)).toBe(5_680_522_464 + 251_532_143);
     expect(pendingItems(withInstalled(desktopListing(16), ALL))).toEqual([]);
   });
 

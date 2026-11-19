@@ -51,8 +51,28 @@ def installed(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("tamper", ["model_missing", "model_hash", "model_size"])
+async def test_a_missing_or_different_vad_model_refuses_whisper_requests_not_the_engine(installed, tamper):
+    """The voice detector is a Whisper file: a Parakeet-only Mac starts without it (requests are refused instead)."""
+    if tamper == "model_missing":
+        installed["model"].unlink()
+    elif tamper == "model_hash":
+        installed["model"].write_bytes(b"x" * installed["model"].stat().st_size)
+    else:
+        installed["model"].write_bytes(b"x")
+    async with native.lifespan(native.app):
+        assert installed["calls"] == [True]
+        expected = "model_not_installed" if tamper == "model_missing" else "model_not_verified"
+        assert native._file_problem(installed["model"]) == expected
+        with pytest.raises(native.LocalModelError) as refused:
+            native._select_engine(None, "es")
+        assert (refused.value.status, refused.value.code) == (409, expected)
+        assert native._vad_for_split() is None  # uploads to a provider are cut by size instead
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("tamper", [
-    "model_missing", "model_hash", "model_size", "binary_missing", "binary_hash", "binary_not_executable",
+    "binary_missing", "binary_hash", "binary_not_executable",
     "provenance_missing", "provenance_hash", "provenance_legacy", "manifest",
 ])
 async def test_vad_assets_fail_closed_before_object_store_initialization(installed, tamper):

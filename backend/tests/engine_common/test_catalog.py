@@ -63,7 +63,7 @@ def test_the_catalog_matches_engine_hashes_for_every_default_model() -> None:
     assert defaults == {*expected, "senko-coreml", "diar-runtime"}
 
 
-def test_parakeet_is_the_preferred_bundle_and_whisper_stays_the_default_fallback() -> None:
+def test_parakeet_is_the_preferred_bundle_and_whisper_stays_the_process_default() -> None:
     catalog = load_catalog()
     parakeet = catalog.get("parakeet-tdt-0.6b-v3-ultra-coreml")
     whisper = catalog.get("whisper-large-v3-turbo-q5_0")

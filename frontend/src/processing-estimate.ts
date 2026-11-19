@@ -204,6 +204,9 @@ const PROCESSING_FAILURE_KEYS = {
   engine_contract_mismatch: "engine_contract_mismatch",
   invalid_response: "invalid_response",
   processing_interrupted: "processing_interrupted",
+  local_model_missing: "local_model_missing",
+  local_model_failed: "local_model_failed",
+  language_not_supported: "language_not_supported",
 } as const;
 
 /** The cause set when a restart or crash stopped the processing and it could not resume by itself. */

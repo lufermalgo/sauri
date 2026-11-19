@@ -11,9 +11,17 @@ that leaves, a timeout or an engine shutdown kills it. Nothing here downloads an
   and list files on Hugging Face), and the subprocess also gets a registry URL that cannot be reached.
 
 The CLI output is converted to the contract-v2 words and segments and then judged by ``sanity_check``: language
-drift (the stock v3 model slips into English), empty output, repetition loops and broken timestamps. A rejected
-output is not an error: the gateway runs the same audio through the whisper.cpp path and records why
-(``engine_fallback_reason``). Thresholds come from the environment with the safe defaults below.
+drift (the stock v3 model slips into English), empty output, repetition loops and broken timestamps. Parakeet is
+the one model of the request and no other model transcribes the audio again:
+
+* soft guards (``SOFT_GUARDS``: language drift, repetition) only warn. The text is returned, the log gets the guard
+  and its measured value (never words) and the answer carries ``diagnostics.parakeet.guard_warning``; imperfect
+  text the user can regenerate with Whisper beats a failed meeting (a Spanish meeting full of English jargon);
+* hard guards (empty output, broken timestamps, invalid output) and CLI failures, timeouts and an unverified CLI
+  fail the transcription (``ParakeetRejected``, mapped by ``failure``). The user can retry, or choose Whisper in
+  Settings and regenerate.
+
+Thresholds come from the environment with the safe defaults below.
 
 Logs carry reason codes and counts only, never transcript text or the CLI's stderr.
 """
@@ -47,7 +55,7 @@ CATALOG_ENGINE: Final = "fluidaudio"
 MODEL_ID: Final = "parakeet-tdt-0.6b-v3-ultra-coreml"
 DEVICE: Final = "coreml-ane"
 BINARY_NAME: Final = "fluidaudiocli"
-# The 25 languages of Parakeet-TDT-0.6B-v3 (model card). Any other language goes to Whisper.
+# The 25 languages of Parakeet-TDT-0.6B-v3 (model card). Any other language is refused (``language_not_supported``).
 SUPPORTED_LANGUAGES: Final = frozenset(
     [
         "en",
@@ -131,7 +139,7 @@ REPEAT_MIN_WORDS: Final = 12
 MIN_WORDS_FOR_RATE: Final = 40
 TOKEN_STRIP: Final = re.compile(r"^\W+|\W+$")
 
-# Reason codes recorded as ``engine_fallback_reason`` (at most 64 characters, content-free).
+# Reason codes of a refused or rejected run (content-free; logged, never returned with any text).
 REASON_LANGUAGE_AUTO: Final = "parakeet_language_auto"
 REASON_LANGUAGE_UNSUPPORTED: Final = "parakeet_language_unsupported"
 REASON_UNAVAILABLE: Final = "parakeet_unavailable"
@@ -142,14 +150,30 @@ REASON_EMPTY: Final = "parakeet_empty_output"
 REASON_DRIFT: Final = "parakeet_language_drift"
 REASON_REPETITION: Final = "parakeet_repetition"
 REASON_TIMESTAMPS: Final = "parakeet_timestamps"
+# Guards that judge the quality of a usable text: they warn and never fail the request.
+SOFT_GUARDS: Final = frozenset({REASON_DRIFT, REASON_REPETITION})
 
 
-class ParakeetRejected(Exception):  # noqa: N818 - a control signal: the audio goes to Whisper
-    """Parakeet cannot or should not answer this audio; ``reason`` is the content-free code to record."""
+class ParakeetRejected(Exception):  # noqa: N818 - the request fails with the code ``failure`` gives
+    """Parakeet cannot or should not answer this audio; ``reason`` is the content-free code to log."""
 
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+def serves_language(language: str) -> bool:
+    """Parakeet needs a known language of its 25 (it does not detect the language: ``auto`` is refused)."""
+    return language in SUPPORTED_LANGUAGES
+
+
+def failure(reason: str) -> tuple[int, str]:
+    """The HTTP status and the stable code a request gets when Parakeet refused or rejected its audio."""
+    if reason in (REASON_LANGUAGE_AUTO, REASON_LANGUAGE_UNSUPPORTED):
+        return 422, "language_not_supported"
+    if reason == REASON_UNAVAILABLE:
+        return 503, "model_failed"
+    return 500, "model_failed"
 
 
 @dataclass(frozen=True)
@@ -168,6 +192,7 @@ class ParakeetResult:
     rtfx: float | None
     cli_ms: int
     english_rate: float
+    guard_warning: str | None = None  # a soft guard that flagged the text (content-free code)
 
 
 # --- configuration ------------------------------------------------------------------------------------
@@ -196,7 +221,10 @@ def guard_config() -> GuardConfig:
 
 
 def default_engine() -> str:
-    """``auto`` (Parakeet when it is installed and healthy, else Whisper) or ``whisper`` (rollback switch)."""
+    """``auto`` (``local:default`` is Parakeet when it is installed and healthy, else Whisper) or ``whisper``.
+
+    It decides which model ``local:default`` means before a request runs; it never moves a running request.
+    """
     value = os.environ.get("SAURI_ASR_DEFAULT_ENGINE", "auto")
     if value not in {"auto", "whisper"}:
         raise ValueError("SAURI_ASR_DEFAULT_ENGINE must be auto or whisper")
@@ -475,11 +503,11 @@ def transcribe(
     deadline_left_s: float,
     config: GuardConfig | None = None,
 ) -> ParakeetResult:
-    """Transcribe ``wav`` or raise ``ParakeetRejected`` (the caller falls back to Whisper)."""
+    """Transcribe ``wav`` or raise ``ParakeetRejected`` (the request fails with ``failure(reason)``)."""
     config = config or guard_config()
     if language == "auto":
         raise ParakeetRejected(REASON_LANGUAGE_AUTO)  # Parakeet does not detect the language
-    if language not in SUPPORTED_LANGUAGES:
+    if not serves_language(language):
         raise ParakeetRejected(REASON_LANGUAGE_UNSUPPORTED)
     verify_binary()
     cancellation.checkpoint()
@@ -489,8 +517,13 @@ def transcribe(
     cli_ms = round((time.monotonic() - started) * 1000)
     words, confidence = parse_output(document, audio_ms, config)
     reason, rate = sanity_check(words, language, config)
-    if reason is not None:
-        count = sum(len(segment.words) for segment in words.segments)
+    count = sum(len(segment.words) for segment in words.segments)
+    if reason in SOFT_GUARDS:
+        logger.warning(
+            "Parakeet output kept despite a quality guard (guard=%s, english_rate=%.4f, max=%.4f, "
+            "repeat_min_repeats=%d, words=%d)", reason, rate, config.english_rate_max, config.repeat_min_repeats, count,
+        )
+    elif reason is not None:
         logger.warning("Parakeet output rejected (reason=%s, words=%d)", reason, count)
         raise ParakeetRejected(reason)
     rtfx = document.get("rtfx")
@@ -501,6 +534,7 @@ def transcribe(
         float(rtfx) if isinstance(rtfx, int | float) and not isinstance(rtfx, bool) else None,
         cli_ms,
         rate,
+        reason,
     )
 
 
@@ -571,8 +605,10 @@ __all__ = [
     "ParakeetResult",
     "default_engine",
     "engine_ready",
+    "failure",
     "guard_config",
     "is_warm",
+    "serves_language",
     "transcribe",
     "warm",
 ]

@@ -61,7 +61,10 @@
     "engine_contract_mismatch": "El motor de transcripción devolvió un formato incompatible.",
     "invalid_response": "El motor de transcripción devolvió una respuesta inválida.",
     "unknown": "El procesamiento falló sin una causa reconocida.",
-    "processing_interrupted": "El procesamiento se interrumpió antes de terminar."
+    "processing_interrupted": "El procesamiento se interrumpió antes de terminar.",
+    "local_model_missing": "Falta el modelo de transcripción que está activo en este Mac. Instálalo o elige otro en Ajustes → Motores y modelos, y vuelve a generar la transcripción.",
+    "local_model_failed": "El modelo de transcripción activo no pudo con esta grabación. Vuelve a generar la transcripción o elige Whisper en Ajustes → Motores y modelos y genérala de nuevo.",
+    "language_not_supported": "El modelo de transcripción activo no admite el idioma de esta grabación. Elige Whisper en Ajustes → Motores y modelos y vuelve a generar la transcripción."
   },
   "retry": "Reintentar",
   "retrying": "Reintentando…",

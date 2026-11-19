@@ -105,7 +105,8 @@ class CatalogModel:
     managed_by: str | None = None
     # Several files in a directory (``file`` names the directory; ``size`` and ``sha256`` describe the listing).
     files: tuple[BundleFile, ...] = ()
-    # ``local:default`` resolves to this model when it is installed and healthy; the ``default`` model is the fallback.
+    # ``local:default`` resolves to this model when it is installed and healthy, else to the ``default`` model
+    # (a Mac that cannot run it). It is resolved once per request: no output is ever transcribed again.
     preferred: bool = False
     # Id of the managed engine this model cannot run without.
     needs: str | None = None
@@ -357,11 +358,11 @@ def recommend(hardware: HardwareProfile, catalog: Catalog) -> dict[Process, Reco
 def setup_plan(recommendations: Mapping[Process, Recommendation], catalog: Catalog) -> tuple[str, ...]:
     """What a first run downloads so that every recommended local model can run, in a fixed order.
 
-    Per process (in ``PROCESSES`` order) with a recommended model: the model itself; the process default when the
-    recommendation is the ``preferred`` model, because ``local:default`` falls back to it and the engine checks it
-    at startup; then the process's default ``auxiliary`` files (the voice detector). Only downloadable entries are
-    listed: a managed engine a model ``needs`` comes with its runtime and is never downloaded. Pure, like
-    ``recommend``: the same recommendations and catalog always give the same tuple.
+    Per process (in ``PROCESSES`` order) with a recommended model: the model itself, then the default
+    ``auxiliary`` files of its own engine (``companions``: the voice detector serves whisper.cpp, not Parakeet).
+    No other model is added: one model runs per process, so a recommended Parakeet does not bring Whisper along.
+    Only downloadable entries are listed: a managed engine a model ``needs`` comes with its runtime and is never
+    downloaded. Pure, like ``recommend``: the same recommendations and catalog always give the same tuple.
     """
     plan: list[str] = []
     for process in PROCESSES:
@@ -369,9 +370,17 @@ def setup_plan(recommendations: Mapping[Process, Recommendation], catalog: Catal
         chosen = catalog.get(recommendation.model_id) if recommendation and recommendation.model_id else None
         if chosen is None:
             continue
-        entries = [chosen]
-        if chosen.preferred:
-            entries += [m for m in catalog.models if m.process == process and m.kind == "model" and m.default]
-        entries += [m for m in catalog.models if m.process == process and m.kind == "auxiliary" and m.default]
+        entries = [chosen, *companions(chosen, catalog)]
         plan += [m.id for m in entries if m.downloadable and m.id not in plan]
     return tuple(plan)
+
+
+def companions(model: CatalogModel, catalog: Catalog) -> tuple[CatalogModel, ...]:
+    """The default ``auxiliary`` files ``model`` runs with: those of its process and of its own engine."""
+    if model.kind != "model":
+        return ()
+    return tuple(
+        entry for entry in catalog.models
+        if entry.kind == "auxiliary" and entry.default and entry.process == model.process
+        and entry.engine == model.engine
+    )

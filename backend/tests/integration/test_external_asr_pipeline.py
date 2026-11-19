@@ -164,6 +164,10 @@ async def world(
     monkeypatch.setattr(native, "MINIO_AUDIO_PREFIX", "synthetic/")
     monkeypatch.setattr(native, "MINIO_BUCKET", "synthetic-bucket")
     monkeypatch.setattr(native, "WHISPER_CLI", str(whisper))
+    # The built-in Whisper model must be on disk for a Whisper request (the fake whisper-cli never reads it).
+    model = tmp_path / "ggml-synthetic.bin"
+    model.write_bytes(b"synthetic model")
+    monkeypatch.setattr(native, "ASR_MODEL_PATH", model)
     monkeypatch.setattr(native, "secret_store", store)
     monkeypatch.setattr(native, "KeepAwake", nullcontext)
     monkeypatch.setattr(native.tempfile, "tempdir", str(tmp_path))

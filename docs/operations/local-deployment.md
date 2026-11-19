@@ -180,9 +180,9 @@ el resto aparece como `[stderr redacted]`. No se registra stdout ni el vocabular
 
 ## Transcripción local con Parakeet (#1180)
 
-Parakeet-TDT-0.6B-v3 «ultra» (Core ML, `fluidaudiocli` de FluidAudio) es el modelo local de transcripción predeterminado cuando está instalado; Whisper turbo queda como respaldo automático y como opción para nombres propios poco comunes. El diseño y la evidencia están en `docs/architecture/overview.md` («Transcripción local: Parakeet y Whisper»).
+Parakeet-TDT-0.6B-v3 «ultra» (Core ML, `fluidaudiocli` de FluidAudio) es el modelo local de transcripción predeterminado cuando está instalado; Whisper turbo es una alternativa que se elige en Ajustes (mejor con nombres propios poco comunes), nunca un respaldo automático: un modelo activo por proceso. El diseño y la evidencia están en `docs/architecture/overview.md` («Transcripción local: Parakeet y Whisper»).
 
-**Instalación en un Mac nuevo.** `make engines-install` ejecuta `scripts/engines/install-parakeet-engine.sh` al final. Construye `fluidaudiocli` desde el commit fijado de FluidAudio (`engine-hashes.json`, sección `parakeet`; se descarga solo ese commit y SwiftPM no tiene dependencias remotas salvo un binario con suma de comprobación fijada) y registra su procedencia en `~/.local/share/sauri/native-engines/parakeet/provenance.json`. Hace falta Swift 6 (Xcode o las Command Line Tools), Apple Silicon y macOS 14+; si falta algo, el script lo explica en español, sale con código 3 y la transcripción sigue con Whisper. El **modelo** (632 MB, 20 archivos con hash propio) se instala desde el portal (Ajustes → Motores y modelos → «Instalar») o, si ya está en el Mac, se copia con la adopción. `--check` verifica el motor instalado; `--warm` compila el modelo para el Neural Engine una vez (el ASR también lo hace en segundo plano al arrancar si no está caliente).
+**Instalación en un Mac nuevo.** `make engines-install` ejecuta `scripts/engines/install-parakeet-engine.sh` al final. Construye `fluidaudiocli` desde el commit fijado de FluidAudio (`engine-hashes.json`, sección `parakeet`; se descarga solo ese commit y SwiftPM no tiene dependencias remotas salvo un binario con suma de comprobación fijada) y registra su procedencia en `~/.local/share/sauri/native-engines/parakeet/provenance.json`. Hace falta Swift 6 (Xcode o las Command Line Tools), Apple Silicon y macOS 14+; si falta algo, el script lo explica en español, sale con código 3 y `local:default` usa Whisper (si está instalado). El **modelo** (632 MB, 20 archivos con hash propio) se instala desde el portal (Ajustes → Motores y modelos → «Instalar») o, si ya está en el Mac, se copia con la adopción. `--check` verifica el motor instalado; `--warm` compila el modelo para el Neural Engine una vez (el ASR también lo hace en segundo plano al arrancar si no está caliente).
 
 **Adopción de lo que ya existe en este Mac** (carpeta del benchmark, sin descargar nada, sin tocar la carpeta de origen):
 
@@ -196,7 +196,7 @@ Acepta el binario solo si su SHA-256 es una compilación conocida (`known_binary
 
 1. `bash scripts/engines/install-parakeet-engine.sh --adopt-from ~/sauri-asr-bench` (o instalar el modelo desde el portal y ejecutar el script sin argumentos).
 2. Reiniciar **solo** los motores nativos `host` y `asr`: `bash scripts/engines/native-engines.sh stop host && bash scripts/engines/native-engines.sh start host`, y lo mismo con `asr`. `host` lee el catálogo nuevo (modelos de varios archivos, `preferred`) y `asr` carga el backend. No hace falta tocar `diar` ni `llm`.
-3. Reconstruir y reiniciar `worker` (guarda `engine_fallback_reason` de Parakeet) y `portal` (tarjetas y estimaciones): `make build`. La API no cambia.
+3. Reconstruir y reiniciar `worker` (causas `local_model_missing`, `local_model_failed`, `language_not_supported`) y `portal` (tarjetas, estimaciones y textos de esas causas): `make build`. La API no cambia.
 4. Verificar: `GET /api/v1/engines/local/models` muestra `parakeet-tdt-0.6b-v3-ultra-coreml` con `active: true`; el registro `asr.log` dice `parakeet_ready=True`; una reunión corta queda con `engine_name = fluidaudio` en `transcripts`.
 
 **Deshacer.** Sin tocar archivos: en Motores y modelos elegir Whisper en Transcripción, o `SAURI_ASR_DEFAULT_ENGINE=whisper` en el entorno del motor ASR y reiniciarlo (`local:default` vuelve al Whisper integrado; Parakeet sigue disponible si se elige a mano). Quitar Parakeet del todo: desinstalarlo desde el portal y borrar `~/.local/share/sauri/native-engines/parakeet`.
@@ -206,15 +206,15 @@ Acepta el binario solo si su SHA-256 es una compilación conocida (`known_binary
 | Variable | Valor por defecto | Efecto |
 |---|---|---|
 | `SAURI_ASR_DEFAULT_ENGINE` | `auto` | `auto`: `local:default` es Parakeet si está sano; `whisper`: siempre el Whisper integrado. |
-| `SAURI_ASR_PARAKEET_ENGLISH_RATE_MAX` | `0.01` | Fracción máxima de palabras vacías del inglés en un idioma que no sea inglés; por encima se repite con Whisper. |
+| `SAURI_ASR_PARAKEET_ENGLISH_RATE_MAX` | `0.01` | Fracción máxima de palabras vacías del inglés en un idioma que no sea inglés; por encima se entrega el texto igualmente y se anota un aviso (`guard_warning`). |
 | `SAURI_ASR_PARAKEET_REPEAT_MIN_REPEATS` | `6` | Repeticiones seguidas de una frase (1–6 palabras, ≥ 12 palabras en total) que se consideran un bucle. |
 | `SAURI_ASR_PARAKEET_NONMONOTONIC_MAX_RATIO` | `0.005` | Fracción de palabras con tiempos que retroceden que se tolera (se reparan y se cuentan en `inverted_words`). |
-| `SAURI_ASR_PARAKEET_TIMEOUT_S` | automático (90 s + 5 % del audio, máx. 420 s) | Tiempo máximo del CLI antes de pasar a Whisper. |
+| `SAURI_ASR_PARAKEET_TIMEOUT_S` | automático (90 s + 5 % del audio, máx. 420 s) | Tiempo máximo del CLI; al agotarlo la transcripción falla (`model_failed`). |
 | `SAURI_PARAKEET_HOME` | `~/.local/share/sauri/native-engines/parakeet` | Dónde están `bin/fluidaudiocli`, `provenance.json` y `warm.json`. |
 
-**Límites y tiempos.** El límite de 20 min del worker (`ENGINE_CALL_TIMEOUT_S`) no cambia: Parakeet ocupa 20–90 s por hora de audio y el peor caso (Parakeet al límite de su tiempo y luego Whisper una hora, ~270 + 549 s) cabe. El portal estima ~2 min por hora con Parakeet y ~10 con Whisper según el motor activo (`frontend/src/processing-estimate.ts`). Los registros solo llevan códigos y cuentas, nunca el texto ni la salida de error del CLI. Un fallo del CLI deja `engine_fallback_reason` (`parakeet_failed`) y la reunión se transcribe con Whisper.
+**Límites y tiempos.** El límite de 20 min del worker (`ENGINE_CALL_TIMEOUT_S`) no cambia: Parakeet ocupa 20–90 s por hora de audio y el peor caso es Parakeet al límite de su tiempo (~270 s), sin repetición con Whisper. El portal estima ~2 min por hora con Parakeet y ~10 con Whisper según el motor activo (`frontend/src/processing-estimate.ts`). Los registros solo llevan códigos y cuentas, nunca el texto ni la salida de error del CLI. Un fallo del CLI deja la reunión fallida con la causa `local_model_failed`; el motivo (`parakeet_failed`) queda solo en `asr.log`.
 
-**Debilidades conocidas.** Escribe peor los nombres propios poco comunes, es más literal (conserva muletillas) y pone menos puntuación en los primeros ~20 min; no tiene bloqueo de idioma (la guardia detecta la deriva al inglés). Idea prevista, sin medir: híbrido (Parakeet y repetir con Whisper solo los tramos de baja confianza).
+**Debilidades conocidas.** Escribe peor los nombres propios poco comunes, es más literal (conserva muletillas) y pone menos puntuación en los primeros ~20 min; no tiene bloqueo de idioma (la guardia detecta la deriva al inglés y solo deja un aviso; con Whisper se puede regenerar). Idea prevista, sin medir: híbrido (Parakeet y repetir con Whisper solo los tramos de baja confianza).
 
 ## Diarización nativa Senko (U1 #921)
 

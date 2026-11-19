@@ -1,9 +1,15 @@
 """Host-native ASR service: Parakeet (Core ML, the default when installed) or whisper.cpp on Metal.
 
-``local:default`` resolves to the catalog's preferred model (Parakeet ultra) when it is installed and its engine is
-healthy, and to the built-in Whisper model otherwise. A Parakeet output that fails the sanity guard, a Parakeet
-failure and any language Parakeet cannot serve are transcribed again by the whisper.cpp path, and the reason is
-recorded as ``engine_fallback_reason`` in the diagnostics. Nothing ever falls back to an external provider.
+One model serves each request. ``local:default`` resolves, before the request runs, to the catalog's preferred
+model (Parakeet ultra) when it is installed and its engine is healthy, and to the built-in Whisper model otherwise;
+``local:<id>`` is that model or a refusal. A Parakeet failure, an unusable output (empty, broken timestamps) and a
+language Parakeet cannot serve fail the request with a stable code (``model_failed``, ``language_not_supported``);
+a text its quality guards flag (drift, repetition) is returned with a logged warning. No other model transcribes
+the audio again: the user can retry, or choose Whisper and regenerate.
+
+Whisper's files (its model and the voice detector it runs with) are needed only by requests that use Whisper:
+the engine starts without them, and such a request is refused with ``model_not_installed`` (or
+``model_not_verified`` when a file present at startup is not the pinned one).
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ from typing import Any, Literal
 import asr_external
 import asr_parakeet
 import boto3
-from asr_assets import vad_cli_path, vad_model_path, verify_assets
+from asr_assets import file_problem, vad_cli_path, vad_model_path, verify_runtime
 from asr_config import (
     chunk_ms,
     default_language,
@@ -98,6 +104,8 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 _bearer_dependency = Depends(_bearer_scheme)
 
 s3_client: Any = None
+# Built-in whisper.cpp files (model, voice detector) present at startup that are not the pinned ones.
+_unverified_files: set[Path] = set()
 # Host secret store for provider keys; None means the default store (Keychain, else private files).
 secret_store: SecretStore | None = None
 
@@ -116,7 +124,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         vad_threshold()
         chunk_ms()
     try:
-        verify_assets(ASR_MODEL_PATH, Path(WHISPER_CLI))
+        manifest = verify_runtime(Path(WHISPER_CLI))
+        _check_whisper_files(manifest)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RuntimeError("Native ASR asset verification failed") from exc
     if not os.environ.get("SAURI_RECORDINGS_DIR"):
@@ -135,6 +144,31 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
     kill_helpers()  # no whisper-cli or VAD process may outlive the engine
     s3_client = None
+
+
+def _whisper_files() -> list[tuple[str, Path]]:
+    """The built-in whisper.cpp files a Whisper request needs, by manifest section."""
+    files = [("asr", ASR_MODEL_PATH)]
+    if vad_enabled():
+        files.append(("vad", vad_model_path()))
+    return files
+
+
+def _check_whisper_files(manifest: dict[str, Any]) -> None:
+    """Hash the built-in Whisper files that are present; a mismatch refuses Whisper requests, not the engine."""
+    _unverified_files.clear()
+    for section, path in _whisper_files():
+        problem = file_problem(path, manifest if section == "asr" else manifest["vad"])
+        if problem == "model_not_verified":
+            _unverified_files.add(path)
+        logger.info("Whisper file %s: %s", section, problem or "verified")
+
+
+def _file_problem(path: Path) -> str | None:
+    """Why a Whisper request cannot use ``path`` now (``None`` when it can); cheap: startup did the hashing."""
+    if path in _unverified_files:
+        return "model_not_verified"
+    return None if path.is_file() else "model_not_installed"
 
 
 def _parakeet_default() -> LocalSelection | None:
@@ -424,12 +458,12 @@ async def transcribe(
         raise HTTPException(status_code=422, detail=error.reason or "route_malformed") from None
     if provider_route is not None:
         return await _transcribe_external(request, http_request, provider_route)
-    try:
-        selection = await run_in_threadpool(_select_engine, route)
-    except LocalModelError as error:
-        raise HTTPException(status_code=error.status, detail=error.code) from None
     if s3_client is None and not os.environ.get("SAURI_RECORDINGS_DIR"):
         raise HTTPException(status_code=503, detail="Engine not initialized")
+    try:
+        selection = await run_in_threadpool(_select_engine, route, request.language)
+    except LocalModelError as error:
+        raise HTTPException(status_code=error.status, detail=error.code) from None
     budget = server_budget()
     deadline = time.monotonic() + budget
     # The thread stops at its next checkpoint once the worker disconnects or this request ends.
@@ -451,14 +485,26 @@ async def transcribe(
         cancellation.unbind(token)
 
 
-def _select_engine(header: str | None) -> LocalSelection | None:
-    """The local model for this request; ``None`` means the built-in whisper.cpp model.
+def _select_engine(header: str | None, language: str) -> LocalSelection | None:
+    """The one local model of this request; ``None`` means the built-in whisper.cpp model.
 
     An explicit ``local:<id>`` is honored or refused, never replaced. ``local:default`` (or no route) is Parakeet
-    when it is installed and healthy, else Whisper.
+    when it is installed and healthy, else Whisper. The chosen model's own files must be there: a request is
+    refused before any audio is read when they are not, or when Parakeet cannot serve its language.
     """
     selection = select_local_model(header, process="transcription", legacy_default=ASR_MODEL_PATH)
-    return _parakeet_default() if selection is None else selection
+    if selection is None:
+        selection = _parakeet_default()
+    if selection is not None and selection.engine == asr_parakeet.CATALOG_ENGINE:
+        if not asr_parakeet.serves_language(language):
+            raise LocalModelError(422, "language_not_supported")
+        return selection
+    for section, path in _whisper_files():
+        if selection is not None and section == "asr":
+            continue  # a chosen Whisper model was located (and vouched for) by select_local_model
+        if (problem := _file_problem(path)) is not None:
+            raise LocalModelError(409, problem)
+    return selection
 
 
 def _provider_failure(error: ProviderError) -> JSONResponse:
@@ -500,10 +546,10 @@ async def _transcribe_external(
 
 
 def _vad_for_split() -> Any:
-    return (
-        vad_cli_runner(vad_cli_path(), vad_model_path(), vad_threshold(), timeout_s=300)
-        if vad_enabled() else None
-    )
+    """Pauses to split an upload at; without the voice detector (a Parakeet-only Mac) parts are cut by size."""
+    if not vad_enabled() or _file_problem(vad_model_path()) is not None:
+        return None
+    return vad_cli_runner(vad_cli_path(), vad_model_path(), vad_threshold(), timeout_s=300)
 
 
 async def _run_external(
@@ -595,6 +641,7 @@ def _parakeet_response(
             "parakeet": {
                 "confidence": result.confidence, "rtfx": result.rtfx,
                 "english_stopword_rate": round(result.english_rate, 4),
+                "guard_warning": result.guard_warning,
             },
             "stage_ms": {**stage_ms, "inference": result.cli_ms},
         },
@@ -614,16 +661,8 @@ def _transcribe_audio(
             report = normalize_to_wav(Path(audio_path), wav_path, timeout_s=min(300, remaining(deadline)))
             cancellation.checkpoint()
             stage_ms = {"download": download_ms, "normalize": round(report.seconds * 1000)}
-            fallback_reason: str | None = None
             if selection is not None and selection.engine == asr_parakeet.CATALOG_ENGINE:
-                try:
-                    return _parakeet_response(
-                        wav_path, report.audio_ms, request.language, selection, deadline, stage_ms)
-                except asr_parakeet.ParakeetRejected as rejected:
-                    # The same audio goes through the whisper.cpp path with the built-in model; nothing leaves the Mac.
-                    fallback_reason = rejected.reason
-                    logger.warning("Parakeet did not answer; using whisper.cpp (reason=%s)", rejected.reason)
-                    selection = None
+                return _parakeet_response(wav_path, report.audio_ms, request.language, selection, deadline, stage_ms)
             model: dict[str, Any] = {} if selection is None else {"model_path": selection.path}
             result, language, vad, inference_ms = _transcribe_wav(
                 wav_path, report.audio_ms, request.language, deadline, **model)
@@ -635,8 +674,6 @@ def _transcribe_audio(
                 "default_prompt": _initial_prompt(language)[1],
                 "stage_ms": {**stage_ms, "inference": inference_ms},
             }
-            if fallback_reason is not None:
-                diagnostics["engine_fallback_reason"] = fallback_reason
             return TranscribeResponse(
                 segments=[Segment(text=s.text.strip(), start_ms=s.start_ms, end_ms=s.end_ms) for s in result.segments],
                 words=[Word(**asdict(word)) for segment in result.segments for word in segment.words],
@@ -649,6 +686,11 @@ def _transcribe_audio(
     except cancellation.JobCancelled as exc:
         logger.info("Transcription stopped: the caller left")
         raise HTTPException(status_code=499, detail="client_closed") from exc
+    except asr_parakeet.ParakeetRejected as rejected:
+        # Parakeet is this request's one model: the transcription fails; the reason code goes to the log only.
+        status, code = asr_parakeet.failure(rejected.reason)
+        logger.warning("Parakeet transcription failed (reason=%s)", rejected.reason)
+        raise HTTPException(status_code=status, detail=code) from None
     except NormalizeError as exc:
         raise HTTPException(status_code=422, detail="normalize_failed") from exc
     except NoSpeechError as exc:

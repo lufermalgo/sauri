@@ -60,13 +60,17 @@ describe("ProcessingStatus — real states", () => {
   });
 
   it.each(["could_not_join", "meeting_cancelled", "engine_failure", "engine_failed",
-    "engine_contract_mismatch", "invalid_response", "unknown", null])(
+    "engine_contract_mismatch", "invalid_response", "local_model_missing", "local_model_failed",
+    "language_not_supported", "unknown", null])(
     "explains failure %s without exposing raw diagnostics or inventing a retry", (failureCause) => {
       render(<ProcessingStatus {...base({
         meeting: { meetingId: "m-1", processState: "failed", failureCause }, hasTranscript: true,
       })} />);
       expect(screen.getByRole("status")).toHaveTextContent(t("processing:failed"));
       expect(screen.getByRole("status")).toHaveTextContent(processingFailureText(failureCause));
+      if (failureCause?.startsWith("local_") || failureCause === "language_not_supported") {
+        expect(processingFailureText(failureCause)).not.toBe(processingFailureText("unknown"));
+      }
       expect(screen.queryByRole("button")).not.toBeInTheDocument();
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     },

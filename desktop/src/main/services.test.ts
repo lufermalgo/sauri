@@ -17,6 +17,7 @@ import {
   ensureAsrProvenance,
   ensureParakeetProvenance,
   ensureSecrets,
+  parakeetActive,
   SECRET_NAMES,
   secretFile,
   parakeetHome,
@@ -122,6 +123,59 @@ describe("engines", () => {
       "diar:component_missing",
       "llm",
     ]);
+  });
+
+  describe("the ASR engine needs the files of its active model only", () => {
+    const PARAKEET_DIR = "parakeet-tdt-0.6b-v3-ultra-coreml";
+    const asrPlan = () => {
+      const plan = enginePlans(ctx, ["asr"])[0];
+      return plan && "blocked" in plan ? plan.blocked : "starts";
+    };
+    function installParakeet() {
+      fs.writeFileSync(
+        path.join(ctx.layout.sourceRoot, "scripts", "engines", "model-catalog.json"),
+        JSON.stringify({
+          catalog_version: 1,
+          models: [
+            { id: "whisper-large-v3-turbo-q5_0", process: "transcription", kind: "model", file: ASR_MODEL_FILE, default: true },
+            { id: PARAKEET_DIR, process: "transcription", kind: "model", file: PARAKEET_DIR, preferred: true },
+            { id: "silero-vad-v6.2.0", process: "transcription", kind: "auxiliary", file: VAD_MODEL_FILE, default: true },
+          ],
+        }),
+      );
+      fs.mkdirSync(path.join(ctx.folders.models, PARAKEET_DIR, "Encoder.mlmodelc"), { recursive: true });
+      fs.writeFileSync(path.join(ctx.folders.models, `${PARAKEET_DIR}.manifest.json`), JSON.stringify({ status: "installed" }));
+    }
+
+    it("starts with Parakeet active and no Whisper model or voice detector on disk", () => {
+      installParakeet();
+      expect(ensureParakeetProvenance(ctx)).toBe(true);
+      expect(parakeetActive(ctx)).toBe(true);
+      expect(fs.existsSync(path.join(ctx.folders.models, ASR_MODEL_FILE))).toBe(false);
+      expect(fs.existsSync(path.join(ctx.folders.models, VAD_MODEL_FILE))).toBe(false);
+      expect(asrPlan()).toBe("starts");
+    });
+
+    it("waits for Whisper's files while Whisper is the active model", () => {
+      expect(asrPlan()).toBe("models_missing"); // nothing installed: local:default is Whisper
+      installParakeet();
+      expect(asrPlan()).toBe("models_missing"); // Parakeet's CLI not vouched for yet: local:default is Whisper
+      expect(ensureParakeetProvenance(ctx)).toBe(true);
+      fs.writeFileSync(path.join(ctx.folders.models, `${PARAKEET_DIR}.manifest.json`), JSON.stringify({ status: "corrupt" }));
+      expect(parakeetActive(ctx)).toBe(false);
+      fs.writeFileSync(path.join(ctx.folders.models, ASR_MODEL_FILE), "model");
+      expect(asrPlan()).toBe("models_missing"); // Whisper runs with its voice detector
+      fs.writeFileSync(path.join(ctx.folders.models, VAD_MODEL_FILE), "vad");
+      expect(asrPlan()).toBe("starts");
+    });
+
+    it("keeps an existing install with Parakeet active and Whisper still on disk working", () => {
+      installParakeet();
+      ensureParakeetProvenance(ctx);
+      for (const file of [ASR_MODEL_FILE, VAD_MODEL_FILE]) fs.writeFileSync(path.join(ctx.folders.models, file), "model");
+      expect(asrPlan()).toBe("starts");
+      expect(fs.existsSync(path.join(ctx.folders.models, ASR_MODEL_FILE))).toBe(true); // nothing is removed
+    });
   });
 
   it("records the pinned runtime whisper.cpp build as the ASR provenance", () => {

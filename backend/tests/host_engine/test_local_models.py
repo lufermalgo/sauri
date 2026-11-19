@@ -57,7 +57,8 @@ CATALOG_RAW = {
     "models": [
         entry(MODEL_ID, "transcription", "model.bin", PAYLOAD, default=True, rank=2),
         entry(OTHER_ID, "transcription", "small.bin", BIG_PAYLOAD),
-        entry(VAD_ID, "transcription", "vad.bin", b"v" * 1000, kind="auxiliary", default=True, rank=0),
+        # Another engine than the models here: their installs download one file (companions have their own tests).
+        entry(VAD_ID, "transcription", "vad.bin", b"v" * 1000, kind="auxiliary", default=True, rank=0, engine="silero"),
         {
             "id": ENGINE_ID, "process": "diarization", "kind": "managed_engine", "engine": "senko",
             "repo": "test/senko", "revision": REVISION, "managed_by": "scripts/engines/install-diar-engine.sh",
@@ -252,6 +253,55 @@ def test_install_writes_the_file_manifest_and_reports_progress(
     view = model_view(client, MODEL_ID)
     assert view["state"] == "installed" and view["installed_size"] == len(PAYLOAD)
     assert hub.seen(f"/test/repo/resolve/{REVISION}/model.bin")
+
+
+def companion_catalog() -> Any:
+    """The test catalog with the voice detector serving whisper.cpp, and the small model on another engine."""
+    raw = json.loads(json.dumps(CATALOG_RAW))
+    for model in raw["models"]:
+        if model["id"] == VAD_ID:
+            model["engine"] = "whisper.cpp"
+        if model["id"] == OTHER_ID:
+            model["engine"] = "fluidaudio"
+    return parse_catalog(raw)
+
+
+def test_installing_a_model_brings_the_missing_voice_detector_of_its_engine_first(
+    client: TestClient, service: local_models.LocalModelService, hub: FakeHub
+) -> None:
+    service._catalog = companion_catalog()
+    job = install(client)
+    assert job["state"] == "done" and job["model_id"] == MODEL_ID and job["result"] == "installed"
+    assert job["bytes_done"] == job["bytes_total"] == len(PAYLOAD) + 1000
+    assert files(service) == ["model.bin", "model.bin.manifest.json", "vad.bin", "vad.bin.manifest.json"]
+    assert model_view(client, VAD_ID)["state"] == "installed" and model_view(client, MODEL_ID)["state"] == "installed"
+    paths = [request["path"] for request in hub.seen(f"/test/repo/resolve/{REVISION}/")]
+    assert paths[0].endswith("/vad.bin") and paths[-1].endswith("/model.bin")
+
+
+def test_a_model_of_another_engine_or_a_present_detector_downloads_one_file(
+    client: TestClient, service: local_models.LocalModelService, hub: FakeHub
+) -> None:
+    service._catalog = companion_catalog()
+    other = install(client, OTHER_ID)
+    assert other["state"] == "done" and other["bytes_total"] == len(BIG_PAYLOAD)
+    assert "vad.bin" not in files(service)
+    assert install(client, VAD_ID)["state"] == "done"
+    job = install(client)
+    assert job["state"] == "done" and job["bytes_total"] == len(PAYLOAD)
+    assert len(hub.seen(f"/test/repo/resolve/{REVISION}/vad.bin")) == 1
+
+
+def test_a_failed_companion_download_leaves_nothing_and_installs_nothing(
+    client: TestClient, service: local_models.LocalModelService, hub: FakeHub
+) -> None:
+    service._catalog = companion_catalog()
+    hub.mode = "tampered"
+    job = install(client)
+    assert job["state"] == "failed" and job["error"] == "hash_mismatch"
+    assert files(service) == []
+    hub.mode = "normal"
+    assert install(client)["state"] == "done" and model_view(client, VAD_ID)["state"] == "installed"
 
 
 def test_a_tampered_download_is_rejected_and_leaves_nothing(

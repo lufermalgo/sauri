@@ -1,9 +1,9 @@
-"""The Parakeet backend: JSON to contract v2, the sanity guard, the automatic fallback to whisper.cpp,
+"""The Parakeet backend: JSON to contract v2, the sanity guard, failures that never go to whisper.cpp,
 default resolution, offline execution and process-group cancellation.
 
 A fake ``fluidaudiocli`` (a Python script driven by ``SAURI_FAKE_MODE``) stands in for the real CLI, and a fake
-``whisper-cli`` records the runs of the fallback. The texts are synthetic. The opt-in check with the real
-binary and model lives in ``tests/native``.
+``whisper-cli`` records every Whisper run (a Parakeet request must never cause one). The texts are synthetic.
+The opt-in check with the real binary and model lives in ``tests/native``.
 """
 
 from __future__ import annotations
@@ -368,7 +368,8 @@ async def test_a_modified_binary_is_not_trusted(setup: Setup) -> None:
     response = await setup.transcribe(None)
     assert response.json()["engine"]["name"] == "whisper.cpp" and setup.cli_runs() == []
     explicit = await setup.transcribe(route_header(f"local:{PARAKEET_ID}", process="transcription"))
-    assert explicit.json()["diagnostics"]["engine_fallback_reason"] == pk.REASON_UNAVAILABLE
+    assert explicit.status_code == 503 and explicit.json() == {"detail": "model_failed"}
+    assert len(setup.whisper_runs()) == 1  # only the local:default request above
 
 
 async def test_the_rollback_switch_and_explicit_whisper_bypass_parakeet(
@@ -384,21 +385,54 @@ async def test_the_rollback_switch_and_explicit_whisper_bypass_parakeet(
     assert explicit.json()["engine"]["name"] == "fluidaudio"
 
 
-# --- fallback -----------------------------------------------------------------------------------------
+# --- one model: Parakeet failures fail the request -----------------------------------------------------
+
+
+DRIFTED = ("the team and that this with you they have what there would " * 6).split()
+
+
+@pytest.mark.parametrize(
+    ("words", "reason", "measured"),
+    [(DRIFTED, pk.REASON_DRIFT, "english_rate=0.9167"), (["no", "se"] * 20, pk.REASON_REPETITION, "words=40")],
+)
+async def test_a_soft_guard_keeps_parakeets_text_and_logs_a_content_free_warning(
+    setup: Setup,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    words: list[str],
+    reason: str,
+    measured: str,
+) -> None:
+    """Imperfect text the user can regenerate with Whisper beats a failed meeting (Spanish full of English jargon)."""
+    setup.install_parakeet()
+    monkeypatch.setenv("SAURI_FAKE_WORDS", json.dumps(words))
+    response = await setup.transcribe(None)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["engine"]["name"] == pk.ENGINE_NAME and len(body["words"]) == len(words)
+    assert body["diagnostics"]["parakeet"]["guard_warning"] == reason
+    assert len(setup.cli_runs()) == 1 and setup.whisper_runs() == []
+    warning = next(record.getMessage() for record in caplog.records if "quality guard" in record.getMessage())
+    assert f"guard={reason}" in warning and measured in warning
+    assert not any(word in warning.split() for word in ("team", "would", "no", "se"))
+
+
+async def test_a_clean_output_carries_no_guard_warning(setup: Setup) -> None:
+    setup.install_parakeet()
+    response = await setup.transcribe(None)
+    assert response.status_code == 200 and response.json()["diagnostics"]["parakeet"]["guard_warning"] is None
 
 
 @pytest.mark.parametrize(
     ("mode", "words", "reason"),
     [
-        ("ok", ("the team and that this with you they have what there would " * 6).split(), pk.REASON_DRIFT),
         ("empty", GOOD, pk.REASON_EMPTY),
-        ("ok", ["no", "se"] * 20, pk.REASON_REPETITION),
         ("nonmono", GOOD, pk.REASON_TIMESTAMPS),
         ("fail", GOOD, pk.REASON_FAILED),
         ("garbage", GOOD, pk.REASON_INVALID),
     ],
 )
-async def test_a_rejected_output_is_transcribed_again_with_whisper_and_the_reason_is_recorded(
+async def test_an_unusable_output_or_a_failed_cli_fails_the_request_and_whisper_never_runs(
     setup: Setup,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -410,36 +444,66 @@ async def test_a_rejected_output_is_transcribed_again_with_whisper_and_the_reaso
     monkeypatch.setenv("SAURI_FAKE_MODE", mode)
     monkeypatch.setenv("SAURI_FAKE_WORDS", json.dumps(words))
     response = await setup.transcribe(None)
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["engine"]["name"] == "whisper.cpp" and body["diagnostics"]["engine_fallback_reason"] == reason
-    assert len(setup.cli_runs()) == 1 and setup.whisper_runs() == [str(setup.legacy)]
-    assert len(reason) <= 64
+    assert response.status_code == 500 and response.json() == {"detail": "model_failed"}
+    assert len(setup.cli_runs()) == 1 and setup.whisper_runs() == []
+    assert f"reason={reason}" in caplog.text  # the content-free code is logged, never returned
     assert "secret transcript" not in caplog.text and "/private/path" not in caplog.text
 
 
-async def test_a_timeout_kills_the_cli_and_falls_back(setup: Setup, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_a_timeout_kills_the_cli_and_fails_the_request(setup: Setup, monkeypatch: pytest.MonkeyPatch) -> None:
     setup.install_parakeet()
     monkeypatch.setenv("SAURI_FAKE_MODE", "sleep")
     monkeypatch.setenv("SAURI_ASR_PARAKEET_TIMEOUT_S", "1")
     started = time.monotonic()
     response = await setup.transcribe(None)
     assert time.monotonic() - started < 20
-    assert response.json()["diagnostics"]["engine_fallback_reason"] == pk.REASON_TIMEOUT
+    assert response.status_code == 500 and response.json() == {"detail": "model_failed"}
     (run,) = setup.cli_runs()
-    assert not _alive(run["pid"])
+    assert not _alive(run["pid"]) and setup.whisper_runs() == []
 
 
-@pytest.mark.parametrize(
-    ("language", "reason"), [("auto", pk.REASON_LANGUAGE_AUTO), ("ja", pk.REASON_LANGUAGE_UNSUPPORTED)]
-)
-async def test_languages_parakeet_cannot_serve_go_to_whisper_without_running_it(
-    setup: Setup, language: str, reason: str
-) -> None:
+@pytest.mark.parametrize("language", ["auto", "ja"])
+async def test_a_language_parakeet_cannot_serve_is_refused_before_any_run(setup: Setup, language: str) -> None:
     setup.install_parakeet()
     response = await setup.transcribe(None, language=language)
-    assert response.status_code == 200, response.text
-    assert response.json()["diagnostics"]["engine_fallback_reason"] == reason and setup.cli_runs() == []
+    assert response.status_code == 422 and response.json() == {"detail": "language_not_supported"}
+    assert setup.cli_runs() == [] and setup.whisper_runs() == []
+    # The same audio is served when the user chooses Whisper for it.
+    chosen = await setup.transcribe(route_header("local:asr-big", process="transcription"), language=language)
+    assert chosen.status_code == 200 and chosen.json()["engine"]["name"] == "whisper.cpp"
+
+
+async def test_parakeet_runs_without_any_whisper_file_on_disk(setup: Setup, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Parakeet-only Mac: no Whisper model (built-in or installed) and no voice detector."""
+    setup.install_parakeet()
+    setup.legacy.unlink()
+    for name in ("ggml-big.bin", "ggml-big.bin.manifest.json"):
+        (setup.models / name).unlink()
+    monkeypatch.setenv("SAURI_ASR_VAD", "on")
+    monkeypatch.setenv("SAURI_ASR_VAD_MODEL_PATH", str(setup.tmp / "absent-vad.bin"))
+    for route in (None, route_header(f"local:{PARAKEET_ID}", process="transcription")):
+        response = await setup.transcribe(route)
+        assert response.status_code == 200, response.text
+        assert response.json()["engine"]["name"] == pk.ENGINE_NAME
+    assert setup.whisper_runs() == []
+    # Whisper requests are refused with a clear code instead of failing inside whisper-cli.
+    whisper = await setup.transcribe(route_header("local:asr-big", process="transcription"))
+    assert whisper.status_code == 409 and whisper.json() == {"detail": "model_not_installed"}
+
+
+async def test_without_parakeet_or_whisper_the_default_is_refused_clearly(setup: Setup) -> None:
+    setup.legacy.unlink()
+    response = await setup.transcribe(None)
+    assert response.status_code == 409 and response.json() == {"detail": "model_not_installed"}
+    assert setup.whisper_runs() == [] and setup.cli_runs() == []
+
+
+async def test_whisper_needs_its_voice_detector_when_it_is_on(setup: Setup, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SAURI_ASR_VAD", "on")
+    monkeypatch.setenv("SAURI_ASR_VAD_MODEL_PATH", str(setup.tmp / "absent-vad.bin"))
+    response = await setup.transcribe(route_header("local:asr-big", process="transcription"))
+    assert response.status_code == 409 and response.json() == {"detail": "model_not_installed"}
+    assert setup.whisper_runs() == []
 
 
 def _alive(pid: int) -> bool:
