@@ -2,7 +2,6 @@ import type { EngineProcess, LocalHardware, LocalJob, LocalModel, LocalRecommend
 import { LOCAL_DEFAULT_MODEL } from "@sauri/shared-types";
 import { EnginesApiError } from "../../api";
 import { t, translateIfKnown } from "../../i18n";
-import type { LocalModelWithOrigin } from "./customModelsApi";
 import { availabilityOf, formatBytes, formatMemory, processList } from "./engineLabels";
 
 /** Same factor as the host's disk check (`DISK_HEADROOM_PERCENT`): the file plus 20 % of room. */
@@ -181,12 +180,12 @@ export function displayName(model: LocalModel): string {
   return (titled && translateIfKnown(`engines:local.managedTitle.${model.process}`)) || model.id;
 }
 
-export function isCustom(model: LocalModel): model is LocalModelWithOrigin & { custom: true } {
-  return (model as LocalModelWithOrigin).custom === true;
+export function isCustom(model: LocalModel): boolean {
+  return model.custom === true;
 }
 
 export function originOf(model: LocalModel) {
-  return (model as LocalModelWithOrigin).origin ?? null;
+  return model.origin ?? null;
 }
 
 /** First characters of a commit, as people see them on Hugging Face. */

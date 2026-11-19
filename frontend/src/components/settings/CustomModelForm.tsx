@@ -1,9 +1,8 @@
 import { useId, useState } from "react";
 import type { FormEvent } from "react";
-import type { LocalJob } from "@sauri/shared-types";
+import type { CustomInstallRequest, CustomModelProcess, CustomResolveResponse, LocalJob } from "@sauri/shared-types";
 import { Button, TextField } from "../ui";
-import { resolveCustomModel } from "./customModelsApi";
-import type { CustomInstallRequest, CustomModelProcess, CustomResolveResponse } from "./customModelsApi";
+import { resolveCustomModel } from "../../api";
 import { formatBytes } from "./engineLabels";
 import { JobProgress } from "./LocalModelRow";
 import { errorCode, fileName, shortRevision } from "./localModelState";
@@ -13,7 +12,9 @@ import { t, translateIfKnown, useT } from "../../i18n";
 function describeResolveError(error: unknown, process: CustomModelProcess): string {
   const code = errorCode(error);
   if (code === "no_compatible_files") return t(`engines:local.custom.errors.no_compatible_files.${process}`);
-  return (code && translateIfKnown(`engines:local.custom.errors.${code}`)) || t("engines:local.custom.errors.generic");
+  // A search refusal first, then the codes every local route shares (the service is down, the registry is unreadable).
+  return (code && (translateIfKnown(`engines:local.custom.errors.${code}`) ?? translateIfKnown(`engines:local.errors.${code}`)))
+    || t("engines:local.custom.errors.generic");
 }
 
 interface CustomModelFormProps {

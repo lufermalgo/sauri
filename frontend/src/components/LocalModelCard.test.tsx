@@ -12,7 +12,7 @@ const POLL_MS = 10;
 const JOB_ID = "a".repeat(32);
 
 /** An installed, hash-verified model in the models directory; tests override what differs. */
-function model(overrides: Partial<LocalModel> & Pick<LocalModel, "id"> & { custom?: boolean; origin?: { repo: string; revision: string; file: string } }): LocalModel {
+function model(overrides: Partial<LocalModel> & Pick<LocalModel, "id">): LocalModel {
   return {
     process: "transcription", kind: "model", engine: "whisper.cpp", size: 574_041_195, min_ram_gib: 8, requires: ["metal"],
     status: "measured", default: false, managed_by: null, recommended: false, in_use_by: [], state: "installed",
@@ -614,6 +614,7 @@ describe("«Otro modelo» from Hugging Face", () => {
     ["no_compatible_files", 422, "transcription", "engines:local.custom.errors.no_compatible_files.transcription"],
     ["no_compatible_files", 422, "summary", "engines:local.custom.errors.no_compatible_files.summary"],
     ["unreachable", 502, "summary", "engines:local.custom.errors.unreachable"],
+    ["host_unavailable", 503, "summary", "engines:local.errors.host_unavailable"],
     ["something_new", 500, "summary", "engines:local.custom.errors.generic"],
   ] as const)("explains «%s» (%s) for %s in plain words and offers no download", async (code, status, process, key) => {
     const models = process === "summary" ? [QWEN_9B] : [TURBO];

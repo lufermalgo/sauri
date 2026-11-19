@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
-import type { EngineProcess, LocalHardware, LocalJob, LocalModel, LocalRecommendation } from "@sauri/shared-types";
+import type { CustomInstallRequest, CustomModelProcess, EngineProcess, LocalHardware, LocalJob, LocalModel, LocalRecommendation } from "@sauri/shared-types";
 import { Button, Dialog, Icon, StatusBadge } from "../ui";
 import { CustomModelForm } from "./CustomModelForm";
-import type { CustomInstallRequest, CustomModelProcess } from "./customModelsApi";
 import { availabilityOf, formatBytes, formatMemory } from "./engineLabels";
 import { JobProgress, ManagedHow, roomNote } from "./LocalModelRow";
 import { addable, chipName, displayName, isManaged, reasonText, shortNote, suggestionsFor } from "./localModelState";

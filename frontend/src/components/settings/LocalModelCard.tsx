@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CircleAlert, Plus, Terminal } from "lucide-react";
-import type { EngineProcess, LocalHardware, LocalJob, LocalModel, LocalModelList } from "@sauri/shared-types";
+import type { CustomInstallRequest, EngineProcess, LocalHardware, LocalJob, LocalModel, LocalModelList } from "@sauri/shared-types";
 import { LOCAL_DEFAULT_MODEL } from "@sauri/shared-types";
 import {
   adoptLocalModels,
@@ -8,6 +8,7 @@ import {
   getEngineStatus,
   getLocalHardware,
   getLocalJob,
+  installCustomModel,
   installLocalModel,
   isLocalMode,
   listLocalModels,
@@ -17,8 +18,6 @@ import {
 import { Button, Card, ConfirmDialog, Icon, Menu, MenuItem, Skeleton, StatusBadge } from "../ui";
 import { AddModelDialog } from "./AddModelDialog";
 import type { Outcome } from "./AddModelDialog";
-import { installCustomModel } from "./customModelsApi";
-import type { CustomInstallRequest } from "./customModelsApi";
 import { formatBytes, resolvedDefault } from "./engineLabels";
 import { EngineLine, ModelRow, SupportLine } from "./LocalModelRow";
 import type { RowContext } from "./LocalModelRow";
