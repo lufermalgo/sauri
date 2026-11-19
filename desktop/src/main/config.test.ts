@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type AppConfig, ConfigError, defaultConfig, loadConfig, phaseADone, SCHEMA_VERSION, saveConfig } from "./config.ts";
+import { type AppConfig, ConfigError, defaultConfig, loadConfig, phaseADone, SCHEMA_VERSION, saveConfig, setupFolders } from "./config.ts";
 
 let dir: string;
 let file: string;
@@ -20,7 +20,7 @@ const complete = (): AppConfig => ({
   locale: "en",
   localUserName: "Ana Pérez",
   localUserId: "6f1c2a52-3b2e-4a55-9d5b-1d2f3e4a5b6c",
-  paths: { recordings: "/Volumes/Disco/Grabaciones", database: "/Users/ana/Sauri/Base de datos", models: "/Users/ana/Sauri/Modelos" },
+  paths: { recordings: "/Volumes/Disco/Recordings", database: "/Users/ana/Sauri/Database", models: "/Users/ana/Sauri/Models" },
   launchAtLogin: true,
   autoUpdate: false,
   appVersionOfData: "1.0.0",
@@ -68,5 +68,30 @@ describe("config", () => {
     expect(phaseADone(defaultConfig())).toBe(false);
     expect(phaseADone({ ...defaultConfig(), setupStep: "folders" })).toBe(false);
     for (const step of ["models", "extension", "done"] as const) expect(phaseADone({ ...complete(), setupStep: step })).toBe(true);
+  });
+
+  it("proposes English folder names to a new installation, whatever the interface language", () => {
+    for (const locale of ["es", "en"] as const) {
+      expect(setupFolders({ ...defaultConfig(), locale }, { home: dir, dev: false })).toEqual({
+        recordings: path.join(dir, "Sauri", "Recordings"),
+        database: path.join(dir, "Sauri", "Database"),
+        models: path.join(dir, "Sauri", "Models"),
+      });
+    }
+    expect(setupFolders(defaultConfig(), { home: dir, dev: true }).database).toBe(path.join(dir, "Sauri-dev", "Database"));
+  });
+
+  it("keeps the folders an earlier setup saved, with their Spanish names, and never renames them", () => {
+    const legacy = {
+      recordings: path.join(dir, "Sauri", "Grabaciones"),
+      database: path.join(dir, "Sauri", "Base de datos"),
+      models: path.join(dir, "Sauri", "Modelos"),
+    };
+    for (const folder of Object.values(legacy)) fs.mkdirSync(folder, { recursive: true });
+    saveConfig(file, { ...complete(), paths: legacy });
+    const config = loadConfig(file);
+    expect(config.paths).toEqual(legacy);
+    expect(setupFolders(config, { home: dir, dev: false })).toEqual(legacy);
+    expect(fs.readdirSync(path.join(dir, "Sauri")).sort()).toEqual(["Base de datos", "Grabaciones", "Modelos", "config.json"]);
   });
 });

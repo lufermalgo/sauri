@@ -64,13 +64,14 @@ export function appPaths(opts: { dev: boolean; home?: string }): AppPaths {
   };
 }
 
-/** Default user folders: `~/Sauri/{Grabaciones,Base de datos,Modelos}` (`~/Sauri-dev/...` in development). */
+/** Default user folders: `~/Sauri/{Recordings,Database,Models}` (`~/Sauri-dev/...` in development), in English
+ * whatever the language of the interface. Only a first setup proposes them: a saved configuration keeps its paths. */
 export function defaultFolders(paths: Pick<AppPaths, "home" | "dev">): UserFolders {
   const root = path.join(paths.home, paths.dev ? "Sauri-dev" : "Sauri");
   return {
-    recordings: path.join(root, "Grabaciones"),
-    database: path.join(root, "Base de datos"),
-    models: path.join(root, "Modelos"),
+    recordings: path.join(root, "Recordings"),
+    database: path.join(root, "Database"),
+    models: path.join(root, "Models"),
   };
 }
 

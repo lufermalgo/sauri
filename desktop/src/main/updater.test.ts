@@ -293,7 +293,7 @@ describe("applying a version (Property 10)", () => {
   }
 
   function setup(overrides: Partial<ApplyDeps> = {}): Setup {
-    const databaseDir = path.join(dir, "Base de datos");
+    const databaseDir = path.join(dir, "Database");
     const pgdata = path.join(databaseDir, "pgdata");
     fs.mkdirSync(path.join(pgdata, "base", "1"), { recursive: true });
     fs.writeFileSync(path.join(pgdata, "PG_VERSION"), "16\n");
@@ -431,7 +431,7 @@ describe("applying a version (Property 10)", () => {
 
 describe("migrations on start (Requirement 9.3, Property 10)", () => {
   function data() {
-    const databaseDir = path.join(dir, "Base de datos");
+    const databaseDir = path.join(dir, "Database");
     const pgdata = path.join(databaseDir, "pgdata");
     fs.mkdirSync(path.join(pgdata, "base", "1"), { recursive: true });
     fs.writeFileSync(path.join(pgdata, "PG_VERSION"), "16\n");

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from hypothesis import given
 from hypothesis import strategies as st
-from sauri_engine_common.recommend import HardwareProfile, load_catalog, recommend
+from sauri_engine_common.recommend import Catalog, HardwareProfile, load_catalog, recommend, setup_plan
 
 CATALOG = load_catalog()
 RANK = {model.id: model.rank for model in CATALOG.models}
@@ -97,3 +97,46 @@ def test_more_memory_never_lowers_the_recommended_level(low: float, high: float,
             assert MIN_RAM[new] <= high
         if old:
             assert MIN_RAM[old] <= low
+
+
+def desktop_view(catalog: Catalog) -> Catalog:
+    """The catalog as host-engine shows it in the desktop app: a component replaces the managed engine it names."""
+    replaced = {model.replaces for model in catalog.models if model.kind == "component"}
+    return Catalog(catalog.version, tuple(model for model in catalog.models if model.id not in replaced))
+
+
+PARAKEET, WHISPER, VAD = "parakeet-tdt-0.6b-v3-ultra-coreml", "whisper-large-v3-turbo-q5_0", "silero-vad-v6.2.0"
+
+
+def test_the_desktop_setup_plan_on_8_16_and_24_gib_macs() -> None:
+    desktop = desktop_view(CATALOG)
+    expected = {
+        8: (PARAKEET, WHISPER, VAD, "qwen3.5-4b-q4_k_m", "diar-runtime"),
+        16: (PARAKEET, WHISPER, VAD, "qwen3.5-9b-q4_k_m", "diar-runtime"),
+        24: (PARAKEET, WHISPER, VAD, "qwen3.5-9b-q4_k_m", "diar-runtime"),
+        64: (PARAKEET, WHISPER, VAD, "qwen3.5-9b-q4_k_m", "diar-runtime"),
+    }
+    for memory, plan in expected.items():
+        recommendations = recommend(hardware(memory), desktop)
+        assert recommendations["diarization"].model_id == "diar-runtime"
+        assert setup_plan(recommendations, desktop) == plan
+        # Deterministic: the same Mac always gets the same plan.
+        assert setup_plan(recommend(hardware(memory), desktop), desktop) == plan
+
+
+def test_the_plan_never_downloads_a_managed_engine_and_keeps_the_engine_fallback() -> None:
+    plan = setup_plan(recommend(hardware(16), CATALOG), CATALOG)
+    # Outside the desktop app the speaker engine and Parakeet's CLI are installed by their scripts, not downloaded.
+    assert plan == (PARAKEET, WHISPER, VAD, "qwen3.5-9b-q4_k_m")
+    assert "senko-coreml" not in plan and "fluidaudio-cli" not in plan
+
+
+def test_an_older_macos_plans_whisper_once_and_no_parakeet() -> None:
+    desktop = desktop_view(CATALOG)
+    plan = setup_plan(recommend(hardware(16, macos_major=13), desktop), desktop)
+    assert plan == (WHISPER, VAD, "qwen3.5-9b-q4_k_m", "diar-runtime")
+
+
+def test_a_process_without_a_local_model_is_left_out_of_the_plan() -> None:
+    plan = setup_plan(recommend(hardware(4), CATALOG), CATALOG)
+    assert plan == ("whisper-small-q5_1", VAD)

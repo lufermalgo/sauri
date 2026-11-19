@@ -16,6 +16,7 @@ export interface CatalogModel {
   min_macos?: number;
   rank: number;
   default?: boolean;
+  preferred?: boolean;
 }
 
 export interface HardwareInput {
@@ -81,6 +82,8 @@ export function checkHardware(input: HardwareInput): HardwareReport {
       continue;
     }
     downloads += model.size ?? 0;
+    // The first run also installs the process default behind a preferred model: its engine falls back to it.
+    if (model.preferred) downloads += candidates.find((entry) => entry.default)?.size ?? 0;
   }
   // Auxiliary files every installation needs (the voice detector).
   for (const entry of input.models) if (entry.kind === "auxiliary" && entry.default) downloads += entry.size ?? 0;

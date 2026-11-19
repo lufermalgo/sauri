@@ -9,8 +9,8 @@ import { t } from "../../i18n";
 
 const FOLDERS: FolderUsage[] = [
   { kind: "recordings", path: "/Users/test/Sauri/Recordings", usedBytes: 3_200_000_000, freeBytes: 120_000_000_000 },
-  { kind: "database", path: "/Users/test/Sauri/Base de datos", usedBytes: 80_000_000, freeBytes: 120_000_000_000 },
-  { kind: "models", path: "/Volumes/External/Modelos", usedBytes: null, freeBytes: null },
+  { kind: "database", path: "/Users/test/Sauri/Database", usedBytes: 80_000_000, freeBytes: 120_000_000_000 },
+  { kind: "models", path: "/Volumes/External/Models", usedBytes: null, freeBytes: null },
 ];
 
 function bridge(result: RelocateResult | Promise<RelocateResult>) {

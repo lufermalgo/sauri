@@ -97,7 +97,7 @@ Ya existen piezas que ayudan. La cola (`backend/app/infra/queue.py`) y el almac�
 #### Criterios de Aceptación
 
 1. WHEN se abre la App_Sauri sin configuración previa, THE Configuración_Inicial SHALL guiar en este orden: comprobación del equipo, nombre del Usuario_Local, Rutas_de_Usuario, modelos recomendados y conexión de la extensión.
-2. THE Configuración_Inicial SHALL proponer por defecto rutas dentro de la carpeta del usuario (por ejemplo `~/Sauri/Grabaciones`) y permitir elegir otras con el selector de carpetas de macOS, incluido un disco externo.
+2. THE Configuración_Inicial SHALL proponer por defecto rutas dentro de la carpeta del usuario (por ejemplo `~/Sauri/Recordings`) y permitir elegir otras con el selector de carpetas de macOS, incluido un disco externo.
 3. WHEN el usuario elige una carpeta, THE Configuración_Inicial SHALL mostrar el espacio libre de ese disco y rechazar carpetas sin permiso de escritura.
 4. WHEN el usuario llega al paso de modelos, THE Configuración_Inicial SHALL ofrecer los modelos recomendados para su equipo con su tamaño, e instalarlos con el flujo existente de `LocalModelCard` (progreso, verificación y cancelación).
 5. IF el usuario cierra la App_Sauri a mitad de la Configuración_Inicial, THEN THE App_Sauri SHALL retomarla en el paso pendiente al volver a abrirla.

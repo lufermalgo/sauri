@@ -1,27 +1,45 @@
 {
   "title": "Te damos la bienvenida a Sauri",
-  "intro": "Faltan dos pasos: instalar los modelos de IA que procesan tus reuniones en este Mac y conectar la extensión de Chrome que las graba.",
+  "intro": "Faltan dos pasos: Sauri instala en este Mac los modelos de IA que procesan tus reuniones y después conectas la extensión de Chrome que las graba.",
   "step": "Paso {{n}} de 2",
   "models": {
     "title": "Modelos para este Mac",
-    "intro": "Te recomendamos los modelos que mejor funcionan con este equipo. Se descargan una vez y después todo se procesa aquí, sin enviar nada fuera.",
-    "later": "Puedes instalar o cambiar modelos cuando quieras desde Ajustes.",
-    "loading": "Leyendo qué usa cada proceso…",
-    "loadError": "No pude leer qué modelo usa cada proceso.",
+    "intro": "Sauri elige e instala solo los modelos que mejor funcionan en este Mac. Se descargan una vez y después todo se procesa aquí, sin enviar nada fuera.",
+    "later": "Si más adelante quieres otro modelo, puedes cambiarlo en Ajustes › Motores y modelos.",
+    "preparing": "Preparando la instalación…",
+    "waiting": "Terminando de revisar lo que ya está instalado…",
+    "estimate": "Unos {{size}} en total. Puede tardar unos minutos según tu conexión.",
+    "installing": "Instalando {{what}} ({{n}} de {{count}})",
+    "checking": "Comprobando {{what}} ({{n}} de {{count}})",
+    "items": {
+      "transcription": "lo que convierte la voz en texto",
+      "diarization": "lo que distingue quién habla",
+      "summary": "lo que redacta los resúmenes"
+    },
+    "progressLabel": "Avance de la instalación",
+    "bytes": "{{done}} de {{total}}",
+    "saving": "Dejando todo listo…",
+    "ready": "Todo listo: Sauri ya puede transcribir, distinguir quién habla y resumir en este Mac.",
+    "noLocal": "{{process}}: este Mac no puede hacerlo aquí. Puedes usar un servicio externo desde Ajustes.",
+    "failed": {
+      "offline": "No pudimos descargar los modelos. Revisa tu conexión a internet y vuelve a intentarlo; lo que ya terminó de instalarse se conserva.",
+      "disk": "No hay espacio suficiente en el disco: hacen falta {{needed}} y hay {{free}} libres. Libera espacio y vuelve a intentarlo.",
+      "unavailable": "Una parte de Sauri todavía no está disponible para descargar. Puedes seguir y terminar más tarde desde Ajustes.",
+      "host": "Sauri no responde en este momento. Espera unos segundos y vuelve a intentarlo.",
+      "generic": "No pudimos terminar la instalación. Vuelve a intentarlo."
+    },
     "retry": "Reintentar",
-    "saveError": "No pude guardar el modelo elegido. Vuelve a intentarlo.",
+    "skip": "Seguir sin terminar",
+    "skipHelp": "Puedes terminar la instalación más tarde desde Ajustes › Motores y modelos.",
     "processes": {
       "transcription": {
-        "title": "Transcripción",
-        "help": "Convierte el audio de tus reuniones en texto."
+        "title": "Transcripción"
       },
       "diarization": {
-        "title": "Hablantes",
-        "help": "Distingue quién habla en cada momento."
+        "title": "Hablantes"
       },
       "summary": {
-        "title": "Resúmenes",
-        "help": "Redacta el resumen de cada reunión."
+        "title": "Resúmenes"
       }
     },
     "continue": "Continuar"

@@ -6,10 +6,10 @@ import path from "node:path";
 import { type BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain } from "electron";
 import { type Locale, type MessageKey, t } from "../i18n.ts";
 import { CHANNELS, type FinishResult, type SetupState, validateName, type View } from "../shared/setup-api.ts";
-import type { AppConfig } from "./config.ts";
+import { type AppConfig, setupFolders } from "./config.ts";
 import { inspectFolders, prepareFolders } from "./folders.ts";
 import { type CatalogModel, checkHardware, freeBytes, type HardwareReport, macosVersion } from "./hardware.ts";
-import { type AppPaths, defaultFolders, FOLDER_KINDS, type FolderKind, type UserFolders } from "./paths.ts";
+import { type AppPaths, FOLDER_KINDS, type FolderKind, type UserFolders } from "./paths.ts";
 import {
   bootstrapLocalUser,
   type Core,
@@ -99,7 +99,7 @@ export class SetupController {
         step: config.setupStep === "folders" ? "folders" : "identity",
         locale: config.locale,
         name: config.localUserName ?? "",
-        folders: config.paths ?? defaultFolders(deps.paths),
+        folders: setupFolders(config, deps.paths),
         view: this.lastView,
       };
     });

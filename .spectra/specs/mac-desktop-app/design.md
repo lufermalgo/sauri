@@ -75,7 +75,7 @@ La extensión obtiene el token con `POST /api/v1/local/pair`, que solo responde 
 **D11. Rutas.**
 - `~/Library/Application Support/Sauri/config.json` guarda las Rutas_de_Usuario, el id del Usuario_Local, el paso de la configuración y las preferencias.
 - Las Rutas_Internas quedan en `~/Library/Application Support/Sauri/`: `secrets/` (0700), `run/` (socket de PostgreSQL y PID) y `components/`. Los registros van a `~/Library/Logs/Sauri`.
-- Por defecto, las Rutas_de_Usuario son `~/Sauri/Grabaciones`, `~/Sauri/Base de datos` y `~/Sauri/Modelos`.
+- Por defecto, las Rutas_de_Usuario son `~/Sauri/Recordings`, `~/Sauri/Database` y `~/Sauri/Models` (en inglés, sea cual sea el idioma de la interfaz; en desarrollo, `~/Sauri-dev/...`). Una instalación que ya guardó sus rutas las conserva tal cual: no se renombran ni se mueven (hasta la v0.1.1 los nombres por defecto eran `Grabaciones`, `Base de datos` y `Modelos`).
 - Cada carpeta lleva un archivo marcador `.sauri-folder` con el id de la instalación, para no arrancar nunca sobre una carpeta vacía o ajena (Requisito 7.4).
 - Las variables existentes se conservan como mecanismo: `SAURI_MODELS_DIR`, los `*_FILE` y `SAURI_NATIVE_ENGINE_STATE_DIR`. La app solo las fija.
 
@@ -258,7 +258,7 @@ Se monta en `app.main` solo si `SAURI_PORTAL_DIR` existe. Reglas:
 
 - `App.tsx`: sin `LoginScreen` cuando `/api/v1/local/status` responde. `api.ts`: sin Bearer en Modo_Local, porque la cookie viaja sola en el mismo origen.
 - `AccountSettings.tsx`: el nombre del Usuario_Local, sin cerrar sesión.
-- Nueva ruta `/bienvenida` para la fase B: modelos recomendados (reutiliza `LocalModelCard`, que incluye el runtime de hablantes) y conexión de la extensión (enlace a la tienda y estado del emparejamiento).
+- Nueva ruta `/bienvenida` para la fase B: instalación automática de los modelos recomendados y conexión de la extensión (enlace a la tienda y estado del emparejamiento). La instalación no pide elegir nada: sigue el `setup_plan` que `host-engine` calcula con `recommend.setup_plan` (el modelo recomendado de cada proceso; con Parakeet, también Whisper, que es su respaldo y el que el motor de transcripción comprueba al arrancar; el detector de voz; el runtime de hablantes), descarga cada archivo por las mismas rutas de Ajustes (hash fijado y hosts permitidos), muestra un único avance con reintento y, al terminar, guarda `local:<id>` solo donde el recomendado no es lo que resuelve `local:default` (el 4B en un Mac de 8 GB). Cambiar de modelo después sigue en Ajustes › Motores y modelos (`LocalModelCard`).
 - Nueva página de ajustes `/settings/almacenamiento`: Rutas_de_Usuario, tamaño, espacio libre y «Cambiar», que pide el cambio a Electron mediante el preload (`window.sauriDesktop.relocate(kind)`). En Chrome muestra «Abre la app Sauri para cambiar carpetas».
 
 ### 7. Extensión (`extension/`)
@@ -301,7 +301,7 @@ CREATE INDEX job_messages_ready ON job_messages (topic, available_at) WHERE lock
   "installId": "<uuid>",
   "setupStep": "done | identity | folders | models | extension",
   "localUserId": "<uuid>",
-  "paths": { "recordings": "~/Sauri/Grabaciones", "database": "~/Sauri/Base de datos", "models": "~/Sauri/Modelos" },
+  "paths": { "recordings": "~/Sauri/Recordings", "database": "~/Sauri/Database", "models": "~/Sauri/Models" },
   "launchAtLogin": false,
   "autoUpdate": true,
   "appVersionOfData": "1.0.0"

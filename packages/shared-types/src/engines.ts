@@ -364,6 +364,11 @@ export interface LocalModelList {
   catalog_version: number;
   models: LocalModel[];
   recommendations: Partial<Record<EngineProcess, LocalRecommendation>>;
+  /**
+   * What the first run installs on its own so every recommended model can run, in order (installed entries
+   * included). Missing in hosts older than the automatic setup.
+   */
+  setup_plan?: string[];
   /** Id of the install or verification running now, if any (one at a time). */
   active_job: string | null;
   /** Id of the model serving each process now, or null when none is installed. */

@@ -149,9 +149,9 @@ describe("copyAndVerify (property 9)", () => {
 function installation(): { config: AppConfig; folders: UserFolders } {
   const config = defaultConfig();
   const folders: UserFolders = {
-    recordings: path.join(dir, "Sauri", "Grabaciones"),
-    database: path.join(dir, "Sauri", "Base de datos"),
-    models: path.join(dir, "Sauri", "Modelos"),
+    recordings: path.join(dir, "Sauri", "Recordings"),
+    database: path.join(dir, "Sauri", "Database"),
+    models: path.join(dir, "Sauri", "Models"),
   };
   for (const [kind, folder] of Object.entries(folders)) {
     fs.mkdirSync(folder, { recursive: true });
@@ -170,7 +170,7 @@ function deps(state: { config: AppConfig }, overrides: Partial<RelocateDeps> = {
       return state.config;
     },
     processing: async () => 0,
-    chooseFolder: async () => path.join(dir, "External", "Grabaciones"),
+    chooseFolder: async () => path.join(dir, "External", "Recordings"),
     confirmTrash: async () => false,
     trash: vi.fn(async () => undefined),
     stopServices: async () => {
@@ -214,7 +214,7 @@ describe("relocate", () => {
     const state = installation();
     const previous = state.folders.recordings;
     const before = snapshot(previous);
-    const target = path.join(dir, "External", "Grabaciones");
+    const target = path.join(dir, "External", "Recordings");
     const { deps: d, calls } = deps(state);
     const result = await relocate("recordings", d);
     expect(result).toEqual({ ok: true, kind: "recordings", path: target, previous, previousTrashed: false });
@@ -270,7 +270,7 @@ describe("relocate", () => {
 
     const retry = deps(state);
     expect(await relocate("recordings", retry.deps)).toMatchObject({ ok: true });
-    expect(snapshot(path.join(dir, "External", "Grabaciones"))).toEqual(before);
+    expect(snapshot(path.join(dir, "External", "Recordings"))).toEqual(before);
     expect(snapshot(previous)).toEqual(before);
   });
 
@@ -298,7 +298,7 @@ describe("checkTarget", () => {
     fs.mkdirSync(foreign);
     writeMarker(foreign, { installId: "another", kind: "recordings" });
     expect(checkTarget("recordings", folders, foreign, id)).toEqual({ issue: "foreign" });
-    expect(checkTarget("recordings", folders, path.join(dir, "Fresh", "Grabaciones"), id)).toBeNull();
+    expect(checkTarget("recordings", folders, path.join(dir, "Fresh", "Recordings"), id)).toBeNull();
   });
 
   it("refuses a folder Sauri cannot write to", () => {
@@ -306,7 +306,7 @@ describe("checkTarget", () => {
     const locked = path.join(dir, "Locked");
     fs.mkdirSync(locked);
     fs.chmodSync(locked, 0o500);
-    expect(checkTarget("recordings", folders, path.join(locked, "Grabaciones"), config.installId)).toEqual({
+    expect(checkTarget("recordings", folders, path.join(locked, "Recordings"), config.installId)).toEqual({
       issue: "not_writable",
     });
   });

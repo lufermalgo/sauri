@@ -360,7 +360,8 @@
       "unverified": "Present, not verified",
       "verifying": "Verifying…",
       "installing": "Installing",
-      "corrupt": "Damaged"
+      "corrupt": "Damaged",
+      "notReady": "Not ready"
     },
     "manual": "Installed manually",
     "manualNote": "Installed manually; Sauri doesn't delete it.",
@@ -471,7 +472,11 @@
       "installCommand": "make engines-install",
       "tools": "It needs these tools: {{list}}.",
       "startIntro": "If it's already installed, start it with:",
-      "startCommand": "make engines-up"
+      "startCommand": "make engines-up",
+      "desktopTitle": "The engine isn't responding",
+      "desktopBody": "The {{engine}} engine isn't responding. Quit Sauri and open it again; if nothing changes, check the logs from the Sauri icon in the menu bar (Open logs).",
+      "desktopHostBody": "The service that manages this computer's models isn't responding. Quit Sauri and open it again; if nothing changes, check the logs from the Sauri icon in the menu bar (Open logs).",
+      "desktopWait": "If you just installed a model, wait a few seconds: Sauri starts the engine on its own."
     },
     "engineNames": {
       "transcription": "transcription",
@@ -490,6 +495,9 @@
     "hardware_one": "{{chip}}, {{memory}} of memory, {{count}} core and {{free}} free on disk.",
     "hardware_other": "{{chip}}, {{memory}} of memory, {{count}} cores and {{free}} free on disk.",
     "description": "{{engine}} engine.",
-    "descriptionMinRam": "{{engine}} engine. Needs at least {{minRam}} GB of memory."
+    "descriptionMinRam": "{{engine}} engine. Needs at least {{minRam}} GB of memory.",
+    "needsEngineDesktop": "The files are installed, but the engine that runs them isn't ready. Meanwhile Sauri transcribes with Whisper. If it stays like this, quit Sauri and open it again.",
+    "managedDesktop": "Comes with Sauri. If it doesn't show as installed, quit Sauri and open it again.",
+    "engineLine": "{{name}} (support) · {{state}}"
   }
 }

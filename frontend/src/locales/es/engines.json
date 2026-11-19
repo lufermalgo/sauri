@@ -349,7 +349,8 @@
       "unverified": "Presente sin verificar",
       "verifying": "Verificando…",
       "installing": "Instalando",
-      "corrupt": "Dañado"
+      "corrupt": "Dañado",
+      "notReady": "No está listo"
     },
     "manual": "Instalado a mano",
     "manualNote": "Instalado a mano; Sauri no lo borra.",
@@ -463,7 +464,11 @@
       "installCommand": "make engines-install",
       "tools": "Necesita estas herramientas: {{list}}.",
       "startIntro": "Si ya está instalado, inícialo con:",
-      "startCommand": "make engines-up"
+      "startCommand": "make engines-up",
+      "desktopTitle": "El motor no responde",
+      "desktopBody": "El motor de {{engine}} no responde. Cierra y vuelve a abrir Sauri; si sigue igual, revisa los registros desde el ícono de Sauri en la barra de menús (Abrir registros).",
+      "desktopHostBody": "El servicio que administra los modelos de este equipo no responde. Cierra y vuelve a abrir Sauri; si sigue igual, revisa los registros desde el ícono de Sauri en la barra de menús (Abrir registros).",
+      "desktopWait": "Si acabas de instalar un modelo, espera unos segundos: Sauri pone el motor en marcha solo."
     },
     "engineNames": {
       "transcription": "transcripción",
@@ -482,7 +487,10 @@
     "hardware_one": "{{chip}}, {{memory}} de memoria, {{count}} núcleo y {{free}} libres en disco.",
     "hardware_other": "{{chip}}, {{memory}} de memoria, {{count}} núcleos y {{free}} libres en disco.",
     "description": "Motor {{engine}}.",
-    "descriptionMinRam": "Motor {{engine}}. Pide al menos {{minRam}} GB de memoria."
+    "descriptionMinRam": "Motor {{engine}}. Pide al menos {{minRam}} GB de memoria.",
+    "needsEngineDesktop": "Los archivos están instalados, pero el motor que los ejecuta no está listo. Mientras tanto Sauri transcribe con Whisper. Si sigue así, cierra y vuelve a abrir Sauri.",
+    "managedDesktop": "Viene con Sauri. Si no aparece como instalado, cierra y vuelve a abrir Sauri.",
+    "engineLine": "{{name}} (apoyo) · {{state}}"
   },
   "account": {
     "row": "Cuenta",

@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { FOLDER_KINDS, type UserFolders } from "./paths.ts";
+import { type AppPaths, defaultFolders, FOLDER_KINDS, type UserFolders } from "./paths.ts";
 
 export const SCHEMA_VERSION = 1;
 /** Phase A (this app) owns identity and folders; phase B (portal /bienvenida) owns models and extension. */
@@ -39,6 +39,11 @@ export function defaultConfig(): AppConfig {
     launchAtLogin: false,
     autoUpdate: true,
   };
+}
+
+/** The folders setup shows: the saved ones as they are (never renamed or moved), else the English defaults. */
+export function setupFolders(config: AppConfig, paths: Pick<AppPaths, "home" | "dev">): UserFolders {
+  return config.paths ?? defaultFolders(paths);
 }
 
 /** Phase A is finished once the local user exists; the core can start from then on. */

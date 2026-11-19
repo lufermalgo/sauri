@@ -352,3 +352,26 @@ def _recommend_process(process: Process, hardware: HardwareProfile, models: Iter
 def recommend(hardware: HardwareProfile, catalog: Catalog) -> dict[Process, Recommendation]:
     """Pure recommendation for every process; see the module docstring for the decision table."""
     return {process: _recommend_process(process, hardware, catalog.models) for process in PROCESSES}
+
+
+def setup_plan(recommendations: Mapping[Process, Recommendation], catalog: Catalog) -> tuple[str, ...]:
+    """What a first run downloads so that every recommended local model can run, in a fixed order.
+
+    Per process (in ``PROCESSES`` order) with a recommended model: the model itself; the process default when the
+    recommendation is the ``preferred`` model, because ``local:default`` falls back to it and the engine checks it
+    at startup; then the process's default ``auxiliary`` files (the voice detector). Only downloadable entries are
+    listed: a managed engine a model ``needs`` comes with its runtime and is never downloaded. Pure, like
+    ``recommend``: the same recommendations and catalog always give the same tuple.
+    """
+    plan: list[str] = []
+    for process in PROCESSES:
+        recommendation = recommendations.get(process)
+        chosen = catalog.get(recommendation.model_id) if recommendation and recommendation.model_id else None
+        if chosen is None:
+            continue
+        entries = [chosen]
+        if chosen.preferred:
+            entries += [m for m in catalog.models if m.process == process and m.kind == "model" and m.default]
+        entries += [m for m in catalog.models if m.process == process and m.kind == "auxiliary" and m.default]
+        plan += [m.id for m in entries if m.downloadable and m.id not in plan]
+    return tuple(plan)

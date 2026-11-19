@@ -17,12 +17,12 @@ Esta herramienta copia **una sola vez** tus reuniones de la instalación con Doc
    docker compose -p sauri stop api worker portal
    ```
 
-4. Enciende solo la base de datos de la app (sin abrir la app). Ajusta `DB_FOLDER` si elegiste otra carpeta en la configuración inicial:
+4. Enciende solo la base de datos de la app (sin abrir la app). Ajusta `DB_FOLDER` y `REC` si elegiste otras carpetas en la configuración inicial (las instalaciones hasta la v0.1.1 proponían `Base de datos` y `Grabaciones`):
 
    ```bash
    APP="$HOME/Library/Application Support/Sauri"
-   DB_FOLDER="$HOME/Sauri/Base de datos"
-   REC="$HOME/Sauri/Grabaciones"
+   DB_FOLDER="$HOME/Sauri/Database"
+   REC="$HOME/Sauri/Recordings"
    PG_BIN="<carpeta pg/bin del runtime de la app>"   # en desarrollo: $HOME/Library/Caches/sauri-runtime-build/runtime-current/pg/bin
    "$PG_BIN/pg_ctl" -D "$DB_FOLDER/pgdata" -l "$HOME/Library/Logs/Sauri/postgres-traslado.log" \
      -o "-c listen_addresses= -k '$APP/run' -p 5432" -w start
