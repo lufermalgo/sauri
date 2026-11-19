@@ -365,6 +365,73 @@ def test_the_host_adopts_by_itself_when_it_starts(
     assert (tmp_path / "models" / "asr.bin.manifest.json").exists()
 
 
+def _startup(host: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> local_models.LocalModelService:
+    service = local_models.LocalModelService(
+        models_dir=tmp_path / "models", catalog=parse_catalog(CATALOG_RAW), legacy_locator=lambda _m: None,
+        managed_dirs={},
+    )  # fmt: skip
+    (tmp_path / "models").mkdir(exist_ok=True)
+    monkeypatch.setattr(local_models, "_service", service)
+    monkeypatch.setattr(host, "ADOPT_ON_START", False)  # the desktop app starts the host this way
+    return service
+
+
+def _boot(host: ModuleType, service: local_models.LocalModelService) -> dict[str, Any]:
+    with TestClient(host.app, base_url="http://127.0.0.1:8005", raise_server_exceptions=False) as client:
+        deadline = time.monotonic() + 20
+        while service._active is not None:
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        body: dict[str, Any] = client.get("/v1/local/models", headers=AUTH).json()
+    return body
+
+
+def test_a_verified_model_whose_file_was_copied_is_confirmed_again_when_the_host_starts(
+    host: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = _startup(host, tmp_path, monkeypatch)
+    path = tmp_path / "models" / "asr.bin"
+    path.write_bytes(ASR)
+    _adopt_by_route(host)
+    assert service._state(service._model(ASR_ID))["state"] == "installed"
+    os.utime(path, ns=(1, 1))  # a copy keeps the bytes and gets a new modification time
+    assert service._state(service._model(ASR_ID))["state"] == "unverified"
+    body = _boot(host, service)
+    assert next(m for m in body["models"] if m["id"] == ASR_ID)["availability"] == "installed"
+
+
+def test_a_normal_start_and_a_file_judged_different_start_no_hashing(
+    host: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = _startup(host, tmp_path, monkeypatch)
+    (tmp_path / "models" / "asr.bin").write_bytes(ASR)
+    (tmp_path / "models" / "asr-small.bin").write_bytes(bytes(len(ASR_SMALL)))  # wrong bytes
+    (tmp_path / "models" / "llm.gguf").write_bytes(b"never seen by Sauri")  # no manifest: not ours to claim
+    _adopt_by_route(host)
+    jobs_before = set(service._jobs)
+    calls: list[Path] = []
+    original = service._hash_into
+
+    async def spy(path: Path, sha: Any, job: Any) -> None:
+        calls.append(path)
+        await original(path, sha, job)
+
+    monkeypatch.setattr(service, "_hash_into", spy)
+    body = _boot(host, service)
+    assert service._jobs.keys() == jobs_before and calls == []
+    assert next(m for m in body["models"] if m["id"] == ASR_SMALL_ID)["reason"] == "hash_mismatch"
+    assert next(m for m in body["models"] if m["id"] == LLM_ID)["availability"] == "present_unverified"
+
+
+def _adopt_by_route(host: ModuleType) -> None:
+    with TestClient(host.app, base_url="http://127.0.0.1:8005", raise_server_exceptions=False) as client:
+        job = client.post("/v1/local/adopt", headers=AUTH).json()
+        deadline = time.monotonic() + 20
+        while client.get(f"/v1/local/jobs/{job['id']}", headers=AUTH).json()["state"] == "running":
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+
+
 # --- verify, install and remove respect the legacy location -----------------------------------------
 
 
