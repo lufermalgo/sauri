@@ -78,18 +78,16 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 from hardware import detect_hardware, disk_free_bytes
-from hf_custom import (
+from hf_custom import HubClient, Source, parse_source
+from sauri_engine_common.custom_models import (
     COMMIT,
     CustomEntry,
     CustomModelError,
-    HubClient,
-    Source,
     check_path,
     check_process,
     check_repo,
     compatible,
     is_custom_id,
-    parse_source,
     read_registry,
     write_registry,
 )

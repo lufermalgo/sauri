@@ -29,12 +29,19 @@ A gateway calls ``select_local_model`` once per request, before it touches any e
   model when it is installed (and the managed engine it ``needs`` is ready), otherwise ``None``, and the
   gateway keeps its built-in default model. An explicit ``local:<id>`` never falls back to another model.
 
+* Custom models (``local:custom-<16 hex>``, a file the user brought from Hugging Face): the model comes from the
+  registry ``<models>/custom_models.json`` (``custom_models``), validated again on every read, and its file must
+  pass the same manifest check as a catalog file (``installed``, SHA-256, size, ``mtime_ns``). Unlike a catalog
+  model, a custom one that is missing, unregistered or not vouched for is never an error: ``select_local_model``
+  logs why and returns ``None``, so the gateway runs its default local model and the meeting goes on.
+
 Errors are ``LocalModelError`` with an HTTP status and a stable code, never a path or a value.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import stat
 from collections.abc import Callable
@@ -42,9 +49,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from sauri_engine_common.custom_models import find_custom, is_custom_id
 from sauri_engine_common.model_bundle import manifest_vouches, snapshot
 from sauri_engine_common.recommend import Catalog, CatalogError, CatalogModel, Process, load_catalog
 from sauri_engine_common.route import LOCAL_KIND, RouteError, decode_route
+
+logger = logging.getLogger("sauri.engine.local_model_use")
 
 MANIFEST_SUFFIX: Final = ".manifest.json"
 LOCATION_MODELS_DIR: Final = "models_dir"
@@ -201,10 +211,26 @@ def select_local_model(
     model_id = route.model[len(LOCAL_PREFIX) :]
     if model_id == DEFAULT_MODEL:
         return None
+    if is_custom_id(model_id):
+        return _select_custom(model_id, process, models_dir or default_models_dir())
     entry = (catalog or load_runtime_catalog()).get(model_id)
     if entry is None or entry.process != process or entry.kind != "model":
         raise LocalModelError(422, "unknown_model")
     return LocalSelection(entry.id, _locate(entry, models_dir or default_models_dir(), legacy_default), entry.engine)
+
+
+def _select_custom(model_id: str, process: Process, models_dir: Path) -> LocalSelection | None:
+    """The custom model a route names when its file is vouched for; else ``None`` (the default local model)."""
+    entry = find_custom(models_dir, model_id, process)
+    if entry is None:
+        logger.warning("custom_model_unavailable model=%s reason=not_registered", model_id)
+        return None
+    try:
+        path = _locate(entry, models_dir, None)
+    except LocalModelError as error:
+        logger.warning("custom_model_unavailable model=%s reason=%s", model_id, error.code)
+        return None
+    return LocalSelection(entry.id, path, entry.engine)
 
 
 def select_preferred(

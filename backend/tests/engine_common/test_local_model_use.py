@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -15,7 +16,15 @@ from sauri_engine_common.local_model_use import (
 )
 from sauri_engine_common.recommend import Catalog, Process, parse_catalog
 
-from tests.local_models_support import BIG, SMALL, adopt_legacy, catalog_entry, install_model, route_header
+from tests.local_models_support import (
+    BIG,
+    SMALL,
+    adopt_legacy,
+    catalog_entry,
+    install_custom,
+    install_model,
+    route_header,
+)
 
 DEFAULT = catalog_entry("llm-big", "summary", "big.gguf", BIG, default=True, rank=2)
 SMALLER = catalog_entry("llm-small", "summary", "small.gguf", SMALL)
@@ -214,3 +223,49 @@ def test_legacy_paths_follow_the_gateways_built_in_locations(tmp_path: Path, mon
     monkeypatch.setenv("ASR_MODEL_PATH", str(tmp_path / "x.bin"))
     assert legacy_path_for(parsed["llm-big"]) == tmp_path / "x.gguf"
     assert legacy_path_for(parsed["asr-one"]) == tmp_path / "x.bin"
+
+
+# --- custom models (local:custom-<16 hex>) ----------------------------------------------------------
+
+
+def test_a_registered_and_verified_custom_model_is_selected_with_its_engine(tmp_path: Path) -> None:
+    model_id, final = install_custom(tmp_path, "summary", SMALL, "sub/model-Q4_K_M.gguf")
+    chosen = select(route_header(f"local:{model_id}"), tmp_path)
+    assert chosen == LocalSelection(model_id, final, "llama.cpp")
+    asr_id, asr_file = install_custom(tmp_path, "transcription", BIG, "ggml-tiny.bin")
+    chosen = select(route_header(f"local:{asr_id}", process="transcription"), tmp_path, process="transcription")
+    assert chosen == LocalSelection(asr_id, asr_file, "whisper.cpp")
+
+
+def test_a_custom_model_that_cannot_be_used_falls_back_to_the_default_and_is_logged(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    model_id, final = install_custom(tmp_path, "summary", SMALL, "model.gguf")
+    unverified_id, _ = install_custom(tmp_path, "summary", BIG, "other.gguf", manifest=False)
+    cases = {
+        "custom-0123456789abcdef": "reason=not_registered",
+        unverified_id: "reason=model_not_verified",
+    }
+    with caplog.at_level(logging.WARNING, logger="sauri.engine.local_model_use"):
+        for missing, reason in cases.items():
+            assert select(route_header(f"local:{missing}"), tmp_path) is None
+            assert reason in caplog.text
+        # Registered for another process: never served by this gateway.
+        header = route_header(f"local:{model_id}", process="transcription")
+        assert select(header, tmp_path, process="transcription") is None
+        # Replaced after the install: the manifest no longer vouches for it.
+        final.write_bytes(SMALL + b"changed")
+        assert select(route_header(f"local:{model_id}"), tmp_path) is None
+        final.unlink()
+        assert select(route_header(f"local:{model_id}"), tmp_path) is None
+    assert "model_not_installed" in caplog.text and str(tmp_path) not in caplog.text
+
+
+def test_an_unreadable_or_tampered_registry_selects_nothing(tmp_path: Path) -> None:
+    model_id, _final = install_custom(tmp_path, "summary", SMALL, "model.gguf")
+    registry = tmp_path / "custom_models.json"
+    record = json.loads(registry.read_text())["models"][0]
+    registry.write_text(json.dumps({"version": 1, "models": [record | {"path": "../model.gguf"}]}))
+    assert select(route_header(f"local:{model_id}"), tmp_path) is None
+    registry.write_text("{not json")
+    assert select(route_header(f"local:{model_id}"), tmp_path) is None

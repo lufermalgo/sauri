@@ -63,6 +63,30 @@ def adopt_legacy(
     return manifest
 
 
+def install_custom(
+    models_dir: Path, process: str, data: bytes, repo_path: str, *, manifest: bool = True
+) -> tuple[str, Path]:
+    """Register a custom model and write its file (and, by default, the manifest ``host-engine`` writes)."""
+    digest = hashlib.sha256(data).hexdigest()
+    record = {"process": process, "repo": "someone/custom", "revision": "c" * 40, "path": repo_path,
+              "size": len(data), "sha256": digest, "license": None, "installed_at": None}  # fmt: skip
+    registry = models_dir / "custom_models.json"
+    existing = json.loads(registry.read_text())["models"] if registry.exists() else []
+    models_dir.mkdir(parents=True, exist_ok=True)
+    registry.write_text(json.dumps({"version": 1, "models": [*existing, record]}), encoding="utf-8")
+    final = models_dir / "custom" / f"{digest[:16]}-{repo_path.rsplit('/', 1)[-1]}"
+    final.parent.mkdir(parents=True, exist_ok=True)
+    final.write_bytes(data)
+    if manifest:
+        info = final.stat()
+        entry = {"id": f"custom-{digest[:16]}", "file": f"custom/{final.name}", "revision": "c" * 40,
+                 "sha256": digest, "size": info.st_size, "mtime_ns": info.st_mtime_ns,
+                 "installed_at": "2026-01-01T00:00:00+00:00", "status": "installed",
+                 "location": "models_dir"}  # fmt: skip
+        final.with_name(final.name + MANIFEST_SUFFIX).write_text(json.dumps(entry), encoding="utf-8")
+    return f"custom-{digest[:16]}", final
+
+
 def route_header(model: str, *, process: Process = "summary", kind: str = "local") -> str:
     capability = "transcription" if process == "transcription" else "summary"
     return encode_route(Route(
@@ -72,4 +96,6 @@ def route_header(model: str, *, process: Process = "summary", kind: str = "local
     ))  # fmt: skip
 
 
-__all__ = ["BIG", "SMALL", "adopt_legacy", "catalog_entry", "install_model", "route_header", "write_catalog"]
+__all__ = [
+    "BIG", "SMALL", "adopt_legacy", "catalog_entry", "install_custom", "install_model", "route_header", "write_catalog",
+]  # fmt: skip

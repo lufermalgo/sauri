@@ -21,6 +21,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sauri_engine_common.chatgpt_login import ALLOWED_HOSTS, ChatGptLogin
+from sauri_engine_common.custom_models import is_custom_id
 from sauri_engine_common.external import chat_anthropic, chat_openai, chat_responses
 from sauri_engine_common.external.allowlist_http import AllowlistedHttp
 from sauri_engine_common.external.errors import ProviderError
@@ -146,6 +147,16 @@ class LlamaServer:
                     pass
                 await asyncio.sleep(0.1)
 
+    async def _start_or_default(self, client: httpx.AsyncClient, selection: LocalSelection | None) -> None:
+        """Start the chosen model; a custom one llama.cpp cannot load gives way to the built-in model (logged)."""
+        try:
+            await self.start(client, selection)
+        except RuntimeError:
+            if selection is None or not is_custom_id(selection.model_id):
+                raise
+            logger.warning("custom_model_load_failed model=%s fallback=default", selection.model_id)
+            await self.start(client, None)
+
     async def chat(self, body: dict[str, Any], selection: LocalSelection | None = None) -> dict[str, Any]:
         if body.get("stream"):
             raise HTTPException(status_code=422, detail="streaming_not_supported")
@@ -155,7 +166,7 @@ class LlamaServer:
                 with KeepAwake():
                     async with httpx.AsyncClient(timeout=self.request_seconds, trust_env=False) as client:
                         async with asyncio.timeout(self.startup_seconds + self.request_seconds):
-                            await self.start(client, selection)
+                            await self._start_or_default(client, selection)
                             response = await client.post(f"{self.url}/v1/chat/completions", json={
                                 **body, "stream": False, "reasoning_budget": 0,
                                 "chat_template_kwargs": {"enable_thinking": False},
