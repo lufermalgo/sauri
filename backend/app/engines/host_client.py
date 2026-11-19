@@ -26,6 +26,8 @@ PROBE_TIMEOUT_S: Final = 85.0
 MODELS_TIMEOUT_S: Final = 45.0
 STATUS_TIMEOUT_S: Final = 10.0
 LOCAL_TIMEOUT_S: Final = 15.0
+# Custom models: the host asks the Hugging Face API (two or more calls of up to 10 s each) before it answers.
+CUSTOM_TIMEOUT_S: Final = 30.0
 ACCOUNT_TIMEOUT_S: Final = 30.0  # one call to OpenAI plus the keychain
 # Same alphabet the host store accepts, but every segment starts with a letter or digit so a reference
 # can never climb out of /v1/secrets/ with ".." or "." segments.
@@ -169,15 +171,19 @@ class HostClient:
     async def chatgpt_logout(self) -> None:
         await self._request("POST", "/v1/oauth/chatgpt/logout", timeout=ACCOUNT_TIMEOUT_S)
 
-    async def local(self, method: str, path: str) -> tuple[int, dict[str, Any] | None]:
-        """One bodyless call to the local-model routes; returns the host's status and JSON body.
+    async def local(
+        self, method: str, path: str, *, json: dict[str, Any] | None = None, timeout: float = LOCAL_TIMEOUT_S
+    ) -> tuple[int, dict[str, Any] | None]:
+        """One call to the local-model routes; returns the host's status and JSON body.
+
+        ``json`` is sent only by the custom-model routes, built by the caller from a validated request body.
 
         Unlike the other calls, a host refusal (404, 409, 507...) is returned, not raised: the user needs
         its code and figures (needed space, the processes using a model). Only "cannot talk to or
         authenticate against the host" raises ``HostUnavailableError``. The caller passes a path built
         from its own fixed templates, so the target is never chosen by a request field.
         """
-        response = await self._send(method, path, timeout=LOCAL_TIMEOUT_S)
+        response = await self._send(method, path, timeout=timeout, json=json)
         code = _error_code(response) if response.status_code >= 400 else None
         if response.status_code == 401 or (response.status_code == 503 and code == "management_auth_unavailable"):
             logger.warning("host_engine_unavailable status=%s", response.status_code)

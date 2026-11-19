@@ -24,6 +24,9 @@ import type {
   EngineProviderUpdate,
   EngineProviderUpdated,
   EngineStatus,
+  CustomInstallRequest,
+  CustomModelProcess,
+  CustomResolveResponse,
   LocalHardware,
   LocalJob,
   LocalModelList,
@@ -974,6 +977,17 @@ export function removeLocalModel(modelId: string): Promise<void> {
 /** Starts a run that recognizes the models already on this computer (installed by hand or earlier). */
 export function adoptLocalModels(): Promise<LocalJob> {
   return enginesRequest("/local/adopt", "POST");
+}
+
+/** Pins a Hugging Face repository (or file URL) to a commit and lists the files `process` can use. */
+export function resolveCustomModel(process: CustomModelProcess, source: string): Promise<CustomResolveResponse> {
+  return enginesRequest("/local/custom/resolve", "POST", { process, source });
+}
+
+/** Starts installing one custom file (the host reads its size and hash again); poll the job like any install. */
+export function installCustomModel(request: CustomInstallRequest): Promise<LocalJob> {
+  const { process, repo, revision, file } = request;
+  return enginesRequest("/local/custom/install", "POST", { process, repo, revision, file });
 }
 
 export function getLocalJob(jobId: string): Promise<LocalJob> {

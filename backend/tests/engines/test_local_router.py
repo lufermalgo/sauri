@@ -8,6 +8,7 @@ proxy). Nothing contacts a real provider or the owner's running host service.
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 
-from app.engines.host_client import HostClient, get_host_client
+from app.engines.host_client import CUSTOM_TIMEOUT_S, LOCAL_TIMEOUT_S, HostClient, get_host_client
 from app.main import app
 from tests.engines.conftest import MANAGEMENT_TOKEN, auth_headers
 from tests.host_engine.conftest import load_host_module
@@ -39,6 +40,7 @@ class Recorder:
     calls: list[tuple[str, str, str, str | None]] = field(default_factory=list)  # method, path, query, auth
     answer: tuple[int, Any] = (200, {"ok": True})
     raw: bytes | None = None
+    bodies: list[bytes] = field(default_factory=list)
 
 
 def fake_host(recorder: Recorder) -> FastAPI:
@@ -49,6 +51,7 @@ def fake_host(recorder: Recorder) -> FastAPI:
         recorder.calls.append(
             (request.method, "/" + path, request.url.query, request.headers.get("authorization"))
         )
+        recorder.bodies.append(await request.body())
         status, body = recorder.answer
         if recorder.raw is not None:
             return Response(recorder.raw, status_code=status, media_type="application/json")
@@ -251,6 +254,83 @@ async def test_a_missing_token_file_or_unreachable_host_is_host_unavailable(
     assert (response.status_code, response.json()) == (503, {"detail": "host_unavailable"})
 
 
+# --- custom models (the only routes with a body) ----------------------------------------------------
+
+SHA = "c" * 40
+RESOLVE = {"process": "summary", "source": "https://huggingface.co/someone/tiny-gguf"}
+INSTALL = {"process": "summary", "repo": "someone/tiny-gguf", "revision": SHA, "file": "sub/model-Q4_K_M.gguf"}
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "status", "target"),
+    [
+        ("/custom/resolve", RESOLVE, 200, "/v1/local/custom/resolve"),
+        ("/custom/install", INSTALL, 202, "/v1/local/custom/install"),
+    ],
+)
+async def test_custom_routes_forward_only_the_validated_fields(
+    http: AsyncClient, recorder: Recorder, path: str, body: dict[str, Any], status: int, target: str
+) -> None:
+    anonymous = await http.post(LOCAL + path, json=body)
+    assert anonymous.status_code == 401 and recorder.calls == []
+    recorder.answer = (status, {"state": "ok"})
+    response = await http.post(f"{LOCAL}{path}?url=https://evil.example/x", headers=auth_headers(), json=body)
+    assert response.status_code == status, response.text
+    assert recorder.calls == [("POST", target, "", f"Bearer {MANAGEMENT_TOKEN}")]
+    assert json.loads(recorder.bodies[0]) == body
+    assert response.headers["cache-control"] == "no-store" and response.json() == {"state": "ok"}
+
+
+async def test_custom_routes_wait_longer_for_the_host(
+    http: AsyncClient, recorder: Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[float] = []
+    original = HostClient._send
+
+    async def spy(self: HostClient, method: str, path: str, *, timeout: float, json: Any = None) -> httpx.Response:
+        seen.append(timeout)
+        return await original(self, method, path, timeout=timeout, json=json)
+
+    monkeypatch.setattr(HostClient, "_send", spy)
+    await http.post(f"{LOCAL}/custom/resolve", headers=auth_headers(), json=RESOLVE)
+    await http.post(f"{LOCAL}/custom/install", headers=auth_headers(), json=INSTALL)
+    await http.get(f"{LOCAL}/models", headers=auth_headers())
+    assert seen == [CUSTOM_TIMEOUT_S, CUSTOM_TIMEOUT_S, LOCAL_TIMEOUT_S] and CUSTOM_TIMEOUT_S >= 30
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/custom/resolve", {"process": "summary"}),
+        ("/custom/resolve", RESOLVE | {"extra": 1}),
+        ("/custom/resolve", RESOLVE | {"process": "diarization"}),
+        ("/custom/resolve", RESOLVE | {"source": ""}),
+        ("/custom/resolve", RESOLVE | {"source": "x" * 600}),
+        ("/custom/install", INSTALL | {"sha256": "0" * 64}),
+        ("/custom/install", INSTALL | {"revision": "main"}),
+        ("/custom/install", INSTALL | {"repo": "someone"}),
+        ("/custom/install", INSTALL | {"repo": "someone/../x"}),
+        ("/custom/install", INSTALL | {"file": "../model.gguf"}),
+        ("/custom/install", INSTALL | {"file": "/etc/model.gguf"}),
+        ("/custom/install", INSTALL | {"file": "a b.gguf"}),
+        ("/custom/install", {k: v for k, v in INSTALL.items() if k != "file"}),
+    ],
+)
+async def test_custom_bodies_outside_the_contract_never_reach_the_host(
+    http: AsyncClient, recorder: Recorder, path: str, body: dict[str, Any]
+) -> None:
+    response = await http.post(LOCAL + path, headers=auth_headers(), json=body)
+    assert response.status_code == 422
+    assert recorder.calls == []
+
+
+async def test_custom_refusals_keep_their_code(http: AsyncClient, recorder: Recorder) -> None:
+    for status, code in [(422, "host_not_allowed"), (403, "gated"), (404, "not_found"), (503, "unreachable")]:
+        recorder.answer = (status, {"error": {"code": code}})
+        response = await http.post(f"{LOCAL}/custom/resolve", headers=auth_headers(), json=RESOLVE)
+        assert (response.status_code, response.json()) == (status, {"detail": code})
+
+
 # --- the real host application behind the proxy ----------------------------------------------------
 
 PAYLOAD = b"synthetic-model-bytes-" * 5000
@@ -365,3 +445,14 @@ async def test_the_real_host_answers_for_hardware_and_unknown_ids(real: Any) -> 
     assert (cancel.status_code, cancel.json()) == (404, {"detail": "unknown_job"})
     missing = await api.post(f"{LOCAL}/models/e2e-model/verify", headers=headers)
     assert (missing.status_code, missing.json()) == (404, {"detail": "not_installed"})
+
+
+async def test_the_real_host_refuses_another_host_through_the_proxy_without_any_download(real: Any) -> None:
+    api, service = real
+    body = {"process": "summary", "source": "https://example.com/someone/tiny-gguf"}
+    response = await api.post(f"{LOCAL}/custom/resolve", headers=auth_headers(), json=body)
+    assert (response.status_code, response.json()) == (422, {"detail": "host_not_allowed"})
+    asr_body = INSTALL | {"process": "transcription"}
+    incompatible = await api.post(f"{LOCAL}/custom/install", headers=auth_headers(), json=asr_body)
+    assert (incompatible.status_code, incompatible.json()) == (422, {"detail": "no_compatible_files"})
+    assert not (service.models_dir / "custom").exists()

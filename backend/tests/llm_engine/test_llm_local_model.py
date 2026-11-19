@@ -20,7 +20,15 @@ from typing import Any
 import httpx
 import pytest
 
-from tests.local_models_support import BIG, SMALL, catalog_entry, install_model, route_header, write_catalog
+from tests.local_models_support import (
+    BIG,
+    SMALL,
+    catalog_entry,
+    install_custom,
+    install_model,
+    route_header,
+    write_catalog,
+)
 
 AUTH = {"Authorization": "Bearer synthetic-token"}
 BODY = {"model": "ignored", "messages": [{"role": "user", "content": "synthetic"}]}
@@ -76,6 +84,9 @@ argv = sys.argv
 record = {{"model": argv[argv.index('-m') + 1], "alias": argv[argv.index('--alias') + 1]}}
 with open({str(starts)!r}, 'a') as log:
     log.write(json.dumps(record) + '\\n')
+with open(record["model"], 'rb') as weights:
+    if weights.read(10) == b'unloadable':
+        sys.exit(1)  # like llama.cpp with a GGUF it cannot load
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args): pass
     def do_GET(self):
@@ -181,3 +192,33 @@ async def test_route_requires_the_engine_token(gateway: Gateway) -> None:
     )
     assert response.status_code == 401
     assert gateway.module.server.process is None
+
+
+async def test_a_custom_model_is_loaded_with_its_own_file_and_alias(gateway: Gateway) -> None:
+    model_id, final = install_custom(gateway.models, "summary", SMALL, "model-Q4_K_M.gguf")
+    assert served(await gateway.chat(route_header(f"local:{model_id}"))) == {"model": str(final), "alias": model_id}
+
+
+async def test_a_custom_model_that_is_missing_or_unverified_runs_the_default_model(gateway: Gateway) -> None:
+    model_id, final = install_custom(gateway.models, "summary", SMALL, "model-Q4_K_M.gguf")
+    final.write_bytes(SMALL + b"changed")
+    for route in (f"local:{model_id}", "local:custom-0123456789abcdef"):
+        assert served(await gateway.chat(route_header(route))) == {"model": str(gateway.legacy), "alias": "qwen3.5-9b"}
+
+
+async def test_a_custom_model_llama_cannot_load_gives_way_to_the_default_model(gateway: Gateway) -> None:
+    model_id, final = install_custom(gateway.models, "summary", b"unloadable" + SMALL, "broken.gguf")
+    response = await gateway.chat(route_header(f"local:{model_id}"))
+    assert served(response) == {"model": str(gateway.legacy), "alias": "qwen3.5-9b"}
+    assert [item["model"] for item in gateway.started()] == [str(final), str(gateway.legacy)]
+
+
+async def test_only_a_custom_model_falls_back_and_only_once(gateway: Gateway) -> None:
+    gateway.legacy.write_bytes(b"unloadable" + BIG[10:])  # the built-in model cannot start either
+    response = await gateway.chat(None)
+    assert (response.status_code, response.json()) == (503, {"detail": "llama_unavailable"})
+    assert len(gateway.started()) == 1
+    model_id, _final = install_custom(gateway.models, "summary", b"unloadable" + SMALL, "broken.gguf")
+    response = await gateway.chat(route_header(f"local:{model_id}"))
+    assert (response.status_code, response.json()) == (503, {"detail": "llama_unavailable"})
+    assert len(gateway.started()) == 3  # the custom model, then the built-in one, then nothing more
