@@ -1,0 +1,12 @@
+{
+  "specId": "c5062c33-9765-4410-8950-6af1edb59c76",
+  "specType": "feature",
+  "workflowType": "requirements-first",
+  "created": "2026-11-19",
+  "idea": "Sauri como app de escritorio local para Windows 10/11 x64 primero y Linux x64 (Ubuntu 22.04/24.04) después, con las mismas funciones y calidad que la versión Mac. Decisiones del dueño (19/11/2026): Windows primero; sin firma de código por ahora; número de usuarios por sistema desconocido (planear con Windows como el más usado); paquetes y pruebas automáticas en las máquinas Windows y Linux de GitHub, y la verificación con GPU NVIDIA en un PC real de un compañero. Hardware: la app detecta NVIDIA y otras GPU (AMD/Intel); NVIDIA usa CUDA para transcripción y resúmenes; AMD/Intel usan Vulkan; la detección de hablantes corre en CPU en todos (Senko con ONNX, sin torch, misma agrupación y mer_cos 0.78); sin GPU utilizable se avisa y se ofrece modo lento o proveedor externo.",
+  "phases": {
+    "requirements": "complete",
+    "design": "pending",
+    "tasks": "pending"
+  }
+}
