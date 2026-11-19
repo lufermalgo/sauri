@@ -1,6 +1,6 @@
 {
   "name": "@sauri/desktop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Sauri desktop app: starts and supervises the local core and engines, and runs first-run setup.",
   "type": "module",
